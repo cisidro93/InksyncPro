@@ -22,27 +22,31 @@ def main():
         print("Enabling UIFileSharingEnabled...")
         pl['UIFileSharingEnabled'] = True
         
-        print("Enabling LSSupportsOpeningDocumentsInPlace...")
-        pl['LSSupportsOpeningDocumentsInPlace'] = True
+        print("Disabling LSSupportsOpeningDocumentsInPlace (Test)...")
+        pl['LSSupportsOpeningDocumentsInPlace'] = False
         
         # 2. Add Document Types (Share Sheet Visibility)
-        # DISABLE FOR BUILD #72: Isolate Folder Visibility
-        # print("Adding CFBundleDocumentTypes...")
-        # new_types = [{
-        #     'CFBundleTypeName': 'Comic Book Archive',
-        #     'CFBundleTypeRole': 'Editor',
-        #     'LSHandlerRank': 'Owner',
-        #     'LSItemContentTypes': [
-        #         'com.pkware.zip-archive',
-        #         'public.zip-archive',
-        #         'public.archive', 
-        #         'com.macitbetter.cbz-archive',
-        #         'public.data',
-        #         'application/zip',
-        #         'application/x-cbz'
-        #     ]
-        # }]
-        # pl['CFBundleDocumentTypes'] = new_types
+        print("Adding CFBundleDocumentTypes...")
+        
+        # Define our types
+        new_types = [{
+            'CFBundleTypeName': 'Comic Book Archive',
+            'CFBundleTypeRole': 'Editor',
+            'LSHandlerRank': 'Owner',
+            'LSItemContentTypes': [
+                'com.pkware.zip-archive',
+                'public.zip-archive',
+                'public.archive', 
+                'com.macitbetter.cbz-archive',
+                'public.data',
+                'application/zip',
+                'application/x-cbz'
+            ]
+        }]
+        
+        # Merge or Overwrite
+        # We overwrite to ensure it's exactly what we want
+        pl['CFBundleDocumentTypes'] = new_types
         
         # Save back
         with open(plist_path, 'wb') as f:

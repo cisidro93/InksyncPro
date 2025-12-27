@@ -14,7 +14,7 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #72 (Nuclear Revert - No Types)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #73 (Sharing ON, InPlace OFF)", color="blue", size=16, weight="bold"))
     
     # ... (rest of code)
 
