@@ -45,10 +45,17 @@ jobs:
           if [ -n "$APP_PATH" ]; then
             echo "Found app at: $APP_PATH"
             
-            # --- MANUAL OVERRIDE: Force Inject Info.plist keys via Python ---
+            # --- MANUAL OVERRIDE: Force Inject Info.plist keys via MERGE (Build #59 Logic) ---
             PLIST="$APP_PATH/Info.plist"
-            echo "Running inject_plist.py on $PLIST..."
-            python inject_plist.py "$PLIST"
+            CONFIG="ios_config.plist"
+            
+            echo "Merging $CONFIG into $PLIST..."
+            if [ -f "$CONFIG" ]; then
+                /usr/libexec/PlistBuddy -c "Merge $CONFIG :" "$PLIST"
+            else
+                echo "ERROR: ios_config.plist not found!"
+                exit 1
+            fi
             
             # Note: Priority is Folder Visibility. These keys MUST result in 'true'.
             
