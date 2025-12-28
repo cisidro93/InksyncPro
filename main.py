@@ -14,7 +14,7 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #87 (Tracing Crash)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #88 (Indentation Fix)", color="blue", size=16, weight="bold"))
     
     # 2. Add Button Handler EARLY (Prevents scoping issues)
     def load_engine_click(e):
@@ -136,11 +136,8 @@ def main(page):
         except Exception as e:
             log(f"Storage Error: {e}", "red")
 
- 
-    
-
-
     # --- FILE DROP HANDLER (Drag & Drop + Open In) ---
+    log("Trace: Global Scope - Init Storage Defined")
     def on_file_drop(e: ft.FileDropEvent):
         try:
             if not e.files:
