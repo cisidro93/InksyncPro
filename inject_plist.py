@@ -25,16 +25,18 @@ def main():
         print("Enabling UIFileSharingEnabled...")
         pl['UIFileSharingEnabled'] = True
         
-        print("Enabling LSSupportsOpeningDocumentsInPlace...")
-        pl['LSSupportsOpeningDocumentsInPlace'] = True
-
-        print("Enabling UISupportsDocumentBrowser...")
-        pl['UISupportsDocumentBrowser'] = True
+        # 1. Enable File Sharing (Folder Visibility)
+        print("Enabling UIFileSharingEnabled...")
+        pl['UIFileSharingEnabled'] = True
         
-        # Privacy Keys
-        pl['NSDocumentsFolderUsageDescription'] = "We need access to your documents to convert CBZ files."
-        pl['NSDownloadsFolderUsageDescription'] = "We need access to save PDF files."
-        pl['NSDesktopFolderUsageDescription'] = "We need access to your files."
+        # REMOVE Potential Conflicts
+        print("Removing LSSupportsOpeningDocumentsInPlace (Force Default)...")
+        if 'LSSupportsOpeningDocumentsInPlace' in pl:
+            del pl['LSSupportsOpeningDocumentsInPlace']
+
+        print("Removing UISupportsDocumentBrowser (Force Default)...")
+        if 'UISupportsDocumentBrowser' in pl:
+            del pl['UISupportsDocumentBrowser']
         
         # 2. Add Document Types (Share Sheet Visibility)
         print("Adding CFBundleDocumentTypes...")

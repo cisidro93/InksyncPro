@@ -14,7 +14,7 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #77 (Privacy Keys + DocBrowser)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #78 (Minimal Sharing Config)", color="blue", size=16, weight="bold"))
     
     # ... (rest of code)
 
