@@ -27,6 +27,14 @@ def main():
         
         print("Enabling LSSupportsOpeningDocumentsInPlace...")
         pl['LSSupportsOpeningDocumentsInPlace'] = True
+
+        print("Enabling UISupportsDocumentBrowser...")
+        pl['UISupportsDocumentBrowser'] = True
+        
+        # Privacy Keys
+        pl['NSDocumentsFolderUsageDescription'] = "We need access to your documents to convert CBZ files."
+        pl['NSDownloadsFolderUsageDescription'] = "We need access to save PDF files."
+        pl['NSDesktopFolderUsageDescription'] = "We need access to your files."
         
         # 2. Add Document Types (Share Sheet Visibility)
         print("Adding CFBundleDocumentTypes...")
