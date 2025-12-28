@@ -29,10 +29,9 @@ def main():
         print("Enabling UIFileSharingEnabled...")
         pl['UIFileSharingEnabled'] = True
         
-        # REMOVE Potential Conflicts
-        print("Removing LSSupportsOpeningDocumentsInPlace (Force Default)...")
-        if 'LSSupportsOpeningDocumentsInPlace' in pl:
-            del pl['LSSupportsOpeningDocumentsInPlace']
+        # Restore In-Place (Crucial for Folder Visibility?)
+        print("Enabling LSSupportsOpeningDocumentsInPlace...")
+        pl['LSSupportsOpeningDocumentsInPlace'] = True
 
         print("Removing UISupportsDocumentBrowser (Force Default)...")
         if 'UISupportsDocumentBrowser' in pl:

@@ -14,7 +14,22 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #84 (Ghost Code Removed)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #85 (Emergency Button + InPlace)", color="blue", size=16, weight="bold"))
+    
+    # --- EMERGENCY BUTTON ---
+    def emergency_click(e):
+        page.add(ft.Text("Emergency Clicked! Attempting load..."))
+        page.update()
+        try:
+             # Try to call the real loader if it exists
+             load_engine_click(e)
+        except Exception as ex:
+             page.add(ft.Text(f"Loader Failed: {ex}", color="red"))
+             page.update()
+
+    btn_emergency = ft.ElevatedButton("EMERGENCY LOAD", on_click=emergency_click, bgcolor="red", color="white")
+    page.add(btn_emergency)
+    page.update()
 
 
     
