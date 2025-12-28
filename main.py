@@ -14,7 +14,7 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #79 (Poller Enabled - TESTING)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #80 (Poller Restored)", color="blue", size=16, weight="bold"))
     
     # ... (rest of code)
 
@@ -36,6 +36,50 @@ def main(page):
             page.update()
         except:
             pass 
+
+    # --- INBOX POLLER (iOS Share Handler) ---
+    def start_inbox_poller():
+        import threading
+        import shutil
+        
+        def check_inbox():
+            inbox = os.path.join(os.path.expanduser("~"), "Documents", "Inbox")
+            docs = os.path.join(os.path.expanduser("~"), "Documents")
+            
+            log(f"Poller Started. Watching: {inbox}")
+            
+            while True:
+                try:
+                    if os.path.exists(inbox):
+                        files = os.listdir(inbox)
+                        for f in files:
+                            src_path = os.path.join(inbox, f)
+                            if os.path.isfile(src_path):
+                                log(f"Inbox: Found {f}...", "green")
+                                dst_path = os.path.join(docs, f)
+                                
+                                # Handle duplicates
+                                if os.path.exists(dst_path):
+                                    base, ext = os.path.splitext(f)
+                                    dst_path = os.path.join(docs, f"{base}_{int(time.time())}{ext}")
+                                
+                                log(f"Inbox: Moving to {dst_path}")
+                                shutil.move(src_path, dst_path)
+                                log(f"Inbox: Import Complete!", "green")
+                                
+                                # Update State
+                                state["selected_file"] = dst_path
+                                state["current_path"] = docs
+                                
+                                # Refresh UI if needed
+                                # (Note: This is a background thread, so direct UI manipulation is safe via our wrapper)
+                                
+                    time.sleep(2)
+                except Exception as e:
+                    log(f"Poller Error: {e}", "red")
+                    time.sleep(5)
+
+        threading.Thread(target=check_inbox, daemon=True).start()
 
     # --- INIT: FORCE STORAGE CREATION ---
     def init_storage():
