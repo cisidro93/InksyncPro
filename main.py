@@ -14,7 +14,7 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #83 (Threaded Init)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #84 (Ghost Code Removed)", color="blue", size=16, weight="bold"))
 
 
     
@@ -103,15 +103,7 @@ def main(page):
         except Exception as e:
             log(f"Storage Error: {e}", "red")
 
-    init_storage()
-
-    log(f"Python: {sys.version}")
-    log(f"Home Dir: {os.path.expanduser('~')}")
-    log(f"CWD: {os.getcwd()}")
-    
-    # --- EXORCISM: NO FILE PICKER ---
-    log("Debug: FilePicker is DISABLED.")
-    file_picker = None 
+ 
     
     def load_engine_click(e):
         global conversion_engine
