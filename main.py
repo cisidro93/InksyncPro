@@ -14,7 +14,7 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #75 (Pure Flet Config)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #76 (Plist Path Debug)", color="blue", size=16, weight="bold"))
     
     # ... (rest of code)
 

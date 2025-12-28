@@ -18,12 +18,15 @@ def main():
         with open(plist_path, 'rb') as f:
             pl = plistlib.load(f)
             
+        print(f"DEBUG: Initial UIFileSharingEnabled: {pl.get('UIFileSharingEnabled', 'Not Set')}")
+        print(f"DEBUG: Initial CFBundleDocumentTypes: {len(pl.get('CFBundleDocumentTypes', []))} items")
+
         # 1. Enable File Sharing (Folder Visibility)
         print("Enabling UIFileSharingEnabled...")
         pl['UIFileSharingEnabled'] = True
         
-        print("Disabling LSSupportsOpeningDocumentsInPlace (Test)...")
-        pl['LSSupportsOpeningDocumentsInPlace'] = False
+        print("Enabling LSSupportsOpeningDocumentsInPlace...")
+        pl['LSSupportsOpeningDocumentsInPlace'] = True
         
         # 2. Add Document Types (Share Sheet Visibility)
         print("Adding CFBundleDocumentTypes...")
@@ -44,8 +47,6 @@ def main():
             ]
         }]
         
-        # Merge or Overwrite
-        # We overwrite to ensure it's exactly what we want
         pl['CFBundleDocumentTypes'] = new_types
         
         # Save back
