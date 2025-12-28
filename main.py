@@ -14,7 +14,7 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #78 (Minimal Sharing Config)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #79 (Poller Enabled - TESTING)", color="blue", size=16, weight="bold"))
     
     # ... (rest of code)
 
@@ -46,11 +46,17 @@ def main(page):
            
            log(f"DEBUG: Docs Path is: {docs}")
            
-           readme = os.path.join(docs, "README.txt")
-           with open(readme, "w") as f:
-               f.write("Welcome to CBZ Converter!\n\nPlace your .cbz files in this folder to see them in the app.\n")
-               
            log(f"Storage Init: Wrote {readme}")
+           
+           # DEBUG: List contents
+           try:
+             items = os.listdir(docs)
+             log(f"DEBUG: Documents contains: {items}")
+           except Exception as ex:
+             log(f"DEBUG: Error listing docs: {ex}", "red")
+
+           # RE-ENABLE POLLER FOR BUILD #79
+           start_inbox_poller()
            
         except Exception as e:
             log(f"Storage Error: {e}", "red")
