@@ -14,22 +14,7 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #81 (UI Priority Fix)", color="blue", size=16, weight="bold"))
-    
-    # 2. Add Load Button IMMEDIATELY
-    btn_load = ft.ElevatedButton("LOAD ENGINE", on_click=load_engine_click, bgcolor="blue", color="white")
-    page.add(ft.Divider(), btn_load)
-    page.update()
-
-    # ... (rest of definitions) ...
-
-    # --- MOVED INIT TO END ---
-    log("Initializing Storage & Poller...")
-    init_storage()
-
-    log(f"Python: {sys.version}")
-    log(f"Home Dir: {os.path.expanduser('~')}")
-    log(f"CWD: {os.getcwd()}")
+    page.add(ft.Text("System Boot: Build #82 (Crash Fixed)", color="blue", size=16, weight="bold"))
 
 
     
@@ -500,9 +485,18 @@ def main(page):
         )
         page.update()
 
+    # --- LOAD UI & INIT ---
+    # Add Load Button (Now that load_engine_click is defined)
     btn_load = ft.ElevatedButton("LOAD ENGINE", on_click=load_engine_click, bgcolor="blue", color="white")
     page.add(ft.Divider(), btn_load)
     page.update()
+
+    log("Initializing Storage & Poller...")
+    init_storage()
+
+    log(f"Python: {sys.version}")
+    log(f"Home Dir: {os.path.expanduser('~')}")
+    log(f"CWD: {os.getcwd()}")
 
 if __name__ == "__main__":
     ft.app(target=main)
