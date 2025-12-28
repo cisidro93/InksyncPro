@@ -14,7 +14,7 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #82 (Crash Fixed)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #83 (Threaded Init)", color="blue", size=16, weight="bold"))
 
 
     
@@ -491,8 +491,9 @@ def main(page):
     page.add(ft.Divider(), btn_load)
     page.update()
 
-    log("Initializing Storage & Poller...")
-    init_storage()
+    log("Starting Background Storage Init...")
+    import threading
+    threading.Thread(target=init_storage, daemon=True).start()
 
     log(f"Python: {sys.version}")
     log(f"Home Dir: {os.path.expanduser('~')}")
