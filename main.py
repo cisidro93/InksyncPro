@@ -14,21 +14,39 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #85 (Emergency Button + InPlace)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #86 (Structure Rewrite)", color="blue", size=16, weight="bold"))
     
-    # --- EMERGENCY BUTTON ---
-    def emergency_click(e):
-        page.add(ft.Text("Emergency Clicked! Attempting load..."))
+    # 2. Add Button Handler EARLY (Prevents scoping issues)
+    def load_engine_click(e):
+        global conversion_engine
+        
+        btn_load.disabled = True
+        btn_load.text = "Loading Engine..."
         page.update()
+        
         try:
-             # Try to call the real loader if it exists
-             load_engine_click(e)
-        except Exception as ex:
-             page.add(ft.Text(f"Loader Failed: {ex}", color="red"))
-             page.update()
+            log("Importing CBZ Engine...")
+            import cbz_to_pdf
+            
+            if hasattr(cbz_to_pdf, 'convert_cbz_to_pdf'):
+                conversion_engine = cbz_to_pdf.convert_cbz_to_pdf
+                log("Engine Loaded!", "green")
+                # Ensure show_main_ui is defined before calling
+                if 'show_main_ui' in locals() or 'show_main_ui' in globals():
+                     show_main_ui()
+                else:
+                     log("Error: show_main_ui not defined yet. Script aborted?", "red")
+            else:
+                log("Error: convert function missing", "red")
+                btn_load.disabled = False
+                
+        except Exception as e:
+            log(f"IMPORT ERROR: {e}", "red")
+            btn_load.disabled = False
 
-    btn_emergency = ft.ElevatedButton("EMERGENCY LOAD", on_click=emergency_click, bgcolor="red", color="white")
-    page.add(btn_emergency)
+    # 3. Add Main Button IMMEDIATELY
+    btn_load = ft.ElevatedButton("LOAD ENGINE", on_click=load_engine_click, bgcolor="blue", color="white")
+    page.add(ft.Divider(), btn_load)
     page.update()
 
 
@@ -120,28 +138,7 @@ def main(page):
 
  
     
-    def load_engine_click(e):
-        global conversion_engine
-        
-        btn_load.disabled = True
-        btn_load.text = "Loading Engine..."
-        page.update()
-        
-        try:
-            log("Importing CBZ Engine...")
-            import cbz_to_pdf
-            
-            if hasattr(cbz_to_pdf, 'convert_cbz_to_pdf'):
-                conversion_engine = cbz_to_pdf.convert_cbz_to_pdf
-                log("Engine Loaded!", "green")
-                show_main_ui()
-            else:
-                log("Error: convert function missing", "red")
-                btn_load.disabled = False
-                
-        except Exception as e:
-            log(f"IMPORT ERROR: {e}", "red")
-            btn_load.disabled = False
+
 
     # --- FILE DROP HANDLER (Drag & Drop + Open In) ---
     def on_file_drop(e: ft.FileDropEvent):
@@ -493,10 +490,7 @@ def main(page):
         page.update()
 
     # --- LOAD UI & INIT ---
-    # Add Load Button (Now that load_engine_click is defined)
-    btn_load = ft.ElevatedButton("LOAD ENGINE", on_click=load_engine_click, bgcolor="blue", color="white")
-    page.add(ft.Divider(), btn_load)
-    page.update()
+
 
     log("Starting Background Storage Init...")
     import threading
