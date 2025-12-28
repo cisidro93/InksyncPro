@@ -14,7 +14,7 @@ def main(page):
     page.padding = 20
     
     # 1. Boot Message
-    page.add(ft.Text("System Boot: Build #86 (Structure Rewrite)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #87 (Tracing Crash)", color="blue", size=16, weight="bold"))
     
     # 2. Add Button Handler EARLY (Prevents scoping issues)
     def load_engine_click(e):
@@ -162,6 +162,7 @@ def main(page):
              log(f"Drop Handler Error: {ex}", "red")
 
     page.on_file_drop = on_file_drop
+    log("Trace: Drop Handler Defined")
 
     # --- SETTINGS SCREEN ---
     def show_settings_ui():
@@ -195,6 +196,7 @@ def main(page):
         page.update()
 
     # --- MAIN CONVERTER SCREEN ---
+    log("Trace: Settings UI Defined")
     def show_main_ui():
         try:
             log("Entering UI Build...")
@@ -364,6 +366,7 @@ def main(page):
             log(traceback.format_exc(), "red")
 
     # --- HELPER: Detect SD Cards (or iOS Home) ---
+    log("Trace: Main UI Defined")
     def get_valid_drives():
         drives = set()
         
@@ -394,6 +397,7 @@ def main(page):
         return sorted(list(drives))
     
     # --- FULL PAGE FILE BROWSER ---
+    log("Trace: Drives Helper Defined")
     def show_browser_ui(start_path):
         page.clean()
         
@@ -491,6 +495,8 @@ def main(page):
 
     # --- LOAD UI & INIT ---
 
+
+    log("Trace: Browser UI Defined")
 
     log("Starting Background Storage Init...")
     import threading
