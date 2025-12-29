@@ -61,7 +61,7 @@ struct PDFKitView: UIViewRepresentable {
     class Coordinator: NSObject {
         var parent: PDFKitView
         init(_ parent: PDFKitView) { self.parent = parent }
-        @objc func pageChanged(_ notification: Notification) { guard let pdfView = notification.object as? PDFView, let currentPage = pdfView.currentPage, let document = pdfView.document, let pageIndex = document.index(for: currentPage) else { return }; DispatchQueue.main.async { self.parent.currentPage = pageIndex } }
+        @objc func pageChanged(_ notification: Notification) { guard let pdfView = notification.object as? PDFView, let currentPage = pdfView.currentPage, let document = pdfView.document else { return }; let pageIndex = document.index(for: currentPage); DispatchQueue.main.async { self.parent.currentPage = pageIndex } }
     }
 }
 
