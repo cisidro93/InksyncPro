@@ -1,13 +1,16 @@
-webapp/downloads/
-webapp/uploads/
-__pycache__/
-*.py[cod]
-*$py.class
-*.spec
+# Xcode
 build/
-dist/
-*.exe
-.env
-venv/
-.idea/
-.vscode/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad
+*.xcworkspace/xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# macOS
+.DS_Store
+
+# CocoaPods
+Pods/
