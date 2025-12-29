@@ -34,7 +34,7 @@ struct LibraryView: View {
             }
             .navigationTitle("Library")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
                     if !conversionManager.convertedPDFs.isEmpty {
                         EditButton()
                     }

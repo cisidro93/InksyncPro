@@ -93,6 +93,103 @@ class ConversionManager: ObservableObject {
         return outputURL
     }
     
+    func addToLibrary(_ url: URL) {
+        let fileName = url.deletingPathExtension().lastPathComponent
+        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+        let fileSize = attributes?[.size] as? Int64 ?? 0
+        let dateAdded = Date()
+        
+        // internal helper to get page count without loading full doc if possible,
+        // but for now simple PDFDocument load is okay or we trust caller.
+        // Actually, let's load it to be sure.
+        let pageCount = PDFDocument(url: url)?.pageCount ?? 0
+        
+        let pdf = ConvertedPDF(
+            id: UUID(),
+            name: fileName,
+            url: url,
+            dateAdded: dateAdded,
+            fileSize: fileSize,
+            pageCount: pageCount
+        )
+        
+        convertedPDFs.insert(pdf, at: 0)
+        savePDFList()
+    }
+    
+    func removeFromLibrary(_ pdf: ConvertedPDF) {
+        // Remove file
+        try? fileManager.removeItem(at: pdf.url)
+        
+        // Remove from list
+        if let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs.remove(at: index)
+            savePDFList()
+        }
+    }
+    
+    func clearAllPDFs() {
+        for pdf in convertedPDFs {
+            try? fileManager.removeItem(at: pdf.url)
+        }
+        convertedPDFs.removeAll()
+        savePDFList()
+    }
+    
+    func splitPDF(at url: URL, maxSizeMB: Int, progressHandler: @escaping (Double) -> Void) async throws -> [URL] {
+        guard let document = PDFDocument(url: url) else {
+            throw ConversionError.invalidArchive // Reusing error or add new one
+        }
+        
+        let pageCount = document.pageCount
+        guard pageCount > 0 else { return [] }
+        
+        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+        let fileSize = attributes?[.size] as? Int64 ?? 0
+        let fileSizeMB = Double(fileSize) / (1024 * 1024)
+        
+        // Simple strategy: Split by pages based on average page size
+        // If file is 100MB and has 100 pages, avg is 1MB/page.
+        // If limit is 50MB, we need chunks of ~50 pages.
+        
+        let avgPageSizeMB = fileSizeMB / Double(pageCount)
+        let pagesPerChunk = Int(Double(maxSizeMB) / avgPageSizeMB)
+        
+        // Ensure at least 1 page per chunk and not infinite
+        let safePagesPerChunk = max(1, min(pagesPerChunk, pageCount))
+        
+        var generatedURLs: [URL] = []
+        var currentPage = 0
+        var partNumber = 1
+        
+        let baseFileName = url.deletingPathExtension().lastPathComponent
+        
+        while currentPage < pageCount {
+            let newDoc = PDFDocument()
+            let endIndex = min(currentPage + safePagesPerChunk, pageCount)
+            
+            for i in currentPage..<endIndex {
+                if let page = document.page(at: i) {
+                    newDoc.insert(page, at: newDoc.pageCount)
+                }
+            }
+            
+            let partFileName = "\(baseFileName) (Part \(partNumber)).pdf"
+            let partURL = pdfDirectory.appendingPathComponent(partFileName)
+            
+            if newDoc.write(to: partURL) {
+                generatedURLs.append(partURL)
+            }
+            
+            currentPage = endIndex
+            partNumber += 1
+            
+            progressHandler(Double(currentPage) / Double(pageCount))
+        }
+        
+        return generatedURLs
+    }
+    
     // ... (rest of class methods unchanged until extractImages)
 
     // MARK: - Private Methods
