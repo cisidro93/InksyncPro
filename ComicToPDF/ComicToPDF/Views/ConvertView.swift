@@ -45,14 +45,32 @@ struct ConvertView: View {
             }
             .navigationTitle("Comic to PDF")
             .navigationBarTitleDisplayMode(.large)
-            .fullScreenCover(isPresented: $showingFilePicker) {
+            .sheet(isPresented: $showingFilePicker) {
                 DocumentPickerView(selectedFiles: $selectedFiles, isPresented: $showingFilePicker)
-                    .ignoresSafeArea()
             }
             .alert("Status", isPresented: $showingAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(alertMessage)
+            }
+            .onReceive(conversionManager.$externalImportURLs) { urls in
+                guard !urls.isEmpty else { return }
+                
+                withAnimation {
+                    // Add unique files
+                    let existingNames = Set(selectedFiles.map { $0.lastPathComponent })
+                    let newFiles = urls.filter { !existingNames.contains($0.lastPathComponent) }
+                    selectedFiles.append(contentsOf: newFiles)
+                }
+                
+                // Clear buffer
+                conversionManager.externalImportURLs.removeAll()
+                
+                // Optional: Alert user
+                if !urls.isEmpty {
+                    alertMessage = "Received \(urls.count) file(s) from external app"
+                    showingAlert = true
+                }
             }
         }
         .navigationViewStyle(.stack)

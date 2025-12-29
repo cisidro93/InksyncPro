@@ -37,6 +37,8 @@ class ConversionManager: ObservableObject {
     @Published var autoSplit: Bool {
         didSet { UserDefaults.standard.set(autoSplit, forKey: "autoSplit") }
     }
+    // Buffer for files opened from other apps (Open In...)
+    @Published var externalImportURLs: [URL] = []
     @Published var splitThreshold: Int {
         didSet { UserDefaults.standard.set(splitThreshold, forKey: "splitThreshold") }
     }
