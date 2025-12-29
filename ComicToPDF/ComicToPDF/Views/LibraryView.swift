@@ -3,6 +3,12 @@ import MessageUI
 
 struct LibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    
+    // Selection state
+    @State private var isSelectionMode = false
+    @State private var selectedPDFs: Set<UUID> = []
+    
+    // Single item actions
     @State private var selectedPDF: ConvertedPDF?
     @State private var showingActionSheet = false
     @State private var showingShareSheet = false
@@ -12,6 +18,15 @@ struct LibraryView: View {
     @State private var showingLargeFileOptions = false
     @State private var showingKindleInstructions = false
     @State private var pdfToDelete: ConvertedPDF?
+    
+    // Batch actions
+    @State private var showingBatchMailComposer = false
+    @State private var showingBatchShareSheet = false
+    @State private var showingBatchDeleteAlert = false
+    @State private var showingBatchSizeWarning = false
+    @State private var batchTotalSize: Int64 = 0
+    
+    // Split options
     @State private var splitSize: Int = 25
     @State private var isSplitting = false
     @State private var splitProgress: Double = 0
@@ -29,19 +44,47 @@ struct LibraryView: View {
                 if conversionManager.convertedPDFs.isEmpty {
                     emptyStateView
                 } else {
-                    pdfListView
+                    VStack(spacing: 0) {
+                        if isSelectionMode {
+                            batchActionBar
+                        }
+                        pdfListView
+                    }
                 }
             }
             .navigationTitle("Library")
             .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     if !conversionManager.convertedPDFs.isEmpty {
-                        EditButton()
+                        Button(isSelectionMode ? "Cancel" : "Select") {
+                            withAnimation {
+                                isSelectionMode.toggle()
+                                if !isSelectionMode {
+                                    selectedPDFs.removeAll()
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if isSelectionMode && !conversionManager.convertedPDFs.isEmpty {
+                        Button(selectedPDFs.count == conversionManager.convertedPDFs.count ? "Deselect All" : "Select All") {
+                            withAnimation {
+                                if selectedPDFs.count == conversionManager.convertedPDFs.count {
+                                    selectedPDFs.removeAll()
+                                } else {
+                                    selectedPDFs = Set(conversionManager.convertedPDFs.map { $0.id })
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
         .navigationViewStyle(.stack)
+        
+        // MARK: - Single Item Sheets
         .sheet(isPresented: $showingShareSheet) {
             if let pdf = selectedPDF {
                 ShareSheet(items: [pdf.url])
@@ -49,7 +92,10 @@ struct LibraryView: View {
         }
         .sheet(isPresented: $showingMailComposer) {
             if let pdf = selectedPDF {
-                KindleMailComposer(pdfURL: pdf.url, kindleEmail: conversionManager.kindleEmail)
+                KindleMailComposer(
+                    pdfURLs: [pdf.url],
+                    kindleEmail: conversionManager.kindleEmail
+                )
             }
         }
         .sheet(isPresented: $showingSplitOptions) {
@@ -68,6 +114,21 @@ struct LibraryView: View {
                 KindleWebInstructionsView(pdf: pdf)
             }
         }
+        
+        // MARK: - Batch Sheets
+        .sheet(isPresented: $showingBatchMailComposer) {
+            let urls = getSelectedPDFURLs()
+            KindleMailComposer(
+                pdfURLs: urls,
+                kindleEmail: conversionManager.kindleEmail
+            )
+        }
+        .sheet(isPresented: $showingBatchShareSheet) {
+            let urls = getSelectedPDFURLs()
+            ShareSheet(items: urls)
+        }
+        
+        // MARK: - Alerts
         .alert("Delete PDF?", isPresented: $showingDeleteAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -78,41 +139,58 @@ struct LibraryView: View {
         } message: {
             Text("This action cannot be undone.")
         }
+        .alert("Delete \(selectedPDFs.count) PDFs?", isPresented: $showingBatchDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete All", role: .destructive) {
+                deleteSelectedPDFs()
+            }
+        } message: {
+            Text("This action cannot be undone.")
+        }
+        .alert("Files Too Large for Email", isPresented: $showingBatchSizeWarning) {
+            Button("Share to Kindle App Instead") {
+                showingBatchShareSheet = true
+            }
+            Button("Send Anyway (May Fail)") {
+                showingBatchMailComposer = true
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Selected files total \(formatBytes(batchTotalSize)), which exceeds the 50MB email limit. Consider using the Kindle app instead.")
+        }
+        
+        // Single item dialogs
+        .confirmationDialog("PDF Options", isPresented: $showingActionSheet, titleVisibility: .visible) {
+            Button("Send to Kindle") { sendSingleToKindle() }
+            Button("Share") { showingShareSheet = true }
+            Button("Split into Parts") { showingSplitOptions = true }
+            Button("Delete", role: .destructive) {
+                pdfToDelete = selectedPDF
+                showingDeleteAlert = true
+            }
+            Button("Cancel", role: .cancel) { }
+        }
         .confirmationDialog("Send to Kindle Options", isPresented: $showingLargeFileOptions, titleVisibility: .visible) {
             if let pdf = selectedPDF {
-                let fileSizeMB = Double(pdf.fileSize) / (1024 * 1024)
-                
                 Button("Share to Kindle App") {
-                    shareToKindleApp(url: pdf.url)
+                    shareToKindleApp(urls: [pdf.url])
                 }
-                
                 Button("Use Send to Kindle Website") {
                     showingKindleInstructions = true
                 }
-                
-                if fileSizeMB > 200 {
-                    Button("Split into Smaller Parts (Recommended)") {
-                        showingSplitOptions = true
-                    }
-                } else {
-                    Button("Split into Smaller Parts") {
-                        showingSplitOptions = true
-                    }
+                Button("Split into Smaller Parts") {
+                    showingSplitOptions = true
                 }
-                
                 Button("Cancel", role: .cancel) { }
             }
         } message: {
             if let pdf = selectedPDF {
-                let fileSizeMB = Double(pdf.fileSize) / (1024 * 1024)
-                if fileSizeMB > 200 {
-                    Text("This file (\(pdf.formattedSize)) exceeds Amazon's 200MB limit. We recommend splitting it into smaller parts.")
-                } else {
-                    Text("This file (\(pdf.formattedSize)) is too large for email (50MB limit). Choose an alternative method.")
-                }
+                Text("This file (\(pdf.formattedSize)) is too large for email. Choose an alternative method.")
             }
         }
     }
+    
+    // MARK: - Empty State
     
     private var emptyStateView: some View {
         VStack(spacing: 20) {
@@ -132,87 +210,231 @@ struct LibraryView: View {
         .padding()
     }
     
+    // MARK: - Batch Action Bar
+    
+    private var batchActionBar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 20) {
+                // Selection count
+                Text("\(selectedPDFs.count) selected")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                // Batch Send to Kindle
+                Button(action: batchSendToKindle) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "paperplane.fill")
+                            .font(.title3)
+                        Text("Kindle")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(selectedPDFs.isEmpty ? .gray : .orange)
+                }
+                .disabled(selectedPDFs.isEmpty)
+                
+                // Batch Share
+                Button(action: { showingBatchShareSheet = true }) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.title3)
+                        Text("Share")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(selectedPDFs.isEmpty ? .gray : .blue)
+                }
+                .disabled(selectedPDFs.isEmpty)
+                
+                // Batch Delete
+                Button(action: { showingBatchDeleteAlert = true }) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "trash.fill")
+                            .font(.title3)
+                        Text("Delete")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(selectedPDFs.isEmpty ? .gray : .red)
+                }
+                .disabled(selectedPDFs.isEmpty)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
+            .background(Color(.secondarySystemBackground))
+            
+            // Size indicator
+            if !selectedPDFs.isEmpty {
+                HStack {
+                    let totalSize = calculateSelectedSize()
+                    let sizeColor: Color = totalSize > 50_000_000 ? .red : (totalSize > 25_000_000 ? .orange : .green)
+                    
+                    Image(systemName: totalSize > 50_000_000 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundColor(sizeColor)
+                    
+                    Text("Total size: \(formatBytes(totalSize))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    if totalSize > 50_000_000 {
+                        Text("(exceeds 50MB email limit)")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Color(.tertiarySystemBackground))
+            }
+        }
+    }
+    
+    // MARK: - PDF List
+    
     private var pdfListView: some View {
         List {
             ForEach(conversionManager.convertedPDFs) { pdf in
-                EnhancedPDFRowView(pdf: pdf)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
+                HStack(spacing: 12) {
+                    // Selection checkbox (in selection mode)
+                    if isSelectionMode {
+                        Button(action: { toggleSelection(pdf) }) {
+                            Image(systemName: selectedPDFs.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                                .font(.title2)
+                                .foregroundColor(selectedPDFs.contains(pdf.id) ? .orange : .gray)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    
+                    // PDF Row
+                    PDFRowView(pdf: pdf)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if isSelectionMode {
+                                toggleSelection(pdf)
+                            } else {
+                                selectedPDF = pdf
+                                showingActionSheet = true
+                            }
+                        }
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        pdfToDelete = pdf
+                        showingDeleteAlert = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+                .swipeActions(edge: .leading) {
+                    Button {
                         selectedPDF = pdf
-                        showingActionSheet = true
+                        sendSingleToKindle()
+                    } label: {
+                        Label("Kindle", systemImage: "paperplane.fill")
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            pdfToDelete = pdf
-                            showingDeleteAlert = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button {
-                            selectedPDF = pdf
-                            sendToKindle()
-                        } label: {
-                            Label("Kindle", systemImage: "arrow.up.forward")
-                        }
-                        .tint(.orange)
-                    }
+                    .tint(.orange)
+                }
             }
             .onDelete(perform: deletePDFs)
         }
         .listStyle(.insetGrouped)
-        .confirmationDialog("PDF Options", isPresented: $showingActionSheet, titleVisibility: .visible) {
-            Button("Send to Kindle") { sendToKindle() }
-            Button("Share") { showingShareSheet = true }
-            Button("Split into Parts") { showingSplitOptions = true }
-            Button("Delete", role: .destructive) {
-                pdfToDelete = selectedPDF
-                showingDeleteAlert = true
+    }
+    
+    // MARK: - Helper Functions
+    
+    private func toggleSelection(_ pdf: ConvertedPDF) {
+        withAnimation {
+            if selectedPDFs.contains(pdf.id) {
+                selectedPDFs.remove(pdf.id)
+            } else {
+                selectedPDFs.insert(pdf.id)
             }
-            Button("Cancel", role: .cancel) { }
         }
     }
     
-    // MARK: - Smart Send to Kindle Logic
+    private func getSelectedPDFURLs() -> [URL] {
+        return conversionManager.convertedPDFs
+            .filter { selectedPDFs.contains($0.id) }
+            .map { $0.url }
+    }
     
-    private func sendToKindle() {
+    private func getSelectedPDFObjects() -> [ConvertedPDF] {
+        return conversionManager.convertedPDFs
+            .filter { selectedPDFs.contains($0.id) }
+    }
+    
+    private func calculateSelectedSize() -> Int64 {
+        return getSelectedPDFObjects().reduce(0) { $0 + $1.fileSize }
+    }
+    
+    private func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
+    }
+    
+    // MARK: - Batch Actions
+    
+    private func batchSendToKindle() {
+        let totalSize = calculateSelectedSize()
+        batchTotalSize = totalSize
+        
+        if totalSize > 50_000_000 {
+            // Over 50MB - show warning
+            showingBatchSizeWarning = true
+        } else {
+            // Under 50MB - send via email
+            if MFMailComposeViewController.canSendMail() {
+                showingBatchMailComposer = true
+            } else {
+                // No email - use share sheet
+                showingBatchShareSheet = true
+            }
+        }
+    }
+    
+    private func deleteSelectedPDFs() {
+        for pdf in getSelectedPDFObjects() {
+            conversionManager.removeFromLibrary(pdf)
+        }
+        selectedPDFs.removeAll()
+        isSelectionMode = false
+    }
+    
+    private func shareToKindleApp(urls: [URL]) {
+        let activityVC = UIActivityViewController(activityItems: urls, applicationActivities: nil)
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = windowScene.windows.first?.rootViewController {
+            
+            if let popover = activityVC.popoverPresentationController {
+                popover.sourceView = rootViewController.view
+                popover.sourceRect = CGRect(x: rootViewController.view.bounds.midX,
+                                           y: rootViewController.view.bounds.midY,
+                                           width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            
+            rootViewController.present(activityVC, animated: true)
+        }
+    }
+    
+    // MARK: - Single Item Actions
+    
+    private func sendSingleToKindle() {
         guard let pdf = selectedPDF else { return }
         
         let fileSizeMB = Double(pdf.fileSize) / (1024 * 1024)
         
         if fileSizeMB <= 50 {
-            // Small file - use email directly
             if MFMailComposeViewController.canSendMail() {
                 showingMailComposer = true
             } else {
-                // No mail configured - show options
                 showingLargeFileOptions = true
             }
         } else {
-            // Large file - show options
             showingLargeFileOptions = true
-        }
-    }
-    
-    private func shareToKindleApp(url: URL) {
-        // Create activity view controller for sharing to Kindle app
-        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        
-        // Get the root view controller
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootViewController = windowScene.windows.first?.rootViewController {
-            
-            // For iPad - set up popover presentation
-            if let popover = activityVC.popoverPresentationController {
-                popover.sourceView = rootViewController.view
-                popover.sourceRect = CGRect(x: rootViewController.view.bounds.midX, 
-                                         y: rootViewController.view.bounds.midY, 
-                                         width: 0, height: 0)
-                popover.permittedArrowDirections = []
-            }
-            
-            rootViewController.present(activityVC, animated: true)
         }
     }
     
@@ -253,27 +475,24 @@ struct LibraryView: View {
     }
 }
 
-// MARK: - Enhanced PDF Row View with File Size Indicators
+// MARK: - PDF Row View
 
-struct EnhancedPDFRowView: View {
+struct PDFRowView: View {
     let pdf: ConvertedPDF
     
     private var fileSizeMB: Double {
         Double(pdf.fileSize) / (1024 * 1024)
     }
     
-    private var fileSizeCategory: FileSizeCategory {
-        if fileSizeMB <= 50 {
-            return .small
-        } else if fileSizeMB <= 200 {
-            return .large
-        } else {
-            return .tooLarge
-        }
+    private var sizeColor: Color {
+        if fileSizeMB <= 50 { return .green }
+        else if fileSizeMB <= 200 { return .orange }
+        else { return .red }
     }
     
     var body: some View {
         HStack(spacing: 16) {
+            // Thumbnail
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.red.opacity(0.1))
@@ -282,24 +501,9 @@ struct EnhancedPDFRowView: View {
                 Image(systemName: "doc.fill")
                     .font(.title2)
                     .foregroundColor(.red)
-                
-                // File size indicator badge
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Image(systemName: fileSizeCategory.iconName)
-                            .font(.caption2)
-                            .foregroundColor(fileSizeCategory.color)
-                            .background(
-                                Circle()
-                                    .fill(.white)
-                                    .frame(width: 16, height: 16)
-                            )
-                    }
-                }
             }
             
+            // Info
             VStack(alignment: .leading, spacing: 4) {
                 Text(pdf.name)
                     .font(.headline)
@@ -308,29 +512,16 @@ struct EnhancedPDFRowView: View {
                 HStack(spacing: 8) {
                     Label(pdf.formattedSize, systemImage: "doc")
                         .font(.caption)
-                        .foregroundColor(fileSizeCategory.color)
+                        .foregroundColor(sizeColor)
                     
                     Label("\(pdf.pageCount) pages", systemImage: "book.pages")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 
-                HStack(spacing: 4) {
-                    Text(pdf.dateAdded.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    
-                    Spacer()
-                    
-                    // Send method indicator
-                    Text(fileSizeCategory.sendMethod)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(fileSizeCategory.color.opacity(0.2))
-                        .foregroundColor(fileSizeCategory.color)
-                        .cornerRadius(4)
-                }
+                Text(pdf.dateAdded.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
             
             Spacer()
@@ -340,192 +531,6 @@ struct EnhancedPDFRowView: View {
                 .foregroundColor(.secondary)
         }
         .padding(.vertical, 4)
-    }
-}
-
-// MARK: - File Size Category Helper
-
-enum FileSizeCategory {
-    case small     // ≤ 50MB
-    case large     // 50-200MB
-    case tooLarge  // > 200MB
-    
-    var color: Color {
-        switch self {
-        case .small: return .green
-        case .large: return .orange
-        case .tooLarge: return .red
-        }
-    }
-    
-    var iconName: String {
-        switch self {
-        case .small: return "checkmark.circle.fill"
-        case .large: return "exclamationmark.triangle.fill"
-        case .tooLarge: return "xmark.circle.fill"
-        }
-    }
-    
-    var sendMethod: String {
-        switch self {
-        case .small: return "Email"
-        case .large: return "App/Web"
-        case .tooLarge: return "Split Required"
-        }
-    }
-}
-
-// MARK: - Kindle Web Instructions View
-
-struct KindleWebInstructionsView: View {
-    let pdf: ConvertedPDF
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Header
-                    VStack(spacing: 12) {
-                        Image(systemName: "globe.americas.fill")
-                            .font(.system(size: 50))
-                            .foregroundColor(.blue)
-                        
-                        Text("Send to Kindle Website")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        Text("File: \(pdf.name)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding()
-                    
-                    Divider()
-                    
-                    // Instructions
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Follow these steps:")
-                            .font(.headline)
-                        
-                        InstructionStep(
-                            number: 1,
-                            title: "Open Send to Kindle Website",
-                            description: "We'll open Amazon's Send to Kindle page in Safari"
-                        )
-                        
-                        InstructionStep(
-                            number: 2,
-                            title: "Sign in to Amazon",
-                            description: "Use your Amazon account to log in"
-                        )
-                        
-                        InstructionStep(
-                            number: 3,
-                            title: "Upload Your File",
-                            description: "Tap 'Select Files' and find your converted PDF in the Files app under 'ComicToPDF'"
-                        )
-                        
-                        InstructionStep(
-                            number: 4,
-                            title: "Send to Device",
-                            description: "Choose your Kindle device and send!"
-                        )
-                    }
-                    .padding()
-                    
-                    // Action buttons
-                    VStack(spacing: 12) {
-                        Button(action: openSendToKindleWebsite) {
-                            HStack {
-                                Image(systemName: "safari.fill")
-                                Text("Open Send to Kindle Website")
-                            }
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.blue)
-                            .cornerRadius(12)
-                        }
-                        
-                        Button(action: openFiles) {
-                            HStack {
-                                Image(systemName: "folder.fill")
-                                Text("Open Files App (to locate PDF)")
-                            }
-                            .fontWeight(.semibold)
-                            .foregroundColor(.blue)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(12)
-                        }
-                    }
-                    .padding()
-                }
-            }
-            .navigationTitle("Send via Website")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-    
-    private func openSendToKindleWebsite() {
-        if let url = URL(string: "https://www.amazon.com/sendtokindle") {
-            UIApplication.shared.open(url)
-        }
-        dismiss()
-    }
-    
-    private func openFiles() {
-        // This opens the Files app
-        if let url = URL(string: "shareddocuments://") {
-            UIApplication.shared.open(url)
-        }
-    }
-}
-
-// MARK: - Instruction Step View
-
-struct InstructionStep: View {
-    let number: Int
-    let title: String
-    let description: String
-    
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color.blue)
-                    .frame(width: 24, height: 24)
-                
-                Text("\(number)")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-            }
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                
-                Text(description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-        }
     }
 }
 
@@ -541,10 +546,10 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-// MARK: - Kindle Mail Composer
+// MARK: - Kindle Mail Composer (Updated for multiple files)
 
 struct KindleMailComposer: UIViewControllerRepresentable {
-    let pdfURL: URL
+    let pdfURLs: [URL]
     let kindleEmail: String
     
     @Environment(\.dismiss) private var dismiss
@@ -554,10 +559,18 @@ struct KindleMailComposer: UIViewControllerRepresentable {
         composer.mailComposeDelegate = context.coordinator
         composer.setToRecipients([kindleEmail])
         composer.setSubject("Convert")
-        composer.setMessageBody("Sent from Comic to PDF Converter", isHTML: false)
         
-        if let pdfData = try? Data(contentsOf: pdfURL) {
-            composer.addAttachmentData(pdfData, mimeType: "application/pdf", fileName: pdfURL.lastPathComponent)
+        let fileCount = pdfURLs.count
+        let message = fileCount == 1 
+            ? "Sent from Comic to PDF Converter"
+            : "Batch send: \(fileCount) files from Comic to PDF Converter"
+        composer.setMessageBody(message, isHTML: false)
+        
+        // Attach all PDFs
+        for url in pdfURLs {
+            if let pdfData = try? Data(contentsOf: url) {
+                composer.addAttachmentData(pdfData, mimeType: "application/pdf", fileName: url.lastPathComponent)
+            }
         }
         
         return composer
@@ -595,17 +608,18 @@ struct SplitOptionsSheet: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 24) {
+            VStack(spacing: 20) {
+                // File info
                 VStack(spacing: 8) {
-                    Image(systemName: "doc.on.doc.fill")
+                    Image(systemName: "doc.fill")
                         .font(.system(size: 50))
-                        .foregroundColor(.orange)
+                        .foregroundColor(.red)
                     
                     Text(pdf.name)
                         .font(.headline)
                         .multilineTextAlignment(.center)
                     
-                    Text("Current size: \(pdf.formattedSize)")
+                    Text(pdf.formattedSize)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -613,22 +627,24 @@ struct SplitOptionsSheet: View {
                 
                 Divider()
                 
+                // Size selector
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Maximum part size")
+                    Text("Maximum file size per part")
                         .font(.headline)
                     
-                    Picker("Split Size", selection: $splitSize) {
-                        Text("10 MB").tag(10)
+                    Picker("Size", selection: $splitSize) {
                         Text("25 MB").tag(25)
-                        Text("50 MB (Kindle limit)").tag(50)
+                        Text("50 MB").tag(50)
+                        Text("100 MB").tag(100)
                     }
                     .pickerStyle(.segmented)
                     
-                    Text("Files will be split into parts no larger than \(splitSize) MB each")
+                    let estimatedParts = max(1, Int(ceil(Double(pdf.fileSize) / Double(splitSize * 1024 * 1024))))
+                    Text("Estimated parts: \(estimatedParts)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal)
+                .padding()
                 
                 if isSplitting {
                     VStack(spacing: 12) {
@@ -644,6 +660,7 @@ struct SplitOptionsSheet: View {
                 
                 Spacer()
                 
+                // Split button
                 Button(action: onSplit) {
                     HStack {
                         Image(systemName: "scissors")
@@ -651,8 +668,8 @@ struct SplitOptionsSheet: View {
                     }
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
-                    .padding()
                     .frame(maxWidth: .infinity)
+                    .padding()
                     .background(Color.orange)
                     .cornerRadius(12)
                 }
@@ -662,11 +679,114 @@ struct SplitOptionsSheet: View {
             .navigationTitle("Split PDF")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
                 }
             }
         }
+    }
+}
+
+// MARK: - Kindle Web Instructions View
+
+struct KindleWebInstructionsView: View {
+    let pdf: ConvertedPDF
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Header
+                    VStack(spacing: 12) {
+                        Image(systemName: "globe.americas.fill")
+                            .font(.system(size: 50))
+                            .foregroundColor(.blue)
+                        
+                        Text("Send to Kindle Website")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Text("File: \(pdf.name)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    
+                    Divider()
+                    
+                    // Instructions
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Follow these steps:")
+                            .font(.headline)
+                        
+                        instructionStep(1, "Open Send to Kindle Website", "We'll open Amazon's Send to Kindle page in Safari")
+                        instructionStep(2, "Sign in to Amazon", "Use your Amazon account to log in")
+                        instructionStep(3, "Upload Your File", "Tap 'Select Files' and find your PDF")
+                        instructionStep(4, "Send to Device", "Choose your Kindle device and send!")
+                    }
+                    .padding()
+                    
+                    // Buttons
+                    VStack(spacing: 12) {
+                        Button(action: openSendToKindleWebsite) {
+                            HStack {
+                                Image(systemName: "safari.fill")
+                                Text("Open Send to Kindle Website")
+                            }
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .cornerRadius(12)
+                        }
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle("Send via Website")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+    
+    private func instructionStep(_ number: Int, _ title: String, _ description: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 24, height: 24)
+                Text("\(number)")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text(description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    private func openSendToKindleWebsite() {
+        if let url = URL(string: "https://www.amazon.com/sendtokindle") {
+            UIApplication.shared.open(url)
+        }
+        dismiss()
     }
 }
 
