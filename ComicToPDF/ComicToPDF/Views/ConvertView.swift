@@ -209,42 +209,46 @@ struct ConvertView: View {
         switch result {
         case .success(let urls):
             var validURLs: [URL] = []
+            var errorMessages: [String] = []
             
             for url in urls {
-                // Security-scoped resources must be accessed explicity
                 let accessing = url.startAccessingSecurityScopedResource()
-                defer {
-                    if accessing {
-                        url.stopAccessingSecurityScopedResource()
-                    }
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                
+                guard accessing else {
+                    errorMessages.append("Could not access file: \(url.lastPathComponent)")
+                    continue
                 }
                 
-                // Validate extension
                 let ext = url.pathExtension.lowercased()
                 let validExtensions = ["cbz", "cbr", "zip", "rar"]
-                guard validExtensions.contains(ext) else { continue }
+                guard validExtensions.contains(ext) else {
+                    errorMessages.append("Invalid extension: \(ext)")
+                    continue 
+                }
                 
-                // Copy to temporary directory
                 do {
                     let tempDir = FileManager.default.temporaryDirectory
                     let destinationURL = tempDir.appendingPathComponent(url.lastPathComponent)
-                    
-                    // Remove existing file if present
                     try? FileManager.default.removeItem(at: destinationURL)
                     try FileManager.default.copyItem(at: url, to: destinationURL)
-                    
                     validURLs.append(destinationURL)
                 } catch {
-                    print("Error copying file: \(error.localizedDescription)")
-                    // If copy fails, we can try using original URL but it might lose access
+                    errorMessages.append("Copy failed: \(error.localizedDescription)")
                 }
             }
             
             DispatchQueue.main.async {
-                withAnimation {
-                    selectedFiles.append(contentsOf: validURLs)
-                    // Deduplicate by name/size ideally, but set is okay for distinct URLs
-                    // selectedFiles = Array(Set(selectedFiles)) // Set requires strict equality, temp URLs are unique
+                if !validURLs.isEmpty {
+                    withAnimation {
+                        selectedFiles.append(contentsOf: validURLs)
+                    }
+                } else if !errorMessages.isEmpty {
+                    alertMessage = "Import Failed:\n" + errorMessages.joined(separator: "\n")
+                    showingAlert = true
+                } else {
+                    alertMessage = "No files selected or supported."
+                    showingAlert = true
                 }
             }
             
