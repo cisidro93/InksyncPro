@@ -45,8 +45,9 @@ struct ConvertView: View {
             }
             .navigationTitle("Comic to PDF")
             .navigationBarTitleDisplayMode(.large)
-            .sheet(isPresented: $showingFilePicker) {
+            .fullScreenCover(isPresented: $showingFilePicker) {
                 DocumentPickerView(selectedFiles: $selectedFiles, isPresented: $showingFilePicker)
+                    .ignoresSafeArea()
             }
             .alert("Status", isPresented: $showingAlert) {
                 Button("OK", role: .cancel) { }
@@ -76,17 +77,13 @@ struct ConvertView: View {
         .navigationViewStyle(.stack)
     }
     
+    // MARK: - Updated Header Card with Bold Type Logo
+    
     private var headerCard: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "book.closed.fill")
-                .font(.system(size: 50))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.orange, .red],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+        VStack(spacing: 16) {
+            // Bold Type Logo
+            AppLogo(size: 80)
+                .shadow(color: .orange.opacity(0.3), radius: 10, y: 5)
             
             Text("CBZ/CBR to PDF Converter")
                 .font(.title2)
@@ -266,14 +263,13 @@ struct ConvertView: View {
     }
 }
 
-// MARK: - Document Picker using UIViewControllerRepresentable with proper lifecycle
+// MARK: - Document Picker
 
 struct DocumentPickerView: UIViewControllerRepresentable {
     @Binding var selectedFiles: [URL]
     @Binding var isPresented: Bool
     
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        // Use the most permissive content types
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
         picker.allowsMultipleSelection = true
         picker.delegate = context.coordinator
