@@ -214,48 +214,6 @@ struct ConvertView: View {
         }
     }
     
-    private func handleFileSelection(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            // DEBUG: Alert immediately what we received
-            let fileNames = urls.map { $0.lastPathComponent }.joined(separator: ", ")
-            alertMessage = "DEBUG: Received \(urls.count) files: \(fileNames)"
-            showingAlert = true
-            
-            // Now process them securely
-            var validURLs: [URL] = []
-            
-            for url in urls {
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                
-                // We try to copy regardless of extension for debugging if it's in the list
-                do {
-                    let tempDir = FileManager.default.temporaryDirectory
-                    let destinationURL = tempDir.appendingPathComponent(url.lastPathComponent)
-                    try? FileManager.default.removeItem(at: destinationURL)
-                    try FileManager.default.copyItem(at: url, to: destinationURL)
-                    validURLs.append(destinationURL)
-                } catch {
-                    print("Copy failed: \(error.localizedDescription)")
-                    // For debug, maybe add original URL if copy fails (though it might fail later)
-                }
-            }
-            
-            DispatchQueue.main.async {
-                withAnimation {
-                    selectedFiles.append(contentsOf: validURLs)
-                    var seen = Set<String>()
-                    selectedFiles = selectedFiles.filter { seen.insert($0.lastPathComponent).inserted }
-                }
-            }
-            
-        case .failure(let error):
-            alertMessage = "Error: \(error.localizedDescription)"
-            showingAlert = true
-        }
-    }
-    
     private func startConversion() {
         isConverting = true
         conversionProgress = 0
