@@ -22,6 +22,7 @@ struct LibraryView: View {
     @State private var showingBatchShare = false
     @State private var showingBatchDelete = false
     @State private var showingBatchCloudExport = false
+    @State private var showingPageDelete = false
     
     var body: some View {
         NavigationView {
@@ -57,6 +58,7 @@ struct LibraryView: View {
         .sheet(isPresented: $showingBatchMail) { KindleDevicePickerView(pdfURLs: getSelectedURLs()) }
         .sheet(isPresented: $showingBatchShare) { ShareSheet(items: getSelectedURLs()) }
         .sheet(isPresented: $showingBatchCloudExport) { CloudExportView(pdfsToExport: getSelectedPDFs()) }
+        .sheet(isPresented: $showingPageDelete) { if let pdf = selectedPDF { PageDeleteView(pdf: pdf) } }
         .alert("Delete PDF?", isPresented: $showingDeleteAlert) { Button("Cancel", role: .cancel) { }; Button("Delete", role: .destructive) { if let pdf = selectedPDF { conversionManager.removeFromLibrary(pdf) } } }
         .alert("Delete \(selectedPDFs.count) PDFs?", isPresented: $showingBatchDelete) { Button("Cancel", role: .cancel) { }; Button("Delete All", role: .destructive) { for pdf in getSelectedPDFs() { conversionManager.removeFromLibrary(pdf) }; selectedPDFs.removeAll(); isSelectionMode = false } }
         .confirmationDialog("PDF Options", isPresented: $showingActionSheet) {
@@ -67,6 +69,7 @@ struct LibraryView: View {
             Button("Edit Metadata") { showingMetadataEditor = true }
             Button("Reorder Pages") { showingPageReorder = true }
             Button("Move to Collection") { showingMoveToCollection = true }
+            Button("Delete Pages") { showingPageDelete = true }
             Button("Delete", role: .destructive) { showingDeleteAlert = true }
             Button("Cancel", role: .cancel) { }
         }
