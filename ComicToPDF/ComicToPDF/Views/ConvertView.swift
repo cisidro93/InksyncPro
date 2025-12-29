@@ -217,25 +217,19 @@ struct ConvertView: View {
     private func handleFileSelection(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            if urls.isEmpty {
-                alertMessage = "No files were selected"
-                showingAlert = true
-                return
-            }
+            // DEBUG: Alert immediately what we received
+            let fileNames = urls.map { $0.lastPathComponent }.joined(separator: ", ")
+            alertMessage = "DEBUG: Received \(urls.count) files: \(fileNames)"
+            showingAlert = true
             
+            // Now process them securely
             var validURLs: [URL] = []
-            var errorMessages: [String] = []
             
             for url in urls {
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 
-                guard accessing else {
-                    errorMessages.append("Could not access: \(url.lastPathComponent)")
-                    continue
-                }
-                
-                // Copy to temporary directory to persist access
+                // We try to copy regardless of extension for debugging if it's in the list
                 do {
                     let tempDir = FileManager.default.temporaryDirectory
                     let destinationURL = tempDir.appendingPathComponent(url.lastPathComponent)
@@ -243,28 +237,21 @@ struct ConvertView: View {
                     try FileManager.default.copyItem(at: url, to: destinationURL)
                     validURLs.append(destinationURL)
                 } catch {
-                    errorMessages.append("Copy failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                    print("Copy failed: \(error.localizedDescription)")
+                    // For debug, maybe add original URL if copy fails (though it might fail later)
                 }
             }
             
             DispatchQueue.main.async {
-                if !validURLs.isEmpty {
-                    withAnimation {
-                        selectedFiles.append(contentsOf: validURLs)
-                        var seen = Set<String>()
-                        selectedFiles = selectedFiles.filter { seen.insert($0.lastPathComponent).inserted }
-                    }
-                    // Success feedback
-                    // alertMessage = "Successfully added \(validURLs.count) file(s)"
-                    // showingAlert = true
-                } else if !errorMessages.isEmpty {
-                    alertMessage = "Import Failed:\n" + errorMessages.joined(separator: "\n")
-                    showingAlert = true
+                withAnimation {
+                    selectedFiles.append(contentsOf: validURLs)
+                    var seen = Set<String>()
+                    selectedFiles = selectedFiles.filter { seen.insert($0.lastPathComponent).inserted }
                 }
             }
             
         case .failure(let error):
-            alertMessage = "Error selecting files: \(error.localizedDescription)"
+            alertMessage = "Error: \(error.localizedDescription)"
             showingAlert = true
         }
     }
