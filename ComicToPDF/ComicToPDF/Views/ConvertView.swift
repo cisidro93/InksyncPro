@@ -1,8 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Convert View
-
 struct ConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var showingFilePicker = false
@@ -12,20 +10,6 @@ struct ConvertView: View {
     @State private var isConverting = false
     @State private var conversionProgress: Double = 0
     @State private var currentFileName = ""
-    // Define supported types more broadly to ensure files are selectable
-    private var supportedTypes: [UTType] {
-        var types: [UTType] = [.zip, .archive, .data, .item]
-        if let cbz = UTType(filenameExtension: "cbz") {
-            types.append(cbz)
-        }
-        if let cbr = UTType(filenameExtension: "cbr") {
-            types.append(cbr)
-        }
-        if let rar = UTType(tag: "rar", tagClass: .filenameExtension, conformingTo: nil) {
-            types.append(rar)
-        }
-        return types
-    }
     
     var body: some View {
         NavigationView {
@@ -61,8 +45,9 @@ struct ConvertView: View {
             }
             .navigationTitle("Comic to PDF")
             .navigationBarTitleDisplayMode(.large)
-            .sheet(isPresented: $showingFilePicker) {
-                DocumentPicker(selectedFiles: $selectedFiles)
+            .fullScreenCover(isPresented: $showingFilePicker) {
+                DocumentPickerView(selectedFiles: $selectedFiles, isPresented: $showingFilePicker)
+                    .ignoresSafeArea()
             }
             .alert("Status", isPresented: $showingAlert) {
                 Button("OK", role: .cancel) { }
@@ -217,7 +202,6 @@ struct ConvertView: View {
         Task {
             do {
                 for (index, fileURL) in selectedFiles.enumerated() {
-                    // Try to access if it's security scoped (graceful fallback if local temp file)
                     let accessing = fileURL.startAccessingSecurityScopedResource()
                     defer {
                         if accessing {
@@ -260,6 +244,55 @@ struct ConvertView: View {
                     showingAlert = true
                 }
             }
+        }
+    }
+}
+
+// MARK: - Document Picker using UIViewControllerRepresentable with proper lifecycle
+
+struct DocumentPickerView: UIViewControllerRepresentable {
+    @Binding var selectedFiles: [URL]
+    @Binding var isPresented: Bool
+    
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        // Use the most permissive content types
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+        picker.allowsMultipleSelection = true
+        picker.delegate = context.coordinator
+        picker.shouldShowFileExtensions = true
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+    
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let parent: DocumentPickerView
+        
+        init(parent: DocumentPickerView) {
+            self.parent = parent
+        }
+        
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            let validExtensions = ["cbz", "cbr", "zip", "rar"]
+            
+            for url in urls {
+                let ext = url.pathExtension.lowercased()
+                if validExtensions.contains(ext) {
+                    if !parent.selectedFiles.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
+                        parent.selectedFiles.append(url)
+                    }
+                }
+            }
+            
+            parent.isPresented = false
+        }
+        
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            parent.isPresented = false
         }
     }
 }
@@ -318,61 +351,7 @@ struct FileRowView: View {
     }
 }
 
-// MARK: - Document Picker
-
-struct DocumentPicker: UIViewControllerRepresentable {
-    @Binding var selectedFiles: [URL]
-    
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let supportedTypes: [UTType] = [.data, .item, .content, .archive, .zip]
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-        picker.delegate = context.coordinator
-        picker.allowsMultipleSelection = true
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let parent: DocumentPicker
-        
-        init(_ parent: DocumentPicker) {
-            self.parent = parent
-        }
-        
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            var validURLs: [URL] = []
-            
-            for url in urls {
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                
-                guard accessing else { continue }
-                
-                do {
-                    let tempDir = FileManager.default.temporaryDirectory
-                    let destinationURL = tempDir.appendingPathComponent(url.lastPathComponent)
-                    try? FileManager.default.removeItem(at: destinationURL)
-                    try FileManager.default.copyItem(at: url, to: destinationURL)
-                    validURLs.append(destinationURL)
-                } catch {
-                    print("Copy error: \(error.localizedDescription)")
-                }
-            }
-            
-            DispatchQueue.main.async {
-                if !validURLs.isEmpty {
-                    withAnimation {
-                        self.parent.selectedFiles.append(contentsOf: validURLs)
-                        var seen = Set<String>()
-                        self.parent.selectedFiles = self.parent.selectedFiles.filter { seen.insert($0.lastPathComponent).inserted }
-                    }
-                }
-            }
-        }
-    }
+#Preview {
+    ConvertView()
+        .environmentObject(ConversionManager())
 }
