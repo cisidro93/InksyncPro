@@ -12,7 +12,7 @@ struct ComicToPDFApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            SplashScreenView()
                 .environmentObject(conversionManager)
                 .onOpenURL { url in
                     // Handle file opened from Files app or AirDrop
