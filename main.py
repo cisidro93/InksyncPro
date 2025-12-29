@@ -17,7 +17,7 @@ def main(page):
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 20
     
-    page.add(ft.Text("System Boot: Build #89 (Clean Rewrite)", color="blue", size=16, weight="bold"))
+    page.add(ft.Text("System Boot: Build #90 (Granular Trace)", color="blue", size=16, weight="bold"))
     
     # --- 2. DEFINE HELPERS (Must be first) ---
     def log(msg, color="black"):
@@ -39,6 +39,7 @@ def main(page):
         "email_password": "",
         "email_recipient": ""
     }
+    log("Trace: State Defined")
 
     # --- 4. DEFINE HANDLERS (Must be defined before Buttons use them) ---
     
@@ -68,6 +69,7 @@ def main(page):
             btn_load.disabled = False
             page.update()
 
+    log("Trace: Load Handler Defined")
     # HANDLER: Settings
     def show_settings_ui():
         page.clean()
@@ -88,6 +90,7 @@ def main(page):
         )
         page.update()
 
+    log("Trace: Settings Handler Defined")
     # HANDLER: Browser
     def show_browser_ui(start_path):
         page.clean()
@@ -131,6 +134,7 @@ def main(page):
         page.add(ft.Column(controls, scroll="always"))
         page.update()
 
+    log("Trace: Browser Handler Defined")
     # HANDLER: Main UI
     def show_main_ui():
         log("Building Main UI...")
@@ -176,8 +180,10 @@ def main(page):
         )
         page.update()
 
+    log("Trace: Main UI Handler Defined")
+
     # HANDLER: Drop
-    def on_file_drop(e: ft.FileDropEvent):
+    def on_file_drop(e):
         if e.files:
             f = e.files[0]
             log(f"Dropped: {f.name}")
