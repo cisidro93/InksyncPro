@@ -61,12 +61,8 @@ struct ConvertView: View {
             }
             .navigationTitle("Comic to PDF")
             .navigationBarTitleDisplayMode(.large)
-            .fileImporter(
-                isPresented: $showingFilePicker,
-                allowedContentTypes: supportedTypes,
-                allowsMultipleSelection: true
-            ) { result in
-                handleFileSelection(result)
+            .sheet(isPresented: $showingFilePicker) {
+                DocumentPicker(selectedFiles: $selectedFiles)
             }
             .alert("Status", isPresented: $showingAlert) {
                 Button("OK", role: .cancel) { }
@@ -221,6 +217,7 @@ struct ConvertView: View {
         Task {
             do {
                 for (index, fileURL) in selectedFiles.enumerated() {
+                    // Try to access if it's security scoped (graceful fallback if local temp file)
                     let accessing = fileURL.startAccessingSecurityScopedResource()
                     defer {
                         if accessing {
@@ -317,6 +314,65 @@ struct FileRowView: View {
             return "doc.zipper.fill"
         default:
             return "doc"
+        }
+    }
+}
+
+// MARK: - Document Picker
+
+struct DocumentPicker: UIViewControllerRepresentable {
+    @Binding var selectedFiles: [URL]
+    
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let supportedTypes: [UTType] = [.data, .item, .content, .archive, .zip]
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = true
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let parent: DocumentPicker
+        
+        init(_ parent: DocumentPicker) {
+            self.parent = parent
+        }
+        
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            var validURLs: [URL] = []
+            
+            for url in urls {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                
+                guard accessing else { continue }
+                
+                do {
+                    let tempDir = FileManager.default.temporaryDirectory
+                    let destinationURL = tempDir.appendingPathComponent(url.lastPathComponent)
+                    try? FileManager.default.removeItem(at: destinationURL)
+                    try FileManager.default.copyItem(at: url, to: destinationURL)
+                    validURLs.append(destinationURL)
+                } catch {
+                    print("Copy error: \(error.localizedDescription)")
+                }
+            }
+            
+            DispatchQueue.main.async {
+                if !validURLs.isEmpty {
+                    withAnimation {
+                        self.parent.selectedFiles.append(contentsOf: validURLs)
+                        var seen = Set<String>()
+                        self.parent.selectedFiles = self.parent.selectedFiles.filter { seen.insert($0.lastPathComponent).inserted }
+                    }
+                }
+            }
         }
     }
 }
