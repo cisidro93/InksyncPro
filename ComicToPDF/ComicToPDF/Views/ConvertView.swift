@@ -12,6 +12,20 @@ struct ConvertView: View {
     @State private var isConverting = false
     @State private var conversionProgress: Double = 0
     @State private var currentFileName = ""
+    // Define supported types more broadly to ensure files are selectable
+    private var supportedTypes: [UTType] {
+        var types: [UTType] = [.zip, .archive, .data, .item]
+        if let cbz = UTType(filenameExtension: "cbz") {
+            types.append(cbz)
+        }
+        if let cbr = UTType(filenameExtension: "cbr") {
+            types.append(cbr)
+        }
+        if let rar = UTType(tag: "rar", tagClass: .filenameExtension, conformingTo: nil) {
+            types.append(rar)
+        }
+        return types
+    }
     
     var body: some View {
         NavigationView {
@@ -49,17 +63,12 @@ struct ConvertView: View {
             .navigationBarTitleDisplayMode(.large)
             .fileImporter(
                 isPresented: $showingFilePicker,
-                allowedContentTypes: [
-                    UTType(filenameExtension: "cbz") ?? .archive,
-                    UTType(filenameExtension: "cbr") ?? .archive,
-                    .zip,
-                    .archive
-                ],
+                allowedContentTypes: supportedTypes,
                 allowsMultipleSelection: true
             ) { result in
                 handleFileSelection(result)
             }
-            .alert("Conversion Status", isPresented: $showingAlert) {
+            .alert("Status", isPresented: $showingAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(alertMessage)
@@ -208,6 +217,12 @@ struct ConvertView: View {
     private func handleFileSelection(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
+            if urls.isEmpty {
+                alertMessage = "No files were selected"
+                showingAlert = true
+                return
+            }
+            
             var validURLs: [URL] = []
             var errorMessages: [String] = []
             
@@ -216,17 +231,11 @@ struct ConvertView: View {
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 
                 guard accessing else {
-                    errorMessages.append("Could not access file: \(url.lastPathComponent)")
+                    errorMessages.append("Could not access: \(url.lastPathComponent)")
                     continue
                 }
                 
-                let ext = url.pathExtension.lowercased()
-                let validExtensions = ["cbz", "cbr", "zip", "rar"]
-                guard validExtensions.contains(ext) else {
-                    errorMessages.append("Invalid extension: \(ext)")
-                    continue 
-                }
-                
+                // Copy to temporary directory to persist access
                 do {
                     let tempDir = FileManager.default.temporaryDirectory
                     let destinationURL = tempDir.appendingPathComponent(url.lastPathComponent)
@@ -234,7 +243,7 @@ struct ConvertView: View {
                     try FileManager.default.copyItem(at: url, to: destinationURL)
                     validURLs.append(destinationURL)
                 } catch {
-                    errorMessages.append("Copy failed: \(error.localizedDescription)")
+                    errorMessages.append("Copy failed for \(url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
             
@@ -242,12 +251,14 @@ struct ConvertView: View {
                 if !validURLs.isEmpty {
                     withAnimation {
                         selectedFiles.append(contentsOf: validURLs)
+                        var seen = Set<String>()
+                        selectedFiles = selectedFiles.filter { seen.insert($0.lastPathComponent).inserted }
                     }
+                    // Success feedback
+                    // alertMessage = "Successfully added \(validURLs.count) file(s)"
+                    // showingAlert = true
                 } else if !errorMessages.isEmpty {
                     alertMessage = "Import Failed:\n" + errorMessages.joined(separator: "\n")
-                    showingAlert = true
-                } else {
-                    alertMessage = "No files selected or supported."
                     showingAlert = true
                 }
             }
