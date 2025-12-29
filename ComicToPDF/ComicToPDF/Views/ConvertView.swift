@@ -1,6 +1,75 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Compression Settings Model
+
+struct CompressionSettings {
+    var quality: CompressionQuality = .high
+    var customScale: Double = 1.0  // 1.0 = 100%, 0.5 = 50%
+    var jpegQuality: Double = 0.85 // 0.0 to 1.0
+    
+    enum CompressionQuality: String, CaseIterable {
+        case original = "Original"
+        case high = "High Quality"
+        case balanced = "Balanced"
+        case compact = "Compact"
+        case custom = "Custom"
+        
+        var description: String {
+            switch self {
+            case .original: return "No compression - largest file size"
+            case .high: return "Minimal compression - best quality"
+            case .balanced: return "Good balance of size and quality"
+            case .compact: return "Smaller files - good for email"
+            case .custom: return "Adjust settings manually"
+            }
+        }
+        
+        var icon: String {
+            switch self {
+            case .original: return "doc.fill"
+            case .high: return "star.fill"
+            case .balanced: return "scale.3d"
+            case .compact: return "arrow.down.doc.fill"
+            case .custom: return "slider.horizontal.3"
+            }
+        }
+        
+        var color: Color {
+            switch self {
+            case .original: return .blue
+            case .high: return .green
+            case .balanced: return .orange
+            case .compact: return .purple
+            case .custom: return .pink
+            }
+        }
+        
+        // Returns (scale, jpegQuality)
+        var presetValues: (Double, Double) {
+            switch self {
+            case .original: return (1.0, 1.0)
+            case .high: return (1.0, 0.9)
+            case .balanced: return (0.85, 0.8)
+            case .compact: return (0.7, 0.7)
+            case .custom: return (1.0, 0.85)
+            }
+        }
+        
+        var estimatedSizeReduction: String {
+            switch self {
+            case .original: return "0%"
+            case .high: return "~20%"
+            case .balanced: return "~40%"
+            case .compact: return "~60%"
+            case .custom: return "Variable"
+            }
+        }
+    }
+}
+
+// MARK: - Convert View with Compression
+
 struct ConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var showingFilePicker = false
@@ -10,6 +79,10 @@ struct ConvertView: View {
     @State private var isConverting = false
     @State private var conversionProgress: Double = 0
     @State private var currentFileName = ""
+    
+    // Compression settings
+    @State private var compressionSettings = CompressionSettings()
+    @State private var showCompressionOptions = false
     
     var body: some View {
         NavigationView {
@@ -28,6 +101,7 @@ struct ConvertView: View {
                         
                         if !selectedFiles.isEmpty {
                             selectedFilesSection
+                            compressionSection
                         }
                         
                         if isConverting {
@@ -55,33 +129,32 @@ struct ConvertView: View {
                 Text(alertMessage)
             }
             .onReceive(conversionManager.$externalImportURLs) { urls in
-                guard !urls.isEmpty else { return }
-                
-                withAnimation {
-                    // Add unique files
-                    let existingNames = Set(selectedFiles.map { $0.lastPathComponent })
-                    let newFiles = urls.filter { !existingNames.contains($0.lastPathComponent) }
-                    selectedFiles.append(contentsOf: newFiles)
-                }
-                
-                // Clear buffer
-                conversionManager.externalImportURLs.removeAll()
-                
-                // Optional: Alert user
-                if !urls.isEmpty {
-                    alertMessage = "Received \(urls.count) file(s) from external app"
-                    showingAlert = true
-                }
-            }
+                 guard !urls.isEmpty else { return }
+                 
+                 withAnimation {
+                     // Add unique files
+                     let existingNames = Set(selectedFiles.map { $0.lastPathComponent })
+                     let newFiles = urls.filter { !existingNames.contains($0.lastPathComponent) }
+                     selectedFiles.append(contentsOf: newFiles)
+                 }
+                 
+                 // Clear buffer
+                 conversionManager.externalImportURLs.removeAll()
+                 
+                 // Optional: Alert user
+                 if !urls.isEmpty {
+                     alertMessage = "Received \(urls.count) file(s) from external app"
+                     showingAlert = true
+                 }
+             }
         }
         .navigationViewStyle(.stack)
     }
     
-    // MARK: - Updated Header Card with Bold Type Logo
+    // MARK: - Header Card with Logo
     
     private var headerCard: some View {
         VStack(spacing: 16) {
-            // Bold Type Logo
             AppLogo(size: 80)
                 .shadow(color: .orange.opacity(0.3), radius: 10, y: 5)
             
@@ -102,6 +175,8 @@ struct ConvertView: View {
                 .fill(.ultraThinMaterial)
         )
     }
+    
+    // MARK: - File Selection Area
     
     private var fileSelectionArea: some View {
         Button(action: { showingFilePicker = true }) {
@@ -133,6 +208,8 @@ struct ConvertView: View {
             )
         }
     }
+    
+    // MARK: - Selected Files Section
     
     private var selectedFilesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -166,6 +243,174 @@ struct ConvertView: View {
         )
     }
     
+    // MARK: - Compression Section
+    
+    private var compressionSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header with toggle
+            HStack {
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundColor(.orange)
+                
+                Text("Compression Settings")
+                    .font(.headline)
+                
+                Spacer()
+                
+                Button(action: {
+                    withAnimation(.spring(response: 0.3)) {
+                        showCompressionOptions.toggle()
+                    }
+                }) {
+                    Image(systemName: showCompressionOptions ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.orange)
+                }
+            }
+            
+            // Current selection summary
+            HStack {
+                Image(systemName: compressionSettings.quality.icon)
+                    .foregroundColor(compressionSettings.quality.color)
+                
+                Text(compressionSettings.quality.rawValue)
+                    .fontWeight(.medium)
+                
+                Spacer()
+                
+                Text("~\(estimatedOutputSize) per file")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(compressionSettings.quality.color.opacity(0.1))
+            )
+            
+            if showCompressionOptions {
+                // Quality Presets
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Quality Preset")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    ForEach(CompressionSettings.CompressionQuality.allCases, id: \.self) { quality in
+                        CompressionPresetButton(
+                            quality: quality,
+                            isSelected: compressionSettings.quality == quality,
+                            action: {
+                                withAnimation {
+                                    compressionSettings.quality = quality
+                                    let values = quality.presetValues
+                                    compressionSettings.customScale = values.0
+                                    compressionSettings.jpegQuality = values.1
+                                }
+                            }
+                        )
+                    }
+                }
+                
+                // Custom sliders (only show when Custom is selected)
+                if compressionSettings.quality == .custom {
+                    VStack(spacing: 20) {
+                        Divider()
+                        
+                        // Resolution Scale Slider
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Resolution Scale")
+                                    .font(.subheadline)
+                                Spacer()
+                                Text("\(Int(compressionSettings.customScale * 100))%")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.orange)
+                            }
+                            
+                            Slider(value: $compressionSettings.customScale, in: 0.3...1.0, step: 0.05)
+                                .tint(.orange)
+                            
+                            HStack {
+                                Text("Smaller")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("Original")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        // JPEG Quality Slider
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Image Quality")
+                                    .font(.subheadline)
+                                Spacer()
+                                Text("\(Int(compressionSettings.jpegQuality * 100))%")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.orange)
+                            }
+                            
+                            Slider(value: $compressionSettings.jpegQuality, in: 0.5...1.0, step: 0.05)
+                                .tint(.orange)
+                            
+                            HStack {
+                                Text("Compressed")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("Best Quality")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.top, 8)
+                }
+                
+                // Info box
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundColor(.blue)
+                    
+                    Text("Higher compression reduces file size but may affect image clarity. 'Balanced' is recommended for most comics.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.blue.opacity(0.1))
+                )
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+        )
+    }
+    
+    private var estimatedOutputSize: String {
+        // Rough estimation based on compression settings
+        let baseSize = 50.0 // Assume 50MB average comic
+        let scale = compressionSettings.quality == .custom ? compressionSettings.customScale : compressionSettings.quality.presetValues.0
+        let jpegQuality = compressionSettings.quality == .custom ? compressionSettings.jpegQuality : compressionSettings.quality.presetValues.1
+        
+        let estimatedSize = baseSize * scale * scale * jpegQuality
+        
+        if estimatedSize < 1 {
+            return "\(Int(estimatedSize * 1024))KB"
+        } else {
+            return "\(Int(estimatedSize))MB"
+        }
+    }
+    
+    // MARK: - Progress Section
+    
     private var conversionProgressSection: some View {
         VStack(spacing: 16) {
             ProgressView(value: conversionProgress)
@@ -187,6 +432,8 @@ struct ConvertView: View {
                 .fill(.ultraThinMaterial)
         )
     }
+    
+    // MARK: - Convert Button
     
     private var convertButton: some View {
         Button(action: startConversion) {
@@ -210,9 +457,24 @@ struct ConvertView: View {
         }
     }
     
+    // MARK: - Conversion Logic
+    
     private func startConversion() {
         isConverting = true
         conversionProgress = 0
+        
+        // Get compression values
+        let scale: Double
+        let jpegQuality: Double
+        
+        if compressionSettings.quality == .custom {
+            scale = compressionSettings.customScale
+            jpegQuality = compressionSettings.jpegQuality
+        } else {
+            let values = compressionSettings.quality.presetValues
+            scale = values.0
+            jpegQuality = values.1
+        }
         
         Task {
             do {
@@ -230,6 +492,8 @@ struct ConvertView: View {
                     
                     let outputURL = try await conversionManager.convertToPDF(
                         from: fileURL,
+                        scale: scale,
+                        jpegQuality: jpegQuality,
                         progressHandler: { progress in
                             Task { @MainActor in
                                 let fileProgress = Double(index) / Double(selectedFiles.count)
@@ -260,6 +524,71 @@ struct ConvertView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Compression Preset Button
+
+struct CompressionPresetButton: View {
+    let quality: CompressionSettings.CompressionQuality
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(quality.color.opacity(isSelected ? 0.2 : 0.1))
+                        .frame(width: 40, height: 40)
+                    
+                    Image(systemName: quality.icon)
+                        .foregroundColor(quality.color)
+                }
+                
+                // Text
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(quality.rawValue)
+                        .font(.subheadline)
+                        .fontWeight(isSelected ? .semibold : .regular)
+                        .foregroundColor(.primary)
+                    
+                    Text(quality.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                // Size reduction badge
+                Text(quality.estimatedSizeReduction)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(quality.color.opacity(0.15))
+                    .foregroundColor(quality.color)
+                    .cornerRadius(6)
+                
+                // Checkmark
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? quality.color.opacity(0.1) : Color(.secondarySystemBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(isSelected ? quality.color : Color.clear, lineWidth: 2)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
