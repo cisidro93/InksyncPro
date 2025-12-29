@@ -208,14 +208,44 @@ struct ConvertView: View {
     private func handleFileSelection(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            let validExtensions = ["cbz", "cbr", "zip", "rar"]
-            let validURLs = urls.filter { url in
-                validExtensions.contains(url.pathExtension.lowercased())
+            var validURLs: [URL] = []
+            
+            for url in urls {
+                // Security-scoped resources must be accessed explicity
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer {
+                    if accessing {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+                
+                // Validate extension
+                let ext = url.pathExtension.lowercased()
+                let validExtensions = ["cbz", "cbr", "zip", "rar"]
+                guard validExtensions.contains(ext) else { continue }
+                
+                // Copy to temporary directory
+                do {
+                    let tempDir = FileManager.default.temporaryDirectory
+                    let destinationURL = tempDir.appendingPathComponent(url.lastPathComponent)
+                    
+                    // Remove existing file if present
+                    try? FileManager.default.removeItem(at: destinationURL)
+                    try FileManager.default.copyItem(at: url, to: destinationURL)
+                    
+                    validURLs.append(destinationURL)
+                } catch {
+                    print("Error copying file: \(error.localizedDescription)")
+                    // If copy fails, we can try using original URL but it might lose access
+                }
             }
             
-            withAnimation {
-                selectedFiles.append(contentsOf: validURLs)
-                selectedFiles = Array(Set(selectedFiles))
+            DispatchQueue.main.async {
+                withAnimation {
+                    selectedFiles.append(contentsOf: validURLs)
+                    // Deduplicate by name/size ideally, but set is okay for distinct URLs
+                    // selectedFiles = Array(Set(selectedFiles)) // Set requires strict equality, temp URLs are unique
+                }
             }
             
         case .failure(let error):
