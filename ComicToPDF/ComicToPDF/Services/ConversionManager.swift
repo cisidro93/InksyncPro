@@ -57,12 +57,16 @@ class ConversionManager: ObservableObject {
         try? fileManager.createDirectory(at: pdfDirectory, withIntermediateDirectories: true)
         
         kindleEmail = UserDefaults.standard.string(forKey: "kindleEmail") ?? ""
-        imageQuality = UserDefaults.standard.double(forKey: "imageQuality")
-        if imageQuality == 0 { imageQuality = 0.8 }
-        autoSplit = UserDefaults.standard.bool(forKey: "autoSplit")
-        splitThreshold = UserDefaults.standard.integer(forKey: "splitThreshold")
-        if splitThreshold == 0 { splitThreshold = 50 }
         
+        let savedQuality = UserDefaults.standard.double(forKey: "imageQuality")
+        imageQuality = savedQuality == 0 ? 0.8 : savedQuality
+        
+        autoSplit = UserDefaults.standard.bool(forKey: "autoSplit")
+        
+        let savedThreshold = UserDefaults.standard.integer(forKey: "splitThreshold")
+        splitThreshold = savedThreshold == 0 ? 50 : savedThreshold
+        
+        // Now all properties are initialized, we can access self
         loadSavedPDFs()
     }
     
