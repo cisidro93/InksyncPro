@@ -2,8 +2,8 @@ import SwiftUI
 
 struct SplashScreenView: View {
     @State private var isActive = false
-    @State private var size: CGFloat = 0.8
-    @State private var opacity: Double = 0.5
+    @State private var logoScale: CGFloat = 0.8
+    @State private var logoOpacity: Double = 0
     
     // Environment object to pass down
     @EnvironmentObject var conversionManager: ConversionManager
@@ -13,56 +13,41 @@ struct SplashScreenView: View {
             ContentView()
         } else {
             ZStack {
+                // Background gradient
                 LinearGradient(
-                    colors: [Color(.systemBackground), Color.orange.opacity(0.1)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    colors: [
+                        Color(red: 24/255, green: 24/255, blue: 27/255),
+                        Color(red: 39/255, green: 39/255, blue: 42/255)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
                 .ignoresSafeArea()
                 
-                VStack(spacing: 20) {
-                    ZStack {
-                        // Background glow
-                        Circle()
-                            .fill(Color.orange.opacity(0.2))
-                            .frame(width: 150, height: 150)
-                            .blur(radius: 20)
-                        
-                        Image(systemName: "book.closed.fill")
-                            .font(.system(size: 80))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.orange, .red],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    }
-                    .scaleEffect(size)
-                    .opacity(opacity)
+                VStack(spacing: 24) {
+                    // Animated logo
+                    AppLogoAnimated(size: 140)
+                        .scaleEffect(logoScale)
+                        .opacity(logoOpacity)
                     
-                    VStack(spacing: 5) {
-                        Text("Comic to PDF")
-                            .font(.title)
-                            .fontWeight(.heavy)
-                            .foregroundColor(.primary)
-                        
-                        Text("Optimized for Kindle")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .opacity(opacity)
+                    // App name
+                    Text("ComicToPDF")
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .opacity(logoOpacity)
                 }
             }
             .onAppear {
-                withAnimation(.easeIn(duration: 1.2)) {
-                    self.size = 1.0
-                    self.opacity = 1.0
+                withAnimation(.easeOut(duration: 0.6)) {
+                    logoScale = 1.0
+                    logoOpacity = 1.0
                 }
                 
+                // Transition to main app after delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    withAnimation {
-                        self.isActive = true
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        isActive = true
                     }
                 }
             }
