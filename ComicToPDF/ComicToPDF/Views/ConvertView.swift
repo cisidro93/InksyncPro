@@ -1,74 +1,8 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
-// MARK: - Compression Settings Model
-
-struct CompressionSettings {
-    var quality: CompressionQuality = .high
-    var customScale: Double = 1.0  // 1.0 = 100%, 0.5 = 50%
-    var jpegQuality: Double = 0.85 // 0.0 to 1.0
-    
-    enum CompressionQuality: String, CaseIterable {
-        case original = "Original"
-        case high = "High Quality"
-        case balanced = "Balanced"
-        case compact = "Compact"
-        case custom = "Custom"
-        
-        var description: String {
-            switch self {
-            case .original: return "No compression - largest file size"
-            case .high: return "Minimal compression - best quality"
-            case .balanced: return "Good balance of size and quality"
-            case .compact: return "Smaller files - good for email"
-            case .custom: return "Adjust settings manually"
-            }
-        }
-        
-        var icon: String {
-            switch self {
-            case .original: return "doc.fill"
-            case .high: return "star.fill"
-            case .balanced: return "scale.3d"
-            case .compact: return "arrow.down.doc.fill"
-            case .custom: return "slider.horizontal.3"
-            }
-        }
-        
-        var color: Color {
-            switch self {
-            case .original: return .blue
-            case .high: return .green
-            case .balanced: return .orange
-            case .compact: return .purple
-            case .custom: return .pink
-            }
-        }
-        
-        // Returns (scale, jpegQuality)
-        var presetValues: (Double, Double) {
-            switch self {
-            case .original: return (1.0, 1.0)
-            case .high: return (1.0, 0.9)
-            case .balanced: return (0.85, 0.8)
-            case .compact: return (0.7, 0.7)
-            case .custom: return (1.0, 0.85)
-            }
-        }
-        
-        var estimatedSizeReduction: String {
-            switch self {
-            case .original: return "0%"
-            case .high: return "~20%"
-            case .balanced: return "~40%"
-            case .compact: return "~60%"
-            case .custom: return "Variable"
-            }
-        }
-    }
-}
-
-// MARK: - Convert View with Compression
+// ============================================================================
+// MARK: - CONVERT VIEW
+// ============================================================================
 
 struct ConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
@@ -79,435 +13,240 @@ struct ConvertView: View {
     @State private var isConverting = false
     @State private var conversionProgress: Double = 0
     @State private var currentFileName = ""
-    
-    // Compression settings
-    @State private var compressionSettings = CompressionSettings()
     @State private var showCompressionOptions = false
+    @State private var showEnhancementOptions = false
+    @State private var showDeviceOptions = false
+    @State private var settings = ConversionSettings()
     
     var body: some View {
         NavigationView {
             ZStack {
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color.orange.opacity(0.1)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                
+                LinearGradient(colors: [Color(.systemBackground), Color.orange.opacity(0.1)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
                 ScrollView {
-                    VStack(spacing: 24) {
+                    VStack(spacing: 20) {
                         headerCard
                         fileSelectionArea
-                        
                         if !selectedFiles.isEmpty {
                             selectedFilesSection
+                            mangaModeToggle
                             compressionSection
+                            imageEnhancementSection
+                            deviceOptimizationSection
                         }
-                        
-                        if isConverting {
-                            conversionProgressSection
-                        }
-                        
-                        if !selectedFiles.isEmpty && !isConverting {
-                            convertButton
-                        }
-                        
+                        if isConverting { conversionProgressSection }
+                        if !selectedFiles.isEmpty && !isConverting { convertButton }
                         Spacer(minLength: 100)
-                    }
-                    .padding()
+                    }.padding()
                 }
             }
             .navigationTitle("Comic to PDF")
             .navigationBarTitleDisplayMode(.large)
-            .fullScreenCover(isPresented: $showingFilePicker) {
-                DocumentPickerView(selectedFiles: $selectedFiles, isPresented: $showingFilePicker)
-                    .ignoresSafeArea()
-            }
-            .alert("Status", isPresented: $showingAlert) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(alertMessage)
-            }
-            .onReceive(conversionManager.$externalImportURLs) { urls in
-                 guard !urls.isEmpty else { return }
-                 
-                 withAnimation {
-                     // Add unique files
-                     let existingNames = Set(selectedFiles.map { $0.lastPathComponent })
-                     let newFiles = urls.filter { !existingNames.contains($0.lastPathComponent) }
-                     selectedFiles.append(contentsOf: newFiles)
-                 }
-                 
-                 // Clear buffer
-                 conversionManager.externalImportURLs.removeAll()
-                 
-                 // Optional: Alert user
-                 if !urls.isEmpty {
-                     alertMessage = "Received \(urls.count) file(s) from external app"
-                     showingAlert = true
-                 }
-             }
-        }
-        .navigationViewStyle(.stack)
+            .fullScreenCover(isPresented: $showingFilePicker) { DocumentPickerView(selectedFiles: $selectedFiles, isPresented: $showingFilePicker).ignoresSafeArea() }
+            .alert("Status", isPresented: $showingAlert) { Button("OK", role: .cancel) { } } message: { Text(alertMessage) }
+            .onAppear { settings = conversionManager.conversionSettings }
+        }.navigationViewStyle(.stack)
     }
-    
-    // MARK: - Header Card with Logo
     
     private var headerCard: some View {
         VStack(spacing: 16) {
-            AppLogo(size: 80)
-                .shadow(color: .orange.opacity(0.3), radius: 10, y: 5)
-            
-            Text("CBZ/CBR to PDF Converter")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            Text("Convert your comic archives to PDF format for Kindle reading")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.vertical, 30)
-        .padding(.horizontal)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.ultraThinMaterial)
-        )
+            Image(systemName: "doc.richtext").font(.system(size: 60)).foregroundColor(.orange)
+            Text("CBZ/CBR to PDF Converter").font(.title2).fontWeight(.bold)
+            Text("Convert your comic archives to PDF format for Kindle reading").font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
+        }.padding(.vertical, 30).padding(.horizontal).frame(maxWidth: .infinity).background(RoundedRectangle(cornerRadius: 20).fill(.ultraThinMaterial))
     }
-    
-    // MARK: - File Selection Area
     
     private var fileSelectionArea: some View {
         Button(action: { showingFilePicker = true }) {
             VStack(spacing: 16) {
                 ZStack {
-                    Circle()
-                        .fill(Color.orange.opacity(0.2))
-                        .frame(width: 80, height: 80)
-                    
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 40))
-                        .foregroundColor(.orange)
+                    Circle().fill(Color.orange.opacity(0.2)).frame(width: 80, height: 80)
+                    Image(systemName: "plus.circle.fill").font(.system(size: 40)).foregroundColor(.orange)
                 }
-                
-                Text("Select CBZ/CBR Files")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                Text("Tap to browse your files")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .padding(40)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10]))
-                    .foregroundColor(.orange.opacity(0.5))
-            )
+                Text("Select CBZ/CBR Files").font(.headline).foregroundColor(.primary)
+                Text("Tap to browse your files").font(.caption).foregroundColor(.secondary)
+            }.padding(40).frame(maxWidth: .infinity).background(RoundedRectangle(cornerRadius: 20).strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10])).foregroundColor(.orange.opacity(0.5)))
         }
     }
-    
-    // MARK: - Selected Files Section
     
     private var selectedFilesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Selected Files")
-                    .font(.headline)
-                
+                Text("Selected Files").font(.headline)
                 Spacer()
-                
-                Button("Clear All") {
-                    withAnimation {
-                        selectedFiles.removeAll()
-                    }
-                }
-                .font(.caption)
-                .foregroundColor(.red)
+                Button("Clear All") { withAnimation { selectedFiles.removeAll() } }.font(.caption).foregroundColor(.red)
             }
-            
             ForEach(selectedFiles, id: \.absoluteString) { url in
-                FileRowView(url: url) {
-                    withAnimation {
-                        selectedFiles.removeAll { $0 == url }
-                    }
-                }
+                FileRowView(url: url) { withAnimation { selectedFiles.removeAll { $0 == url } } }
             }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
+        }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
     }
     
-    // MARK: - Compression Section
+    private var mangaModeToggle: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "text.justify.trailing").foregroundColor(.purple).font(.title2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Manga Mode").font(.headline)
+                    Text("Right-to-left reading order (for Japanese manga)").font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.mangaMode).toggleStyle(SwitchToggleStyle(tint: .purple))
+            }
+            if settings.mangaMode {
+                HStack {
+                    Image(systemName: "info.circle.fill").foregroundColor(.purple)
+                    Text("Pages will be reversed for proper manga reading").font(.caption).foregroundColor(.secondary)
+                }.padding(10).background(Color.purple.opacity(0.1).cornerRadius(8))
+            }
+        }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+    }
     
     private var compressionSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header with toggle
             HStack {
-                Image(systemName: "slider.horizontal.3")
-                    .foregroundColor(.orange)
-                
-                Text("Compression Settings")
-                    .font(.headline)
-                
+                Image(systemName: "arrow.down.doc.fill").foregroundColor(.orange)
+                Text("Compression").font(.headline)
                 Spacer()
-                
-                Button(action: {
-                    withAnimation(.spring(response: 0.3)) {
-                        showCompressionOptions.toggle()
-                    }
-                }) {
-                    Image(systemName: showCompressionOptions ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.orange)
+                Button(action: { withAnimation { showCompressionOptions.toggle() } }) {
+                    Image(systemName: showCompressionOptions ? "chevron.up.circle.fill" : "chevron.down.circle.fill").font(.title2).foregroundColor(.orange)
                 }
             }
-            
-            // Current selection summary
             HStack {
-                Image(systemName: compressionSettings.quality.icon)
-                    .foregroundColor(compressionSettings.quality.color)
-                
-                Text(compressionSettings.quality.rawValue)
-                    .fontWeight(.medium)
-                
+                Text(settings.compressionQuality.rawValue).fontWeight(.medium)
                 Spacer()
-                
-                Text("~\(estimatedOutputSize) per file")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(compressionSettings.quality.color.opacity(0.1))
-            )
-            
+                Text(compressionSizeEstimate).font(.caption).foregroundColor(.secondary)
+            }.padding(12).background(Color.orange.opacity(0.1).cornerRadius(10))
             if showCompressionOptions {
-                // Quality Presets
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Quality Preset")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    ForEach(CompressionSettings.CompressionQuality.allCases, id: \.self) { quality in
-                        CompressionPresetButton(
-                            quality: quality,
-                            isSelected: compressionSettings.quality == quality,
-                            action: {
-                                withAnimation {
-                                    compressionSettings.quality = quality
-                                    let values = quality.presetValues
-                                    compressionSettings.customScale = values.0
-                                    compressionSettings.jpegQuality = values.1
-                                }
-                            }
-                        )
-                    }
+                ForEach(CompressionPreset.allCases, id: \.self) { preset in
+                    CompressionPresetRow(preset: preset, isSelected: settings.compressionQuality == preset, action: { settings.compressionQuality = preset })
                 }
-                
-                // Custom sliders (only show when Custom is selected)
-                if compressionSettings.quality == .custom {
-                    VStack(spacing: 20) {
-                        Divider()
-                        
-                        // Resolution Scale Slider
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Resolution Scale")
-                                    .font(.subheadline)
-                                Spacer()
-                                Text("\(Int(compressionSettings.customScale * 100))%")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.orange)
-                            }
-                            
-                            Slider(value: $compressionSettings.customScale, in: 0.3...1.0, step: 0.05)
-                                .tint(.orange)
-                            
-                            HStack {
-                                Text("Smaller")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("Original")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        // JPEG Quality Slider
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Image Quality")
-                                    .font(.subheadline)
-                                Spacer()
-                                Text("\(Int(compressionSettings.jpegQuality * 100))%")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.orange)
-                            }
-                            
-                            Slider(value: $compressionSettings.jpegQuality, in: 0.5...1.0, step: 0.05)
-                                .tint(.orange)
-                            
-                            HStack {
-                                Text("Compressed")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("Best Quality")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                    .padding(.top, 8)
-                }
-                
-                // Info box
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundColor(.blue)
-                    
-                    Text("Higher compression reduces file size but may affect image clarity. 'Balanced' is recommended for most comics.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.blue.opacity(0.1))
-                )
+                if settings.compressionQuality == .custom { customSliders }
+            }
+        }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+    }
+    
+    private var customSliders: some View {
+        VStack(spacing: 16) {
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { Text("Resolution Scale"); Spacer(); Text("\(Int(settings.customScale * 100))%").fontWeight(.semibold).foregroundColor(.orange) }
+                Slider(value: $settings.customScale, in: 0.3...1.0, step: 0.05).tint(.orange)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { Text("Image Quality"); Spacer(); Text("\(Int(settings.customJpegQuality * 100))%").fontWeight(.semibold).foregroundColor(.orange) }
+                Slider(value: $settings.customJpegQuality, in: 0.5...1.0, step: 0.05).tint(.orange)
             }
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
     }
     
-    private var estimatedOutputSize: String {
-        // Rough estimation based on compression settings
-        let baseSize = 50.0 // Assume 50MB average comic
-        let scale = compressionSettings.quality == .custom ? compressionSettings.customScale : compressionSettings.quality.presetValues.0
-        let jpegQuality = compressionSettings.quality == .custom ? compressionSettings.jpegQuality : compressionSettings.quality.presetValues.1
-        
-        let estimatedSize = baseSize * scale * scale * jpegQuality
-        
-        if estimatedSize < 1 {
-            return "\(Int(estimatedSize * 1024))KB"
-        } else {
-            return "\(Int(estimatedSize))MB"
-        }
+    private var compressionSizeEstimate: String {
+        let values = settings.compressionQuality == .custom ? (settings.customScale, settings.customJpegQuality) : settings.compressionQuality.values
+        let reduction = Int((1 - values.0 * values.1) * 100)
+        return "~\(reduction)% smaller"
     }
     
-    // MARK: - Progress Section
+    private var imageEnhancementSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "wand.and.stars").foregroundColor(.blue)
+                Text("Image Enhancement").font(.headline)
+                Spacer()
+                Toggle("", isOn: $settings.imageEnhancement.enabled).toggleStyle(SwitchToggleStyle(tint: .blue))
+            }
+            if settings.imageEnhancement.enabled {
+                Button(action: { withAnimation { showEnhancementOptions.toggle() } }) {
+                    HStack { Text("Enhancement Settings").font(.subheadline); Spacer(); Image(systemName: showEnhancementOptions ? "chevron.up" : "chevron.down") }.foregroundColor(.blue)
+                }
+                if showEnhancementOptions {
+                    VStack(spacing: 16) {
+                        Divider()
+                        HStack(spacing: 12) {
+                            EnhancementToggle(title: "Auto", icon: "wand.and.rays", isOn: $settings.imageEnhancement.autoContrast)
+                            EnhancementToggle(title: "B&W", icon: "circle.lefthalf.filled", isOn: $settings.imageEnhancement.grayscale)
+                            EnhancementToggle(title: "Dark", icon: "moon.fill", isOn: $settings.imageEnhancement.invertColors)
+                        }
+                        EnhancementSlider(title: "Brightness", value: $settings.imageEnhancement.brightness, range: -0.5...0.5)
+                        EnhancementSlider(title: "Contrast", value: $settings.imageEnhancement.contrast, range: 0.5...1.5)
+                        EnhancementSlider(title: "Sharpness", value: $settings.imageEnhancement.sharpness, range: 0...1.0)
+                        Button("Reset to Defaults") { settings.imageEnhancement = ImageEnhancementSettings(enabled: true) }.font(.caption).foregroundColor(.red)
+                    }
+                }
+            }
+        }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+    }
+    
+    private var deviceOptimizationSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "ipad.and.arrow.forward").foregroundColor(.green)
+                Text("Kindle Optimization").font(.headline)
+                Spacer()
+                Toggle("", isOn: $settings.optimizeForDevice).toggleStyle(SwitchToggleStyle(tint: .green))
+            }
+            if settings.optimizeForDevice {
+                Button(action: { withAnimation { showDeviceOptions.toggle() } }) {
+                    HStack {
+                        Image(systemName: settings.targetDevice.icon)
+                        Text(settings.targetDevice.rawValue).fontWeight(.medium)
+                        Spacer()
+                        Text("\(Int(settings.targetDevice.resolution.width))×\(Int(settings.targetDevice.resolution.height))").font(.caption).foregroundColor(.secondary)
+                        Image(systemName: showDeviceOptions ? "chevron.up" : "chevron.down")
+                    }.foregroundColor(.primary).padding(12).background(Color.green.opacity(0.1).cornerRadius(10))
+                }
+                if showDeviceOptions {
+                    ForEach(KindleDeviceType.allCases, id: \.self) { device in
+                        Button(action: { settings.targetDevice = device; showDeviceOptions = false }) {
+                            HStack {
+                                Image(systemName: device.icon).frame(width: 24)
+                                Text(device.rawValue)
+                                Spacer()
+                                Text("\(Int(device.resolution.width))×\(Int(device.resolution.height))").font(.caption).foregroundColor(.secondary)
+                                if settings.targetDevice == device { Image(systemName: "checkmark.circle.fill").foregroundColor(.green) }
+                            }.foregroundColor(.primary).padding(10)
+                        }
+                    }
+                }
+            }
+        }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+    }
     
     private var conversionProgressSection: some View {
         VStack(spacing: 16) {
-            ProgressView(value: conversionProgress)
-                .progressViewStyle(LinearProgressViewStyle(tint: .orange))
-                .scaleEffect(y: 2)
-            
-            Text("Converting: \(currentFileName)")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            Text("\(Int(conversionProgress * 100))%")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.orange)
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
+            ProgressView(value: conversionProgress).progressViewStyle(LinearProgressViewStyle(tint: .orange)).scaleEffect(y: 2)
+            Text("Converting: \(currentFileName)").font(.caption).foregroundColor(.secondary)
+            Text("\(Int(conversionProgress * 100))%").font(.title2).fontWeight(.bold).foregroundColor(.orange)
+        }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
     }
-    
-    // MARK: - Convert Button
     
     private var convertButton: some View {
         Button(action: startConversion) {
             HStack(spacing: 12) {
                 Image(systemName: "arrow.triangle.2.circlepath")
-                Text("Convert \(selectedFiles.count) File\(selectedFiles.count > 1 ? "s" : "")")
-                    .fontWeight(.semibold)
-            }
-            .foregroundColor(.white)
-            .padding()
-            .frame(maxWidth: .infinity)
-            .background(
-                LinearGradient(
-                    colors: [.orange, .red],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-            .cornerRadius(16)
-            .shadow(color: .orange.opacity(0.4), radius: 10, y: 5)
+                Text("Convert \(selectedFiles.count) File\(selectedFiles.count > 1 ? "s" : "")").fontWeight(.semibold)
+            }.foregroundColor(.white).padding().frame(maxWidth: .infinity).background(LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing)).cornerRadius(16).shadow(color: .orange.opacity(0.4), radius: 10, y: 5)
         }
     }
-    
-    // MARK: - Conversion Logic
     
     private func startConversion() {
         isConverting = true
         conversionProgress = 0
-        
-        // Get compression values
-        let scale: Double
-        let jpegQuality: Double
-        
-        if compressionSettings.quality == .custom {
-            scale = compressionSettings.customScale
-            jpegQuality = compressionSettings.jpegQuality
-        } else {
-            let values = compressionSettings.quality.presetValues
-            scale = values.0
-            jpegQuality = values.1
-        }
-        
+        conversionManager.conversionSettings = settings
+        conversionManager.saveSettings()
         Task {
             do {
                 for (index, fileURL) in selectedFiles.enumerated() {
                     let accessing = fileURL.startAccessingSecurityScopedResource()
-                    defer {
-                        if accessing {
-                            fileURL.stopAccessingSecurityScopedResource()
+                    defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
+                    await MainActor.run { currentFileName = fileURL.lastPathComponent }
+                    let outputURL = try await conversionManager.convertToPDF(from: fileURL, settings: settings) { progress in
+                        Task { @MainActor in
+                            let fileProgress = Double(index) / Double(selectedFiles.count)
+                            let itemProgress = progress / Double(selectedFiles.count)
+                            conversionProgress = fileProgress + itemProgress
                         }
                     }
-                    
-                    await MainActor.run {
-                        currentFileName = fileURL.lastPathComponent
-                    }
-                    
-                    let outputURL = try await conversionManager.convertToPDF(
-                        from: fileURL,
-                        scale: scale,
-                        jpegQuality: jpegQuality,
-                        progressHandler: { progress in
-                            Task { @MainActor in
-                                let fileProgress = Double(index) / Double(selectedFiles.count)
-                                let itemProgress = progress / Double(selectedFiles.count)
-                                conversionProgress = fileProgress + itemProgress
-                            }
-                        }
-                    )
-                    
-                    await MainActor.run {
-                        conversionManager.addToLibrary(outputURL)
-                    }
+                    await MainActor.run { conversionManager.addToLibrary(outputURL) }
                 }
-                
                 await MainActor.run {
                     isConverting = false
                     conversionProgress = 1.0
@@ -515,7 +254,6 @@ struct ConvertView: View {
                     alertMessage = "All files converted successfully! Check the Library tab."
                     showingAlert = true
                 }
-                
             } catch {
                 await MainActor.run {
                     isConverting = false
@@ -527,174 +265,36 @@ struct ConvertView: View {
     }
 }
 
-// MARK: - Compression Preset Button
-
-struct CompressionPresetButton: View {
-    let quality: CompressionSettings.CompressionQuality
+struct CompressionPresetRow: View {
+    let preset: CompressionPreset
     let isSelected: Bool
     let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                // Icon
-                ZStack {
-                    Circle()
-                        .fill(quality.color.opacity(isSelected ? 0.2 : 0.1))
-                        .frame(width: 40, height: 40)
-                    
-                    Image(systemName: quality.icon)
-                        .foregroundColor(quality.color)
-                }
-                
-                // Text
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(quality.rawValue)
-                        .font(.subheadline)
-                        .fontWeight(isSelected ? .semibold : .regular)
-                        .foregroundColor(.primary)
-                    
-                    Text(quality.description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-                
-                Spacer()
-                
-                // Size reduction badge
-                Text(quality.estimatedSizeReduction)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(quality.color.opacity(0.15))
-                    .foregroundColor(quality.color)
-                    .cornerRadius(6)
-                
-                // Checkmark
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                }
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? quality.color.opacity(0.1) : Color(.secondarySystemBackground))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(isSelected ? quality.color : Color.clear, lineWidth: 2)
-                    )
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
+    var body: some View { Button(action: action) { HStack { Text(preset.rawValue).fontWeight(isSelected ? .semibold : .regular); Spacer(); if isSelected { Image(systemName: "checkmark.circle.fill").foregroundColor(.orange) } }.foregroundColor(.primary).padding(12).background(RoundedRectangle(cornerRadius: 10).fill(isSelected ? Color.orange.opacity(0.1) : Color.clear)) } }
 }
 
-// MARK: - Document Picker
-
-struct DocumentPickerView: UIViewControllerRepresentable {
-    @Binding var selectedFiles: [URL]
-    @Binding var isPresented: Bool
-    
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
-        picker.allowsMultipleSelection = true
-        picker.delegate = context.coordinator
-        picker.shouldShowFileExtensions = true
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
-    }
-    
-    class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let parent: DocumentPickerView
-        
-        init(parent: DocumentPickerView) {
-            self.parent = parent
-        }
-        
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            let validExtensions = ["cbz", "cbr", "zip", "rar"]
-            
-            for url in urls {
-                let ext = url.pathExtension.lowercased()
-                if validExtensions.contains(ext) {
-                    if !parent.selectedFiles.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
-                        parent.selectedFiles.append(url)
-                    }
-                }
-            }
-            
-            parent.isPresented = false
-        }
-        
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            parent.isPresented = false
-        }
-    }
+struct EnhancementToggle: View {
+    let title: String
+    let icon: String
+    @Binding var isOn: Bool
+    var body: some View { Button(action: { isOn.toggle() }) { VStack(spacing: 6) { Image(systemName: icon).font(.title2); Text(title).font(.caption2) }.foregroundColor(isOn ? .white : .blue).frame(maxWidth: .infinity).padding(.vertical, 12).background(RoundedRectangle(cornerRadius: 10).fill(isOn ? Color.blue : Color.blue.opacity(0.1))) } }
 }
 
-// MARK: - File Row View
+struct EnhancementSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var body: some View { VStack(alignment: .leading, spacing: 4) { HStack { Text(title).font(.caption); Spacer(); Text(String(format: "%.0f%%", value * 100)).font(.caption).foregroundColor(.blue) }; Slider(value: $value, in: range).tint(.blue) } }
+}
 
 struct FileRowView: View {
     let url: URL
     let onDelete: () -> Void
-    
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: iconForExtension(url.pathExtension))
-                .font(.title2)
-                .foregroundColor(.orange)
-                .frame(width: 40)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(url.lastPathComponent)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                
-                Text(url.pathExtension.uppercased())
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.2))
-                    .cornerRadius(4)
-            }
-            
+            Image(systemName: url.pathExtension.lowercased() == "cbr" ? "doc.zipper.fill" : "doc.zipper").font(.title2).foregroundColor(.orange).frame(width: 40)
+            VStack(alignment: .leading, spacing: 2) { Text(url.lastPathComponent).font(.subheadline).fontWeight(.medium).lineLimit(1); Text(url.pathExtension.uppercased()).font(.caption2).foregroundColor(.secondary).padding(.horizontal, 6).padding(.vertical, 2).background(Color.orange.opacity(0.2).cornerRadius(4)) }
             Spacer()
-            
-            Button(action: onDelete) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
-        )
+            Button(action: onDelete) { Image(systemName: "xmark.circle.fill").foregroundColor(.secondary) }
+        }.padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
     }
-    
-    private func iconForExtension(_ ext: String) -> String {
-        switch ext.lowercased() {
-        case "cbz", "zip":
-            return "doc.zipper"
-        case "cbr", "rar":
-            return "doc.zipper.fill"
-        default:
-            return "doc"
-        }
-    }
-}
-
-#Preview {
-    ConvertView()
-        .environmentObject(ConversionManager())
 }
