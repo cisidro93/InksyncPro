@@ -22,7 +22,7 @@ struct LibraryView: View {
     @State private var showingBatchShare = false
     @State private var showingBatchDelete = false
     @State private var showingBatchCloudExport = false
-    @State private var showingBatchCloudExport = false
+
     @State private var showingPageDelete = false
     @State private var showingSplitPDF = false
     @State private var showingRenameFile = false
