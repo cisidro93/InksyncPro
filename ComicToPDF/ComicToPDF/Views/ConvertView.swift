@@ -17,8 +17,8 @@ struct ConvertView: View {
     @State private var showEnhancementOptions = false
     @State private var showDeviceOptions = false
     @State private var settings = ConversionSettings()
-    @State private var showingRenameBeforeConvert = false
-    @State private var fileToRename: URL?
+    @State private var showingRenameSheet = false
+    @State private var renameFileURL: URL? = nil
     @State private var customFileNames: [URL: String] = [:]
     
     var body: some View {
@@ -47,7 +47,13 @@ struct ConvertView: View {
             .fullScreenCover(isPresented: $showingFilePicker) { DocumentPickerView(selectedFiles: $selectedFiles, isPresented: $showingFilePicker).ignoresSafeArea() }
             .alert("Status", isPresented: $showingAlert) { Button("OK", role: .cancel) { } } message: { Text(alertMessage) }
             .onAppear { settings = conversionManager.conversionSettings }
-            .sheet(isPresented: $showingRenameBeforeConvert) { if let url = fileToRename { RenameBeforeConvertSheet(originalURL: url, customNames: $customFileNames) } }
+            .sheet(isPresented: $showingRenameSheet) {
+                RenameSheetView(
+                    fileURL: renameFileURL,
+                    customFileNames: $customFileNames,
+                    isPresented: $showingRenameSheet
+                )
+            }
         }.navigationViewStyle(.stack)
     }
     
@@ -77,17 +83,75 @@ struct ConvertView: View {
             HStack {
                 Text("Selected Files").font(.headline)
                 Spacer()
-                Button("Clear All") { withAnimation { selectedFiles.removeAll() } }.font(.caption).foregroundColor(.red)
+                Button("Clear All") { 
+                    withAnimation { 
+                        selectedFiles.removeAll()
+                        customFileNames.removeAll()
+                    } 
+                }
+                .font(.caption)
+                .foregroundColor(.red)
             }
+            
             ForEach(selectedFiles, id: \.absoluteString) { url in
-                FileRowViewWithRename(
-                    url: url,
-                    customName: customFileNames[url],
-                    onRename: { fileToRename = url; showingRenameBeforeConvert = true },
-                    onDelete: { withAnimation { selectedFiles.removeAll { $0 == url } } }
-                )
+                HStack(spacing: 12) {
+                    Image(systemName: url.pathExtension.lowercased() == "cbr" ? "doc.zipper.fill" : "doc.zipper")
+                        .font(.title2)
+                        .foregroundColor(.orange)
+                        .frame(width: 40)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(customFileNames[url] ?? url.deletingPathExtension().lastPathComponent)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                        
+                        HStack(spacing: 4) {
+                            Text(url.pathExtension.uppercased())
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.2).cornerRadius(4))
+                            
+                            if customFileNames[url] != nil {
+                                Text("renamed")
+                                    .font(.caption2)
+                                    .foregroundColor(.blue)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.blue.opacity(0.2).cornerRadius(4))
+                            }
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        renameFileURL = url
+                        showingRenameSheet = true
+                    }) {
+                        Image(systemName: "pencil.circle.fill")
+                            .foregroundColor(.blue)
+                            .font(.title2)
+                    }
+                    
+                    Button(action: {
+                        withAnimation {
+                            selectedFiles.removeAll { $0 == url }
+                            customFileNames.removeValue(forKey: url)
+                        }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
             }
-        }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+        }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
     }
     
     private var mangaModeToggle: some View {

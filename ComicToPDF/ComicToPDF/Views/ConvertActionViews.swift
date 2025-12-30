@@ -3,42 +3,80 @@ import Foundation
 
 // MARK: - Rename Before Convert Sheet (for Convert View)
 
-struct RenameBeforeConvertSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let originalURL: URL
-    @Binding var customNames: [URL: String]
+struct RenameSheetView: View {
+    let fileURL: URL?
+    @Binding var customFileNames: [URL: String]
+    @Binding var isPresented: Bool
     
     @State private var newName: String = ""
+    
+    var originalName: String {
+        fileURL?.deletingPathExtension().lastPathComponent ?? ""
+    }
     
     var body: some View {
         NavigationView {
             Form {
                 Section {
-                    TextField("File name", text: $newName)
+                    TextField("Output file name", text: $newName)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
-                } header: { Text("Output Name") } footer: { Text("This will be the name of the converted PDF file.") }
+                } header: {
+                    Text("New Name")
+                } footer: {
+                    Text("This will be the name of the converted PDF file.")
+                }
                 
                 Section {
-                    HStack { Text("Original"); Spacer(); Text(originalURL.lastPathComponent).foregroundColor(.secondary).lineLimit(1) }
-                    HStack { Text("Output"); Spacer(); Text("\(newName.isEmpty ? originalURL.deletingPathExtension().lastPathComponent : newName).pdf").foregroundColor(.orange).lineLimit(1) }
-                } header: { Text("Preview") }
-            }
-            .navigationTitle("Rename Output").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        if !newName.isEmpty && newName != originalURL.deletingPathExtension().lastPathComponent {
-                            customNames[originalURL] = newName
-                        } else {
-                            customNames.removeValue(forKey: originalURL)
+                    if let url = fileURL {
+                        HStack {
+                            Text("Original")
+                            Spacer()
+                            Text(url.lastPathComponent)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
                         }
-                        dismiss()
-                    }.fontWeight(.semibold)
+                    }
+                    
+                    HStack {
+                        Text("Output PDF")
+                        Spacer()
+                        Text("\(newName.isEmpty ? originalName : newName).pdf")
+                            .foregroundColor(.orange)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                    }
+                } header: {
+                    Text("Preview")
                 }
             }
-            .onAppear { newName = customNames[originalURL] ?? originalURL.deletingPathExtension().lastPathComponent }
+            .navigationTitle("Rename Output")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        isPresented = false
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        if let url = fileURL {
+                            if !newName.isEmpty && newName != originalName {
+                                customFileNames[url] = newName
+                            } else {
+                                customFileNames.removeValue(forKey: url)
+                            }
+                        }
+                        isPresented = false
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+            .onAppear {
+                if let url = fileURL {
+                    newName = customFileNames[url] ?? url.deletingPathExtension().lastPathComponent
+                }
+            }
         }
     }
 }
