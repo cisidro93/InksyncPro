@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct DeletablePageItem: Identifiable {
     let id = UUID()

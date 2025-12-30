@@ -2,6 +2,7 @@ import SwiftUI
 import PDFKit
 import CoreImage
 import ZIPFoundation
+import UIKit
 
 // ============================================================================
 // MARK: - MODELS

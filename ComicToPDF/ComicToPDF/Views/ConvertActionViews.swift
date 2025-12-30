@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 // MARK: - Rename Before Convert Sheet (for Convert View)
 
