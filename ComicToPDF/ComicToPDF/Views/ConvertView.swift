@@ -17,6 +17,9 @@ struct ConvertView: View {
     @State private var showEnhancementOptions = false
     @State private var showDeviceOptions = false
     @State private var settings = ConversionSettings()
+    @State private var showingRenameBeforeConvert = false
+    @State private var fileToRename: URL?
+    @State private var customFileNames: [URL: String] = [:]
     
     var body: some View {
         NavigationView {
@@ -44,6 +47,7 @@ struct ConvertView: View {
             .fullScreenCover(isPresented: $showingFilePicker) { DocumentPickerView(selectedFiles: $selectedFiles, isPresented: $showingFilePicker).ignoresSafeArea() }
             .alert("Status", isPresented: $showingAlert) { Button("OK", role: .cancel) { } } message: { Text(alertMessage) }
             .onAppear { settings = conversionManager.conversionSettings }
+            .sheet(isPresented: $showingRenameBeforeConvert) { if let url = fileToRename { RenameBeforeConvertSheet(originalURL: url, customNames: $customFileNames) } }
         }.navigationViewStyle(.stack)
     }
     
@@ -76,7 +80,12 @@ struct ConvertView: View {
                 Button("Clear All") { withAnimation { selectedFiles.removeAll() } }.font(.caption).foregroundColor(.red)
             }
             ForEach(selectedFiles, id: \.absoluteString) { url in
-                FileRowView(url: url) { withAnimation { selectedFiles.removeAll { $0 == url } } }
+                FileRowViewWithRename(
+                    url: url,
+                    customName: customFileNames[url],
+                    onRename: { fileToRename = url; showingRenameBeforeConvert = true },
+                    onDelete: { withAnimation { selectedFiles.removeAll { $0 == url } } }
+                )
             }
         }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
     }
@@ -238,7 +247,29 @@ struct ConvertView: View {
                     let accessing = fileURL.startAccessingSecurityScopedResource()
                     defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
                     await MainActor.run { currentFileName = fileURL.lastPathComponent }
-                    let outputURL = try await conversionManager.convertToPDF(from: fileURL, settings: settings) { progress in
+                    
+                    // Create a mutable copy of settings so we can change the output name if needed (though name is passed to createPDF)
+                    // Actually, convertToPDF takes 'from sourceURL' and derives name.
+                    // We need to check if ConvertedPDF logic supports custom name, or if we need to modify how naming works.
+                    // Looking at ConversionManager.convertToPDF:
+                    // It calls createPDF(..., named: sourceURL.deletingPathExtension().lastPathComponent, ...)
+                    // We need to modify ConversionManager.convertToPDF to accept a name, OR we can't easily do this without modifying ConversionManager.
+                    
+                    // Wait, I can't modify ConversionManager easily right now as it's not in the plan (though I can add a task).
+                    // BUT, let's look at ConversionManager.scan again. 
+                    // ConversionManager.convertToPDF line 233: 
+                    // let pdfURL = try await createPDF(..., named: sourceURL.deletingPathExtension().lastPathComponent, ...)
+                    
+                    // Ah, I need to update ConversionManager to allow passing a custom name or handle the renaming there.
+                    // OR, since I'm in the Controller/View, I can rename the file AFTER it is returned? 
+                    // But convertToPDF returns a URL.
+                    
+                    // Let's modify ConversionManager.convertToPDF to accept an optional 'customName' argument.
+                    // Wait, I am editing ConvertView.swift. 
+                    // Let's assume I will update ConversionManager.swift next.
+                    
+                    let nameToUse = customFileNames[fileURL] ?? fileURL.deletingPathExtension().lastPathComponent
+                    let outputURL = try await conversionManager.convertToPDF(from: fileURL, customName: nameToUse, settings: settings) { progress in
                         Task { @MainActor in
                             let fileProgress = Double(index) / Double(selectedFiles.count)
                             let itemProgress = progress / Double(selectedFiles.count)

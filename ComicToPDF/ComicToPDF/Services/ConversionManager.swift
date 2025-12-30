@@ -204,7 +204,7 @@ class ConversionManager: ObservableObject {
         loadSavedData()
     }
     
-    func convertToPDF(from sourceURL: URL, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> URL {
+    func convertToPDF(from sourceURL: URL, customName: String? = nil, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> URL {
         let config = settings ?? conversionSettings
         var images = try await extractImages(from: sourceURL) { progress in
             progressHandler(progress * 0.4)
@@ -230,7 +230,8 @@ class ConversionManager: ObservableObject {
             progressHandler(0.4 + progress * 0.4)
         }
         
-        let pdfURL = try await createPDF(from: processedImages, named: sourceURL.deletingPathExtension().lastPathComponent, jpegQuality: jpegQuality) { progress in
+        let outputName = customName ?? sourceURL.deletingPathExtension().lastPathComponent
+        let pdfURL = try await createPDF(from: processedImages, named: outputName, jpegQuality: jpegQuality) { progress in
             progressHandler(0.8 + progress * 0.2)
         }
         return pdfURL
