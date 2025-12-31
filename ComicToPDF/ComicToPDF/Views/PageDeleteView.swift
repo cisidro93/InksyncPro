@@ -161,8 +161,18 @@ struct PageDeleteView: View {
                 guard let document = PDFDocument(url: url) else { continuation.resume(throwing: NSError(domain: "PageDelete", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open PDF"])); return }
                 let newDocument = PDFDocument()
                 for (newIndex, oldIndex) in indices.enumerated() { if let page = document.page(at: oldIndex) { newDocument.insert(page, at: newIndex) } }
-                if newDocument.write(to: url) { continuation.resume() }
-                else { continuation.resume(throwing: NSError(domain: "PageDelete", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not save PDF"])) }
+                if newDocument.write(to: url) {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: NSError(domain: "PageDelete", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not save PDF"]))
+                }
+            }
+        }
+        
+        await MainActor.run {
+            if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[index].pageCount = indices.count
+                conversionManager.savePDFs()
             }
         }
     }
