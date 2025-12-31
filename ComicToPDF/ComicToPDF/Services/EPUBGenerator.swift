@@ -29,22 +29,22 @@ class EPUBGenerator {
     
     // MARK: - Main Generation Function
     
-    func generateEPUB(from images: [UIImage], outputName: String) async throws -> URL {
+    func generateEPUB(from images: [UIImage], outputName: String) async throws -> (URL, Int) {
         try createEPUBStructure()
         try await generateContent(from: images)
         try generateMetadataFiles()
         let epubURL = try packageEPUB(outputName: outputName)
         cleanup()
-        return epubURL
+        return (epubURL, accumulatedPageCount)
     }
 
-    func generateEPUB(from imageURLs: [URL], outputName: String) async throws -> URL {
+    func generateEPUB(from imageURLs: [URL], outputName: String) async throws -> (URL, Int) {
         try createEPUBStructure()
         try await generateContent(from: imageURLs)
         try generateMetadataFiles()
         let epubURL = try packageEPUB(outputName: outputName)
         cleanup()
-        return epubURL
+        return (epubURL, accumulatedPageCount)
     }
     
     // MARK: - EPUB Structure Creation

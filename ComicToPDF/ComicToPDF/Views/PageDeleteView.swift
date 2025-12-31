@@ -184,7 +184,7 @@ struct PageDeleteView: View {
         let generator = EPUBGenerator(settings: settings, metadata: pdf.metadata, compressionQuality: 1.0) // Maintain quality
         
         // Generate new EPUB to temp location
-        let tempOutputURL = try await generator.generateEPUB(from: keepingImageURLs, outputName: pdf.name)
+        let (tempOutputURL, generatedPageCount) = try await generator.generateEPUB(from: keepingImageURLs, outputName: pdf.name)
         
         // Output handler to overwrite original
         if FileManager.default.fileExists(atPath: url.path) {
@@ -195,7 +195,7 @@ struct PageDeleteView: View {
         // Update valid page count in library
         await MainActor.run {
             if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                conversionManager.convertedPDFs[index].pageCount = keepingImageURLs.count
+                conversionManager.convertedPDFs[index].pageCount = generatedPageCount
                 conversionManager.savePDFs()
             }
         }

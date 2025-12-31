@@ -435,7 +435,8 @@ class ConversionManager: ObservableObject {
             metadata.title = outputName
             
             let generator = EPUBGenerator(settings: config.epubSettings, metadata: metadata, compressionQuality: jpegQuality)
-            let tempEpubURL = try await generator.generateEPUB(from: processedImages, outputName: outputName)
+            let (tempEpubURL, generatedPageCount) = try await generator.generateEPUB(from: processedImages, outputName: outputName)
+            finalPageCount = generatedPageCount
             
             // Move to final destination
             let finalURL = self.outputDirectory.appendingPathComponent("\(outputName).epub")
