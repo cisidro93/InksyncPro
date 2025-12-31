@@ -442,7 +442,7 @@ class ConversionManager: ObservableObject {
             
         } else {
             // New Logic for Archive -> EPUB using CBZToEPUBConverter (Preserves Full Pages)
-            return try await withCheckedThrowingContinuation { continuation in
+            return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, Int), Error>) in
                 let converter = CBZToEPUBConverter()
                 converter.convertCBZToEPUB(sourceURL) { result in
                     progressHandler(1.0)
