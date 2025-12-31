@@ -776,7 +776,7 @@ class ConversionManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: "conversionSettings"), let settings = try? JSONDecoder().decode(ConversionSettings.self, from: data) { conversionSettings = settings }
     }
     
-    private func savePDFs() { if let data = try? JSONEncoder().encode(convertedPDFs) { UserDefaults.standard.set(data, forKey: "convertedPDFs") } }
+    func savePDFs() { if let data = try? JSONEncoder().encode(convertedPDFs) { UserDefaults.standard.set(data, forKey: "convertedPDFs") } }
     private func saveCollections() { if let data = try? JSONEncoder().encode(collections) { UserDefaults.standard.set(data, forKey: "pdfCollections") } }
     private func saveKindleDevices() { if let data = try? JSONEncoder().encode(kindleDevices) { UserDefaults.standard.set(data, forKey: "kindleDevices") } }
     func saveSettings() { if let data = try? JSONEncoder().encode(conversionSettings) { UserDefaults.standard.set(data, forKey: "conversionSettings") } }

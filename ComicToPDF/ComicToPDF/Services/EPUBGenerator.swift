@@ -81,10 +81,7 @@ class EPUBGenerator {
     
     // MARK: - Content Generation
     
-    // State for generation
-    private var imageItems = ""
-    private var pageItems = ""
-    private var spineItems = ""
+
 
     private func generateContent(from images: [UIImage]) async throws {
         var imageManifestLines: [String] = []
