@@ -394,32 +394,40 @@ class PDFToEPUBConverter {
         """
     }
     
-    private func createEPUB(from sourceDir: URL, to outputURL: URL) throws {
-        // Remove existing file if present
-        if FileManager.default.fileExists(atPath: outputURL.path) {
+    private func createEPUB(from tempDir: URL, to outputURL: URL) throws {
+         if FileManager.default.fileExists(atPath: outputURL.path) {
             try FileManager.default.removeItem(at: outputURL)
         }
         
-        // Use ZIPFoundation or manual zip
-        // For iOS, we'll use the built-in compression
-        let coordinator = NSFileCoordinator()
-        var error: NSError?
+        guard let archive = Archive(url: outputURL, accessMode: .create) else {
+            throw NSError(domain: "PDFToEPUBConverter", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
+        }
         
-        coordinator.coordinate(readingItemAt: sourceDir, options: .forUploading, error: &error) { zipURL in
-            do {
-                try FileManager.default.copyItem(at: zipURL, to: outputURL)
-            } catch {
-                print("Failed to create EPUB: \(error)")
+        // 1. Mimetype (MUST be first and uncompressed)
+        let mimetypeURL = tempDir.appendingPathComponent("mimetype")
+        try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: 20, compressionMethod: .none) { position, size in
+            return try Data(contentsOf: mimetypeURL).subdata(in: 0..<Int(size))
+        }
+        
+        // 2. Add remaining files
+        let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
+        let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: resourceKeys)!
+        
+        for case let fileURL as URL in enumerator {
+            let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))
+            let isDirectory = resourceValues.isDirectory ?? false
+            let path = fileURL.path.replacingOccurrences(of: tempDir.path + "/", with: "")
+            
+            if path == "mimetype" || path.isEmpty { continue }
+            
+            if !isDirectory {
+                let fileSize = UInt32(resourceValues.fileSize ?? 0)
+                try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(fileSize), compressionMethod: .deflate) { position, size in
+                    return try Data(contentsOf: fileURL).subdata(in: 0..<Int(size))
+                }
+            } else {
+                 try archive.addEntry(with: path + "/", type: .directory, uncompressedSize: 0, compressionMethod: .none) { _, _ in Data() }
             }
-        }
-        
-        if let error = error {
-            throw error
-        }
-        
-        // Verify file was created
-        guard FileManager.default.fileExists(atPath: outputURL.path) else {
-            throw ConversionError.epubCreationFailed
         }
     }
     

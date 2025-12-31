@@ -365,16 +365,47 @@ class EPUBGenerator {
         // Output to a temporary file initially
         let outputURL = tempDirectory.deletingLastPathComponent().appendingPathComponent("\(outputName).epub")
         
-        // Ensure output directory exists
-        try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        
         // Remove existing file if it exists
         if FileManager.default.fileExists(atPath: outputURL.path) {
             try FileManager.default.removeItem(at: outputURL)
         }
         
-        // Create ZIP archive (EPUB is basically a ZIP file)
-        try FileManager.default.zipItem(at: tempDirectory, to: outputURL, shouldKeepParent: false)
+        guard let archive = Archive(url: outputURL, accessMode: .create) else {
+            throw NSError(domain: "EPUBGenerator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
+        }
+        
+        // 1. Mimetype (MUST be first and uncompressed)
+        let mimetypeURL = tempDirectory.appendingPathComponent("mimetype")
+        try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: 20, compressionMethod: .none) { position, size in
+            return try Data(contentsOf: mimetypeURL).subdata(in: 0..<Int(size))
+        }
+        
+        // 2. Add remaining files (META-INF, OEBPS)
+        let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
+        let enumerator = FileManager.default.enumerator(at: tempDirectory, includingPropertiesForKeys: resourceKeys)!
+        
+        for case let fileURL as URL in enumerator {
+            let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))
+            let isDirectory = resourceValues.isDirectory ?? false
+            
+            // Get relative path
+            let path = fileURL.path.replacingOccurrences(of: tempDirectory.path + "/", with: "")
+            
+            // Skip mimetype as we added it already (and temp directory root)
+            if path == "mimetype" || path.isEmpty { continue }
+            
+            if !isDirectory {
+                let fileSize = UInt32(resourceValues.fileSize ?? 0)
+                try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(fileSize), compressionMethod: .deflate) { position, size in
+                    return try Data(contentsOf: fileURL).subdata(in: 0..<Int(size))
+                }
+            } else {
+                 // Directories are implicit or added as 0-size entries in some zip implementations, 
+                 // but ZIPFoundation typically handles file paths. We can skip explicit directory entries
+                 // unless necessary, but adding them doesn't hurt.
+                 try archive.addEntry(with: path + "/", type: .directory, uncompressedSize: 0, compressionMethod: .none) { _, _ in Data() }
+            }
+        }
         
         return outputURL
     }
