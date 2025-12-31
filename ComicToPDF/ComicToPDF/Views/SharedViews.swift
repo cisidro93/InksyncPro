@@ -53,8 +53,7 @@ struct KindleDevicePickerView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) private var dismiss
     let pdfURLs: [URL]
-    @State private var selectedDevice: KindleDevice?
-    @State private var showingMailComposer = false
+    @State private var selectedDeviceForMail: KindleDevice?
     @State private var showingSuccessAnimation = false
     
     @State private var showingMailError = false
@@ -68,12 +67,10 @@ struct KindleDevicePickerView: View {
             }
             .navigationTitle("Send to Kindle").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { dismiss() } } }
-            .sheet(isPresented: $showingMailComposer) {
-                if let device = selectedDevice {
-                    MailComposerView(pdfURLs: pdfURLs, kindleEmail: device.email) { result, error in
-                        if result == .sent {
-                            handleSuccess(device: device)
-                        }
+            .sheet(item: $selectedDeviceForMail) { device in
+                MailComposerView(pdfURLs: pdfURLs, kindleEmail: device.email) { result, error in
+                    if result == .sent {
+                        handleSuccess(device: device)
                     }
                 }
             }
@@ -94,8 +91,7 @@ struct KindleDevicePickerView: View {
     
     private func selectAndSend(_ device: KindleDevice) {
         if MFMailComposeViewController.canSendMail() {
-            selectedDevice = device
-            showingMailComposer = true
+            selectedDeviceForMail = device
         } else {
             showingMailError = true
         }
