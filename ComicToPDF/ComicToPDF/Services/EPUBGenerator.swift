@@ -180,7 +180,7 @@ class EPUBGenerator {
         """
         
         let contentURL = tempDirectory.appendingPathComponent("OEBPS/content.opf")
-        try contentOPF.write(to: contentURL, atomically: true, encoding: .utf8)
+        try contentOPF.write(to: contentURL, atomically: true, encoding: String.Encoding.utf8)
     }
     
     private func generateManifestItems(pageCount: Int) -> String {

@@ -14,50 +14,47 @@ struct DuplicateDetectionView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 60))
                         .foregroundColor(.green)
-                    Text("No Duplicates Found")
-                        .font(.title2)
-                        .bold()
-                    Text("Your library is clean!")
-                        .foregroundColor(.secondary)
+                    Text("No Duplicates Found").font(.title2).bold()
+                    Text("Your library is clean!").foregroundColor(.secondary)
                 }
             } else {
-                List {
-                    ForEach(duplicateGroups) { group in
-                        Section(header: Text("Identical Files (\(group.pdfs.count))")) {
-                            ForEach(group.pdfs) { pdf in
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(pdf.name)
-                                            .font(.headline)
-                                        Text(pdf.formattedSize)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                    Button(action: {
-                                        withAnimation {
-                                            conversionManager.removeFromLibrary(pdf)
-                                            // Refresh list locally
-                                            if let index = duplicateGroups.firstIndex(where: { $0.id == group.id }) {
-                                                // Simplified refresh logic
-                                                // Ideally we re-scan but that's expensive
-                                            }
-                                        }
-                                    }) {
-                                        Image(systemName: "trash")
-                                            .foregroundColor(.red)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                duplicateList
             }
         }
         .navigationTitle("Duplicate Finder")
         .task {
             duplicateGroups = await conversionManager.findDuplicates()
             isLoading = false
+        }
+    }
+    
+    var duplicateList: some View {
+        List {
+            ForEach(duplicateGroups) { group in
+                Section(header: Text("Identical Files (\(group.pdfs.count))")) {
+                    ForEach(group.pdfs) { pdf in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(pdf.name).font(.headline)
+                                Text(pdf.formattedSize).font(.caption).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button(action: {
+                                deletePDF(pdf)
+                            }) {
+                                Image(systemName: "trash").foregroundColor(.red)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    func deletePDF(_ pdf: ConvertedPDF) {
+        withAnimation {
+            conversionManager.removeFromLibrary(pdf)
+            // Refresh list if needed
         }
     }
 }

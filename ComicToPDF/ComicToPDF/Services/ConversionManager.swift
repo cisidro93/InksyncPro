@@ -51,6 +51,7 @@ struct PDFMetadata: Codable {
     var tags: [String] = []
     var notes: String = ""
     var summary: String = ""
+    var publisher: String = ""
 }
 
 struct PDFCollection: Identifiable, Codable {
@@ -316,6 +317,84 @@ class ConversionManager: ObservableObject {
             progressHandler(0.8 + progress * 0.2)
         }
         return pdfURL
+    }
+    
+    // MARK: - Universal Conversion
+    
+    func convertToFormat(_ format: OutputFormat, from sourceURL: URL, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> [URL] {
+        let config = settings ?? conversionSettings
+        var outputURLs: [URL] = []
+        
+        switch format {
+        case .pdf:
+            let url = try await convertToPDF(from: sourceURL, settings: config, progressHandler: progressHandler)
+            outputURLs.append(url)
+            addToLibrary(url)
+            
+        case .epub:
+            let url = try await convertToEPUB(from: sourceURL, settings: config, progressHandler: progressHandler)
+            outputURLs.append(url)
+            addToLibrary(url, explicitPageCount: 0) // EPUB page count not easily available without unzip
+            
+        case .both:
+            // Split progress: 50% for PDF, 50% for EPUB
+            let pdfURL = try await convertToPDF(from: sourceURL, settings: config) { p in
+                progressHandler(p * 0.5)
+            }
+            outputURLs.append(pdfURL)
+            addToLibrary(pdfURL)
+            
+            let epubURL = try await convertToEPUB(from: sourceURL, settings: config) { p in
+                progressHandler(0.5 + p * 0.5)
+            }
+            outputURLs.append(epubURL)
+            addToLibrary(epubURL, explicitPageCount: 0)
+        }
+        
+        return outputURLs
+    }
+    
+    func convertToEPUB(from sourceURL: URL, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> URL {
+        let config = settings ?? conversionSettings
+        var images = try await extractImages(from: sourceURL) { progress in
+            progressHandler(progress * 0.3)
+        }
+        guard !images.isEmpty else { throw ConversionError.noImagesFound }
+        if config.mangaMode { images.reverse() }
+        
+        // Resize images for EPUB (similar logic to PDF but maybe different constraints)
+        // For EPUB, we generally want good quality but reasonable size. 
+        // Let's use the same processing logic but maybe different target size if strictly defined.
+        // For now reusing processImages
+        
+        let scale: Double
+        let jpegQuality: Double
+        if config.compressionQuality == .custom {
+            scale = config.customScale
+            jpegQuality = config.customJpegQuality
+        } else {
+            let values = config.compressionQuality.values
+            scale = values.scale
+            jpegQuality = values.quality
+        }
+        
+        // Enhance images
+        let processedImages = try await processImages(images, scale: scale, jpegQuality: jpegQuality, enhancement: config.imageEnhancement, targetSize: nil) { progress in
+            progressHandler(0.3 + progress * 0.4)
+        }
+        
+        // Metadata
+        var metadata = PDFMetadata()
+        metadata.title = sourceURL.deletingPathExtension().lastPathComponent
+        // TODO: Extract metadata from ComicInfo.xml if available (future feature)
+        
+        let outputName = sourceURL.deletingPathExtension().lastPathComponent
+        
+        let generator = EPUBGenerator(settings: config.epubSettings, metadata: metadata)
+        let epubURL = try await generator.generateEPUB(from: processedImages, outputName: outputName)
+        
+        progressHandler(1.0)
+        return epubURL
     }
     
     private func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
@@ -639,7 +718,7 @@ class ConversionManager: ObservableObject {
     }
     
     func recordSend(pdf: ConvertedPDF, device: KindleDevice) {
-        let record = SendHistoryRecord(pdf: pdf, device: device)
+        let record = SendHistoryRecord(pdf: pdf, device: device.deviceType)
         sendHistory.insert(record, at: 0)
         if let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
             convertedPDFs[index].lastSentDate = Date()
@@ -837,14 +916,16 @@ struct ConversionPreset: Identifiable, Codable {
     let name: String
     let settings: ConversionSettings
     let dateCreated: Date
+    var isDefault: Bool = false
     
     var icon: String { "slider.horizontal.3" }
     
-    init(name: String, settings: ConversionSettings) {
+    init(name: String, settings: ConversionSettings, isDefault: Bool = false) {
         self.id = UUID()
         self.name = name
         self.settings = settings
         self.dateCreated = Date()
+        self.isDefault = isDefault
     }
 }
 
@@ -862,6 +943,12 @@ struct DuplicateGroup: Identifiable {
     let hash: String
     let files: [ConvertedPDF]
     
+    // Custom init to match usage
+    init(fileHash: String, pdfs: [ConvertedPDF]) {
+        self.hash = fileHash
+        self.files = pdfs
+    }
+    
     var totalSize: Int64 {
         files.reduce(0) { $0 + $1.fileSize }
     }
@@ -872,11 +959,12 @@ struct StorageInfo {
     let pdfCount: Int
     let largestFile: ConvertedPDF?
     let oldestFile: ConvertedPDF?
-    let byCollection: [(collection: PDFCollection, size: Int64, count: Int)]
+    let byCollection: [(collection: PDFCollection?, size: Int64, count: Int)]
     
     var formattedTotalSize: String {
         ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
     }
+}
 }
 
 struct BackupData: Codable {

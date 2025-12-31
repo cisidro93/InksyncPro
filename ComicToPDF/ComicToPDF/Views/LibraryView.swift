@@ -47,7 +47,8 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Library")
-            .toolbar(content: {
+                
+            .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if !conversionManager.convertedPDFs.isEmpty {
                         Button(isSelectionMode ? "Cancel" : "Select") { withAnimation { isSelectionMode.toggle(); if !isSelectionMode { selectedPDFs.removeAll() } } }
@@ -72,7 +73,8 @@ struct LibraryView: View {
                     }
                 }
             }
-        }.navigationViewStyle(.stack)
+        }
+        .navigationViewStyle(.stack)
         .sheet(isPresented: $showingPreview) { if let pdf = selectedPDF { PDFPreviewView(pdf: pdf) } }
         .sheet(isPresented: $showingMetadataEditor) { if let pdf = selectedPDF { MetadataEditorView(pdf: pdf) } }
         .sheet(isPresented: $showingPageReorder) { if let pdf = selectedPDF { PageReorderView(pdf: pdf) } }

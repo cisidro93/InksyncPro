@@ -55,7 +55,7 @@ struct PageExtractionView: View {
         let range = Array((rangeStart-1)...(rangeEnd-1))
         Task {
             do {
-                let urls = try await conversionManager.extractPages(from: pdf, pageIndices: range, asImages: exportAsImages)
+                let _ = try await conversionManager.extractPages(from: pdf, pageIndices: range, asImages: exportAsImages)
                 await MainActor.run {
                     isExporting = false
                     // Optionally show result alert or share sheet
