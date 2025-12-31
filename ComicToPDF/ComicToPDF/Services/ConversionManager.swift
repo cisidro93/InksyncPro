@@ -288,6 +288,35 @@ class ConversionManager: ObservableObject {
     
     func convertToPDF(from sourceURL: URL, customName: String? = nil, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> URL {
         let config = settings ?? conversionSettings
+        let ext = sourceURL.pathExtension.lowercased()
+        
+        // Special handling for EPUB using refined converter
+        if ext == "epub" {
+            return try await withCheckedThrowingContinuation { continuation in
+                let converter = EPUBConverter()
+                converter.convertEPUBToPDF(epubURL: sourceURL) { result in
+                    progressHandler(1.0)
+                    switch result {
+                    case .success(let pdfURL):
+                        // Move to output directory
+                        let outputName = customName ?? sourceURL.deletingPathExtension().lastPathComponent
+                        let finalURL = self.outputDirectory.appendingPathComponent("\(outputName).pdf")
+                        do {
+                            if FileManager.default.fileExists(atPath: finalURL.path) {
+                                try FileManager.default.removeItem(at: finalURL)
+                            }
+                            try FileManager.default.moveItem(at: pdfURL, to: finalURL)
+                            continuation.resume(returning: finalURL)
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        }
+        
         var images = try await extractImages(from: sourceURL) { progress in
             progressHandler(progress * 0.4)
         }
