@@ -469,7 +469,7 @@ class ConversionManager: ObservableObject {
             progressHandler(1.0)
             return (finalURL, finalPageCount)
         }
-    }
+
     
 
     
