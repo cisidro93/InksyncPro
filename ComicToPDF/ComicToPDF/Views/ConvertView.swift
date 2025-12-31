@@ -497,13 +497,10 @@ struct ConvertView: View {
                     conversionProgress = 1.0
                     selectedFiles.removeAll()
                     
-                    // Show success animation instead of alert
-                    showingSuccessAnimation = true
+                    // Show alert
+                    alertMessage = "All files converted successfully! Check the Library tab."
+                    showingAlert = true
                     HapticManager.shared.notification(.success)
-                    
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        showingSuccessAnimation = false
-                    }
                 }
             } catch {
                 await MainActor.run {
