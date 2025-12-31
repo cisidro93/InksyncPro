@@ -23,7 +23,7 @@ struct SendHistoryView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     
-                    Text(record.dateSent, style: .date)
+                    Text(record.sentDate, style: .date)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
