@@ -81,9 +81,9 @@ class EPUBGenerator {
     private var spineItems = ""
 
     private func generateContent(from images: [UIImage]) async throws {
-        self.imageItems = ""
-        self.pageItems = ""
-        self.spineItems = ""
+        var imageManifestLines: [String] = []
+        var xhtmlManifestLines: [String] = []
+        var spineItemLines: [String] = []
         
         let imagesDir = tempDirectory.appendingPathComponent("OEBPS/images")
         
@@ -97,28 +97,28 @@ class EPUBGenerator {
             try imageData.write(to: imageURL)
             
             // Add to image manifest items
-            currentImageManifestItems += """
+            imageManifestLines.append("""
                 <item id="image\(pageNumber)" href="images/\(imageName)" media-type="image/jpeg"/>
-            """
+            """)
             
             // Create XHTML page for each image
             let xhtmlFileName = String(format: "page%d.xhtml", pageNumber)
             try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlFileName)
             
             // Add to XHTML manifest items
-            currentXHTMLManifestItems += """
+            xhtmlManifestLines.append("""
                 <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
-            """
+            """)
             
             // Add to spine items
-            currentSpineItems += """
+            spineItemLines.append("""
                 <itemref idref="page\(pageNumber)"/>
-            """
+            """)
         }
         
-        self.imageManifestItems = currentImageManifestItems
-        self.xhtmlManifestItems = currentXHTMLManifestItems
-        self.spineItems = currentSpineItems
+        self.imageManifestItems = imageManifestLines.joined(separator: "\n")
+        self.xhtmlManifestItems = xhtmlManifestLines.joined(separator: "\n")
+        self.spineItems = spineItemLines.joined(separator: "\n")
         self.pageCount = images.count
         
         // Generate table of contents
@@ -128,9 +128,9 @@ class EPUBGenerator {
     }
 
     private func generateContent(from imageURLs: [URL]) async throws {
-        var currentImageManifestItems = ""
-        var currentXHTMLManifestItems = ""
-        var currentSpineItems = ""
+        var imageManifestLines: [String] = []
+        var xhtmlManifestLines: [String] = []
+        var spineItemLines: [String] = []
         
         let imagesDir = tempDirectory.appendingPathComponent("OEBPS/images")
         
@@ -142,8 +142,9 @@ class EPUBGenerator {
             let destURL = imagesDir.appendingPathComponent(imageName)
             
             // If the image is already a JPEG and compression is not needed, just copy.
-            // Otherwise, load and re-save with compression.
-            if ext.lowercased() == "jpg" || ext.lowercased() == "jpeg" && compressionQuality >= 1.0 {
+            // Since && binds tighter than ||, we group the extension checks.
+            let isJPEG = ext.lowercased() == "jpg" || ext.lowercased() == "jpeg"
+            if isJPEG && compressionQuality >= 1.0 {
                 try FileManager.default.copyItem(at: sourceURL, to: destURL)
             } else {
                 // Load image, convert to JPEG with compression, then save
@@ -166,28 +167,28 @@ class EPUBGenerator {
             }
             
             // Add to image manifest items
-            currentImageManifestItems += """
+            imageManifestLines.append("""
                 <item id="image\(pageNumber)" href="images/\(imageName)" media-type="\(mediaType)"/>
-            """
+            """)
             
             // Create XHTML page for each image
             let xhtmlFileName = String(format: "page%d.xhtml", pageNumber)
             try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlFileName)
             
             // Add to XHTML manifest items
-            currentXHTMLManifestItems += """
+            xhtmlManifestLines.append("""
                 <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
-            """
+            """)
             
             // Add to spine items
-            currentSpineItems += """
+            spineItemLines.append("""
                 <itemref idref="page\(pageNumber)"/>
-            """
+            """)
         }
         
-        self.imageManifestItems = currentImageManifestItems
-        self.xhtmlManifestItems = currentXHTMLManifestItems
-        self.spineItems = currentSpineItems
+        self.imageManifestItems = imageManifestLines.joined(separator: "\n")
+        self.xhtmlManifestItems = xhtmlManifestLines.joined(separator: "\n")
+        self.spineItems = spineItemLines.joined(separator: "\n")
         self.pageCount = imageURLs.count
         
         // Generate table of contents
