@@ -160,6 +160,7 @@ enum ConversionError: LocalizedError {
     case unsupportedFormat
     case pdfCreationFailed
     case compressionFailed
+    case conversionFailed
     
     var errorDescription: String? {
         switch self {
@@ -167,6 +168,7 @@ enum ConversionError: LocalizedError {
         case .unsupportedFormat: return "Unsupported archive format"
         case .pdfCreationFailed: return "Failed to create PDF"
         case .compressionFailed: return "Failed to compress images"
+        case .conversionFailed: return "Conversion failed"
         }
     }
 }

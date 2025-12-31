@@ -191,3 +191,15 @@ class ComicEPUBProcessor {
         UIGraphicsEndPDFContext()
     }
 }
+
+enum EPUBError: LocalizedError {
+    case extractionFailed
+    case noImages
+    
+    var errorDescription: String? {
+        switch self {
+        case .extractionFailed: return "Failed to extract EPUB archive"
+        case .noImages: return "No images found in EPUB"
+        }
+    }
+}
