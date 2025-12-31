@@ -50,6 +50,7 @@ struct PDFMetadata: Codable {
     var genre: String = ""
     var tags: [String] = []
     var notes: String = ""
+    var summary: String = ""
 }
 
 struct PDFCollection: Identifiable, Codable {
@@ -120,6 +121,8 @@ struct ConversionSettings: Codable, Equatable {
     var targetDevice: KindleDeviceType = .paperwhite
     var optimizeForDevice: Bool = false
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
+    var outputFormat: OutputFormat = .pdf
+    var epubSettings: EPUBSettings = EPUBSettings()
 }
 
 struct ImageEnhancementSettings: Codable, Equatable {
@@ -809,3 +812,81 @@ class ConversionManager: ObservableObject {
     
     private func saveSendHistory() { if let data = try? JSONEncoder().encode(sendHistory) { UserDefaults.standard.set(data, forKey: "sendHistory") } }
     private func savePresets() { if let data = try? JSONEncoder().encode(conversionPresets) { UserDefaults.standard.set(data, forKey: "conversionPresets") } }
+}
+
+// MARK: - SUPPORTING STRUCTS
+
+struct SendHistoryRecord: Identifiable, Codable {
+    let id: UUID
+    let pdfName: String
+    let pdfURL: URL
+    let sentDate: Date
+    let deviceName: String
+    
+    init(pdf: ConvertedPDF, device: KindleDeviceType) {
+        self.id = UUID()
+        self.pdfName = pdf.name
+        self.pdfURL = pdf.url
+        self.sentDate = Date()
+        self.deviceName = device.rawValue
+    }
+}
+
+struct ConversionPreset: Identifiable, Codable {
+    let id: UUID
+    let name: String
+    let settings: ConversionSettings
+    let dateCreated: Date
+    
+    var icon: String { "slider.horizontal.3" }
+    
+    init(name: String, settings: ConversionSettings) {
+        self.id = UUID()
+        self.name = name
+        self.settings = settings
+        self.dateCreated = Date()
+    }
+}
+
+enum SortOption: String, CaseIterable, Identifiable {
+    case dateAdded = "Date Added"
+    case name = "Name"
+    case size = "Size"
+    case pageCount = "Page Count"
+    
+    var id: String { rawValue }
+}
+
+struct DuplicateGroup: Identifiable {
+    let id = UUID()
+    let hash: String
+    let files: [ConvertedPDF]
+    
+    var totalSize: Int64 {
+        files.reduce(0) { $0 + $1.fileSize }
+    }
+}
+
+struct StorageInfo {
+    let totalSize: Int64
+    let pdfCount: Int
+    let largestFile: ConvertedPDF?
+    let oldestFile: ConvertedPDF?
+    let byCollection: [(collection: PDFCollection, size: Int64, count: Int)]
+    
+    var formattedTotalSize: String {
+        ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
+    }
+}
+
+struct BackupData: Codable {
+    let date: Date
+    let version: String
+    let pdfs: [ConvertedPDF]
+    let collections: [PDFCollection]
+    let devices: [KindleDevice]
+    let settings: ConversionSettings
+    let presets: [ConversionPreset]
+    let history: [SendHistoryRecord]
+}
+

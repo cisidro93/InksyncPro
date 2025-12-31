@@ -47,7 +47,7 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Library")
-            .toolbar {
+            .toolbar(content: {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if !conversionManager.convertedPDFs.isEmpty {
                         Button(isSelectionMode ? "Cancel" : "Select") { withAnimation { isSelectionMode.toggle(); if !isSelectionMode { selectedPDFs.removeAll() } } }
