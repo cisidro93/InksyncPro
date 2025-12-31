@@ -15,8 +15,12 @@ struct PDFPreviewView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                PDFKitView(url: pdf.url, currentPage: $currentPage, totalPages: $totalPages).ignoresSafeArea(edges: .bottom)
-                bottomToolbar
+                if pdf.url.pathExtension.lowercased() == "pdf" {
+                    PDFKitView(url: pdf.url, currentPage: $currentPage, totalPages: $totalPages).ignoresSafeArea(edges: .bottom)
+                    bottomToolbar
+                } else {
+                    QuickLookView(url: pdf.url).ignoresSafeArea(edges: .bottom)
+                }
             }
             .navigationTitle(pdf.name).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarLeading) { Button("Done") { dismiss() } }; ToolbarItem(placement: .navigationBarTrailing) { Menu { Button(action: { sharePDF() }) { Label("Share", systemImage: "square.and.arrow.up") }; Button(action: { showingPagePicker = true }) { Label("Go to Page", systemImage: "arrow.right.doc.on.clipboard") } } label: { Image(systemName: "ellipsis.circle") } } }

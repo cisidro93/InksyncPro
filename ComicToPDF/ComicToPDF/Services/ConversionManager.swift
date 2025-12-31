@@ -636,6 +636,11 @@ class ConversionManager: ObservableObject {
         }
         // EPUB page count detection would require unzipping, so explicit passing is better
         
+        // Dedupe: Remove existing entry if it exists
+        if let existingIndex = convertedPDFs.firstIndex(where: { $0.url == url }) {
+            convertedPDFs.remove(at: existingIndex)
+        }
+        
         let pdf = ConvertedPDF(name: url.deletingPathExtension().lastPathComponent, url: url, pageCount: pageCount, fileSize: fileSize, collectionId: collectionId)
         convertedPDFs.insert(pdf, at: 0)
         savePDFs()
