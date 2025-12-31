@@ -999,3 +999,35 @@ struct BackupData: Codable {
     let history: [SendHistoryRecord]
 }
 
+extension ConversionManager {
+    func createBackupData() -> BackupData {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        return BackupData(
+            date: Date(),
+            version: version,
+            pdfs: convertedPDFs,
+            collections: collections,
+            devices: kindleDevices,
+            settings: conversionSettings,
+            presets: conversionPresets,
+            history: sendHistory
+        )
+    }
+    
+    func restoreFromBackup(_ backup: BackupData) {
+        convertedPDFs = backup.pdfs
+        collections = backup.collections
+        kindleDevices = backup.devices
+        conversionSettings = backup.settings
+        conversionPresets = backup.presets
+        sendHistory = backup.history
+        
+        savePDFs()
+        saveCollections()
+        saveKindleDevices()
+        saveSettings()
+        savePresets()
+        saveSendHistory()
+    }
+}
+

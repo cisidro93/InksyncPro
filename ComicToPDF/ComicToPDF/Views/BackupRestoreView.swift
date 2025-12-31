@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct BackupRestoreView: View {
     @EnvironmentObject var conversionManager: ConversionManager
