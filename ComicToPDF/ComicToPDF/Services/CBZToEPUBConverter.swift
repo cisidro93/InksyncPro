@@ -3,7 +3,7 @@ import ZIPFoundation
 
 class CBZToEPUBConverter {
     
-    func convertCBZToEPUB(_ cbzURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+    func convertCBZToEPUB(_ cbzURL: URL, compressionQuality: Double = 0.85, completion: @escaping (Result<URL, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 // 1. Extract CBZ
@@ -22,7 +22,8 @@ class CBZToEPUBConverter {
                 let epubURL = try self.createEPUB(
                     from: pageImages,
                     title: cbzURL.deletingPathExtension().lastPathComponent,
-                    outputDir: tempDir
+                    outputDir: tempDir,
+                    compressionQuality: compressionQuality
                 )
                 
                 print("✅ EPUB created: \(epubURL.lastPathComponent)")
@@ -55,13 +56,13 @@ class CBZToEPUBConverter {
         }
         
         // Sort by filename to maintain page order
-        images.sort { $0.url.lastPathComponent < $1.url.lastPathComponent }
+        images.sort { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }
         
         return images.map { $0.image }
     }
     
     // Create proper EPUB with full pages (NOT strips!)
-    private func createEPUB(from pages: [UIImage], title: String, outputDir: URL) throws -> URL {
+    private func createEPUB(from pages: [UIImage], title: String, outputDir: URL, compressionQuality: Double) throws -> URL {
         
         // Create EPUB directory structure
         let epubDir = outputDir.appendingPathComponent("epub_temp")
@@ -96,7 +97,7 @@ class CBZToEPUBConverter {
             let imageURL = imagesDir.appendingPathComponent(imageName)
             
             // Save COMPLETE image (not sliced!)
-            if let jpegData = page.jpegData(compressionQuality: 0.9) {
+            if let jpegData = page.jpegData(compressionQuality: compressionQuality) {
                 try jpegData.write(to: imageURL)
                 print("💾 Saved full page: \(imageName) - \(Int(page.size.width))x\(Int(page.size.height))")
             }

@@ -442,23 +442,22 @@ class ConversionManager: ObservableObject {
             
         } else {
             // New Logic for Archive -> EPUB using CBZToEPUBConverter (Preserves Full Pages)
+            
+            // Determine Compression Quality
+            let jpegQuality: Double
+            if config.compressionQuality == .custom {
+                jpegQuality = config.customJpegQuality
+            } else {
+                jpegQuality = config.compressionQuality.values.quality
+            }
+            
             return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, Int), Error>) in
                 let converter = CBZToEPUBConverter()
-                converter.convertCBZToEPUB(sourceURL) { result in
+                converter.convertCBZToEPUB(sourceURL, compressionQuality: jpegQuality) { result in
                     progressHandler(1.0)
                     switch result {
                     case .success(let epubURL):
-                        // We need to calculate page count since the converter doesn't return it directly in the completion
-                        // But we can quickly get it from the file structure or trust the caller to verify
-                        // For now we will return 0 and let the library update logic handle it, or we can try to parse it.
-                        // Actually, let's keep it simple. The user script prints it but doesn't return it.
-                        // We will return 0 for now and let the library count it on import if needed, 
-                        // OR we can trust the previous implementation style. 
-                        // Wait, the return type is (URL, Int). 
-                        // Let's assume the library will update the count later, or we can quickly count images in the unzipped source which we don't have access to here easily.
-                        // Let's trust the LibraryView's metadata fetching.
                         continuation.resume(returning: (epubURL, 0))
-                        
                     case .failure(let error):
                         continuation.resume(throwing: error)
                     }
