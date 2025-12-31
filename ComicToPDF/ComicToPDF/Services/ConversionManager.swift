@@ -590,13 +590,16 @@ class ConversionManager: ObservableObject {
                         newSize = CGSize(width: newSize.width * scale, height: newSize.height * scale)
                         
                         if newSize != processed.size {
-                            UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
-                            processed.draw(in: CGRect(origin: .zero, size: newSize))
-                            if let resized = UIGraphicsGetImageFromCurrentImageContext() { processed = resized }
-                            UIGraphicsEndImageContext()
+                             let format = UIGraphicsImageRendererFormat()
+                             format.scale = 1.0
+                             let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+                             processed = renderer.image { _ in
+                                 processed.draw(in: CGRect(origin: .zero, size: newSize))
+                             }
                         }
                         
-                        if jpegQuality < 1.0 {
+                        if jpegQuality < 1.0 || enhancement.enabled {
+                            // Ensure final format is consistent and compressed
                             if let jpegData = processed.jpegData(compressionQuality: jpegQuality), let recompressed = UIImage(data: jpegData) {
                                 processed = recompressed
                             }
