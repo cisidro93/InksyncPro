@@ -332,9 +332,9 @@ class ConversionManager: ObservableObject {
             addToLibrary(url)
             
         case .epub:
-            let url = try await convertToEPUB(from: sourceURL, settings: config, progressHandler: progressHandler)
-            outputURLs.append(url)
-            addToLibrary(url, explicitPageCount: 0) // EPUB page count not easily available without unzip
+            let epubData = try await convertToEPUB(from: sourceURL, settings: config, progressHandler: progressHandler)
+            outputURLs.append(epubData.0)
+            addToLibrary(epubData.0, explicitPageCount: epubData.1)
             
         case .both:
             // Split progress: 50% for PDF, 50% for EPUB
