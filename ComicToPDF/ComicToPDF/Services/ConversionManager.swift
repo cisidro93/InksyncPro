@@ -587,7 +587,7 @@ class ConversionManager: ObservableObject {
                             let ratio = min(widthRatio, heightRatio, 1.0)
                             newSize = CGSize(width: processed.size.width * ratio, height: processed.size.height * ratio)
                         }
-                        newSize = CGSize(width: newSize.width * scale, height: newSize.height * scale)
+                        newSize = CGSize(width: (newSize.width * scale).rounded(), height: (newSize.height * scale).rounded())
                         
                         if newSize != processed.size {
                              let format = UIGraphicsImageRendererFormat()

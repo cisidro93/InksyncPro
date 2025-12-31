@@ -154,8 +154,8 @@ class PDFToEPUBConverter {
                 )
                 
                 let scaledSize = CGSize(
-                    width: pageRect.width * scale,
-                    height: pageRect.height * scale
+                    width: checkFinite(pageRect.width * scale).rounded(),
+                    height: checkFinite(pageRect.height * scale).rounded()
                 )
                 
                 // Double check scaled size logic to prevent invalid image context
@@ -469,5 +469,10 @@ extension PDFToEPUBConverter {
                 }
             }
         }
+    }
+    
+    // Helper to ensure values are valid numbers
+    private func checkFinite(_ value: CGFloat) -> CGFloat {
+        return value.isFinite ? value : 0
     }
 }
