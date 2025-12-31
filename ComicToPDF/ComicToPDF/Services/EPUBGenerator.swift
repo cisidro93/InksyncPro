@@ -13,12 +13,11 @@ class EPUBGenerator {
     private let metadata: PDFMetadata
     private let compressionQuality: Double
     
-    private var imageManifestItems: String = ""
-    private var xhtmlManifestItems: String = ""
+    private var accumulatedImageManifestItems: String = ""
+    private var accumulatedXhtmlManifestItems: String = ""
 
-    private var spineItems: String = ""
-    private var pageCount: Int = 0
-    // Force re-sync of file structure
+    private var accumulatedSpineItems: String = ""
+    private var accumulatedPageCount: Int = 0
     
     init(settings: EPUBSettings, metadata: PDFMetadata, compressionQuality: Double = 0.85) {
         self.settings = settings
@@ -120,10 +119,11 @@ class EPUBGenerator {
             """)
         }
         
-        self.imageManifestItems = imageManifestLines.joined(separator: "\n")
-        self.xhtmlManifestItems = xhtmlManifestLines.joined(separator: "\n")
-        self.spineItems = spineItemLines.joined(separator: "\n")
-        self.pageCount = images.count
+        // Generate page content
+        self.accumulatedImageManifestItems = imageManifestLines.joined(separator: "\n")
+        self.accumulatedXhtmlManifestItems = xhtmlManifestLines.joined(separator: "\n")
+        self.accumulatedSpineItems = spineItemLines.joined(separator: "\n")
+        self.accumulatedPageCount = images.count
         
         // Generate table of contents
         if settings.includeTableOfContents {
@@ -190,10 +190,11 @@ class EPUBGenerator {
             """)
         }
         
-        self.imageManifestItems = imageManifestLines.joined(separator: "\n")
-        self.xhtmlManifestItems = xhtmlManifestLines.joined(separator: "\n")
-        self.spineItems = spineItemLines.joined(separator: "\n")
-        self.pageCount = imageURLs.count
+        // Generate page content
+        self.accumulatedImageManifestItems = imageManifestLines.joined(separator: "\n")
+        self.accumulatedXhtmlManifestItems = xhtmlManifestLines.joined(separator: "\n")
+        self.accumulatedSpineItems = spineItemLines.joined(separator: "\n")
+        self.accumulatedPageCount = imageURLs.count
         
         // Generate table of contents
         if settings.includeTableOfContents {
