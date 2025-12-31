@@ -442,6 +442,45 @@ class ConversionManager: ObservableObject {
         }
     }
     
+    }
+    
+    func extractImageURLs(from url: URL) async throws -> [URL] {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    // Create a unique temp directory for this extraction
+                    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    
+                    // Unzip the archive
+                    try FileManager.default.unzipItem(at: url, to: tempDir)
+                    
+                    let imageExtensions = ["jpg", "jpeg", "png", "gif", "webp", "bmp"]
+                    var imageURLs: [URL] = []
+                    
+                    // Recursive search for images
+                    if let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: nil) {
+                        while let fileURL = enumerator.nextObject() as? URL {
+                            if imageExtensions.contains(fileURL.pathExtension.lowercased()) {
+                                // Skip MacOS metadata files
+                                if !fileURL.lastPathComponent.hasPrefix("._") && !fileURL.path.contains("__MACOSX") {
+                                    imageURLs.append(fileURL)
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Sort alphabetically to maintain order
+                    imageURLs.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+                    
+                    continuation.resume(returning: imageURLs)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     private func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {

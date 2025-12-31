@@ -31,6 +31,15 @@ class EPUBGenerator {
         cleanup()
         return epubURL
     }
+
+    func generateEPUB(from imageURLs: [URL], outputName: String) async throws -> URL {
+        try createEPUBStructure()
+        try await generateContent(from: imageURLs)
+        try generateMetadataFiles()
+        let epubURL = try packageEPUB(outputName: outputName)
+        cleanup()
+        return epubURL
+    }
     
     // MARK: - EPUB Structure Creation
     
@@ -66,25 +75,128 @@ class EPUBGenerator {
     
     // MARK: - Content Generation
     
+    // State for generation
+    private var imageItems = ""
+    private var pageItems = ""
+    private var spineItems = ""
+
     private func generateContent(from images: [UIImage]) async throws {
+        self.imageItems = ""
+        self.pageItems = ""
+        self.spineItems = ""
+        
+        let imagesDir = tempDirectory.appendingPathComponent("OEBPS/images")
+        
         // Process and save images
         for (index, image) in images.enumerated() {
+            let pageNumber = index + 1
+            let imageName = String(format: "page%d.jpg", pageNumber)
+            let imageURL = imagesDir.appendingPathComponent(imageName)
+            
             let imageData = image.jpegData(compressionQuality: self.compressionQuality) ?? Data()
-            let imageURL = tempDirectory.appendingPathComponent("OEBPS/images/page\(index + 1).jpg")
             try imageData.write(to: imageURL)
             
+            // Add to image manifest items
+            currentImageManifestItems += """
+                <item id="image\(pageNumber)" href="images/\(imageName)" media-type="image/jpeg"/>
+            """
+            
             // Create XHTML page for each image
-            try generateImagePage(index: index, totalPages: images.count)
+            let xhtmlFileName = String(format: "page%d.xhtml", pageNumber)
+            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlFileName)
+            
+            // Add to XHTML manifest items
+            currentXHTMLManifestItems += """
+                <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
+            """
+            
+            // Add to spine items
+            currentSpineItems += """
+                <itemref idref="page\(pageNumber)"/>
+            """
         }
+        
+        self.imageManifestItems = currentImageManifestItems
+        self.xhtmlManifestItems = currentXHTMLManifestItems
+        self.spineItems = currentSpineItems
+        self.pageCount = images.count
         
         // Generate table of contents
         if settings.includeTableOfContents {
             try generateTableOfContents(pageCount: images.count)
         }
     }
+
+    private func generateContent(from imageURLs: [URL]) async throws {
+        var currentImageManifestItems = ""
+        var currentXHTMLManifestItems = ""
+        var currentSpineItems = ""
+        
+        let imagesDir = tempDirectory.appendingPathComponent("OEBPS/images")
+        
+        for (index, sourceURL) in imageURLs.enumerated() {
+            let pageNumber = index + 1
+            // Copy image file
+            let ext = sourceURL.pathExtension.isEmpty ? "jpg" : sourceURL.pathExtension
+            let imageName = String(format: "page%d.\(ext)", pageNumber)
+            let destURL = imagesDir.appendingPathComponent(imageName)
+            
+            // If the image is already a JPEG and compression is not needed, just copy.
+            // Otherwise, load and re-save with compression.
+            if ext.lowercased() == "jpg" || ext.lowercased() == "jpeg" && compressionQuality >= 1.0 {
+                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            } else {
+                // Load image, convert to JPEG with compression, then save
+                if let image = UIImage(contentsOfFile: sourceURL.path),
+                   let imageData = image.jpegData(compressionQuality: self.compressionQuality) {
+                    try imageData.write(to: destURL)
+                } else {
+                    // Fallback: just copy if conversion fails or is not an image
+                    try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                }
+            }
+            
+            // Determine media type
+            let mediaType: String
+            switch ext.lowercased() {
+            case "png": mediaType = "image/png"
+            case "gif": mediaType = "image/gif"
+            case "webp": mediaType = "image/webp"
+            default: mediaType = "image/jpeg"
+            }
+            
+            // Add to image manifest items
+            currentImageManifestItems += """
+                <item id="image\(pageNumber)" href="images/\(imageName)" media-type="\(mediaType)"/>
+            """
+            
+            // Create XHTML page for each image
+            let xhtmlFileName = String(format: "page%d.xhtml", pageNumber)
+            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlFileName)
+            
+            // Add to XHTML manifest items
+            currentXHTMLManifestItems += """
+                <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
+            """
+            
+            // Add to spine items
+            currentSpineItems += """
+                <itemref idref="page\(pageNumber)"/>
+            """
+        }
+        
+        self.imageManifestItems = currentImageManifestItems
+        self.xhtmlManifestItems = currentXHTMLManifestItems
+        self.spineItems = currentSpineItems
+        self.pageCount = imageURLs.count
+        
+        // Generate table of contents
+        if settings.includeTableOfContents {
+            try generateTableOfContents(pageCount: imageURLs.count)
+        }
+    }
     
-    private func generateImagePage(index: Int, totalPages: Int) throws {
-        let pageNumber = index + 1
+    private func createPageXHTML(pageNumber: Int, imageName: String, xhtmlFileName: String) throws {
         let imageWidth = 800  // Standard comic width
         let imageHeight = 1200  // Standard comic height
         
@@ -104,7 +216,7 @@ class EPUBGenerator {
         </head>
         <body>
             <div class="page">
-                <img src="../images/page\(pageNumber).jpg" alt="Page \(pageNumber)"/>
+                <img src="../images/\(imageName)" alt="Page \(pageNumber)"/>
             </div>
         </body>
         </html>

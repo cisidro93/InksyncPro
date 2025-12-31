@@ -77,27 +77,77 @@ struct PageDeleteView: View {
     }
     
     private func loadPages() {
+        isLoading = true
         DispatchQueue.global(qos: .userInitiated).async {
-            guard let document = PDFDocument(url: pdf.url) else { DispatchQueue.main.async { isLoading = false }; return }
-            var loadedPages: [DeletablePageItem] = []
-            let thumbnailSize = CGSize(width: 100, height: 140)
-            for i in 0..<document.pageCount {
-                if let page = document.page(at: i) {
-                    let thumbnail = page.thumbnail(of: thumbnailSize, for: .mediaBox)
-                    loadedPages.append(DeletablePageItem(pageIndex: i, thumbnail: thumbnail, isSelected: false))
+            // PDF Handling
+            if pdf.url.pathExtension.lowercased() == "pdf" {
+                guard let document = PDFDocument(url: pdf.url) else { DispatchQueue.main.async { isLoading = false }; return }
+                var loadedPages: [DeletablePageItem] = []
+                let thumbnailSize = CGSize(width: 100, height: 140)
+                for i in 0..<document.pageCount {
+                    if let page = document.page(at: i) {
+                        let thumbnail = page.thumbnail(of: thumbnailSize, for: .mediaBox)
+                        loadedPages.append(DeletablePageItem(pageIndex: i, thumbnail: thumbnail, isSelected: false))
+                    }
+                }
+                DispatchQueue.main.async { pages = loadedPages; isLoading = false }
+            } 
+            // EPUB Handling
+            else if pdf.url.pathExtension.lowercased() == "epub" {
+                Task {
+                    do {
+                        let imageURLs = try await conversionManager.extractImageURLs(from: pdf.url)
+                        var loadedPages: [DeletablePageItem] = []
+                        let thumbnailSize = CGSize(width: 100, height: 140)
+                        
+                        for (index, url) in imageURLs.enumerated() {
+                            if let image = UIImage(contentsOfFile: url.path) {
+                                // Create thumbnail efficiently
+                                let renderer = UIGraphicsImageRenderer(size: thumbnailSize)
+                                let thumbnail = renderer.image { _ in
+                                    image.draw(in: CGRect(origin: .zero, size: thumbnailSize))
+                                }
+                                var item = DeletablePageItem(pageIndex: index, thumbnail: thumbnail, isSelected: false)
+                                item.imageURL = url
+                                loadedPages.append(item)
+                            }
+                        }
+                        await MainActor.run { pages = loadedPages; isLoading = false }
+                    } catch {
+                        await MainActor.run { isLoading = false; alertMessage = "Failed to load EPUB pages: \(error.localizedDescription)"; showingAlert = true }
+                    }
                 }
             }
-            DispatchQueue.main.async { pages = loadedPages; isLoading = false }
         }
     }
     
     private func deleteSelectedPages() {
         isSaving = true
         let pagesToKeep = pages.enumerated().filter { !$0.element.isSelected }.map { $0.element.pageIndex }
+        
         Task {
             do {
-                try await removePagesFromPDF(at: pdf.url, keepingPages: pagesToKeep)
-                await MainActor.run { isSaving = false; alertMessage = "Successfully removed \(selectedCount) page\(selectedCount > 1 ? "s" : "")!"; showingAlert = true }
+                if pdf.url.pathExtension.lowercased() == "pdf" {
+                    try await removePagesFromPDF(at: pdf.url, keepingPages: pagesToKeep)
+                } else {
+                    let keepingImageURLs = pages.filter { !$0.isSelected }.compactMap { $0.imageURL }
+                    try await removePagesFromEPUB(at: pdf.url, keepingImageURLs: keepingImageURLs)
+                }
+                
+                // Update local list
+                await MainActor.run {
+                    pages = pages.filter { !$0.isSelected }
+                    // Re-index remaining pages
+                    var newPages: [DeletablePageItem] = []
+                    for (index, item) in pages.enumerated() {
+                        newPages.append(DeletablePageItem(pageIndex: index, thumbnail: item.thumbnail, isSelected: false, imageURL: item.imageURL))
+                    }
+                    pages = newPages
+                    
+                    isSaving = false
+                    alertMessage = "Successfully removed \(selectedCount) page\(selectedCount > 1 ? "s" : "")!"
+                    showingAlert = true
+                }
             } catch {
                 await MainActor.run { isSaving = false; alertMessage = "Failed to delete pages: \(error.localizedDescription)"; showingAlert = true }
             }
@@ -112,6 +162,29 @@ struct PageDeleteView: View {
                 for (newIndex, oldIndex) in indices.enumerated() { if let page = document.page(at: oldIndex) { newDocument.insert(page, at: newIndex) } }
                 if newDocument.write(to: url) { continuation.resume() }
                 else { continuation.resume(throwing: NSError(domain: "PageDelete", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not save PDF"])) }
+            }
+        }
+    }
+    
+    private func removePagesFromEPUB(at url: URL, keepingImageURLs: [URL]) async throws {
+        // Create settings
+        let settings = conversionManager.conversionSettings.epubSettings
+        let generator = EPUBGenerator(settings: settings, metadata: pdf.metadata, compressionQuality: 1.0) // Maintain quality
+        
+        // Generate new EPUB to temp location
+        let tempOutputURL = try await generator.generateEPUB(from: keepingImageURLs, outputName: pdf.name)
+        
+        // Output handler to overwrite original
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+        try FileManager.default.moveItem(at: tempOutputURL, to: url)
+        
+        // Update valid page count in library
+        await MainActor.run {
+            if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[index].pageCount = keepingImageURLs.count
+                conversionManager.savePDFs()
             }
         }
     }

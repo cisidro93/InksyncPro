@@ -6,4 +6,5 @@ struct DeletablePageItem: Identifiable {
     let pageIndex: Int
     let thumbnail: UIImage
     var isSelected: Bool
+    var imageURL: URL? = nil
 }
