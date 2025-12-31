@@ -170,7 +170,7 @@ struct RenameFileView: View {
                 
                 Section {
                     HStack { Text("Current"); Spacer(); Text(pdf.name).foregroundColor(.secondary).lineLimit(1) }
-                    HStack { Text("New"); Spacer(); Text("\(newName).pdf").foregroundColor(.orange).lineLimit(1) }
+                    HStack { Text("New"); Spacer(); Text("\(newName).\(pdf.url.pathExtension)").foregroundColor(.orange).lineLimit(1) }
                 } header: { Text("Preview") }
                 
                 Section {
@@ -191,7 +191,8 @@ struct RenameFileView: View {
     private func renameFile() {
         let fileManager = FileManager.default
         let directory = pdf.url.deletingLastPathComponent()
-        let newURL = directory.appendingPathComponent("\(newName).pdf")
+        let fileExt = pdf.url.pathExtension
+        let newURL = directory.appendingPathComponent("\(newName).\(fileExt)")
         
         if fileManager.fileExists(atPath: newURL.path) && newURL != pdf.url {
             alertTitle = "Error"
