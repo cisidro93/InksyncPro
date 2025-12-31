@@ -57,6 +57,8 @@ struct KindleDevicePickerView: View {
     @State private var showingMailComposer = false
     @State private var showingSuccessAnimation = false
     
+    @State private var showingMailError = false
+    
     var body: some View {
         NavigationView {
             List {
@@ -75,6 +77,11 @@ struct KindleDevicePickerView: View {
                     }
                 }
             }
+            .alert("Cannot Send Mail", isPresented: $showingMailError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Your specific device is not configured to send mail. Please set up an email account in the generic Mail app.")
+            }
             .overlay(Group {
                 if showingSuccessAnimation {
                     SuccessCheckmarkView()
@@ -85,7 +92,14 @@ struct KindleDevicePickerView: View {
     
     private var totalSize: String { var total: Int64 = 0; for url in pdfURLs { if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path), let size = attrs[.size] as? Int64 { total += size } }; let formatter = ByteCountFormatter(); formatter.countStyle = .file; return formatter.string(fromByteCount: total) }
     
-    private func selectAndSend(_ device: KindleDevice) { selectedDevice = device; showingMailComposer = true }
+    private func selectAndSend(_ device: KindleDevice) {
+        if MFMailComposeViewController.canSendMail() {
+            selectedDevice = device
+            showingMailComposer = true
+        } else {
+            showingMailError = true
+        }
+    }
     
     private func handleSuccess(device: KindleDevice) {
         // Record in history
