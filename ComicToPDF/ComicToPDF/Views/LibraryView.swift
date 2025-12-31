@@ -204,20 +204,25 @@ struct LibraryView: View {
             
             // Add to library
             Task {
-                // If it's a PDF/EPUB, add directly. If archive, maybe prompt convert?
-                // For now, just add to library list if supported.
-                // Assuming ConversionManager has a method to add existing file
-                // If not, we might need to recreate PDF/EPUB object.
-                // Let's check ConversionManager later if this fails, but strictly following user request to key it up.
-                
-                await BigSync.runOnMain {
-                     // Since we don't have direct access to 'addToLibrary' on ConversionManager (it handles conversions), 
-                     // we might need to manually create a ConvertedPDF object or import it.
-                     // Actually, looking at ConversionManager earlier, it scans Documents.
-                     // So just copying it there (which ExternalStorageManager does) might be enough if we trigger a refresh!
-                     conversionManager.refreshLibrary()
+                await MainActor.run {
+                     // Trigger a reload of the library
+                     conversionManager.scanForPDFs()
                 }
             }
+        }
+    }
+
+    private func exportToExternalStorage(pdfs: [ConvertedPDF]) {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else { return }
+        
+        let urls = pdfs.map { $0.url }
+        if urls.isEmpty { return }
+        
+        if urls.count == 1 {
+            ExternalStorageManager.shared.exportToExternalStorage(fileURL: urls[0], suggestedName: nil, from: rootViewController) { _, _ in }
+        } else {
+            ExternalStorageManager.shared.exportMultipleToExternalStorage(fileURLs: urls, from: rootViewController) { _ in }
         }
     }
 

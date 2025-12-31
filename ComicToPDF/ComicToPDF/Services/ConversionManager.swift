@@ -89,6 +89,7 @@ struct KindleDevice: Identifiable, Codable {
 enum KindleDeviceType: String, Codable, CaseIterable {
     case paperwhite = "Paperwhite"
     case oasis = "Oasis"
+    // Fallback since I haven't viewed the class definition yet.
     case scribe = "Scribe"
     case basic = "Kindle"
     case fire = "Fire Tablet"
@@ -813,6 +814,34 @@ class ConversionManager: ObservableObject {
     func saveSettings() { if let data = try? JSONEncoder().encode(conversionSettings) { UserDefaults.standard.set(data, forKey: "conversionSettings") } }
     
     // Force re-sync of file structure
+    func scanForPDFs() {
+        loadSavedData()
+        
+        // Scan directory for new files
+        guard let files = try? fileManager.contentsOfDirectory(at: outputDirectory, includingPropertiesForKeys: [.fileSizeKey], options: .skipsHiddenFiles) else { return }
+        
+        var hasChanges = false
+        for fileURL in files {
+            let ext = fileURL.pathExtension.lowercased()
+            guard ext == "pdf" || ext == "epub" else { continue }
+            
+            // Check if already known
+            if !convertedPDFs.contains(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) {
+                let name = fileURL.deletingPathExtension().lastPathComponent
+                let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                // Minimal metadata fetch
+                let pageCount = (PDFDocument(url: fileURL)?.pageCount) ?? 0
+                let newPDF = ConvertedPDF(name: name, url: fileURL, pageCount: pageCount, fileSize: Int64(fileSize))
+                convertedPDFs.append(newPDF)
+                hasChanges = true
+            }
+        }
+        
+        if hasChanges {
+            convertedPDFs.sort { $0.dateAdded > $1.dateAdded }
+            savePDFs()
+        }
+    }
     
     // MARK: - New Feature Implementation
     
