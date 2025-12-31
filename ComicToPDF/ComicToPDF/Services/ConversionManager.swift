@@ -592,6 +592,7 @@ class ConversionManager: ObservableObject {
                         if newSize != processed.size {
                              let format = UIGraphicsImageRendererFormat()
                              format.scale = 1.0
+                             format.opaque = true
                              let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
                              processed = renderer.image { _ in
                                  processed.draw(in: CGRect(origin: .zero, size: newSize))

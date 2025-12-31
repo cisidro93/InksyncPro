@@ -161,7 +161,12 @@ class PDFToEPUBConverter {
                 // Double check scaled size logic to prevent invalid image context
                 guard scaledSize.width > 1, scaledSize.height > 1 else { return }
                 
-                let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                // Create format with scale 1.0 and opaque (no alpha for JPEG)
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1.0
+                format.opaque = true
+                
+                let renderer = UIGraphicsImageRenderer(size: scaledSize, format: format)
                 let image = renderer.image { context in
                     UIColor.white.setFill()
                     context.fill(CGRect(origin: .zero, size: scaledSize))
