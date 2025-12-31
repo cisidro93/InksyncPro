@@ -7,7 +7,6 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var showingAddDevice = false
-    @State private var showingEditDevice = false
     @State private var deviceToEdit: KindleDevice?
     @State private var showingDeleteAlert = false
     @State private var deviceToDelete: KindleDevice?
@@ -18,7 +17,7 @@ struct SettingsView: View {
             List {
                 Section {
                     ForEach(conversionManager.kindleDevices) { device in
-                        KindleDeviceRow(device: device, isDefault: device.isDefault, onSetDefault: { conversionManager.setDefaultKindleDevice(device) }, onEdit: { deviceToEdit = device; showingEditDevice = true })
+                        KindleDeviceRow(device: device, isDefault: device.isDefault, onSetDefault: { conversionManager.setDefaultKindleDevice(device) }, onEdit: { deviceToEdit = device })
                         .swipeActions(edge: .trailing) { Button(role: .destructive) { deviceToDelete = device; showingDeleteAlert = true } label: { Label("Delete", systemImage: "trash") } }
                     }
                     Button(action: { showingAddDevice = true }) { HStack { Image(systemName: "plus.circle.fill").foregroundColor(.green); Text("Add Kindle Device") } }
@@ -56,7 +55,7 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .sheet(isPresented: $showingAddDevice) { AddEditKindleDeviceView(mode: .add) }
-            .sheet(isPresented: $showingEditDevice) { if let device = deviceToEdit { AddEditKindleDeviceView(mode: .edit(device)) } }
+            .sheet(item: $deviceToEdit) { device in AddEditKindleDeviceView(mode: .edit(device)) }
             .sheet(isPresented: $showingCloudImport) { CloudImportView() }
             .alert("Delete Device?", isPresented: $showingDeleteAlert) { Button("Cancel", role: .cancel) { }; Button("Delete", role: .destructive) { if let device = deviceToDelete { conversionManager.removeKindleDevice(device) } } } message: { if let device = deviceToDelete { Text("Are you sure you want to delete \"\(device.name)\"?") } }
         }.navigationViewStyle(.stack)
