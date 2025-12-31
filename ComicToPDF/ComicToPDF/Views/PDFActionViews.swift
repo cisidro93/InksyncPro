@@ -186,8 +186,7 @@ struct SplitPDFView: View {
         var currentBatch: [UIImage] = []
         var currentBatchSize: Int64 = 0
         var partIndex = 1
-        var processedCount = 0
-        let totalFilesApprox = imageURLs.count // Approximate since stitching changes count
+        var processedItems = 0
         
         // Lower compression for Split to avoid size bloat (users often split large files)
         let generator = EPUBGenerator(settings: EPUBSettings(), metadata: pdf.metadata, compressionQuality: 0.7)
@@ -195,9 +194,39 @@ struct SplitPDFView: View {
         let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         
-        // Helper to process a ready image (stitched or single)
+        // Detect strips logic (Two-Pass approach like ComicEPUBProcessor)
+        var isStrips = false
+        var stripsPerPage = 1
+        
+        if !imageURLs.isEmpty {
+            let sampleCount = min(5, imageURLs.count)
+            var stripVotes = 0
+            for i in 0..<sampleCount {
+                 if let img = UIImage(contentsOfFile: imageURLs[i].path) {
+                     // Aspect ratio check: width > 2 * height -> Strip
+                     if img.size.width / img.size.height > 2.0 { stripVotes += 1 }
+                 }
+            }
+            isStrips = stripVotes >= (sampleCount / 2)
+        }
+        
+        if isStrips {
+            let total = imageURLs.count
+            // Heuristic divisors: Prefer 10, 8, 6, 5, 4
+            stripsPerPage = 6 // Default
+            for n in [10, 8, 6, 5, 4] {
+                if total % n == 0 {
+                    stripsPerPage = n
+                    break
+                }
+            }
+        }
+        
+        let totalSteps = isStrips ? (imageURLs.count / stripsPerPage) : imageURLs.count
+        
+        // Helper to process a ready image
         func processReadyImage(_ image: UIImage) async throws {
-            let estimatedSize = Int64(image.size.width * image.size.height * 0.5) // Rough estimate for JPEG
+            let estimatedSize = Int64(image.size.width * image.size.height * 0.5)
             
             if currentBatchSize + estimatedSize > Int64(maxBytes) && !currentBatch.isEmpty {
                 // Generate part
@@ -216,69 +245,43 @@ struct SplitPDFView: View {
             
             currentBatch.append(image)
             currentBatchSize += estimatedSize
-            processedCount += 1
-            
-            await MainActor.run {
-                // Progress is approximate because stitching reduces count, but good enough
-                self.progress = min(Double(processedCount) / Double(totalFilesApprox), 0.99)
+        }
+        
+        // Process Loop
+        if isStrips {
+            // Processing strips in chunks
+            for i in stride(from: 0, to: imageURLs.count, by: stripsPerPage) {
+                let endIndex = min(i + stripsPerPage, imageURLs.count)
+                let chunkURLs = imageURLs[i..<endIndex]
+                
+                var chunkImages: [UIImage] = []
+                for url in chunkURLs {
+                    if let img = UIImage(contentsOfFile: url.path) {
+                        chunkImages.append(img)
+                    }
+                }
+                
+                if let stitched = EPUBStripFixer.combineStripsVertically(chunkImages) {
+                    try await processReadyImage(stitched)
+                }
+                
+                processedItems += 1
+                await MainActor.run {
+                    self.progress = min(Double(processedItems) / Double(totalSteps), 0.99)
+                }
             }
-        }
-        
-        // Pre-process images: Stitch strips if needed
-        var stripBuffer: [UIImage] = []
-        
-        for url in imageURLs {
-             if let img = UIImage(contentsOfFile: url.path) {
-                 if stripBuffer.isEmpty {
-                     stripBuffer.append(img)
-                 } else {
-                     let prev = stripBuffer.last!
-                     
-                     // Improved Heuristic: Use tolerance for width matching
-                     let widthDiff = abs(img.size.width - prev.size.width)
-                     let isSameWidth = widthDiff < 5.0
-                     
-                     // If both are clearly "strips" (short), allow slightly looser width matching (e.g. 20px)
-                     // This handles cases where some strips might be cropped slightly differently
-                     let isStrip = img.size.height < img.size.width * 0.8
-                     let isPrevStrip = prev.size.height < prev.size.width * 0.8
-                     let isCompatible = isSameWidth || (isStrip && isPrevStrip && widthDiff < 20.0)
-                     
-                     if isCompatible {
-                         stripBuffer.append(img)
-                         
-                         // Flush if accumulated height is enough for a page
-                         let totalH = stripBuffer.reduce(0) { $0 + $1.size.height }
-                         // Target a standard aspect ratio (e.g. 1.5 - 2.0x width)
-                         if totalH > img.size.width * 1.8 {
-                             if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
-                                 try await processReadyImage(combined)
-                             }
-                             stripBuffer = []
-                         }
-                     } else {
-                         // Incompatible width/type! Flush previous buffer.
-                         if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
-                             try await processReadyImage(combined)
-                         }
-                         stripBuffer = [img]
-                     }
-                 }
-                 
-                 // Memory safety: if buffer gets huge, flush.
-                 if stripBuffer.count > 15 { // Increased buffer limit slightly
-                      if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
-                             try await processReadyImage(combined)
-                      }
-                      stripBuffer = []
-                 }
-             }
-        }
-        // Flush remaining strips
-        if !stripBuffer.isEmpty {
-             if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
-                 try await processReadyImage(combined)
-             }
+        } else {
+            // Normal processing
+            for url in imageURLs {
+                if let img = UIImage(contentsOfFile: url.path) {
+                    try await processReadyImage(img)
+                }
+                
+                processedItems += 1
+                await MainActor.run {
+                    self.progress = min(Double(processedItems) / Double(totalSteps), 0.99)
+                }
+            }
         }
         
         // Final part
