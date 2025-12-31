@@ -1,5 +1,6 @@
 import SwiftUI
 import PDFKit
+import ZIPFoundation
 
 // MARK: - Split PDF View
 
@@ -37,11 +38,11 @@ struct SplitPDFView: View {
                     Section {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack { Text("Max Size per Part"); Spacer(); Text("\(Int(maxSizeMB)) MB").fontWeight(.semibold).foregroundColor(.orange) }
-                            Slider(value: $maxSizeMB, in: 5...50, step: 5).tint(.orange)
-                            HStack { Text("5 MB").font(.caption).foregroundColor(.secondary); Spacer(); Text("50 MB").font(.caption).foregroundColor(.secondary) }
+                            Slider(value: $maxSizeMB, in: 5...200, step: 5).tint(.orange)
+                            HStack { Text("5 MB").font(.caption).foregroundColor(.secondary); Spacer(); Text("200 MB").font(.caption).foregroundColor(.secondary) }
                         }
                         HStack { Image(systemName: "doc.on.doc.fill").foregroundColor(.blue); Text("Estimated Parts"); Spacer(); Text("~\(estimatedParts) file\(estimatedParts > 1 ? "s" : "")").fontWeight(.medium).foregroundColor(.blue) }
-                    } header: { Text("Split Settings") } footer: { Text("Kindle has a 50MB limit for emailed documents. Splitting creates separate PDFs.") }
+                    } header: { Text("Split Settings") } footer: { Text("Send-to-Kindle (Web) supports up to 200MB. Email is limited to ~50MB.") }
                     
                     Section { HStack { Image(systemName: "info.circle.fill").foregroundColor(.orange); Text("Parts will be named: \(pdf.name)_part1, _part2, etc.").font(.caption).foregroundColor(.secondary) } }
                     
@@ -78,20 +79,26 @@ struct SplitPDFView: View {
         
         Task {
             do {
-                let parts = try await performSplit()
+                let parts: [URL]
+                if pdf.url.pathExtension.lowercased() == "epub" {
+                     parts = try await performEPUBSplit()
+                } else {
+                     parts = try await performSplit()
+                }
+                
                 await MainActor.run {
                     for partURL in parts { conversionManager.addToLibrary(partURL) }
                     isSplitting = false
                     resultParts = parts
                     alertTitle = "Success"
-                    alertMessage = "PDF split into \(parts.count) parts. They have been added to your library."
+                    alertMessage = "File split into \(parts.count) parts. They have been added to your library."
                     showingAlert = true
                 }
             } catch {
                 await MainActor.run {
                     isSplitting = false
                     alertTitle = "Error"
-                    alertMessage = "Failed to split PDF: \(error.localizedDescription)"
+                    alertMessage = "Failed to split file: \(error.localizedDescription)"
                     showingAlert = true
                 }
             }
@@ -144,6 +151,82 @@ struct SplitPDFView: View {
                 continuation.resume(returning: parts)
             }
         }
+    }
+
+    private func performEPUBSplit() async throws -> [URL] {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        try FileManager.default.unzipItem(at: pdf.url, to: tempDir)
+        
+        // Find images
+        let deepEnumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: [.fileSizeKey])
+        var imageURLs: [URL] = []
+        
+        while let url = deepEnumerator?.nextObject() as? URL {
+            let ext = url.pathExtension.lowercased()
+            if ["jpg", "jpeg", "png", "gif", "webp"].contains(ext) {
+                // Ignore thumbnails or cover if they are not part of the main pages (heuristic based on size or path could be better, but simple is okay for now)
+                // Actually, finding all images in OEBPS/images is safer for standard EPUBs, but general unzip is safer for varying structures.
+                // Let's rely on standard image extensions.
+                imageURLs.append(url)
+            }
+        }
+        
+        imageURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
+        
+        let maxBytes = Int(maxSizeMB) * 1024 * 1024
+        var parts: [URL] = []
+        var currentBatch: [URL] = []
+        var currentBatchSize: Int64 = 0
+        var partIndex = 1
+        
+        let generator = EPUBGenerator(settings: EPUBSettings(), metadata: pdf.metadata)
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+         let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        
+        for (index, url) in imageURLs.enumerated() {
+             let resValues = try url.resourceValues(forKeys: [.fileSizeKey])
+             let fileSize = Int64(resValues.fileSize ?? 0)
+             
+             if currentBatchSize + fileSize > Int64(maxBytes) && !currentBatch.isEmpty {
+                 // Generate part
+                 let partName = "\(pdf.name)_part\(partIndex)"
+                 let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName)
+                 
+                 // Move to documents
+                 let finalURL = outputDir.appendingPathComponent("\(partName).epub")
+                 if FileManager.default.fileExists(atPath: finalURL.path) { try FileManager.default.removeItem(at: finalURL) }
+                 try FileManager.default.moveItem(at: epubURL, to: finalURL)
+                 parts.append(finalURL)
+                 
+                 currentBatch = []
+                 currentBatchSize = 0
+                 partIndex += 1
+             }
+             
+             currentBatch.append(url)
+             currentBatchSize += fileSize
+             
+             await MainActor.run {
+                 self.progress = Double(index + 1) / Double(imageURLs.count)
+             }
+        }
+        
+        // Final part
+        if !currentBatch.isEmpty {
+             let partName = "\(pdf.name)_part\(partIndex)"
+             let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName)
+             
+             let finalURL = outputDir.appendingPathComponent("\(partName).epub")
+             if FileManager.default.fileExists(atPath: finalURL.path) { try FileManager.default.removeItem(at: finalURL) }
+             try FileManager.default.moveItem(at: epubURL, to: finalURL)
+             parts.append(finalURL)
+        }
+        
+        try? FileManager.default.removeItem(at: tempDir)
+        return parts
     }
 }
 
