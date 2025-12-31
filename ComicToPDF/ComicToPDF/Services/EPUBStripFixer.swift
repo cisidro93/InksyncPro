@@ -37,7 +37,7 @@ class EPUBStripFixer {
                 let end = start + stripsPerPage
                 let pageStrips = Array(strips[start..<end])
                 
-                if let combinedPage = self.combineStripsVertically(pageStrips) {
+                if let combinedPage = Self.combineStripsVertically(pageStrips) {
                     fullPages.append(combinedPage)
                     print("✂️ Created page \(pageNum + 1) from \(pageStrips.count) strips")
                 }

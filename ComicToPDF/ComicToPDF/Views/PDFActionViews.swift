@@ -242,20 +242,6 @@ struct SplitPDFView: View {
              }
         }
         
-        let maxBytes = Int(maxSizeMB) * 1024 * 1024
-        var parts: [URL] = []
-        var currentBatch: [UIImage] = [] // using UIImages now
-        var currentBatchSize: Int64 = 0
-        var partIndex = 1
-        
-        // Need to roughly estimate JPEG size since we have UIImages now
-        // A full page approx 1MB?
-        
-        let generator = EPUBGenerator(settings: EPUBSettings(), metadata: pdf.metadata)
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-         let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
-        try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
-        
         for (index, image) in finalImages.enumerated() {
              let estimatedSize = Int64(image.size.width * image.size.height * 0.5) // Rough estimate for JPEG
              

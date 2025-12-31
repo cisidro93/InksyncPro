@@ -395,7 +395,7 @@ class ConversionManager: ObservableObject {
         
         // Check if source is marked as PDF or has PDF extension
         let isPDF = sourceURL.pathExtension.lowercased() == "pdf"
-        var finalPageCount = 0
+
         
         if isPDF {
             let tempOutput = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("\(outputName).epub")
