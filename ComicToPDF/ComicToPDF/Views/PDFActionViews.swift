@@ -177,7 +177,7 @@ struct SplitPDFView: View {
             }
         }
         
-        imageURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
+        imageURLs.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         
         let maxBytes = Int(maxSizeMB) * 1024 * 1024
         var parts: [URL] = []
@@ -229,29 +229,35 @@ struct SplitPDFView: View {
         
         for url in imageURLs {
              if let img = UIImage(contentsOfFile: url.path) {
-                 // Heuristic: If image is "wide" (width > height) or very short, it might be a strip.
-                 // A stronger check is if it matches the WIDTH of the previous image in the buffer.
                  if stripBuffer.isEmpty {
                      stripBuffer.append(img)
                  } else {
                      let prev = stripBuffer.last!
-                     if Int(img.size.width) == Int(prev.size.width) {
-                         // Potentially a strip sequence. Accumulate.
+                     
+                     // Improved Heuristic: Use tolerance for width matching
+                     let widthDiff = abs(img.size.width - prev.size.width)
+                     let isSameWidth = widthDiff < 5.0
+                     
+                     // If both are clearly "strips" (short), allow slightly looser width matching (e.g. 20px)
+                     // This handles cases where some strips might be cropped slightly differently
+                     let isStrip = img.size.height < img.size.width * 0.8
+                     let isPrevStrip = prev.size.height < prev.size.width * 0.8
+                     let isCompatible = isSameWidth || (isStrip && isPrevStrip && widthDiff < 20.0)
+                     
+                     if isCompatible {
                          stripBuffer.append(img)
                          
-                         // If detection is too aggressive, we might merge pages that shouldn't be.
-                         // Check combined height. If > 2.5x width (very tall), maybe flush?
-                         // Standard tablet aspect is 4:3 or 16:9. Comic pages usually 1.5 aspect.
-                         // Let's flush if accumulated height is "enough".
+                         // Flush if accumulated height is enough for a page
                          let totalH = stripBuffer.reduce(0) { $0 + $1.size.height }
-                         if totalH > img.size.width * 1.5 {
+                         // Target a standard aspect ratio (e.g. 1.5 - 2.0x width)
+                         if totalH > img.size.width * 1.8 {
                              if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
                                  try await processReadyImage(combined)
                              }
                              stripBuffer = []
                          }
                      } else {
-                         // Width change! Flush previous buffer.
+                         // Incompatible width/type! Flush previous buffer.
                          if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
                              try await processReadyImage(combined)
                          }
@@ -260,11 +266,11 @@ struct SplitPDFView: View {
                  }
                  
                  // Memory safety: if buffer gets huge, flush.
-                 if stripBuffer.count > 10 { // 10 strips is generous
+                 if stripBuffer.count > 15 { // Increased buffer limit slightly
                       if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
                              try await processReadyImage(combined)
-                     }
-                     stripBuffer = []
+                      }
+                      stripBuffer = []
                  }
              }
         }
