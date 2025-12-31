@@ -49,7 +49,6 @@ struct ConvertView: View {
                     }.padding()
                 }
             }
-            }
             .navigationTitle("Comic to PDF")
             .navigationBarTitleDisplayMode(.large)
             .fullScreenCover(isPresented: $showingFilePicker) { DocumentPickerView(selectedFiles: $selectedFiles, isPresented: $showingFilePicker).ignoresSafeArea() }
