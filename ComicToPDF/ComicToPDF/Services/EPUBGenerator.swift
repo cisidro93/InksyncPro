@@ -362,9 +362,8 @@ class EPUBGenerator {
     // MARK: - EPUB Packaging
     
     private func packageEPUB(outputName: String) throws -> URL {
-        let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ConvertedPDFs")
-            .appendingPathComponent("\(outputName).epub")
+        // Output to a temporary file initially
+        let outputURL = tempDirectory.deletingLastPathComponent().appendingPathComponent("\(outputName).epub")
         
         // Ensure output directory exists
         try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
