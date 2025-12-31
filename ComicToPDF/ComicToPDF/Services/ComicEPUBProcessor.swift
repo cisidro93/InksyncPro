@@ -161,7 +161,7 @@ class ComicEPUBProcessor {
         guard !strips.isEmpty else { return nil }
         
         let width = strips.first!.size.width
-        let totalHeight = strips.reduce(0) { $0 + $1.size.height }
+        let totalHeight = strips.reduce(CGFloat(0)) { $0 + $1.size.height }
         
         // Fix: Use UIGraphicsImageRenderer to avoid Retina scaling artifacts (stripes)
         let format = UIGraphicsImageRendererFormat()

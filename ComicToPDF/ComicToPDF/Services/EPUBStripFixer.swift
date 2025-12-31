@@ -80,7 +80,7 @@ class EPUBStripFixer {
         
         // Calculate total size
         let width = strips[0].size.width
-        let height = strips.reduce(0) { $0 + $1.size.height }
+        let height = strips.reduce(CGFloat(0)) { $0 + $1.size.height }
         
         // Fix: Use UIGraphicsImageRenderer to avoid Retina scaling artifacts (stripes)
         let format = UIGraphicsImageRendererFormat()
