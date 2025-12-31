@@ -132,43 +132,55 @@ class PDFToEPUBConverter {
                 phase: .extracting
             ))
             
-            guard let page = pdfDocument.page(at: pageIndex) else {
-                throw ConversionError.pageRenderFailed(pageIndex + 1)
-            }
-            
-            // Render page to image
-            let pageRect = page.bounds(for: .mediaBox)
-            let scale = min(
-                options.maxImageWidth / pageRect.width,
-                options.maxImageHeight / pageRect.height,
-                2.0 // Max 2x scale
-            )
-            
-            let scaledSize = CGSize(
-                width: pageRect.width * scale,
-                height: pageRect.height * scale
-            )
-            
-            let renderer = UIGraphicsImageRenderer(size: scaledSize)
-            let image = renderer.image { context in
-                UIColor.white.setFill()
-                context.fill(CGRect(origin: .zero, size: scaledSize))
+            try autoreleasepool {
+                guard let page = pdfDocument.page(at: pageIndex) else {
+                    throw ConversionError.pageRenderFailed(pageIndex + 1)
+                }
                 
-                context.cgContext.translateBy(x: 0, y: scaledSize.height)
-                context.cgContext.scaleBy(x: scale, y: -scale)
+                // Render page to image
+                let pageRect = page.bounds(for: .mediaBox)
                 
-                page.draw(with: .mediaBox, to: context.cgContext)
+                // Safety check for invalid dimensions
+                guard pageRect.width > 0, pageRect.height > 0 else {
+                    print("Skipping page \(pageIndex + 1) due to invalid dimensions: \(pageRect)")
+                    return // Skip this page instead of crashing
+                }
+                
+                let scale = min(
+                    options.maxImageWidth / pageRect.width,
+                    options.maxImageHeight / pageRect.height,
+                    2.0 // Max 2x scale
+                )
+                
+                let scaledSize = CGSize(
+                    width: pageRect.width * scale,
+                    height: pageRect.height * scale
+                )
+                
+                // Double check scaled size logic to prevent invalid image context
+                guard scaledSize.width > 1, scaledSize.height > 1 else { return }
+                
+                let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                let image = renderer.image { context in
+                    UIColor.white.setFill()
+                    context.fill(CGRect(origin: .zero, size: scaledSize))
+                    
+                    context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                    context.cgContext.scaleBy(x: scale, y: -scale)
+                    
+                    page.draw(with: .mediaBox, to: context.cgContext)
+                }
+                
+                // Save as JPEG
+                guard let imageData = image.jpegData(compressionQuality: options.imageQuality) else {
+                    throw ConversionError.pageRenderFailed(pageIndex + 1)
+                }
+                
+                let imageName = String(format: "page_%04d.jpg", pageIndex + 1)
+                let imageURL = imagesDir.appendingPathComponent(imageName)
+                try imageData.write(to: imageURL)
+                imageFiles.append(imageName)
             }
-            
-            // Save as JPEG
-            guard let imageData = image.jpegData(compressionQuality: options.imageQuality) else {
-                throw ConversionError.pageRenderFailed(pageIndex + 1)
-            }
-            
-            let imageName = String(format: "page_%04d.jpg", pageIndex + 1)
-            let imageURL = imagesDir.appendingPathComponent(imageName)
-            try imageData.write(to: imageURL)
-            imageFiles.append(imageName)
         }
         
         progressHandler?(ConversionProgress(
