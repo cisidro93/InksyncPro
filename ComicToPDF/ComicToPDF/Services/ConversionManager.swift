@@ -344,22 +344,23 @@ class ConversionManager: ObservableObject {
             outputURLs.append(pdfURL)
             addToLibrary(pdfURL)
             
-            let epubURL = try await convertToEPUB(from: sourceURL, settings: config) { p in
+            let epubData = try await convertToEPUB(from: sourceURL, settings: config) { p in
                 progressHandler(0.5 + p * 0.5)
             }
-            outputURLs.append(epubURL)
-            addToLibrary(epubURL, explicitPageCount: 0)
+            outputURLs.append(epubData.0)
+            addToLibrary(epubData.0, explicitPageCount: epubData.1)
         }
         
         return outputURLs
     }
     
-    func convertToEPUB(from sourceURL: URL, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> URL {
+    func convertToEPUB(from sourceURL: URL, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> (URL, Int) {
         let config = settings ?? conversionSettings
         let outputName = sourceURL.deletingPathExtension().lastPathComponent
         
         // Check if source is marked as PDF or has PDF extension
         let isPDF = sourceURL.pathExtension.lowercased() == "pdf"
+        var finalPageCount = 0
         
         if isPDF {
             let tempOutput = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("\(outputName).epub")
@@ -376,9 +377,15 @@ class ConversionManager: ObservableObject {
             }
             options.title = outputName
             
-            return try await converter.convert(pdfURL: sourceURL, to: self.outputDirectory.appendingPathComponent("\(outputName).epub"), options: options) { progress in
+            // Get page count first
+            if let pdf = PDFDocument(url: sourceURL) {
+                finalPageCount = pdf.pageCount
+            }
+            
+            let url = try await converter.convert(pdfURL: sourceURL, to: self.outputDirectory.appendingPathComponent("\(outputName).epub"), options: options) { progress in
                 progressHandler(progress.percentage)
             }
+            return (url, finalPageCount)
             
         } else {
             // Existing Logic for Archive -> EPUB
@@ -386,6 +393,7 @@ class ConversionManager: ObservableObject {
                 progressHandler(progress * 0.3)
             }
             guard !images.isEmpty else { throw ConversionError.noImagesFound }
+            finalPageCount = images.count
             if config.mangaMode { images.reverse() }
             
             let scale: Double
@@ -412,7 +420,7 @@ class ConversionManager: ObservableObject {
             let epubURL = try await generator.generateEPUB(from: processedImages, outputName: outputName)
             
             progressHandler(1.0)
-            return epubURL
+            return (epubURL, finalPageCount)
         }
     }
     
