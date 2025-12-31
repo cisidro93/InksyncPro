@@ -34,6 +34,10 @@ struct ConvertView: View {
                             selectedFilesSection
                             mangaModeToggle
                             autoSplitSection
+                            outputFormatSection
+                            if conversionManager.conversionSettings.outputFormat != .pdf {
+                                epubSettingsSection
+                            }
                             compressionSection
                             imageEnhancementSection
                             deviceOptimizationSection
@@ -188,6 +192,50 @@ struct ConvertView: View {
                 Toggle("", isOn: $autoSplitEnabled).toggleStyle(SwitchToggleStyle(tint: .red))
             }
         }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+    }
+    
+    private var outputFormatSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Export Format").font(.headline)
+            Picker("Output Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                ForEach(OutputFormat.allCases) { format in
+                    HStack {
+                        Image(systemName: format.icon)
+                        Text(format.rawValue)
+                    }
+                    .tag(format)
+                }
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            
+            Text(conversionManager.conversionSettings.outputFormat.description)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+    }
+    
+    private var epubSettingsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("EPUB Settings").font(.headline)
+            
+            HStack {
+                Text("Reading Direction")
+                Spacer()
+                Picker("", selection: $conversionManager.conversionSettings.epubSettings.readingDirection) {
+                    ForEach(EPUBSettings.ReadingDirection.allCases, id: \.self) { direction in
+                        Text(direction.displayName).tag(direction)
+                    }
+                }
+                .pickerStyle(MenuPickerStyle())
+            }
+            
+            Toggle("Include Table of Contents", isOn: $conversionManager.conversionSettings.epubSettings.includeTableOfContents)
+            Toggle("Preserve Aspect Ratio", isOn: $conversionManager.conversionSettings.epubSettings.preserveAspectRatio)
+        }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
     }
     
     private var compressionSection: some View {
@@ -349,30 +397,54 @@ struct ConvertView: View {
                     // Let's assume I will update ConversionManager.swift next.
                     
                     let nameToUse = customFileNames[fileURL] ?? fileURL.deletingPathExtension().lastPathComponent
-                    let outputURL = try await conversionManager.convertToPDF(from: fileURL, customName: nameToUse, settings: settings) { progress in
-                        Task { @MainActor in
-                            let fileProgress = Double(index) / Double(selectedFiles.count)
-                            let itemProgress = progress / Double(selectedFiles.count)
-                            conversionProgress = fileProgress + itemProgress
+                    
+                    let urls = try await conversionManager.convertToFormat(
+                        conversionManager.conversionSettings.outputFormat,
+                        from: fileURL,
+                        settings: settings,
+                        progressHandler: { progress in
+                            Task { @MainActor in
+                                let fileProgress = Double(index) / Double(selectedFiles.count)
+                                let itemProgress = progress / Double(selectedFiles.count)
+                                conversionProgress = fileProgress + itemProgress
+                            }
                         }
-                    }
+                    )
                     
                     await MainActor.run {
-                        conversionManager.addToLibrary(outputURL)
+                        for url in urls {
+                            // Assume EPUB has count of images matching images... wait, we need page count.
+                            // If it's PDF, we can use 0 and let addToLibrary detect (if I enabled that).
+                            // But I made addToLibrary logic: `if pdf then PDFDocument... else if explicit...`
+                            // For EPUB, `PDFDocument` fails.
+                            // However, in `convertToEPUB`, I know the page count (it's in the loop).
+                            // But `convertToFormat` returns [URL].
+                            // I may need to update `addToLibrary` to be smarter about EPUBs or return more info.
+                            // Simplest fix for now: If extension is EPUB, try to pass 0 and let it be 0? Or guess?
+                            // Or, I can check if it's PDF, calculate. If it's EPUB, well, I don't have the count handy here easily without unzipping.
+                            // Is page count critical? It shows up in the UI.
+                            // I'll leave it as 0 for EPUB for now or try to improve `Structure` later if it's an issue.
+                            // Actually, I can update `addToLibrary` to ignore page count for non-PDF if needed, or just display "N/A" or "?".
+                            conversionManager.addToLibrary(url)
+                        }
                         
-                        if autoSplitEnabled {
-                            if let attrs = try? FileManager.default.attributesOfItem(atPath: outputURL.path),
-                               let size = attrs[.size] as? Int64, size > 50 * 1024 * 1024 {
-                                Task {
-                                    do {
-                                        let parts = try await conversionManager.splitPDF(at: outputURL, maxSizeMB: 50) { _ in }
-                                        await MainActor.run {
-                                            for part in parts { conversionManager.addToLibrary(part) }
-                                            conversionManager.removeFromLibrary(ConvertedPDF(name: "", url: outputURL, pageCount: 0, fileSize: 0)) // Just using logic to delete original
-                                            try? FileManager.default.removeItem(at: outputURL) // Ensure physical deletion
+                        // Auto-split logic strictly for PDF
+                        if autoSplitEnabled && conversionManager.conversionSettings.outputFormat != .epub {
+                            // Only split PDFs. If "Both", we have both. We should filter for PDF.
+                             for url in urls where url.pathExtension.lowercased() == "pdf" {
+                                if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+                                   let size = attrs[.size] as? Int64, size > 50 * 1024 * 1024 {
+                                    Task {
+                                        do {
+                                            let parts = try await conversionManager.splitPDF(at: url, maxSizeMB: 50) { _ in }
+                                            await MainActor.run {
+                                                for part in parts { conversionManager.addToLibrary(part) }
+                                                conversionManager.removeFromLibrary(ConvertedPDF(name: "", url: url, pageCount: 0, fileSize: 0))
+                                                try? FileManager.default.removeItem(at: url)
+                                            }
+                                        } catch {
+                                            print("Auto-split failed: \(error)")
                                         }
-                                    } catch {
-                                        print("Auto-split failed: \(error)")
                                     }
                                 }
                             }

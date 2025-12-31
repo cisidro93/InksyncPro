@@ -167,6 +167,51 @@ enum ConversionError: LocalizedError {
     }
 }
 
+enum OutputFormat: String, CaseIterable, Identifiable, Codable {
+    case pdf = "PDF"
+    case epub = "EPUB"
+    case both = "Both"
+    
+    var id: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .pdf: return "doc.fill"
+        case .epub: return "book.fill"
+        case .both: return "doc.on.doc.fill"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .pdf: return "PDF (Kindle, universal)"
+        case .epub: return "EPUB (Apple Books, Kobo, etc.)"
+        case .both: return "PDF + EPUB (maximum compatibility)"
+        }
+    }
+}
+
+struct EPUBSettings: Codable, Equatable {
+    var useFixedLayout: Bool = true
+    var includeTableOfContents: Bool = true
+    var readingDirection: ReadingDirection = .leftToRight
+    var preserveAspectRatio: Bool = true
+    var includeMetadata: Bool = true
+    var embedFonts: Bool = false
+    
+    enum ReadingDirection: String, CaseIterable, Codable {
+        case leftToRight = "ltr"
+        case rightToLeft = "rtl"
+        
+        var displayName: String {
+            switch self {
+            case .leftToRight: return "Left to Right (Western)"
+            case .rightToLeft: return "Right to Left (Manga)"
+            }
+        }
+    }
+}
+
 struct PageItem: Identifiable, Equatable {
     let id = UUID()
     let originalIndex: Int
@@ -471,9 +516,17 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    func addToLibrary(_ url: URL, collectionId: UUID? = nil) {
+    func addToLibrary(_ url: URL, collectionId: UUID? = nil, explicitPageCount: Int? = nil) {
         guard let attributes = try? fileManager.attributesOfItem(atPath: url.path), let fileSize = attributes[.size] as? Int64 else { return }
-        let pageCount = PDFDocument(url: url)?.pageCount ?? 0
+        
+        var pageCount = 0
+        if let count = explicitPageCount {
+            pageCount = count
+        } else if url.pathExtension.lowercased() == "pdf" {
+            pageCount = PDFDocument(url: url)?.pageCount ?? 0
+        }
+        // EPUB page count detection would require unzipping, so explicit passing is better
+        
         let pdf = ConvertedPDF(name: url.deletingPathExtension().lastPathComponent, url: url, pageCount: pageCount, fileSize: fileSize, collectionId: collectionId)
         convertedPDFs.insert(pdf, at: 0)
         savePDFs()
