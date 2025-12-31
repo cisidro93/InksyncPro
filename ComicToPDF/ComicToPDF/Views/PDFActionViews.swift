@@ -25,6 +25,10 @@ struct SplitPDFView: View {
     private var fileSizeMB: Double {
         Double(pdf.fileSize) / (1024 * 1024)
     }
+
+    private var isEPUB: Bool {
+        pdf.url.pathExtension.lowercased() == "epub"
+    }
     
     var body: some View {
         NavigationView {
@@ -32,8 +36,8 @@ struct SplitPDFView: View {
                 Form {
                     Section {
                         HStack { Text("File Size"); Spacer(); Text(String(format: "%.1f MB", fileSizeMB)).foregroundColor(.secondary) }
-                        HStack { Text("Pages"); Spacer(); Text("\(pdf.pageCount)").foregroundColor(.secondary) }
-                    } header: { Text("Current PDF") }
+                        HStack { Text("Pages/Images"); Spacer(); Text("\(pdf.pageCount)").foregroundColor(.secondary) }
+                    } header: { Text(isEPUB ? "Current EPUB" : "Current PDF") }
                     
                     Section {
                         VStack(alignment: .leading, spacing: 12) {
@@ -59,12 +63,12 @@ struct SplitPDFView: View {
                     Color.black.opacity(0.5).ignoresSafeArea()
                     VStack(spacing: 20) {
                         ProgressView(value: progress).progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(1.5)
-                        Text("Splitting PDF...").foregroundColor(.white).fontWeight(.medium)
+                        Text("Splitting \(isEPUB ? "EPUB" : "PDF")...").foregroundColor(.white).fontWeight(.medium)
                         Text("\(Int(progress * 100))%").foregroundColor(.white.opacity(0.8))
                     }.padding(40).background(Color.black.opacity(0.7).cornerRadius(20))
                 }
             }
-            .navigationTitle("Split PDF").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(isEPUB ? "Split EPUB" : "Split PDF").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .navigationBarTrailing) { Button("Split") { splitPDF() }.fontWeight(.semibold).disabled(isSplitting || estimatedParts <= 1) }
@@ -177,7 +181,7 @@ struct SplitPDFView: View {
         
         let maxBytes = Int(maxSizeMB) * 1024 * 1024
         var parts: [URL] = []
-        var currentBatch: [URL] = []
+        var currentBatch: [UIImage] = []
         var currentBatchSize: Int64 = 0
         var partIndex = 1
         
@@ -186,16 +190,80 @@ struct SplitPDFView: View {
          let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         
-        for (index, url) in imageURLs.enumerated() {
-             let resValues = try url.resourceValues(forKeys: [.fileSizeKey])
-             let fileSize = Int64(resValues.fileSize ?? 0)
+        // Pre-process images: Stitch strips if needed
+        var finalImages: [UIImage] = []
+        var stripBuffer: [UIImage] = []
+        
+        for url in imageURLs {
+             if let img = UIImage(contentsOfFile: url.path) {
+                 // Heuristic: If image is "wide" (width > height) or very short, it might be a strip.
+                 // A stronger check is if it matches the WIDTH of the previous image in the buffer.
+                 if stripBuffer.isEmpty {
+                     stripBuffer.append(img)
+                 } else {
+                     let prev = stripBuffer.last!
+                     if Int(img.size.width) == Int(prev.size.width) {
+                         // Potentially a strip sequence. Accumulate.
+                         stripBuffer.append(img)
+                         
+                         // If detection is too aggressive, we might merge pages that shouldn't be.
+                         // Check combined height. If > 2.5x width (very tall), maybe flush?
+                         // Standard tablet aspect is 4:3 or 16:9. Comic pages usually 1.5 aspect.
+                         // Let's flush if accumulated height is "enough".
+                         let totalH = stripBuffer.reduce(0) { $0 + $1.size.height }
+                         if totalH > img.size.width * 1.5 {
+                             if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
+                                 finalImages.append(combined)
+                             }
+                             stripBuffer = []
+                         }
+                     } else {
+                         // Width change! Flush previous buffer.
+                         if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
+                             finalImages.append(combined)
+                         }
+                         stripBuffer = [img]
+                     }
+                 }
+                 
+                 // Memory safety: if buffer gets huge, flush.
+                 if stripBuffer.count > 10 { // 10 strips is generous
+                      if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
+                             finalImages.append(combined)
+                     }
+                     stripBuffer = []
+                 }
+             }
+        }
+        // Flush remaining
+        if !stripBuffer.isEmpty {
+             if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
+                 finalImages.append(combined)
+             }
+        }
+        
+        let maxBytes = Int(maxSizeMB) * 1024 * 1024
+        var parts: [URL] = []
+        var currentBatch: [UIImage] = [] // using UIImages now
+        var currentBatchSize: Int64 = 0
+        var partIndex = 1
+        
+        // Need to roughly estimate JPEG size since we have UIImages now
+        // A full page approx 1MB?
+        
+        let generator = EPUBGenerator(settings: EPUBSettings(), metadata: pdf.metadata)
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+         let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        
+        for (index, image) in finalImages.enumerated() {
+             let estimatedSize = Int64(image.size.width * image.size.height * 0.5) // Rough estimate for JPEG
              
-             if currentBatchSize + fileSize > Int64(maxBytes) && !currentBatch.isEmpty {
+             if currentBatchSize + estimatedSize > Int64(maxBytes) && !currentBatch.isEmpty {
                  // Generate part
                  let partName = "\(pdf.name)_part\(partIndex)"
                  let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName)
                  
-                 // Move to documents
                  let finalURL = outputDir.appendingPathComponent("\(partName).epub")
                  if FileManager.default.fileExists(atPath: finalURL.path) { try FileManager.default.removeItem(at: finalURL) }
                  try FileManager.default.moveItem(at: epubURL, to: finalURL)
@@ -206,11 +274,11 @@ struct SplitPDFView: View {
                  partIndex += 1
              }
              
-             currentBatch.append(url)
-             currentBatchSize += fileSize
+             currentBatch.append(image)
+             currentBatchSize += estimatedSize
              
              await MainActor.run {
-                 self.progress = Double(index + 1) / Double(imageURLs.count)
+                 self.progress = Double(index + 1) / Double(finalImages.count)
              }
         }
         

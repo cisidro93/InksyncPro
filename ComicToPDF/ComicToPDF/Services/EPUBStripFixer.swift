@@ -75,7 +75,7 @@ class EPUBStripFixer {
         return imageURLs.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
     
-    private func combineStripsVertically(_ strips: [UIImage]) -> UIImage? {
+    static func combineStripsVertically(_ strips: [UIImage]) -> UIImage? {
         guard !strips.isEmpty else { return nil }
         
         // Calculate total size
