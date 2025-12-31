@@ -102,8 +102,9 @@ class CBZToEPUBConverter {
             }
             
             // Add to manifest
+            let properties = (index == 0) ? " properties=\"cover-image\"" : ""
             imageManifest += """
-                <item id="img\(pageNum)" href="images/\(imageName)" media-type="image/jpeg"/>
+                <item id="img\(pageNum)" href="images/\(imageName)" media-type="image/jpeg"\(properties)/>
                 <item id="page\(pageNum)" href="page\(pageNum).xhtml" media-type="application/xhtml+xml"/>
             
             """
@@ -141,6 +142,7 @@ class CBZToEPUBConverter {
                 <dc:title>\(title)</dc:title>
                 <dc:language>en</dc:language>
                 <dc:identifier id="uid">comic-\(UUID().uuidString)</dc:identifier>
+                <meta name="cover" content="img0001"/>
             </metadata>
             <manifest>
         \(imageManifest)
