@@ -15,7 +15,7 @@ class EPUBConverter {
                 try FileManager.default.unzipItem(at: epubURL, to: tempDir)
                 
                 // Get FULL pages (not slices)
-                let pages = try self.extractFullPages(from: directory: tempDir)
+                let pages = try self.extractFullPages(from: tempDir)
                 
                 if pages.isEmpty {
                     throw EPUBError.noImages
