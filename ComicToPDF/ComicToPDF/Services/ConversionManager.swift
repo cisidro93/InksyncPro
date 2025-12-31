@@ -291,26 +291,30 @@ class ConversionManager: ObservableObject {
         let ext = sourceURL.pathExtension.lowercased()
         
         // Special handling for EPUB using refined converter
+        // Special handling for EPUB using refined converter
         if ext == "epub" {
             return try await withCheckedThrowingContinuation { continuation in
-                let converter = EPUBConverter()
-                converter.convertEPUBToPDF(epubURL: sourceURL) { result in
+                ComicEPUBProcessor.shared.convertEPUBIfNeeded(sourceURL) { pdfURL, error in
                     progressHandler(1.0)
-                    switch result {
-                    case .success(let pdfURL):
-                        // Move to output directory
-                        let outputName = customName ?? sourceURL.deletingPathExtension().lastPathComponent
-                        let finalURL = self.outputDirectory.appendingPathComponent("\(outputName).pdf")
-                        do {
-                            if FileManager.default.fileExists(atPath: finalURL.path) {
-                                try FileManager.default.removeItem(at: finalURL)
-                            }
-                            try FileManager.default.moveItem(at: pdfURL, to: finalURL)
-                            continuation.resume(returning: finalURL)
-                        } catch {
-                            continuation.resume(throwing: error)
+                    if let error = error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    guard let pdfURL = pdfURL else {
+                        continuation.resume(throwing: ConversionError.conversionFailed)
+                        return
+                    }
+                    
+                    // Move to output directory
+                    let outputName = customName ?? sourceURL.deletingPathExtension().lastPathComponent
+                    let finalURL = self.outputDirectory.appendingPathComponent("\(outputName).pdf")
+                    do {
+                        if FileManager.default.fileExists(atPath: finalURL.path) {
+                            try FileManager.default.removeItem(at: finalURL)
                         }
-                    case .failure(let error):
+                        try FileManager.default.moveItem(at: pdfURL, to: finalURL)
+                        continuation.resume(returning: finalURL)
+                    } catch {
                         continuation.resume(throwing: error)
                     }
                 }
