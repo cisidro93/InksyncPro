@@ -23,6 +23,12 @@ struct LibraryView: View {
     @State private var showingBatchDelete = false
     @State private var showingBatchCloudExport = false
 
+    @State private var showingFilters = false
+    @State private var showingMerge = false
+    @State private var showingDuplicates = false
+    @State private var showingPageExtraction = false
+    @State private var showingBatchRename = false
+    
     @State private var showingPageDelete = false
     @State private var showingSplitPDF = false
     @State private var showingRenameFile = false
@@ -32,7 +38,13 @@ struct LibraryView: View {
             ZStack {
                 LinearGradient(colors: [Color(.systemBackground), Color.blue.opacity(0.05)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
                 if conversionManager.convertedPDFs.isEmpty { emptyState }
-                else { VStack(spacing: 0) { if isSelectionMode { batchActionBar }; pdfList } }
+                else {
+                    VStack(spacing: 0) {
+                        SearchFilterBar(searchText: $conversionManager.searchText, showFilters: $showingFilters)
+                        if isSelectionMode { batchActionBar }
+                        pdfList
+                    }
+                }
             }
             .navigationTitle("Library")
             .toolbar {
@@ -42,10 +54,20 @@ struct LibraryView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if isSelectionMode {
-                        Button(selectedPDFs.count == conversionManager.convertedPDFs.count ? "Deselect All" : "Select All") {
-                            if selectedPDFs.count == conversionManager.convertedPDFs.count { selectedPDFs.removeAll() }
-                            else { selectedPDFs = Set(conversionManager.convertedPDFs.map { $0.id }) }
+                    HStack {
+                        if isSelectionMode {
+                            Button(selectedPDFs.count == conversionManager.convertedPDFs.count ? "Deselect All" : "Select All") {
+                                if selectedPDFs.count == conversionManager.convertedPDFs.count { selectedPDFs.removeAll() }
+                                else { selectedPDFs = Set(conversionManager.convertedPDFs.map { $0.id }) }
+                            }
+                        } else {
+                            Menu {
+                                Button(action: { showingMerge = true }) { Label("Merge PDFs", systemImage: "doc.on.doc") }
+                                Button(action: { showingBatchRename = true }) { Label("Batch Rename", systemImage: "pencil.circle") }
+                                Button(action: { showingDuplicates = true }) { Label("Find Duplicates", systemImage: "doc.on.doc.fill") }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                            }
                         }
                     }
                 }
@@ -61,12 +83,27 @@ struct LibraryView: View {
         .sheet(isPresented: $showingBatchMail) { KindleDevicePickerView(pdfURLs: getSelectedURLs()) }
         .sheet(isPresented: $showingBatchShare) { ShareSheet(items: getSelectedURLs()) }
         .sheet(isPresented: $showingBatchCloudExport) { CloudExportView(pdfsToExport: getSelectedPDFs()) }
+        .sheet(isPresented: $showingMerge) { PDFMergeView() }
+        .sheet(isPresented: $showingDuplicates) { NavigationView { DuplicateDetectionView() } }
+        .sheet(isPresented: $showingPageExtraction) { if let pdf = selectedPDF { PageExtractionView(pdf: pdf) } }
+        .sheet(isPresented: $showingBatchRename) { BatchRenameView() }
         .sheet(isPresented: $showingPageDelete) { if let pdf = selectedPDF { PageDeleteView(pdf: pdf) } }
         .sheet(isPresented: $showingSplitPDF) { if let pdf = selectedPDF { SplitPDFView(pdf: pdf) } }
         .sheet(isPresented: $showingRenameFile) { if let pdf = selectedPDF { RenameFileView(pdf: pdf) } }
         .alert("Delete PDF?", isPresented: $showingDeleteAlert) { Button("Cancel", role: .cancel) { }; Button("Delete", role: .destructive) { if let pdf = selectedPDF { conversionManager.removeFromLibrary(pdf) } } }
         .alert("Delete \(selectedPDFs.count) PDFs?", isPresented: $showingBatchDelete) { Button("Cancel", role: .cancel) { }; Button("Delete All", role: .destructive) { for pdf in getSelectedPDFs() { conversionManager.removeFromLibrary(pdf) }; selectedPDFs.removeAll(); isSelectionMode = false } }
+        .confirmationDialog("Filter Options", isPresented: $showingFilters) {
+            Button("Sort by Date Added") { conversionManager.sortOption = .dateAdded }
+            Button("Sort by Name") { conversionManager.sortOption = .name }
+            Button("Sort by Size") { conversionManager.sortOption = .size }
+            Button("Sort by Pages") { conversionManager.sortOption = .pageCount }
+            Button(conversionManager.filterFavoritesOnly ? "Show All PDFs" : "Show Favorites Only") { conversionManager.filterFavoritesOnly.toggle() }
+            if conversionManager.filterCollection != nil { Button("Clear Collection Filter") { conversionManager.filterCollection = nil } }
+            Button("Cancel", role: .cancel) { }
+        }
         .confirmationDialog("PDF Options", isPresented: $showingActionSheet) {
+            Button("Toggle Favorite") { conversionManager.toggleFavorite(selectedPDF!) }
+            Button("Extract Pages") { showingPageExtraction = true }
             Button("Preview") { showingPreview = true }
             Button("Send to Kindle") { showingDevicePicker = true }
             Button("Export to Cloud") { showingCloudExport = true }
@@ -108,10 +145,10 @@ struct LibraryView: View {
     
     private var pdfList: some View {
         List {
-            ForEach(conversionManager.convertedPDFs) { pdf in
+            ForEach(conversionManager.filteredPDFs) { pdf in
                 HStack(spacing: 12) {
                     if isSelectionMode { Button(action: { toggleSelection(pdf) }) { Image(systemName: selectedPDFs.contains(pdf.id) ? "checkmark.circle.fill" : "circle").font(.title2).foregroundColor(selectedPDFs.contains(pdf.id) ? .orange : .gray) }.buttonStyle(PlainButtonStyle()) }
-                    LibraryPDFRow(pdf: pdf).contentShape(Rectangle()).onTapGesture { if isSelectionMode { toggleSelection(pdf) } else { selectedPDF = pdf; showingActionSheet = true } }
+                    LibraryPDFRowWithCover(pdf: pdf, isSelected: false).contentShape(Rectangle()).onTapGesture { if isSelectionMode { toggleSelection(pdf) } else { selectedPDF = pdf; showingActionSheet = true } }
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) { Button(role: .destructive) { selectedPDF = pdf; showingDeleteAlert = true } label: { Label("Delete", systemImage: "trash") } }
                 .swipeActions(edge: .leading) {

@@ -33,7 +33,16 @@ struct SettingsView: View {
                 Section {
                     NavigationLink(destination: DefaultConversionSettingsView()) { HStack { Image(systemName: "slider.horizontal.3").foregroundColor(.orange).frame(width: 28); Text("Conversion Defaults") } }
                     NavigationLink(destination: DefaultEnhancementSettingsView()) { HStack { Image(systemName: "wand.and.stars").foregroundColor(.blue).frame(width: 28); Text("Enhancement Defaults") } }
+                    NavigationLink(destination: ConversionPresetsView()) { HStack { Image(systemName: "list.dash.header.rectangle").foregroundColor(.purple).frame(width: 28); Text("Conversion Presets") } }
                 } header: { Text("Default Settings") }
+                
+                Section {
+                    NavigationLink(destination: StorageManagerView()) { HStack { Image(systemName: "internaldrive.fill").foregroundColor(.gray).frame(width: 28); Text("Storage Manager") } }
+                    NavigationLink(destination: DuplicateDetectionView()) { HStack { Image(systemName: "doc.on.doc.fill").foregroundColor(.red).frame(width: 28); Text("Duplicate Finder") } }
+                    NavigationLink(destination: AutoOrganizeView()) { HStack { Image(systemName: "tray.full.fill").foregroundColor(.green).frame(width: 28); Text("Auto-Organize") } }
+                    NavigationLink(destination: SendHistoryView()) { HStack { Image(systemName: "clock.fill").foregroundColor(.blue).frame(width: 28); Text("Send History") } }
+                    NavigationLink(destination: BackupRestoreView()) { HStack { Image(systemName: "arrow.triangle.2.circlepath.circle.fill").foregroundColor(.orange).frame(width: 28); Text("Backup & Restore") } }
+                } header: { Text("Tools") }
                 
                 Section {
                     HStack { Image(systemName: "internaldrive.fill").foregroundColor(.gray).frame(width: 28); Text("Library Size"); Spacer(); Text(calculateLibrarySize()).foregroundColor(.secondary) }

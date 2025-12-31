@@ -3,6 +3,7 @@ import PDFKit
 import CoreImage
 import ZIPFoundation
 import UIKit
+import CryptoKit
 
 // ============================================================================
 // MARK: - MODELS
@@ -17,6 +18,11 @@ struct ConvertedPDF: Identifiable, Codable {
     let fileSize: Int64
     var collectionId: UUID?
     var metadata: PDFMetadata
+    var isFavorite: Bool = false
+    var coverImageData: Data? = nil
+    var fileHash: String? = nil
+    var lastSentDate: Date? = nil
+    var lastSentDevice: String? = nil
     
     init(name: String, url: URL, pageCount: Int, fileSize: Int64, collectionId: UUID? = nil) {
         self.id = UUID()
@@ -182,6 +188,32 @@ class ConversionManager: ObservableObject {
     @Published var collections: [PDFCollection] = []
     @Published var kindleDevices: [KindleDevice] = []
     @Published var conversionSettings = ConversionSettings()
+    @Published var sendHistory: [SendHistoryRecord] = []
+    @Published var conversionPresets: [ConversionPreset] = []
+    @Published var searchText: String = ""
+    @Published var filterFavoritesOnly: Bool = false
+    @Published var filterCollection: UUID? = nil
+    @Published var sortOption: SortOption = .dateAdded
+    
+    var filteredPDFs: [ConvertedPDF] {
+        var result = convertedPDFs
+        if !searchText.isEmpty {
+            result = result.filter { $0.name.localizedCaseInsensitiveContains(searchText) || $0.metadata.title.localizedCaseInsensitiveContains(searchText) || $0.metadata.series.localizedCaseInsensitiveContains(searchText) }
+        }
+        if filterFavoritesOnly {
+            result = result.filter { $0.isFavorite }
+        }
+        if let collectionId = filterCollection {
+            result = result.filter { $0.collectionId == collectionId }
+        }
+        switch sortOption {
+        case .dateAdded: result.sort { $0.dateAdded > $1.dateAdded }
+        case .name: result.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .size: result.sort { $0.fileSize > $1.fileSize }
+        case .pageCount: result.sort { $0.pageCount > $1.pageCount }
+        }
+        return result
+    }
     
     var kindleEmail: String {
         get { kindleDevices.first(where: { $0.isDefault })?.email ?? kindleDevices.first?.email ?? "" }
@@ -524,4 +556,203 @@ class ConversionManager: ObservableObject {
     private func saveCollections() { if let data = try? JSONEncoder().encode(collections) { UserDefaults.standard.set(data, forKey: "pdfCollections") } }
     private func saveKindleDevices() { if let data = try? JSONEncoder().encode(kindleDevices) { UserDefaults.standard.set(data, forKey: "kindleDevices") } }
     func saveSettings() { if let data = try? JSONEncoder().encode(conversionSettings) { UserDefaults.standard.set(data, forKey: "conversionSettings") } }
-}
+    
+    // MARK: - New Feature Implementation
+    
+    func toggleFavorite(_ pdf: ConvertedPDF) {
+        if let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs[index].isFavorite.toggle()
+            savePDFs()
+        }
+    }
+    
+    func generateCoverThumbnail(for pdf: ConvertedPDF) {
+        guard let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }), convertedPDFs[index].coverImageData == nil else { return }
+        DispatchQueue.global(qos: .utility).async {
+            guard let document = PDFDocument(url: pdf.url), let page = document.page(at: 0) else { return }
+            let thumbnail = page.thumbnail(of: CGSize(width: 200, height: 280), for: .mediaBox)
+            if let data = thumbnail.jpegData(compressionQuality: 0.7) {
+                DispatchQueue.main.async {
+                    if let idx = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        self.convertedPDFs[idx].coverImageData = data
+                        self.savePDFs()
+                    }
+                }
+            }
+        }
+    }
+    
+    func recordSend(pdf: ConvertedPDF, device: KindleDevice) {
+        let record = SendHistoryRecord(pdf: pdf, device: device)
+        sendHistory.insert(record, at: 0)
+        if let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs[index].lastSentDate = Date()
+            convertedPDFs[index].lastSentDevice = device.name
+        }
+        saveSendHistory()
+        savePDFs()
+    }
+    
+    func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String) async throws -> URL {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let mergedDocument = PDFDocument()
+                var pageIndex = 0
+                for pdf in pdfs {
+                    guard let document = PDFDocument(url: pdf.url) else { continue }
+                    for i in 0..<document.pageCount {
+                        if let page = document.page(at: i) {
+                            mergedDocument.insert(page, at: pageIndex)
+                            pageIndex += 1
+                        }
+                    }
+                }
+                let outputURL = self.outputDirectory.appendingPathComponent("\(outputName).pdf")
+                if mergedDocument.write(to: outputURL) {
+                    continuation.resume(returning: outputURL)
+                } else {
+                    continuation.resume(throwing: NSError(domain: "Merge", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to save"]))
+                }
+            }
+        }
+    }
+    
+    func findDuplicates() async -> [DuplicateGroup] {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var hashGroups: [String: [ConvertedPDF]] = [:]
+                for pdf in self.convertedPDFs {
+                    if let data = try? Data(contentsOf: pdf.url) {
+                        let hash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+                        hashGroups[hash, default: []].append(pdf)
+                    }
+                }
+                let duplicates = hashGroups.filter { $0.value.count > 1 }.map { DuplicateGroup(fileHash: $0.key, pdfs: $0.value) }
+                continuation.resume(returning: duplicates)
+            }
+        }
+    }
+    
+    func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> [URL] {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let document = PDFDocument(url: pdf.url) else {
+                    continuation.resume(throwing: NSError(domain: "Extract", code: 1, userInfo: [:]))
+                    return
+                }
+                let extractionDir = self.outputDirectory.appendingPathComponent("Extracted", isDirectory: true)
+                try? FileManager.default.createDirectory(at: extractionDir, withIntermediateDirectories: true)
+                
+                var outputURLs: [URL] = []
+                for pageIndex in pageIndices {
+                    guard let page = document.page(at: pageIndex) else { continue }
+                    if asImages {
+                        let image = page.thumbnail(of: CGSize(width: 1200, height: 1600), for: .mediaBox)
+                        if let data = image.jpegData(compressionQuality: 0.9) {
+                            let url = extractionDir.appendingPathComponent("\(pdf.name)_page\(pageIndex + 1).jpg")
+                            try? data.write(to: url)
+                            outputURLs.append(url)
+                        }
+                    } else {
+                        let singlePageDoc = PDFDocument()
+                        singlePageDoc.insert(page, at: 0)
+                        let url = extractionDir.appendingPathComponent("\(pdf.name)_page\(pageIndex + 1).pdf")
+                        if singlePageDoc.write(to: url) { outputURLs.append(url) }
+                    }
+                }
+                continuation.resume(returning: outputURLs)
+            }
+        }
+    }
+    
+    func savePreset(_ preset: ConversionPreset) {
+        if let index = conversionPresets.firstIndex(where: { $0.id == preset.id }) {
+            conversionPresets[index] = preset
+        } else {
+            conversionPresets.append(preset)
+        }
+        savePresets()
+    }
+    
+    func deletePreset(_ preset: ConversionPreset) {
+        conversionPresets.removeAll { $0.id == preset.id }
+        savePresets()
+    }
+    
+    func applyPreset(_ preset: ConversionPreset) {
+        conversionSettings = preset.settings
+        saveSettings()
+    }
+    
+    func calculateStorageInfo() -> StorageInfo {
+        let totalSize = convertedPDFs.reduce(0) { $0 + $1.fileSize }
+        let largestFile = convertedPDFs.max { $0.fileSize < $1.fileSize }
+        let oldestFile = convertedPDFs.min { $0.dateAdded < $1.dateAdded }
+        var byCollection: [(collection: PDFCollection?, size: Int64, count: Int)] = []
+        let uncategorized = convertedPDFs.filter { $0.collectionId == nil }
+        if !uncategorized.isEmpty {
+            byCollection.append((nil, uncategorized.reduce(0) { $0 + $1.fileSize }, uncategorized.count))
+        }
+        for collection in collections {
+            let inCollection = convertedPDFs.filter { $0.collectionId == collection.id }
+            if !inCollection.isEmpty {
+                byCollection.append((collection, inCollection.reduce(0) { $0 + $1.fileSize }, inCollection.count))
+            }
+        }
+        return StorageInfo(totalSize: totalSize, pdfCount: convertedPDFs.count, largestFile: largestFile, oldestFile: oldestFile, byCollection: byCollection.sorted { $0.size > $1.size })
+    }
+    
+    func batchRename(pdfs: [ConvertedPDF], pattern: String, startNumber: Int = 1) {
+        for (index, pdf) in pdfs.enumerated() {
+            let newName = pattern.replacingOccurrences(of: "{n}", with: "\(startNumber + index)")
+                .replacingOccurrences(of: "{name}", with: pdf.name)
+                .replacingOccurrences(of: "{series}", with: pdf.metadata.series)
+            let directory = pdf.url.deletingLastPathComponent()
+            let newURL = directory.appendingPathComponent("\(newName).pdf")
+            guard !FileManager.default.fileExists(atPath: newURL.path) || newURL == pdf.url else { continue }
+            do {
+                try FileManager.default.moveItem(at: pdf.url, to: newURL)
+                if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    convertedPDFs[idx].name = newName
+                    // Need to update the URL in struct? struct is value type, array holds copies.
+                    // This is why we use index. But we need to recreate the struct with new URL
+                    let old = convertedPDFs[idx]
+                     convertedPDFs[idx] = ConvertedPDF(name: newName, url: newURL, pageCount: old.pageCount, fileSize: old.fileSize, collectionId: old.collectionId)
+                     convertedPDFs[idx].metadata = old.metadata
+                     convertedPDFs[idx].isFavorite = old.isFavorite
+                }
+            } catch {
+                print("Rename failed: \(error)")
+            }
+        }
+        savePDFs()
+    }
+    
+    func autoOrganize() {
+        for i in 0..<convertedPDFs.count {
+            let pdf = convertedPDFs[i]
+            guard pdf.collectionId == nil else { continue }
+            if !pdf.metadata.series.isEmpty {
+                if let collection = collections.first(where: { $0.name.localizedCaseInsensitiveContains(pdf.metadata.series) }) {
+                    convertedPDFs[i].collectionId = collection.id
+                    continue
+                }
+            }
+            let name = pdf.name.lowercased()
+            for collection in collections {
+                if name.contains(collection.name.lowercased()) {
+                    convertedPDFs[i].collectionId = collection.id
+                    break
+                }
+            }
+        }
+        savePDFs()
+    }
+    
+    func clearSendHistory() {
+        sendHistory.removeAll()
+        saveSendHistory()
+    }
+    
+    private func saveSendHistory() { if let data = try? JSONEncoder().encode(sendHistory) { UserDefaults.standard.set(data, forKey: "sendHistory") } }
+    private func savePresets() { if let data = try? JSONEncoder().encode(conversionPresets) { UserDefaults.standard.set(data, forKey: "conversionPresets") } }

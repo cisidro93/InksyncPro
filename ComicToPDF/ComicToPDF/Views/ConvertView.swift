@@ -20,6 +20,7 @@ struct ConvertView: View {
     @State private var showingRenameSheet = false
     @State private var renameFileURL: URL? = nil
     @State private var customFileNames: [URL: String] = [:]
+    @State private var autoSplitEnabled = true
     
     var body: some View {
         NavigationView {
@@ -32,6 +33,7 @@ struct ConvertView: View {
                         if !selectedFiles.isEmpty {
                             selectedFilesSection
                             mangaModeToggle
+                            autoSplitSection
                             compressionSection
                             imageEnhancementSection
                             deviceOptimizationSection
@@ -170,6 +172,20 @@ struct ConvertView: View {
                     Image(systemName: "info.circle.fill").foregroundColor(.purple)
                     Text("Pages will be reversed for proper manga reading").font(.caption).foregroundColor(.secondary)
                 }.padding(10).background(Color.purple.opacity(0.1).cornerRadius(8))
+            }
+        }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+    }
+    
+    private var autoSplitSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "scissors").foregroundColor(.red).font(.title2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Auto-Split").font(.headline)
+                    Text("Split PDF if size exceeds 50MB (Kindle limit)").font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $autoSplitEnabled).toggleStyle(SwitchToggleStyle(tint: .red))
             }
         }.padding().background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
     }
@@ -340,7 +356,28 @@ struct ConvertView: View {
                             conversionProgress = fileProgress + itemProgress
                         }
                     }
-                    await MainActor.run { conversionManager.addToLibrary(outputURL) }
+                    
+                    await MainActor.run {
+                        conversionManager.addToLibrary(outputURL)
+                        
+                        if autoSplitEnabled {
+                            if let attrs = try? FileManager.default.attributesOfItem(atPath: outputURL.path),
+                               let size = attrs[.size] as? Int64, size > 50 * 1024 * 1024 {
+                                Task {
+                                    do {
+                                        let parts = try await conversionManager.splitPDF(at: outputURL, maxSizeMB: 50) { _ in }
+                                        await MainActor.run {
+                                            for part in parts { conversionManager.addToLibrary(part) }
+                                            conversionManager.removeFromLibrary(ConvertedPDF(name: "", url: outputURL, pageCount: 0, fileSize: 0)) // Just using logic to delete original
+                                            try? FileManager.default.removeItem(at: outputURL) // Ensure physical deletion
+                                        }
+                                    } catch {
+                                        print("Auto-split failed: \(error)")
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 await MainActor.run {
                     isConverting = false
