@@ -112,7 +112,8 @@ struct PageDeleteView: View {
                                 loadedPages.append(item)
                             }
                         }
-                        await MainActor.run { pages = loadedPages; isLoading = false }
+                        let finalPages = loadedPages
+                        await MainActor.run { pages = finalPages; isLoading = false }
                     } catch {
                         await MainActor.run { isLoading = false; alertMessage = "Failed to load EPUB pages: \(error.localizedDescription)"; showingAlert = true }
                     }
