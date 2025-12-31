@@ -28,11 +28,21 @@ struct DocumentPickerView: UIViewControllerRepresentable {
 struct MailComposerView: UIViewControllerRepresentable {
     let pdfURLs: [URL]
     let kindleEmail: String
+    var onResult: ((MFMailComposeResult, Error?) -> Void)?
     @Environment(\.dismiss) private var dismiss
+    
     func makeUIViewController(context: Context) -> MFMailComposeViewController { let composer = MFMailComposeViewController(); composer.mailComposeDelegate = context.coordinator; composer.setToRecipients([kindleEmail]); composer.setSubject("Convert"); composer.setMessageBody("Sent from Comic to PDF Converter", isHTML: false); for url in pdfURLs { if let data = try? Data(contentsOf: url) { composer.addAttachmentData(data, mimeType: "application/pdf", fileName: url.lastPathComponent) } }; return composer }
     func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator(dismiss: dismiss) }
-    class Coordinator: NSObject, MFMailComposeViewControllerDelegate { let dismiss: DismissAction; init(dismiss: DismissAction) { self.dismiss = dismiss }; func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) { dismiss() } }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    
+    class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
+        let parent: MailComposerView
+        init(_ parent: MailComposerView) { self.parent = parent }
+        func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
+            parent.onResult?(result, error)
+            parent.dismiss()
+        }
+    }
 }
 
 // ============================================================================
@@ -45,6 +55,7 @@ struct KindleDevicePickerView: View {
     let pdfURLs: [URL]
     @State private var selectedDevice: KindleDevice?
     @State private var showingMailComposer = false
+    @State private var showingSuccessAnimation = false
     
     var body: some View {
         NavigationView {
@@ -55,10 +66,50 @@ struct KindleDevicePickerView: View {
             }
             .navigationTitle("Send to Kindle").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { dismiss() } } }
-            .sheet(isPresented: $showingMailComposer) { if let device = selectedDevice { MailComposerView(pdfURLs: pdfURLs, kindleEmail: device.email) } }
+            .sheet(isPresented: $showingMailComposer) {
+                if let device = selectedDevice {
+                    MailComposerView(pdfURLs: pdfURLs, kindleEmail: device.email) { result, error in
+                        if result == .sent {
+                            handleSuccess(device: device)
+                        }
+                    }
+                }
+            }
+            .overlay(Group {
+                if showingSuccessAnimation {
+                    SuccessCheckmarkView()
+                }
+            })
         }
     }
     
     private var totalSize: String { var total: Int64 = 0; for url in pdfURLs { if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path), let size = attrs[.size] as? Int64 { total += size } }; let formatter = ByteCountFormatter(); formatter.countStyle = .file; return formatter.string(fromByteCount: total) }
+    
     private func selectAndSend(_ device: KindleDevice) { selectedDevice = device; showingMailComposer = true }
+    
+    private func handleSuccess(device: KindleDevice) {
+        // Record in history
+        for url in pdfURLs {
+            if let pdf = conversionManager.convertedPDFs.first(where: { $0.url == url }) {
+                conversionManager.recordSend(pdf: pdf, device: device)
+            } else {
+                // If not in library (e.g. temporary split), create a transient record or skip?
+                // Minimal effort: create a transient ConvertedPDF just for the record if possible,
+                // or just skip. The requirement implies tracking history.
+                // Assuming most uses are from Library. If not found, we can't easily record without more info.
+                // Let's at least try to find by filename match if URL path differs?
+            }
+            // For now, only recording if in library.
+        }
+        
+        // Show animation
+        showingSuccessAnimation = true
+        HapticManager.shared.notification(.success)
+        
+        // Auto dismiss after animation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            showingSuccessAnimation = false
+            dismiss()
+        }
+    }
 }

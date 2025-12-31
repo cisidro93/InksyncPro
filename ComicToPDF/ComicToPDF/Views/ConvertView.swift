@@ -21,6 +21,7 @@ struct ConvertView: View {
     @State private var renameFileURL: URL? = nil
     @State private var customFileNames: [URL: String] = [:]
     @State private var autoSplitEnabled = true
+    @State private var showingSuccessAnimation = false
     
     var body: some View {
         NavigationView {
@@ -48,6 +49,7 @@ struct ConvertView: View {
                     }.padding()
                 }
             }
+            }
             .navigationTitle("Comic to PDF")
             .navigationBarTitleDisplayMode(.large)
             .fullScreenCover(isPresented: $showingFilePicker) { DocumentPickerView(selectedFiles: $selectedFiles, isPresented: $showingFilePicker).ignoresSafeArea() }
@@ -60,6 +62,11 @@ struct ConvertView: View {
                     isPresented: $showingRenameSheet
                 )
             }
+            .overlay(Group {
+                if showingSuccessAnimation {
+                    SuccessCheckmarkView()
+                }
+            })
         }.navigationViewStyle(.stack)
     }
     
@@ -455,8 +462,14 @@ struct ConvertView: View {
                     isConverting = false
                     conversionProgress = 1.0
                     selectedFiles.removeAll()
-                    alertMessage = "All files converted successfully! Check the Library tab."
-                    showingAlert = true
+                    
+                    // Show success animation instead of alert
+                    showingSuccessAnimation = true
+                    HapticManager.shared.notification(.success)
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        showingSuccessAnimation = false
+                    }
                 }
             } catch {
                 await MainActor.run {

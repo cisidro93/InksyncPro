@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var conversionManager = ConversionManager()
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @State private var selectedTab = 0
     
     var body: some View {
@@ -13,5 +14,8 @@ struct ContentView: View {
         }
         .tint(.orange)
         .environmentObject(conversionManager)
+        .fullScreenCover(isPresented: !$hasCompletedOnboarding) {
+            OnboardingView()
+        }
     }
 }

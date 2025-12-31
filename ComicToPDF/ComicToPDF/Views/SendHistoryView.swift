@@ -2,13 +2,19 @@ import SwiftUI
 
 struct SendHistoryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @State private var showingClearAlert = false
     
     var body: some View {
         List {
-            Section {
-                Button(action: conversionManager.clearSendHistory) {
-                    Text("Clear History")
-                        .foregroundColor(.red)
+            if !conversionManager.sendHistory.isEmpty {
+                Section {
+                    Button(action: {
+                        HapticManager.shared.impact(.medium)
+                        showingClearAlert = true
+                    }) {
+                        Text("Clear History")
+                            .foregroundColor(.red)
+                    }
                 }
             }
             
@@ -31,5 +37,25 @@ struct SendHistoryView: View {
             }
         }
         .navigationTitle("Send History")
+        .overlay(Group {
+            if conversionManager.sendHistory.isEmpty {
+                VStack(spacing: 20) {
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 60)).foregroundColor(.secondary.opacity(0.5))
+                    Text("No History").font(.title2).fontWeight(.semibold)
+                    Text("Files you send to Kindle will appear here").font(.subheadline).foregroundColor(.secondary)
+                }
+            }
+        })
+        .alert("Clear History?", isPresented: $showingClearAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Clear All", role: .destructive) {
+                HapticManager.shared.notification(.success)
+                withAnimation {
+                    conversionManager.clearSendHistory()
+                }
+            }
+        } message: {
+            Text("This will remove all records of sent files from your history.")
+        }
     }
 }

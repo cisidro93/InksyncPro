@@ -50,7 +50,7 @@ struct SettingsView: View {
                 } header: { Text("Storage") }
                 
                 Section {
-                    HStack { Image(systemName: "info.circle.fill").foregroundColor(.blue).frame(width: 28); Text("Version"); Spacer(); Text("1.0.0").foregroundColor(.secondary) }
+                    HStack { Image(systemName: "info.circle.fill").foregroundColor(.blue).frame(width: 28); Text("Version"); Spacer(); Text(appVersion).foregroundColor(.secondary) }
                     Link(destination: URL(string: "https://www.amazon.com/sendtokindle")!) { HStack { Image(systemName: "globe").foregroundColor(.orange).frame(width: 28); Text("Send to Kindle Website"); Spacer(); Image(systemName: "arrow.up.right.square").foregroundColor(.secondary) } }
                 } header: { Text("About") }
             }
@@ -63,6 +63,12 @@ struct SettingsView: View {
     }
     
     private func calculateLibrarySize() -> String { let totalBytes = conversionManager.convertedPDFs.reduce(0) { $0 + $1.fileSize }; let formatter = ByteCountFormatter(); formatter.countStyle = .file; return formatter.string(fromByteCount: totalBytes) }
+    
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "v\(version) (\(build))"
+    }
 }
 
 struct KindleDeviceRow: View {
@@ -148,6 +154,8 @@ struct DefaultConversionSettingsView: View {
 
 struct DefaultEnhancementSettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @State private var showingResetAlert = false
+    
     var body: some View {
         Form {
             Section { Toggle("Enable Enhancement", isOn: $conversionManager.conversionSettings.imageEnhancement.enabled) }
@@ -158,9 +166,26 @@ struct DefaultEnhancementSettingsView: View {
                     VStack(alignment: .leading) { Text("Contrast: \(Int(conversionManager.conversionSettings.imageEnhancement.contrast * 100))%"); Slider(value: $conversionManager.conversionSettings.imageEnhancement.contrast, in: 0.5...1.5) }
                     VStack(alignment: .leading) { Text("Sharpness: \(Int(conversionManager.conversionSettings.imageEnhancement.sharpness * 100))%"); Slider(value: $conversionManager.conversionSettings.imageEnhancement.sharpness, in: 0...1.0) }
                 } header: { Text("Adjustments") }
-                Section { Button("Reset to Defaults") { conversionManager.conversionSettings.imageEnhancement = ImageEnhancementSettings(enabled: true) }.foregroundColor(.red) }
+                Section { 
+                    Button("Reset to Defaults") { 
+                        showingResetAlert = true 
+                        HapticManager.shared.impact(.medium)
+                    }
+                    .foregroundColor(.red) 
+                }
             }
-        }.navigationTitle("Enhancement Defaults").onChange(of: conversionManager.conversionSettings) { _ in conversionManager.saveSettings() }
+        }
+        .navigationTitle("Enhancement Defaults")
+        .onChange(of: conversionManager.conversionSettings) { _ in conversionManager.saveSettings() }
+        .alert("Reset Settings?", isPresented: $showingResetAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset", role: .destructive) {
+                HapticManager.shared.notification(.success)
+                withAnimation {
+                    conversionManager.conversionSettings.imageEnhancement = ImageEnhancementSettings(enabled: true)
+                }
+            }
+        }
     }
 }
 

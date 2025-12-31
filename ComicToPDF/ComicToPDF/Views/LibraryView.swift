@@ -37,8 +37,11 @@ struct LibraryView: View {
         NavigationView {
             ZStack {
                 LinearGradient(colors: [Color(.systemBackground), Color.blue.opacity(0.05)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
-                if conversionManager.convertedPDFs.isEmpty { emptyState }
-                else {
+                if conversionManager.convertedPDFs.isEmpty {
+                    emptyStateLibrary
+                } else if conversionManager.filteredPDFs.isEmpty {
+                    emptyStateSearch
+                } else {
                     VStack(spacing: 0) {
                         SearchFilterBar(searchText: $conversionManager.searchText, showFilters: $showingFilters)
                         if isSelectionMode { batchActionBar }
@@ -51,13 +54,17 @@ struct LibraryView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if !conversionManager.convertedPDFs.isEmpty {
-                        Button(isSelectionMode ? "Cancel" : "Select") { withAnimation { isSelectionMode.toggle(); if !isSelectionMode { selectedPDFs.removeAll() } } }
+                        Button(isSelectionMode ? "Cancel" : "Select") { 
+                            HapticManager.shared.impact(.light)
+                            withAnimation { isSelectionMode.toggle(); if !isSelectionMode { selectedPDFs.removeAll() } } 
+                        }
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack {
                         if isSelectionMode {
                             Button(selectedPDFs.count == conversionManager.convertedPDFs.count ? "Deselect All" : "Select All") {
+                                HapticManager.shared.impact(.light)
                                 if selectedPDFs.count == conversionManager.convertedPDFs.count { selectedPDFs.removeAll() }
                                 else { selectedPDFs = Set(conversionManager.convertedPDFs.map { $0.id }) }
                             }
@@ -121,11 +128,33 @@ struct LibraryView: View {
         }
     }
     
-    private var emptyState: some View {
+    private var emptyStateLibrary: some View {
         VStack(spacing: 20) {
-            Image(systemName: "tray").font(.system(size: 60)).foregroundColor(.secondary.opacity(0.5))
+            Image(systemName: "books.vertical").font(.system(size: 60)).foregroundColor(.secondary.opacity(0.5))
             Text("No Converted PDFs").font(.title2).fontWeight(.semibold)
             Text("Convert some CBZ/CBR files to see them here").font(.subheadline).foregroundColor(.secondary)
+            Button("Go to Convert") {
+                // Ideally switch tab, but for now just a visual call to action
+            }
+            .padding(.top, 10)
+            .opacity(0) // Hidden but takes space if needed, or remove
+        }
+    }
+    
+    private var emptyStateSearch: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "magnifyingglass").font(.system(size: 60)).foregroundColor(.secondary.opacity(0.5))
+            Text("No Matches Found").font(.title2).fontWeight(.semibold)
+            Text("Try adjusting your search or filters").font(.subheadline).foregroundColor(.secondary)
+            Button("Clear Filters") {
+                withAnimation {
+                    conversionManager.searchText = ""
+                    conversionManager.filterFavoritesOnly = false
+                    conversionManager.filterCollection = nil
+                    HapticManager.shared.notification(.success)
+                }
+            }
+            .buttonStyle(.bordered)
         }
     }
     
