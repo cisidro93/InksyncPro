@@ -34,7 +34,7 @@ struct BackupRestoreView: View {
             Section(footer: Text("Backups include your library index, collections, and settings. PDF files are not included in the backup file.")) {}
         }
         .navigationTitle("Backup & Restore")
-        .fileExporter(isPresented: $showingExporter, document: backupDocument, contentType: .json, defaultFilename: "ComicToPDF_Backup") { result in
+        .fileExporter(isPresented: $showingExporter, document: backupDocument, contentType: .json, defaultFilename: "ComicToPDF_Backup.json") { result in
              switch result {
              case .success:
                  HapticManager.shared.notification(.success)
@@ -43,7 +43,7 @@ struct BackupRestoreView: View {
                  showingAlert = true
              }
         }
-        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json]) { result in
+        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json, .plainText, .data]) { result in
             switch result {
             case .success(let url):
                 importBackup(from: url)
