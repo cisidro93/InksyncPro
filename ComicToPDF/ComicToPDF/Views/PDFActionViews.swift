@@ -181,17 +181,50 @@ struct SplitPDFView: View {
         
         let maxBytes = Int(maxSizeMB) * 1024 * 1024
         var parts: [URL] = []
+        
+        // Stream processing state
         var currentBatch: [UIImage] = []
         var currentBatchSize: Int64 = 0
         var partIndex = 1
+        var processedCount = 0
+        let totalFilesApprox = imageURLs.count // Approximate since stitching changes count
         
-        let generator = EPUBGenerator(settings: EPUBSettings(), metadata: pdf.metadata)
+        // Lower compression for Split to avoid size bloat (users often split large files)
+        let generator = EPUBGenerator(settings: EPUBSettings(), metadata: pdf.metadata, compressionQuality: 0.7)
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-         let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
+        let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         
+        // Helper to process a ready image (stitched or single)
+        func processReadyImage(_ image: UIImage) async throws {
+            let estimatedSize = Int64(image.size.width * image.size.height * 0.5) // Rough estimate for JPEG
+            
+            if currentBatchSize + estimatedSize > Int64(maxBytes) && !currentBatch.isEmpty {
+                // Generate part
+                let partName = "\(pdf.name)_part\(partIndex)"
+                let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName)
+                
+                let finalURL = outputDir.appendingPathComponent("\(partName).epub")
+                if FileManager.default.fileExists(atPath: finalURL.path) { try FileManager.default.removeItem(at: finalURL) }
+                try FileManager.default.moveItem(at: epubURL, to: finalURL)
+                parts.append(finalURL)
+                
+                currentBatch = []
+                currentBatchSize = 0
+                partIndex += 1
+            }
+            
+            currentBatch.append(image)
+            currentBatchSize += estimatedSize
+            processedCount += 1
+            
+            await MainActor.run {
+                // Progress is approximate because stitching reduces count, but good enough
+                self.progress = min(Double(processedCount) / Double(totalFilesApprox), 0.99)
+            }
+        }
+        
         // Pre-process images: Stitch strips if needed
-        var finalImages: [UIImage] = []
         var stripBuffer: [UIImage] = []
         
         for url in imageURLs {
@@ -213,14 +246,14 @@ struct SplitPDFView: View {
                          let totalH = stripBuffer.reduce(0) { $0 + $1.size.height }
                          if totalH > img.size.width * 1.5 {
                              if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
-                                 finalImages.append(combined)
+                                 try await processReadyImage(combined)
                              }
                              stripBuffer = []
                          }
                      } else {
                          // Width change! Flush previous buffer.
                          if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
-                             finalImages.append(combined)
+                             try await processReadyImage(combined)
                          }
                          stripBuffer = [img]
                      }
@@ -229,42 +262,16 @@ struct SplitPDFView: View {
                  // Memory safety: if buffer gets huge, flush.
                  if stripBuffer.count > 10 { // 10 strips is generous
                       if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
-                             finalImages.append(combined)
+                             try await processReadyImage(combined)
                      }
                      stripBuffer = []
                  }
              }
         }
-        // Flush remaining
+        // Flush remaining strips
         if !stripBuffer.isEmpty {
              if let combined = EPUBStripFixer.combineStripsVertically(stripBuffer) {
-                 finalImages.append(combined)
-             }
-        }
-        
-        for (index, image) in finalImages.enumerated() {
-             let estimatedSize = Int64(image.size.width * image.size.height * 0.5) // Rough estimate for JPEG
-             
-             if currentBatchSize + estimatedSize > Int64(maxBytes) && !currentBatch.isEmpty {
-                 // Generate part
-                 let partName = "\(pdf.name)_part\(partIndex)"
-                 let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName)
-                 
-                 let finalURL = outputDir.appendingPathComponent("\(partName).epub")
-                 if FileManager.default.fileExists(atPath: finalURL.path) { try FileManager.default.removeItem(at: finalURL) }
-                 try FileManager.default.moveItem(at: epubURL, to: finalURL)
-                 parts.append(finalURL)
-                 
-                 currentBatch = []
-                 currentBatchSize = 0
-                 partIndex += 1
-             }
-             
-             currentBatch.append(image)
-             currentBatchSize += estimatedSize
-             
-             await MainActor.run {
-                 self.progress = Double(index + 1) / Double(finalImages.count)
+                 try await processReadyImage(combined)
              }
         }
         
