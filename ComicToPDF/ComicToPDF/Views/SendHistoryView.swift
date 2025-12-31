@@ -12,7 +12,7 @@ struct SendHistoryView: View {
                 }
             }
             
-            ForEach(conversionManager.sendHistory, id: \.id) { record in
+            ForEach(conversionManager.sendHistory, id: \.id) { (record: SendHistoryRecord) in
                 VStack(alignment: .leading, spacing: 6) {
                     Text(record.pdfName)
                         .font(.headline)
