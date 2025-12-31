@@ -36,7 +36,7 @@ struct ConvertView: View {
                             mangaModeToggle
                             autoSplitSection
                             outputFormatSection
-                            if conversionManager.conversionSettings.outputFormat != .pdf {
+                            if settings.outputFormat != .pdf {
                                 epubSettingsSection
                             }
                             compressionSection
@@ -203,7 +203,7 @@ struct ConvertView: View {
     private var outputFormatSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Export Format").font(.headline)
-            Picker("Output Format", selection: $conversionManager.conversionSettings.outputFormat) {
+            Picker("Output Format", selection: $settings.outputFormat) {
                 ForEach(OutputFormat.allCases) { format in
                     HStack {
                         Image(systemName: format.icon)
@@ -214,7 +214,7 @@ struct ConvertView: View {
             }
             .pickerStyle(SegmentedPickerStyle())
             
-            Text(conversionManager.conversionSettings.outputFormat.description)
+            Text(settings.outputFormat.description)
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -229,7 +229,7 @@ struct ConvertView: View {
             HStack {
                 Text("Reading Direction")
                 Spacer()
-                Picker("", selection: $conversionManager.conversionSettings.epubSettings.readingDirection) {
+                Picker("", selection: $settings.epubSettings.readingDirection) {
                     ForEach(EPUBSettings.ReadingDirection.allCases, id: \.self) { direction in
                         Text(direction.displayName).tag(direction)
                     }
@@ -237,8 +237,8 @@ struct ConvertView: View {
                 .pickerStyle(MenuPickerStyle())
             }
             
-            Toggle("Include Table of Contents", isOn: $conversionManager.conversionSettings.epubSettings.includeTableOfContents)
-            Toggle("Preserve Aspect Ratio", isOn: $conversionManager.conversionSettings.epubSettings.preserveAspectRatio)
+            Toggle("Include Table of Contents", isOn: $settings.epubSettings.includeTableOfContents)
+            Toggle("Preserve Aspect Ratio", isOn: $settings.epubSettings.preserveAspectRatio)
         }
         .padding()
         .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
@@ -435,7 +435,7 @@ struct ConvertView: View {
                         }
                         
                         // Auto-split logic strictly for PDF
-                        if autoSplitEnabled && conversionManager.conversionSettings.outputFormat != .epub {
+                        if autoSplitEnabled && settings.outputFormat != .epub {
                             // Only split PDFs. If "Both", we have both. We should filter for PDF.
                              for url in urls where url.pathExtension.lowercased() == "pdf" {
                                 if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
