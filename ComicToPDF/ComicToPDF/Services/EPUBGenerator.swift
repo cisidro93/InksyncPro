@@ -372,13 +372,11 @@ class EPUBGenerator {
             try FileManager.default.removeItem(at: outputURL)
         }
         
-        guard let archive = Archive(url: outputURL, accessMode: .create) else {
-            throw NSError(domain: "EPUBGenerator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
-        }
+        let archive = try Archive(url: outputURL, accessMode: .create)
         
         // 1. Mimetype (MUST be first and uncompressed)
         let mimetypeURL = tempDirectory.appendingPathComponent("mimetype")
-        try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: 20, compressionMethod: .none) { position, size in
+        try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: Int64(20), compressionMethod: .none) { position, size in
             return try Data(contentsOf: mimetypeURL).subdata(in: 0..<Int(size))
         }
         
@@ -405,7 +403,7 @@ class EPUBGenerator {
                  // Directories are implicit or added as 0-size entries in some zip implementations, 
                  // but ZIPFoundation typically handles file paths. We can skip explicit directory entries
                  // unless necessary, but adding them doesn't hurt.
-                 try archive.addEntry(with: path + "/", type: .directory, uncompressedSize: 0, compressionMethod: .none) { _, _ in Data() }
+                 try archive.addEntry(with: path + "/", type: .directory, uncompressedSize: Int64(0), compressionMethod: .none) { _, _ in Data() }
             }
         }
         

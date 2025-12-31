@@ -1,6 +1,7 @@
 import Foundation
 import PDFKit
 import UIKit
+import ZIPFoundation
 
 /// Service to convert PDF files to EPUB format
 /// Extracts PDF pages as images and packages them into a valid EPUB structure
@@ -399,13 +400,11 @@ class PDFToEPUBConverter {
             try FileManager.default.removeItem(at: outputURL)
         }
         
-        guard let archive = Archive(url: outputURL, accessMode: .create) else {
-            throw NSError(domain: "PDFToEPUBConverter", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
-        }
+        let archive = try Archive(url: outputURL, accessMode: .create)
         
         // 1. Mimetype (MUST be first and uncompressed)
         let mimetypeURL = tempDir.appendingPathComponent("mimetype")
-        try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: 20, compressionMethod: .none) { position, size in
+        try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: Int64(20), compressionMethod: .none) { position, size in
             return try Data(contentsOf: mimetypeURL).subdata(in: 0..<Int(size))
         }
         
@@ -426,7 +425,7 @@ class PDFToEPUBConverter {
                     return try Data(contentsOf: fileURL).subdata(in: 0..<Int(size))
                 }
             } else {
-                 try archive.addEntry(with: path + "/", type: .directory, uncompressedSize: 0, compressionMethod: .none) { _, _ in Data() }
+                 try archive.addEntry(with: path + "/", type: .directory, uncompressedSize: Int64(0), compressionMethod: .none) { _, _ in Data() }
             }
         }
     }
