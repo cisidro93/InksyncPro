@@ -72,7 +72,7 @@ class PDFToEPUBConverter {
         to outputURL: URL,
         options: ConversionOptions = .default,
         progressHandler: ((ConversionProgress) -> Void)? = nil
-    ) async throws -> URL {
+    ) async throws -> (URL, Int) {
         
         // Load PDF
         guard let pdfDocument = PDFDocument(url: pdfURL) else {
@@ -234,7 +234,7 @@ class PDFToEPUBConverter {
             phase: .complete
         ))
         
-        return outputURL
+        return (outputURL, pageCount)
     }
     
     // MARK: - Private Methods
@@ -438,9 +438,10 @@ class PDFToEPUBConverter {
 extension PDFToEPUBConverter {
     
     /// Quick convert with default options
-    static func convert(pdf pdfURL: URL, to outputURL: URL) async throws -> URL {
+    static func convert(pdf pdfURL: URL, to outputURL: URL) async throws -> (url: URL, pageCount: Int) {
         let converter = PDFToEPUBConverter()
-        return try await converter.convert(pdfURL: pdfURL, to: outputURL)
+        let (url, pageCount) = try await converter.convert(pdfURL: pdfURL, to: outputURL)
+        return (url, pageCount)
     }
     
     /// Convert with progress tracking using Combine

@@ -399,15 +399,11 @@ class ConversionManager: ObservableObject {
             }
             options.title = outputName
             
-            // Get page count first
-            if let pdf = PDFDocument(url: sourceURL) {
-                finalPageCount = pdf.pageCount
-            }
-            
-            let url = try await converter.convert(pdfURL: sourceURL, to: self.outputDirectory.appendingPathComponent("\(outputName).epub"), options: options) { progress in
+            // Perform conversion and get result URL+PageCount
+            let (url, pageCount) = try await converter.convert(pdfURL: sourceURL, to: self.outputDirectory.appendingPathComponent("\(outputName).epub"), options: options) { progress in
                 progressHandler(progress.percentage)
             }
-            return (url, finalPageCount)
+            return (url, pageCount)
             
         } else {
             // Existing Logic for Archive -> EPUB
