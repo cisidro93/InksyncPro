@@ -396,7 +396,7 @@ struct ConvertView: View {
                     // Wait, I am editing ConvertView.swift. 
                     // Let's assume I will update ConversionManager.swift next.
                     
-                    let nameToUse = customFileNames[fileURL] ?? fileURL.deletingPathExtension().lastPathComponent
+                    let _ = customFileNames[fileURL] ?? fileURL.deletingPathExtension().lastPathComponent
                     
                     let urls = try await conversionManager.convertToFormat(
                         conversionManager.conversionSettings.outputFormat,

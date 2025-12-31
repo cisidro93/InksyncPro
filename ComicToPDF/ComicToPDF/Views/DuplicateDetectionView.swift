@@ -33,17 +33,8 @@ struct DuplicateDetectionView: View {
             ForEach(duplicateGroups) { group in
                 Section(header: Text("Identical Files (\(group.pdfs.count))")) {
                     ForEach(group.pdfs) { pdf in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(pdf.name).font(.headline)
-                                Text(pdf.formattedSize).font(.caption).foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Button(action: {
-                                deletePDF(pdf)
-                            }) {
-                                Image(systemName: "trash").foregroundColor(.red)
-                            }
+                        DuplicateRow(pdf: pdf) {
+                            deletePDF(pdf)
                         }
                     }
                 }
@@ -55,6 +46,24 @@ struct DuplicateDetectionView: View {
         withAnimation {
             conversionManager.removeFromLibrary(pdf)
             // Refresh list if needed
+        }
+    }
+}
+
+struct DuplicateRow: View {
+    let pdf: ConvertedPDF
+    let onDelete: () -> Void
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(pdf.name).font(.headline)
+                Text(pdf.formattedSize).font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+            Button(action: onDelete) {
+                Image(systemName: "trash").foregroundColor(.red)
+            }
         }
     }
 }

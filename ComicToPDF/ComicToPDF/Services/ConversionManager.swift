@@ -753,10 +753,11 @@ class ConversionManager: ObservableObject {
     }
     
     func findDuplicates() async -> [DuplicateGroup] {
+        let pdfs = await MainActor.run { convertedPDFs }
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 var hashGroups: [String: [ConvertedPDF]] = [:]
-                for pdf in self.convertedPDFs {
+                for pdf in pdfs {
                     if let data = try? Data(contentsOf: pdf.url) {
                         let hash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
                         hashGroups[hash, default: []].append(pdf)
@@ -964,8 +965,8 @@ struct StorageInfo {
     var formattedTotalSize: String {
         ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
     }
-}
-}
+
+
 
 struct BackupData: Codable {
     let date: Date
