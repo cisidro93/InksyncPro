@@ -370,10 +370,32 @@ class ConversionManager: ObservableObject {
             var options = PDFToEPUBConverter.ConversionOptions.default
             
             // Map settings to options
+            // Map settings to options
+            var scale: Double = 1.0
             if config.compressionQuality == .custom {
                 options.imageQuality = config.customJpegQuality
+                scale = config.customScale
             } else {
-                options.imageQuality = config.compressionQuality.values.quality
+                let values = config.compressionQuality.values
+                options.imageQuality = values.quality
+                scale = values.scale
+            }
+            
+            if config.optimizeForDevice {
+                let resolution = config.targetDevice.resolution
+                options.maxImageWidth = resolution.width
+                options.maxImageHeight = resolution.height
+            } else {
+                // Apply scale to default base resolution (approx 1600x2400) or just pass generic limits
+                // If user wants "Original", we give high limits. If "Low", we reduce.
+                options.maxImageWidth = 1600 * CGFloat(scale)
+                options.maxImageHeight = 2400 * CGFloat(scale)
+                
+                // If "Original", lets unlock the size a bit more to be true to source
+                if config.compressionQuality == .original {
+                    options.maxImageWidth = 4000
+                    options.maxImageHeight = 6000
+                }
             }
             options.title = outputName
             
@@ -416,7 +438,7 @@ class ConversionManager: ObservableObject {
             var metadata = PDFMetadata()
             metadata.title = outputName
             
-            let generator = EPUBGenerator(settings: config.epubSettings, metadata: metadata)
+            let generator = EPUBGenerator(settings: config.epubSettings, metadata: metadata, compressionQuality: jpegQuality)
             let epubURL = try await generator.generateEPUB(from: processedImages, outputName: outputName)
             
             progressHandler(1.0)

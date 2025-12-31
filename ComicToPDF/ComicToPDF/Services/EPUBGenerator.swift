@@ -8,13 +8,12 @@ import ZIPFoundation
 
 class EPUBGenerator {
     
-    private let tempDirectory: URL
-    private let settings: EPUBSettings
-    private let metadata: PDFMetadata
+    private let compressionQuality: Double
     
-    init(settings: EPUBSettings, metadata: PDFMetadata) {
+    init(settings: EPUBSettings, metadata: PDFMetadata, compressionQuality: Double = 0.85) {
         self.settings = settings
         self.metadata = metadata
+        self.compressionQuality = compressionQuality
         self.tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("EPUBGeneration_\(UUID().uuidString)", isDirectory: true)
     }
@@ -67,7 +66,7 @@ class EPUBGenerator {
     private func generateContent(from images: [UIImage]) async throws {
         // Process and save images
         for (index, image) in images.enumerated() {
-            let imageData = image.jpegData(compressionQuality: 0.9) ?? Data()
+            let imageData = image.jpegData(compressionQuality: self.compressionQuality) ?? Data()
             let imageURL = tempDirectory.appendingPathComponent("OEBPS/images/page\(index + 1).jpg")
             try imageData.write(to: imageURL)
             
