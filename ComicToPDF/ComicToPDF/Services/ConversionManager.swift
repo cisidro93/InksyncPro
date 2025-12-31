@@ -1134,5 +1134,27 @@ extension ConversionManager {
         savePresets()
         saveSendHistory()
     }
+    func autoOrganize(by method: OrganizationMethod) {
+        // Simple implementation for now - just logs
+        print("Auto organizing by: \(method)")
+        // Actual implementation would involve moving files or updating metadata based on the method
+        // For now, we stub this out to fix the build
+        objectWillChange.send()
+    }
+    
+    func batchRename(pattern: String, startNumber: Int) {
+        // Simple implementation for now
+        print("Batch renaming with pattern: \(pattern), start: \(startNumber)")
+        // Logic to iterate through PDFs and rename them
+        // Stub to fix build
+        objectWillChange.send()
+    }
+}
+
+enum OrganizationMethod: String, CaseIterable, Identifiable {
+    case alphabetical = "Alphabetical"
+    case dateAdded = "Date Added"
+    
+    var id: String { rawValue }
 }
 
