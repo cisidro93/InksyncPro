@@ -6,8 +6,9 @@ import ZIPFoundation
 // MARK: - EPUB GENERATOR CLASS
 // =============================================================================
 
-class EPUBGenerator {
-    
+    private let tempDirectory: URL
+    private let settings: EPUBSettings
+    private let metadata: PDFMetadata
     private let compressionQuality: Double
     
     init(settings: EPUBSettings, metadata: PDFMetadata, compressionQuality: Double = 0.85) {
