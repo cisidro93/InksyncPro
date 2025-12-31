@@ -356,45 +356,64 @@ class ConversionManager: ObservableObject {
     
     func convertToEPUB(from sourceURL: URL, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> URL {
         let config = settings ?? conversionSettings
-        var images = try await extractImages(from: sourceURL) { progress in
-            progressHandler(progress * 0.3)
-        }
-        guard !images.isEmpty else { throw ConversionError.noImagesFound }
-        if config.mangaMode { images.reverse() }
-        
-        // Resize images for EPUB (similar logic to PDF but maybe different constraints)
-        // For EPUB, we generally want good quality but reasonable size. 
-        // Let's use the same processing logic but maybe different target size if strictly defined.
-        // For now reusing processImages
-        
-        let scale: Double
-        let jpegQuality: Double
-        if config.compressionQuality == .custom {
-            scale = config.customScale
-            jpegQuality = config.customJpegQuality
-        } else {
-            let values = config.compressionQuality.values
-            scale = values.scale
-            jpegQuality = values.quality
-        }
-        
-        // Enhance images
-        let processedImages = try await processImages(images, scale: scale, jpegQuality: jpegQuality, enhancement: config.imageEnhancement, targetSize: nil) { progress in
-            progressHandler(0.3 + progress * 0.4)
-        }
-        
-        // Metadata
-        var metadata = PDFMetadata()
-        metadata.title = sourceURL.deletingPathExtension().lastPathComponent
-        // TODO: Extract metadata from ComicInfo.xml if available (future feature)
-        
         let outputName = sourceURL.deletingPathExtension().lastPathComponent
         
-        let generator = EPUBGenerator(settings: config.epubSettings, metadata: metadata)
-        let epubURL = try await generator.generateEPUB(from: processedImages, outputName: outputName)
+        // Check if source is marked as PDF or has PDF extension
+        let isPDF = sourceURL.pathExtension.lowercased() == "pdf"
         
-        progressHandler(1.0)
-        return epubURL
+        if isPDF {
+            let tempOutput = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("\(outputName).epub")
+            try? FileManager.default.createDirectory(at: tempOutput.deletingLastPathComponent(), withIntermediateDirectories: true)
+            
+            let converter = PDFToEPUBConverter()
+            var options = PDFToEPUBConverter.ConversionOptions.default
+            
+            // Map settings to options
+            if config.compressionQuality == .custom {
+                options.imageQuality = config.customJpegQuality
+            } else {
+                options.imageQuality = config.compressionQuality.values.quality
+            }
+            options.title = outputName
+            
+            return try await converter.convert(pdfURL: sourceURL, to: self.outputDirectory.appendingPathComponent("\(outputName).epub"), options: options) { progress in
+                progressHandler(progress.percentage)
+            }
+            
+        } else {
+            // Existing Logic for Archive -> EPUB
+            var images = try await extractImages(from: sourceURL) { progress in
+                progressHandler(progress * 0.3)
+            }
+            guard !images.isEmpty else { throw ConversionError.noImagesFound }
+            if config.mangaMode { images.reverse() }
+            
+            let scale: Double
+            let jpegQuality: Double
+            if config.compressionQuality == .custom {
+                scale = config.customScale
+                jpegQuality = config.customJpegQuality
+            } else {
+                let values = config.compressionQuality.values
+                scale = values.scale
+                jpegQuality = values.quality
+            }
+            
+            // Enhance images
+            let processedImages = try await processImages(images, scale: scale, jpegQuality: jpegQuality, enhancement: config.imageEnhancement, targetSize: nil) { progress in
+                progressHandler(0.3 + progress * 0.4)
+            }
+            
+            // Metadata
+            var metadata = PDFMetadata()
+            metadata.title = outputName
+            
+            let generator = EPUBGenerator(settings: config.epubSettings, metadata: metadata)
+            let epubURL = try await generator.generateEPUB(from: processedImages, outputName: outputName)
+            
+            progressHandler(1.0)
+            return epubURL
+        }
     }
     
     private func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
