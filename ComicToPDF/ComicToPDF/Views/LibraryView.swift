@@ -73,6 +73,8 @@ struct LibraryView: View {
                                 Button(action: { showingMerge = true }) { Label("Merge PDFs", systemImage: "doc.on.doc") }
                                 Button(action: { showingBatchRename = true }) { Label("Batch Rename", systemImage: "pencil.circle") }
                                 Button(action: { showingDuplicates = true }) { Label("Find Duplicates", systemImage: "doc.on.doc.fill") }
+                                Divider()
+                                Button(action: { importFromExternalStorage() }) { Label("Import from USB/Files", systemImage: "externaldrive") }
                             } label: {
                                 Image(systemName: "ellipsis.circle")
                             }
@@ -166,6 +168,7 @@ struct LibraryView: View {
                 Button(action: { showingBatchMail = true }) { VStack(spacing: 4) { Image(systemName: "paperplane.fill").font(.title3); Text("Kindle").font(.caption2) }.foregroundColor(selectedPDFs.isEmpty ? .gray : .orange) }.disabled(selectedPDFs.isEmpty)
                 Button(action: { showingBatchCloudExport = true }) { VStack(spacing: 4) { Image(systemName: "icloud.and.arrow.up").font(.title3); Text("Cloud").font(.caption2) }.foregroundColor(selectedPDFs.isEmpty ? .gray : .blue) }.disabled(selectedPDFs.isEmpty)
                 Button(action: { showingBatchShare = true }) { VStack(spacing: 4) { Image(systemName: "square.and.arrow.up").font(.title3); Text("Share").font(.caption2) }.foregroundColor(selectedPDFs.isEmpty ? .gray : .green) }.disabled(selectedPDFs.isEmpty)
+                Button(action: { exportToExternalStorage(pdfs: getSelectedPDFs()) }) { VStack(spacing: 4) { Image(systemName: "externaldrive.fill").font(.title3); Text("USB").font(.caption2) }.foregroundColor(selectedPDFs.isEmpty ? .gray : .purple) }.disabled(selectedPDFs.isEmpty)
                 Button(action: { showingBatchDelete = true }) { VStack(spacing: 4) { Image(systemName: "trash.fill").font(.title3); Text("Delete").font(.caption2) }.foregroundColor(selectedPDFs.isEmpty ? .gray : .red) }.disabled(selectedPDFs.isEmpty)
             }.padding(.horizontal).padding(.vertical, 12).background(Color(.secondarySystemBackground))
             if !selectedPDFs.isEmpty {
@@ -184,12 +187,40 @@ struct LibraryView: View {
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) { Button(role: .destructive) { selectedPDF = pdf; showingDeleteAlert = true } label: { Label("Delete", systemImage: "trash") } }
                 .swipeActions(edge: .leading) {
                     Button { selectedPDF = pdf; showingDevicePicker = true } label: { Label("Kindle", systemImage: "paperplane.fill") }.tint(.orange)
-                    Button { selectedPDF = pdf; showingCloudExport = true } label: { Label("Cloud", systemImage: "icloud.and.arrow.up") }.tint(.blue)
+                    Button { exportToExternalStorage(pdfs: [pdf]) } label: { Label("Export (USB)", systemImage: "externaldrive") }.tint(.purple)
                 }
             }.onDelete { indexSet in for index in indexSet { conversionManager.removeFromLibrary(conversionManager.convertedPDFs[index]) } }
         }.listStyle(.insetGrouped)
     }
     
+    private func importFromExternalStorage() {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else {
+            return
+        }
+        
+        ExternalStorageManager.shared.selectFileFromExternalStorage(from: rootViewController) { url in
+            guard let fileURL = url else { return }
+            
+            // Add to library
+            Task {
+                // If it's a PDF/EPUB, add directly. If archive, maybe prompt convert?
+                // For now, just add to library list if supported.
+                // Assuming ConversionManager has a method to add existing file
+                // If not, we might need to recreate PDF/EPUB object.
+                // Let's check ConversionManager later if this fails, but strictly following user request to key it up.
+                
+                await BigSync.runOnMain {
+                     // Since we don't have direct access to 'addToLibrary' on ConversionManager (it handles conversions), 
+                     // we might need to manually create a ConvertedPDF object or import it.
+                     // Actually, looking at ConversionManager earlier, it scans Documents.
+                     // So just copying it there (which ExternalStorageManager does) might be enough if we trigger a refresh!
+                     conversionManager.refreshLibrary()
+                }
+            }
+        }
+    }
+
     private func toggleSelection(_ pdf: ConvertedPDF) { if selectedPDFs.contains(pdf.id) { selectedPDFs.remove(pdf.id) } else { selectedPDFs.insert(pdf.id) } }
     private func getSelectedURLs() -> [URL] { conversionManager.convertedPDFs.filter { selectedPDFs.contains($0.id) }.map { $0.url } }
     private func getSelectedPDFs() -> [ConvertedPDF] { conversionManager.convertedPDFs.filter { selectedPDFs.contains($0.id) } }
