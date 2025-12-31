@@ -4,22 +4,6 @@ import PDFKit
 
 class EPUBConverter {
     
-    enum EPUBError: LocalizedError {
-        case opfNotFound
-        case invalidOPF
-        case noImages
-        case extractionFailed
-        
-        var errorDescription: String? {
-            switch self {
-            case .opfNotFound: return "Could not find EPUB content file"
-            case .invalidOPF: return "EPUB file is corrupted"
-            case .noImages: return "No images found in EPUB"
-            case .extractionFailed: return "Failed to extract EPUB"
-            }
-        }
-    }
-    
     func convertEPUBToPDF(epubURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
@@ -31,7 +15,7 @@ class EPUBConverter {
                 try FileManager.default.unzipItem(at: epubURL, to: tempDir)
                 
                 // Get FULL pages (not slices)
-                let pages = try self.extractFullPages(from: tempDir)
+                let pages = try self.extractFullPages(from: directory: tempDir)
                 
                 if pages.isEmpty {
                     throw EPUBError.noImages
@@ -225,16 +209,20 @@ class EPUBConverter {
         
         let size = CGSize(width: maxWidth, height: totalHeight)
         
-        UIGraphicsBeginImageContextWithOptions(size, false, slices.first?.scale ?? 1.0)
-        defer { UIGraphicsEndImageContext() }
+        // Use UIGraphicsImageRenderer with 1.0 scale and opaque background to prevent corruption
+        // (Replaces legacy UIGraphicsBeginImageContextWithOptions)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
         
-        var yOffset: CGFloat = 0
-        for slice in slices {
-            slice.draw(at: CGPoint(x: 0, y: yOffset))
-            yOffset += slice.size.height
+        return renderer.image { context in
+             var yOffset: CGFloat = 0
+             for slice in slices {
+                 slice.draw(at: CGPoint(x: 0, y: yOffset))
+                 yOffset += slice.size.height
+             }
         }
-        
-        return UIGraphicsGetImageFromCurrentImageContext()
     }
     
     private func findContentDirectory(in directory: URL) throws -> URL {
@@ -280,5 +268,21 @@ class EPUBConverter {
         UIGraphicsEndPDFContext()
         
         return pdfURL
+    }
+}
+
+enum EPUBError: LocalizedError {
+    case opfNotFound
+    case invalidOPF
+    case noImages
+    case extractionFailed
+    
+    var errorDescription: String? {
+        switch self {
+        case .opfNotFound: return "Could not find EPUB content file"
+        case .invalidOPF: return "EPUB file is corrupted"
+        case .noImages: return "No images found in EPUB"
+        case .extractionFailed: return "Failed to extract EPUB"
+        }
     }
 }
