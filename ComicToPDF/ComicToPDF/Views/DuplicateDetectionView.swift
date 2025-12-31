@@ -31,8 +31,8 @@ struct DuplicateDetectionView: View {
     var duplicateList: some View {
         List {
             ForEach(duplicateGroups) { group in
-                Section(header: Text("Identical Files (\(group.pdfs.count))")) {
-                    ForEach(group.pdfs) { pdf in
+                Section(header: Text("Identical Files (\(group.files.count))")) {
+                    ForEach(group.files) { pdf in
                         DuplicateRow(pdf: pdf) {
                             deletePDF(pdf)
                         }

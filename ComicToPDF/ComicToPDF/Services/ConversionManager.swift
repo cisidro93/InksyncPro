@@ -965,6 +965,7 @@ struct StorageInfo {
     var formattedTotalSize: String {
         ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
     }
+}
 
 
 
