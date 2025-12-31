@@ -18,6 +18,7 @@ class EPUBGenerator {
 
     private var spineItems: String = ""
     private var pageCount: Int = 0
+    // Force re-sync of file structure
     
     init(settings: EPUBSettings, metadata: PDFMetadata, compressionQuality: Double = 0.85) {
         self.settings = settings

@@ -788,6 +788,8 @@ class ConversionManager: ObservableObject {
     private func saveKindleDevices() { if let data = try? JSONEncoder().encode(kindleDevices) { UserDefaults.standard.set(data, forKey: "kindleDevices") } }
     func saveSettings() { if let data = try? JSONEncoder().encode(conversionSettings) { UserDefaults.standard.set(data, forKey: "conversionSettings") } }
     
+    // Force re-sync of file structure
+    
     // MARK: - New Feature Implementation
     
     func toggleFavorite(_ pdf: ConvertedPDF) {

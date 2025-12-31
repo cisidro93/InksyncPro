@@ -177,6 +177,7 @@ struct PageDeleteView: View {
         }
     }
     
+    // Force re-sync of file structure
     private func removePagesFromEPUB(at url: URL, keepingImageURLs: [URL]) async throws {
         // Create settings
         let settings = conversionManager.conversionSettings.epubSettings
