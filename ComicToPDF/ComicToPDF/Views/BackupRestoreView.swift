@@ -43,7 +43,7 @@ struct BackupRestoreView: View {
                  showingAlert = true
              }
         }
-        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json, .plainText, .data, .content]) { result in
+        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item]) { result in
             switch result {
             case .success(let url):
                 importBackup(from: url)
