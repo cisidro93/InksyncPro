@@ -442,7 +442,7 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    }
+
     
     func extractImageURLs(from url: URL) async throws -> [URL] {
         return try await withCheckedThrowingContinuation { continuation in
