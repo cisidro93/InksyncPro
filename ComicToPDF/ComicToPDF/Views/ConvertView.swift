@@ -22,6 +22,7 @@ struct ConvertView: View {
     @State private var customFileNames: [URL: String] = [:]
     @State private var autoSplitEnabled = true
     @State private var showingSuccessAnimation = false
+    @State private var hasAppeared = false
     
     var body: some View {
         NavigationView {
@@ -43,9 +44,41 @@ struct ConvertView: View {
                             imageEnhancementSection
                             deviceOptimizationSection
                         }
-                        if isConverting { conversionProgressSection }
-                        if !selectedFiles.isEmpty && !isConverting { convertButton }
-                        Spacer(minLength: 100)
+                        
+                        // Action buttons
+                        VStack(spacing: 12) {
+                            if !selectedFiles.isEmpty {
+                                Button(action: startConversion) {
+                                    HStack {
+                                        if isConverting {
+                                            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        } else {
+                                            Image(systemName: "arrow.right.circle.fill")
+                                        }
+                                        Text(isConverting ? "Converting..." : "Convert Now")
+                                            .fontWeight(.bold)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(isConverting ? Color.gray : Color.orange)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(12)
+                                }
+                                .disabled(isConverting)
+                            }
+                            
+                            Button(action: { showingFilePicker = true }) {
+                                HStack {
+                                    Image(systemName: "plus.circle.fill")
+                                    Text("Select Files")
+                                }
+                                .font(.headline)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        
+                        // Adding extra spacer to ensure scrolling content isn't hidden under floating buttons if any
+                        Spacer(minLength: 60)
                     }.padding()
                 }
             }
@@ -53,7 +86,12 @@ struct ConvertView: View {
             .navigationBarTitleDisplayMode(.large)
             .fullScreenCover(isPresented: $showingFilePicker) { DocumentPickerView(selectedFiles: $selectedFiles, isPresented: $showingFilePicker).ignoresSafeArea() }
             .alert("Status", isPresented: $showingAlert) { Button("OK", role: .cancel) { } } message: { Text(alertMessage) }
-            .onAppear { settings = conversionManager.conversionSettings }
+            .onAppear {
+                if !hasAppeared {
+                    settings = conversionManager.conversionSettings
+                    hasAppeared = true
+                }
+            }
             .sheet(isPresented: $showingRenameSheet) {
                 RenameSheetView(
                     fileURL: renameFileURL,
