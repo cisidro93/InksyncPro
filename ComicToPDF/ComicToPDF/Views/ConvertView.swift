@@ -242,12 +242,9 @@ struct ConvertView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Export Format").font(.headline)
             Picker("Output Format", selection: $settings.outputFormat) {
-                ForEach(OutputFormat.allCases) { format in
-                    HStack {
-                        Image(systemName: format.icon)
-                        Text(format.rawValue)
-                    }
-                    .tag(format)
+                ForEach(OutputFormat.allCases, id: \.self) { format in
+                    Label(format.rawValue, systemImage: format.icon)
+                        .tag(format)
                 }
             }
             .pickerStyle(SegmentedPickerStyle())
