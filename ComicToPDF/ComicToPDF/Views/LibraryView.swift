@@ -213,7 +213,7 @@ struct LibraryView: View {
         }
         
         ExternalStorageManager.shared.selectFileFromExternalStorage(from: rootViewController) { url in
-            guard let fileURL = url else { return }
+            guard url != nil else { return }
             
             // Add to library
             Task {

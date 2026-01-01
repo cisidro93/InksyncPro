@@ -30,7 +30,7 @@ class CBZToEPUBConverter {
         
         // 3. Use EPUBGenerator
         // Note: We use passthrough=false so that EPUBGenerator applies resizing/compression
-        let metadata = PDFMetadata(title: options.title, author: "Unknown", coverImage: nil)
+        let metadata = PDFMetadata(title: options.title, author: "Unknown")
         let generator = EPUBGenerator(
             settings: EPUBSettings(),
             metadata: metadata,
