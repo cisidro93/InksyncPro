@@ -125,48 +125,72 @@ class CBZToEPUBConverter {
         for (index, page) in pages.enumerated() {
             let isDirectCopy = compressionQuality >= 1.0
             
-            // NORMAL MODE (Direct Copy or Transcode) - No Splitting
+            // 1. Check Dimensions & Safety Resize
+            var finalImageSource: CGImageSource? = nil
+            var shouldResize = false
+            
+            if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
+                finalImageSource = source
+                if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+                    let height = (properties[kCGImagePropertyPixelHeight as String] as? Int) ?? page.height
+                    // Safety Limit: 4000px (WebKit texture limit is often 4096px or 8192px)
+                    // Resizing ensures no tiling/stripping artifacts.
+                    if height > 4000 {
+                        shouldResize = true
+                    }
+                }
+            }
+            
+            // NORMAL MODE (Direct Copy or Transcode or Resize)
             let pageNumStr = String(format: "%04d", index + 1)
             
-            // If Direct Copy: Keep original extension
-            // If Compressed: Force JPG
-            let finalExt = isDirectCopy ? page.originalExtension : "jpg"
+            // If Direct Copy & No Resize: Keep original extension
+            // If Compressed OR Resized: Force JPG
+            let finalExt = (isDirectCopy && !shouldResize) ? page.originalExtension : "jpg"
             let imageName = "page\(pageNumStr).\(finalExt)"
             let imageDestURL = imagesDir.appendingPathComponent(imageName)
             
-            // Copy or Compress
-            if isDirectCopy {
+            // Execution
+            if shouldResize, let source = finalImageSource {
+                // RESIZE MODE (Thumbnailing)
+                let options: [String: Any] = [
+                    kCGImageSourceCreateThumbnailStart: true,
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 4000,
+                    kCGImageSourceCreateThumbnailWithTransform: true
+                ]
+                
+                if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
+                         let destOptions: [String: Any] = [kCGImageDestinationLossyCompressionQuality as String: compressionQuality]
+                         CGImageDestinationAddImage(destination, thumbnail, destOptions as CFDictionary)
+                         CGImageDestinationFinalize(destination)
+                    }
+                } else {
+                     // Fallback if thumbnail fails
+                     try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
+                }
+                
+            } else if isDirectCopy {
+                // DIRECT COPY
                 try FileManager.default.copyItem(at: page.url, to: imageDestURL)
             } else {
-                // Compression Logic (Only used for non-Original quality)
-                // STRICT RULE: Use ImageIO Transcoding. NO UIImage. NO Decoding.
-                // This prevents "horizontal stripping" caused by UIKit rendering pipelines.
-                
+                // TRANSCODE (Existing Logic)
                 var compressionSuccess = false
                 
-                if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
-                    // Create destination for JPEG
+                if let source = finalImageSource {
                     if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
                         let options: [String: Any] = [
                             kCGImageDestinationLossyCompressionQuality as String: compressionQuality
                         ]
-                        
-                        // Direct transcode: Source -> Destination with quality option
                         CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
-                        
-                        if CGImageDestinationFinalize(destination) {
-                            compressionSuccess = true
-                        }
+                        if CGImageDestinationFinalize(destination) { compressionSuccess = true }
                     }
                 }
                 
                 if !compressionSuccess {
-                    // FALLBACK: SAFETY NET
-                    // If transcoding fails, we DO NOT attempt UIImage (which causes corruption).
-                    // We fall back to DIRECT COPY ("Original" quality).
-                    // Better a large file than a corrupted one.
                     print("⚠️ ImageIO Compression failed for \(imageName). Falling back to direct copy.")
-                    try? FileManager.default.removeItem(at: imageDestURL) // Clean up potential partial write
+                    try? FileManager.default.removeItem(at: imageDestURL)
                     try FileManager.default.copyItem(at: page.url, to: imageDestURL)
                 }
             }
@@ -183,8 +207,19 @@ class CBZToEPUBConverter {
             // Add to Manifests
             imageManifest += "<item id=\"img_\(pageNumStr)\" href=\"images/\(imageName)\" media-type=\"\(mediaType)\"/>\n"
             
+            // Update Page dimensions for Viewport (Important if resized)
+            var finalWidth = page.width
+            var finalHeight = page.height
+            if shouldResize {
+                // Estimate new dimensions (proportional)
+                 if page.height > 0 {
+                     let ratio = Double(page.width) / Double(page.height)
+                     finalHeight = 4000
+                     finalWidth = Int(Double(finalHeight) * ratio)
+                 }
+            }
+            
             // Generate XHTML
-            // Use dimensions from PageInfo to set viewport correctly
             let xhtmlContent = """
             <?xml version="1.0" encoding="utf-8"?>
             <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
@@ -192,7 +227,7 @@ class CBZToEPUBConverter {
             <head>
                 <title>Page \(index + 1)</title>
                 <link href="../styles.css" type="text/css" rel="stylesheet"/>
-                <meta name="viewport" content="width=\(page.width), height=\(page.height)" />
+                <meta name="viewport" content="width=\(finalWidth), height=\(finalHeight)" />
             </head>
             <body style="margin:0;padding:0;background-color:black;">
                 <div style="text-align:center;height:100vh;display:flex;justify-content:center;align-items:center;">
