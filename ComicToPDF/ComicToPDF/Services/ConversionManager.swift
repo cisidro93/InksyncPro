@@ -1051,10 +1051,15 @@ class ConversionManager: ObservableObject {
                     convertedPDFs[idx].name = newName
                     // Need to update the URL in struct? struct is value type, array holds copies.
                     // This is why we use index. But we need to recreate the struct with new URL
-                    let old = convertedPDFs[idx]
-                     convertedPDFs[idx] = ConvertedPDF(name: newName, url: newURL, pageCount: old.pageCount, fileSize: old.fileSize, collectionId: old.collectionId)
-                     convertedPDFs[idx].metadata = old.metadata
-                     convertedPDFs[idx].isFavorite = old.isFavorite
+                     let old = convertedPDFs[idx]
+                     var newPDF = ConvertedPDF(name: newName, url: newURL, pageCount: old.pageCount, fileSize: old.fileSize, collectionId: old.collectionId)
+                     newPDF.metadata = old.metadata
+                     newPDF.isFavorite = old.isFavorite
+                     newPDF.coverImageData = old.coverImageData
+                     newPDF.fileHash = old.fileHash
+                     newPDF.lastSentDate = old.lastSentDate
+                     newPDF.lastSentDevice = old.lastSentDevice
+                     convertedPDFs[idx] = newPDF
                 }
             } catch {
                 print("Rename failed: \(error)")

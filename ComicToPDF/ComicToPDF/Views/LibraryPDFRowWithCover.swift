@@ -1,5 +1,6 @@
 import SwiftUI
 import PDFKit
+import UIKit
 
 struct LibraryPDFRowWithCover: View {
     let pdf: ConvertedPDF
