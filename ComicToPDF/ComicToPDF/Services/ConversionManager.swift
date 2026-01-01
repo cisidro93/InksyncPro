@@ -855,15 +855,62 @@ class ConversionManager: ObservableObject {
     
     func generateCoverThumbnail(for pdf: ConvertedPDF) {
         guard let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }), convertedPDFs[index].coverImageData == nil else { return }
+        
         DispatchQueue.global(qos: .utility).async {
-            guard let document = PDFDocument(url: pdf.url), let page = document.page(at: 0) else { return }
-            let thumbnail = page.thumbnail(of: CGSize(width: 200, height: 280), for: .mediaBox)
-            if let data = thumbnail.jpegData(compressionQuality: 0.7) {
-                DispatchQueue.main.async {
-                    if let idx = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        self.convertedPDFs[idx].coverImageData = data
-                        self.savePDFs()
+            let ext = pdf.url.pathExtension.lowercased()
+            
+            if ext == "pdf" {
+                guard let document = PDFDocument(url: pdf.url), let page = document.page(at: 0) else { return }
+                let thumbnail = page.thumbnail(of: CGSize(width: 200, height: 280), for: .mediaBox)
+                self.saveThumbnail(thumbnail, for: pdf.id)
+            } else if ext == "epub" {
+                // EPUB Thumbnail Generation
+                do {
+                    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    defer { try? FileManager.default.removeItem(at: tempDir) }
+                    
+                    try FileManager.default.unzipItem(at: pdf.url, to: tempDir)
+                    
+                    // Simple heuristic: Take the first found image that looks like a cover
+                    // (Sorting alphanumeric usually puts cover first: e.g. cover.jpg, image001.jpg)
+                    if let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: nil) {
+                        var images: [URL] = []
+                        while let fileURL = enumerator.nextObject() as? URL {
+                            if ["jpg", "jpeg", "png", "webp"].contains(fileURL.pathExtension.lowercased()) {
+                                images.append(fileURL)
+                            }
+                        }
+                        
+                        // Sort mainly by path to get "OEBPS/images/page1.jpg" or "cover.jpg"
+                        images.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                        
+                        if let firstImageURL = images.first,
+                           let originalImage = UIImage(contentsOfFile: firstImageURL.path) {
+                           
+                             // Resize to thumbnail
+                             let targetSize = CGSize(width: 200, height: 280)
+                             let renderer = UIGraphicsImageRenderer(size: targetSize)
+                             let thumbnail = renderer.image { _ in
+                                 originalImage.draw(in: CGRect(origin: .zero, size: targetSize))
+                             }
+                             
+                             self.saveThumbnail(thumbnail, for: pdf.id)
+                        }
                     }
+                } catch {
+                    print("Failed to generate EPUB thumbnail: \(error)")
+                }
+            }
+        }
+    }
+    
+    private func saveThumbnail(_ image: UIImage, for id: UUID) {
+        if let data = image.jpegData(compressionQuality: 0.7) {
+            DispatchQueue.main.async {
+                if let idx = self.convertedPDFs.firstIndex(where: { $0.id == id }) {
+                    self.convertedPDFs[idx].coverImageData = data
+                    self.savePDFs()
                 }
             }
         }
