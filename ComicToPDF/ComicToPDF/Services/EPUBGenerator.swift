@@ -38,9 +38,9 @@ class EPUBGenerator {
         return (epubURL, accumulatedPageCount)
     }
 
-    func generateEPUB(from imageURLs: [URL], outputName: String) async throws -> (URL, Int) {
+    func generateEPUB(from imageURLs: [URL], outputName: String, passthrough: Bool = false) async throws -> (URL, Int) {
         try createEPUBStructure()
-        try await generateContent(from: imageURLs)
+        try await generateContent(from: imageURLs, passthrough: passthrough)
         try generateMetadataFiles()
         let epubURL = try packageEPUB(outputName: outputName)
         cleanup()
@@ -131,7 +131,7 @@ class EPUBGenerator {
         }
     }
 
-    private func generateContent(from imageURLs: [URL]) async throws {
+    private func generateContent(from imageURLs: [URL], passthrough: Bool = false) async throws {
         var imageManifestLines: [String] = []
         var xhtmlManifestLines: [String] = []
         var spineItemLines: [String] = []
@@ -145,19 +145,22 @@ class EPUBGenerator {
             let imageName = String(format: "page%d.\(ext)", pageNumber)
             let destURL = imagesDir.appendingPathComponent(imageName)
             
-            // If the image is already a JPEG and compression is not needed, just copy.
-            // Since && binds tighter than ||, we group the extension checks.
-            let isJPEG = ext.lowercased() == "jpg" || ext.lowercased() == "jpeg"
-            if isJPEG && compressionQuality >= 1.0 {
-                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            if passthrough {
+                 try FileManager.default.copyItem(at: sourceURL, to: destURL)
             } else {
-                // Load image, convert to JPEG with compression, then save
-                if let image = UIImage(contentsOfFile: sourceURL.path),
-                   let imageData = image.jpegData(compressionQuality: self.compressionQuality) {
-                    try imageData.write(to: destURL)
-                } else {
-                    // Fallback: just copy if conversion fails or is not an image
+                // Determine if we can copy directly based on compression
+                let isJPEG = ext.lowercased() == "jpg" || ext.lowercased() == "jpeg"
+                if isJPEG && compressionQuality >= 1.0 {
                     try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                } else {
+                    // Load image, convert to JPEG with compression, then save
+                    if let image = UIImage(contentsOfFile: sourceURL.path),
+                       let imageData = image.jpegData(compressionQuality: self.compressionQuality) {
+                        try imageData.write(to: destURL)
+                    } else {
+                        // Fallback: just copy if conversion fails or is not an image
+                        try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                    }
                 }
             }
             

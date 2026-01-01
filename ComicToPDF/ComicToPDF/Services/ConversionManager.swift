@@ -380,7 +380,7 @@ class ConversionManager: ObservableObject {
         var parts: [URL] = []
         
         // Stream processing state
-        var currentBatch: [UIImage] = []
+        var currentBatch: [URL] = []
         var currentBatchSize: Int64 = 0
         var partIndex = 1
         
@@ -435,14 +435,16 @@ class ConversionManager: ObservableObject {
              print("✂️ Background EPUB Split: Detected strips. Using \(stripsPerPage) strips per page.")
         }
         
-        // Helper to output
-        func outputImage(_ image: UIImage) async throws {
-            let estimatedSize = Int64(image.size.width * image.size.height * 0.5)
+        // Helper to output (URL based)
+        func outputURL(_ url: URL) async throws {
+            let resources = try? url.resourceValues(forKeys: [.fileSizeKey])
+            let fileSize = Int64(resources?.fileSize ?? 0)
             
-            if currentBatchSize + estimatedSize > Int64(maxBytes) && !currentBatch.isEmpty {
+            if currentBatchSize + fileSize > Int64(maxBytes) && !currentBatch.isEmpty {
                 // Generate part
                 let partName = "\(pdf.name)_part\(partIndex)"
-                let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName)
+                // Pass passthrough: !isStrips to ensure direct copy for non-strip mode
+                let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName, passthrough: !isStrips)
                 
                 let finalURL = outputDir.appendingPathComponent("\(partName).epub")
                 if FileManager.default.fileExists(atPath: finalURL.path) { try FileManager.default.removeItem(at: finalURL) }
@@ -454,13 +456,19 @@ class ConversionManager: ObservableObject {
                 partIndex += 1
             }
             
-            currentBatch.append(image)
-            currentBatchSize += estimatedSize
+            currentBatch.append(url)
+            currentBatchSize += fileSize
         }
         
         // Process Loop
         if isStrips {
-            // Use Stride based on detected stripsPerPage
+            // STRIP MODE: Complex processing required (stitch strips -> new images)
+            // We must process these into UIImages, stitch them, save effectively new pages, and use their URLs.
+            
+            let tempStitchDir = tempDir.appendingPathComponent("stitched_pages")
+            try? FileManager.default.createDirectory(at: tempStitchDir, withIntermediateDirectories: true)
+            var stitchedPageCount = 0
+            
             for i in stride(from: 0, to: imageURLs.count, by: stripsPerPage) {
                 let endIndex = min(i + stripsPerPage, imageURLs.count)
                 let chunkURLs = imageURLs[i..<endIndex]
@@ -474,17 +482,22 @@ class ConversionManager: ObservableObject {
                 
                 // Use Robust Stitching from EPUBStripFixer
                 if let stitched = EPUBStripFixer.combineStripsVertically(chunkImages) {
-                    try await outputImage(stitched)
+                    // Save stitched image to temp file to treat it as a URL input
+                    stitchedPageCount += 1
+                    let pageURL = tempStitchDir.appendingPathComponent("stitched_page_\(stitchedPageCount).jpg")
+                    if let data = stitched.jpegData(compressionQuality: 0.7) {
+                        try data.write(to: pageURL)
+                        try await outputURL(pageURL)
+                    }
                 }
                 
                 Task { @MainActor in onProgress(min(Double(i + stripsPerPage) / Double(imageURLs.count), 0.99)) }
             }
         } else {
-            // Normal processing - just copy images
+            // STANDARD MODE: Pass-through (Fast & Safe)
+            // Direct copy of original image URLs
             for (index, url) in imageURLs.enumerated() {
-                if let img = UIImage(contentsOfFile: url.path) {
-                    try await outputImage(img)
-                }
+                try await outputURL(url)
                 Task { @MainActor in onProgress(Double(index + 1) / Double(imageURLs.count)) }
             }
         }
@@ -492,7 +505,7 @@ class ConversionManager: ObservableObject {
         // Final part
         if !currentBatch.isEmpty {
              let partName = "\(pdf.name)_part\(partIndex)"
-             let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName)
+             let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName, passthrough: !isStrips)
              
              let finalURL = outputDir.appendingPathComponent("\(partName).epub")
              if FileManager.default.fileExists(atPath: finalURL.path) { try FileManager.default.removeItem(at: finalURL) }
