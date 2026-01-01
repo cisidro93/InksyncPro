@@ -28,9 +28,17 @@ class CBZToEPUBConverter {
                         compressionQuality: compressionQuality
                     )
                     
-                    print("✅ EPUB created: \(epubURL.lastPathComponent)")
+                    // Move to safe location before tempDir is deleted
+                    let safeFileName = epubURL.lastPathComponent
+                    let safeURL = FileManager.default.temporaryDirectory.appendingPathComponent(safeFileName)
                     
-                    continuation.resume(returning: epubURL)
+                    // Remove existing if any
+                    try? FileManager.default.removeItem(at: safeURL)
+                    try FileManager.default.moveItem(at: epubURL, to: safeURL)
+                    
+                    print("✅ EPUB created and moved to: \(safeURL.lastPathComponent)")
+                    
+                    continuation.resume(returning: safeURL)
                     
                 } catch {
                     continuation.resume(throwing: error)
