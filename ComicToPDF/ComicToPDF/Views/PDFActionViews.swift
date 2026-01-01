@@ -199,15 +199,30 @@ struct SplitPDFView: View {
         var stripsPerPage = 1
         
         if !imageURLs.isEmpty {
-            let sampleCount = min(5, imageURLs.count)
+            // Check a spread of images to avoid being fooled by covers
+            // Sample: Start, 25%, 50%, 75%, End
+            let count = imageURLs.count
+            let indicesToCheck = Set([
+                0,
+                count / 4,
+                count / 2,
+                (count * 3) / 4,
+                count - 1
+            ]).sorted().filter { $0 >= 0 && $0 < count }
+            
             var stripVotes = 0
-            for i in 0..<sampleCount {
+            var validSamples = 0
+            
+            for i in indicesToCheck {
                  if let img = UIImage(contentsOfFile: imageURLs[i].path) {
+                     validSamples += 1
                      // Aspect ratio check: width > 2 * height -> Strip
                      if img.size.width / img.size.height > 2.0 { stripVotes += 1 }
                  }
             }
-            isStrips = stripVotes >= (sampleCount / 2)
+            // If more than 30% of samples are strips, treat as strips
+            // (Lower threshold because covers/credits might be full pages)
+            isStrips = validSamples > 0 && (Double(stripVotes) / Double(validSamples) > 0.3)
         }
         
         if isStrips {
