@@ -29,7 +29,12 @@ class CBZToEPUBConverter {
         }
         
         // 3. Use EPUBGenerator
-        // Note: We use passthrough=false so that EPUBGenerator applies resizing/compression
+        // Determine smart passthrough
+        // If High Quality (1.0), No Target Size, and No Custom Scale -> Passthrough (Copy only)
+        let shouldPassthrough = options.compressionQuality >= 0.99 &&
+                                options.targetSize == nil &&
+                                (options.customScale >= 0.99 || options.customScale <= 0.0)
+        
         let metadata = PDFMetadata(title: options.title, author: "Unknown")
         let generator = EPUBGenerator(
             settings: EPUBSettings(),
@@ -40,7 +45,7 @@ class CBZToEPUBConverter {
         )
         
         // Generator is marked async, so we just await it directly
-        let (epubURL, _) = try await generator.generateEPUB(from: pageURLs, outputName: options.title, passthrough: false)
+        let (epubURL, _) = try await generator.generateEPUB(from: pageURLs, outputName: options.title, passthrough: shouldPassthrough)
 
         generator.printCompressionStats()
         print("✅ EPUB created via Generator: \(epubURL.lastPathComponent)")
