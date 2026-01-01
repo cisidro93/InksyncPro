@@ -297,27 +297,32 @@ class ConversionManager: ObservableObject {
         // Special handling for EPUB using refined converter
         if ext == "epub" {
             return try await withCheckedThrowingContinuation { continuation in
-                ComicEPUBProcessor.shared.convertEPUBIfNeeded(sourceURL) { pdfURL, error in
+                // Use the new user-provided converter for reliable strip reconstruction
+                let converter = EPUBtoPDFConverter()
+                converter.convertEPUBtoPDF(sourceURL) { result in
                     progressHandler(1.0)
-                    if let error = error {
-                        continuation.resume(throwing: error)
-                        return
-                    }
-                    guard let pdfURL = pdfURL else {
-                        continuation.resume(throwing: ConversionError.conversionFailed)
-                        return
-                    }
                     
-                    // Move to output directory
-                    let outputName = customName ?? sourceURL.deletingPathExtension().lastPathComponent
-                    let finalURL = self.outputDirectory.appendingPathComponent("\(outputName).pdf")
-                    do {
-                        if FileManager.default.fileExists(atPath: finalURL.path) {
-                            try FileManager.default.removeItem(at: finalURL)
+                    switch result {
+                    case .success(let pdfURL):
+                        // Move to output directory
+                        let outputName = customName ?? sourceURL.deletingPathExtension().lastPathComponent
+                        let finalURL = self.outputDirectory.appendingPathComponent("\(outputName).pdf")
+                        do {
+                            if FileManager.default.fileExists(atPath: finalURL.path) {
+                                try FileManager.default.removeItem(at: finalURL)
+                            }
+                            try FileManager.default.moveItem(at: pdfURL, to: finalURL)
+                            continuation.resume(returning: finalURL)
+                        } catch {
+                            continuation.resume(throwing: error)
                         }
-                        try FileManager.default.moveItem(at: pdfURL, to: finalURL)
-                        continuation.resume(returning: finalURL)
-                    } catch {
+                        
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        }
                         continuation.resume(throwing: error)
                     }
                 }
