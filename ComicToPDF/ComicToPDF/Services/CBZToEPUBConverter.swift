@@ -122,169 +122,91 @@ class CBZToEPUBConverter {
         var xhtmlManifest = ""
         var spineItems = ""
         
-        var globalPageIndex = 1
-        
         for (index, page) in pages.enumerated() {
             let isDirectCopy = compressionQuality >= 1.0
             
-            // Check Height for Safety Splitting (WebKit limit approx 4096px safe, 8192px max)
-            var shouldSplit = false
-            var splitCount = 1
-             if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
-                  if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
-                      let height = (properties[kCGImagePropertyPixelHeight as String] as? Int) ?? page.height
-                      if height > 4096 {
-                          shouldSplit = true
-                          splitCount = Int(ceil(Double(height) / 4096.0))
-                          print("✂️ Giant Image Detected (Page \(index+1)): Height \(height)px > 4096px. Splitting into \(splitCount) parts.")
-                      }
-                  }
-             }
+            // NORMAL MODE (Direct Copy or Transcode) - No Splitting
+            let pageNumStr = String(format: "%04d", index + 1)
             
-            if shouldSplit {
-                // SPLIT MODE
-                 if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil),
-                    let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
-                     
-                     let totalHeight = cgImage.height
-                     let width = cgImage.width
-                     let splitHeight = 4096
-                     
-                     for part in 0..<splitCount {
-                         let y = part * splitHeight
-                         let h = min(splitHeight, totalHeight - y)
-                         let chunkRect = CGRect(x: 0, y: y, width: width, height: h)
-                         
-                         if let chunkImg = cgImage.cropping(to: chunkRect) {
-                             let pageNumStr = String(format: "%04d", globalPageIndex)
-                             let imageName = "page\(pageNumStr).jpg"
-                             let imageDestURL = imagesDir.appendingPathComponent(imageName)
-                             
-                             // Save Chunk
-                             if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                                 let options: [String: Any] = [kCGImageDestinationLossyCompressionQuality as String: compressionQuality]
-                                 CGImageDestinationAddImage(destination, chunkImg, options as CFDictionary)
-                                 CGImageDestinationFinalize(destination)
-                             }
-                             
-                             // Add to Manifest
-                             imageManifest += "<item id=\"img_\(pageNumStr)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
-                             
-                             // Generate XHTML
-                             let xhtmlContent = """
-                             <?xml version="1.0" encoding="utf-8"?>
-                             <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-                             <html xmlns="http://www.w3.org/1999/xhtml">
-                             <head>
-                                 <title>Page \(globalPageIndex)</title>
-                                 <link href="../styles.css" type="text/css" rel="stylesheet"/>
-                                 <meta name="viewport" content="width=\(width), height=\(h)" />
-                             </head>
-                             <body style="margin:0;padding:0;background-color:black;">
-                                 <div style="text-align:center;height:100vh;display:flex;justify-content:center;align-items:center;">
-                                     <img src="../images/\(imageName)" alt="Page \(globalPageIndex)" style="max-width:100%;max-height:100%;"/>
-                                 </div>
-                             </body>
-                             </html>
-                             """
-                             
-                             let xhtmlName = "page\(pageNumStr).xhtml"
-                             try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
-                             
-                             xhtmlManifest += "<item id=\"page_\(pageNumStr)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
-                             spineItems += "<itemref idref=\"page_\(pageNumStr)\"/>\n"
-                             
-                             globalPageIndex += 1
-                         }
-                     }
-                 }
-                
+            // If Direct Copy: Keep original extension
+            // If Compressed: Force JPG
+            let finalExt = isDirectCopy ? page.originalExtension : "jpg"
+            let imageName = "page\(pageNumStr).\(finalExt)"
+            let imageDestURL = imagesDir.appendingPathComponent(imageName)
+            
+            // Copy or Compress
+            if isDirectCopy {
+                try FileManager.default.copyItem(at: page.url, to: imageDestURL)
             } else {
-                // NORMAL MODE (Direct Copy or Transcode)
-                let pageNumStr = String(format: "%04d", globalPageIndex)
+                // Compression Logic (Only used for non-Original quality)
+                // STRICT RULE: Use ImageIO Transcoding. NO UIImage. NO Decoding.
+                // This prevents "horizontal stripping" caused by UIKit rendering pipelines.
                 
-                // If Direct Copy: Keep original extension
-                // If Compressed: Force JPG
-                let finalExt = isDirectCopy ? page.originalExtension : "jpg"
-                let imageName = "page\(pageNumStr).\(finalExt)"
-                let imageDestURL = imagesDir.appendingPathComponent(imageName)
+                var compressionSuccess = false
                 
-                // Copy or Compress
-                if isDirectCopy {
-                    try FileManager.default.copyItem(at: page.url, to: imageDestURL)
-                } else {
-                    // Compression Logic (Only used for non-Original quality)
-                    // STRICT RULE: Use ImageIO Transcoding. NO UIImage. NO Decoding.
-                    // This prevents "horizontal stripping" caused by UIKit rendering pipelines.
-                    
-                    var compressionSuccess = false
-                    
-                    if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
-                        // Create destination for JPEG
-                        if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                            let options: [String: Any] = [
-                                kCGImageDestinationLossyCompressionQuality as String: compressionQuality
-                            ]
-                            
-                            // Direct transcode: Source -> Destination with quality option
-                            CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
-                            
-                            if CGImageDestinationFinalize(destination) {
-                                compressionSuccess = true
-                            }
+                if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
+                    // Create destination for JPEG
+                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
+                        let options: [String: Any] = [
+                            kCGImageDestinationLossyCompressionQuality as String: compressionQuality
+                        ]
+                        
+                        // Direct transcode: Source -> Destination with quality option
+                        CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
+                        
+                        if CGImageDestinationFinalize(destination) {
+                            compressionSuccess = true
                         }
                     }
-                    
-                    if !compressionSuccess {
-                        // FALLBACK: SAFETY NET
-                        // If transcoding fails, we DO NOT attempt UIImage (which causes corruption).
-                        // We fall back to DIRECT COPY ("Original" quality).
-                        // Better a large file than a corrupted one.
-                        print("⚠️ ImageIO Compression failed for \(imageName). Falling back to direct copy.")
-                        try? FileManager.default.removeItem(at: imageDestURL) // Clean up potential partial write
-                        try FileManager.default.copyItem(at: page.url, to: imageDestURL)
-                    }
                 }
                 
-                // Determine Media Type
-                let mediaType: String
-                switch finalExt.lowercased() {
-                case "png": mediaType = "image/png"
-                case "gif": mediaType = "image/gif"
-                case "webp": mediaType = "image/webp"
-                default: mediaType = "image/jpeg"
+                if !compressionSuccess {
+                    // FALLBACK: SAFETY NET
+                    // If transcoding fails, we DO NOT attempt UIImage (which causes corruption).
+                    // We fall back to DIRECT COPY ("Original" quality).
+                    // Better a large file than a corrupted one.
+                    print("⚠️ ImageIO Compression failed for \(imageName). Falling back to direct copy.")
+                    try? FileManager.default.removeItem(at: imageDestURL) // Clean up potential partial write
+                    try FileManager.default.copyItem(at: page.url, to: imageDestURL)
                 }
-                
-                // Add to Manifests
-                imageManifest += "<item id=\"img_\(pageNumStr)\" href=\"images/\(imageName)\" media-type=\"\(mediaType)\"/>\n"
-                
-                // Generate XHTML
-                // Use dimensions from PageInfo to set viewport correctly
-                let xhtmlContent = """
-                <?xml version="1.0" encoding="utf-8"?>
-                <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-                <html xmlns="http://www.w3.org/1999/xhtml">
-                <head>
-                    <title>Page \(globalPageIndex)</title>
-                    <link href="../styles.css" type="text/css" rel="stylesheet"/>
-                    <meta name="viewport" content="width=\(page.width), height=\(page.height)" />
-                </head>
-                <body style="margin:0;padding:0;background-color:black;">
-                    <div style="text-align:center;height:100vh;display:flex;justify-content:center;align-items:center;">
-                        <img src="../images/\(imageName)" alt="Page \(globalPageIndex)" style="max-width:100%;max-height:100%;"/>
-                    </div>
-                </body>
-                </html>
-                """
-                
-                let xhtmlName = "page\(pageNumStr).xhtml"
-                try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
-                
-                xhtmlManifest += "<item id=\"page_\(pageNumStr)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
-                spineItems += "<itemref idref=\"page_\(pageNumStr)\"/>\n"
-                
-                globalPageIndex += 1
             }
+            
+            // Determine Media Type
+            let mediaType: String
+            switch finalExt.lowercased() {
+            case "png": mediaType = "image/png"
+            case "gif": mediaType = "image/gif"
+            case "webp": mediaType = "image/webp"
+            default: mediaType = "image/jpeg"
+            }
+            
+            // Add to Manifests
+            imageManifest += "<item id=\"img_\(pageNumStr)\" href=\"images/\(imageName)\" media-type=\"\(mediaType)\"/>\n"
+            
+            // Generate XHTML
+            // Use dimensions from PageInfo to set viewport correctly
+            let xhtmlContent = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+            <html xmlns="http://www.w3.org/1999/xhtml">
+            <head>
+                <title>Page \(index + 1)</title>
+                <link href="../styles.css" type="text/css" rel="stylesheet"/>
+                <meta name="viewport" content="width=\(page.width), height=\(page.height)" />
+            </head>
+            <body style="margin:0;padding:0;background-color:black;">
+                <div style="text-align:center;height:100vh;display:flex;justify-content:center;align-items:center;">
+                    <img src="../images/\(imageName)" alt="Page \(index + 1)" style="max-width:100%;max-height:100%;"/>
+                </div>
+            </body>
+            </html>
+            """
+            
+            let xhtmlName = "page\(pageNumStr).xhtml"
+            try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
+            
+            xhtmlManifest += "<item id=\"page_\(pageNumStr)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
+            spineItems += "<itemref idref=\"page_\(pageNumStr)\"/>\n"
         }
         
         // 4. content.opf
@@ -314,7 +236,7 @@ class CBZToEPUBConverter {
         
         // 5. toc.ncx
         // Calculate Actual Page Count
-        let finalPageCount = globalPageIndex - 1
+        let finalPageCount = pages.count
         
         let ncxContent = """
         <?xml version="1.0" encoding="UTF-8"?>
