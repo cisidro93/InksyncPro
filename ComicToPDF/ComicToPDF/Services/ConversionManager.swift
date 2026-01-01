@@ -323,11 +323,7 @@ class ConversionManager: ObservableObject {
                 }
             }
         }
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
-        }
+
         
         var images = try await extractImages(from: sourceURL) { progress in
             progressHandler(progress * 0.4)
