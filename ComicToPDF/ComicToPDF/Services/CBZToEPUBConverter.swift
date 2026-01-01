@@ -2,6 +2,7 @@ import UIKit
 import ZIPFoundation
 import ImageIO
 import MobileCoreServices
+import Foundation
 
 class CBZToEPUBConverter {
     
@@ -131,8 +132,8 @@ class CBZToEPUBConverter {
             
             if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
                 finalImageSource = source
-                if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
-                    let height = (properties[kCGImagePropertyPixelHeight as String] as? Int) ?? page.height
+                if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                    let height = (properties[kCGImagePropertyPixelHeight] as? Int) ?? page.height
                     // Safety Limit: 4000px (WebKit texture limit is often 4096px or 8192px)
                     // Resizing ensures no tiling/stripping artifacts.
                     if height > 4000 {
@@ -153,16 +154,16 @@ class CBZToEPUBConverter {
             // Execution
             if shouldResize, let source = finalImageSource {
                 // RESIZE MODE (Thumbnailing)
-                let options: [String: Any] = [
-                    kCGImageSourceCreateThumbnailStart as String: true,
-                    kCGImageSourceCreateThumbnailFromImageAlways as String: true,
-                    kCGImageSourceThumbnailMaxPixelSize as String: 4000,
-                    kCGImageSourceCreateThumbnailWithTransform as String: true
+                let options: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailStart: kCFBooleanTrue as Any,
+                    kCGImageSourceCreateThumbnailFromImageAlways: kCFBooleanTrue as Any,
+                    kCGImageSourceThumbnailMaxPixelSize: 4000 as NSNumber,
+                    kCGImageSourceCreateThumbnailWithTransform: kCFBooleanTrue as Any
                 ]
                 
                 if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
                     if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                         let destOptions: [String: Any] = [kCGImageDestinationLossyCompressionQuality as String: compressionQuality]
+                         let destOptions: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: compressionQuality as NSNumber]
                          CGImageDestinationAddImage(destination, thumbnail, destOptions as CFDictionary)
                          CGImageDestinationFinalize(destination)
                     }
@@ -180,8 +181,8 @@ class CBZToEPUBConverter {
                 
                 if let source = finalImageSource {
                     if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                        let options: [String: Any] = [
-                            kCGImageDestinationLossyCompressionQuality as String: compressionQuality
+                        let options: [CFString: Any] = [
+                            kCGImageDestinationLossyCompressionQuality: compressionQuality as NSNumber
                         ]
                         CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
                         if CGImageDestinationFinalize(destination) { compressionSuccess = true }
