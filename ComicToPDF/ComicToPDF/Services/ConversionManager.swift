@@ -276,9 +276,9 @@ class ConversionManager: ObservableObject {
             do {
                 let parts: [URL]
                 if pdf.url.pathExtension.lowercased() == "epub" {
-                     parts = try await performEPUBSplit(pdf: pdf, maxSizeMB: maxSizeMB) { p in
-                         taskInfo.progress = p
-                     }
+                     // Use new ComicEPUBProcessor for robust splitting
+                     parts = try await ComicEPUBProcessor.splitEPUB(epubURL: pdf.url)
+                     taskInfo.progress = 1.0
                 } else {
                      parts = try await performSplit(pdf: pdf, maxSizeMB: maxSizeMB) { p in
                          taskInfo.progress = p

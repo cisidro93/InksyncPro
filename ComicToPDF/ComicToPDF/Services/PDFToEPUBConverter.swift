@@ -201,12 +201,12 @@ class PDFToEPUBConverter {
                 let imageName = String(format: "page_%04d.jpg", pageIndex + 1)
                 let imageURL = imagesDir.appendingPathComponent(imageName)
                 
-                guard let destination = CGImageDestinationCreateWithURL(imageURL as CFURL, kUTTypeJPEG, 1, nil) else {
+                guard let destination = CGImageDestinationCreateWithURL(imageURL as CFURL, "public.jpeg" as CFString, 1, nil) else {
                      throw ConversionError.fileWriteFailed
                 }
                 
-                let imageOptions: [CFString: Any] = [
-                    kCGImageDestinationLossyCompressionQuality: options.imageQuality
+                let imageOptions: [String: Any] = [
+                    kCGImageDestinationLossyCompressionQuality as String: options.imageQuality
                 ]
                 
                 CGImageDestinationAddImage(destination, cgImage, imageOptions as CFDictionary)

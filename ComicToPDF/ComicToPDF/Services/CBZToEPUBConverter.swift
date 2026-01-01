@@ -130,16 +130,16 @@ class CBZToEPUBConverter {
             // Check Height for Safety Splitting (WebKit limit approx 4096px safe, 8192px max)
             var shouldSplit = false
             var splitCount = 1
-            if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
-                 if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
-                     let height = (properties[kCGImagePropertyPixelHeight] as? Int) ?? page.height
-                     if height > 4096 {
-                         shouldSplit = true
-                         splitCount = Int(ceil(Double(height) / 4096.0))
-                         print("✂️ Giant Image Detected (Page \(index+1)): Height \(height)px > 4096px. Splitting into \(splitCount) parts.")
-                     }
-                 }
-            }
+             if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
+                  if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+                      let height = (properties[kCGImagePropertyPixelHeight as String] as? Int) ?? page.height
+                      if height > 4096 {
+                          shouldSplit = true
+                          splitCount = Int(ceil(Double(height) / 4096.0))
+                          print("✂️ Giant Image Detected (Page \(index+1)): Height \(height)px > 4096px. Splitting into \(splitCount) parts.")
+                      }
+                  }
+             }
             
             if shouldSplit {
                 // SPLIT MODE
@@ -161,8 +161,8 @@ class CBZToEPUBConverter {
                              let imageDestURL = imagesDir.appendingPathComponent(imageName)
                              
                              // Save Chunk
-                             if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, kUTTypeJPEG, 1, nil) {
-                                 let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: compressionQuality]
+                             if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
+                                 let options: [String: Any] = [kCGImageDestinationLossyCompressionQuality as String: compressionQuality]
                                  CGImageDestinationAddImage(destination, chunkImg, options as CFDictionary)
                                  CGImageDestinationFinalize(destination)
                              }
@@ -221,9 +221,9 @@ class CBZToEPUBConverter {
                     
                     if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
                         // Create destination for JPEG
-                        if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, kUTTypeJPEG, 1, nil) {
-                            let options: [CFString: Any] = [
-                                kCGImageDestinationLossyCompressionQuality: compressionQuality
+                        if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
+                            let options: [String: Any] = [
+                                kCGImageDestinationLossyCompressionQuality as String: compressionQuality
                             ]
                             
                             // Direct transcode: Source -> Destination with quality option
