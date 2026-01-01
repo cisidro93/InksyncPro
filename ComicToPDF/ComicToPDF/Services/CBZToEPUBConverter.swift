@@ -152,34 +152,52 @@ class CBZToEPUBConverter {
             let imageDestURL = imagesDir.appendingPathComponent(imageName)
             
             // Execution
+            // EXECUTION: Resize using UIGraphicsImageRenderer (NOT Apple's buggy thumbnail API)
             if shouldResize {
-                // FIXED: Use UIImage resizing instead of buggy CGImageSourceCreateThumbnailAtIndex
+                // Load original image
                 if let originalImage = UIImage(contentsOfFile: page.url.path) {
-                    let maxDimension: CGFloat = 8000
-                    let scale = min(maxDimension / originalImage.size.width, maxDimension / originalImage.size.height, 1.0)
-                    let newSize = CGSize(width: originalImage.size.width * scale, height: originalImage.size.height * scale)
+                    let maxDimension: CGFloat = 4000
                     
+                    // Calculate scale
+                    let scale = min(
+                        maxDimension / originalImage.size.width,
+                        maxDimension / originalImage.size.height,
+                        1.0  // Never scale UP
+                    )
+                    
+                    let newSize = CGSize(
+                        width: originalImage.size.width * scale,
+                        height: originalImage.size.height * scale
+                    )
+                    
+                    // Use UIGraphicsImageRenderer (same as CBZ→PDF converter)
                     let format = UIGraphicsImageRendererFormat()
                     format.scale = 1.0
                     format.opaque = true
+                    
                     let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
                     let resizedImage = renderer.image { _ in
                         originalImage.draw(in: CGRect(origin: .zero, size: newSize))
                     }
                     
+                    // Save as JPEG
                     if let jpegData = resizedImage.jpegData(compressionQuality: compressionQuality) {
                         try jpegData.write(to: imageDestURL)
                     } else {
+                        // Fallback: direct copy
                         try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
                     }
                 } else {
+                    // Fallback: direct copy
                     try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
                 }
+                
             } else if isDirectCopy {
-                // DIRECT COPY
+                // DIRECT COPY (no changes needed)
                 try FileManager.default.copyItem(at: page.url, to: imageDestURL)
+                
             } else {
-                // TRANSCODE (Existing Logic)
+                // TRANSCODE (existing logic - no changes needed)
                 var compressionSuccess = false
                 
                 if let source = finalImageSource {
