@@ -717,41 +717,19 @@ class ConversionManager: ObservableObject {
             return (url, pageCount)
             
         } else {
-            // New Logic for Archive -> EPUB using CBZToEPUBConverter (Preserves Full Pages)
-            
-            // Determine Compression Options
+            // Determine Compression Quality
             var jpegQuality: Double
-            var scale: Double = 1.0
-            var targetSize: CGSize? = nil
-            
             if config.compressionQuality == .custom {
                 jpegQuality = config.customJpegQuality
-                scale = config.customScale
             } else {
                 jpegQuality = config.compressionQuality.values.quality
-                scale = config.compressionQuality.values.scale
             }
             
-            // Safety Clamps
+            // Safety Clamp
             jpegQuality = max(0.01, min(jpegQuality, 1.0))
-            scale = max(0.1, min(scale, 2.0))
-            
-            if config.optimizeForDevice {
-                targetSize = config.targetDevice.resolution
-            } else if config.compressionQuality != .original {
-                // Approximate generic scaling if not optimizing for specific device
-                targetSize = CGSize(width: 1600 * scale, height: 2400 * scale)
-            }
-            
-            let options = CBZToEPUBConverter.ConversionOptions(
-                compressionQuality: jpegQuality,
-                targetSize: targetSize,
-                customScale: scale,
-                title: outputName
-            )
             
             let converter = CBZToEPUBConverter()
-            let epubURL = try await converter.convertCBZToEPUB(sourceURL, options: options)
+            let epubURL = try await converter.convertCBZToEPUB(sourceURL, compressionQuality: jpegQuality)
             progressHandler(1.0)
             return (epubURL, 0)
         }
