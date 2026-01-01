@@ -278,7 +278,7 @@ class ConversionManager: ObservableObject {
                 if pdf.url.pathExtension.lowercased() == "epub" {
                      // Use new ComicEPUBProcessor for robust splitting
                      // Convert Double MB to Int MB
-                     parts = try await ComicEPUBProcessor.splitEPUB(pdf.url, maxSizeMB: Int(maxSizeMB))
+                     parts = try ComicEPUBProcessor.splitEPUB(pdf.url, maxSizeMB: Int(maxSizeMB))
                      taskInfo.progress = 1.0
                 } else {
                      parts = try await performSplit(pdf: pdf, maxSizeMB: maxSizeMB) { p in
