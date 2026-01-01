@@ -56,7 +56,7 @@ class ComicEPUBProcessor {
         let enumerator = fileManager.enumerator(at: textDir, includingPropertiesForKeys: nil)
         while let fileURL = enumerator?.nextObject() as? URL {
             if fileURL.pathExtension == "xhtml" {
-                let filename = fileURL.lastPathComponent
+                // let filename = fileURL.lastPathComponent
                 // Assumption: page0001.xhtml pairs with page0001.jpg/png
                 let basename = fileURL.deletingPathExtension().lastPathComponent
                 
