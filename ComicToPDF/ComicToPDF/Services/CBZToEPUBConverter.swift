@@ -1,13 +1,25 @@
 import UIKit
 import ZIPFoundation
+import ImageIO
 
 class CBZToEPUBConverter {
     
+    struct PageInfo {
+        let url: URL
+        let width: Int
+        let height: Int
+        let originalExtension: String
+    }
+    
+    /// Converts a CBZ file to EPUB.
+    /// - Parameters:
+    ///   - cbzURL: The source CBZ URL.
+    ///   - compressionQuality: 1.0 = Direct Copy (Original), < 1.0 = Re-encode (Compressed).
     func convertCBZToEPUB(_ cbzURL: URL, compressionQuality: Double) async throws -> URL {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    // 1. Extract CBZ
+                    // 1. Setup Temp Directory
                     let tempDir = FileManager.default.temporaryDirectory
                         .appendingPathComponent(UUID().uuidString)
                     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -16,77 +28,84 @@ class CBZToEPUBConverter {
                     print("📦 Extracting CBZ...")
                     try FileManager.default.unzipItem(at: cbzURL, to: tempDir)
                     
-                    // 2. Get comic pages (images) in order
-                    let pageImages = try CBZToEPUBConverter.extractComicPages(from: tempDir)
-                    print("📄 Found \(pageImages.count) pages")
+                    // 2. Scan for Pages (Metadata Only - No Loading)
+                    let pages = try CBZToEPUBConverter.scanComicPages(in: tempDir)
+                    print("📄 Found \(pages.count) pages")
                     
-                    // 3. Create EPUB structure with FULL pages (no slicing!)
-                    let epubURL = try CBZToEPUBConverter.createEPUB(
-                        from: pageImages,
+                    if pages.isEmpty {
+                        throw NSError(domain: "CBZConverter", code: 404, userInfo: [NSLocalizedDescriptionKey: "No supported images found in CBZ."])
+                    }
+                    
+                    // 3. Generate EPUB Structure
+                    let epubURL = try CBZToEPUBConverter.buildEPUB(
+                        from: pages,
                         title: cbzURL.deletingPathExtension().lastPathComponent,
                         outputDir: tempDir,
                         compressionQuality: compressionQuality
                     )
                     
-                    // Move to safe location before tempDir is deleted
+                    // 4. Move to Safe Location (Persistent Temp)
                     let safeFileName = epubURL.lastPathComponent
                     let safeURL = FileManager.default.temporaryDirectory.appendingPathComponent(safeFileName)
-                    
-                    // Remove existing if any
                     try? FileManager.default.removeItem(at: safeURL)
                     try FileManager.default.moveItem(at: epubURL, to: safeURL)
                     
-                    print("✅ EPUB created and moved to: \(safeURL.lastPathComponent)")
-                    
+                    print("✅ EPUB created successfully: \(safeURL.path)")
                     continuation.resume(returning: safeURL)
                     
                 } catch {
+                    print("❌ CBZ Conversion Failed: \(error.localizedDescription)")
                     continuation.resume(throwing: error)
                 }
             }
         }
     }
     
-    // Extract comic pages WITHOUT slicing
-    private static func extractComicPages(from directory: URL) throws -> [UIImage] {
-        var images: [(url: URL, image: UIImage)] = []
+    // MARK: - Helper Methods
+    
+    /// Scans directory for images and extracts dimensions using ImageIO (Fast, Low Memory).
+    private static func scanComicPages(in directory: URL) throws -> [PageInfo] {
+        var pages: [PageInfo] = []
+        let supportedExtensions = ["jpg", "jpeg", "png", "gif", "webp"]
         
         if let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil) {
             for case let fileURL as URL in enumerator {
                 let ext = fileURL.pathExtension.lowercased()
-                if ["jpg", "jpeg", "png", "gif", "webp"].contains(ext) {
-                    if let image = UIImage(contentsOfFile: fileURL.path) {
-                        images.append((url: fileURL, image: image))
+                if supportedExtensions.contains(ext) {
+                    // Use ImageIO to get dimensions without decoding
+                    if let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+                       let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any] {
+                        
+                        let width = properties[kCGImagePropertyPixelWidth] as? Int ?? 1000
+                        let height = properties[kCGImagePropertyPixelHeight] as? Int ?? 1500
+                        
+                        pages.append(PageInfo(url: fileURL, width: width, height: height, originalExtension: ext))
                     }
                 }
             }
         }
         
-        // Sort by filename to maintain page order
-        images.sort { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }
-        
-        return images.map { $0.image }
+        // Sort alphanumerically
+        pages.sort { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }
+        return pages
     }
     
-    // Create proper EPUB with full pages (NOT strips!)
-    private static func createEPUB(from pages: [UIImage], title: String, outputDir: URL, compressionQuality: Double) throws -> URL {
-        
-        // Create EPUB directory structure
-        let epubDir = outputDir.appendingPathComponent("epub_temp")
-        let metaInfDir = epubDir.appendingPathComponent("META-INF")
+    /// Builds the EPUB file structure.
+    private static func buildEPUB(from pages: [PageInfo], title: String, outputDir: URL, compressionQuality: Double) throws -> URL {
+        let epubDir = outputDir.appendingPathComponent("epub_build")
         let oebpsDir = epubDir.appendingPathComponent("OEBPS")
         let imagesDir = oebpsDir.appendingPathComponent("images")
         let textDir = oebpsDir.appendingPathComponent("text")
+        let metaInfDir = epubDir.appendingPathComponent("META-INF")
         
-        try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: textDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
         
-        // 1. Create mimetype file
-        let mimetypeURL = epubDir.appendingPathComponent("mimetype")
-        try "application/epub+zip".write(to: mimetypeURL, atomically: true, encoding: .utf8)
+        // 1. Mimetype
+        try "application/epub+zip".write(to: epubDir.appendingPathComponent("mimetype"), atomically: true, encoding: .utf8)
         
-        // 2. Create container.xml
+        // 2. Container.xml
         let containerXML = """
         <?xml version="1.0" encoding="UTF-8"?>
         <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -97,60 +116,75 @@ class CBZToEPUBConverter {
         """
         try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
-        // 3. Save FULL page images (NO SLICING!)
+        // 3. Process Images & content.opf manifests
         var imageManifest = ""
         var xhtmlManifest = ""
         var spineItems = ""
         
         for (index, page) in pages.enumerated() {
             let pageNum = String(format: "%04d", index + 1)
-            let imageName = "page\(pageNum).jpg"
-            let imageURL = imagesDir.appendingPathComponent(imageName)
-            let xhtmlName = "page\(pageNum).xhtml"
+            let isDirectCopy = compressionQuality >= 1.0
             
-            // Save COMPLETE image (not sliced!)
-            if let jpegData = page.jpegData(compressionQuality: compressionQuality) {
-                try jpegData.write(to: imageURL)
-                
-                imageManifest += """
-                        <item id="img_\(pageNum)" href="images/\(imageName)" media-type="image/jpeg"/>
-                
-                """
-                
-                // Create XHTML wrapper
-                let xhtmlContent = """
-                <?xml version="1.0" encoding="utf-8"?>
-                <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-                <html xmlns="http://www.w3.org/1999/xhtml">
-                <head>
-                    <title>Page \(index + 1)</title>
-                    <link href="../styles.css" type="text/css" rel="stylesheet"/>
-                    <meta name="viewport" content="width=\(Int(page.size.width)), height=\(Int(page.size.height))" />
-                </head>
-                <body style="margin:0;padding:0">
-                    <div style="text-align:center">
-                        <img src="../images/\(imageName)" alt="Page \(index + 1)" style="height:100%;max-width:100%"/>
-                    </div>
-                </body>
-                </html>
-                """
-                
-                let xhtmlURL = textDir.appendingPathComponent(xhtmlName)
-                try xhtmlContent.write(to: xhtmlURL, atomically: true, encoding: .utf8)
-                
-                xhtmlManifest += """
-                        <item id="page_\(pageNum)" href="text/\(xhtmlName)" media-type="application/xhtml+xml"/>
-                
-                """
-                
-                spineItems += """
-                        <itemref idref="page_\(pageNum)"/>
-                
-                """
+            // Determine Output format
+            // If Direct Copy: Keep original extension
+            // If Compressed: Force JPG
+            let finalExt = isDirectCopy ? page.originalExtension : "jpg"
+            let imageName = "page\(pageNum).\(finalExt)"
+            let imageDestURL = imagesDir.appendingPathComponent(imageName)
+            
+            // Copy or Compress
+            if isDirectCopy {
+                try FileManager.default.copyItem(at: page.url, to: imageDestURL)
+            } else {
+                // Compression Logic (Only used for non-Original quality)
+                if let image = UIImage(contentsOfFile: page.url.path),
+                   let data = image.jpegData(compressionQuality: compressionQuality) {
+                    try data.write(to: imageDestURL)
+                } else {
+                    // Fallback to copy if encoding fails
+                    try FileManager.default.copyItem(at: page.url, to: imageDestURL)
+                }
             }
+            
+            // Determine Media Type
+            let mediaType: String
+            switch finalExt.lowercased() {
+            case "png": mediaType = "image/png"
+            case "gif": mediaType = "image/gif"
+            case "webp": mediaType = "image/webp"
+            default: mediaType = "image/jpeg"
+            }
+            
+            // Add to Manifests
+            imageManifest += "<item id=\"img_\(pageNum)\" href=\"images/\(imageName)\" media-type=\"\(mediaType)\"/>\n"
+            
+            // Generate XHTML
+            // Use dimensions from PageInfo to set viewport correctly
+            let xhtmlContent = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+            <html xmlns="http://www.w3.org/1999/xhtml">
+            <head>
+                <title>Page \(index + 1)</title>
+                <link href="../styles.css" type="text/css" rel="stylesheet"/>
+                <meta name="viewport" content="width=\(page.width), height=\(page.height)" />
+            </head>
+            <body style="margin:0;padding:0;background-color:black;">
+                <div style="text-align:center;height:100vh;display:flex;justify-content:center;align-items:center;">
+                    <img src="../images/\(imageName)" alt="Page \(index + 1)" style="max-width:100%;max-height:100%;"/>
+                </div>
+            </body>
+            </html>
+            """
+            
+            let xhtmlName = "page\(pageNum).xhtml"
+            try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
+            
+            xhtmlManifest += "<item id=\"page_\(pageNum)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
+            spineItems += "<itemref idref=\"page_\(pageNum)\"/>\n"
         }
         
-        // 4. Create Opf file
+        // 4. content.opf
         let opfContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="2.0">
@@ -159,6 +193,9 @@ class CBZToEPUBConverter {
                 <dc:identifier id="BookID">urn:uuid:\(UUID().uuidString)</dc:identifier>
                 <dc:language>en</dc:language>
                 <meta name="cover" content="img_0001"/>
+                <meta property="rendition:layout">pre-paginated</meta>
+                <meta property="rendition:orientation">auto</meta>
+                <meta property="rendition:spread">auto</meta>
             </metadata>
             <manifest>
                 <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
@@ -172,7 +209,7 @@ class CBZToEPUBConverter {
         """
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
-        // 5. Create NCX
+        // 5. toc.ncx
         let ncxContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
@@ -193,17 +230,16 @@ class CBZToEPUBConverter {
         """
         try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
         
-        // 6. Manual Zip (using ZIPFoundation)
+        // 6. Zip (Manual Archive)
         let finalEPUB = outputDir.appendingPathComponent("\(title).epub")
-        
         let archive = try Archive(url: finalEPUB, accessMode: .create)
         
-        // Add mimetype first (uncompressed)
+        // Add mimetype (Uncompressed)
         try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: Int64(20), compressionMethod: .none) { position, size in
-            return try Data(contentsOf: mimetypeURL).subdata(in: 0..<Int(size))
+            return try Data(contentsOf: epubDir.appendingPathComponent("mimetype")).subdata(in: 0..<Int(size))
         }
         
-        // Add content directory
+        // Add Content (Deflate)
         let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
         let enumerator = FileManager.default.enumerator(at: epubDir, includingPropertiesForKeys: resourceKeys)!
         
