@@ -152,26 +152,29 @@ class CBZToEPUBConverter {
             let imageDestURL = imagesDir.appendingPathComponent(imageName)
             
             // Execution
-            if shouldResize, let source = finalImageSource {
-                // RESIZE MODE (Thumbnailing)
-                // RESIZE MODE (Thumbnailing)
-                let options: [String: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageAlways as String: true,
-                    kCGImageSourceThumbnailMaxPixelSize as String: 8000,
-                    kCGImageSourceCreateThumbnailWithTransform as String: true
-                ]
-                
-                if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                         let destOptions: [String: Any] = [kCGImageDestinationLossyCompressionQuality as String: compressionQuality]
-                         CGImageDestinationAddImage(destination, thumbnail, destOptions as CFDictionary)
-                         CGImageDestinationFinalize(destination)
+            if shouldResize {
+                // FIXED: Use UIImage resizing instead of buggy CGImageSourceCreateThumbnailAtIndex
+                if let originalImage = UIImage(contentsOfFile: page.url.path) {
+                    let maxDimension: CGFloat = 8000
+                    let scale = min(maxDimension / originalImage.size.width, maxDimension / originalImage.size.height, 1.0)
+                    let newSize = CGSize(width: originalImage.size.width * scale, height: originalImage.size.height * scale)
+                    
+                    let format = UIGraphicsImageRendererFormat()
+                    format.scale = 1.0
+                    format.opaque = true
+                    let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+                    let resizedImage = renderer.image { _ in
+                        originalImage.draw(in: CGRect(origin: .zero, size: newSize))
+                    }
+                    
+                    if let jpegData = resizedImage.jpegData(compressionQuality: compressionQuality) {
+                        try jpegData.write(to: imageDestURL)
+                    } else {
+                        try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
                     }
                 } else {
-                     // Fallback if thumbnail fails
-                     try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
+                    try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
                 }
-                
             } else if isDirectCopy {
                 // DIRECT COPY
                 try FileManager.default.copyItem(at: page.url, to: imageDestURL)
