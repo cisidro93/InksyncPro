@@ -905,9 +905,10 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    private func saveThumbnail(_ image: UIImage, for id: UUID) {
+    nonisolated private func saveThumbnail(_ image: UIImage, for id: UUID) {
         if let data = image.jpegData(compressionQuality: 0.7) {
             DispatchQueue.main.async {
+                // Re-capture self strictly for MainActor access
                 if let idx = self.convertedPDFs.firstIndex(where: { $0.id == id }) {
                     self.convertedPDFs[idx].coverImageData = data
                     self.savePDFs()
