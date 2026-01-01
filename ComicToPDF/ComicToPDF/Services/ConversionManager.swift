@@ -854,15 +854,18 @@ class ConversionManager: ObservableObject {
     }
     
     func generateCoverThumbnail(for pdf: ConvertedPDF) {
+        // Accessing main-actor property convertedPDFs
         guard let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }), convertedPDFs[index].coverImageData == nil else { return }
         
         DispatchQueue.global(qos: .utility).async {
             let ext = pdf.url.pathExtension.lowercased()
+            var imageData: Data? = nil
             
             if ext == "pdf" {
-                guard let document = PDFDocument(url: pdf.url), let page = document.page(at: 0) else { return }
-                let thumbnail = page.thumbnail(of: CGSize(width: 200, height: 280), for: .mediaBox)
-                self.saveThumbnail(thumbnail, for: pdf.id)
+                if let document = PDFDocument(url: pdf.url), let page = document.page(at: 0) {
+                     let thumbnail = page.thumbnail(of: CGSize(width: 200, height: 280), for: .mediaBox)
+                     imageData = thumbnail.jpegData(compressionQuality: 0.7)
+                }
             } else if ext == "epub" {
                 // EPUB Thumbnail Generation
                 do {
@@ -895,23 +898,21 @@ class ConversionManager: ObservableObject {
                                  originalImage.draw(in: CGRect(origin: .zero, size: targetSize))
                              }
                              
-                             self.saveThumbnail(thumbnail, for: pdf.id)
+                             imageData = thumbnail.jpegData(compressionQuality: 0.7)
                         }
                     }
                 } catch {
                     print("Failed to generate EPUB thumbnail: \(error)")
                 }
             }
-        }
-    }
-    
-    nonisolated private func saveThumbnail(_ image: UIImage, for id: UUID) {
-        if let data = image.jpegData(compressionQuality: 0.7) {
-            DispatchQueue.main.async {
-                // Re-capture self strictly for MainActor access
-                if let idx = self.convertedPDFs.firstIndex(where: { $0.id == id }) {
-                    self.convertedPDFs[idx].coverImageData = data
-                    self.savePDFs()
+            
+            if let finalData = imageData {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    if let idx = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        self.convertedPDFs[idx].coverImageData = finalData
+                        self.savePDFs()
+                    }
                 }
             }
         }
