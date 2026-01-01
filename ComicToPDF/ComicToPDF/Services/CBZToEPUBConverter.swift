@@ -3,53 +3,36 @@ import ZIPFoundation
 
 class CBZToEPUBConverter {
     
-    // Original simple signature (async wrapper added effectively)
-    func convertCBZToEPUB(_ cbzURL: URL, compressionQuality: Double = 0.85, completion: @escaping (Result<URL, Error>) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                // 1. Extract CBZ
-                let tempDir = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString)
-                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                defer { try? FileManager.default.removeItem(at: tempDir) }
-                
-                print("📦 Extracting CBZ...")
-                try FileManager.default.unzipItem(at: cbzURL, to: tempDir)
-                
-                // 2. Get comic pages (images) in order
-                let pageImages = try self.extractComicPages(from: tempDir)
-                print("📄 Found \(pageImages.count) pages")
-                
-                // 3. Create EPUB structure with FULL pages (no slicing!)
-                let epubURL = try self.createEPUB(
-                    from: pageImages,
-                    title: cbzURL.deletingPathExtension().lastPathComponent,
-                    outputDir: tempDir,
-                    compressionQuality: compressionQuality
-                )
-                
-                print("✅ EPUB created: \(epubURL.lastPathComponent)")
-                
-                DispatchQueue.main.async {
-                    completion(.success(epubURL))
-                }
-                
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
-        }
-    }
-    
-    // Modern async version for compatibility with new async calls, but using internal logic
     func convertCBZToEPUB(_ cbzURL: URL, compressionQuality: Double) async throws -> URL {
         return try await withCheckedThrowingContinuation { continuation in
-            convertCBZToEPUB(cbzURL, compressionQuality: compressionQuality) { result in
-                switch result {
-                case .success(let url):
-                    continuation.resume(returning: url)
-                case .failure(let error):
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    // 1. Extract CBZ
+                    let tempDir = FileManager.default.temporaryDirectory
+                        .appendingPathComponent(UUID().uuidString)
+                    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    defer { try? FileManager.default.removeItem(at: tempDir) }
+                    
+                    print("📦 Extracting CBZ...")
+                    try FileManager.default.unzipItem(at: cbzURL, to: tempDir)
+                    
+                    // 2. Get comic pages (images) in order
+                    let pageImages = try self.extractComicPages(from: tempDir)
+                    print("📄 Found \(pageImages.count) pages")
+                    
+                    // 3. Create EPUB structure with FULL pages (no slicing!)
+                    let epubURL = try self.createEPUB(
+                        from: pageImages,
+                        title: cbzURL.deletingPathExtension().lastPathComponent,
+                        outputDir: tempDir,
+                        compressionQuality: compressionQuality
+                    )
+                    
+                    print("✅ EPUB created: \(epubURL.lastPathComponent)")
+                    
+                    continuation.resume(returning: epubURL)
+                    
+                } catch {
                     continuation.resume(throwing: error)
                 }
             }
