@@ -195,7 +195,7 @@ class CBZToEPUBConverter {
                     let height = (properties[kCGImagePropertyPixelHeight as String] as? Int) ?? page.height
                     // Safety Limit: 4000px (WebKit texture limit is often 4096px or 8192px)
                     // Resizing ensures no tiling/stripping artifacts.
-                    if height > 4000 {
+                    if height > 8000 {
                         shouldResize = true
                     }
                 }
@@ -211,37 +211,55 @@ class CBZToEPUBConverter {
             let imageDestURL = imagesDir.appendingPathComponent(imageName)
             
             // Execution
-            if shouldResize, let source = finalImageSource {
-                // RESIZE MODE (Thumbnailing)
-                // RESIZE MODE (Thumbnailing)
-                let options: [String: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageAlways as String: true,
-                    kCGImageSourceThumbnailMaxPixelSize as String: 4000,
-                    kCGImageSourceCreateThumbnailWithTransform as String: true
-                ]
-                
-                if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                         let destOptions: [String: Any] = [kCGImageDestinationLossyCompressionQuality as String: compressionQuality]
-                         CGImageDestinationAddImage(destination, thumbnail, destOptions as CFDictionary)
-                         CGImageDestinationFinalize(destination)
+            // EXECUTION: Resize using UIGraphicsImageRenderer (NOT Apple's buggy thumbnail API)
+            if shouldResize {
+                // Load original image
+                if let originalImage = UIImage(contentsOfFile: page.url.path) {
+                    let maxDimension: CGFloat = 4000
+                    
+                    // Calculate scale
+                    let scale = min(
+                        maxDimension / originalImage.size.width,
+                        maxDimension / originalImage.size.height,
+                        1.0  // Never scale UP
+                    )
+                    
+                    let newSize = CGSize(
+                        width: originalImage.size.width * scale,
+                        height: originalImage.size.height * scale
+                    )
+                    
+                    // Use UIGraphicsImageRenderer (same as CBZâ†’PDF converter)
+                    let format = UIGraphicsImageRendererFormat()
+                    format.scale = 1.0
+                    format.opaque = true
+                    
+                    let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+                    let resizedImage = renderer.image { _ in
+                        originalImage.draw(in: CGRect(origin: .zero, size: newSize))
+                    }
+                    
+                    // Save as JPEG
+                    if let jpegData = resizedImage.jpegData(compressionQuality: compressionQuality) {
+                        try jpegData.write(to: imageDestURL)
+                    } else {
+                        // Fallback: direct copy
+                        try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
                     }
                 } else {
-                     // Fallback if thumbnail fails
-                     try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
+                    // Fallback: direct copy
+                    try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
                 }
                 
             } else if isDirectCopy {
-                // DIRECT COPY
+                // DIRECT COPY (no changes needed)
                 try FileManager.default.copyItem(at: page.url, to: imageDestURL)
+                
             } else {
-                // TRANSCODE (Existing Logic)
+                // TRANSCODE (existing logic - no changes needed)
                 var compressionSuccess = false
                 
                 if let source = finalImageSource {
-                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
                     if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
                         let options: [String: Any] = [
                             kCGImageDestinationLossyCompressionQuality as String: compressionQuality
@@ -277,7 +295,7 @@ class CBZToEPUBConverter {
                 // Estimate new dimensions (proportional)
                  if page.height > 0 {
                      let ratio = Double(page.width) / Double(page.height)
-                     finalHeight = 4000
+                     finalHeight = 8000
                      finalWidth = Int(Double(finalHeight) * ratio)
                  }
             }
@@ -2990,7 +3008,7 @@ class EPUBtoPDFConverter {
                 print("ðŸ–¼ï¸ Found \(images.count) images in EPUB")
                 
                 // 3. Check if images are strips and reconstruct if needed
-                let finalPages = self.reconstructPagesIfNeeded(images)
+                let finalPages = images
                 print("ðŸ“„ Final page count: \(finalPages.count)")
                 
                 if finalPages.isEmpty {

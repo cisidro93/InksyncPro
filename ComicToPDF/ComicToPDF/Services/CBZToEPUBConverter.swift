@@ -124,124 +124,62 @@ class CBZToEPUBConverter {
         var spineItems = ""
         
         for (index, page) in pages.enumerated() {
-            let isDirectCopy = compressionQuality >= 1.0
-            
-            // 1. Check Dimensions & Safety Resize
-            var finalImageSource: CGImageSource? = nil
-            var shouldResize = false
-            
-            if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
-                finalImageSource = source
-                if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
-                    let height = (properties[kCGImagePropertyPixelHeight as String] as? Int) ?? page.height
-                    // Safety Limit: 4000px (WebKit texture limit is often 4096px or 8192px)
-                    // Resizing ensures no tiling/stripping artifacts.
-                    if height > 8000 {
-                        shouldResize = true
-                    }
-                }
-            }
-            
-            // NORMAL MODE (Direct Copy or Transcode or Resize)
             let pageNumStr = String(format: "%04d", index + 1)
             
-            // If Direct Copy & No Resize: Keep original extension
-            // If Compressed OR Resized: Force JPG
-            let finalExt = (isDirectCopy && !shouldResize) ? page.originalExtension : "jpg"
-            let imageName = "page\(pageNumStr).\(finalExt)"
+            // ALWAYS use JPG for EPUB (no direct copy, no original extensions)
+            let imageName = "page\(pageNumStr).jpg"
             let imageDestURL = imagesDir.appendingPathComponent(imageName)
             
-            // Execution
-            // EXECUTION: Resize using UIGraphicsImageRenderer (NOT Apple's buggy thumbnail API)
-            if shouldResize {
-                // Load original image
-                if let originalImage = UIImage(contentsOfFile: page.url.path) {
-                    let maxDimension: CGFloat = 4000
-                    
-                    // Calculate scale
-                    let scale = min(
-                        maxDimension / originalImage.size.width,
-                        maxDimension / originalImage.size.height,
-                        1.0  // Never scale UP
-                    )
-                    
-                    let newSize = CGSize(
-                        width: originalImage.size.width * scale,
-                        height: originalImage.size.height * scale
-                    )
-                    
-                    // Use UIGraphicsImageRenderer (same as CBZ→PDF converter)
-                    let format = UIGraphicsImageRendererFormat()
-                    format.scale = 1.0
-                    format.opaque = true
-                    
-                    let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
-                    let resizedImage = renderer.image { _ in
-                        originalImage.draw(in: CGRect(origin: .zero, size: newSize))
-                    }
-                    
-                    // Save as JPEG
-                    if let jpegData = resizedImage.jpegData(compressionQuality: compressionQuality) {
-                        try jpegData.write(to: imageDestURL)
-                    } else {
-                        // Fallback: direct copy
-                        try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
-                    }
-                } else {
-                    // Fallback: direct copy
-                    try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
-                }
-                
-            } else if isDirectCopy {
-                // DIRECT COPY (no changes needed)
-                try FileManager.default.copyItem(at: page.url, to: imageDestURL)
-                
+            // ALWAYS process through UIGraphicsImageRenderer (bypasses ALL Apple bugs)
+            guard let originalImage = UIImage(contentsOfFile: page.url.path) else {
+                print("❌ Could not load image: \(page.url.lastPathComponent)")
+                continue
+            }
+            
+            // Determine if resize is needed (keep images reasonable for e-readers)
+            let maxDimension: CGFloat = 2400  // Good balance for Kindle/e-readers
+            var finalSize = originalImage.size
+            
+            // Scale down if too large
+            if originalImage.size.width > maxDimension || originalImage.size.height > maxDimension {
+                let scale = min(
+                    maxDimension / originalImage.size.width,
+                    maxDimension / originalImage.size.height,
+                    1.0
+                )
+                finalSize = CGSize(
+                    width: originalImage.size.width * scale,
+                    height: originalImage.size.height * scale
+                )
+            }
+            
+            // ALWAYS use UIGraphicsImageRenderer (proven to work in your PDF converter)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1.0
+            format.opaque = true
+            
+            let renderer = UIGraphicsImageRenderer(size: finalSize, format: format)
+            let processedImage = renderer.image { _ in
+                originalImage.draw(in: CGRect(origin: .zero, size: finalSize))
+            }
+            
+            // Save as JPEG with compression quality
+            if let jpegData = processedImage.jpegData(compressionQuality: compressionQuality) {
+                try jpegData.write(to: imageDestURL)
+                print("✅ Saved: \(imageName) (\(Int(finalSize.width))x\(Int(finalSize.height)))")
             } else {
-                // TRANSCODE (existing logic - no changes needed)
-                var compressionSuccess = false
-                
-                if let source = finalImageSource {
-                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                        let options: [String: Any] = [
-                            kCGImageDestinationLossyCompressionQuality as String: compressionQuality
-                        ]
-                        CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
-                        if CGImageDestinationFinalize(destination) { compressionSuccess = true }
-                    }
-                }
-                
-                if !compressionSuccess {
-                    print("⚠️ ImageIO Compression failed for \(imageName). Falling back to direct copy.")
-                    try? FileManager.default.removeItem(at: imageDestURL)
-                    try FileManager.default.copyItem(at: page.url, to: imageDestURL)
-                }
+                print("⚠️ JPEG encoding failed for \(imageName)")
+                // Emergency fallback - but this should never happen
+                try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
             }
             
-            // Determine Media Type
-            let mediaType: String
-            switch finalExt.lowercased() {
-            case "png": mediaType = "image/png"
-            case "gif": mediaType = "image/gif"
-            case "webp": mediaType = "image/webp"
-            default: mediaType = "image/jpeg"
-            }
+            // Add to Manifests (always JPG now)
+            imageManifest += "<item id=\"img_\(pageNumStr)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
             
-            // Add to Manifests
-            imageManifest += "<item id=\"img_\(pageNumStr)\" href=\"images/\(imageName)\" media-type=\"\(mediaType)\"/>\n"
+            // Generate XHTML with proper dimensions
+            let finalWidth = Int(originalImage.size.width)
+            let finalHeight = Int(originalImage.size.height)
             
-            // Update Page dimensions for Viewport (Important if resized)
-            var finalWidth = page.width
-            var finalHeight = page.height
-            if shouldResize {
-                // Estimate new dimensions (proportional)
-                 if page.height > 0 {
-                     let ratio = Double(page.width) / Double(page.height)
-                     finalHeight = 8000
-                     finalWidth = Int(Double(finalHeight) * ratio)
-                 }
-            }
-            
-            // Generate XHTML
             let xhtmlContent = """
             <?xml version="1.0" encoding="utf-8"?>
             <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
