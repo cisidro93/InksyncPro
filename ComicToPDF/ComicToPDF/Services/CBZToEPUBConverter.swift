@@ -136,7 +136,7 @@ class CBZToEPUBConverter {
                     let height = (properties[kCGImagePropertyPixelHeight as String] as? Int) ?? page.height
                     // Safety Limit: 4000px (WebKit texture limit is often 4096px or 8192px)
                     // Resizing ensures no tiling/stripping artifacts.
-                    if height > 4000 {
+                    if height > 8000 {
                         shouldResize = true
                     }
                 }
@@ -157,12 +157,11 @@ class CBZToEPUBConverter {
                 // RESIZE MODE (Thumbnailing)
                 let options: [String: Any] = [
                     kCGImageSourceCreateThumbnailFromImageAlways as String: true,
-                    kCGImageSourceThumbnailMaxPixelSize as String: 4000,
+                    kCGImageSourceThumbnailMaxPixelSize as String: 8000,
                     kCGImageSourceCreateThumbnailWithTransform as String: true
                 ]
                 
                 if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
                     if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
                          let destOptions: [String: Any] = [kCGImageDestinationLossyCompressionQuality as String: compressionQuality]
                          CGImageDestinationAddImage(destination, thumbnail, destOptions as CFDictionary)
@@ -181,8 +180,6 @@ class CBZToEPUBConverter {
                 var compressionSuccess = false
                 
                 if let source = finalImageSource {
-                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
                     if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
                         let options: [String: Any] = [
                             kCGImageDestinationLossyCompressionQuality as String: compressionQuality
@@ -218,7 +215,7 @@ class CBZToEPUBConverter {
                 // Estimate new dimensions (proportional)
                  if page.height > 0 {
                      let ratio = Double(page.width) / Double(page.height)
-                     finalHeight = 4000
+                     finalHeight = 8000
                      finalWidth = Int(Double(finalHeight) * ratio)
                  }
             }

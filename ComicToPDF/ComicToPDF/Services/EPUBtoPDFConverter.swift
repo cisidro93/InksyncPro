@@ -22,7 +22,7 @@ class EPUBtoPDFConverter {
                 print("🖼️ Found \(images.count) images in EPUB")
                 
                 // 3. Check if images are strips and reconstruct if needed
-                let finalPages = self.reconstructPagesIfNeeded(images)
+                let finalPages = images
                 print("📄 Final page count: \(finalPages.count)")
                 
                 if finalPages.isEmpty {
