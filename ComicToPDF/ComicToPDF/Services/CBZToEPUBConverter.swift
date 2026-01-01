@@ -1,6 +1,7 @@
 import UIKit
 import ZIPFoundation
 import ImageIO
+import MobileCoreServices
 
 class CBZToEPUBConverter {
     
@@ -137,16 +138,34 @@ class CBZToEPUBConverter {
                 try FileManager.default.copyItem(at: page.url, to: imageDestURL)
             } else {
                 // Compression Logic (Only used for non-Original quality)
+                // STRICT RULE: Use ImageIO Transcoding. NO UIImage. NO Decoding.
+                // This prevents "horizontal stripping" caused by UIKit rendering pipelines.
+                
                 var compressionSuccess = false
-                if let data = try? Data(contentsOf: page.url),
-                   let image = UIImage(data: data),
-                   let jpegData = image.jpegData(compressionQuality: compressionQuality) {
-                    try jpegData.write(to: imageDestURL)
-                    compressionSuccess = true
+                
+                if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
+                    // Create destination for JPEG
+                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, kUTTypeJPEG, 1, nil) {
+                        let options: [CFString: Any] = [
+                            kCGImageDestinationLossyCompressionQuality: compressionQuality
+                        ]
+                        
+                        // Direct transcode: Source -> Destination with quality option
+                        CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
+                        
+                        if CGImageDestinationFinalize(destination) {
+                            compressionSuccess = true
+                        }
+                    }
                 }
                 
                 if !compressionSuccess {
-                    // Fallback to copy if encoding fails
+                    // FALLBACK: SAFETY NET
+                    // If transcoding fails, we DO NOT attempt UIImage (which causes corruption).
+                    // We fall back to DIRECT COPY ("Original" quality).
+                    // Better a large file than a corrupted one.
+                    print("⚠️ ImageIO Compression failed for \(imageName). Falling back to direct copy.")
+                    try? FileManager.default.removeItem(at: imageDestURL) // Clean up potential partial write
                     try FileManager.default.copyItem(at: page.url, to: imageDestURL)
                 }
             }
