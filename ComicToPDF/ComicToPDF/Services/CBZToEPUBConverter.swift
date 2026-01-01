@@ -76,10 +76,10 @@ class CBZToEPUBConverter {
                 if supportedExtensions.contains(ext) {
                     // Use ImageIO to get dimensions without decoding
                     if let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
-                       let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any] {
+                       let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [String: Any] {
                         
-                        let width = properties[kCGImagePropertyPixelWidth] as? Int ?? 1000
-                        let height = properties[kCGImagePropertyPixelHeight] as? Int ?? 1500
+                        let width = properties[kCGImagePropertyPixelWidth as String] as? Int ?? 1000
+                        let height = properties[kCGImagePropertyPixelHeight as String] as? Int ?? 1500
                         
                         pages.append(PageInfo(url: fileURL, width: width, height: height, originalExtension: ext))
                     }
@@ -132,8 +132,8 @@ class CBZToEPUBConverter {
             
             if let source = CGImageSourceCreateWithURL(page.url as CFURL, nil) {
                 finalImageSource = source
-                if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
-                    let height = (properties[kCGImagePropertyPixelHeight] as? Int) ?? page.height
+                if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+                    let height = (properties[kCGImagePropertyPixelHeight as String] as? Int) ?? page.height
                     // Safety Limit: 4000px (WebKit texture limit is often 4096px or 8192px)
                     // Resizing ensures no tiling/stripping artifacts.
                     if height > 4000 {
