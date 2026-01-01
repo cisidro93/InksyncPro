@@ -688,6 +688,10 @@ class ConversionManager: ObservableObject {
                 scale = values.scale
             }
             
+            // Safety Clamps
+            scale = max(0.1, min(scale, 2.0))
+            options.imageQuality = max(0.01, min(options.imageQuality, 1.0))
+            
             if config.optimizeForDevice {
                 let resolution = config.targetDevice.resolution
                 options.maxImageWidth = resolution.width
@@ -727,6 +731,10 @@ class ConversionManager: ObservableObject {
                 jpegQuality = config.compressionQuality.values.quality
                 scale = config.compressionQuality.values.scale
             }
+            
+            // Safety Clamps
+            jpegQuality = max(0.01, min(jpegQuality, 1.0))
+            scale = max(0.1, min(scale, 2.0))
             
             if config.optimizeForDevice {
                 targetSize = config.targetDevice.resolution
