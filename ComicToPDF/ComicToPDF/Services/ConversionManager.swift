@@ -742,21 +742,10 @@ class ConversionManager: ObservableObject {
                 title: outputName
             )
             
-            return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, Int), Error>) in
-                let converter = CBZToEPUBConverter()
-                converter.convertCBZToEPUB(sourceURL, options: options) { result in
-                    progressHandler(1.0)
-                    switch result {
-                    case .success(let epubURL):
-                        // EPUBGenerator accumulates page count but returns it via its own method which we accessed in the wrapper. 
-                        // However, we need to extract it or assume standard count.
-                        // For now we return 0 or could verify later.
-                        continuation.resume(returning: (epubURL, 0))
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
+            let converter = CBZToEPUBConverter()
+            let epubURL = try await converter.convertCBZToEPUB(sourceURL, options: options)
+            progressHandler(1.0)
+            return (epubURL, 0)
         }
             
 

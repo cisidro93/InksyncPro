@@ -10,55 +10,42 @@ class CBZToEPUBConverter {
         let title: String
     }
     
-    func convertCBZToEPUB(_ cbzURL: URL, options: ConversionOptions, completion: @escaping (Result<URL, Error>) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                // 1. Extract CBZ
-                let tempDir = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString)
-                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                defer { try? FileManager.default.removeItem(at: tempDir) }
-                
-                print("📦 Extracting CBZ...")
-                try FileManager.default.unzipItem(at: cbzURL, to: tempDir)
-                
-                // 2. Get comic pages (URLs) in order
-                let pageURLs = try self.extractComicPageURLs(from: tempDir)
-                print("📄 Found \(pageURLs.count) pages")
-                
-                if pageURLs.isEmpty {
-                    throw NSError(domain: "CBZConversion", code: 404, userInfo: [NSLocalizedDescriptionKey: "No images found in CBZ"])
-                }
-                
-                // 3. Use EPUBGenerator
-                // Note: We use passthrough=false so that EPUBGenerator applies resizing/compression
-                let metadata = PDFMetadata(title: options.title, author: "Unknown", coverImage: nil)
-                let generator = EPUBGenerator(
-                    settings: EPUBSettings(),
-                    metadata: metadata,
-                    compressionQuality: options.compressionQuality,
-                    targetSize: options.targetSize,
-                    customScale: options.customScale
-                )
-                
-                // Using Task to bridge async call
-                let (epubURL, _) = try await Task {
-                    try await generator.generateEPUB(from: pageURLs, outputName: options.title, passthrough: false)
-                }.value
-
-                generator.printCompressionStats()
-                print("✅ EPUB created via Generator: \(epubURL.lastPathComponent)")
-                
-                DispatchQueue.main.async {
-                    completion(.success(epubURL))
-                }
-                
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
+    func convertCBZToEPUB(_ cbzURL: URL, options: ConversionOptions) async throws -> URL {
+        // 1. Extract CBZ
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        
+        print("📦 Extracting CBZ...")
+        try FileManager.default.unzipItem(at: cbzURL, to: tempDir)
+        
+        // 2. Get comic pages (URLs) in order
+        let pageURLs = try self.extractComicPageURLs(from: tempDir)
+        print("📄 Found \(pageURLs.count) pages")
+        
+        if pageURLs.isEmpty {
+            throw NSError(domain: "CBZConversion", code: 404, userInfo: [NSLocalizedDescriptionKey: "No images found in CBZ"])
         }
+        
+        // 3. Use EPUBGenerator
+        // Note: We use passthrough=false so that EPUBGenerator applies resizing/compression
+        let metadata = PDFMetadata(title: options.title, author: "Unknown", coverImage: nil)
+        let generator = EPUBGenerator(
+            settings: EPUBSettings(),
+            metadata: metadata,
+            compressionQuality: options.compressionQuality,
+            targetSize: options.targetSize,
+            customScale: options.customScale
+        )
+        
+        // Generator is marked async, so we just await it directly
+        let (epubURL, _) = try await generator.generateEPUB(from: pageURLs, outputName: options.title, passthrough: false)
+
+        generator.printCompressionStats()
+        print("✅ EPUB created via Generator: \(epubURL.lastPathComponent)")
+        
+        return epubURL
     }
     
     // Extract comic pages as URLs
