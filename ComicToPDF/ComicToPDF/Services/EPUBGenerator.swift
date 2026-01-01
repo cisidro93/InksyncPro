@@ -177,6 +177,10 @@ class EPUBGenerator {
             
 
             
+            // Create XHTML page for each image
+            let xhtmlFileName = String(format: "page%d.xhtml", pageNumber)
+            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlFileName)
+            
             // Add to XHTML manifest items
             xhtmlManifestLines.append("""
                 <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
