@@ -188,6 +188,7 @@ struct LibraryView: View {
                 .swipeActions(edge: .leading) {
                     Button { selectedPDF = pdf; showingDevicePicker = true } label: { Label("Kindle", systemImage: "paperplane.fill") }.tint(.orange)
                     Button { exportToExternalStorage(pdfs: [pdf]) } label: { Label("Export (USB)", systemImage: "externaldrive") }.tint(.purple)
+                    Button { EPUBDiagnostics.diagnoseEPUB(pdf.url) } label: { Label("Diagnose", systemImage: "ladybug") }.tint(.gray)
                 }
             }.onDelete { indexSet in for index in indexSet { conversionManager.removeFromLibrary(conversionManager.convertedPDFs[index]) } }
         }.listStyle(.insetGrouped)
