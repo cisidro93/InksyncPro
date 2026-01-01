@@ -17,11 +17,11 @@ class CBZToEPUBConverter {
                     try FileManager.default.unzipItem(at: cbzURL, to: tempDir)
                     
                     // 2. Get comic pages (images) in order
-                    let pageImages = try self.extractComicPages(from: tempDir)
+                    let pageImages = try CBZToEPUBConverter.extractComicPages(from: tempDir)
                     print("📄 Found \(pageImages.count) pages")
                     
                     // 3. Create EPUB structure with FULL pages (no slicing!)
-                    let epubURL = try self.createEPUB(
+                    let epubURL = try CBZToEPUBConverter.createEPUB(
                         from: pageImages,
                         title: cbzURL.deletingPathExtension().lastPathComponent,
                         outputDir: tempDir,
@@ -40,7 +40,7 @@ class CBZToEPUBConverter {
     }
     
     // Extract comic pages WITHOUT slicing
-    private func extractComicPages(from directory: URL) throws -> [UIImage] {
+    private static func extractComicPages(from directory: URL) throws -> [UIImage] {
         var images: [(url: URL, image: UIImage)] = []
         
         if let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil) {
@@ -61,7 +61,7 @@ class CBZToEPUBConverter {
     }
     
     // Create proper EPUB with full pages (NOT strips!)
-    private func createEPUB(from pages: [UIImage], title: String, outputDir: URL, compressionQuality: Double) throws -> URL {
+    private static func createEPUB(from pages: [UIImage], title: String, outputDir: URL, compressionQuality: Double) throws -> URL {
         
         // Create EPUB directory structure
         let epubDir = outputDir.appendingPathComponent("epub_temp")
@@ -191,7 +191,7 @@ class CBZToEPUBConverter {
         let archive = try Archive(url: finalEPUB, accessMode: .create)
         
         // Add mimetype first (uncompressed)
-        try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: 20, compressionMethod: .none) { position, size in
+        try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: Int64(20), compressionMethod: .none) { position, size in
             return try Data(contentsOf: mimetypeURL).subdata(in: 0..<Int(size))
         }
         
