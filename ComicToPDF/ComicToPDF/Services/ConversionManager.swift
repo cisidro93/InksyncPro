@@ -401,6 +401,33 @@ class ConversionManager: ObservableObject {
                      isStrips = true
                  }
              }
+             
+             // If first image says yes, verify with a larger sample to avoid covers/frontmatter
+             if isStrips {
+                 let count = imageURLs.count
+                 let sampleIndices = [
+                     count / 4,
+                     count / 2,
+                     (count * 3) / 4
+                 ].filter { $0 > 0 && $0 < count }
+                 
+                 var stripVotes = 0
+                 for i in sampleIndices {
+                     if let img = UIImage(contentsOfFile: imageURLs[i].path) {
+                         // Must also be wide strip to vote YES
+                         if img.size.width / img.size.height > 2.0 {
+                             stripVotes += 1
+                         }
+                     }
+                 }
+                 
+                 // If samples contradict the first image (e.g. cover was spread but content is pages)
+                 // We trust the content.
+                 if !sampleIndices.isEmpty && stripVotes == 0 {
+                     isStrips = false
+                     print("🚫 Background EPUB Split: Initial detect was false positive (Cover?). Content appears to be full pages.")
+                 }
+             }
         }
         
         if isStrips {
