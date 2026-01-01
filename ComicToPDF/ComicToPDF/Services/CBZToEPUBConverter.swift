@@ -137,10 +137,15 @@ class CBZToEPUBConverter {
                 try FileManager.default.copyItem(at: page.url, to: imageDestURL)
             } else {
                 // Compression Logic (Only used for non-Original quality)
-                if let image = UIImage(contentsOfFile: page.url.path),
-                   let data = image.jpegData(compressionQuality: compressionQuality) {
-                    try data.write(to: imageDestURL)
-                } else {
+                var compressionSuccess = false
+                if let data = try? Data(contentsOf: page.url),
+                   let image = UIImage(data: data),
+                   let jpegData = image.jpegData(compressionQuality: compressionQuality) {
+                    try jpegData.write(to: imageDestURL)
+                    compressionSuccess = true
+                }
+                
+                if !compressionSuccess {
                     // Fallback to copy if encoding fails
                     try FileManager.default.copyItem(at: page.url, to: imageDestURL)
                 }

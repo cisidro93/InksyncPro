@@ -639,9 +639,11 @@ class ConversionManager: ObservableObject {
             addToLibrary(url)
             
         case .epub:
-            let epubData = try await convertToEPUB(from: sourceURL, settings: config, progressHandler: progressHandler)
-            outputURLs.append(epubData.0)
-            addToLibrary(epubData.0, explicitPageCount: epubData.1)
+            let (urls, pageCount) = try await convertToEPUB(from: sourceURL, settings: config, progressHandler: progressHandler)
+            outputURLs.append(contentsOf: urls)
+            for url in urls {
+                addToLibrary(url, explicitPageCount: pageCount)
+            }
             
         case .both:
             // Split progress: 50% for PDF, 50% for EPUB
@@ -651,17 +653,19 @@ class ConversionManager: ObservableObject {
             outputURLs.append(pdfURL)
             addToLibrary(pdfURL)
             
-            let epubData = try await convertToEPUB(from: sourceURL, settings: config) { p in
+            let (urls, pageCount) = try await convertToEPUB(from: sourceURL, settings: config) { p in
                 progressHandler(0.5 + p * 0.5)
             }
-            outputURLs.append(epubData.0)
-            addToLibrary(epubData.0, explicitPageCount: epubData.1)
+            outputURLs.append(contentsOf: urls)
+            for url in urls {
+                addToLibrary(url, explicitPageCount: pageCount)
+            }
         }
         
         return outputURLs
     }
     
-    func convertToEPUB(from sourceURL: URL, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> (URL, Int) {
+    func convertToEPUB(from sourceURL: URL, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> ([URL], Int) {
         let config = settings ?? conversionSettings
         let outputName = sourceURL.deletingPathExtension().lastPathComponent
         
@@ -714,7 +718,15 @@ class ConversionManager: ObservableObject {
             let (url, pageCount) = try await converter.convert(pdfURL: sourceURL, to: self.outputDirectory.appendingPathComponent("\(outputName).epub"), options: options) { progress in
                 progressHandler(progress.percentage)
             }
-            return (url, pageCount)
+            
+            // Check Split
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+            if fileSize > 200 * 1024 * 1024 {
+                let parts = try ComicEPUBProcessor.splitEPUB(url, maxSizeMB: 200)
+                try? FileManager.default.removeItem(at: url)
+                return (parts, pageCount)
+            }
+            return ([url], pageCount)
             
         } else {
             // Determine Compression Quality
@@ -730,8 +742,18 @@ class ConversionManager: ObservableObject {
             
             let converter = CBZToEPUBConverter()
             let epubURL = try await converter.convertCBZToEPUB(sourceURL, compressionQuality: jpegQuality)
+            
+            // Check Split (CBZ)
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: epubURL.path)[.size] as? Int64) ?? 0
+            if fileSize > 200 * 1024 * 1024 {
+                let parts = try ComicEPUBProcessor.splitEPUB(epubURL, maxSizeMB: 200)
+                try? FileManager.default.removeItem(at: epubURL)
+                progressHandler(1.0)
+                return (parts, 0)
+            }
+            
             progressHandler(1.0)
-            return (epubURL, 0)
+            return ([epubURL], 0)
         }
             
 
