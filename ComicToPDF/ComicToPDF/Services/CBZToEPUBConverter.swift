@@ -154,16 +154,17 @@ class CBZToEPUBConverter {
             // Execution
             if shouldResize, let source = finalImageSource {
                 // RESIZE MODE (Thumbnailing)
+                // RESIZE MODE (Thumbnailing)
                 let options: [String: Any] = [
-                    kCGImageSourceCreateThumbnailStart as String: NSNumber(value: true),
-                    kCGImageSourceCreateThumbnailFromImageAlways as String: NSNumber(value: true),
-                    kCGImageSourceThumbnailMaxPixelSize as String: NSNumber(value: 4000),
-                    kCGImageSourceCreateThumbnailWithTransform as String: NSNumber(value: true)
+                    kCGImageSourceCreateThumbnailFromImageAlways as String: true,
+                    kCGImageSourceThumbnailMaxPixelSize as String: 4000,
+                    kCGImageSourceCreateThumbnailWithTransform as String: true
                 ]
                 
                 if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
                     if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
-                         let destOptions: [String: Any] = [kCGImageDestinationLossyCompressionQuality as String: NSNumber(value: compressionQuality)]
+                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
+                         let destOptions: [String: Any] = [kCGImageDestinationLossyCompressionQuality as String: compressionQuality]
                          CGImageDestinationAddImage(destination, thumbnail, destOptions as CFDictionary)
                          CGImageDestinationFinalize(destination)
                     }
@@ -182,8 +183,9 @@ class CBZToEPUBConverter {
                 if let source = finalImageSource {
                     if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
                     if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
+                    if let destination = CGImageDestinationCreateWithURL(imageDestURL as CFURL, "public.jpeg" as CFString, 1, nil) {
                         let options: [String: Any] = [
-                            kCGImageDestinationLossyCompressionQuality as String: NSNumber(value: compressionQuality)
+                            kCGImageDestinationLossyCompressionQuality as String: compressionQuality
                         ]
                         CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
                         if CGImageDestinationFinalize(destination) { compressionSuccess = true }
