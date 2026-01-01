@@ -3,7 +3,69 @@ import ZIPFoundation
 
 class EPUBStripFixer {
     
-    // MANUAL CONTROL VERSION - you specify strips per page
+    // MARK: - Shared Logic (Copied from EPUBtoPDFConverter)
+    
+    static func detectStripsPerPage(_ totalCount: Int) -> Int {
+        // Try common strip counts
+        for strips in [10, 8, 7, 6, 5, 4] {
+            if totalCount % strips == 0 {
+                return strips
+            }
+        }
+        
+        // Fallback: check if 32 pages with common strip patterns
+        if totalCount == 32 {
+            return 8
+        }
+        
+        return 6 // Default fallback
+    }
+    
+    static func reconstructPages(from strips: [UIImage], stripsPerPage: Int) -> [UIImage] {
+        var pages: [UIImage] = []
+        let pageCount = strips.count / stripsPerPage
+        
+        for pageNum in 0..<pageCount {
+            let startIdx = pageNum * stripsPerPage
+            let endIdx = min(startIdx + stripsPerPage, strips.count)
+            let pageStrips = Array(strips[startIdx..<endIdx])
+            
+            if let fullPage = combineStripsVertically(pageStrips) {
+                pages.append(fullPage)
+            }
+        }
+        
+        return pages
+    }
+    
+    static func combineStripsVertically(_ strips: [UIImage]) -> UIImage? {
+        guard !strips.isEmpty else { return nil }
+        
+        // Calculate total dimensions
+        let width = strips[0].size.width
+        let totalHeight = strips.reduce(0) { $0 + $1.size.height }
+        let scale = strips[0].scale
+        
+        // Use legacy context as it is confirmed to work well in conversions
+        UIGraphicsBeginImageContextWithOptions(
+            CGSize(width: width, height: totalHeight),
+            false,
+            scale
+        )
+        defer { UIGraphicsEndImageContext() }
+        
+        // Draw strips vertically
+        var yOffset: CGFloat = 0
+        for strip in strips {
+            strip.draw(at: CGPoint(x: 0, y: yOffset))
+            yOffset += strip.size.height
+        }
+        
+        return UIGraphicsGetImageFromCurrentImageContext()
+    }
+    
+    // MARK: - Original Instance Methods (Refactored to use static logic)
+    
     func fixEPUBStrips(_ epubURL: URL, stripsPerPage: Int = 6) -> URL? {
         print("🔧 Starting EPUB strip repair...")
         print("📋 Will combine \(stripsPerPage) strips into each page")
@@ -24,38 +86,25 @@ class EPUBStripFixer {
             for fileURL in imageFiles {
                 if let img = UIImage(contentsOfFile: fileURL.path) {
                     strips.append(img)
-                    print("  ✓ Loaded: \(fileURL.lastPathComponent) - \(Int(img.size.width))x\(Int(img.size.height))")
                 }
             }
             
-            // 4. Combine strips into pages
-            var fullPages: [UIImage] = []
-            let pageCount = strips.count / stripsPerPage
+            // 4. Reconstruct Pages
+            let pages = Self.reconstructPages(from: strips, stripsPerPage: stripsPerPage)
+            print("📄 Reconstructed \(pages.count) pages")
             
-            for pageNum in 0..<pageCount {
-                let start = pageNum * stripsPerPage
-                let end = start + stripsPerPage
-                let pageStrips = Array(strips[start..<end])
-                
-                if let combinedPage = Self.combineStripsVertically(pageStrips) {
-                    fullPages.append(combinedPage)
-                    print("✂️ Created page \(pageNum + 1) from \(pageStrips.count) strips")
-                }
-            }
+            // 5. Create PDF
+            let pdfName = epubURL.deletingPathExtension().lastPathComponent + "_fixed.pdf"
+            let outputURL = epubURL.deletingLastPathComponent().appendingPathComponent(pdfName)
             
-            print("📄 Created \(fullPages.count) complete pages")
+            try self.makePDF(from: pages, outputURL: outputURL)
+            print("✅ Created fixed PDF: \(outputURL.path)")
             
-            // 5. Make PDF
-            let pdfURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(epubURL.deletingPathExtension().lastPathComponent + "_FIXED.pdf")
-            
-            try self.makePDF(from: fullPages, outputURL: pdfURL)
-            print("✅ PDF saved: \(pdfURL.lastPathComponent)")
-            
-            return pdfURL
+            try FileManager.default.removeItem(at: tempDir)
+            return outputURL
             
         } catch {
-            print("❌ Error: \(error)")
+            print("❌ Failed to fix strips: \(error)")
             return nil
         }
     }
@@ -73,28 +122,6 @@ class EPUBStripFixer {
         
         // Sort alphabetically
         return imageURLs.sorted { $0.lastPathComponent < $1.lastPathComponent }
-    }
-    
-    static func combineStripsVertically(_ strips: [UIImage]) -> UIImage? {
-        guard !strips.isEmpty else { return nil }
-        
-        // Calculate total size
-        let width = strips[0].size.width
-        let height = strips.reduce(CGFloat(0)) { $0 + $1.size.height }
-        
-        // Fix: Use UIGraphicsImageRenderer to avoid Retina scaling artifacts (stripes)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1.0
-        format.opaque = true
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format)
-        
-        return renderer.image { context in
-            var y: CGFloat = 0
-            for strip in strips {
-                strip.draw(at: CGPoint(x: 0, y: y))
-                y += strip.size.height
-            }
-        }
     }
     
     private func makePDF(from images: [UIImage], outputURL: URL) throws {

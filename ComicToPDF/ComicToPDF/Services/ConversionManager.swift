@@ -231,6 +231,22 @@ struct PageItem: Identifiable, Equatable {
 }
 
 // ============================================================================
+// MARK: - BACKGROUND TASKS
+// ============================================================================
+
+struct BackgroundTask: Identifiable {
+    let id: UUID
+    let description: String
+    let dateStarted: Date
+    
+    init(description: String) {
+        self.id = UUID()
+        self.description = description
+        self.dateStarted = Date()
+    }
+}
+
+// ============================================================================
 // MARK: - CONVERSION MANAGER
 // ============================================================================
 
@@ -246,6 +262,210 @@ class ConversionManager: ObservableObject {
     @Published var filterFavoritesOnly: Bool = false
     @Published var filterCollection: UUID? = nil
     @Published var sortOption: SortOption = .dateAdded
+    
+    @Published var activeTasks: [BackgroundTask] = []
+    
+    // MARK: - Background Processing
+    
+    func splitFileInBackground(pdf: ConvertedPDF, maxSizeMB: Double) {
+        let taskInfo = BackgroundTask(description: "Splitting \(pdf.name)...")
+        self.activeTasks.append(taskInfo)
+        
+        Task {
+            do {
+                let parts: [URL]
+                if pdf.url.pathExtension.lowercased() == "epub" {
+                     parts = try await performEPUBSplit(pdf: pdf, maxSizeMB: maxSizeMB)
+                } else {
+                     parts = try await performSplit(pdf: pdf, maxSizeMB: maxSizeMB)
+                }
+                
+                await MainActor.run {
+                    for partURL in parts { self.addToLibrary(partURL) }
+                    
+                    if let index = self.activeTasks.firstIndex(where: { $0.id == taskInfo.id }) {
+                        self.activeTasks.remove(at: index)
+                    }
+                    
+                    // Optional: Notification could be implemented here (e.g. UNUserNotificationCenter)
+                    print("✅ Split complete. Created \(parts.count) parts.")
+                }
+            } catch {
+                await MainActor.run {
+                    if let index = self.activeTasks.firstIndex(where: { $0.id == taskInfo.id }) {
+                        self.activeTasks.remove(at: index)
+                    }
+                    print("❌ Split failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    // MARK: - Split Logic (Moved from PDFActionViews)
+    
+    private func performSplit(pdf: ConvertedPDF, maxSizeMB: Double) async throws -> [URL] {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let document = PDFDocument(url: pdf.url) else {
+                    continuation.resume(throwing: NSError(domain: "SplitPDF", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open PDF"]))
+                    return
+                }
+                
+                let pageCount = document.pageCount
+                let maxBytes = Int(maxSizeMB) * 1024 * 1024
+                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
+                try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+                
+                var parts: [URL] = []
+                var currentPart = PDFDocument()
+                var currentPartIndex = 1
+                var pagesInCurrentPart = 0
+                let baseName = pdf.name
+                
+                let avgPageSize = pdf.fileSize / Int64(max(pageCount, 1))
+                let pagesPerPart = max(1, Int(Int64(maxBytes) / max(avgPageSize, 1)))
+                
+                for i in 0..<pageCount {
+                    autoreleasepool {
+                        if let page = document.page(at: i) {
+                            currentPart.insert(page, at: pagesInCurrentPart)
+                            pagesInCurrentPart += 1
+                        }
+                    }
+                    
+                    if pagesInCurrentPart >= pagesPerPart || i == pageCount - 1 {
+                        let partURL = outputDir.appendingPathComponent("\(baseName)_part\(currentPartIndex).pdf")
+                        if FileManager.default.fileExists(atPath: partURL.path) { try? FileManager.default.removeItem(at: partURL) }
+                        if currentPart.write(to: partURL) { parts.append(partURL) }
+                        currentPart = PDFDocument()
+                        pagesInCurrentPart = 0
+                        currentPartIndex += 1
+                    }
+                }
+                
+                continuation.resume(returning: parts)
+            }
+        }
+    }
+
+    private func performEPUBSplit(pdf: ConvertedPDF, maxSizeMB: Double) async throws -> [URL] {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        try FileManager.default.unzipItem(at: pdf.url, to: tempDir)
+        
+        // Find images
+        let deepEnumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: [.fileSizeKey])
+        var imageURLs: [URL] = []
+        
+        while let url = deepEnumerator?.nextObject() as? URL {
+            let ext = url.pathExtension.lowercased()
+            if ["jpg", "jpeg", "png", "gif", "webp"].contains(ext) {
+                imageURLs.append(url)
+            }
+        }
+        
+        // Use localizedStandardCompare for correct numbering (1, 2, 10...)
+        imageURLs.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        
+        let maxBytes = Int(maxSizeMB) * 1024 * 1024
+        var parts: [URL] = []
+        
+        // Stream processing state
+        var currentBatch: [UIImage] = []
+        var currentBatchSize: Int64 = 0
+        var partIndex = 1
+        
+        // Lower compression for Split to avoid size bloat
+        let generator = EPUBGenerator(settings: EPUBSettings(), metadata: pdf.metadata, compressionQuality: 0.7)
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        
+        // Use Robust Detect Strips from EPUBStripFixer (fixes Horizontal Snipping issues)
+        var isStrips = false
+        var stripsPerPage = 1
+        
+        if !imageURLs.isEmpty {
+             // Heuristic: Check first image aspect ratio
+             if let firstImg = UIImage(contentsOfFile: imageURLs[0].path) {
+                 if firstImg.size.width / firstImg.size.height > 2.0 {
+                     isStrips = true
+                 }
+             }
+        }
+        
+        if isStrips {
+             stripsPerPage = EPUBStripFixer.detectStripsPerPage(imageURLs.count)
+             print("✂️ Background EPUB Split: Detected strips. Using \(stripsPerPage) strips per page.")
+        }
+        
+        // Helper to output
+        func outputImage(_ image: UIImage) async throws {
+            let estimatedSize = Int64(image.size.width * image.size.height * 0.5)
+            
+            if currentBatchSize + estimatedSize > Int64(maxBytes) && !currentBatch.isEmpty {
+                // Generate part
+                let partName = "\(pdf.name)_part\(partIndex)"
+                let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName)
+                
+                let finalURL = outputDir.appendingPathComponent("\(partName).epub")
+                if FileManager.default.fileExists(atPath: finalURL.path) { try FileManager.default.removeItem(at: finalURL) }
+                try FileManager.default.moveItem(at: epubURL, to: finalURL)
+                parts.append(finalURL)
+                
+                currentBatch = []
+                currentBatchSize = 0
+                partIndex += 1
+            }
+            
+            currentBatch.append(image)
+            currentBatchSize += estimatedSize
+        }
+        
+        // Process Loop
+        if isStrips {
+            // Use Stride based on detected stripsPerPage
+            for i in stride(from: 0, to: imageURLs.count, by: stripsPerPage) {
+                let endIndex = min(i + stripsPerPage, imageURLs.count)
+                let chunkURLs = imageURLs[i..<endIndex]
+                
+                var chunkImages: [UIImage] = []
+                for url in chunkURLs {
+                    if let img = UIImage(contentsOfFile: url.path) {
+                        chunkImages.append(img)
+                    }
+                }
+                
+                // Use Robust Stitching from EPUBStripFixer
+                if let stitched = EPUBStripFixer.combineStripsVertically(chunkImages) {
+                    try await outputImage(stitched)
+                }
+            }
+        } else {
+            // Normal processing - just copy images
+            for url in imageURLs {
+                if let img = UIImage(contentsOfFile: url.path) {
+                    try await outputImage(img)
+                }
+            }
+        }
+        
+        // Final part
+        if !currentBatch.isEmpty {
+             let partName = "\(pdf.name)_part\(partIndex)"
+             let (epubURL, _) = try await generator.generateEPUB(from: currentBatch, outputName: partName)
+             
+             let finalURL = outputDir.appendingPathComponent("\(partName).epub")
+             if FileManager.default.fileExists(atPath: finalURL.path) { try FileManager.default.removeItem(at: finalURL) }
+             try FileManager.default.moveItem(at: epubURL, to: finalURL)
+             parts.append(finalURL)
+        }
+        
+        try? FileManager.default.removeItem(at: tempDir)
+        return parts
+    }
     
     var filteredPDFs: [ConvertedPDF] {
         var result = convertedPDFs
