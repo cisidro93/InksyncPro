@@ -13,6 +13,9 @@ targets:
     platform: iOS
     sources:
       - path: ComicToPDF
+    preBuildScripts:
+      - script: sh scripts/run_swiftlint.sh
+        name: SwiftLint
     dependencies:
       - package: ZIPFoundation
     settings:

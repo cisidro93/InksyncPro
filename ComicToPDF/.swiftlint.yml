@@ -1,0 +1,39 @@
+disabled_rules:
+  - trailing_whitespace
+  - line_length
+  - force_cast
+  - force_try
+  - function_body_length
+  - type_body_length
+  - file_length
+
+opt_in_rules:
+  - empty_count
+  - empty_string
+  - unused_declaration
+  - unused_import
+  - duplicate_imports
+  - fatal_error_message
+
+analyzer_rules:
+  - unused_declaration
+  - unused_import
+
+reporter: "xcode" # Makes warnings show up in Xcode build output
+
+excluded:
+  - "DerivedData"
+  - "build"
+  - "Carthage"
+  - "Pods"
+  - "*.xcodeproj"
+  - "*.xcworkspace"
+
+custom_rules:
+  no_print_in_release:
+    name: "Print in Release"
+    regex: "(print|debugPrint)\\s*\\("
+    match_kinds:
+      - identifier
+    message: "Do not leave print statements in release code."
+    severity: warning

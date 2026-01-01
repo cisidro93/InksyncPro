@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "ios-port" ]
+  pull_request:
+    branches: [ "main", "ios-port" ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Tools
+      run: |
+        brew install swiftlint
+        brew install xcodegen || true # Install xcodegen if needed, ignore if present/fails
+
+    - name: Run SwiftLint
+      run: swiftlint lint
+      continue-on-error: true # Don't block build on lint errors as requested
+
+    - name: Generate Project (If Project.yml exists)
+      run: |
+        if [ -f "project.yml" ]; then
+          xcodegen generate
+        fi
+
+    - name: Build
+      run: |
+        xcodebuild -project ComicToPDF.xcodeproj -scheme ComicToPDF -sdk iphoneos -configuration Release clean build CODE_SIGNING_ALLOWED=NO
