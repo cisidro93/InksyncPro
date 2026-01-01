@@ -2,6 +2,8 @@ import Foundation
 import PDFKit
 import UIKit
 import ZIPFoundation
+import ImageIO
+import MobileCoreServices
 
 /// Service to convert PDF files to EPUB format
 /// Extracts PDF pages as images and packages them into a valid EPUB structure
@@ -161,30 +163,57 @@ class PDFToEPUBConverter {
                 // Double check scaled size logic to prevent invalid image context
                 guard scaledSize.width > 1, scaledSize.height > 1 else { return }
                 
-                // Create format with scale 1.0 and opaque (no alpha for JPEG)
-                let format = UIGraphicsImageRendererFormat()
-                format.scale = 1.0
-                format.opaque = true
+                // FIX: Use Low-Level CGBitmapContext to avoid UIGraphicsImageRenderer stripping artifacts
+                let width = Int(scaledSize.width)
+                let height = Int(scaledSize.height)
+                let bitsPerComponent = 8
+                let bytesPerRow = 0 // Auto
+                let colorSpace = CGColorSpaceCreateDeviceRGB()
+                let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue // Opaque RGB
                 
-                let renderer = UIGraphicsImageRenderer(size: scaledSize, format: format)
-                let image = renderer.image { context in
-                    UIColor.white.setFill()
-                    context.fill(CGRect(origin: .zero, size: scaledSize))
-                    
-                    context.cgContext.translateBy(x: 0, y: scaledSize.height)
-                    context.cgContext.scaleBy(x: scale, y: -scale)
-                    
-                    page.draw(with: .mediaBox, to: context.cgContext)
-                }
-                
-                // Save as JPEG
-                guard let imageData = image.jpegData(compressionQuality: options.imageQuality) else {
+                guard let context = CGContext(data: nil,
+                                            width: width,
+                                            height: height,
+                                            bitsPerComponent: bitsPerComponent,
+                                            bytesPerRow: bytesPerRow,
+                                            space: colorSpace,
+                                            bitmapInfo: bitmapInfo) else {
                     throw ConversionError.pageRenderFailed(pageIndex + 1)
                 }
                 
+                // Draw White Background
+                context.setFillColor(UIColor.white.cgColor)
+                context.fill(CGRect(origin: .zero, size: scaledSize))
+                
+                // Draw PDF Page
+                // Flip coords for CoreGraphics
+                context.translateBy(x: 0, y: scaledSize.height)
+                context.scaleBy(x: scale, y: -scale)
+                
+                page.draw(with: .mediaBox, to: context)
+                
+                // Create Image from Context
+                guard let cgImage = context.makeImage() else {
+                     throw ConversionError.pageRenderFailed(pageIndex + 1)
+                }
+                
+                // Save as JPEG using ImageIO (Direct Transcode)
                 let imageName = String(format: "page_%04d.jpg", pageIndex + 1)
                 let imageURL = imagesDir.appendingPathComponent(imageName)
-                try imageData.write(to: imageURL)
+                
+                guard let destination = CGImageDestinationCreateWithURL(imageURL as CFURL, kUTTypeJPEG, 1, nil) else {
+                     throw ConversionError.fileWriteFailed
+                }
+                
+                let imageOptions: [CFString: Any] = [
+                    kCGImageDestinationLossyCompressionQuality: options.imageQuality
+                ]
+                
+                CGImageDestinationAddImage(destination, cgImage, imageOptions as CFDictionary)
+                if !CGImageDestinationFinalize(destination) {
+                     throw ConversionError.fileWriteFailed
+                }
+                
                 imageFiles.append(imageName)
             }
         }
