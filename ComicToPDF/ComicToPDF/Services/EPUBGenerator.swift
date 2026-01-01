@@ -144,93 +144,94 @@ class EPUBGenerator {
         
         let imagesDir = tempDirectory.appendingPathComponent("OEBPS/images")
         
+        // Process and save images
         for (index, sourceURL) in imageURLs.enumerated() {
-            let pageNumber = index + 1
-            // Copy image file
-            let ext = sourceURL.pathExtension.isEmpty ? "jpg" : sourceURL.pathExtension
-            let imageName = String(format: "page%d.\(ext)", pageNumber)
-            let destURL = imagesDir.appendingPathComponent(imageName)
-            
-            if passthrough {
-                 try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                 if let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path), let size = attrs[.size] as? Int64 {
-                     originalSize += size
-                     finalSize += size
-                 }
-            } else {
-                var processed = false
+            try autoreleasepool {
+                let pageNumber = index + 1
+                // Copy image file
+                let ext = sourceURL.pathExtension.isEmpty ? "jpg" : sourceURL.pathExtension
+                let imageName = String(format: "page%d.\(ext)", pageNumber)
+                let destURL = imagesDir.appendingPathComponent(imageName)
                 
-                // Load image for processing if resizing/compression is needed
-                // "Smart" copying: If no resize needed AND input is JPEG AND quality is High, just copy.
-                // Otherwise, decode -> resize -> compress -> save.
-                
-                let ext = sourceURL.pathExtension.lowercased()
-                let isJPEG = ext == "jpg" || ext == "jpeg"
-                let needsResize = targetSize != nil || customScale < 0.99
-                
-                // Track input size
-                if let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path), let size = attrs[.size] as? Int64 {
-                    originalSize += size
-                }
-                
-                if !needsResize && isJPEG && compressionQuality >= 1.0 {
-                    // Fast path
-                    try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                    if let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path), let size = attrs[.size] as? Int64 {
-                        finalSize += size
+                if passthrough {
+                     try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                     if let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path), let size = attrs[.size] as? Int64 {
+                         originalSize += size
+                         finalSize += size
+                     }
+                } else {
+                    var processed = false
+                    
+                    // Load image for processing if resizing/compression is needed
+                    // "Smart" copying: If no resize needed AND input is JPEG AND quality is High, just copy.
+                    // Otherwise, decode -> resize -> compress -> save.
+                    
+                    let ext = sourceURL.pathExtension.lowercased()
+                    let isJPEG = ext == "jpg" || ext == "jpeg"
+                    let needsResize = targetSize != nil || customScale < 0.99
+                    
+                    // Track input size
+                    if let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path), let size = attrs[.size] as? Int64 {
+                        originalSize += size
                     }
-                    processed = true
-                }
-                
-                if !processed {
-                    if let image = UIImage(contentsOfFile: sourceURL.path) {
-                        // 1. Resize if needed
-                        let resizedImage = resizeImageIfNeeded(image)
-                        
-                        // 2. Compress
-                        if let imageData = resizedImage.jpegData(compressionQuality: self.compressionQuality) {
-                            try imageData.write(to: destURL)
-                            finalSize += Int64(imageData.count)
-                            processed = true
+                    
+                    if !needsResize && isJPEG && compressionQuality >= 1.0 {
+                        // Fast path
+                        try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                        if let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path), let size = attrs[.size] as? Int64 {
+                            finalSize += size
+                        }
+                        processed = true
+                    }
+                    
+                    if !processed {
+                        if let image = UIImage(contentsOfFile: sourceURL.path) {
+                            // 1. Resize if needed
+                            let resizedImage = resizeImageIfNeeded(image)
+                            
+                            // 2. Compress
+                            if let imageData = resizedImage.jpegData(compressionQuality: self.compressionQuality) {
+                                try imageData.write(to: destURL)
+                                finalSize += Int64(imageData.count)
+                                processed = true
+                            }
                         }
                     }
+                    
+                    if !processed {
+                       // Fallback
+                       try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                    }
                 }
                 
-                if !processed {
-                   // Fallback
-                   try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                // Determine media type
+                let mediaType: String
+                switch ext.lowercased() {
+                case "png": mediaType = "image/png"
+                case "gif": mediaType = "image/gif"
+                case "webp": mediaType = "image/webp"
+                default: mediaType = "image/jpeg"
                 }
+                
+                // Add to image manifest items
+                imageManifestLines.append("""
+                    <item id="image\(pageNumber)" href="images/\(imageName)" media-type="\(mediaType)"/>
+                """)
+                
+                // Create XHTML page for each image
+                let xhtmlFileName = String(format: "page%d.xhtml", pageNumber)
+                try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlFileName)
+                
+                // Add to XHTML manifest items
+                xhtmlManifestLines.append("""
+                    <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
+                """)
+                
+                // Add to spine items
+                spineItemLines.append("""
+                    <itemref idref="page\(pageNumber)"/>
+                """)
             }
-            
-            // Determine media type
-            let mediaType: String
-            switch ext.lowercased() {
-            case "png": mediaType = "image/png"
-            case "gif": mediaType = "image/gif"
-            case "webp": mediaType = "image/webp"
-            default: mediaType = "image/jpeg"
-            }
-            
-            // Add to image manifest items
-            imageManifestLines.append("""
-                <item id="image\(pageNumber)" href="images/\(imageName)" media-type="\(mediaType)"/>
-            """)
-            
-
-            
-            // Create XHTML page for each image
-            let xhtmlFileName = String(format: "page%d.xhtml", pageNumber)
-            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlFileName)
-            
-            // Add to XHTML manifest items
-            xhtmlManifestLines.append("""
-                <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
-            """)
-            
-            // Add to spine items
-            spineItemLines.append("""
-                <itemref idref="page\(pageNumber)"/>
-            """)
         }
         
         // Generate page content
@@ -453,6 +454,13 @@ class EPUBGenerator {
     
     private func resizeImageIfNeeded(_ image: UIImage) -> UIImage {
         let originalSize = image.size
+        
+        // Safety check for invalid dimensions or memory issues
+        guard originalSize.width > 0, originalSize.height > 0,
+              !originalSize.width.isNaN, !originalSize.height.isNaN else {
+            return image
+        }
+        
         var newSize = originalSize
         
         // 1. Apply Custom Scale (e.g. 0.5x)
@@ -462,7 +470,7 @@ class EPUBGenerator {
         
         // 2. Apply Target Constraints (e.g. Kindle 1236x1648)
         // We only scale DOWN, never up (aspect fit)
-        if let target = targetSize {
+        if let target = targetSize, target.width > 0, target.height > 0 {
             let widthRatio = target.width / newSize.width
             let heightRatio = target.height / newSize.height
             
@@ -473,6 +481,12 @@ class EPUBGenerator {
             }
         }
         
+        // Validate new size
+        guard newSize.width > 1, newSize.height > 1,
+              !newSize.width.isNaN, !newSize.height.isNaN else {
+             return image
+        }
+        
         // If unchanged, return original
         if newSize == originalSize { return image }
         
@@ -480,6 +494,12 @@ class EPUBGenerator {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0
         format.opaque = true
+        
+        // Final safety catch for context creation failure
+        if newSize.width > 10000 || newSize.height > 10000 {
+            // Avoid attempting to render excessively large contexts if something went wrong
+            return image
+        }
         
         let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
         return renderer.image { _ in
