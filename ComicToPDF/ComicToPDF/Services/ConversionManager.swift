@@ -234,10 +234,11 @@ struct PageItem: Identifiable, Equatable {
 // MARK: - BACKGROUND TASKS
 // ============================================================================
 
-struct BackgroundTask: Identifiable {
+class BackgroundTask: Identifiable, ObservableObject {
     let id: UUID
     let description: String
     let dateStarted: Date
+    @Published var progress: Double = 0
     
     init(description: String) {
         self.id = UUID()
@@ -275,9 +276,13 @@ class ConversionManager: ObservableObject {
             do {
                 let parts: [URL]
                 if pdf.url.pathExtension.lowercased() == "epub" {
-                     parts = try await performEPUBSplit(pdf: pdf, maxSizeMB: maxSizeMB)
+                     parts = try await performEPUBSplit(pdf: pdf, maxSizeMB: maxSizeMB) { p in
+                         taskInfo.progress = p
+                     }
                 } else {
-                     parts = try await performSplit(pdf: pdf, maxSizeMB: maxSizeMB)
+                     parts = try await performSplit(pdf: pdf, maxSizeMB: maxSizeMB) { p in
+                         taskInfo.progress = p
+                     }
                 }
                 
                 await MainActor.run {
@@ -303,7 +308,7 @@ class ConversionManager: ObservableObject {
     
     // MARK: - Split Logic (Moved from PDFActionViews)
     
-    private func performSplit(pdf: ConvertedPDF, maxSizeMB: Double) async throws -> [URL] {
+    private func performSplit(pdf: ConvertedPDF, maxSizeMB: Double, onProgress: @escaping (Double) -> Void) async throws -> [URL] {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 guard let document = PDFDocument(url: pdf.url) else {
@@ -342,6 +347,8 @@ class ConversionManager: ObservableObject {
                         pagesInCurrentPart = 0
                         currentPartIndex += 1
                     }
+                    
+                    Task { @MainActor in onProgress(Double(i + 1) / Double(pageCount)) }
                 }
                 
                 continuation.resume(returning: parts)
@@ -349,7 +356,7 @@ class ConversionManager: ObservableObject {
         }
     }
 
-    private func performEPUBSplit(pdf: ConvertedPDF, maxSizeMB: Double) async throws -> [URL] {
+    private func performEPUBSplit(pdf: ConvertedPDF, maxSizeMB: Double, onProgress: @escaping (Double) -> Void) async throws -> [URL] {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
@@ -442,13 +449,16 @@ class ConversionManager: ObservableObject {
                 if let stitched = EPUBStripFixer.combineStripsVertically(chunkImages) {
                     try await outputImage(stitched)
                 }
+                
+                Task { @MainActor in onProgress(min(Double(i + stripsPerPage) / Double(imageURLs.count), 0.99)) }
             }
         } else {
             // Normal processing - just copy images
-            for url in imageURLs {
+            for (index, url) in imageURLs.enumerated() {
                 if let img = UIImage(contentsOfFile: url.path) {
                     try await outputImage(img)
                 }
+                Task { @MainActor in onProgress(Double(index + 1) / Double(imageURLs.count)) }
             }
         }
         

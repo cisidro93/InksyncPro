@@ -44,6 +44,18 @@ struct LibraryView: View {
                 } else {
                     VStack(spacing: 0) {
                         SearchFilterBar(searchText: $conversionManager.searchText, showFilters: $showingFilters)
+                        
+                        // Active Tasks Monitor
+                        if !conversionManager.activeTasks.isEmpty {
+                            VStack(spacing: 8) {
+                                ForEach(conversionManager.activeTasks) { task in
+                                    TaskMonitorRow(task: task)
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 8)
+                        }
+                        
                         if isSelectionMode { batchActionBar }
                         pdfList
                     }
