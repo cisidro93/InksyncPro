@@ -194,53 +194,70 @@ struct SplitPDFView: View {
         let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         
-        // Detect strips logic (Two-Pass approach like ComicEPUBProcessor)
+        // Detect strips logic (Robost logic matching EPUBtoPDFConverter)
         var isStrips = false
         var stripsPerPage = 1
         
         if !imageURLs.isEmpty {
-            // Check a spread of images to avoid being fooled by covers
-            // Sample: Start, 25%, 50%, 75%, End
-            let count = imageURLs.count
-            let indicesToCheck = Set([
-                0,
-                count / 4,
-                count / 2,
-                (count * 3) / 4,
-                count - 1
-            ]).sorted().filter { $0 >= 0 && $0 < count }
-            
-            var stripVotes = 0
-            var validSamples = 0
-            
-            for i in indicesToCheck {
-                 if let img = UIImage(contentsOfFile: imageURLs[i].path) {
-                     validSamples += 1
-                     // Aspect ratio check: width > 2 * height -> Strip
-                     if img.size.width / img.size.height > 2.0 { stripVotes += 1 }
-                 }
+            // Check first image for aspect ratio (fastest check)
+            if let firstImg = UIImage(contentsOfFile: imageURLs[0].path) {
+                let ratio = firstImg.size.width / firstImg.size.height
+                if ratio > 2.0 {
+                    isStrips = true
+                }
             }
-            // If more than 30% of samples are strips, treat as strips
-            // (Lower threshold because covers/credits might be full pages)
-            isStrips = validSamples > 0 && (Double(stripVotes) / Double(validSamples) > 0.3)
-        }
-        
-        if isStrips {
-            let total = imageURLs.count
-            // Heuristic divisors: Prefer 10, 8, 6, 5, 4
-            stripsPerPage = 6 // Default
-            for n in [10, 8, 6, 5, 4] {
-                if total % n == 0 {
-                    stripsPerPage = n
-                    break
+            
+            // If first image says yes, verify with a larger sample to avoid covers/frontmatter
+            if isStrips {
+                let count = imageURLs.count
+                let sampleIndices = [
+                    count / 4,
+                    count / 2,
+                    (count * 3) / 4
+                ].filter { $0 > 0 && $0 < count }
+                
+                var stripVotes = 0
+                for i in sampleIndices {
+                    if let img = UIImage(contentsOfFile: imageURLs[i].path) {
+                        if img.size.width / img.size.height > 2.0 {
+                            stripVotes += 1
+                        }
+                    }
+                }
+                
+                // If samples contradict the first image (e.g. cover was spread but content is pages)
+                // We trust the content.
+                if !sampleIndices.isEmpty && stripVotes == 0 {
+                    isStrips = false
                 }
             }
         }
         
+        if isStrips {
+            let total = imageURLs.count
+            // Specific heuristic for known 32-strip files (User request)
+            if total == 32 {
+                stripsPerPage = 8
+            } else {
+                // Heuristic divisors: Prefer 10, 8, 6, 5, 4
+                stripsPerPage = 6 // Default
+                for n in [10, 8, 6, 5, 4] {
+                    if total % n == 0 {
+                        stripsPerPage = n
+                        break
+                    }
+                }
+            }
+            print("✂️ EPUB Split: Detected strips. Using \(stripsPerPage) strips per page.")
+        } else {
+            print("📄 EPUB Split: Detected full pages. No stitching.")
+        }
+        
+        // Calculate total steps for progress
         let totalSteps = isStrips ? (imageURLs.count / stripsPerPage) : imageURLs.count
         
-        // Helper to process a ready image
-        func processReadyImage(_ image: UIImage) async throws {
+        // Helper to handle outputting the processed image
+        func outputImage(_ image: UIImage) async throws {
             let estimatedSize = Int64(image.size.width * image.size.height * 0.5)
             
             if currentBatchSize + estimatedSize > Int64(maxBytes) && !currentBatch.isEmpty {
@@ -260,11 +277,16 @@ struct SplitPDFView: View {
             
             currentBatch.append(image)
             currentBatchSize += estimatedSize
+            
+            processedItems += 1
+            await MainActor.run {
+                self.progress = min(Double(processedItems) / Double(totalSteps), 0.99)
+            }
         }
         
         // Process Loop
         if isStrips {
-            // Processing strips in chunks
+            // Processing strips in chunks to manage memory
             for i in stride(from: 0, to: imageURLs.count, by: stripsPerPage) {
                 let endIndex = min(i + stripsPerPage, imageURLs.count)
                 let chunkURLs = imageURLs[i..<endIndex]
@@ -276,25 +298,16 @@ struct SplitPDFView: View {
                     }
                 }
                 
+                // Only stitch if we have enough strips or it's the last chunk
                 if let stitched = EPUBStripFixer.combineStripsVertically(chunkImages) {
-                    try await processReadyImage(stitched)
-                }
-                
-                processedItems += 1
-                await MainActor.run {
-                    self.progress = min(Double(processedItems) / Double(totalSteps), 0.99)
+                    try await outputImage(stitched)
                 }
             }
         } else {
-            // Normal processing
+            // Normal processing - just copy images
             for url in imageURLs {
                 if let img = UIImage(contentsOfFile: url.path) {
-                    try await processReadyImage(img)
-                }
-                
-                processedItems += 1
-                await MainActor.run {
-                    self.progress = min(Double(processedItems) / Double(totalSteps), 0.99)
+                    try await outputImage(img)
                 }
             }
         }

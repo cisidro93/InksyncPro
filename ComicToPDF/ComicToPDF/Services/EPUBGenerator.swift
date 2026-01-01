@@ -175,9 +175,7 @@ class EPUBGenerator {
                 <item id="image\(pageNumber)" href="images/\(imageName)" media-type="\(mediaType)"/>
             """)
             
-            // Create XHTML page for each image
-            let xhtmlFileName = String(format: "page%d.xhtml", pageNumber)
-            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlFileName)
+
             
             // Add to XHTML manifest items
             xhtmlManifestLines.append("""
@@ -203,9 +201,6 @@ class EPUBGenerator {
     }
     
     private func createPageXHTML(pageNumber: Int, imageName: String, xhtmlFileName: String) throws {
-        let imageWidth = 800  // Standard comic width
-        let imageHeight = 1200  // Standard comic height
-        
         let xhtmlContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
@@ -213,10 +208,9 @@ class EPUBGenerator {
         <head>
             <title>Page \(pageNumber)</title>
             <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-            <meta name="viewport" content="width=\(imageWidth), height=\(imageHeight)"/>
             <style type="text/css">
-                body { margin: 0; padding: 0; text-align: center; }
-                .page { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; }
+                body { margin: 0; padding: 0; text-align: center; background-color: white; }
+                .page { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
                 img { max-width: 100%; max-height: 100%; object-fit: contain; }
             </style>
         </head>
