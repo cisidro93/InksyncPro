@@ -12,17 +12,23 @@ class EPUBGenerator {
     private let settings: EPUBSettings
     private let metadata: PDFMetadata
     private let compressionQuality: Double
+    private let targetSize: CGSize? // Added for optimizeForDevice
+    private let customScale: Double // Added for custom sliders
     
     private var accumulatedImageManifestItems: String = ""
     private var accumulatedXhtmlManifestItems: String = ""
 
     private var accumulatedSpineItems: String = ""
     private var accumulatedPageCount: Int = 0
+    private var originalSize: Int64 = 0
+    private var finalSize: Int64 = 0
     
-    init(settings: EPUBSettings, metadata: PDFMetadata, compressionQuality: Double = 0.85) {
+    init(settings: EPUBSettings, metadata: PDFMetadata, compressionQuality: Double = 0.85, targetSize: CGSize? = nil, customScale: Double = 1.0) {
         self.settings = settings
         self.metadata = metadata
         self.compressionQuality = compressionQuality
+        self.targetSize = targetSize
+        self.customScale = customScale
         self.tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("EPUBGeneration_\(UUID().uuidString)", isDirectory: true)
     }
@@ -147,20 +153,52 @@ class EPUBGenerator {
             
             if passthrough {
                  try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                 if let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path), let size = attrs[.size] as? Int64 {
+                     originalSize += size
+                     finalSize += size
+                 }
             } else {
-                // Determine if we can copy directly based on compression
-                let isJPEG = ext.lowercased() == "jpg" || ext.lowercased() == "jpeg"
-                if isJPEG && compressionQuality >= 1.0 {
+                var processed = false
+                
+                // Load image for processing if resizing/compression is needed
+                // "Smart" copying: If no resize needed AND input is JPEG AND quality is High, just copy.
+                // Otherwise, decode -> resize -> compress -> save.
+                
+                let ext = sourceURL.pathExtension.lowercased()
+                let isJPEG = ext == "jpg" || ext == "jpeg"
+                let needsResize = targetSize != nil || customScale < 0.99
+                
+                // Track input size
+                if let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path), let size = attrs[.size] as? Int64 {
+                    originalSize += size
+                }
+                
+                if !needsResize && isJPEG && compressionQuality >= 1.0 {
+                    // Fast path
                     try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                } else {
-                    // Load image, convert to JPEG with compression, then save
-                    if let image = UIImage(contentsOfFile: sourceURL.path),
-                       let imageData = image.jpegData(compressionQuality: self.compressionQuality) {
-                        try imageData.write(to: destURL)
-                    } else {
-                        // Fallback: just copy if conversion fails or is not an image
-                        try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                    if let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path), let size = attrs[.size] as? Int64 {
+                        finalSize += size
                     }
+                    processed = true
+                }
+                
+                if !processed {
+                    if let image = UIImage(contentsOfFile: sourceURL.path) {
+                        // 1. Resize if needed
+                        let resizedImage = resizeImageIfNeeded(image)
+                        
+                        // 2. Compress
+                        if let imageData = resizedImage.jpegData(compressionQuality: self.compressionQuality) {
+                            try imageData.write(to: destURL)
+                            finalSize += Int64(imageData.count)
+                            processed = true
+                        }
+                    }
+                }
+                
+                if !processed {
+                   // Fallback
+                   try FileManager.default.copyItem(at: sourceURL, to: destURL)
                 }
             }
             
@@ -411,6 +449,51 @@ class EPUBGenerator {
         return outputURL
     }
     
+    // MARK: - Helper Methods
+    
+    private func resizeImageIfNeeded(_ image: UIImage) -> UIImage {
+        let originalSize = image.size
+        var newSize = originalSize
+        
+        // 1. Apply Custom Scale (e.g. 0.5x)
+        if customScale < 0.99 && customScale > 0 {
+            newSize = CGSize(width: originalSize.width * customScale, height: originalSize.height * customScale)
+        }
+        
+        // 2. Apply Target Constraints (e.g. Kindle 1236x1648)
+        // We only scale DOWN, never up (aspect fit)
+        if let target = targetSize {
+            let widthRatio = target.width / newSize.width
+            let heightRatio = target.height / newSize.height
+            
+            // If image is larger than target in any dimension, scale down
+            if widthRatio < 1.0 || heightRatio < 1.0 {
+                let scale = min(widthRatio, heightRatio)
+                newSize = CGSize(width: newSize.width * scale, height: newSize.height * scale)
+            }
+        }
+        
+        // If unchanged, return original
+        if newSize == originalSize { return image }
+        
+        // Perform resizing using UIGraphicsImageRenderer to ensure sRGB and avoid tiling artifacts
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
+        
+        let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+    
+    func printCompressionStats() {
+        if originalSize > 0 {
+             let percent = 100.0 * (1.0 - (Double(finalSize) / Double(originalSize)))
+             print("📉 Compression Stats: Original: \(ByteCountFormatter.string(fromByteCount: originalSize, countStyle: .file)) -> EPUB Content: \(ByteCountFormatter.string(fromByteCount: finalSize, countStyle: .file)) (\(String(format: "%.1f", percent))% reduction)")
+        }
+    }
+
     // MARK: - Cleanup
     
     private func cleanup() {

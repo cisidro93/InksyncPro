@@ -715,20 +715,42 @@ class ConversionManager: ObservableObject {
         } else {
             // New Logic for Archive -> EPUB using CBZToEPUBConverter (Preserves Full Pages)
             
-            // Determine Compression Quality
-            let jpegQuality: Double
+            // Determine Compression Options
+            var jpegQuality: Double
+            var scale: Double = 1.0
+            var targetSize: CGSize? = nil
+            
             if config.compressionQuality == .custom {
                 jpegQuality = config.customJpegQuality
+                scale = config.customScale
             } else {
                 jpegQuality = config.compressionQuality.values.quality
+                scale = config.compressionQuality.values.scale
             }
+            
+            if config.optimizeForDevice {
+                targetSize = config.targetDevice.resolution
+            } else if config.compressionQuality != .original {
+                // Approximate generic scaling if not optimizing for specific device
+                targetSize = CGSize(width: 1600 * scale, height: 2400 * scale)
+            }
+            
+            let options = CBZToEPUBConverter.ConversionOptions(
+                compressionQuality: jpegQuality,
+                targetSize: targetSize,
+                customScale: scale,
+                title: outputName
+            )
             
             return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, Int), Error>) in
                 let converter = CBZToEPUBConverter()
-                converter.convertCBZToEPUB(sourceURL, compressionQuality: jpegQuality) { result in
+                converter.convertCBZToEPUB(sourceURL, options: options) { result in
                     progressHandler(1.0)
                     switch result {
                     case .success(let epubURL):
+                        // EPUBGenerator accumulates page count but returns it via its own method which we accessed in the wrapper. 
+                        // However, we need to extract it or assume standard count.
+                        // For now we return 0 or could verify later.
                         continuation.resume(returning: (epubURL, 0))
                     case .failure(let error):
                         continuation.resume(throwing: error)
