@@ -67,11 +67,22 @@ struct ComicPage {
     let imageURL: URL
     let width: Int
     let height: Int
+    var aspectRatio: Double {
+        return Double(width) / Double(height)
+    }
 }
 
-// MARK: - CBZToEPUBConverter (Complete Rewrite)
+struct PageGroup {
+    let strips: [ComicPage]  // Array of strips that should be stitched together
+    var isStripGroup: Bool { return strips.count > 1 }
+}
+
+// MARK: - CBZToEPUBConverter (WITH SMART STITCHING INTEGRATED)
 
 class CBZToEPUBConverter {
+    
+    // Strip detection threshold - if width > 2x height, it's a horizontal strip
+    private let stripAspectRatioThreshold: Double = 2.0
     
     // MARK: - Initialization
     
@@ -106,24 +117,29 @@ class CBZToEPUBConverter {
         
         // 2. Scan and load comic pages
         print("ðŸ“¸ Scanning images...")
-        let pages = try scanComicPages(in: extractDir)
-        print("âœ… Found \(pages.count) pages")
+        let allPages = try scanComicPages(in: extractDir)
+        print("âœ… Found \(allPages.count) images")
         
-        guard !pages.isEmpty else {
+        guard !allPages.isEmpty else {
             throw NSError(domain: "CBZConverter", code: 404, userInfo: [NSLocalizedDescriptionKey: "No images found in CBZ"])
         }
         
-        // 3. Build EPUB structure
+        // 3. â­ THE FIX: Detect and group strips BEFORE processing
+        print("ðŸ” Analyzing image layout...")
+        let pageGroups = detectAndGroupStrips(allPages)
+        print("ðŸ“„ Detected \(pageGroups.count) final pages (some may be stitched from strips)")
+        
+        // 4. Build EPUB structure with stitched pages
         print("ðŸ“š Building EPUB...")
         let title = cbzURL.deletingPathExtension().lastPathComponent
         let epubURL = try buildEPUB(
-            pages: pages,
+            pageGroups: pageGroups,
             title: title,
             outputDir: tempDir,
             compressionQuality: compressionQuality
         )
         
-        // 4. Move to persistent location
+        // 5. Move to persistent location
         let finalURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
         try FileManager.default.copyItem(at: epubURL, to: finalURL)
         
@@ -170,9 +186,88 @@ class CBZToEPUBConverter {
         return pages
     }
     
+    // MARK: - â­ SMART STITCHING LOGIC (THE FIX)
+    
+    private func detectAndGroupStrips(_ pages: [ComicPage]) -> [PageGroup] {
+        var groups: [PageGroup] = []
+        var currentStripGroup: [ComicPage] = []
+        
+        for page in pages {
+            let isStrip = page.aspectRatio > stripAspectRatioThreshold
+            
+            if isStrip {
+                // This is a strip - add to current group
+                currentStripGroup.append(page)
+                print("ðŸ”¹ Strip detected: \(page.imageURL.lastPathComponent) (AR: \(String(format: "%.2f", page.aspectRatio)))")
+            } else {
+                // This is a normal page
+                // First, finalize any existing strip group
+                if !currentStripGroup.isEmpty {
+                    groups.append(PageGroup(strips: currentStripGroup))
+                    print("âœ‚ï¸  Grouped \(currentStripGroup.count) strips into 1 page")
+                    currentStripGroup = []
+                }
+                // Then add this normal page as its own group
+                groups.append(PageGroup(strips: [page]))
+            }
+        }
+        
+        // Don't forget the last strip group if it exists
+        if !currentStripGroup.isEmpty {
+            groups.append(PageGroup(strips: currentStripGroup))
+            print("âœ‚ï¸  Grouped \(currentStripGroup.count) strips into 1 page (final)")
+        }
+        
+        return groups
+    }
+    
+    private func stitchStrips(_ strips: [ComicPage]) -> UIImage? {
+        guard !strips.isEmpty else { return nil }
+        
+        print("ðŸ§µ Stitching \(strips.count) strips together...")
+        
+        // Load all strip images
+        var loadedStrips: [UIImage] = []
+        for strip in strips {
+            guard let image = UIImage(contentsOfFile: strip.imageURL.path) else {
+                print("âš ï¸ Failed to load strip: \(strip.imageURL.lastPathComponent)")
+                continue
+            }
+            loadedStrips.append(image)
+        }
+        
+        guard !loadedStrips.isEmpty else { return nil }
+        
+        // Calculate total dimensions (use FIRST strip's width, sum all heights)
+        let width = loadedStrips[0].size.width
+        let totalHeight = loadedStrips.reduce(0) { $0 + $1.size.height }
+        let scale = loadedStrips[0].scale
+        
+        print("ðŸ“ Stitching to: \(Int(width))x\(Int(totalHeight))")
+        
+        // Create stitched image using UIGraphicsImageContext (proven method)
+        UIGraphicsBeginImageContextWithOptions(
+            CGSize(width: width, height: totalHeight),
+            false,
+            scale
+        )
+        defer { UIGraphicsEndImageContext() }
+        
+        // Draw strips vertically
+        var yOffset: CGFloat = 0
+        for strip in loadedStrips {
+            strip.draw(at: CGPoint(x: 0, y: yOffset))
+            yOffset += strip.size.height
+        }
+        
+        let stitchedImage = UIGraphicsGetImageFromCurrentImageContext()
+        print("âœ… Stitched successfully")
+        return stitchedImage
+    }
+    
     // MARK: - EPUB Generation
     
-    private func buildEPUB(pages: [ComicPage], title: String, outputDir: URL, compressionQuality: Double) throws -> URL {
+    private func buildEPUB(pageGroups: [PageGroup], title: String, outputDir: URL, compressionQuality: Double) throws -> URL {
         
         // Create EPUB directory structure
         let epubDir = outputDir.appendingPathComponent("epub_build")
@@ -199,24 +294,33 @@ class CBZToEPUBConverter {
         """
         try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
-        // 3. Process images and generate XHTML
+        // 3. Process page groups (stitch if needed) and generate XHTML
         var imageManifest = ""
         var xhtmlManifest = ""
         var spineItems = ""
         
-        for (index, page) in pages.enumerated() {
+        for (index, group) in pageGroups.enumerated() {
             let pageNum = String(format: "%04d", index + 1)
             let imageName = "page\(pageNum).jpg"
             let imageDestURL = imagesDir.appendingPathComponent(imageName)
             
-            // Load and process image
-            guard let sourceImage = UIImage(contentsOfFile: page.imageURL.path),
+            // Get the final image (either single page or stitched strips)
+            let finalImage: UIImage?
+            if group.isStripGroup {
+                // Multiple strips - stitch them together
+                finalImage = stitchStrips(group.strips)
+            } else {
+                // Single image - load it
+                finalImage = UIImage(contentsOfFile: group.strips[0].imageURL.path)
+            }
+            
+            guard let sourceImage = finalImage,
                   let cgImage = sourceImage.cgImage else {
-                print("âš ï¸ Failed to load: \(page.imageURL.lastPathComponent)")
+                print("âš ï¸ Failed to load/stitch page \(index + 1)")
                 continue
             }
             
-            // Get actual pixel dimensions
+            // Get actual pixel dimensions of the final image
             let sourceWidth = CGFloat(cgImage.width)
             let sourceHeight = CGFloat(cgImage.height)
             
@@ -246,7 +350,7 @@ class CBZToEPUBConverter {
                 space: colorSpace,
                 bitmapInfo: bitmapInfo
             ) else {
-                print("âš ï¸ Failed to create context for: \(page.imageURL.lastPathComponent)")
+                print("âš ï¸ Failed to create context for page \(index + 1)")
                 continue
             }
             
@@ -256,24 +360,26 @@ class CBZToEPUBConverter {
             
             // Extract rendered image
             guard let renderedCGImage = context.makeImage() else {
-                print("âš ï¸ Failed to render: \(page.imageURL.lastPathComponent)")
+                print("âš ï¸ Failed to render page \(index + 1)")
                 continue
             }
             
             // Convert to UIImage and save as JPEG
-            let finalImage = UIImage(cgImage: renderedCGImage)
-            guard let jpegData = finalImage.jpegData(compressionQuality: compressionQuality) else {
+            let finalProcessedImage = UIImage(cgImage: renderedCGImage)
+            guard let jpegData = finalProcessedImage.jpegData(compressionQuality: compressionQuality) else {
                 print("âš ï¸ Failed to encode JPEG: \(imageName)")
                 continue
             }
             
             try jpegData.write(to: imageDestURL)
-            print("âœ… Saved: \(imageName) (\(Int(targetSize.width))x\(Int(targetSize.height))) - \(jpegData.count / 1024)KB")
+            
+            let stripInfo = group.isStripGroup ? " [stitched from \(group.strips.count) strips]" : ""
+            print("âœ… Page \(index + 1): \(Int(targetSize.width))x\(Int(targetSize.height)) - \(jpegData.count / 1024)KB\(stripInfo)")
             
             // Add to manifest
             imageManifest += "    <item id=\"img_\(pageNum)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
             
-            // Generate XHTML with correct viewport
+            // Generate XHTML with correct viewport (based on FINAL stitched/resized dimensions)
             let xhtmlContent = """
             <?xml version="1.0" encoding="utf-8"?>
             <!DOCTYPE html>
@@ -303,73 +409,51 @@ class CBZToEPUBConverter {
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                <dc:title>\(title)</dc:title>
                 <dc:identifier id="BookID">urn:uuid:\(UUID().uuidString)</dc:identifier>
+                <dc:title>\(title)</dc:title>
                 <dc:language>en</dc:language>
-                <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
             </metadata>
             <manifest>
-                <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                <item id="stylesheet" href="styles.css" media-type="text/css"/>
-        \(imageManifest)\(xhtmlManifest)    </manifest>
-            <spine toc="ncx">
+        \(imageManifest)\(xhtmlManifest)        <item id="css" href="styles.css" media-type="text/css"/>
+            </manifest>
+            <spine>
         \(spineItems)    </spine>
         </package>
         """
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
-        // 5. Create toc.ncx
-        let ncxContent = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-            <head>
-                <meta name="dtb:uid" content="urn:uuid:\(UUID().uuidString)"/>
-                <meta name="dtb:depth" content="1"/>
-                <meta name="dtb:totalPageCount" content="\(pages.count)"/>
-                <meta name="dtb:maxPageNumber" content="\(pages.count)"/>
-            </head>
-            <docTitle><text>\(title)</text></docTitle>
-            <navMap>
-                <navPoint id="navPoint-1" playOrder="1">
-                    <navLabel><text>Start</text></navLabel>
-                    <content src="text/page0001.xhtml"/>
-                </navPoint>
-            </navMap>
-        </ncx>
-        """
-        try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
-        
-        // 6. Create styles.css
+        // 5. Create styles.css
         let cssContent = """
+        @page {
+            margin: 0;
+            padding: 0;
+        }
         body {
             margin: 0;
             padding: 0;
-            background-color: black;
+            text-align: center;
         }
-        
         .page {
+            margin: 0;
+            padding: 0;
             width: 100%;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            height: 100%;
         }
-        
         img {
-            max-width: 100%;
-            max-height: 100%;
-            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
         """
         try cssContent.write(to: oebpsDir.appendingPathComponent("styles.css"), atomically: true, encoding: .utf8)
         
-        // 7. Package as EPUB (ZIP with specific ordering)
+        // 6. Zip (Manual Archive) - MOVED CUSTOM ZIP LOGIC HERE
         let finalEPUB = outputDir.appendingPathComponent("\(title).epub")
         guard let archive = Archive(url: finalEPUB, accessMode: .create) else {
-            throw NSError(domain: "CBZConverter", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
+             throw NSError(domain: "CBZConverter", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
         }
         
         // Add mimetype FIRST and UNCOMPRESSED (critical for EPUB spec)
