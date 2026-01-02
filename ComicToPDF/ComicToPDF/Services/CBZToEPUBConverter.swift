@@ -604,6 +604,7 @@ class ComicEPUBProcessor {
             throw SplitError.invalidSource
         }
         
+        var epubRoot = sourceDir
         var oebpsDir = sourceDir.appendingPathComponent("OEBPS")
         
         // Handle case where zip contains a wrapping directory
@@ -613,7 +614,8 @@ class ComicEPUBProcessor {
             
             if subdirs.count == 1 {
                 print("⚠️  Found wrapping directory: \(subdirs[0].lastPathComponent)")
-                oebpsDir = subdirs[0].appendingPathComponent("OEBPS")
+                epubRoot = subdirs[0]
+                oebpsDir = epubRoot.appendingPathComponent("OEBPS")
             } else {
                 print("❌ OEBPS directory not found in \(sourceDir.path)")
                 print("Files found: \(contents.map { $0.lastPathComponent })")
@@ -714,7 +716,7 @@ class ComicEPUBProcessor {
             if currentSize + pageSize + commonFilesSize > maxBytes && !currentPages.isEmpty {
                 print("Creating part \(partIndex) with \(currentPages.count) pages...")
                 let partURL = try createSplitPart(
-                    from: sourceDir,
+                    from: epubRoot,
                     pages: currentPages,
                     partIndex: partIndex,
                     originalName: epubURL.deletingPathExtension().lastPathComponent,
@@ -735,7 +737,7 @@ class ComicEPUBProcessor {
         if !currentPages.isEmpty {
             print("Creating part \(partIndex) with \(currentPages.count) pages...")
             let partURL = try createSplitPart(
-                from: sourceDir,
+                from: epubRoot,
                 pages: currentPages,
                 partIndex: partIndex,
                 originalName: epubURL.deletingPathExtension().lastPathComponent,
