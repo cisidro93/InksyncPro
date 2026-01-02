@@ -1,19 +1,23 @@
+// ============================================================================
+// COMPREHENSIVE CBZ TO EPUB CONVERSION AND SPLITTING SYSTEM
+// ============================================================================
+// 
+// This file contains TWO classes that work together:
+// 1. CBZToEPUBConverter - Handles conversion with memory optimization
+// 2. ComicEPUBProcessor - Handles splitting large files
+//
+// PASTE THIS ENTIRE FILE INTO ANTIGRAVITY IDE
+// Tell it: "Replace CBZToEPUBConverter.swift and ComicEPUBProcessor.swift with this code"
+//
+// ============================================================================
+
 import Foundation
 import UIKit
 import ZIPFoundation
 import CoreGraphics
 
 // ============================================================================
-// PRODUCTION CBZ TO EPUB CONVERTER - MEMORY-OPTIMIZED + SPLITTING COMPATIBLE
-// ============================================================================
-// 
-// ✅ CRITICAL FIXES:
-// - Proper directory structure (lowercase) for splitting compatibility
-// - Memory-efficient processing for large files (800MB+)
-// - Streaming image processing to avoid memory crashes
-// - Robust error handling with detailed logging
-// - Auto-split for files > 200MB
-//
+// PART 1: CBZ TO EPUB CONVERTER
 // ============================================================================
 
 struct CBZToEPUBConverter {
@@ -21,7 +25,7 @@ struct CBZToEPUBConverter {
     // MARK: - Configuration
     
     private let stripAspectRatioThreshold: Double = 2.0
-    private let maxMemorySafeBatchSize = 50 // Process images in batches to avoid memory issues
+    private let maxMemorySafeBatchSize = 50
     
     // MARK: - Device Profiles
     
@@ -89,26 +93,22 @@ struct CBZToEPUBConverter {
     
     private func performConversion(cbzURL: URL, compressionQuality: Double) throws -> URL {
         print("\n" + String(repeating: "=", count: 70))
-        print("📚 CBZ TO EPUB CONVERTER - MEMORY-OPTIMIZED VERSION")
+        print("📚 CBZ TO EPUB CONVERTER - PRODUCTION VERSION")
         print(String(repeating: "=", count: 70))
         print("Input: \(cbzURL.lastPathComponent)")
         
-        // Check input file size
         let inputSize = (try? FileManager.default.attributesOfItem(atPath: cbzURL.path)[.size] as? Int64) ?? 0
         let inputSizeMB = inputSize / 1_000_000
         print("Input size: \(inputSizeMB) MB")
         print("Quality: \(Int(compressionQuality * 100))%")
         
-        // Setup workspace
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
         
-        // Extract metadata
         let metadata = extractMetadata(from: cbzURL)
         print("Title: \(metadata.title)")
         
-        // 1. Extract CBZ
         print("\n1️⃣  Extracting archive...")
         let extractDir = tempDir.appendingPathComponent("extracted")
         
@@ -120,7 +120,6 @@ struct CBZToEPUBConverter {
             throw error
         }
         
-        // 2. Scan images
         print("\n2️⃣  Scanning images...")
         let allImages = try scanImages(in: extractDir)
         print("   Found: \(allImages.count) images")
@@ -130,13 +129,11 @@ struct CBZToEPUBConverter {
                          userInfo: [NSLocalizedDescriptionKey: "No images found in CBZ"])
         }
         
-        // Warn if very large
         if allImages.count > 500 {
             print("   ⚠️  Large file detected (\(allImages.count) pages)")
             print("   ⚠️  Processing in memory-safe batches")
         }
         
-        // 3. Analyze content
         let stripCount = allImages.filter { $0.isHorizontalStrip }.count
         let normalCount = allImages.count - stripCount
         
@@ -144,7 +141,6 @@ struct CBZToEPUBConverter {
         print("   Normal pages: \(normalCount)")
         print("   Horizontal strips: \(stripCount)")
         
-        // 4. Group images
         print("\n3️⃣  Processing layout...")
         let pageGroups: [PageGroup]
         if stripCount > 0 {
@@ -155,7 +151,6 @@ struct CBZToEPUBConverter {
             pageGroups = allImages.map { PageGroup(images: [$0]) }
         }
         
-        // 5. Build EPUB
         print("\n4️⃣  Building EPUB...")
         let epubURL = try buildEPUB(
             pageGroups: pageGroups,
@@ -164,7 +159,6 @@ struct CBZToEPUBConverter {
             compressionQuality: compressionQuality
         )
         
-        // 6. Move to final location with preserved filename
         let originalFilename = cbzURL.deletingPathExtension().lastPathComponent
         let finalFilename = sanitizeFilename(originalFilename) + ".epub"
         let finalURL = FileManager.default.temporaryDirectory
@@ -173,7 +167,6 @@ struct CBZToEPUBConverter {
         try? FileManager.default.removeItem(at: finalURL)
         try FileManager.default.copyItem(at: epubURL, to: finalURL)
         
-        // Report results
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: finalURL.path)[.size] as? Int64) ?? 0
         let sizeMB = fileSize / 1_000_000
         
@@ -257,7 +250,6 @@ struct CBZToEPUBConverter {
             
             guard supportedExtensions.contains(ext) else { continue }
             
-            // Memory-efficient: Don't load full image, just get dimensions
             guard let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
                   let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [String: Any],
                   let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
@@ -273,7 +265,6 @@ struct CBZToEPUBConverter {
             ))
         }
         
-        // CRITICAL: Alphanumeric sorting
         images.sort {
             $0.filename.localizedStandardCompare($1.filename) == .orderedAscending
         }
@@ -345,10 +336,9 @@ struct CBZToEPUBConverter {
         return UIGraphicsGetImageFromCurrentImageContext()
     }
     
-    // MARK: - Image Processing (Memory-Efficient)
+    // MARK: - Image Processing
     
     private func processImage(_ group: PageGroup, targetResolution: CGSize) -> UIImage? {
-        // Get source image
         let sourceImage: UIImage?
         if group.isSingleImage {
             sourceImage = UIImage(contentsOfFile: group.images[0].fileURL.path)
@@ -401,7 +391,6 @@ struct CBZToEPUBConverter {
         compressionQuality: Double
     ) throws -> URL {
         
-        // Determine target resolution
         let targetResolution: CGSize
         if compressionQuality >= 0.9 {
             targetResolution = DeviceProfile.highRes.resolution
@@ -413,25 +402,23 @@ struct CBZToEPUBConverter {
         
         print("   Target resolution: \(Int(targetResolution.width))×\(Int(targetResolution.height))")
         
-        // Create EPUB structure with LOWERCASE directories for splitting compatibility
+        // CRITICAL: Use lowercase directories for splitting compatibility
         let epubDir = outputDir.appendingPathComponent("epub_build")
         let metaInfDir = epubDir.appendingPathComponent("META-INF")
         let oebpsDir = epubDir.appendingPathComponent("OEBPS")
-        let imagesDir = oebpsDir.appendingPathComponent("images")  // ⭐ LOWERCASE for splitter
-        let textDir = oebpsDir.appendingPathComponent("text")      // ⭐ LOWERCASE for splitter
+        let imagesDir = oebpsDir.appendingPathComponent("images")
+        let textDir = oebpsDir.appendingPathComponent("text")
         
         try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: textDir, withIntermediateDirectories: true)
         
-        // Create mimetype
         try "application/epub+zip".write(
             to: epubDir.appendingPathComponent("mimetype"),
             atomically: true,
             encoding: .utf8
         )
         
-        // Create container.xml
         let containerXML = """
         <?xml version="1.0" encoding="UTF-8"?>
         <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -446,7 +433,6 @@ struct CBZToEPUBConverter {
             encoding: .utf8
         )
         
-        // Enhanced CSS
         let cssContent = """
         @charset "UTF-8";
         * { margin: 0; padding: 0; border: 0; }
@@ -462,7 +448,6 @@ struct CBZToEPUBConverter {
             encoding: .utf8
         )
         
-        // Process pages in batches to avoid memory issues
         var imageManifest = ""
         var xhtmlManifest = ""
         var spineItems = ""
@@ -473,7 +458,7 @@ struct CBZToEPUBConverter {
         for (index, group) in pageGroups.enumerated() {
             autoreleasepool {
                 let pageNum = String(format: "%04d", index + 1)
-                let imageName = "page\(pageNum).jpg"  // ⭐ LOWERCASE prefix for consistency
+                let imageName = "page\(pageNum).jpg"
                 let imageDestURL = imagesDir.appendingPathComponent(imageName)
                 
                 do {
@@ -494,7 +479,6 @@ struct CBZToEPUBConverter {
                     let height = cgImage.height
                     processedCount += 1
                     
-                    // Progress indicator for large files
                     if totalPages > 100 && processedCount % 50 == 0 {
                         print("   Progress: \(processedCount)/\(totalPages) pages (\(Int((Double(processedCount)/Double(totalPages)) * 100))%)")
                     }
@@ -519,7 +503,7 @@ struct CBZToEPUBConverter {
                     </html>
                     """
                     
-                    let xhtmlName = "page\(pageNum).xhtml"  // ⭐ LOWERCASE prefix
+                    let xhtmlName = "page\(pageNum).xhtml"
                     try xhtmlContent.write(
                         to: textDir.appendingPathComponent(xhtmlName),
                         atomically: true,
@@ -537,7 +521,6 @@ struct CBZToEPUBConverter {
         
         print("   ✓ Processed \(processedCount) pages")
         
-        // Create content.opf
         let authorElement = metadata.author.map { "<dc:creator>\($0)</dc:creator>" } ?? ""
         
         let opfContent = """
@@ -555,10 +538,10 @@ struct CBZToEPUBConverter {
                 <meta property="rendition:spread">none</meta>
             </metadata>
             <manifest>
-        <item id="css" href="styles.css" media-type="text/css"/>
-        \(imageManifest)\(xhtmlManifest)    </manifest>
+                <item id="css" href="styles.css" media-type="text/css"/>
+                \(imageManifest)\(xhtmlManifest)    </manifest>
             <spine>
-        \(spineItems)    </spine>
+                \(spineItems)    </spine>
         </package>
         """
         try opfContent.write(
@@ -567,10 +550,297 @@ struct CBZToEPUBConverter {
             encoding: .utf8
         )
         
-        // Zip to EPUB
         let epubURL = outputDir.appendingPathComponent(metadata.title + ".epub")
         try FileManager.default.zipItem(at: epubDir, to: epubURL)
         
         return epubURL
+    }
+}
+
+// ============================================================================
+// PART 2: COMIC EPUB PROCESSOR (SPLITTER)
+// ============================================================================
+
+class ComicEPUBProcessor {
+    static let shared = ComicEPUBProcessor()
+    
+    enum SplitError: Error, LocalizedError {
+        case invalidSource
+        case structuralError(String)
+        case splittingFailed(String)
+        
+        var errorDescription: String? {
+            switch self {
+            case .invalidSource: return "Invalid source EPUB file"
+            case .structuralError(let msg): return "EPUB Structure Error: \(msg)"
+            case .splittingFailed(let msg): return "Splitting Failed: \(msg)"
+            }
+        }
+    }
+    
+    struct PageItem {
+        let xhtmlPath: String
+        let imagePath: String
+        let fullPathInZip: String
+    }
+    
+    static func splitEPUB(_ epubURL: URL, maxSizeMB: Int) throws -> [URL] {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent("EPUBSplit_\(UUID().uuidString)")
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDir) }
+        
+        print("\n📦 SPLITTING EPUB")
+        print("Source: \(epubURL.lastPathComponent)")
+        print("Max size per part: \(maxSizeMB)MB")
+        
+        let sourceDir = tempDir.appendingPathComponent("Source")
+        try fileManager.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        
+        do {
+            try fileManager.unzipItem(at: epubURL, to: sourceDir)
+            print("✓ Extracted EPUB")
+        } catch {
+            throw SplitError.invalidSource
+        }
+        
+        let oebpsDir = sourceDir.appendingPathComponent("OEBPS")
+        guard fileManager.fileExists(atPath: oebpsDir.path) else {
+            print("❌ OEBPS directory not found")
+            throw SplitError.structuralError("OEBPS directory not found")
+        }
+        
+        var imagesDir: URL?
+        var textDir: URL?
+        
+        // Try lowercase first (new format)
+        let imagesLower = oebpsDir.appendingPathComponent("images")
+        let textLower = oebpsDir.appendingPathComponent("text")
+        
+        if fileManager.fileExists(atPath: imagesLower.path) && 
+           fileManager.fileExists(atPath: textLower.path) {
+            imagesDir = imagesLower
+            textDir = textLower
+            print("✓ Found lowercase structure (images/text)")
+        } else {
+            // Try capitalized (old format)
+            let imagesCap = oebpsDir.appendingPathComponent("Images")
+            let textCap = oebpsDir.appendingPathComponent("Text")
+            
+            if fileManager.fileExists(atPath: imagesCap.path) && 
+               fileManager.fileExists(atPath: textCap.path) {
+                imagesDir = imagesCap
+                textDir = textCap
+                print("✓ Found capitalized structure (Images/Text)")
+            }
+        }
+        
+        guard let finalImagesDir = imagesDir, let finalTextDir = textDir else {
+            print("❌ Could not find standard directory structure")
+            
+            if let contents = try? fileManager.contentsOfDirectory(at: oebpsDir, includingPropertiesForKeys: nil) {
+                print("📁 OEBPS contains:")
+                for item in contents {
+                    print("   - \(item.lastPathComponent)")
+                }
+            }
+            
+            throw SplitError.structuralError("Standard EPUB structure not found. Expected OEBPS/images/text or OEBPS/Images/Text")
+        }
+        
+        print("🔍 Scanning pages...")
+        var pages: [PageItem] = []
+        let enumerator = fileManager.enumerator(at: finalTextDir, includingPropertiesForKeys: nil)
+        
+        while let fileURL = enumerator?.nextObject() as? URL {
+            if fileURL.pathExtension.lowercased() == "xhtml" {
+                let basename = fileURL.deletingPathExtension().lastPathComponent
+                
+                var imageFile: URL?
+                for ext in ["jpg", "jpeg", "png", "gif", "webp"] {
+                    let imgURL = finalImagesDir.appendingPathComponent("\(basename).\(ext)")
+                    if fileManager.fileExists(atPath: imgURL.path) {
+                        imageFile = imgURL
+                        break
+                    }
+                }
+                
+                if let img = imageFile {
+                    pages.append(PageItem(
+                        xhtmlPath: fileURL.path,
+                        imagePath: img.path,
+                        fullPathInZip: ""
+                    ))
+                }
+            }
+        }
+        
+        pages.sort { $0.xhtmlPath.localizedStandardCompare($1.xhtmlPath) == .orderedAscending }
+        
+        print("✓ Found \(pages.count) pages")
+        
+        if pages.isEmpty { 
+            print("⚠️  No pages found - returning original file")
+            return [epubURL] 
+        }
+        
+        let maxBytes = Int64(maxSizeMB * 1024 * 1024)
+        var splitURLs: [URL] = []
+        var currentPages: [PageItem] = []
+        var currentSize: Int64 = 0
+        var partIndex = 1
+        
+        let commonFilesSize: Int64 = 100 * 1024
+        
+        for page in pages {
+            let xhtmlSize = (try? fileManager.attributesOfItem(atPath: page.xhtmlPath)[.size] as? Int64) ?? 0
+            let imageSize = (try? fileManager.attributesOfItem(atPath: page.imagePath)[.size] as? Int64) ?? 0
+            let pageSize = xhtmlSize + imageSize
+            
+            if currentSize + pageSize + commonFilesSize > maxBytes && !currentPages.isEmpty {
+                print("Creating part \(partIndex) with \(currentPages.count) pages...")
+                let partURL = try createSplitPart(
+                    from: sourceDir,
+                    pages: currentPages,
+                    partIndex: partIndex,
+                    originalName: epubURL.deletingPathExtension().lastPathComponent,
+                    outputDir: tempDir,
+                    useCapitalizedDirs: (imagesDir == oebpsDir.appendingPathComponent("Images"))
+                )
+                splitURLs.append(partURL)
+                
+                partIndex += 1
+                currentPages = []
+                currentSize = 0
+            }
+            
+            currentPages.append(page)
+            currentSize += pageSize
+        }
+        
+        if !currentPages.isEmpty {
+            print("Creating part \(partIndex) with \(currentPages.count) pages...")
+            let partURL = try createSplitPart(
+                from: sourceDir,
+                pages: currentPages,
+                partIndex: partIndex,
+                originalName: epubURL.deletingPathExtension().lastPathComponent,
+                outputDir: tempDir,
+                useCapitalizedDirs: (imagesDir == oebpsDir.appendingPathComponent("Images"))
+            )
+            splitURLs.append(partURL)
+        }
+        
+        var safeURLs: [URL] = []
+        for url in splitURLs {
+            let safeURL = fileManager.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+            try? fileManager.removeItem(at: safeURL)
+            try fileManager.moveItem(at: url, to: safeURL)
+            safeURLs.append(safeURL)
+        }
+        
+        print("✅ Split into \(safeURLs.count) parts")
+        for (index, url) in safeURLs.enumerated() {
+            let size = (try? fileManager.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+            print("   Part \(index + 1): \(url.lastPathComponent) (\(size / 1_000_000)MB)")
+        }
+        
+        return safeURLs
+    }
+    
+    private static func createSplitPart(
+        from sourceDir: URL,
+        pages: [PageItem],
+        partIndex: Int,
+        originalName: String,
+        outputDir: URL,
+        useCapitalizedDirs: Bool
+    ) throws -> URL {
+        let fileManager = FileManager.default
+        let partName = "\(originalName)_Part\(partIndex)"
+        let buildDir = outputDir.appendingPathComponent(partName)
+        
+        let oebpsDir = buildDir.appendingPathComponent("OEBPS")
+        let imagesDir = oebpsDir.appendingPathComponent(useCapitalizedDirs ? "Images" : "images")
+        let textDir = oebpsDir.appendingPathComponent(useCapitalizedDirs ? "Text" : "text")
+        let metaInfDir = buildDir.appendingPathComponent("META-INF")
+        
+        try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: textDir, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+        
+        try fileManager.copyItem(
+            at: sourceDir.appendingPathComponent("mimetype"),
+            to: buildDir.appendingPathComponent("mimetype")
+        )
+        try fileManager.copyItem(
+            at: sourceDir.appendingPathComponent("META-INF/container.xml"),
+            to: metaInfDir.appendingPathComponent("container.xml")
+        )
+        
+        let cssSource = sourceDir.appendingPathComponent("OEBPS/styles.css")
+        if fileManager.fileExists(atPath: cssSource.path) {
+            try fileManager.copyItem(at: cssSource, to: oebpsDir.appendingPathComponent("styles.css"))
+        }
+        
+        var imageManifest = ""
+        var xhtmlManifest = ""
+        var spineItems = ""
+        
+        let imagesDirName = useCapitalizedDirs ? "Images" : "images"
+        let textDirName = useCapitalizedDirs ? "Text" : "text"
+        
+        for (index, page) in pages.enumerated() {
+            let pageNum = String(format: "%04d", index + 1)
+            let xhtmlDest = textDir.appendingPathComponent(URL(fileURLWithPath: page.xhtmlPath).lastPathComponent)
+            let imageDest = imagesDir.appendingPathComponent(URL(fileURLWithPath: page.imagePath).lastPathComponent)
+            
+            try fileManager.copyItem(atPath: page.xhtmlPath, toPath: xhtmlDest.path)
+            try fileManager.copyItem(atPath: page.imagePath, toPath: imageDest.path)
+            
+            let imgName = imageDest.lastPathComponent
+            let xhtmlName = xhtmlDest.lastPathComponent
+            
+            let ext = imageDest.pathExtension.lowercased()
+            let mediaType: String
+            switch ext {
+            case "png": mediaType = "image/png"
+            case "gif": mediaType = "image/gif"
+            case "webp": mediaType = "image/webp"
+            default: mediaType = "image/jpeg"
+            }
+            
+            imageManifest += "    <item id=\"img_\(pageNum)\" href=\"\(imagesDirName)/\(imgName)\" media-type=\"\(mediaType)\"/>\n"
+            xhtmlManifest += "    <item id=\"page_\(pageNum)\" href=\"\(textDirName)/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
+            spineItems += "    <itemref idref=\"page_\(pageNum)\"/>\n"
+        }
+        
+        let cssItem = fileManager.fileExists(atPath: oebpsDir.appendingPathComponent("styles.css").path) 
+            ? "    <item id=\"css\" href=\"styles.css\" media-type=\"text/css\"/>\n" 
+            : ""
+        
+        let opfContent = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
+            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:identifier id="BookID">urn:uuid:\(UUID().uuidString)</dc:identifier>
+                <dc:title>\(originalName) (Part \(partIndex))</dc:title>
+                <dc:language>en</dc:language>
+                <meta property="rendition:layout">pre-paginated</meta>
+                <meta property="rendition:orientation">auto</meta>
+                <meta property="rendition:spread">none</meta>
+            </metadata>
+            <manifest>
+                \(cssItem)\(imageManifest)\(xhtmlManifest)    </manifest>
+            <spine>
+                \(spineItems)    </spine>
+        </package>
+        """
+        try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+        
+        let finalEPUB = outputDir.appendingPathComponent("\(partName).epub")
+        try fileManager.zipItem(at: buildDir, to: finalEPUB)
+        
+        return finalEPUB
     }
 }
