@@ -846,34 +846,33 @@ struct ConvertView: View {
                     }
                     
                     // ✅ CRASH FIX: Wrap conversion in autoreleasepool for large files
-                    let urls = try await autoreleasepool {
-                        try await conversionManager.convertToFormat(
-                            settings.outputFormat,
-                            from: fileURL,
-                            settings: settings,
-                            progressHandler: { progress in
-                                Task { @MainActor in
-                                    // Update stage based on progress
-                                    if progress < 0.2 {
-                                        currentStage = "Extracting archive..."
-                                    } else if progress < 0.8 {
-                                        currentStage = "Processing images..."
-                                        if inputFileSize > 200_000_000 {
-                                            detailedStatus = "Large file detected - using memory-safe processing"
-                                        }
-                                    } else if progress < 0.95 {
-                                        currentStage = "Building output file..."
-                                    } else {
-                                        currentStage = "Finalizing..."
+                    // Note: autoreleasepool cannot wrap async calls directly in Swift. Removed to fix build.
+                    let urls = try await conversionManager.convertToFormat(
+                        settings.outputFormat,
+                        from: fileURL,
+                        settings: settings,
+                        progressHandler: { progress in
+                            Task { @MainActor in
+                                // Update stage based on progress
+                                if progress < 0.2 {
+                                    currentStage = "Extracting archive..."
+                                } else if progress < 0.8 {
+                                    currentStage = "Processing images..."
+                                    if inputFileSize > 200_000_000 {
+                                        detailedStatus = "Large file detected - using memory-safe processing"
                                     }
-                                    
-                                    let fileProgress = Double(index) / Double(selectedFiles.count)
-                                    let itemProgress = progress / Double(selectedFiles.count)
-                                    conversionProgress = fileProgress + itemProgress
+                                } else if progress < 0.95 {
+                                    currentStage = "Building output file..."
+                                } else {
+                                    currentStage = "Finalizing..."
                                 }
+                                
+                                let fileProgress = Double(index) / Double(selectedFiles.count)
+                                let itemProgress = progress / Double(selectedFiles.count)
+                                conversionProgress = fileProgress + itemProgress
                             }
-                        )
-                    }
+                        }
+                    )
                     
                     await MainActor.run {
                         if urls.count > 1 {
