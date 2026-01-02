@@ -712,10 +712,11 @@ struct EnhancedDocumentPicker: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let picker = UIDocumentPickerViewController(
             forOpeningContentTypes: [.item],
-            asCopy: false
+            asCopy: true
         )
         picker.allowsMultipleSelection = true
         picker.delegate = context.coordinator
+        picker.shouldShowFileExtensions = true
         return picker
     }
     
@@ -733,7 +734,14 @@ struct EnhancedDocumentPicker: UIViewControllerRepresentable {
         }
         
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            parent.selectedFiles.append(contentsOf: urls)
+            // Validation and update logic
+            let validExtensions = ["cbz", "cbr", "zip", "rar", "pdf", "epub", "cb7"]
+            for url in urls {
+                let ext = url.pathExtension.lowercased()
+                if validExtensions.contains(ext) {
+                    parent.selectedFiles.append(url)
+                }
+            }
             parent.isPresented = false
         }
     }
