@@ -6,14 +6,7 @@ import Foundation
 
 class CBZToEPUBConverter {
     
-    struct PageInfo {
-        let url: URL
-        let width: Int
-        let height: Int
-        let originalExtension: String
-    }
-    
-    /// Converts a CBZ file to EPUB.
+    /// Converts a CBZ file to EPUB with Smart Stitching.
     /// - Parameters:
     ///   - cbzURL: The source CBZ URL.
     ///   - compressionQuality: 1.0 = Direct Copy (Original), < 1.0 = Re-encode (Compressed).
@@ -30,17 +23,20 @@ class CBZToEPUBConverter {
                     print("📦 Extracting CBZ...")
                     try FileManager.default.unzipItem(at: cbzURL, to: tempDir)
                     
-                    // 2. Scan for Pages (Metadata Only - No Loading)
-                    let pages = try CBZToEPUBConverter.scanComicPages(in: tempDir)
-                    print("📄 Found \(pages.count) pages")
+                    // 2. Scan and Group Pages (Smart Stitching Logic)
+                    // Instead of just finding files, we now group them into ComicPageModel objects
+                    let rawImageURLs = try CBZToEPUBConverter.scanRawImageURLs(in: tempDir)
+                    let pageModels = ComicStitcher.analyzeAndGroup(imageURLs: rawImageURLs)
                     
-                    if pages.isEmpty {
+                    print("📄 Raw files: \(rawImageURLs.count) -> 📖 Stitched Pages: \(pageModels.count)")
+                    
+                    if pageModels.isEmpty {
                         throw NSError(domain: "CBZConverter", code: 404, userInfo: [NSLocalizedDescriptionKey: "No supported images found in CBZ."])
                     }
                     
                     // 3. Generate EPUB Structure
                     let epubURL = try CBZToEPUBConverter.buildEPUB(
-                        from: pages,
+                        from: pageModels,
                         title: cbzURL.deletingPathExtension().lastPathComponent,
                         outputDir: tempDir,
                         compressionQuality: compressionQuality
@@ -65,37 +61,30 @@ class CBZToEPUBConverter {
     
     // MARK: - Helper Methods
     
-    private static func scanComicPages(in directory: URL) throws -> [PageInfo] {
-        var pages: [PageInfo] = []
+    private static func scanRawImageURLs(in directory: URL) throws -> [URL] {
+        var urls: [URL] = []
         let supportedExtensions = ["jpg", "jpeg", "png", "gif", "webp"]
         
         if let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil) {
             for case let fileURL as URL in enumerator {
                 let ext = fileURL.pathExtension.lowercased()
                 if supportedExtensions.contains(ext) {
-                    // ✅ SKIP MACOS METADATA FILES (same as PDF converter)
+                    // Skip MacOS metadata
                     if fileURL.lastPathComponent.hasPrefix("._") || fileURL.path.contains("__MACOSX") {
-                        continue  // Skip metadata files
+                        continue
                     }
-                    
-                    // Use UIImage to load, but get PIXEL dimensions from CGImage
-                    if let image = UIImage(contentsOfFile: fileURL.path),
-                       let cgImage = image.cgImage {
-                        let width = cgImage.width    // ✅ Actual pixels
-                        let height = cgImage.height  // ✅ Actual pixels
-                        pages.append(PageInfo(url: fileURL, width: width, height: height, originalExtension: ext))
-                    }
+                    urls.append(fileURL)
                 }
             }
         }
         
-        // Sort alphanumerically
-        pages.sort { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }
-        return pages
+        // Sort alphanumerically to ensure correct page order
+        urls.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        return urls
     }
     
-    /// Builds the EPUB file structure.
-    private static func buildEPUB(from pages: [PageInfo], title: String, outputDir: URL, compressionQuality: Double) throws -> URL {
+    /// Builds the EPUB file structure using PageModels
+    private static func buildEPUB(from pages: [ComicPageModel], title: String, outputDir: URL, compressionQuality: Double) throws -> URL {
         let epubDir = outputDir.appendingPathComponent("epub_build")
         let oebpsDir = epubDir.appendingPathComponent("OEBPS")
         let imagesDir = oebpsDir.appendingPathComponent("images")
@@ -125,31 +114,44 @@ class CBZToEPUBConverter {
         var xhtmlManifest = ""
         var spineItems = ""
         
-        for (index, page) in pages.enumerated() {
+        for (index, pageModel) in pages.enumerated() {
             let pageNumStr = String(format: "%04d", index + 1)
-            let imageName = "page\(pageNumStr).jpg"  // Always JPG for EPUB
+            let imageName = "page\(pageNumStr).jpg"
             let imageDestURL = imagesDir.appendingPathComponent(imageName)
             
-            // Load original image
-            guard let originalImage = UIImage(contentsOfFile: page.url.path),
-                  let cgImage = originalImage.cgImage else {
-                print("❌ Could not load \(page.url.lastPathComponent)")
+            // --- SMART STITCHING PIPELINE ---
+            var finalImage: UIImage?
+            
+            if pageModel.isComposite {
+                // Stitch logic: Load all images in the group
+                let sourceImages = pageModel.images.compactMap { UIImage(contentsOfFile: $0.path) }
+                finalImage = ComicStitcher.stitchImagesVertically(sourceImages)
+                print("🧩 Stitched \(sourceImages.count) strips for page \(index + 1)")
+            } else {
+                // Single page logic
+                if let url = pageModel.images.first {
+                    finalImage = UIImage(contentsOfFile: url.path)
+                }
+            }
+            
+            guard let imageToProcess = finalImage, let cgImage = imageToProcess.cgImage else {
+                print("⚠️ Could not process page \(index + 1)")
                 continue
             }
             
-            // Get ACTUAL pixel dimensions from CGImage
+            // --- RESIZING & COMPRESSION ---
             let sourceWidth = CGFloat(cgImage.width)
             let sourceHeight = CGFloat(cgImage.height)
-            
-            // Calculate target size
             let maxDimension: CGFloat = 2400
+            
             var targetWidth = sourceWidth
             var targetHeight = sourceHeight
             
-            if sourceWidth > maxDimension || sourceHeight > maxDimension {
+            // Downscale if too massive (e.g., long stitched strip)
+            if sourceWidth > maxDimension || sourceHeight > 3200 { // Allow more height for vertical strips
                 let scale = min(
                     maxDimension / sourceWidth,
-                    maxDimension / sourceHeight,
+                    3200 / sourceHeight, // Cap height to prevent crash on older devices
                     1.0
                 )
                 targetWidth = (sourceWidth * scale).rounded()
@@ -158,56 +160,26 @@ class CBZToEPUBConverter {
             
             let targetSize = CGSize(width: targetWidth, height: targetHeight)
             
-            // Create bitmap context (NO TILING - renders entire image at once)
-            let colorSpace = CGColorSpaceCreateDeviceRGB()
-            let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue
+            // Render final JPEG
+            let rendererFormat = UIGraphicsImageRendererFormat()
+            rendererFormat.opaque = true
+            rendererFormat.scale = 1.0 // Force 1x scale to keep pixels exact
             
-            guard let context = CGContext(
-                data: nil,
-                width: Int(targetSize.width),
-                height: Int(targetSize.height),
-                bitsPerComponent: 8,
-                bytesPerRow: 0,
-                space: colorSpace,
-                bitmapInfo: bitmapInfo
-            ) else {
-                print("❌ Could not create context for \(page.url.lastPathComponent)")
-                continue
-            }
+            let renderer = UIGraphicsImageRenderer(size: targetSize, format: rendererFormat)
+            let processedData = renderer.image { context in
+                // High quality interpolation
+                context.cgContext.interpolationQuality = .high
+                imageToProcess.draw(in: CGRect(origin: .zero, size: targetSize))
+            }.jpegData(compressionQuality: compressionQuality)
             
-            // Configure high-quality rendering
-            context.interpolationQuality = .high
-            
-            // Draw the ENTIRE image in one operation (no tiling)
-            context.draw(cgImage, in: CGRect(origin: .zero, size: targetSize))
-            
-            // Extract the rendered image
-            guard let renderedCGImage = context.makeImage() else {
-                print("❌ Could not render \(page.url.lastPathComponent)")
-                continue
-            }
-            
-            // Convert back to UIImage for JPEG encoding
-            let processedImage = UIImage(cgImage: renderedCGImage)
-            
-            // Save as JPEG
-            if let jpegData = processedImage.jpegData(compressionQuality: compressionQuality) {
-                try jpegData.write(to: imageDestURL)
-                print("✅ Saved: \(imageName) (\(Int(targetSize.width))x\(Int(targetSize.height)))")
+            if let data = processedData {
+                try data.write(to: imageDestURL)
             } else {
-                print("⚠️ JPEG encoding failed for \(imageName)")
                 continue
             }
             
-            // Generate manifest entries
+            // --- MANIFEST GENERATION ---
             imageManifest += "<item id=\"img_\(pageNumStr)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
-            
-            // Generate XHTML with correct dimensions
-            let finalWidth = Int(page.width) // Fallback to scanned width if needed, or re-measure
-            let finalHeight = Int(page.height)
-            
-            // NOTE: The user's code snippet calculated finalWidth/Height from originalImage, but originalImage scope is closed above.
-            // However, page.width and page.height are now sourced from UIImage in scanComicPages, so they are accurate.
             
             let xhtmlContent = """
             <?xml version="1.0" encoding="utf-8"?>
@@ -216,7 +188,7 @@ class CBZToEPUBConverter {
             <head>
                 <title>Page \(index + 1)</title>
                 <link href="../styles.css" type="text/css" rel="stylesheet"/>
-                <meta name="viewport" content="width=\(finalWidth), height=\(finalHeight)" />
+                <meta name="viewport" content="width=\(Int(targetWidth)), height=\(Int(targetHeight))" />
             </head>
             <body style="margin:0;padding:0;background-color:black;">
                 <div style="text-align:center;height:100vh;display:flex;justify-content:center;align-items:center;">
@@ -259,9 +231,7 @@ class CBZToEPUBConverter {
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
         // 5. toc.ncx
-        // Calculate Actual Page Count
         let finalPageCount = pages.count
-        
         let ncxContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
@@ -294,7 +264,6 @@ class CBZToEPUBConverter {
         // Add Content (Deflate)
         let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
         let enumerator = FileManager.default.enumerator(at: epubDir, includingPropertiesForKeys: resourceKeys)!
-        
         for case let fileURL as URL in enumerator {
             let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))
             let isDirectory = resourceValues.isDirectory ?? false
