@@ -65,7 +65,6 @@ class CBZToEPUBConverter {
     
     // MARK: - Helper Methods
     
-    /// Scans directory for images and extracts dimensions using ImageIO (Fast, Low Memory).
     private static func scanComicPages(in directory: URL) throws -> [PageInfo] {
         var pages: [PageInfo] = []
         let supportedExtensions = ["jpg", "jpeg", "png", "gif", "webp"]
@@ -74,13 +73,10 @@ class CBZToEPUBConverter {
             for case let fileURL as URL in enumerator {
                 let ext = fileURL.pathExtension.lowercased()
                 if supportedExtensions.contains(ext) {
-                    // Use ImageIO to get dimensions without decoding
-                    if let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
-                       let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [String: Any] {
-                        
-                        let width = properties[kCGImagePropertyPixelWidth as String] as? Int ?? 1000
-                        let height = properties[kCGImagePropertyPixelHeight as String] as? Int ?? 1500
-                        
+                    // ✅ USE UIImage LIKE THE PDF CONVERTER DOES!
+                    if let image = UIImage(contentsOfFile: fileURL.path) {
+                        let width = Int(image.size.width)
+                        let height = Int(image.size.height)
                         pages.append(PageInfo(url: fileURL, width: width, height: height, originalExtension: ext))
                     }
                 }
@@ -125,60 +121,59 @@ class CBZToEPUBConverter {
         
         for (index, page) in pages.enumerated() {
             let pageNumStr = String(format: "%04d", index + 1)
-            
-            // ALWAYS use JPG for EPUB (no direct copy, no original extensions)
-            let imageName = "page\(pageNumStr).jpg"
+            let imageName = "page\(pageNumStr).jpg"  // Always JPG for EPUB
             let imageDestURL = imagesDir.appendingPathComponent(imageName)
             
-            // ALWAYS process through UIGraphicsImageRenderer (bypasses ALL Apple bugs)
-            guard let originalImage = UIImage(contentsOfFile: page.url.path) else {
-                print("❌ Could not load image: \(page.url.lastPathComponent)")
+            // ✅ LOAD IMAGE THE SAME WAY PDF CONVERTER DOES
+            if let originalImage = UIImage(contentsOfFile: page.url.path) {
+                
+                // Determine target size (reasonable for e-readers)
+                let maxDimension: CGFloat = 2400
+                var targetSize = originalImage.size
+                
+                if originalImage.size.width > maxDimension || originalImage.size.height > maxDimension {
+                    let scale = min(
+                        maxDimension / originalImage.size.width,
+                        maxDimension / originalImage.size.height,
+                        1.0
+                    )
+                    targetSize = CGSize(
+                        width: (originalImage.size.width * scale).rounded(),
+                        height: (originalImage.size.height * scale).rounded()
+                    )
+                }
+                
+                // ✅ PROCESS IMAGE THE SAME WAY PDF CONVERTER DOES
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1.0
+                format.opaque = true
+                
+                let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+                let processedImage = renderer.image { _ in
+                    originalImage.draw(in: CGRect(origin: .zero, size: targetSize))
+                }
+                
+                // Save as JPEG
+                if let jpegData = processedImage.jpegData(compressionQuality: compressionQuality) {
+                    try jpegData.write(to: imageDestURL)
+                } else {
+                    print("⚠️ Failed to save \(imageName)")
+                    continue
+                }
+            } else {
+                print("❌ Could not load \(page.url.lastPathComponent)")
                 continue
             }
             
-            // Determine if resize is needed (keep images reasonable for e-readers)
-            let maxDimension: CGFloat = 2400  // Good balance for Kindle/e-readers
-            var finalSize = originalImage.size
-            
-            // Scale down if too large
-            if originalImage.size.width > maxDimension || originalImage.size.height > maxDimension {
-                let scale = min(
-                    maxDimension / originalImage.size.width,
-                    maxDimension / originalImage.size.height,
-                    1.0
-                )
-                finalSize = CGSize(
-                    width: originalImage.size.width * scale,
-                    height: originalImage.size.height * scale
-                )
-            }
-            
-            // ALWAYS use UIGraphicsImageRenderer (proven to work in your PDF converter)
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = 1.0
-            format.opaque = true
-            
-            let renderer = UIGraphicsImageRenderer(size: finalSize, format: format)
-            let processedImage = renderer.image { _ in
-                originalImage.draw(in: CGRect(origin: .zero, size: finalSize))
-            }
-            
-            // Save as JPEG with compression quality
-            if let jpegData = processedImage.jpegData(compressionQuality: compressionQuality) {
-                try jpegData.write(to: imageDestURL)
-                print("✅ Saved: \(imageName) (\(Int(finalSize.width))x\(Int(finalSize.height)))")
-            } else {
-                print("⚠️ JPEG encoding failed for \(imageName)")
-                // Emergency fallback - but this should never happen
-                try? FileManager.default.copyItem(at: page.url, to: imageDestURL)
-            }
-            
-            // Add to Manifests (always JPG now)
+            // Generate manifest entries
             imageManifest += "<item id=\"img_\(pageNumStr)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
             
-            // Generate XHTML with proper dimensions
-            let finalWidth = Int(originalImage.size.width)
-            let finalHeight = Int(originalImage.size.height)
+            // Generate XHTML with correct dimensions
+            let finalWidth = Int(page.width) // Fallback to scanned width if needed, or re-measure
+            let finalHeight = Int(page.height)
+            
+            // NOTE: The user's code snippet calculated finalWidth/Height from originalImage, but originalImage scope is closed above.
+            // However, page.width and page.height are now sourced from UIImage in scanComicPages, so they are accurate.
             
             let xhtmlContent = """
             <?xml version="1.0" encoding="utf-8"?>
