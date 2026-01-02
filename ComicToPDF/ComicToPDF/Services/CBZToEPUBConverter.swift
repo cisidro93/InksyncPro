@@ -1,36 +1,31 @@
 import Foundation
 import UIKit
 import ZIPFoundation
+import CoreGraphics
 
 // ============================================================================
 // PRODUCTION CBZ TO EPUB CONVERTER
 // ============================================================================
-// 
-// Based on best practices from:
-// - go-comic-converter (industry standard for manga/comic conversion)
-// - CloudConvert (clean, reliable conversion)
-// - Calibre (proper page ordering and structure)
 //
-// KEY FEATURES:
-// ✅ Device-specific profiles (Kindle, Kobo, Standard)
-// ✅ Smart strip detection and stitching
-// ✅ Quality-based resolution targeting
-// ✅ Proper EPUB 3 Fixed-Layout structure
-// ✅ Alphanumeric sorting (critical for page order)
-// ✅ Grayscale option for e-ink devices
-// ✅ Size management (auto-split if > 200MB)
+// Features:
+// - Device-specific profiles (Kindle, Kobo, Standard)
+// - Smart strip detection and stitching
+// - Quality-based resolution targeting
+// - Proper EPUB 3 Fixed-Layout structure
+// - Alphanumeric sorting
+// - Grayscale option
 //
 // ============================================================================
 
 class CBZToEPUBConverter {
     
-    // MARK: - Device Profiles (from go-comic-converter)
+    // MARK: - Device Profiles
     
     enum DeviceProfile {
-        case standard       // 1200×1920 - Universal, fast Amazon conversion
-        case kindlePW       // 1072×1448 - Paperwhite 3/4/5
-        case kindleScribe   // 1860×2480 - Kindle Scribe
-        case highRes        // 2400×3840 - High-end devices
+        case standard       // 1200x1920 - Universal
+        case kindlePW       // 1072x1448 - Paperwhite 3/4/5
+        case kindleScribe   // 1860x2480 - Kindle Scribe
+        case highRes        // 2400x3840 - High-end devices
         
         var resolution: CGSize {
             switch self {
@@ -41,10 +36,6 @@ class CBZToEPUBConverter {
             }
         }
     }
-    
-    // MARK: - Configuration
-    
-    private let stripAspectRatioThreshold: Double = 2.0
     
     // MARK: - Internal Types
     
@@ -85,9 +76,9 @@ class CBZToEPUBConverter {
     // MARK: - Main Conversion Pipeline
     
     private func performConversion(cbzURL: URL, compressionQuality: Double) throws -> URL {
-        print("\n" + String(repeating: "=", count: 70))
-        print("📚 CBZ TO EPUB CONVERTER - PRODUCTION MODE")
-        print(String(repeating: "=", count: 70))
+        print("\n======================================================================")
+        print("CBZ TO EPUB CONVERTER - PRODUCTION MODE")
+        print("======================================================================")
         print("Input: \(cbzURL.lastPathComponent)")
         print("Quality: \(Int(compressionQuality * 100))%")
         
@@ -97,13 +88,13 @@ class CBZToEPUBConverter {
         defer { try? FileManager.default.removeItem(at: tempDir) }
         
         // 1. Extract CBZ
-        print("\n1️⃣  Extracting archive...")
+        print("\n1. Extracting archive...")
         let extractDir = tempDir.appendingPathComponent("extracted")
         try FileManager.default.unzipItem(at: cbzURL, to: extractDir)
-        print("   ✓ Extracted")
+        print("   Detected extracted files")
         
         // 2. Scan images with proper sorting
-        print("\n2️⃣  Scanning images...")
+        print("\n2. Scanning images...")
         let allImages = try scanImages(in: extractDir)
         print("   Found: \(allImages.count) images")
         
@@ -116,24 +107,24 @@ class CBZToEPUBConverter {
         let stripCount = allImages.filter { $0.isHorizontalStrip }.count
         let normalCount = allImages.count - stripCount
         
-        print("\n📊 Content Analysis:")
+        print("\nContent Analysis:")
         print("   Normal pages: \(normalCount)")
         print("   Horizontal strips: \(stripCount)")
         
         // 4. Group images (handle strips)
-        print("\n3️⃣  Processing layout...")
+        print("\n3. Processing layout...")
         let pageGroups: [PageGroup]
         if stripCount > 0 {
-            print("   ⚠️  Strips detected - applying stitching")
+            print("   Strips detected - applying stitching")
             pageGroups = groupImagesWithStripDetection(allImages)
-            print("   ✓ Grouped into \(pageGroups.count) pages")
+            print("   Grouped into \(pageGroups.count) pages")
         } else {
-            print("   ✓ All pages are normal - no stitching needed")
+            print("   All pages are normal - no stitching needed")
             pageGroups = allImages.map { PageGroup(images: [$0]) }
         }
         
         // 5. Build EPUB with quality-based resolution
-        print("\n4️⃣  Building EPUB...")
+        print("\n4. Building EPUB...")
         let title = cbzURL.deletingPathExtension().lastPathComponent
         let epubURL = try buildEPUB(
             pageGroups: pageGroups,
@@ -151,9 +142,9 @@ class CBZToEPUBConverter {
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: finalURL.path)[.size] as? Int64) ?? 0
         let sizeMB = fileSize / 1_000_000
         
-        print("\n" + String(repeating: "=", count: 70))
-        print("✅ CONVERSION COMPLETE")
-        print(String(repeating: "=", count: 70))
+        print("\n======================================================================")
+        print("CONVERSION COMPLETE")
+        print("======================================================================")
         print("Output: \(finalURL.lastPathComponent)")
         print("Size: \(sizeMB) MB")
         print("Pages: \(pageGroups.count)")
@@ -186,7 +177,7 @@ class CBZToEPUBConverter {
             
             guard supportedExtensions.contains(ext) else { continue }
             
-            // Load image safely (NO broken Apple thumbnail API)
+            // Load image safely
             guard let image = UIImage(contentsOfFile: fileURL.path),
                   let cgImage = image.cgImage else {
                 continue
@@ -200,8 +191,7 @@ class CBZToEPUBConverter {
             ))
         }
         
-        // CRITICAL: Alphanumeric sorting (from Calibre/go-comic-converter)
-        // This ensures page001.jpg, page002.jpg, ..., page010.jpg are in correct order
+        // Alphanumeric sorting
         images.sort {
             $0.filename.localizedStandardCompare($1.filename) == .orderedAscending
         }
@@ -223,7 +213,7 @@ class CBZToEPUBConverter {
                 // Flush accumulated strips
                 if !currentStripBatch.isEmpty {
                     groups.append(PageGroup(images: currentStripBatch))
-                    print("      ✂️  Grouped \(currentStripBatch.count) strips → 1 page")
+                    print("      Grouped \(currentStripBatch.count) strips -> 1 page")
                     currentStripBatch = []
                 }
                 // Add normal page
@@ -234,7 +224,7 @@ class CBZToEPUBConverter {
         // Flush remaining strips
         if !currentStripBatch.isEmpty {
             groups.append(PageGroup(images: currentStripBatch))
-            print("      ✂️  Grouped \(currentStripBatch.count) strips → 1 page (final)")
+            print("      Grouped \(currentStripBatch.count) strips -> 1 page (final)")
         }
         
         return groups
@@ -265,7 +255,7 @@ class CBZToEPUBConverter {
         let totalHeight = loaded.reduce(0) { $0 + $1.size.height }
         let scale = loaded[0].scale
         
-        // Use UIGraphicsImageContext (proven method from go-comic-converter)
+        // Use UIGraphicsImageContext
         UIGraphicsBeginImageContextWithOptions(
             CGSize(width: width, height: totalHeight),
             false,
@@ -343,17 +333,17 @@ class CBZToEPUBConverter {
         compressionQuality: Double
     ) throws -> URL {
         
-        // Determine target resolution based on quality (from go-comic-converter)
+        // Determine target resolution based on quality
         let targetResolution: CGSize
         if compressionQuality >= 0.9 {
-            targetResolution = DeviceProfile.highRes.resolution // 2400×3840
+            targetResolution = DeviceProfile.highRes.resolution // 2400x3840
         } else if compressionQuality >= 0.8 {
             targetResolution = CGSize(width: 1600, height: 2400) // Balanced
         } else {
-            targetResolution = DeviceProfile.standard.resolution // 1200×1920
+            targetResolution = DeviceProfile.standard.resolution // 1200x1920
         }
         
-        print("   Target resolution: \(Int(targetResolution.width))×\(Int(targetResolution.height))")
+        print("   Target resolution: \(Int(targetResolution.width))x\(Int(targetResolution.height))")
         
         // Create EPUB structure
         let epubDir = outputDir.appendingPathComponent("epub_build")
@@ -401,13 +391,13 @@ class CBZToEPUBConverter {
             // Process image
             guard let processedImage = processImage(group, targetResolution: targetResolution),
                   let cgImage = processedImage.cgImage else {
-                print("   ⚠️  Skipped page \(index + 1)")
+                print("   Skipped page \(index + 1)")
                 continue
             }
             
             // Encode to JPEG
             guard let jpegData = processedImage.jpegData(compressionQuality: compressionQuality) else {
-                print("   ⚠️  Failed to encode page \(index + 1)")
+                print("   Failed to encode page \(index + 1)")
                 continue
             }
             
@@ -417,7 +407,7 @@ class CBZToEPUBConverter {
             let height = cgImage.height
             let sizeKB = jpegData.count / 1024
             let stitchInfo = group.isSingleImage ? "" : " [stitched from \(group.images.count)]"
-            print("   ✓ Page \(index + 1): \(width)×\(height) - \(sizeKB)KB\(stitchInfo)")
+            print("   Page \(index + 1): \(width)x\(height) - \(sizeKB)KB\(stitchInfo)")
             
             // Add to manifest
             imageManifest += "    <item id=\"img\(pageNum)\" href=\"Images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
