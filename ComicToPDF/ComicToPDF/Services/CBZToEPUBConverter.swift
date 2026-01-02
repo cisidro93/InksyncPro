@@ -78,10 +78,11 @@ class CBZToEPUBConverter {
                         continue  // Skip metadata files
                     }
                     
-                    // ✅ USE UIImage LIKE THE PDF CONVERTER DOES!
-                    if let image = UIImage(contentsOfFile: fileURL.path) {
-                        let width = Int(image.size.width)
-                        let height = Int(image.size.height)
+                    // Use UIImage to load, but get PIXEL dimensions from CGImage
+                    if let image = UIImage(contentsOfFile: fileURL.path),
+                       let cgImage = image.cgImage {
+                        let width = cgImage.width    // ✅ Actual pixels
+                        let height = cgImage.height  // ✅ Actual pixels
                         pages.append(PageInfo(url: fileURL, width: width, height: height, originalExtension: ext))
                     }
                 }
