@@ -42,11 +42,11 @@ struct SplitPDFView: View {
                     Section {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack { Text("Max Size per Part"); Spacer(); Text("\(Int(maxSizeMB)) MB").fontWeight(.semibold).foregroundColor(.orange) }
-                            Slider(value: $maxSizeMB, in: 5...200, step: 5).tint(.orange)
-                            HStack { Text("5 MB").font(.caption).foregroundColor(.secondary); Spacer(); Text("200 MB").font(.caption).foregroundColor(.secondary) }
+                            Slider(value: $maxSizeMB, in: 5...190, step: 5).tint(.orange)
+                            HStack { Text("5 MB").font(.caption).foregroundColor(.secondary); Spacer(); Text("190 MB").font(.caption).foregroundColor(.secondary) }
                         }
                         HStack { Image(systemName: "doc.on.doc.fill").foregroundColor(.blue); Text("Estimated Parts"); Spacer(); Text("~\(estimatedParts) file\(estimatedParts > 1 ? "s" : "")").fontWeight(.medium).foregroundColor(.blue) }
-                    } header: { Text("Split Settings") } footer: { Text("Send-to-Kindle (Web) supports up to 200MB. Email is limited to ~50MB.") }
+                    } header: { Text("Split Settings") } footer: { Text("Send-to-Kindle (Web) supports up to 200MB. Limit capped at 190MB for safety.") }
                     
                     Section { HStack { Image(systemName: "info.circle.fill").foregroundColor(.orange); Text("Parts will be named: \(pdf.name)_part1, _part2, etc.").font(.caption).foregroundColor(.secondary) } }
                     

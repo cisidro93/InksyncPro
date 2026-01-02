@@ -177,8 +177,8 @@ struct CBZToEPUBConverter {
         print("Size: \(sizeMB) MB")
         print("Pages: \(pageGroups.count)")
         
-        if sizeMB > 200 {
-            print("⚠️  File is \(sizeMB)MB - exceeds 200MB limit")
+        if sizeMB > 190 {
+            print("⚠️  File is \(sizeMB)MB - exceeds 190MB limit")
             print("⚠️  Will be automatically split by ConversionManager")
         }
         

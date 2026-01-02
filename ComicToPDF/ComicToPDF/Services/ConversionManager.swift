@@ -564,8 +564,8 @@ class ConversionManager: ObservableObject {
             
             // Check Split
             let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
-            if fileSize > 200 * 1024 * 1024 {
-                let parts = try ComicEPUBProcessor.splitEPUB(url, maxSizeMB: 200)
+            if fileSize > 190 * 1024 * 1024 {
+                let parts = try ComicEPUBProcessor.splitEPUB(url, maxSizeMB: 190)
                 try? FileManager.default.removeItem(at: url)
                 return (parts, pageCount)
             }
@@ -588,8 +588,8 @@ class ConversionManager: ObservableObject {
             
             // Check Split (CBZ)
             let fileSize = (try? FileManager.default.attributesOfItem(atPath: epubURL.path)[.size] as? Int64) ?? 0
-            if fileSize > 200 * 1024 * 1024 {
-                let parts = try ComicEPUBProcessor.splitEPUB(epubURL, maxSizeMB: 200)
+            if fileSize > 190 * 1024 * 1024 {
+                let parts = try ComicEPUBProcessor.splitEPUB(epubURL, maxSizeMB: 190)
                 try? FileManager.default.removeItem(at: epubURL)
                 progressHandler(1.0)
                 return (parts, 0)
