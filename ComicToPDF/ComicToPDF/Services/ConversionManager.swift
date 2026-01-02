@@ -584,9 +584,7 @@ class ConversionManager: ObservableObject {
             jpegQuality = max(0.01, min(jpegQuality, 1.0))
             
             let converter = CBZToEPUBConverter()
-            var config = CBZToEPUBConverter.ConversionConfig()
-            config.quality = jpegQuality
-            let epubURL = try await converter.convertCBZToEPUB(sourceURL, config: config)
+            let epubURL = try await converter.convertCBZToEPUB(sourceURL, compressionQuality: jpegQuality)
             
             // Check Split (CBZ)
             let fileSize = (try? FileManager.default.attributesOfItem(atPath: epubURL.path)[.size] as? Int64) ?? 0
