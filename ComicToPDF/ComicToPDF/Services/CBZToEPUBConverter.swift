@@ -604,9 +604,23 @@ class ComicEPUBProcessor {
             throw SplitError.invalidSource
         }
         
-        let oebpsDir = sourceDir.appendingPathComponent("OEBPS")
+        var oebpsDir = sourceDir.appendingPathComponent("OEBPS")
+        
+        // Handle case where zip contains a wrapping directory
+        if !fileManager.fileExists(atPath: oebpsDir.path) {
+            let contents = (try? fileManager.contentsOfDirectory(at: sourceDir, includingPropertiesForKeys: nil)) ?? []
+            let subdirs = contents.filter { $0.hasDirectoryPath }
+            
+            if subdirs.count == 1 {
+                print("⚠️  Found wrapping directory: \(subdirs[0].lastPathComponent)")
+                oebpsDir = subdirs[0].appendingPathComponent("OEBPS")
+            } else {
+                print("❌ OEBPS directory not found in \(sourceDir.path)")
+                print("Files found: \(contents.map { $0.lastPathComponent })")
+            }
+        }
+        
         guard fileManager.fileExists(atPath: oebpsDir.path) else {
-            print("❌ OEBPS directory not found")
             throw SplitError.structuralError("OEBPS directory not found")
         }
         
