@@ -73,6 +73,11 @@ class CBZToEPUBConverter {
             for case let fileURL as URL in enumerator {
                 let ext = fileURL.pathExtension.lowercased()
                 if supportedExtensions.contains(ext) {
+                    // ✅ SKIP MACOS METADATA FILES (same as PDF converter)
+                    if fileURL.lastPathComponent.hasPrefix("._") || fileURL.path.contains("__MACOSX") {
+                        continue  // Skip metadata files
+                    }
+                    
                     // ✅ USE UIImage LIKE THE PDF CONVERTER DOES!
                     if let image = UIImage(contentsOfFile: fileURL.path) {
                         let width = Int(image.size.width)
