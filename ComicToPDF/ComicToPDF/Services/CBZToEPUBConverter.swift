@@ -14,6 +14,10 @@ struct ComicPage {
 
 class CBZToEPUBConverter {
     
+    // MARK: - Initialization
+    
+    public init() {}
+    
     // MARK: - Public Interface
     
     func convertCBZToEPUB(_ cbzURL: URL, compressionQuality: Double) async throws -> URL {
@@ -305,13 +309,15 @@ class CBZToEPUBConverter {
         
         // 7. Package as EPUB (ZIP with specific ordering)
         let finalEPUB = outputDir.appendingPathComponent("\(title).epub")
-        let archive = try Archive(url: finalEPUB, accessMode: .create)
+        guard let archive = Archive(url: finalEPUB, accessMode: .create) else {
+            throw NSError(domain: "CBZConverter", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
+        }
         
         // Add mimetype FIRST and UNCOMPRESSED (critical for EPUB spec)
         try archive.addEntry(
             with: "mimetype",
             type: .file,
-            uncompressedSize: 20,
+            uncompressedSize: Int64(20),
             compressionMethod: .none
         ) { position, size in
             return try Data(contentsOf: epubDir.appendingPathComponent("mimetype"))
