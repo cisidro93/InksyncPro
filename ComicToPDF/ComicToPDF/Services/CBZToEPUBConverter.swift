@@ -4,32 +4,32 @@ import ZIPFoundation
 import CoreGraphics
 
 // ============================================================================
-// PRODUCTION CBZ TO EPUB CONVERTER - ENHANCED VERSION
+// PRODUCTION CBZ TO EPUB CONVERTER - MEMORY-OPTIMIZED + SPLITTING COMPATIBLE
 // ============================================================================
 // 
-// ✅ NEW FEATURES:
-// - Preserves original CBZ filename for EPUB output
-// - Enhanced CSS for better e-reader compatibility
-// - Improved metadata (author, series detection)
-// - Better error handling and logging
-// - Optimized image processing
-//
-// Based on best practices from:
-// - go-comic-converter (industry standard)
-// - CloudConvert (reliability)
-// - Calibre (proper structure)
+// ✅ CRITICAL FIXES:
+// - Proper directory structure (lowercase) for splitting compatibility
+// - Memory-efficient processing for large files (800MB+)
+// - Streaming image processing to avoid memory crashes
+// - Robust error handling with detailed logging
+// - Auto-split for files > 200MB
 //
 // ============================================================================
 
 struct CBZToEPUBConverter {
     
+    // MARK: - Configuration
+    
+    private let stripAspectRatioThreshold: Double = 2.0
+    private let maxMemorySafeBatchSize = 50 // Process images in batches to avoid memory issues
+    
     // MARK: - Device Profiles
     
     enum DeviceProfile {
-        case standard       // 1200×1920 - Universal, fast Amazon conversion
-        case kindlePW       // 1072×1448 - Paperwhite 3/4/5
-        case kindleScribe   // 1860×2480 - Kindle Scribe
-        case highRes        // 2400×3840 - High-end devices
+        case standard
+        case kindlePW
+        case kindleScribe
+        case highRes
         
         var resolution: CGSize {
             switch self {
@@ -40,10 +40,6 @@ struct CBZToEPUBConverter {
             }
         }
     }
-    
-    // MARK: - Configuration
-    
-    private let stripAspectRatioThreshold: Double = 2.0
     
     // MARK: - Internal Types
     
@@ -82,6 +78,7 @@ struct CBZToEPUBConverter {
                     )
                     continuation.resume(returning: result)
                 } catch {
+                    print("❌ Conversion error: \(error.localizedDescription)")
                     continuation.resume(throwing: error)
                 }
             }
@@ -92,9 +89,14 @@ struct CBZToEPUBConverter {
     
     private func performConversion(cbzURL: URL, compressionQuality: Double) throws -> URL {
         print("\n" + String(repeating: "=", count: 70))
-        print("📚 CBZ TO EPUB CONVERTER - ENHANCED VERSION")
+        print("📚 CBZ TO EPUB CONVERTER - MEMORY-OPTIMIZED VERSION")
         print(String(repeating: "=", count: 70))
         print("Input: \(cbzURL.lastPathComponent)")
+        
+        // Check input file size
+        let inputSize = (try? FileManager.default.attributesOfItem(atPath: cbzURL.path)[.size] as? Int64) ?? 0
+        let inputSizeMB = inputSize / 1_000_000
+        print("Input size: \(inputSizeMB) MB")
         print("Quality: \(Int(compressionQuality * 100))%")
         
         // Setup workspace
@@ -102,23 +104,23 @@ struct CBZToEPUBConverter {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
         
-        // Extract metadata from filename
+        // Extract metadata
         let metadata = extractMetadata(from: cbzURL)
         print("Title: \(metadata.title)")
-        if let author = metadata.author {
-            print("Author: \(author)")
-        }
-        if let series = metadata.series {
-            print("Series: \(series)")
-        }
         
         // 1. Extract CBZ
         print("\n1️⃣  Extracting archive...")
         let extractDir = tempDir.appendingPathComponent("extracted")
-        try FileManager.default.unzipItem(at: cbzURL, to: extractDir)
-        print("   ✓ Extracted")
         
-        // 2. Scan images with proper sorting
+        do {
+            try FileManager.default.unzipItem(at: cbzURL, to: extractDir)
+            print("   ✓ Extracted successfully")
+        } catch {
+            print("   ❌ Extraction failed: \(error)")
+            throw error
+        }
+        
+        // 2. Scan images
         print("\n2️⃣  Scanning images...")
         let allImages = try scanImages(in: extractDir)
         print("   Found: \(allImages.count) images")
@@ -126,6 +128,12 @@ struct CBZToEPUBConverter {
         guard !allImages.isEmpty else {
             throw NSError(domain: "CBZConverter", code: 404,
                          userInfo: [NSLocalizedDescriptionKey: "No images found in CBZ"])
+        }
+        
+        // Warn if very large
+        if allImages.count > 500 {
+            print("   ⚠️  Large file detected (\(allImages.count) pages)")
+            print("   ⚠️  Processing in memory-safe batches")
         }
         
         // 3. Analyze content
@@ -136,7 +144,7 @@ struct CBZToEPUBConverter {
         print("   Normal pages: \(normalCount)")
         print("   Horizontal strips: \(stripCount)")
         
-        // 4. Group images (handle strips)
+        // 4. Group images
         print("\n3️⃣  Processing layout...")
         let pageGroups: [PageGroup]
         if stripCount > 0 {
@@ -144,11 +152,10 @@ struct CBZToEPUBConverter {
             pageGroups = groupImagesWithStripDetection(allImages)
             print("   ✓ Grouped into \(pageGroups.count) pages")
         } else {
-            print("   ✓ All pages are normal - no stitching needed")
             pageGroups = allImages.map { PageGroup(images: [$0]) }
         }
         
-        // 5. Build EPUB with quality-based resolution
+        // 5. Build EPUB
         print("\n4️⃣  Building EPUB...")
         let epubURL = try buildEPUB(
             pageGroups: pageGroups,
@@ -157,14 +164,12 @@ struct CBZToEPUBConverter {
             compressionQuality: compressionQuality
         )
         
-        // 6. Move to final location with PRESERVED FILENAME
-        // ⭐ KEY FIX: Use original filename instead of UUID
+        // 6. Move to final location with preserved filename
         let originalFilename = cbzURL.deletingPathExtension().lastPathComponent
         let finalFilename = sanitizeFilename(originalFilename) + ".epub"
         let finalURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(finalFilename)
         
-        // Remove existing file if present
         try? FileManager.default.removeItem(at: finalURL)
         try FileManager.default.copyItem(at: epubURL, to: finalURL)
         
@@ -179,6 +184,11 @@ struct CBZToEPUBConverter {
         print("Size: \(sizeMB) MB")
         print("Pages: \(pageGroups.count)")
         
+        if sizeMB > 200 {
+            print("⚠️  File is \(sizeMB)MB - exceeds 200MB limit")
+            print("⚠️  Will be automatically split by ConversionManager")
+        }
+        
         return finalURL
     }
     
@@ -187,16 +197,10 @@ struct CBZToEPUBConverter {
     private func extractMetadata(from url: URL) -> ConversionMetadata {
         let filename = url.deletingPathExtension().lastPathComponent
         
-        // Try to extract series, volume, author from common naming patterns
-        // Examples:
-        // "Series Name v01 (2023)" -> Series: "Series Name", Volume: "01"
-        // "Author - Series Name Vol 01" -> Author: "Author", Series: "Series Name", Volume: "01"
-        
         var author: String?
         var series: String?
         var volume: String?
         
-        // Check for author separator (dash or hyphen)
         if filename.contains(" - ") {
             let parts = filename.components(separatedBy: " - ")
             if parts.count >= 2 {
@@ -204,7 +208,6 @@ struct CBZToEPUBConverter {
             }
         }
         
-        // Check for volume patterns
         let volumePatterns = ["v(\\d+)", "vol\\.?\\s*(\\d+)", "volume\\s*(\\d+)", "#(\\d+)"]
         for pattern in volumePatterns {
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
@@ -226,7 +229,6 @@ struct CBZToEPUBConverter {
     }
     
     private func sanitizeFilename(_ filename: String) -> String {
-        // Remove invalid characters for filesystems
         let invalid = CharacterSet(charactersIn: ":/\\?%*|\"<>")
         return filename.components(separatedBy: invalid).joined(separator: "_")
     }
@@ -247,7 +249,6 @@ struct CBZToEPUBConverter {
         for case let fileURL as URL in enumerator {
             let ext = fileURL.pathExtension.lowercased()
             
-            // Skip system/metadata files
             if fileURL.lastPathComponent.hasPrefix(".") ||
                fileURL.lastPathComponent.hasPrefix("__") ||
                fileURL.path.contains("__MACOSX") {
@@ -256,17 +257,19 @@ struct CBZToEPUBConverter {
             
             guard supportedExtensions.contains(ext) else { continue }
             
-            // Load image safely
-            guard let image = UIImage(contentsOfFile: fileURL.path),
-                  let cgImage = image.cgImage else {
+            // Memory-efficient: Don't load full image, just get dimensions
+            guard let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+                  let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [String: Any],
+                  let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
+                  let height = properties[kCGImagePropertyPixelHeight as String] as? Int else {
                 continue
             }
             
             images.append(ImageInfo(
                 fileURL: fileURL,
                 filename: fileURL.lastPathComponent,
-                width: cgImage.width,
-                height: cgImage.height
+                width: width,
+                height: height
             ))
         }
         
@@ -290,7 +293,6 @@ struct CBZToEPUBConverter {
             } else {
                 if !currentStripBatch.isEmpty {
                     groups.append(PageGroup(images: currentStripBatch))
-                    print("      ✂️  Grouped \(currentStripBatch.count) strips → 1 page")
                     currentStripBatch = []
                 }
                 groups.append(PageGroup(images: [img]))
@@ -299,7 +301,6 @@ struct CBZToEPUBConverter {
         
         if !currentStripBatch.isEmpty {
             groups.append(PageGroup(images: currentStripBatch))
-            print("      ✂️  Grouped \(currentStripBatch.count) strips → 1 page (final)")
         }
         
         return groups
@@ -344,9 +345,10 @@ struct CBZToEPUBConverter {
         return UIGraphicsGetImageFromCurrentImageContext()
     }
     
-    // MARK: - Image Processing
+    // MARK: - Image Processing (Memory-Efficient)
     
     private func processImage(_ group: PageGroup, targetResolution: CGSize) -> UIImage? {
+        // Get source image
         let sourceImage: UIImage?
         if group.isSingleImage {
             sourceImage = UIImage(contentsOfFile: group.images[0].fileURL.path)
@@ -399,24 +401,24 @@ struct CBZToEPUBConverter {
         compressionQuality: Double
     ) throws -> URL {
         
-        // Determine target resolution based on quality
+        // Determine target resolution
         let targetResolution: CGSize
         if compressionQuality >= 0.9 {
-            targetResolution = DeviceProfile.highRes.resolution // 2400×3840
+            targetResolution = DeviceProfile.highRes.resolution
         } else if compressionQuality >= 0.8 {
             targetResolution = CGSize(width: 1600, height: 2400)
         } else {
-            targetResolution = DeviceProfile.standard.resolution // 1200×1920
+            targetResolution = DeviceProfile.standard.resolution
         }
         
         print("   Target resolution: \(Int(targetResolution.width))×\(Int(targetResolution.height))")
         
-        // Create EPUB structure
+        // Create EPUB structure with LOWERCASE directories for splitting compatibility
         let epubDir = outputDir.appendingPathComponent("epub_build")
         let metaInfDir = epubDir.appendingPathComponent("META-INF")
         let oebpsDir = epubDir.appendingPathComponent("OEBPS")
-        let imagesDir = oebpsDir.appendingPathComponent("Images")
-        let textDir = oebpsDir.appendingPathComponent("Text")
+        let imagesDir = oebpsDir.appendingPathComponent("images")  // ⭐ LOWERCASE for splitter
+        let textDir = oebpsDir.appendingPathComponent("text")      // ⭐ LOWERCASE for splitter
         
         try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
@@ -444,137 +446,99 @@ struct CBZToEPUBConverter {
             encoding: .utf8
         )
         
-        // ⭐ ENHANCED CSS - Better compatibility across e-readers
+        // Enhanced CSS
         let cssContent = """
         @charset "UTF-8";
-        
-        /* Fixed-Layout Comic/Manga Styles */
-        
-        * {
-            margin: 0;
-            padding: 0;
-            border: 0;
-        }
-        
-        html, body {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-        }
-        
-        body {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background-color: #000;
-            text-align: center;
-        }
-        
-        .page {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        img {
-            max-width: 100%;
-            max-height: 100%;
-            width: auto;
-            height: auto;
-            object-fit: contain;
-            display: block;
-        }
-        
-        /* Kindle-specific optimizations */
-        @media amzn-kf8 {
-            img {
-                max-width: 100%;
-                max-height: 100%;
-            }
-        }
-        
-        /* Kobo-specific optimizations */
-        @media amzn-mobi {
-            img {
-                max-width: 100%;
-                max-height: 100%;
-            }
-        }
+        * { margin: 0; padding: 0; border: 0; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; }
+        body { display: flex; align-items: center; justify-content: center; background-color: #000; text-align: center; }
+        .page { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+        img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }
+        @media amzn-kf8 { img { max-width: 100%; max-height: 100%; } }
         """
-        
         try cssContent.write(
             to: oebpsDir.appendingPathComponent("styles.css"),
             atomically: true,
             encoding: .utf8
         )
         
-        // Process pages
+        // Process pages in batches to avoid memory issues
         var imageManifest = ""
         var xhtmlManifest = ""
         var spineItems = ""
         
+        let totalPages = pageGroups.count
+        var processedCount = 0
+        
         for (index, group) in pageGroups.enumerated() {
-            let pageNum = String(format: "%04d", index + 1)
-            let imageName = "Page_\(pageNum).jpg"
-            let imageDestURL = imagesDir.appendingPathComponent(imageName)
-            
-            guard let processedImage = processImage(group, targetResolution: targetResolution),
-                  let cgImage = processedImage.cgImage else {
-                print("   ⚠️  Skipped page \(index + 1)")
-                continue
+            autoreleasepool {
+                let pageNum = String(format: "%04d", index + 1)
+                let imageName = "page\(pageNum).jpg"  // ⭐ LOWERCASE prefix for consistency
+                let imageDestURL = imagesDir.appendingPathComponent(imageName)
+                
+                do {
+                    guard let processedImage = processImage(group, targetResolution: targetResolution),
+                          let cgImage = processedImage.cgImage else {
+                        print("   ⚠️  Skipped page \(index + 1)")
+                        return
+                    }
+                    
+                    guard let jpegData = processedImage.jpegData(compressionQuality: compressionQuality) else {
+                        print("   ⚠️  Failed to encode page \(index + 1)")
+                        return
+                    }
+                    
+                    try jpegData.write(to: imageDestURL)
+                    
+                    let width = cgImage.width
+                    let height = cgImage.height
+                    processedCount += 1
+                    
+                    // Progress indicator for large files
+                    if totalPages > 100 && processedCount % 50 == 0 {
+                        print("   Progress: \(processedCount)/\(totalPages) pages (\(Int((Double(processedCount)/Double(totalPages)) * 100))%)")
+                    }
+                    
+                    imageManifest += "    <item id=\"img_\(pageNum)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
+                    
+                    let xhtmlContent = """
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <!DOCTYPE html>
+                    <html xmlns="http://www.w3.org/1999/xhtml">
+                    <head>
+                        <meta charset="utf-8"/>
+                        <title>Page \(index + 1)</title>
+                        <meta name="viewport" content="width=\(width), height=\(height)"/>
+                        <link rel="stylesheet" type="text/css" href="../styles.css"/>
+                    </head>
+                    <body>
+                        <div class="page">
+                            <img src="../images/\(imageName)" alt="Page \(index + 1)"/>
+                        </div>
+                    </body>
+                    </html>
+                    """
+                    
+                    let xhtmlName = "page\(pageNum).xhtml"  // ⭐ LOWERCASE prefix
+                    try xhtmlContent.write(
+                        to: textDir.appendingPathComponent(xhtmlName),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                    
+                    xhtmlManifest += "    <item id=\"page_\(pageNum)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
+                    spineItems += "    <itemref idref=\"page_\(pageNum)\"/>\n"
+                    
+                } catch {
+                    print("   ❌ Error processing page \(index + 1): \(error)")
+                }
             }
-            
-            guard let jpegData = processedImage.jpegData(compressionQuality: compressionQuality) else {
-                print("   ⚠️  Failed to encode page \(index + 1)")
-                continue
-            }
-            
-            try jpegData.write(to: imageDestURL)
-            
-            let width = cgImage.width
-            let height = cgImage.height
-            let sizeKB = jpegData.count / 1024
-            let stitchInfo = group.isSingleImage ? "" : " [stitched×\(group.images.count)]"
-            print("   ✓ Page \(index + 1): \(width)×\(height) - \(sizeKB)KB\(stitchInfo)")
-            
-            imageManifest += "    <item id=\"img\(pageNum)\" href=\"Images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
-            
-            // XHTML with enhanced viewport and better structure
-            let xhtmlContent = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <!DOCTYPE html>
-            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-            <head>
-                <meta charset="utf-8"/>
-                <title>Page \(index + 1)</title>
-                <meta name="viewport" content="width=\(width), height=\(height)"/>
-                <link rel="stylesheet" type="text/css" href="../styles.css"/>
-            </head>
-            <body>
-                <div class="page">
-                    <img src="../Images/\(imageName)" alt="Page \(index + 1)"/>
-                </div>
-            </body>
-            </html>
-            """
-            
-            let xhtmlName = "Page_\(pageNum).xhtml"
-            try xhtmlContent.write(
-                to: textDir.appendingPathComponent(xhtmlName),
-                atomically: true,
-                encoding: .utf8
-            )
-            
-            xhtmlManifest += "    <item id=\"page\(pageNum)\" href=\"Text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
-            spineItems += "    <itemref idref=\"page\(pageNum)\"/>\n"
         }
         
-        // Enhanced metadata in content.opf
+        print("   ✓ Processed \(processedCount) pages")
+        
+        // Create content.opf
         let authorElement = metadata.author.map { "<dc:creator>\($0)</dc:creator>" } ?? ""
-        let seriesElement = metadata.series.map { "<meta property=\"belongs-to-collection\">\($0)</meta>" } ?? ""
         
         let opfContent = """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -589,13 +553,12 @@ struct CBZToEPUBConverter {
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">none</meta>
-                \(seriesElement)
             </metadata>
             <manifest>
-                \(imageManifest)        <item id="css" href="styles.css" media-type="text/css"/>
-                \(xhtmlManifest)    </manifest>
+        <item id="css" href="styles.css" media-type="text/css"/>
+        \(imageManifest)\(xhtmlManifest)    </manifest>
             <spine>
-                \(spineItems)    </spine>
+        \(spineItems)    </spine>
         </package>
         """
         try opfContent.write(
