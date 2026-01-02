@@ -17,7 +17,7 @@ import CoreGraphics
 //
 // ============================================================================
 
-class CBZToEPUBConverter {
+struct CBZToEPUBConverter {
     
     // MARK: - Device Profiles
     
@@ -456,9 +456,9 @@ class CBZToEPUBConverter {
                 <meta property="rendition:spread">none</meta>
             </metadata>
             <manifest>
-\(imageManifest)\(xhtmlManifest)    </manifest>
+        \(imageManifest)\(xhtmlManifest)    </manifest>
             <spine>
-\(spineItems)    </spine>
+        \(spineItems)    </spine>
         </package>
         """
         try opfContent.write(
