@@ -188,44 +188,72 @@ class CBZToEPUBConverter {
             let imageName = "page\(pageNumStr).jpg"  // Always JPG for EPUB
             let imageDestURL = imagesDir.appendingPathComponent(imageName)
             
-            // âœ… LOAD IMAGE THE SAME WAY PDF CONVERTER DOES
-            if let originalImage = UIImage(contentsOfFile: page.url.path) {
-                
-                // Determine target size (reasonable for e-readers)
-                let maxDimension: CGFloat = 2400
-                var targetSize = originalImage.size
-                
-                if originalImage.size.width > maxDimension || originalImage.size.height > maxDimension {
-                    let scale = min(
-                        maxDimension / originalImage.size.width,
-                        maxDimension / originalImage.size.height,
-                        1.0
-                    )
-                    targetSize = CGSize(
-                        width: (originalImage.size.width * scale).rounded(),
-                        height: (originalImage.size.height * scale).rounded()
-                    )
-                }
-                
-                // âœ… PROCESS IMAGE THE SAME WAY PDF CONVERTER DOES
-                let format = UIGraphicsImageRendererFormat()
-                format.scale = 1.0
-                format.opaque = true
-                
-                let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
-                let processedImage = renderer.image { _ in
-                    originalImage.draw(in: CGRect(origin: .zero, size: targetSize))
-                }
-                
-                // Save as JPEG
-                if let jpegData = processedImage.jpegData(compressionQuality: compressionQuality) {
-                    try jpegData.write(to: imageDestURL)
-                } else {
-                    print("âš ï¸ Failed to save \(imageName)")
-                    continue
-                }
-            } else {
+            // Load original image
+            guard let originalImage = UIImage(contentsOfFile: page.url.path),
+                  let cgImage = originalImage.cgImage else {
                 print("âŒ Could not load \(page.url.lastPathComponent)")
+                continue
+            }
+            
+            // Get ACTUAL pixel dimensions from CGImage
+            let sourceWidth = CGFloat(cgImage.width)
+            let sourceHeight = CGFloat(cgImage.height)
+            
+            // Calculate target size
+            let maxDimension: CGFloat = 2400
+            var targetWidth = sourceWidth
+            var targetHeight = sourceHeight
+            
+            if sourceWidth > maxDimension || sourceHeight > maxDimension {
+                let scale = min(
+                    maxDimension / sourceWidth,
+                    maxDimension / sourceHeight,
+                    1.0
+                )
+                targetWidth = (sourceWidth * scale).rounded()
+                targetHeight = (sourceHeight * scale).rounded()
+            }
+            
+            let targetSize = CGSize(width: targetWidth, height: targetHeight)
+            
+            // Create bitmap context (NO TILING - renders entire image at once)
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue
+            
+            guard let context = CGContext(
+                data: nil,
+                width: Int(targetSize.width),
+                height: Int(targetSize.height),
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo
+            ) else {
+                print("âŒ Could not create context for \(page.url.lastPathComponent)")
+                continue
+            }
+            
+            // Configure high-quality rendering
+            context.interpolationQuality = .high
+            
+            // Draw the ENTIRE image in one operation (no tiling)
+            context.draw(cgImage, in: CGRect(origin: .zero, size: targetSize))
+            
+            // Extract the rendered image
+            guard let renderedCGImage = context.makeImage() else {
+                print("âŒ Could not render \(page.url.lastPathComponent)")
+                continue
+            }
+            
+            // Convert back to UIImage for JPEG encoding
+            let processedImage = UIImage(cgImage: renderedCGImage)
+            
+            // Save as JPEG
+            if let jpegData = processedImage.jpegData(compressionQuality: compressionQuality) {
+                try jpegData.write(to: imageDestURL)
+                print("âœ… Saved: \(imageName) (\(Int(targetSize.width))x\(Int(targetSize.height)))")
+            } else {
+                print("âš ï¸ JPEG encoding failed for \(imageName)")
                 continue
             }
             
