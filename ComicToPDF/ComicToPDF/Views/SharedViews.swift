@@ -12,7 +12,14 @@ func colorFor(_ colorName: String) -> Color {
 
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
-    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: items, applicationActivities: nil) }
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        // Map URLs to NSURLs to ensure "Save to Files" handles multiple files correctly
+        let processedItems = items.map { item -> Any in
+            if let url = item as? URL { return url as NSURL }
+            return item
+        }
+        return UIActivityViewController(activityItems: processedItems, applicationActivities: nil)
+    }
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
