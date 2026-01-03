@@ -17,6 +17,8 @@ class EPUBMerger {
     /// - Returns: The URL of the merged EPUB and the total page count.
     static func mergeEPUBs(sourceURLs: [URL], outputURL: URL, metadata: PDFMetadata, settings: EPUBSettings) async throws -> (URL, Int) {
         
+        print("🔄 Starting EPUB merge for \(sourceURLs.count) files")
+        
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("EPUBMerge_\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
@@ -32,7 +34,7 @@ class EPUBMerger {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         
-        // Write mimetype (must be first, uncompressed)
+        // Write mimetype
         try "application/epub+zip".write(to: epubDir.appendingPathComponent("mimetype"), atomically: true, encoding: .ascii)
         
         // Write container.xml
@@ -78,41 +80,90 @@ class EPUBMerger {
         var manifestItems: [String] = []
         var spineItems: [String] = []
         
-        // Process each source EPUB in order
+        // Process each source EPUB
         for (index, sourceURL) in sourceURLs.enumerated() {
+            print("📖 Processing EPUB \(index + 1)/\(sourceURLs.count): \(sourceURL.lastPathComponent)")
+            
             let workingDir = tempDir.appendingPathComponent("source_\(index)")
             try FileManager.default.createDirectory(at: workingDir, withIntermediateDirectories: true)
             
-            // Unzip source EPUB
+            // Unzip
             try FileManager.default.unzipItem(at: sourceURL, to: workingDir)
+            print("   ✓ Unzipped to \(workingDir.path)")
             
-            // Find images directory
-            let sourceImagesDir = workingDir.appendingPathComponent("OEBPS/images")
+            // Try multiple possible image directory locations
+            var sourceImagesDir: URL? = nil
+            let possiblePaths = [
+                "OEBPS/images",
+                "OPS/images", 
+                "EPUB/images",
+                "images",
+                "OEBPS/Images",
+                "content/images"
+            ]
             
-            guard FileManager.default.fileExists(atPath: sourceImagesDir.path) else {
-                continue // Skip if no images directory
+            for path in possiblePaths {
+                let testDir = workingDir.appendingPathComponent(path)
+                if FileManager.default.fileExists(atPath: testDir.path) {
+                    sourceImagesDir = testDir
+                    print("   ✓ Found images in: \(path)")
+                    break
+                }
             }
             
-            // Get all image files sorted by name
+            // If standard paths don't work, search recursively
+            if sourceImagesDir == nil {
+                print("   ⚠️ Standard paths not found, searching recursively...")
+                sourceImagesDir = findImagesDirectory(in: workingDir)
+            }
+            
+            guard let imagesDirectory = sourceImagesDir else {
+                print("   ❌ ERROR: No images found in EPUB \(index + 1)")
+                throw NSError(domain: "EPUBMerger", code: 404, 
+                             userInfo: [NSLocalizedDescriptionKey: "No images found in \(sourceURL.lastPathComponent)"])
+            }
+            
+            // Get all image files
             let imageFiles = try FileManager.default.contentsOfDirectory(
-                at: sourceImagesDir,
+                at: imagesDirectory,
                 includingPropertiesForKeys: nil
             )
             .filter { url in
-                ["jpg", "jpeg", "png", "gif", "webp"].contains(url.pathExtension.lowercased())
+                let ext = url.pathExtension.lowercased()
+                return ["jpg", "jpeg", "png", "gif", "webp", "bmp"].contains(ext)
             }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
             
-            // Copy each image directly (NO PROCESSING!)
-            for imageURL in imageFiles {
+            print("   ✓ Found \(imageFiles.count) images")
+            
+            if imageFiles.isEmpty {
+                print("   ⚠️ WARNING: Images directory exists but contains no images")
+                continue
+            }
+            
+            // Copy each image
+            for (imgIndex, imageURL) in imageFiles.enumerated() {
                 let ext = imageURL.pathExtension
                 let destImageName = "page\(pageNumber).\(ext)"
                 let destImageURL = imagesDir.appendingPathComponent(destImageName)
                 
-                // CRITICAL: Direct file copy - preserves exact quality
-                try FileManager.default.copyItem(at: imageURL, to: destImageURL)
+                // DIRECT COPY - NO PROCESSING
+                do {
+                    try FileManager.default.copyItem(at: imageURL, to: destImageURL)
+                    
+                    // Verify file was copied
+                    let attrs = try FileManager.default.attributesOfItem(atPath: destImageURL.path)
+                    let size = attrs[.size] as? Int64 ?? 0
+                    
+                    if imgIndex == 0 || imgIndex == imageFiles.count - 1 {
+                        print("      Page \(pageNumber): \(destImageName) (\(size) bytes)")
+                    }
+                } catch {
+                    print("   ❌ ERROR copying \(imageURL.lastPathComponent): \(error)")
+                    throw error
+                }
                 
-                // Determine media type
+                // Media type
                 let mediaType: String
                 switch ext.lowercased() {
                 case "png": mediaType = "image/png"
@@ -121,12 +172,12 @@ class EPUBMerger {
                 default: mediaType = "image/jpeg"
                 }
                 
-                // Add to manifest
+                // Manifest
                 manifestItems.append("""
                     <item id="image\(pageNumber)" href="images/\(destImageName)" media-type="\(mediaType)"/>
                 """)
                 
-                // Create XHTML wrapper
+                // XHTML
                 let xhtmlFileName = "page\(pageNumber).xhtml"
                 let xhtmlContent = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -146,12 +197,10 @@ class EPUBMerger {
                 """
                 try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlFileName), atomically: true, encoding: .utf8)
                 
-                // Add XHTML to manifest
                 manifestItems.append("""
                     <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
                 """)
                 
-                // Add to spine
                 spineItems.append("""
                     <itemref idref="page\(pageNumber)"/>
                 """)
@@ -161,6 +210,12 @@ class EPUBMerger {
         }
         
         let totalPages = pageNumber - 1
+        print("📊 Total pages merged: \(totalPages)")
+        
+        if totalPages == 0 {
+            throw NSError(domain: "EPUBMerger", code: 500,
+                         userInfo: [NSLocalizedDescriptionKey: "No images were found in any EPUB files"])
+        }
         
         // Create content.opf
         let bookTitle = metadata.title.isEmpty ? "Merged Book" : metadata.title
@@ -212,30 +267,62 @@ class EPUBMerger {
         """
         try tocNCX.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
         
-        // Create EPUB archive
+        // Create archive
+        print("📦 Creating EPUB archive...")
         let finalEPUB = tempDir.appendingPathComponent("\(bookTitle).epub")
         
         guard let archive = Archive(url: finalEPUB, accessMode: .create) else {
-            throw NSError(domain: "EPUBMerger", code: 500, 
-                         userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
+            throw NSError(domain: "EPUBMerger", code: 500,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
         }
         
-        // Add mimetype first (uncompressed - EPUB spec requirement)
+        // Add mimetype first (uncompressed)
         try archive.addEntry(with: "mimetype", relativeTo: epubDir, compressionMethod: .none)
         
-        // Add all other files (compressed)
+        // Add all other files
         let allFiles = try FileManager.default.subpathsOfDirectory(atPath: epubDir.path)
         for file in allFiles where file != "mimetype" {
             try archive.addEntry(with: file, relativeTo: epubDir, compressionMethod: .deflate)
         }
         
-        // Move to final destination
+        // Check final file size
+        let finalAttrs = try FileManager.default.attributesOfItem(atPath: finalEPUB.path)
+        let finalSize = finalAttrs[.size] as? Int64 ?? 0
+        print("✅ EPUB created: \(ByteCountFormatter.string(fromByteCount: finalSize, countStyle: .file))")
+        
+        // Move to destination
         if FileManager.default.fileExists(atPath: outputURL.path) {
             try FileManager.default.removeItem(at: outputURL)
         }
         try FileManager.default.moveItem(at: finalEPUB, to: outputURL)
         
+        print("✅ Merge complete! \(totalPages) pages")
         return (outputURL, totalPages)
+    }
+    
+    // Helper function to find images directory recursively
+    private static func findImagesDirectory(in rootURL: URL) -> URL? {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: rootURL, includingPropertiesForKeys: [.isDirectoryKey]) else {
+            return nil
+        }
+        
+        while let fileURL = enumerator.nextObject() as? URL {
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
+                  let isDirectory = resourceValues.isDirectory else {
+                continue
+            }
+            
+            if isDirectory && fileURL.lastPathComponent.lowercased() == "images" {
+                // Check if it actually contains images
+                if let contents = try? fm.contentsOfDirectory(at: fileURL, includingPropertiesForKeys: nil),
+                   contents.contains(where: { ["jpg", "jpeg", "png", "gif", "webp"].contains($0.pathExtension.lowercased()) }) {
+                    return fileURL
+                }
+            }
+        }
+        
+        return nil
     }
     
     // MARK: - Extraction Logic
