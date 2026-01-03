@@ -313,27 +313,36 @@ struct LibraryView: View {
     
     @ToolbarContentBuilder
     var toolbarContent: some ToolbarContent {
+        // Grid toggle button
         ToolbarItem(placement: .navigationBarTrailing) {
-            HStack {
-                Button(action: { isGridView.toggle() }) {
-                    Image(systemName: isGridView ? "square.grid.2x2" : "list.bullet")
-                }
-                
-                if isGridView {
-                    Menu {
-                        Picker("Columns", selection: $gridColumns) {
-                            Text("2 Columns").tag(2)
-                            Text("3 Columns").tag(3)
-                            Text("4 Columns").tag(4)
-                        }
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
+            Button(action: { isGridView.toggle() }) {
+                Image(systemName: isGridView ? "square.grid.2x2" : "list.bullet")
+            }
+        }
+
+        // Column picker (only when grid view)
+        if isGridView {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Picker("Columns", selection: $gridColumns) {
+                        Text("2 Columns").tag(2)
+                        Text("3 Columns").tag(3)
+                        Text("4 Columns").tag(4)
                     }
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
                 }
-                Button(isSelectionMode ? "Done" : "Select") {
-                    isSelectionMode.toggle()
-                    if !isSelectionMode { selectedPDFs.removeAll() }
-                }
+            }
+        }
+
+        // Select button - ALWAYS VISIBLE
+        ToolbarItem(placement: .principal) {
+            Button(action: {
+                isSelectionMode.toggle()
+                if !isSelectionMode { selectedPDFs.removeAll() }
+            }) {
+                Text(isSelectionMode ? "Done" : "Select")
+                    .fontWeight(.bold)
             }
         }
     }
