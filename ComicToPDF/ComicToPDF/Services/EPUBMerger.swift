@@ -216,8 +216,30 @@ class EPUBMerger {
             throw NSError(domain: "EPUBMerger", code: 500,
                          userInfo: [NSLocalizedDescriptionKey: "No images were found in any EPUB files"])
         }
+
+        // CREATE COVER IMAGE FOR KINDLE THUMBNAIL
+        if totalPages > 0 {
+            // Find the first page image (could be jpg, jpeg, or png)
+            var coverCreated = false
+            let possibleExts = ["jpg", "jpeg", "png", "webp"]
+            
+            for ext in possibleExts {
+                let firstPageURL = imagesDir.appendingPathComponent("page1.\(ext)")
+                if FileManager.default.fileExists(atPath: firstPageURL.path) {
+                    let coverURL = imagesDir.appendingPathComponent("cover.jpg")
+                    try FileManager.default.copyItem(at: firstPageURL, to: coverURL)
+                    print("📖 Created cover.jpg from page1.\(ext) for Kindle thumbnail")
+                    coverCreated = true
+                    break
+                }
+            }
+            
+            if !coverCreated {
+                print("⚠️ Warning: Could not create cover image")
+            }
+        }
         
-        // Create content.opf
+        // Create content.opf WITH COVER METADATA
         let bookTitle = metadata.title.isEmpty ? "Merged Book" : metadata.title
         let bookAuthor = metadata.author.isEmpty ? "Unknown" : metadata.author
         let bookID = UUID().uuidString
@@ -225,21 +247,26 @@ class EPUBMerger {
         let contentOPF = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookID">
-            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
                 <dc:identifier id="BookID">\(bookID)</dc:identifier>
                 <dc:title>\(bookTitle)</dc:title>
                 <dc:creator>\(bookAuthor)</dc:creator>
                 <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
+                <meta name="cover" content="cover-image"/>
             </metadata>
             <manifest>
                 <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
                 <item id="css" href="style.css" media-type="text/css"/>
+                <item id="cover-image" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>
         \(manifestItems.joined(separator: "\n"))
             </manifest>
             <spine toc="ncx">
         \(spineItems.joined(separator: "\n"))
             </spine>
+            <guide>
+                <reference type="cover" title="Cover" href="text/page1.xhtml"/>
+            </guide>
         </package>
         """
         try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
