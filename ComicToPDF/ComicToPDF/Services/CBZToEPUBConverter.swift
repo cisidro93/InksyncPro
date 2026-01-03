@@ -405,10 +405,27 @@ struct CBZToEPUBConverter {
         let cssContent = """
         @charset "UTF-8";
         * { margin: 0; padding: 0; border: 0; }
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background-color: #000; }
-        body { display: block; text-align: center; }
-        svg { width: 100%; height: 100%; display: block; }
-        @media amzn-kf8 { svg { width: 100vw; height: 100vh; } }
+        html, body { 
+            width: 100%; 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #000; 
+        }
+        .page { 
+            width: 100%; 
+            height: 100%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
+        img { 
+            max-width: 100%; 
+            max-height: 100%; 
+            width: auto; 
+            height: auto; 
+            object-fit: contain; 
+        }
         """
         try cssContent.write(
             to: oebpsDir.appendingPathComponent("styles.css"),
@@ -460,16 +477,13 @@ struct CBZToEPUBConverter {
                     <head>
                         <meta charset="utf-8"/>
                         <title>Page \(index + 1)</title>
-                        <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/>
+                        <meta name="viewport" content="width=device-width, height=device-height"/>
                         <link rel="stylesheet" type="text/css" href="../styles.css"/>
                     </head>
                     <body>
-                        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
-                             version="1.1" width="100%" height="100%" 
-                             viewBox="0 0 \(width) \(height)" 
-                             preserveAspectRatio="xMidYMid meet">
-                            <image width="\(width)" height="\(height)" xlink:href="../images/\(imageName)"/>
-                        </svg>
+                        <div class="page">
+                            <img src="../images/\(imageName)" alt="Page \(index + 1)"/>
+                        </div>
                     </body>
                     </html>
                     """
