@@ -4,6 +4,7 @@ struct FileMergeView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var selectedPDFs: Set<UUID> = []
+    @State private var selectionOrder: [UUID] = []
     @State private var outputName: String = "Merged Book"
     @State private var isMerging = false
     @State private var targetFormat: OutputFormat = .pdf
@@ -86,6 +87,10 @@ struct FileMergeView: View {
             .onAppear {
                 if let preselected = preselectedPDFs {
                     selectedPDFs = preselected
+                    // Initialize selection order based on list order for pre-selected items
+                    selectionOrder = conversionManager.convertedPDFs
+                        .filter { preselected.contains($0.id) }
+                        .map { $0.id }
                 }
                 // Auto-detect format if all same
                 let selectedFiles = conversionManager.convertedPDFs.filter { selectedPDFs.contains($0.id) }
@@ -110,8 +115,10 @@ struct FileMergeView: View {
     private func toggleSelection(_ pdf: ConvertedPDF) {
         if selectedPDFs.contains(pdf.id) {
             selectedPDFs.remove(pdf.id)
+            selectionOrder.removeAll { $0 == pdf.id }
         } else {
             selectedPDFs.insert(pdf.id)
+            selectionOrder.append(pdf.id)
         }
     }
     
@@ -119,11 +126,10 @@ struct FileMergeView: View {
         guard !outputName.isEmpty else { return }
         isMerging = true
         
-        let filesToMerge = conversionManager.convertedPDFs.filter { selectedPDFs.contains($0.id) }
-        
-        // Sort by selection order? Set is unordered.
-        // We probably want to respect the order they appear in list or allow reordering.
-        // For now, we take them in list order (filtered from source array).
+        // Use selectionOrder to determine the merge order
+        let filesToMerge = selectionOrder.compactMap { id in 
+            conversionManager.convertedPDFs.first(where: { $0.id == id }) 
+        }
         
         Task {
             do {
