@@ -410,21 +410,22 @@ struct CBZToEPUBConverter {
             height: 100%; 
             margin: 0; 
             padding: 0; 
-            background-color: #000; 
+            background-color: #000;
+            overflow: hidden;
         }
         .page { 
-            width: 100%; 
-            height: 100%; 
+            width: 100vw; 
+            height: 100vh; 
             display: flex; 
             align-items: center; 
             justify-content: center; 
+            overflow: hidden;
         }
         img { 
-            max-width: 100%; 
-            max-height: 100%; 
-            width: auto; 
-            height: auto; 
-            object-fit: contain; 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain;
+            display: block;
         }
         """
         try cssContent.write(
@@ -439,6 +440,42 @@ struct CBZToEPUBConverter {
         var processedCount = 0
         
         print("   Processing pages...")
+        
+        // -------------------------------------------------------------------------
+        // COVER PAGE LOGIC
+        // -------------------------------------------------------------------------
+        
+        if let firstGroup = pageGroups.first {
+             let coverPageNum = "0001"
+             let coverImageName = "page\(coverPageNum).jpg"
+             
+             let coverXHTML = """
+             <?xml version="1.0" encoding="utf-8"?>
+             <!DOCTYPE html>
+             <html xmlns="http://www.w3.org/1999/xhtml">
+             <head>
+                 <meta charset="utf-8"/>
+                 <title>Cover</title>
+                 <meta name="viewport" content="width=device-width, height=device-height"/>
+                 <link rel="stylesheet" type="text/css" href="../styles.css"/>
+             </head>
+             <body>
+                 <div class="page">
+                     <img src="../images/\(coverImageName)" alt="Cover"/>
+                 </div>
+             </body>
+             </html>
+             """
+             try coverXHTML.write(
+                 to: textDir.appendingPathComponent("cover.xhtml"),
+                 atomically: true,
+                 encoding: .utf8
+             )
+             
+             // Mark cover in manifest and spine
+             xhtmlManifest += "        <item id=\"cover\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
+             spineItems += "        <itemref idref=\"cover\"/>\n"
+        }
         
         for (index, group) in pageGroups.enumerated() {
             autoreleasepool {
@@ -468,7 +505,12 @@ struct CBZToEPUBConverter {
                         print("   Progress: \(processedCount)/\(pageGroups.count)")
                     }
                     
-                    imageManifest += "    <item id=\"img_\(pageNum)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
+                    if index == 0 {
+                        // First image is the cover
+                        imageManifest += "    <item id=\"cover-image\" href=\"images/\(imageName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>\n"
+                    } else {
+                        imageManifest += "    <item id=\"img_\(pageNum)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
+                    }
                     
                     let xhtmlContent = """
                     <?xml version="1.0" encoding="utf-8"?>
@@ -520,6 +562,7 @@ struct CBZToEPUBConverter {
         opfContent += "        <meta property=\"rendition:layout\">pre-paginated</meta>\n"
         opfContent += "        <meta property=\"rendition:orientation\">auto</meta>\n"
         opfContent += "        <meta property=\"rendition:spread\">none</meta>\n"
+        opfContent += "        <meta name=\"cover\" content=\"cover-image\"/>\n"
         opfContent += "    </metadata>\n"
         opfContent += "    <manifest>\n"
         opfContent += "        <item id=\"css\" href=\"styles.css\" media-type=\"text/css\"/>\n"
@@ -792,6 +835,40 @@ class ComicEPUBProcessor {
         let imagesDirName = useCapitalizedDirs ? "Images" : "images"
         let textDirName = useCapitalizedDirs ? "Text" : "text"
         
+        // -------------------------------------------------------------------------
+        // COVER PAGE LOGIC (SPLITTER)
+        // -------------------------------------------------------------------------
+        
+        if let firstPage = pages.first {
+             let coverImageName = URL(fileURLWithPath: firstPage.imagePath).lastPathComponent
+             
+             let coverXHTML = """
+             <?xml version="1.0" encoding="utf-8"?>
+             <!DOCTYPE html>
+             <html xmlns="http://www.w3.org/1999/xhtml">
+             <head>
+                 <meta charset="utf-8"/>
+                 <title>Cover</title>
+                 <meta name="viewport" content="width=device-width, height=device-height"/>
+                 <link rel="stylesheet" type="text/css" href="../styles.css"/>
+             </head>
+             <body>
+                 <div class="page">
+                     <img src="../\(imagesDirName)/\(coverImageName)" alt="Cover"/>
+                 </div>
+             </body>
+             </html>
+             """
+             try coverXHTML.write(
+                 to: textDir.appendingPathComponent("cover.xhtml"),
+                 atomically: true,
+                 encoding: .utf8
+             )
+             
+             xhtmlManifest += "    <item id=\"cover\" href=\"\(textDirName)/cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
+             spineItems += "    <itemref idref=\"cover\"/>\n"
+        }
+        
         for (index, page) in pages.enumerated() {
             let pageNum = String(format: "%04d", index + 1)
             let xhtmlDest = textDir.appendingPathComponent(URL(fileURLWithPath: page.xhtmlPath).lastPathComponent)
@@ -812,7 +889,11 @@ class ComicEPUBProcessor {
             default: mediaType = "image/jpeg"
             }
             
-            imageManifest += "    <item id=\"img_\(pageNum)\" href=\"\(imagesDirName)/\(imgName)\" media-type=\"\(mediaType)\"/>\n"
+            if index == 0 {
+                imageManifest += "    <item id=\"cover-image\" href=\"\(imagesDirName)/\(imgName)\" media-type=\"\(mediaType)\" properties=\"cover-image\"/>\n"
+            } else {
+                imageManifest += "    <item id=\"img_\(pageNum)\" href=\"\(imagesDirName)/\(imgName)\" media-type=\"\(mediaType)\"/>\n"
+            }
             xhtmlManifest += "    <item id=\"page_\(pageNum)\" href=\"\(textDirName)/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
             spineItems += "    <itemref idref=\"page_\(pageNum)\"/>\n"
         }
@@ -832,6 +913,7 @@ class ComicEPUBProcessor {
         opfContent += "        <meta property=\"rendition:layout\">pre-paginated</meta>\n"
         opfContent += "        <meta property=\"rendition:orientation\">auto</meta>\n"
         opfContent += "        <meta property=\"rendition:spread\">none</meta>\n"
+        opfContent += "        <meta name=\"cover\" content=\"cover-image\"/>\n"
         opfContent += "    </metadata>\n"
         opfContent += "    <manifest>\n"
         opfContent += cssItem
