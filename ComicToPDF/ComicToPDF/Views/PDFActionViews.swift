@@ -166,84 +166,153 @@ struct RenameFileView: View {
 struct PanelExtractionHost: View {
     let pdf: ConvertedPDF
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
     @State private var coverImage: UIImage? = nil
     @State private var isLoading = true
     
     var body: some View {
-        Group {
-            if let image = coverImage {
-                PanelExtractionView(sourceImage: image)
-            } else if isLoading {
-                VStack {
-                    ProgressView()
-                    Text("Loading first page...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .navigationTitle("Extract Panels")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }
-                }
-            } else {
-                Text("Failed to load image.")
-            }
-        }
-        .task {
-            // Check file type
-            let ext = pdf.url.pathExtension.lowercased()
-            
-            if ext == "pdf" {
-                // PDF handling
-                if let doc = PDFDocument(url: pdf.url), let page = doc.page(at: 0) {
-                    let pageRect = page.bounds(for: .mediaBox)
-                    let renderer = UIGraphicsImageRenderer(size: pageRect.size)
-                    let image = renderer.image { ctx in
-                        UIColor.white.set()
-                        ctx.fill(pageRect)
-                        ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
-                        ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
-                        page.draw(with: .mediaBox, to: ctx.cgContext)
-                    }
-                    await MainActor.run {
-                        self.coverImage = image
-                        self.isLoading = false
+        NavigationView {
+            Group {
+                if let image = coverImage {
+                    PanelExtractionView(sourceImage: image)
+                } else if isLoading {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                        Text("Loading...")
                     }
                 } else {
-                    await MainActor.run { self.isLoading = false }
+                    VStack(spacing: 16) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 50))
+                            .foregroundColor(.orange)
+                        Text("Could not load image")
+                        Button("Close") { dismiss() }
+                    }
                 }
-            } else if ext == "epub" {
-                // EPUB handling - extract first image
-                let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                do {
-                    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                    try FileManager.default.unzipItem(at: pdf.url, to: tempDir)
-                    
-                    // Find first image
-                    if let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: nil) {
-                        while let fileURL = enumerator.nextObject() as? URL {
-                            let imageExts = ["jpg", "jpeg", "png", "gif", "webp"]
-                            if imageExts.contains(fileURL.pathExtension.lowercased()) {
-                                if let imageData = try? Data(contentsOf: fileURL),
-                                   let image = UIImage(data: imageData) {
-                                    await MainActor.run {
-                                        self.coverImage = image
-                                        self.isLoading = false
-                                    }
-                                    try? FileManager.default.removeItem(at: tempDir)
-                                    return
-                                }
-                            }
+            }
+            .navigationTitle("Extract Panels")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .onAppear {
+            loadImage()
+        }
+    }
+    
+    private func loadImage() {
+        Task {
+            // Force generate thumbnail if missing
+            if pdf.coverImageData == nil {
+                conversionManager.generateCoverThumbnail(for: pdf)
+                // Wait a bit for it to generate
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            }
+            
+            // OPTION 1: Try using existing cover image data first (fastest)
+            if let imageData = pdf.coverImageData,
+               let image = UIImage(data: imageData) {
+                await MainActor.run {
+                    self.coverImage = image
+                    self.isLoading = false
+                }
+                return
+            }
+            
+            // OPTION 2: Try loading from ConversionManager cache
+            if let cachedImage = conversionManager.getThumbnail(for: pdf) {
+                await MainActor.run {
+                    self.coverImage = cachedImage
+                    self.isLoading = false
+                }
+                return
+            }
+            
+            // OPTION 3: Generate new thumbnail (last resort)
+            await generateThumbnail()
+        }
+    }
+    
+    private func generateThumbnail() async {
+        // This runs on background thread
+        let url = pdf.url
+        let ext = url.pathExtension.lowercased()
+        
+        // Start security access
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        
+        var resultImage: UIImage? = nil
+        
+        if ext == "pdf" {
+            // PDF extraction
+            if let doc = PDFDocument(url: url),
+               let page = doc.page(at: 0) {
+                let pageRect = page.bounds(for: .mediaBox)
+                let targetSize = CGSize(width: 1200, height: 1800) // High res for panel detection
+                let scale = min(targetSize.width / pageRect.width, targetSize.height / pageRect.height)
+                let scaledSize = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
+                
+                let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                resultImage = renderer.image { ctx in
+                    UIColor.white.set()
+                    ctx.fill(CGRect(origin: .zero, size: scaledSize))
+                    ctx.cgContext.translateBy(x: 0, y: scaledSize.height)
+                    ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
+                    ctx.cgContext.scaleBy(x: scale, y: scale)
+                    page.draw(with: .mediaBox, to: ctx.cgContext)
+                }
+            }
+        } else if ext == "epub" {
+            // EPUB extraction
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            
+            do {
+                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                try FileManager.default.unzipItem(at: url, to: tempDir)
+                
+                // Find OEBPS/images or any images directory
+                let searchPaths = [
+                    tempDir.appendingPathComponent("OEBPS/images"),
+                    tempDir.appendingPathComponent("OPS/images"),
+                    tempDir.appendingPathComponent("images"),
+                    tempDir
+                ]
+                
+                let imageExts = ["jpg", "jpeg", "png", "gif", "webp"]
+                
+                for searchPath in searchPaths {
+                    if let files = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) {
+                        let imageFiles = files
+                            .filter { imageExts.contains($0.pathExtension.lowercased()) }
+                            .filter { !$0.lastPathComponent.hasPrefix("._") }
+                            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+                        
+                        if let firstImage = imageFiles.first,
+                           let data = try? Data(contentsOf: firstImage),
+                           let image = UIImage(data: data) {
+                            resultImage = image
+                            break
                         }
                     }
-                    try? FileManager.default.removeItem(at: tempDir)
-                    await MainActor.run { self.isLoading = false }
-                } catch {
-                    try? FileManager.default.removeItem(at: tempDir)
-                    await MainActor.run { self.isLoading = false }
                 }
-            } else {
-                await MainActor.run { self.isLoading = false }
+                
+                try? FileManager.default.removeItem(at: tempDir)
+            } catch {
+                try? FileManager.default.removeItem(at: tempDir)
             }
+        }
+        
+        await MainActor.run {
+            self.coverImage = resultImage
+            self.isLoading = false
         }
     }
 }
