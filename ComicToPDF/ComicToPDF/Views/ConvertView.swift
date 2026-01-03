@@ -1,3 +1,5 @@
+
+
 // ============================================================================
 // COMPLETE CONVERTVIEW - FULLY RESTORED WITH ENHANCEMENTS
 // ============================================================================
@@ -579,8 +581,7 @@ struct ConvertView: View {
             Picker("Format", selection: $settings.outputFormat) {
                 ForEach(OutputFormat.allCases) { format in
                     HStack {
-                        Image(systemName: format == .pdf ? "doc.fill" : 
-                                           format == .epub ? "book.fill" : "doc.on.doc")
+                        Image(systemName: format.icon)
                         Text(format.rawValue)
                     }
                     .tag(format)
