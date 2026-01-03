@@ -189,7 +189,7 @@ struct CBZToEPUBConverter {
         let filename = url.deletingPathExtension().lastPathComponent
         
         var author: String?
-        var series: String?
+        let series: String? // ✅ Fixed: Changed var to let
         var volume: String?
         
         if filename.contains(" - ") {
@@ -445,7 +445,7 @@ struct CBZToEPUBConverter {
         // COVER PAGE LOGIC
         // -------------------------------------------------------------------------
         
-        if let firstGroup = pageGroups.first {
+        if !pageGroups.isEmpty { // ✅ Fixed: Safely check for content
              let coverPageNum = "0001"
              let coverImageName = "page\(coverPageNum).jpg"
              
@@ -482,9 +482,8 @@ struct CBZToEPUBConverter {
                 do {
                     let pageNum = String(format: "%04d", index + 1)
                     
-                    let imageData: Data
-                    let width: Int
-                    let height: Int
+                    let imageData: Data // ✅ Fixed: Removed unused width/height
+                    
                     
                     if group.isSingleImage {
                         let image = group.images[0]
