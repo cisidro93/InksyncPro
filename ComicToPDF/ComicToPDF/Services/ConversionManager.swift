@@ -818,7 +818,7 @@ class ConversionManager: ObservableObject {
                              // Since we are modifying the file, we should probably preserve settings if possible, or use current global settings.
                              // Using current conversionSettings is safest default.
                              
-                             let generator = EPUBGenerator(settings: self.conversionSettings.epubSettings, metadata: PDFMetadata(), compressionQuality: 1.0)
+                             let generator = await EPUBGenerator(settings: self.conversionSettings.epubSettings, metadata: PDFMetadata(), compressionQuality: 1.0)
                              // Use metadata from existing file if possible? Ideally yes. But reading it is hard.
                              // We can fetch from convertedPDFs array via URL matching?
                              
@@ -1205,8 +1205,11 @@ class ConversionManager: ObservableObject {
     }
     
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> [URL] {
+        let extractionDir = self.outputDirectory.appendingPathComponent("Extracted", isDirectory: true)
+        try? FileManager.default.createDirectory(at: extractionDir, withIntermediateDirectories: true)
+        
         return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task.detached(priority: .userInitiated) {
                 if pdf.url.pathExtension.lowercased() == "epub" {
                      // EPUB Extraction
                      do {
@@ -1244,30 +1247,45 @@ class ConversionManager: ObservableObject {
                     continuation.resume(throwing: NSError(domain: "Extract", code: 1, userInfo: [:]))
                     return
                 }
-                let extractionDir = self.outputDirectory.appendingPathComponent("Extracted", isDirectory: true)
-                try? FileManager.default.createDirectory(at: extractionDir, withIntermediateDirectories: true)
                 
                 var outputURLs: [URL] = []
                 for pageIndex in pageIndices {
-                    guard let page = document.page(at: pageIndex) else { continue }
-                    if asImages {
-                        let image = page.thumbnail(of: CGSize(width: 1200, height: 1600), for: .mediaBox)
-                        if let data = image.jpegData(compressionQuality: 0.9) {
-                            let url = extractionDir.appendingPathComponent("\(pdf.name)_page\(pageIndex + 1).jpg")
-                            try? data.write(to: url)
-                            outputURLs.append(url)
+                    if let page = document.page(at: pageIndex) {
+                        if asImages {
+                            // Convert page to image
+                             // Note: PDFPage.thumbnail might be low res. 
+                             // Better to use draw(with: .mediaBox)
+                             let pageRect = page.bounds(for: .mediaBox)
+                             let renderer = UIGraphicsImageRenderer(size: pageRect.size)
+                             let img = renderer.image { ctx in
+                                 UIColor.white.set()
+                                 ctx.fill(pageRect)
+                                 ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
+                                 ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
+                                 page.draw(with: .mediaBox, to: ctx.cgContext)
+                             }
+                             
+                             let url = extractionDir.appendingPathComponent("\(pdf.name)_page\(pageIndex + 1).jpg")
+                             if let data = img.jpegData(compressionQuality: 0.8) {
+                                 try? data.write(to: url)
+                                 outputURLs.append(url)
+                             }
+                        } else {
+                            // Single Page PDF
+                            let singlePageDoc = PDFDocument()
+                            singlePageDoc.insert(page, at: 0)
+                            let url = extractionDir.appendingPathComponent("\(pdf.name)_page\(pageIndex + 1).pdf")
+                            if singlePageDoc.write(to: url) {
+                                outputURLs.append(url)
+                            }
                         }
-                    } else {
-                        let singlePageDoc = PDFDocument()
-                        singlePageDoc.insert(page, at: 0)
-                        let url = extractionDir.appendingPathComponent("\(pdf.name)_page\(pageIndex + 1).pdf")
-                        if singlePageDoc.write(to: url) { outputURLs.append(url) }
                     }
                 }
                 continuation.resume(returning: outputURLs)
             }
         }
     }
+
     
     func savePreset(_ preset: ConversionPreset) {
         if let index = conversionPresets.firstIndex(where: { $0.id == preset.id }) {

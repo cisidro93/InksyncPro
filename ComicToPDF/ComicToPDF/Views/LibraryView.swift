@@ -17,8 +17,6 @@ struct LibraryView: View {
     @State private var showingShareSheet = false
     @State private var showingDevicePicker = false
     @State private var showingDeleteAlert = false
-    @State private var showingDeleteAlert = false
-    // @State private var previewURL: URL? // Removed in favor of ReaderView
     
     // Batch Actions
     @State private var showingBatchMail = false
@@ -28,10 +26,7 @@ struct LibraryView: View {
     
     @State private var readingPDF: ConvertedPDF?
     
-    var filteredPDFs: [ConvertedPDF] {
     @State private var showingBatchMerge = false
-    
-    var filteredPDFs: [ConvertedPDF] {
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs

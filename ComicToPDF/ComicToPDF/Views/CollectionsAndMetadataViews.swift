@@ -162,42 +162,7 @@ struct CreateEditCollectionView: View {
 // MARK: - METADATA EDITOR VIEW
 // ============================================================================
 
-struct MetadataEditorView: View {
-    @EnvironmentObject var conversionManager: ConversionManager
-    @Environment(\.dismiss) private var dismiss
-    let pdf: ConvertedPDF
-    @State private var title: String = ""
-    @State private var author: String = ""
-    @State private var series: String = ""
-    @State private var volume: String = ""
-    @State private var genre: String = ""
-    @State private var notes: String = ""
-    @State private var tagInput: String = ""
-    @State private var tags: [String] = []
-    let genres = ["Action", "Adventure", "Comedy", "Drama", "Fantasy", "Horror", "Mystery", "Romance", "Sci-Fi", "Slice of Life", "Sports", "Superhero", "Thriller", "Other"]
-    
-    var body: some View {
-        NavigationView {
-            Form {
-                Section { TextField("Title", text: $title); TextField("Author/Artist", text: $author) } header: { Text("Basic Info") }
-                Section { TextField("Series Name", text: $series); TextField("Volume/Issue", text: $volume) } header: { Text("Series Info") }
-                Section { Picker("Genre", selection: $genre) { Text("Select Genre").tag(""); ForEach(genres, id: \.self) { g in Text(g).tag(g) } } } header: { Text("Category") }
-                Section {
-                    HStack { TextField("Add tag", text: $tagInput); Button(action: addTag) { Image(systemName: "plus.circle.fill").foregroundColor(.green) }.disabled(tagInput.isEmpty) }
-                    if !tags.isEmpty { FlowLayout(spacing: 8) { ForEach(tags, id: \.self) { tag in TagView(tag: tag) { tags.removeAll { $0 == tag } } } } }
-                } header: { Text("Tags") }
-                Section { TextEditor(text: $notes).frame(minHeight: 100) } header: { Text("Notes") }
-                Section { HStack { Text("File Size"); Spacer(); Text(pdf.formattedSize).foregroundColor(.secondary) }; HStack { Text("Pages"); Spacer(); Text("\(pdf.pageCount)").foregroundColor(.secondary) }; HStack { Text("Added"); Spacer(); Text(pdf.dateAdded.formatted()).foregroundColor(.secondary) } } header: { Text("File Info") }
-            }
-            .navigationTitle("Edit Metadata").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .navigationBarTrailing) { Button("Save") { save() }.fontWeight(.semibold) } }
-            .onAppear { title = pdf.metadata.title.isEmpty ? pdf.name : pdf.metadata.title; author = pdf.metadata.author; series = pdf.metadata.series; volume = pdf.metadata.volume; genre = pdf.metadata.genre; notes = pdf.metadata.notes; tags = pdf.metadata.tags }
-        }
-    }
-    
-    private func addTag() { let newTag = tagInput.trimmingCharacters(in: .whitespaces); if !newTag.isEmpty && !tags.contains(newTag) { tags.append(newTag); tagInput = "" } }
-    private func save() { let metadata = PDFMetadata(title: title, author: author, series: series, volume: volume, genre: genre, tags: tags, notes: notes); conversionManager.updatePDFMetadata(pdf, metadata: metadata); dismiss() }
-}
+// MetadataEditorView removed (consolidated in ReaderView.swift)
 
 struct TagView: View {
     let tag: String
