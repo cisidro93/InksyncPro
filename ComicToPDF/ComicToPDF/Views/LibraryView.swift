@@ -7,6 +7,7 @@ import SwiftUI
 struct LibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Binding var selectedTab: Int // ✅ ADDED BINDING
+    @State private var isGridView = true // ✅ Step 3 Checkpoint
     @State private var isSelectionMode = false
     @State private var selectedPDFs: Set<UUID> = []
     @State private var selectedPDF: ConvertedPDF?
@@ -58,7 +59,12 @@ struct LibraryView: View {
                         }
                         
                         if isSelectionMode { batchActionBar }
-                        pdfList
+                        
+                        if isGridView {
+                            pdfGrid
+                        } else {
+                            pdfList
+                        }
                     }
                 }
             }
@@ -71,6 +77,11 @@ struct LibraryView: View {
                             HapticManager.shared.impact(.light)
                             withAnimation { isSelectionMode.toggle(); if !isSelectionMode { selectedPDFs.removeAll() } } 
                         }
+                    }
+                    
+                    Button(action: { isGridView.toggle() }) {
+                        Image(systemName: isGridView ? "list.bullet" : "square.grid.2x2")
+                    }
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -189,6 +200,42 @@ struct LibraryView: View {
         }
     }
     
+    private var pdfGrid: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 16) {
+                ForEach(conversionManager.filteredPDFs) { pdf in
+                    VStack {
+                        if isSelectionMode {
+                            ZStack(alignment: .topTrailing) {
+                                LibraryGridItem(pdf: pdf)
+                                    .opacity(selectedPDFs.contains(pdf.id) ? 0.7 : 1.0)
+                                
+                                Button(action: { toggleSelection(pdf) }) {
+                                    Image(systemName: selectedPDFs.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                                        .font(.title2)
+                                        .foregroundColor(selectedPDFs.contains(pdf.id) ? .orange : .gray)
+                                        .background(Circle().fill(Color.white))
+                                }
+                                .padding(8)
+                            }
+                        } else {
+                            Button(action: { selectedPDF = pdf; showingActionSheet = true }) {
+                                LibraryGridItem(pdf: pdf)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .contextMenu {
+                                Button { selectedPDF = pdf; showingDevicePicker = true } label: { Label("Kindle", systemImage: "paperplane") }
+                                Button { selectedPDF = pdf; showingShareSheet = true } label: { Label("Share", systemImage: "square.and.arrow.up") }
+                                Button(role: .destructive) { selectedPDF = pdf; showingDeleteAlert = true } label: { Label("Delete", systemImage: "trash") }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+
     private var pdfList: some View {
         List {
             ForEach(conversionManager.filteredPDFs) { pdf in

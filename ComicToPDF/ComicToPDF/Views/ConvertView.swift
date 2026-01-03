@@ -49,11 +49,7 @@ struct ConvertView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color.orange.opacity(0.1)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ).ignoresSafeArea()
+                AppTheme.mainGradient.ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 20) {
@@ -93,21 +89,13 @@ struct ConvertView: View {
                             if !selectedFiles.isEmpty {
                                 Button(action: startConversion) {
                                     HStack {
-                                        if isConverting {
-                                            ProgressView()
-                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        } else {
+                                        if !isConverting {
                                             Image(systemName: "arrow.right.circle.fill")
                                         }
                                         Text(isConverting ? "Converting..." : "Convert Now")
-                                            .fontWeight(.bold)
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(isConverting ? Color.gray : Color.orange)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(12)
                                 }
+                                .buttonStyle(PrimaryButtonStyle(isLoading: isConverting))
                                 .disabled(isConverting)
                             }
                             
@@ -454,6 +442,7 @@ struct ConvertView: View {
                     )
                     .foregroundColor(.orange.opacity(0.5))
             )
+            .cardStyle() // ✅ Apply Card Style
         }
     }
     
