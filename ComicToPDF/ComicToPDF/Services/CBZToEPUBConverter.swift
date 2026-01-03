@@ -14,7 +14,6 @@
 import Foundation
 import UIKit
 import ZIPFoundation
-import CoreGraphics
 
 // ============================================================================
 // PART 1: CBZ TO EPUB CONVERTER
@@ -92,19 +91,19 @@ struct CBZToEPUBConverter {
     // MARK: - Main Conversion Pipeline
     
     private func performConversion(cbzURL: URL, compressionQuality: Double) throws -> URL {
+        let startTime = Date()
+        
         print("\n" + String(repeating: "=", count: 70))
-        print("📚 CBZ TO EPUB CONVERTER - PRODUCTION VERSION")
+        print("🎨 CBZ → EPUB CONVERSION")
         print(String(repeating: "=", count: 70))
-        print("Input: \(cbzURL.lastPathComponent)")
         
-        let inputSize = (try? FileManager.default.attributesOfItem(atPath: cbzURL.path)[.size] as? Int64) ?? 0
-        let inputSizeMB = inputSize / 1_000_000
-        print("Input size: \(inputSizeMB) MB")
-        print("Quality: \(Int(compressionQuality * 100))%")
-        
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
+        
+        defer {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
         
         let metadata = extractMetadata(from: cbzURL)
         print("Title: \(metadata.title)")
@@ -148,6 +147,7 @@ struct CBZToEPUBConverter {
             pageGroups = groupImagesWithStripDetection(allImages)
             print("   ✓ Grouped into \(pageGroups.count) pages")
         } else {
+            print("   ✓ Standard layout - no stitching needed")
             pageGroups = allImages.map { PageGroup(images: [$0]) }
         }
         
@@ -173,14 +173,11 @@ struct CBZToEPUBConverter {
         print("\n" + String(repeating: "=", count: 70))
         print("✅ CONVERSION COMPLETE")
         print(String(repeating: "=", count: 70))
-        print("Output: \(finalFilename)")
-        print("Size: \(sizeMB) MB")
-        print("Pages: \(pageGroups.count)")
-        
-        if sizeMB > 190 {
-            print("⚠️  File is \(sizeMB)MB - exceeds 190MB limit")
-            print("⚠️  Will be automatically split by ConversionManager")
-        }
+        print("📄 Output: \(finalFilename)")
+        print("📦 Size: \(sizeMB)MB")
+        print("📖 Pages: \(pageGroups.count)")
+        print("⏱️  Time: \(String(format: "%.1f", Date().timeIntervalSince(startTime)))s")
+        print(String(repeating: "=", count: 70) + "\n")
         
         return finalURL
     }
@@ -222,167 +219,150 @@ struct CBZToEPUBConverter {
     }
     
     private func sanitizeFilename(_ filename: String) -> String {
-        let invalid = CharacterSet(charactersIn: ":/\\?%*|\"<>")
-        return filename.components(separatedBy: invalid).joined(separator: "_")
+        let invalidChars = CharacterSet(charactersIn: ":/\\?%*|\"<>")
+        return filename.components(separatedBy: invalidChars).joined(separator: "_")
     }
     
     // MARK: - Image Scanning
     
     private func scanImages(in directory: URL) throws -> [ImageInfo] {
+        let fileManager = FileManager.default
         var images: [ImageInfo] = []
-        let supportedExtensions = ["jpg", "jpeg", "png", "gif", "webp", "bmp"]
         
-        guard let enumerator = FileManager.default.enumerator(
+        let enumerator = fileManager.enumerator(
             at: directory,
-            includingPropertiesForKeys: nil
-        ) else {
-            return images
-        }
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )
         
-        for case let fileURL as URL in enumerator {
+        let validExtensions = ["jpg", "jpeg", "png", "gif", "webp"]
+        
+        while let fileURL = enumerator?.nextObject() as? URL {
             let ext = fileURL.pathExtension.lowercased()
+            guard validExtensions.contains(ext) else { continue }
             
-            if fileURL.lastPathComponent.hasPrefix(".") ||
-               fileURL.lastPathComponent.hasPrefix("__") ||
-               fileURL.path.contains("__MACOSX") {
-                continue
+            if let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+               let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [String: Any],
+               let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
+               let height = properties[kCGImagePropertyPixelHeight as String] as? Int {
+                
+                images.append(ImageInfo(
+                    fileURL: fileURL,
+                    filename: fileURL.lastPathComponent,
+                    width: width,
+                    height: height
+                ))
             }
-            
-            guard supportedExtensions.contains(ext) else { continue }
-            
-            guard let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
-                  let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [String: Any],
-                  let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
-                  let height = properties[kCGImagePropertyPixelHeight as String] as? Int else {
-                continue
-            }
-            
-            images.append(ImageInfo(
-                fileURL: fileURL,
-                filename: fileURL.lastPathComponent,
-                width: width,
-                height: height
-            ))
         }
         
-        images.sort {
-            $0.filename.localizedStandardCompare($1.filename) == .orderedAscending
-        }
-        
-        return images
+        return images.sorted { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
     }
     
-    // MARK: - Strip Detection and Grouping
+    // MARK: - Strip Detection & Grouping
     
     private func groupImagesWithStripDetection(_ images: [ImageInfo]) -> [PageGroup] {
         var groups: [PageGroup] = []
-        var currentStripBatch: [ImageInfo] = []
+        var currentStripGroup: [ImageInfo] = []
         
-        for img in images {
-            if img.isHorizontalStrip {
-                currentStripBatch.append(img)
+        for image in images {
+            if image.isHorizontalStrip {
+                currentStripGroup.append(image)
             } else {
-                if !currentStripBatch.isEmpty {
-                    groups.append(PageGroup(images: currentStripBatch))
-                    currentStripBatch = []
+                if !currentStripGroup.isEmpty {
+                    groups.append(PageGroup(images: currentStripGroup))
+                    currentStripGroup = []
                 }
-                groups.append(PageGroup(images: [img]))
+                groups.append(PageGroup(images: [image]))
             }
         }
         
-        if !currentStripBatch.isEmpty {
-            groups.append(PageGroup(images: currentStripBatch))
+        if !currentStripGroup.isEmpty {
+            groups.append(PageGroup(images: currentStripGroup))
         }
         
         return groups
     }
     
-    // MARK: - Image Stitching
-    
-    private func stitchImages(_ images: [ImageInfo]) -> UIImage? {
-        guard !images.isEmpty else { return nil }
-        
-        if images.count == 1 {
-            return UIImage(contentsOfFile: images[0].fileURL.path)
-        }
-        
-        var loaded: [UIImage] = []
-        for info in images {
-            guard let img = UIImage(contentsOfFile: info.fileURL.path) else {
-                continue
-            }
-            loaded.append(img)
-        }
-        
-        guard !loaded.isEmpty else { return nil }
-        
-        let width = loaded[0].size.width
-        let totalHeight = loaded.reduce(0) { $0 + $1.size.height }
-        let scale = loaded[0].scale
-        
-        UIGraphicsBeginImageContextWithOptions(
-            CGSize(width: width, height: totalHeight),
-            false,
-            scale
-        )
-        defer { UIGraphicsEndImageContext() }
-        
-        var yOffset: CGFloat = 0
-        for img in loaded {
-            img.draw(at: CGPoint(x: 0, y: yOffset))
-            yOffset += img.size.height
-        }
-        
-        return UIGraphicsGetImageFromCurrentImageContext()
-    }
-    
     // MARK: - Image Processing
     
-    private func processImage(_ group: PageGroup, targetResolution: CGSize) -> UIImage? {
-        let sourceImage: UIImage?
-        if group.isSingleImage {
-            sourceImage = UIImage(contentsOfFile: group.images[0].fileURL.path)
-        } else {
-            sourceImage = stitchImages(group.images)
+    private func stitchImages(_ images: [ImageInfo], compressionQuality: Double) throws -> Data {
+        guard !images.isEmpty else {
+            throw NSError(domain: "ImageStitcher", code: 400,
+                         userInfo: [NSLocalizedDescriptionKey: "No images to stitch"])
         }
         
-        guard let image = sourceImage, let cgImage = image.cgImage else {
-            return nil
+        let targetWidth = images.map { $0.width }.max() ?? 1200
+        let totalHeight = images.reduce(0) { $0 + $1.height }
+        
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: targetWidth,
+            height: totalHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: targetWidth * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw NSError(domain: "ImageStitcher", code: 500,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to create context"])
         }
         
-        let sourceWidth = CGFloat(cgImage.width)
-        let sourceHeight = CGFloat(cgImage.height)
-        
-        var finalWidth = sourceWidth
-        var finalHeight = sourceHeight
-        
-        if sourceWidth > targetResolution.width || sourceHeight > targetResolution.height {
-            let scale = min(
-                targetResolution.width / sourceWidth,
-                targetResolution.height / sourceHeight,
-                1.0
-            )
-            finalWidth = (sourceWidth * scale).rounded()
-            finalHeight = (sourceHeight * scale).rounded()
+        var yOffset = 0
+        for imageInfo in images {
+            guard let imageSource = CGImageSourceCreateWithURL(imageInfo.fileURL as CFURL, nil),
+                  let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+                continue
+            }
+            
+            let rect = CGRect(x: 0, y: yOffset, width: imageInfo.width, height: imageInfo.height)
+            context.draw(cgImage, in: rect)
+            yOffset += imageInfo.height
         }
         
-        if finalWidth == sourceWidth && finalHeight == sourceHeight {
-            return image
+        guard let outputImage = context.makeImage() else {
+            throw NSError(domain: "ImageStitcher", code: 500,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to create output image"])
         }
         
-        let renderer = UIGraphicsImageRenderer(
-            size: CGSize(width: finalWidth, height: finalHeight)
-        )
-        
-        return renderer.image { _ in
-            image.draw(in: CGRect(
-                origin: .zero,
-                size: CGSize(width: finalWidth, height: finalHeight)
-            ))
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, kUTTypeJPEG, 1, nil) else {
+            throw NSError(domain: "ImageStitcher", code: 500,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to create image destination"])
         }
+        
+        let options: [String: Any] = [
+            kCGImageDestinationLossyCompressionQuality as String: compressionQuality
+        ]
+        CGImageDestinationAddImage(destination, outputImage, options as CFDictionary)
+        CGImageDestinationFinalize(destination)
+        
+        return data as Data
     }
     
-    // MARK: - EPUB Generation
+    private func processImage(_ imageURL: URL, compressionQuality: Double) throws -> Data {
+        guard let imageSource = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+            throw NSError(domain: "ImageProcessor", code: 400,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to load image"])
+        }
+        
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, kUTTypeJPEG, 1, nil) else {
+            throw NSError(domain: "ImageProcessor", code: 500,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to create destination"])
+        }
+        
+        let options: [String: Any] = [
+            kCGImageDestinationLossyCompressionQuality as String: compressionQuality
+        ]
+        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+        CGImageDestinationFinalize(destination)
+        
+        return data as Data
+    }
+    
+    // MARK: - EPUB Building
     
     private func buildEPUB(
         pageGroups: [PageGroup],
@@ -390,33 +370,21 @@ struct CBZToEPUBConverter {
         outputDir: URL,
         compressionQuality: Double
     ) throws -> URL {
-        
-        let targetResolution: CGSize
-        if compressionQuality >= 0.9 {
-            targetResolution = DeviceProfile.highRes.resolution
-        } else if compressionQuality >= 0.8 {
-            targetResolution = CGSize(width: 1600, height: 2400)
-        } else {
-            targetResolution = DeviceProfile.standard.resolution
-        }
-        
-        print("   Target resolution: \(Int(targetResolution.width))×\(Int(targetResolution.height))")
-        
-        // CRITICAL: Use lowercase directories for splitting compatibility
-        let epubDir = outputDir.appendingPathComponent("epub_build")
+        let epubDir = outputDir.appendingPathComponent("epub")
         let metaInfDir = epubDir.appendingPathComponent("META-INF")
         let oebpsDir = epubDir.appendingPathComponent("OEBPS")
         let imagesDir = oebpsDir.appendingPathComponent("images")
         let textDir = oebpsDir.appendingPathComponent("text")
         
-        try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: textDir, withIntermediateDirectories: true)
+        for dir in [epubDir, metaInfDir, oebpsDir, imagesDir, textDir] {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
         
-        try "application/epub+zip".write(
+        let mimetypeContent = "application/epub+zip"
+        try mimetypeContent.write(
             to: epubDir.appendingPathComponent("mimetype"),
             atomically: true,
-            encoding: .utf8
+            encoding: .ascii
         )
         
         let containerXML = """
@@ -436,11 +404,10 @@ struct CBZToEPUBConverter {
         let cssContent = """
         @charset "UTF-8";
         * { margin: 0; padding: 0; border: 0; }
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; }
-        body { display: flex; align-items: center; justify-content: center; background-color: #000; text-align: center; }
-        .page { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-        img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }
-        @media amzn-kf8 { img { max-width: 100%; max-height: 100%; } }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background-color: #000; }
+        body { display: block; text-align: center; }
+        svg { width: 100%; height: 100%; display: block; }
+        @media amzn-kf8 { svg { width: 100vw; height: 100vh; } }
         """
         try cssContent.write(
             to: oebpsDir.appendingPathComponent("styles.css"),
@@ -451,36 +418,36 @@ struct CBZToEPUBConverter {
         var imageManifest = ""
         var xhtmlManifest = ""
         var spineItems = ""
-        
-        let totalPages = pageGroups.count
         var processedCount = 0
+        
+        print("   Processing pages...")
         
         for (index, group) in pageGroups.enumerated() {
             autoreleasepool {
-                let pageNum = String(format: "%04d", index + 1)
-                let imageName = "page\(pageNum).jpg"
-                let imageDestURL = imagesDir.appendingPathComponent(imageName)
-                
                 do {
-                    guard let processedImage = processImage(group, targetResolution: targetResolution),
-                          let cgImage = processedImage.cgImage else {
-                        print("   ⚠️  Skipped page \(index + 1)")
-                        return
+                    let pageNum = String(format: "%04d", index + 1)
+                    
+                    let imageData: Data
+                    let width: Int
+                    let height: Int
+                    
+                    if group.isSingleImage {
+                        let image = group.images[0]
+                        imageData = try processImage(image.fileURL, compressionQuality: compressionQuality)
+                        width = image.width
+                        height = image.height
+                    } else {
+                        imageData = try stitchImages(group.images, compressionQuality: compressionQuality)
+                        width = group.images.map { $0.width }.max() ?? 1200
+                        height = group.images.reduce(0) { $0 + $1.height }
                     }
                     
-                    guard let jpegData = processedImage.jpegData(compressionQuality: compressionQuality) else {
-                        print("   ⚠️  Failed to encode page \(index + 1)")
-                        return
-                    }
+                    let imageName = "page\(pageNum).jpg"
+                    try imageData.write(to: imagesDir.appendingPathComponent(imageName))
                     
-                    try jpegData.write(to: imageDestURL)
-                    
-                    let width = cgImage.width
-                    let height = cgImage.height
                     processedCount += 1
-                    
-                    if totalPages > 100 && processedCount % 50 == 0 {
-                        print("   Progress: \(processedCount)/\(totalPages) pages (\(Int((Double(processedCount)/Double(totalPages)) * 100))%)")
+                    if processedCount % 10 == 0 || processedCount == pageGroups.count {
+                        print("   Progress: \(processedCount)/\(pageGroups.count)")
                     }
                     
                     imageManifest += "    <item id=\"img_\(pageNum)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
@@ -492,13 +459,16 @@ struct CBZToEPUBConverter {
                     <head>
                         <meta charset="utf-8"/>
                         <title>Page \(index + 1)</title>
-                        <meta name="viewport" content="width=\(width), height=\(height)"/>
+                        <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/>
                         <link rel="stylesheet" type="text/css" href="../styles.css"/>
                     </head>
                     <body>
-                        <div class="page">
-                            <img src="../images/\(imageName)" alt="Page \(index + 1)"/>
-                        </div>
+                        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+                             version="1.1" width="100%" height="100%" 
+                             viewBox="0 0 \(width) \(height)" 
+                             preserveAspectRatio="xMidYMid meet">
+                            <image width="\(width)" height="\(height)" xlink:href="../images/\(imageName)"/>
+                        </svg>
                     </body>
                     </html>
                     """
@@ -539,9 +509,11 @@ struct CBZToEPUBConverter {
             </metadata>
             <manifest>
                 <item id="css" href="styles.css" media-type="text/css"/>
-                \(imageManifest)\(xhtmlManifest)    </manifest>
+                \(imageManifest)\(xhtmlManifest)
+            </manifest>
             <spine>
-                \(spineItems)    </spine>
+                \(spineItems)
+            </spine>
         </package>
         """
         try opfContent.write(
