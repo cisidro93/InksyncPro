@@ -29,12 +29,45 @@ struct PageReorderView: View {
     }
     
     private func loadPages() {
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let document = PDFDocument(url: pdf.url) else { return }
-            var loadedPages: [PageItem] = []
-            let thumbnailSize = CGSize(width: 100, height: 140)
-            for i in 0..<document.pageCount { if let page = document.page(at: i) { let thumbnail = page.thumbnail(of: thumbnailSize, for: .mediaBox); loadedPages.append(PageItem(originalIndex: i, currentIndex: i, thumbnail: thumbnail)) } }
-            DispatchQueue.main.async { pages = loadedPages; isLoading = false }
+        Task {
+            if pdf.url.pathExtension.lowercased() == "epub" {
+                do {
+                    let urls = try await conversionManager.extractImageURLs(from: pdf.url)
+                    var loadedPages: [PageItem] = []
+                    // Resize for thumbnail optimization usually done by UIImage instantiation?
+                    // We'll just load them. For 100 pages it might be heavy memory-wise if we load full images.
+                    // But for "thumbnailSize", we should downscale.
+                    
+                    for (i, url) in urls.enumerated() {
+                        if let image = UIImage(contentsOfFile: url.path) {
+                             // Downscale
+                             let targetSize = CGSize(width: 100, height: 140)
+                             let renderer = UIGraphicsImageRenderer(size: targetSize)
+                             let thumbnail = renderer.image { _ in
+                                 image.draw(in: CGRect(origin: .zero, size: targetSize))
+                             }
+                             loadedPages.append(PageItem(originalIndex: i, currentIndex: i, thumbnail: thumbnail))
+                        }
+                    }
+                    await MainActor.run { pages = loadedPages; isLoading = false }
+                } catch {
+                    print("Failed to load EPUB pages: \(error)")
+                    await MainActor.run { isLoading = false }
+                }
+            } else {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    guard let document = PDFDocument(url: pdf.url) else { return }
+                    var loadedPages: [PageItem] = []
+                    let thumbnailSize = CGSize(width: 100, height: 140)
+                    for i in 0..<document.pageCount {
+                         if let page = document.page(at: i) {
+                             let thumbnail = page.thumbnail(of: thumbnailSize, for: .mediaBox)
+                             loadedPages.append(PageItem(originalIndex: i, currentIndex: i, thumbnail: thumbnail))
+                         }
+                    }
+                    DispatchQueue.main.async { pages = loadedPages; isLoading = false }
+                }
+            }
         }
     }
     

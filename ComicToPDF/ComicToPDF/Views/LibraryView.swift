@@ -17,12 +17,21 @@ struct LibraryView: View {
     @State private var showingShareSheet = false
     @State private var showingDevicePicker = false
     @State private var showingDeleteAlert = false
-    @State private var previewURL: URL?
+    @State private var showingDeleteAlert = false
+    // @State private var previewURL: URL? // Removed in favor of ReaderView
     
     // Batch Actions
     @State private var showingBatchMail = false
     @State private var showingBatchShare = false
     @State private var showingBatchDelete = false
+    @State private var showingBatchMerge = false
+    
+    @State private var readingPDF: ConvertedPDF?
+    
+    var filteredPDFs: [ConvertedPDF] {
+    @State private var showingBatchMerge = false
+    
+    var filteredPDFs: [ConvertedPDF] {
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
@@ -69,22 +78,33 @@ struct LibraryView: View {
                 .background(AppTheme.surface)
             }
             
-            ScrollView {
-                if isGridView {
+            if isGridView {
+                ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 16)], spacing: 16) {
                         ForEach(filteredPDFs) { pdf in
                             gridItem(for: pdf)
                         }
                     }
                     .padding()
-                } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(filteredPDFs) { pdf in
-                            listItem(for: pdf)
-                        }
-                    }
-                    .padding()
                 }
+            } else {
+                List {
+                    ForEach(filteredPDFs) { pdf in
+                        listItem(for: pdf)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    selectedPDF = pdf
+                                    showingDeleteAlert = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
             
             // Bottom Action Bar (Batch)
@@ -92,6 +112,7 @@ struct LibraryView: View {
                 HStack(spacing: 20) {
                     batchButton(icon: "paperplane.fill", label: "Kindle", color: .orange) { showingBatchMail = true }
                     batchButton(icon: "square.and.arrow.up", label: "Share", color: .blue) { showingBatchShare = true }
+                    batchButton(icon: "doc.on.doc.fill", label: "Merge", color: .purple) { showingBatchMerge = true }
                     batchButton(icon: "trash.fill", label: "Delete", color: .red) { showingBatchDelete = true }
                 }
                 .padding()
@@ -137,6 +158,16 @@ struct LibraryView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             }
+            .sheet(isPresented: $showingBatchMerge) {
+                 let items = getSelectedPDFs()
+                 let ids = Set(items.map { $0.id })
+                 FileMergeView(preselectedPDFs: ids)
+                     .environmentObject(conversionManager)
+            }
+            .fullScreenCover(item: $readingPDF) { pdf in
+                ReaderView(pdf: pdf)
+                    .environmentObject(conversionManager)
+            }
             .alert("Delete \(selectedPDFs.count) Items?", isPresented: $showingBatchDelete) {
                 Button("Delete", role: .destructive) {
                     let items = getSelectedPDFs()
@@ -174,13 +205,15 @@ struct LibraryView: View {
                 if isSelectionMode {
                     toggleSelection(pdf)
                 } else {
-                    previewURL = pdf.url
+                    readingPDF = pdf
                 }
             }
             .contextMenu {
                 menuItems(for: pdf)
             }
-            .quickLookPreview($previewURL)
+            .contextMenu {
+                menuItems(for: pdf)
+            }
     }
     
     func listItem(for pdf: ConvertedPDF) -> some View {
@@ -198,7 +231,7 @@ struct LibraryView: View {
             if isSelectionMode {
                 toggleSelection(pdf)
             } else {
-                previewURL = pdf.url
+                readingPDF = pdf
             }
         }
         .contextMenu {

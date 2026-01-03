@@ -24,6 +24,12 @@ struct ConvertedPDF: Identifiable, Codable {
     var lastSentDate: Date? = nil
     var lastSentDevice: String? = nil
     
+    // Advanced Features
+    var bookmarks: [Int]? = []
+    var lastReadPage: Int? = 0
+    var readingProgress: Double? = 0.0
+    var format: OutputFormat? // Optional, inferred from URL if nil
+    
     init(name: String, url: URL, pageCount: Int, fileSize: Int64, collectionId: UUID? = nil) {
         self.id = UUID()
         self.name = name
@@ -795,6 +801,42 @@ class ConversionManager: ObservableObject {
     func reorderPages(in pdfURL: URL, newOrder: [Int]) async throws -> URL {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                if pdfURL.pathExtension.lowercased() == "epub" {
+                     // EPUB Reorder
+                     Task {
+                         do {
+                             let allImages = try await self.extractImageURLs(from: pdfURL)
+                             var reorderedImages: [URL] = []
+                             for index in newOrder {
+                                 if index < allImages.count {
+                                     reorderedImages.append(allImages[index])
+                                 }
+                             }
+                             
+                             // Regenerate
+                             // Need generic settings, or preserve?
+                             // Since we are modifying the file, we should probably preserve settings if possible, or use current global settings.
+                             // Using current conversionSettings is safest default.
+                             
+                             let generator = EPUBGenerator(settings: self.conversionSettings.epubSettings, metadata: PDFMetadata(), compressionQuality: 1.0)
+                             // Use metadata from existing file if possible? Ideally yes. But reading it is hard.
+                             // We can fetch from convertedPDFs array via URL matching?
+                             
+                             let outputName = pdfURL.deletingPathExtension().lastPathComponent
+                             let (newEPUB, _) = try await generator.generateEPUB(from: reorderedImages, outputName: outputName)
+                             
+                             // Replace
+                             try? FileManager.default.removeItem(at: pdfURL)
+                             try FileManager.default.moveItem(at: newEPUB, to: pdfURL)
+                             
+                             continuation.resume(returning: pdfURL)
+                         } catch {
+                             continuation.resume(throwing: error)
+                         }
+                     }
+                     return
+                }
+                
                 guard let document = PDFDocument(url: pdfURL) else {
                     continuation.resume(throwing: ConversionError.pdfCreationFailed)
                     return
@@ -1085,6 +1127,66 @@ class ConversionManager: ObservableObject {
         }
     }
     
+    func mergeEPUBs(_ epubs: [ConvertedPDF], outputName: String) async throws -> URL {
+        let urls = epubs.map { $0.url }
+        // Simple metadata for merged file
+        var metadata = PDFMetadata()
+        metadata.title = outputName
+        if let first = epubs.first {
+             metadata.author = first.metadata.author
+        }
+        
+        let outputURL = self.outputDirectory.appendingPathComponent("\(outputName).epub")
+        let (finalURL, pageCount) = try await EPUBMerger.mergeEPUBs(sourceURLs: urls, outputURL: outputURL, metadata: metadata, settings: conversionSettings.epubSettings)
+        
+        await MainActor.run {
+             self.addToLibrary(finalURL, explicitPageCount: pageCount)
+        }
+        return finalURL
+    }
+    
+    func mergeMixedFiles(files: [ConvertedPDF], outputName: String, targetFormat: OutputFormat) async throws -> URL {
+        // 1. Convert everything to target format
+        var readyURLs: [URL] = []
+        var tempPDFs: [ConvertedPDF] = [] 
+        
+        for file in files {
+            let ext = file.url.pathExtension.lowercased()
+            let isTarget = (targetFormat == .pdf && ext == "pdf") || (targetFormat == .epub && ext == "epub")
+            
+            if isTarget {
+                readyURLs.append(file.url)
+                tempPDFs.append(file)
+            } else {
+                // Convert
+                if targetFormat == .pdf {
+                     let pdfURL = try await convertToPDF(from: file.url, customName: "\(file.name)_temp", settings: conversionSettings) { _ in }
+                     readyURLs.append(pdfURL)
+                     tempPDFs.append(ConvertedPDF(name: file.name, url: pdfURL, pageCount: 0, fileSize: 0)) // dummy
+                } else {
+                     let (epubURLs, _) = try await convertToEPUB(from: file.url, settings: conversionSettings) { _ in }
+                     if let first = epubURLs.first {
+                         readyURLs.append(first)
+                         tempPDFs.append(ConvertedPDF(name: file.name, url: first, pageCount: 0, fileSize: 0))
+                     }
+                }
+            }
+        }
+        
+        // 2. Merge
+        if targetFormat == .pdf {
+            // Re-wrap URLs into ConvertedPDFs for mergePDFs or just direct?
+            // mergePDFs takes [ConvertedPDF].
+            // We can just create dummy objects or refactor mergePDFs. 
+            // Creating dummy objects is easier.
+            return try await mergePDFs(tempPDFs, outputName: outputName)
+        } else {
+            // mergeEPUBs takes [ConvertedPDF].
+            let dummyEPUBs = readyURLs.map { ConvertedPDF(name: "temp", url: $0, pageCount: 0, fileSize: 0) }
+            return try await mergeEPUBs(dummyEPUBs, outputName: outputName)
+        }
+    }
+    
     func findDuplicates() async -> [DuplicateGroup] {
         let pdfs = await MainActor.run { convertedPDFs }
         return await withCheckedContinuation { continuation in
@@ -1105,6 +1207,39 @@ class ConversionManager: ObservableObject {
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> [URL] {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                if pdf.url.pathExtension.lowercased() == "epub" {
+                     // EPUB Extraction
+                     do {
+                         let allImages = try await self.extractImageURLs(from: pdf.url)
+                         var outputURLs: [URL] = []
+                         
+                         for pageIndex in pageIndices {
+                             guard pageIndex < allImages.count else { continue }
+                             let imageURL = allImages[pageIndex]
+                             
+                             if asImages {
+                                 // Copy image to extraction dir
+                                 let destURL = extractionDir.appendingPathComponent("\(pdf.name)_page\(pageIndex + 1).\(imageURL.pathExtension)")
+                                 try FileManager.default.copyItem(at: imageURL, to: destURL)
+                                 outputURLs.append(destURL)
+                             } else {
+                                 // Create single page PDF
+                                 if let image = UIImage(contentsOfFile: imageURL.path),
+                                    let page = PDFPage(image: image) {
+                                     let singlePageDoc = PDFDocument()
+                                     singlePageDoc.insert(page, at: 0)
+                                     let url = extractionDir.appendingPathComponent("\(pdf.name)_page\(pageIndex + 1).pdf")
+                                     if singlePageDoc.write(to: url) { outputURLs.append(url) }
+                                 }
+                             }
+                         }
+                         continuation.resume(returning: outputURLs)
+                     } catch {
+                         continuation.resume(throwing: error)
+                     }
+                     return
+                }
+                
                 guard let document = PDFDocument(url: pdf.url) else {
                     continuation.resume(throwing: NSError(domain: "Extract", code: 1, userInfo: [:]))
                     return
