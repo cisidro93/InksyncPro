@@ -152,7 +152,6 @@ struct LibraryView: View {
                 selectedTab = 0 // ✅ SWITCH TO CONVERT TAB
             }
             .padding(.top, 10)
-            .opacity(0) // Hidden but takes space if needed, or remove
         }
     }
     
