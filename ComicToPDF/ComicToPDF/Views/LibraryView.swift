@@ -108,20 +108,20 @@ struct LibraryView: View {
         EmptyView()
             .sheet(item: $selectedPDF) { pdf in
                 if showingShareSheet {
-                    // FIX: Changed 'activityItems' to 'items'
                     ShareSheet(items: [pdf.url])
                 } else if showingDevicePicker {
-                    // FIX: Correct arguments for KindleDevicePickerView
-                    KindleDevicePickerView(conversionManager: conversionManager, pdfURLs: [pdf.url])
+                    KindleDevicePickerView(pdfURLs: [pdf.url])
+                        .environmentObject(conversionManager)
                 }
             }
             .sheet(isPresented: $showingBatchMail) {
-                // FIX: Correct batch arguments
-                let urls = getSelectedPDFs().map { $0.url }
-                KindleDevicePickerView(conversionManager: conversionManager, pdfURLs: urls)
+                if let first = getSelectedPDFs().first {
+                    let urls = getSelectedPDFs().map { $0.url }
+                    KindleDevicePickerView(pdfURLs: urls)
+                        .environmentObject(conversionManager)
+                }
             }
             .sheet(isPresented: $showingBatchShare) {
-                // Batch Share
                 let urls = getSelectedPDFs().map { $0.url }
                 ShareSheet(items: urls)
             }
