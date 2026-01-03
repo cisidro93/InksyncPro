@@ -21,42 +21,221 @@ class EPUBMerger {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
         
-        var allImages: [URL] = []
+        // Create EPUB structure
+        let epubDir = tempDir.appendingPathComponent("epub")
+        let metaInfDir = epubDir.appendingPathComponent("META-INF")
+        let oebpsDir = epubDir.appendingPathComponent("OEBPS")
+        let imagesDir = oebpsDir.appendingPathComponent("images")
+        let textDir = oebpsDir.appendingPathComponent("text")
         
-        // 1. Extract Images from all EPUBs in Reading Order
-        for (index, url) in sourceURLs.enumerated() {
+        for dir in [epubDir, metaInfDir, oebpsDir, imagesDir, textDir] {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        
+        // Write mimetype (must be first, uncompressed)
+        try "application/epub+zip".write(to: epubDir.appendingPathComponent("mimetype"), atomically: true, encoding: .ascii)
+        
+        // Write container.xml
+        let containerXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+            <rootfiles>
+                <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+            </rootfiles>
+        </container>
+        """
+        try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+        
+        // Write CSS
+        let cssContent = """
+        @charset "UTF-8";
+        * { margin: 0; padding: 0; border: 0; }
+        html, body { 
+            width: 100%; 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #000;
+            overflow: hidden;
+        }
+        .page { 
+            width: 100vw; 
+            height: 100vh; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            overflow: hidden;
+        }
+        img { 
+            max-width: 100%; 
+            max-height: 100%; 
+            object-fit: contain;
+        }
+        """
+        try cssContent.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
+        
+        var pageNumber = 1
+        var manifestItems: [String] = []
+        var spineItems: [String] = []
+        
+        // Process each source EPUB in order
+        for (index, sourceURL) in sourceURLs.enumerated() {
             let workingDir = tempDir.appendingPathComponent("source_\(index)")
             try FileManager.default.createDirectory(at: workingDir, withIntermediateDirectories: true)
             
-            // Unzip
-            try FileManager.default.unzipItem(at: url, to: workingDir)
+            // Unzip source EPUB
+            try FileManager.default.unzipItem(at: sourceURL, to: workingDir)
             
-            // Extract Ordered Images
-            let images = try extractOrderedImages(from: workingDir)
-            allImages.append(contentsOf: images)
+            // Find images directory
+            let sourceImagesDir = workingDir.appendingPathComponent("OEBPS/images")
+            
+            guard FileManager.default.fileExists(atPath: sourceImagesDir.path) else {
+                continue // Skip if no images directory
+            }
+            
+            // Get all image files sorted by name
+            let imageFiles = try FileManager.default.contentsOfDirectory(
+                at: sourceImagesDir,
+                includingPropertiesForKeys: nil
+            )
+            .filter { url in
+                ["jpg", "jpeg", "png", "gif", "webp"].contains(url.pathExtension.lowercased())
+            }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            
+            // Copy each image directly (NO PROCESSING!)
+            for imageURL in imageFiles {
+                let ext = imageURL.pathExtension
+                let destImageName = "page\(pageNumber).\(ext)"
+                let destImageURL = imagesDir.appendingPathComponent(destImageName)
+                
+                // CRITICAL: Direct file copy - preserves exact quality
+                try FileManager.default.copyItem(at: imageURL, to: destImageURL)
+                
+                // Determine media type
+                let mediaType: String
+                switch ext.lowercased() {
+                case "png": mediaType = "image/png"
+                case "gif": mediaType = "image/gif"
+                case "webp": mediaType = "image/webp"
+                default: mediaType = "image/jpeg"
+                }
+                
+                // Add to manifest
+                manifestItems.append("""
+                    <item id="image\(pageNumber)" href="images/\(destImageName)" media-type="\(mediaType)"/>
+                """)
+                
+                // Create XHTML wrapper
+                let xhtmlFileName = "page\(pageNumber).xhtml"
+                let xhtmlContent = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE html>
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                <head>
+                    <title>Page \(pageNumber)</title>
+                    <link rel="stylesheet" type="text/css" href="../style.css"/>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+                </head>
+                <body>
+                    <div class="page">
+                        <img src="../images/\(destImageName)" alt="Page \(pageNumber)"/>
+                    </div>
+                </body>
+                </html>
+                """
+                try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlFileName), atomically: true, encoding: .utf8)
+                
+                // Add XHTML to manifest
+                manifestItems.append("""
+                    <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
+                """)
+                
+                // Add to spine
+                spineItems.append("""
+                    <itemref idref="page\(pageNumber)"/>
+                """)
+                
+                pageNumber += 1
+            }
         }
         
-        // 2. Generate New EPUB
-        let generator = EPUBGenerator(settings: settings, metadata: metadata, compressionQuality: 1.0) // 1.0 to avoid re-compression if not needed
+        let totalPages = pageNumber - 1
         
-        // We use "passthrough: true" logic implicitly in generateEPUB if we pass URLs.
-        // However, EPUBGenerator.generateEPUB(from imageURLs:...) logic attempts to compress if needed.
-        // We should ensure we don't degrade quality of already compressed images.
-        // The generator's logic: if isJPEG and quality >= 1.0, it copies.
+        // Create content.opf
+        let bookTitle = metadata.title.isEmpty ? "Merged Book" : metadata.title
+        let bookAuthor = metadata.author.isEmpty ? "Unknown" : metadata.author
+        let bookID = UUID().uuidString
         
-        // We need a custom name for the file, but we are passing outputURL to this function...
-        // Actually EPUBGenerator returns a temp URL. We need to move it.
+        let contentOPF = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookID">
+            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:identifier id="BookID">\(bookID)</dc:identifier>
+                <dc:title>\(bookTitle)</dc:title>
+                <dc:creator>\(bookAuthor)</dc:creator>
+                <dc:language>en</dc:language>
+                <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
+            </metadata>
+            <manifest>
+                <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+                <item id="css" href="style.css" media-type="text/css"/>
+        \(manifestItems.joined(separator: "\n"))
+            </manifest>
+            <spine toc="ncx">
+        \(spineItems.joined(separator: "\n"))
+            </spine>
+        </package>
+        """
+        try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
-        let outputName = outputURL.deletingPathExtension().lastPathComponent
-        let (tempEPUB, pageCount) = try await generator.generateEPUB(from: allImages, outputName: outputName, passthrough: true)
+        // Create toc.ncx
+        let tocNCX = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+            <head>
+                <meta name="dtb:uid" content="\(bookID)"/>
+                <meta name="dtb:depth" content="1"/>
+                <meta name="dtb:totalPageCount" content="0"/>
+                <meta name="dtb:maxPageNumber" content="0"/>
+            </head>
+            <docTitle>
+                <text>\(bookTitle)</text>
+            </docTitle>
+            <navMap>
+                <navPoint id="navpoint-1" playOrder="1">
+                    <navLabel><text>Start</text></navLabel>
+                    <content src="text/page1.xhtml"/>
+                </navPoint>
+            </navMap>
+        </ncx>
+        """
+        try tocNCX.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
+        
+        // Create EPUB archive
+        let finalEPUB = tempDir.appendingPathComponent("\(bookTitle).epub")
+        
+        guard let archive = Archive(url: finalEPUB, accessMode: .create) else {
+            throw NSError(domain: "EPUBMerger", code: 500, 
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
+        }
+        
+        // Add mimetype first (uncompressed - EPUB spec requirement)
+        try archive.addEntry(with: "mimetype", relativeTo: epubDir, compressionMethod: .none)
+        
+        // Add all other files (compressed)
+        let allFiles = try FileManager.default.subpathsOfDirectory(atPath: epubDir.path)
+        for file in allFiles where file != "mimetype" {
+            try archive.addEntry(with: file, relativeTo: epubDir, compressionMethod: .deflate)
+        }
         
         // Move to final destination
         if FileManager.default.fileExists(atPath: outputURL.path) {
             try FileManager.default.removeItem(at: outputURL)
         }
-        try FileManager.default.moveItem(at: tempEPUB, to: outputURL)
+        try FileManager.default.moveItem(at: finalEPUB, to: outputURL)
         
-        return (outputURL, pageCount)
+        return (outputURL, totalPages)
     }
     
     // MARK: - Extraction Logic
