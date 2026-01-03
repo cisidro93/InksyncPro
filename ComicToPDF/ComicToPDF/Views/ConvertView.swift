@@ -70,9 +70,17 @@ struct ConvertView: View {
                                 epubSettingsSection  // ✅ RESTORED
                             }
                             
-                            compressionSection  // ✅ RESTORED - Back in main view!
-                            imageEnhancementSection  // ✅ RESTORED
-                            deviceOptimizationSection  // ✅ RESTORED
+                            // ✅ GROUPED ADVANCED OPTIONS
+                            GroupBox {
+                                DisclosureGroup("Advanced Options") {
+                                    VStack(spacing: 20) {
+                                        compressionSection
+                                        imageEnhancementSection
+                                        deviceOptimizationSection
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
                         }
                         
                         // ENHANCED PROGRESS SECTION
@@ -479,7 +487,7 @@ struct ConvertView: View {
     private func selectedFileRow(fileURL: URL) -> some View {
         HStack(spacing: 12) {
             Image(systemName: fileIcon(for: fileURL))
-                .foregroundColor(.orange)
+                .foregroundColor(fileColor(for: fileURL)) // ✅ COLORED ICON
                 .frame(width: 30)
             
             VStack(alignment: .leading, spacing: 4) {
@@ -969,10 +977,21 @@ struct ConvertView: View {
     
     private func fileIcon(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
-        case "cbz", "cbr", "cb7": return "book.closed.fill"
+        case "cbz", "zip", "cb7": return "book.closed.fill"
+        case "cbr", "rar": return "book.closed.fill"
         case "epub": return "book.fill"
         case "pdf": return "doc.fill"
         default: return "doc"
+        }
+    }
+    
+    private func fileColor(for url: URL) -> Color {
+        switch url.pathExtension.lowercased() {
+        case "cbz", "zip", "cb7": return .orange
+        case "cbr", "rar": return .blue
+        case "epub": return .green
+        case "pdf": return .red
+        default: return .secondary
         }
     }
 }

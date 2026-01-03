@@ -6,6 +6,7 @@ import SwiftUI
 
 struct LibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @Binding var selectedTab: Int // ✅ ADDED BINDING
     @State private var isSelectionMode = false
     @State private var selectedPDFs: Set<UUID> = []
     @State private var selectedPDF: ConvertedPDF?
@@ -148,7 +149,7 @@ struct LibraryView: View {
             Text("No Converted PDFs").font(.title2).fontWeight(.semibold)
             Text("Convert some CBZ/CBR files to see them here").font(.subheadline).foregroundColor(.secondary)
             Button("Go to Convert") {
-                // Ideally switch tab, but for now just a visual call to action
+                selectedTab = 0 // ✅ SWITCH TO CONVERT TAB
             }
             .padding(.top, 10)
             .opacity(0) // Hidden but takes space if needed, or remove
