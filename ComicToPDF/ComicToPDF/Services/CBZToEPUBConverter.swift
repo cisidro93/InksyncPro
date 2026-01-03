@@ -819,9 +819,11 @@ class ComicEPUBProcessor {
                 <meta property="rendition:spread">none</meta>
             </metadata>
             <manifest>
-                \(cssItem)\(imageManifest)\(xhtmlManifest)    </manifest>
+                \(cssItem)\(imageManifest)\(xhtmlManifest)
+            </manifest>
             <spine>
-                \(spineItems)    </spine>
+                \(spineItems)
+            </spine>
         </package>
         """
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
