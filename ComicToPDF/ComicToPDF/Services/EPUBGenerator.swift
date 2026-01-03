@@ -187,34 +187,35 @@ class EPUBGenerator {
                     
                     if !processed {
                         // FIX: Use CGImageSource/Destination to avoid UIImage tiling artifacts (horizontal strips)
-                        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
-                              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+                        if let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
+                           let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) {
+                            
+                            let data = NSMutableData()
+                            if let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil) {
+                                let options: [String: Any] = [
+                                    kCGImageDestinationLossyCompressionQuality as String: self.compressionQuality
+                                ]
+                                
+                                CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+                                CGImageDestinationFinalize(destination)
+                                
+                                try (data as Data).write(to: destURL)
+                                finalSize += Int64((data as Data).count)
+                                processed = true
+                            } else {
+                                // Destination creation failed
+                                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                                processed = true
+                            }
+                        } else {
+                            // Source creation failed
                             try FileManager.default.copyItem(at: sourceURL, to: destURL)
                             if let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path),
                                let size = attrs[.size] as? Int64 {
                                 finalSize += size
                             }
                             processed = true
-                            continue
                         }
-                        
-                        let data = NSMutableData()
-                        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil) else {
-                            try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                            processed = true
-                            continue
-                        }
-                        
-                        let options: [String: Any] = [
-                            kCGImageDestinationLossyCompressionQuality as String: self.compressionQuality
-                        ]
-                        
-                        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
-                        CGImageDestinationFinalize(destination)
-                        
-                        try (data as Data).write(to: destURL)
-                        finalSize += Int64((data as Data).count)
-                        processed = true
                     }
                     
                     if !processed {
