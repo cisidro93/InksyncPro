@@ -26,7 +26,6 @@ struct LibraryView: View {
     
     @State private var readingPDF: ConvertedPDF?
     
-    @State private var showingBatchMerge = false
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
@@ -131,7 +130,7 @@ struct LibraryView: View {
                 }
             }
             .sheet(isPresented: $showingBatchMail) {
-                if let first = getSelectedPDFs().first {
+                if getSelectedPDFs().first != nil {
                     let urls = getSelectedPDFs().map { $0.url }
                     KindleDevicePickerView(pdfURLs: urls)
                         .environmentObject(conversionManager)
