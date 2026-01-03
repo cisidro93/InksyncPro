@@ -26,7 +26,7 @@ struct SettingsView: View {
                 
                 Section(header: Text("Appearance")) {
                     Picker("Theme", selection: $themeManager.selectedTheme) {
-                        ForEach(AppTheme.allCases) { theme in
+                        ForEach(AppearanceTheme.allCases) { theme in
                             Text(theme.displayName).tag(theme)
                         }
                     }

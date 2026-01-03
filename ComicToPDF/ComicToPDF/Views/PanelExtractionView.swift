@@ -1,138 +1,111 @@
 import SwiftUI
 
 struct PanelExtractionView: View {
-    let image: UIImage
-    @State private var extractedPanels: [UIImage] = []
-    @State private var isProcessing = false
+    let sourceImage: UIImage
+    @State private var panels: [PanelExtractor.Panel] = []
+    @State private var isExtracting = false
     @State private var extractionMode: PanelExtractor.ExtractionMode = .automatic
-    @State private var showSaveSuccess = false
-    
-    // Grid settings
-    @State private var gridRows = 2
-    @State private var gridCols = 2
-    
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         NavigationView {
             VStack {
-                if extractedPanels.isEmpty && !isProcessing {
-                    // Preview Original
-                    Image(uiImage: image)
+                Picker("Mode", selection: Binding(
+                    get: { 
+                        switch extractionMode {
+                        case .automatic: return 0
+                        case .grid(2, 2): return 1
+                        case .grid(3, 3): return 2
+                        default: return 0
+                        }
+                    },
+                    set: { value in
+                        switch value {
+                        case 0: extractionMode = .automatic
+                        case 1: extractionMode = .grid(rows: 2, columns: 2)
+                        case 2: extractionMode = .grid(rows: 3, columns: 3)
+                        default: extractionMode = .automatic
+                        }
+                    }
+                )) {
+                    Text("Automatic").tag(0)
+                    Text("Grid 2x2").tag(1)
+                    Text("Grid 3x3").tag(2)
+                }
+                .pickerStyle(.segmented)
+                .padding()
+                
+                if isExtracting {
+                    ProgressView("Detecting panels...")
+                        .padding()
+                } else if panels.isEmpty {
+                    Image(uiImage: sourceImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .padding()
-                } else if isProcessing {
-                    ProgressView("Extracting Panels...")
+                    
+                    Button("Extract Panels") {
+                        extractPanels()
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .padding()
                 } else {
-                    // Result Grid
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))]) {
-                            ForEach(0..<extractedPanels.count, id: \.self) { index in
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))], spacing: 16) {
+                            ForEach(Array(panels.enumerated()), id: \.offset) { index, panel in
                                 VStack {
-                                    Image(uiImage: extractedPanels[index])
+                                    Image(uiImage: panel.image)
                                         .resizable()
                                         .aspectRatio(contentMode: .fit)
-                                        .frame(height: 150)
                                         .cornerRadius(8)
+                                        .shadow(radius: 4)
+                                    
                                     Text("Panel \(index + 1)")
                                         .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
                             }
                         }
                         .padding()
                     }
-                }
-                
-                // Controls
-                VStack {
-                    Picker("Mode", selection: Binding(get: {
-                        switch extractionMode {
-                        case .automatic: return 0
-                        case .grid: return 1
-                        case .manual: return 2
-                        }
-                    }, set: { val in
-                        if val == 0 { extractionMode = .automatic }
-                        else if val == 1 { extractionMode = .grid(rows: gridRows, cols: gridCols) }
-                        else { extractionMode = .manual }
-                    })) {
-                        Text("Automatic").tag(0)
-                        Text("Grid").tag(1)
-                        Text("Manual").tag(2)
+                    
+                    Button("Done") {
+                        dismiss()
                     }
-                    .pickerStyle(.segmented)
+                    .buttonStyle(PrimaryButtonStyle())
                     .padding()
-                    
-                    if case .grid = extractionMode {
-                        HStack {
-                            Stepper("Rows: \(gridRows)", value: $gridRows, in: 1...5)
-                            Stepper("Cols: \(gridCols)", value: $gridCols, in: 1...4)
-                        }
-                        .padding(.horizontal)
-                        .onChange(of: gridRows) { _ in updateGridMode() }
-                        .onChange(of: gridCols) { _ in updateGridMode() }
-                    }
-                    
-                    Button("Extract Panels") {
-                        processExtraction()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding()
-                    
-                    if !extractedPanels.isEmpty {
-                        Button("Save Panels to Photos") {
-                            savePanels()
-                        }
-                        .padding(.bottom)
-                    }
                 }
-                .background(Color(UIColor.secondarySystemBackground))
             }
-            .navigationTitle("Panel Extractor")
+            .navigationTitle("Panel Extraction")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
             }
-            .alert("Success", isPresented: $showSaveSuccess) {
-                Button("OK") { }
-            } message: {
-                Text("Panels saved to Photos.")
-            }
         }
     }
     
-    private func updateGridMode() {
-        extractionMode = .grid(rows: gridRows, cols: gridCols)
-    }
-    
-    private func processExtraction() {
-        isProcessing = true
-        extractedPanels = []
+    private func extractPanels() {
+        isExtracting = true
+        
         Task {
             do {
-                // Ensure grid mode params are current
-                if case .grid = extractionMode {
-                    extractionMode = .grid(rows: gridRows, cols: gridCols)
-                }
+                let extractedPanels = try await PanelExtractor.extractPanels(
+                    from: sourceImage,
+                    mode: extractionMode
+                )
                 
-                let panels = try await PanelExtractor.extractPanels(from: image, mode: extractionMode)
                 await MainActor.run {
-                    self.extractedPanels = panels
-                    self.isProcessing = false
+                    panels = extractedPanels
+                    isExtracting = false
                 }
             } catch {
-                print("Error: \(error)")
-                await MainActor.run { isProcessing = false }
+                await MainActor.run {
+                    isExtracting = false
+                    print("Panel extraction failed: \(error)")
+                }
             }
         }
-    }
-    
-    private func savePanels() {
-        for panel in extractedPanels {
-            UIImageWriteToSavedPhotosAlbum(panel, nil, nil, nil)
-        }
-        showSaveSuccess = true
     }
 }

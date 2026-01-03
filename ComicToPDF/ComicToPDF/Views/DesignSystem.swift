@@ -58,8 +58,20 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 
+
 extension View {
     func cardStyle() -> some View {
         modifier(CardStyle())
+    }
+}
+
+extension View {
+    func hapticFeedback(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) -> some View {
+        self.simultaneousGesture(
+            TapGesture().onEnded {
+                let generator = UIImpactFeedbackGenerator(style: style)
+                generator.impactOccurred()
+            }
+        )
     }
 }

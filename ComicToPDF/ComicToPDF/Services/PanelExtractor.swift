@@ -1,29 +1,34 @@
-import Vision
 import UIKit
+import Vision
+import CoreImage
 
 class PanelExtractor {
     
-    enum ExtractionMode {
-        case automatic // Vision Framework
-        case grid(rows: Int, cols: Int)
-        case manual
+    struct Panel {
+        let image: UIImage
+        let boundingBox: CGRect
+        let confidence: Float
     }
     
-    static func extractPanels(from image: UIImage, mode: ExtractionMode) async throws -> [UIImage] {
+    enum ExtractionMode {
+        case automatic
+        case grid(rows: Int, columns: Int)
+    }
+    
+    static func extractPanels(from image: UIImage, mode: ExtractionMode = .automatic) async throws -> [Panel] {
         switch mode {
         case .automatic:
-            return try await extractPanelsAutomatic(from: image)
-        case .grid(let rows, let cols):
-            return extractPanelsGrid(from: image, rows: rows, cols: cols)
-        case .manual:
-            return [image] // Stub for manual
+            return try await detectPanelsAutomatically(image)
+        case .grid(let rows, let columns):
+            return extractPanelsInGrid(image, rows: rows, columns: columns)
         }
     }
     
-    // MARK: - Automatic (Vision)
-    
-    private static func extractPanelsAutomatic(from image: UIImage) async throws -> [UIImage] {
-        guard let cgImage = image.cgImage else { return [image] }
+    private static func detectPanelsAutomatically(_ image: UIImage) async throws -> [Panel] {
+        guard let cgImage = image.cgImage else {
+            throw NSError(domain: "PanelExtractor", code: 1, 
+                         userInfo: [NSLocalizedDescriptionKey: "Invalid image"])
+        }
         
         return try await withCheckedThrowingContinuation { continuation in
             let request = VNDetectRectanglesRequest { request, error in
@@ -32,67 +37,46 @@ class PanelExtractor {
                     return
                 }
                 
-                guard let results = request.results as? [VNRectangleObservation] else {
-                    continuation.resume(returning: [image])
+                guard let observations = request.results as? [VNRectangleObservation] else {
+                    continuation.resume(returning: [])
                     return
                 }
                 
-                // Filter small rectangles (likely noise or text bubbles)
-                let validRects = results.filter { $0.boundingBox.width > 0.3 && $0.boundingBox.height > 0.15 }
+                var panels: [Panel] = []
+                let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
                 
-                // Sort by reading order (Top-Left to Bottom-Right roughly)
-                // Assuming standard Western layout for now (Top-down, Left-right)
-                // For Manga, we might need Right-Left option.
-                // Simple heuristic: Sort by Y (top to bottom), then X (left to right) with some fuzziness.
-                
-                let sortedRects = validRects.sorted { r1, r2 in
-                    let yDiff = abs(r1.boundingBox.origin.y - r2.boundingBox.origin.y)
-                    if yDiff > 0.1 { // If significant Y difference, use Y (Remember Vision Y is flipped? No, 0,0 is bottom-left usually in specialized coords, but boundingBox is normalized)
-                        // In Vision, Y=0 is bottom. So higher Y is top?
-                        // "The origin is the lower-left corner of the image"
-                        // So Top is Y=1.
-                        // We want Top first, so DESCENDING Y.
-                        return r1.boundingBox.origin.y > r2.boundingBox.origin.y
-                    } else {
-                        // Same row, simple left-to-right (ASCENDING X)
-                        return r1.boundingBox.origin.x < r2.boundingBox.origin.x
+                for observation in observations {
+                    let boundingBox = VNImageRectForNormalizedRect(
+                        observation.boundingBox,
+                        Int(imageSize.width),
+                        Int(imageSize.height)
+                    )
+                    
+                    if let panelCGImage = cgImage.cropping(to: boundingBox) {
+                        let panelImage = UIImage(cgImage: panelCGImage)
+                        let panel = Panel(
+                            image: panelImage,
+                            boundingBox: boundingBox,
+                            confidence: observation.confidence
+                        )
+                        panels.append(panel)
                     }
                 }
                 
-                var panels: [UIImage] = []
-                for rect in sortedRects {
-                    // Convert normalized rect to image coords
-                    // Remember Vision Y is bottom-up. CoreGraphics/UIImage usually top-down? 
-                    // Need to handle coordinate flip carefully.
-                    
-                    let w = CGFloat(cgImage.width)
-                    let h = CGFloat(cgImage.height)
-                    
-                    let r = rect.boundingBox
-                    
-                    // Transform to CGImage coords (Y flipped)
-                    let x = r.origin.x * w
-                    let y = (1.0 - r.origin.y - r.height) * h
-                    let width = r.width * w
-                    let height = r.height * h
-                    
-                    let cropRect = CGRect(x: x, y: y, width: width, height: height)
-                    
-                    if let cropped = cgImage.cropping(to: cropRect) {
-                        panels.append(UIImage(cgImage: cropped))
+                panels.sort { lhs, rhs in
+                    if abs(lhs.boundingBox.minY - rhs.boundingBox.minY) < 50 {
+                        return lhs.boundingBox.minX < rhs.boundingBox.minX
                     }
+                    return lhs.boundingBox.minY < rhs.boundingBox.minY
                 }
                 
-                if panels.isEmpty { panels.append(image) }
                 continuation.resume(returning: panels)
             }
             
-            // Tweaks for finding panels
-            request.minimumAspectRatio = 0.1
-            request.maximumAspectRatio = 5.0
+            request.minimumAspectRatio = 0.3
+            request.maximumAspectRatio = 3.0
             request.minimumSize = 0.1
-            request.quadratureTolerance = 20
-            request.minimumConfidence = 0.6
+            request.maximumObservations = 20
             
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             do {
@@ -103,23 +87,26 @@ class PanelExtractor {
         }
     }
     
-    // MARK: - Grid
-    
-    private static func extractPanelsGrid(from image: UIImage, rows: Int, cols: Int) -> [UIImage] {
-        guard let cgImage = image.cgImage else { return [image] }
-        var panels: [UIImage] = []
+    private static func extractPanelsInGrid(_ image: UIImage, rows: Int, columns: Int) -> [Panel] {
+        guard let cgImage = image.cgImage else { return [] }
         
-        let w = CGFloat(cgImage.width) / CGFloat(cols)
-        let h = CGFloat(cgImage.height) / CGFloat(rows)
+        let imageWidth = CGFloat(cgImage.width)
+        let imageHeight = CGFloat(cgImage.height)
+        let panelWidth = imageWidth / CGFloat(columns)
+        let panelHeight = imageHeight / CGFloat(rows)
         
-        for r in 0..<rows {
-            for c in 0..<cols {
-                let x = CGFloat(c) * w
-                let y = CGFloat(r) * h
-                let rect = CGRect(x: x, y: y, width: w, height: h)
+        var panels: [Panel] = []
+        
+        for row in 0..<rows {
+            for col in 0..<columns {
+                let x = CGFloat(col) * panelWidth
+                let y = CGFloat(row) * panelHeight
+                let rect = CGRect(x: x, y: y, width: panelWidth, height: panelHeight)
                 
-                if let cropped = cgImage.cropping(to: rect) {
-                    panels.append(UIImage(cgImage: cropped))
+                if let panelCGImage = cgImage.cropping(to: rect) {
+                    let panelImage = UIImage(cgImage: panelCGImage)
+                    let panel = Panel(image: panelImage, boundingBox: rect, confidence: 1.0)
+                    panels.append(panel)
                 }
             }
         }

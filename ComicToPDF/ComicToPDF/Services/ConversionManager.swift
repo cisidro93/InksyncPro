@@ -265,6 +265,13 @@ class ConversionManager: ObservableObject {
     @Published var conversionSettings = ConversionSettings()
     @Published var sendHistory: [SendHistoryRecord] = []
     @Published var conversionPresets: [ConversionPreset] = []
+    
+    // Thumbnail cache
+    @Published var thumbnailCache: [UUID: Data] = [:]
+
+    // Incremental save
+    private var saveTimer: Timer?
+    private var needsSave = false
     @Published var searchText: String = ""
     @Published var filterFavoritesOnly: Bool = false
     @Published var filterCollection: UUID? = nil
@@ -414,7 +421,7 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    private let fileManager = FileManager.default
+
     private let outputDirectory: URL
     
     init() {
@@ -869,7 +876,7 @@ class ConversionManager: ObservableObject {
     
     func splitPDF(at url: URL, maxSizeMB: Int, progressHandler: @escaping (Double) -> Void) async throws -> [URL] {
         return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task.detached(priority: .userInitiated) {
                 guard let document = PDFDocument(url: url) else {
                     continuation.resume(throwing: ConversionError.pdfCreationFailed)
                     return
@@ -883,27 +890,30 @@ class ConversionManager: ObservableObject {
                 let baseName = url.deletingPathExtension().lastPathComponent
                 let originalSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
                 
-            for i in 0..<pageCount {
-                autoreleasepool {
-                    if let page = document.page(at: i) {
-                        currentPart.insert(page, at: pagesInCurrentPart)
-                        pagesInCurrentPart += 1
+                for i in 0..<pageCount {
+                    autoreleasepool {
+                        if let page = document.page(at: i) {
+                            currentPart.insert(page, at: pagesInCurrentPart)
+                            pagesInCurrentPart += 1
+                        }
                     }
+                    
+                    // Periodic memory cleanup
+                    if i % 10 == 0 {
+                        await Task.yield()
+                    }
+                    
+                    let estimatedPartSize = (Int64(pagesInCurrentPart) * originalSize) / Int64(pageCount)
+                    if estimatedPartSize >= maxBytes || i == pageCount - 1 {
+                        let partURL = self.outputDirectory.appendingPathComponent("\(baseName)_part\(currentPartIndex).pdf")
+                        if currentPart.write(to: partURL) { parts.append(partURL) }
+                        
+                        currentPart = PDFDocument()
+                        currentPartIndex += 1
+                        pagesInCurrentPart = 0
+                    }
+                    progressHandler(Double(i + 1) / Double(pageCount))
                 }
-                
-                // Memory cleanup
-                if i % 10 == 0 { await Task.yield() }
-                
-                let estimatedPartSize = (Int64(pagesInCurrentPart) * originalSize) / Int64(pageCount)
-                if estimatedPartSize >= maxBytes || i == pageCount - 1 {
-                    let partURL = self.outputDirectory.appendingPathComponent("\(baseName)_part\(currentPartIndex).pdf")
-                    if currentPart.write(to: partURL) { parts.append(partURL) }
-                    currentPart = PDFDocument()
-                    pagesInCurrentPart = 0
-                    currentPartIndex += 1
-                }
-                DispatchQueue.main.async { progressHandler(Double(i + 1) / Double(pageCount)) }
-            }
                 continuation.resume(returning: parts)
             }
         }
@@ -1041,23 +1051,37 @@ class ConversionManager: ObservableObject {
     
     // MARK: - Lazy Loading & Caching
     
-    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
-        if let cached = thumbnailCache.object(forKey: pdf.id.uuidString as NSString) { return cached }
-        if let data = pdf.coverImageData, let image = UIImage(data: data) {
-            thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
-            return image
+    func getThumbnail(for pdf: ConvertedPDF) -> Data? {
+        if let cached = thumbnailCache[pdf.id] {
+            return cached
         }
-        if pdf.coverImageData == nil { generateCoverThumbnail(for: pdf) }
+        
+        if pdf.coverImageData == nil {
+            generateCoverThumbnail(for: pdf)
+        }
+        
+        if let data = pdf.coverImageData {
+            thumbnailCache[pdf.id] = data
+            return data
+        }
+        
         return nil
     }
 
     // MARK: - Incremental Save
     
     func markNeedsSave() {
+        needsSave = true
         saveTimer?.invalidate()
         saveTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.saveDataNow() }
+            self?.saveDataIfNeeded()
         }
+    }
+    
+    private func saveDataIfNeeded() {
+        guard needsSave else { return }
+        saveDataNow()
+        needsSave = false
     }
     
     private func saveDataNow() {

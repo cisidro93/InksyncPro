@@ -12,6 +12,13 @@ struct LibraryView: View {
     @State private var selectedPDFs = Set<UUID>()
     @AppStorage("gridColumns") private var gridColumns: Int = 3
     
+    func refreshLibrary() async {
+        conversionManager.loadSavedData()
+        for pdf in conversionManager.convertedPDFs where pdf.coverImageData == nil {
+            conversionManager.generateCoverThumbnail(for: pdf)
+        }
+    }
+
     // Single Item Actions
     
     // Single Item Actions
@@ -87,7 +94,7 @@ struct LibraryView: View {
                     .padding()
                 }
                 .refreshable {
-                    conversionManager.scanForPDFs()
+                    await refreshLibrary()
                 }
             } else {
                 List {
@@ -95,20 +102,36 @@ struct LibraryView: View {
                         listItem(for: pdf)
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    conversionManager.toggleFavorite(pdf)
+                                } label: {
+                                    Label("Favorite", systemImage: pdf.isFavorite ? "star.fill" : "star")
+                                }
+                                .tint(.yellow)
+                            }
+                            .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
                                     selectedPDF = pdf
                                     showingDeleteAlert = true
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
+                                
+                                Button {
+                                    selectedPDF = pdf
+                                    showingShareSheet = true
+                                } label: {
+                                    Label("Share", systemImage: "square.and.arrow.up")
+                                }
+                                .tint(.blue)
                             }
                     }
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .refreshable {
-                    conversionManager.scanForPDFs()
+                    await refreshLibrary()
                 }
             }
             
@@ -265,19 +288,27 @@ struct LibraryView: View {
     @ViewBuilder
     var emptyStateLibrary: some View {
         VStack(spacing: 20) {
-            Image(systemName: "books.vertical")
-                .font(.system(size: 60))
-                .foregroundColor(.gray)
-            Text("Your library is empty")
-                .font(.headline)
-            Text("Converted files will appear here.")
-                .font(.subheadline)
+            Image(systemName: "books.vertical.fill")
+                .font(.system(size: 80))
+                .foregroundColor(.orange.opacity(0.3))
+            
+            Text("No Books Yet")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Start by converting your first comic or manga file")
+                .font(.body)
                 .foregroundColor(.secondary)
-            Button("Go to Convert") {
-                selectedTab = 0
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            
+            Button(action: { selectedTab = 0 }) {
+                Label("Convert Files", systemImage: "arrow.triangle.2.circlepath")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal, 40)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     @ToolbarContentBuilder
