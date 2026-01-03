@@ -101,22 +101,29 @@ struct LibraryView: View {
         }
     }
     
-    // MARK: - Extracted Sheet Handlers (Fixes Compiler Timeout)
+    // MARK: - Sheet Handlers
     
     @ViewBuilder
     var sheetHandlers: some View {
         EmptyView()
             .sheet(item: $selectedPDF) { pdf in
                 if showingShareSheet {
-                    ShareSheet(activityItems: [pdf.url])
+                    // FIX: Changed 'activityItems' to 'items'
+                    ShareSheet(items: [pdf.url])
                 } else if showingDevicePicker {
-                    KindleDevicePickerView(pdf: pdf)
+                    // FIX: Correct arguments for KindleDevicePickerView
+                    KindleDevicePickerView(conversionManager: conversionManager, pdfURLs: [pdf.url])
                 }
             }
             .sheet(isPresented: $showingBatchMail) {
-                if let first = getSelectedPDFs().first {
-                    KindleDevicePickerView(pdf: first)
-                }
+                // FIX: Correct batch arguments
+                let urls = getSelectedPDFs().map { $0.url }
+                KindleDevicePickerView(conversionManager: conversionManager, pdfURLs: urls)
+            }
+            .sheet(isPresented: $showingBatchShare) {
+                // Batch Share
+                let urls = getSelectedPDFs().map { $0.url }
+                ShareSheet(items: urls)
             }
             .confirmationDialog("Options", isPresented: $showingActionSheet, presenting: selectedPDF) { pdf in
                 Button("Send to Kindle") { showingDevicePicker = true }
