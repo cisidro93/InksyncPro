@@ -14,6 +14,7 @@
 import Foundation
 import UIKit
 import ZIPFoundation
+import UniformTypeIdentifiers
 
 // ============================================================================
 // PART 1: CBZ TO EPUB CONVERTER
@@ -326,7 +327,7 @@ struct CBZToEPUBConverter {
         }
         
         let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, kUTTypeJPEG, 1, nil) else {
+        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil) else {
             throw NSError(domain: "ImageStitcher", code: 500,
                          userInfo: [NSLocalizedDescriptionKey: "Failed to create image destination"])
         }
@@ -348,7 +349,7 @@ struct CBZToEPUBConverter {
         }
         
         let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, kUTTypeJPEG, 1, nil) else {
+        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil) else {
             throw NSError(domain: "ImageProcessor", code: 500,
                          userInfo: [NSLocalizedDescriptionKey: "Failed to create destination"])
         }
