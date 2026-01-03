@@ -493,29 +493,28 @@ struct CBZToEPUBConverter {
         
         let authorElement = metadata.author.map { "<dc:creator>\($0)</dc:creator>" } ?? ""
         
-        let opfContent = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
-            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                <dc:identifier id="BookID">urn:uuid:\(UUID().uuidString)</dc:identifier>
-                <dc:title>\(metadata.title)</dc:title>
-                <dc:language>en</dc:language>
-                \(authorElement)
-                <dc:publisher>ComicToPDF Converter</dc:publisher>
-                <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-                <meta property="rendition:layout">pre-paginated</meta>
-                <meta property="rendition:orientation">auto</meta>
-                <meta property="rendition:spread">none</meta>
-            </metadata>
-            <manifest>
-                <item id="css" href="styles.css" media-type="text/css"/>
-                \(imageManifest)\(xhtmlManifest)
-            </manifest>
-            <spine>
-                \(spineItems)
-            </spine>
-        </package>
-        """
+        var opfContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        opfContent += "<package xmlns=\"http://www.idpf.org/2007/opf\" unique-identifier=\"BookID\" version=\"3.0\">\n"
+        opfContent += "    <metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n"
+        opfContent += "        <dc:identifier id=\"BookID\">urn:uuid:\(UUID().uuidString)</dc:identifier>\n"
+        opfContent += "        <dc:title>\(metadata.title)</dc:title>\n"
+        opfContent += "        <dc:language>en</dc:language>\n"
+        opfContent += "        \(authorElement)\n"
+        opfContent += "        <dc:publisher>ComicToPDF Converter</dc:publisher>\n"
+        opfContent += "        <meta property=\"dcterms:modified\">\(ISO8601DateFormatter().string(from: Date()))</meta>\n"
+        opfContent += "        <meta property=\"rendition:layout\">pre-paginated</meta>\n"
+        opfContent += "        <meta property=\"rendition:orientation\">auto</meta>\n"
+        opfContent += "        <meta property=\"rendition:spread\">none</meta>\n"
+        opfContent += "    </metadata>\n"
+        opfContent += "    <manifest>\n"
+        opfContent += "        <item id=\"css\" href=\"styles.css\" media-type=\"text/css\"/>\n"
+        opfContent += imageManifest
+        opfContent += xhtmlManifest
+        opfContent += "    </manifest>\n"
+        opfContent += "    <spine>\n"
+        opfContent += spineItems
+        opfContent += "    </spine>\n"
+        opfContent += "</package>"
         try opfContent.write(
             to: oebpsDir.appendingPathComponent("content.opf"),
             atomically: true,
@@ -807,25 +806,27 @@ class ComicEPUBProcessor {
             ? "    <item id=\"css\" href=\"styles.css\" media-type=\"text/css\"/>\n" 
             : ""
         
-        let opfContent = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
-            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                <dc:identifier id="BookID">urn:uuid:\(UUID().uuidString)</dc:identifier>
-                <dc:title>\(originalName) (Part \(partIndex))</dc:title>
-                <dc:language>en</dc:language>
-                <meta property="rendition:layout">pre-paginated</meta>
-                <meta property="rendition:orientation">auto</meta>
-                <meta property="rendition:spread">none</meta>
-            </metadata>
-            <manifest>
-                \(cssItem)\(imageManifest)\(xhtmlManifest)
-            </manifest>
-            <spine>
-                \(spineItems)
-            </spine>
-        </package>
-        """
+        var opfContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        opfContent += "<package xmlns=\"http://www.idpf.org/2007/opf\" unique-identifier=\"BookID\" version=\"3.0\">\n"
+        opfContent += "    <metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n"
+        opfContent += "        <dc:identifier id=\"BookID\">urn:uuid:\(UUID().uuidString)</dc:identifier>\n"
+        opfContent += "        <dc:title>\(originalName) (Part \(partIndex))</dc:title>\n"
+        opfContent += "        <dc:language>en</dc:language>\n"
+        opfContent += "        <dc:publisher>ComicToPDF Converter</dc:publisher>\n"
+        opfContent += "        <meta property=\"dcterms:modified\">\(ISO8601DateFormatter().string(from: Date()))</meta>\n"
+        opfContent += "        <meta property=\"rendition:layout\">pre-paginated</meta>\n"
+        opfContent += "        <meta property=\"rendition:orientation\">auto</meta>\n"
+        opfContent += "        <meta property=\"rendition:spread\">none</meta>\n"
+        opfContent += "    </metadata>\n"
+        opfContent += "    <manifest>\n"
+        opfContent += cssItem
+        opfContent += imageManifest
+        opfContent += xhtmlManifest
+        opfContent += "    </manifest>\n"
+        opfContent += "    <spine>\n"
+        opfContent += spineItems
+        opfContent += "    </spine>\n"
+        opfContent += "</package>"
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
         let finalEPUB = outputDir.appendingPathComponent("\(partName).epub")
