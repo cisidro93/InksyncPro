@@ -189,7 +189,7 @@ struct CBZToEPUBConverter {
         let filename = url.deletingPathExtension().lastPathComponent
         
         var author: String?
-        let series: String? // ✅ Fixed: Changed var to let
+        var series: String? // Reverted to var
         var volume: String?
         
         if filename.contains(" - ") {
