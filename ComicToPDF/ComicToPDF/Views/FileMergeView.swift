@@ -80,6 +80,31 @@ struct FileMergeView: View {
                     }
                 }
                 
+                Section(header: Text("Merge Order Preview")) {
+                    if !sortedFiles.filter({ selectedPDFs.contains($0.id) }).isEmpty {
+                        ForEach(Array(sortedFiles.filter { selectedPDFs.contains($0.id) }.enumerated()), id: \.element.id) { index, pdf in
+                            HStack {
+                                Text("\(index + 1).")
+                                    .font(.headline)
+                                    .foregroundColor(.orange)
+                                    .frame(width: 30)
+                                VStack(alignment: .leading) {
+                                    Text(pdf.name)
+                                        .font(.subheadline)
+                                    Text("\(pdf.pageCount) pages")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                        }
+                    } else {
+                        Text("No files selected")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    }
+                }
+                
                 Button(action: mergeFiles) {
                     if isMerging {
                         ProgressView().progressViewStyle(CircularProgressViewStyle())

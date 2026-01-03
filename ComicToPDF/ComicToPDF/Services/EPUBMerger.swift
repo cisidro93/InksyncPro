@@ -48,7 +48,7 @@ class EPUBMerger {
         // Actually EPUBGenerator returns a temp URL. We need to move it.
         
         let outputName = outputURL.deletingPathExtension().lastPathComponent
-        let (tempEPUB, pageCount) = try await generator.generateEPUB(from: allImages, outputName: outputName)
+        let (tempEPUB, pageCount) = try await generator.generateEPUB(from: allImages, outputName: outputName, passthrough: true)
         
         // Move to final destination
         if FileManager.default.fileExists(atPath: outputURL.path) {

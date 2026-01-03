@@ -268,7 +268,7 @@ class ConversionManager: ObservableObject {
     @Published var searchText: String = ""
     @Published var filterFavoritesOnly: Bool = false
     @Published var filterCollection: UUID? = nil
-    @Published var sortOption: SortOption = .dateAdded
+    @Published var sortOption: SortOption = .name
     
     @Published var activeTasks: [BackgroundTask] = []
     
