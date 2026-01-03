@@ -488,12 +488,8 @@ struct CBZToEPUBConverter {
                     if group.isSingleImage {
                         let image = group.images[0]
                         imageData = try processImage(image.fileURL, compressionQuality: compressionQuality)
-                        width = image.width
-                        height = image.height
                     } else {
                         imageData = try stitchImages(group.images, compressionQuality: compressionQuality)
-                        width = group.images.map { $0.width }.max() ?? 1200
-                        height = group.images.reduce(0) { $0 + $1.height }
                     }
                     
                     let imageName = "page\(pageNum).jpg"

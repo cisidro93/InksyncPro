@@ -21,13 +21,11 @@ struct LibraryView: View {
     
     // Batch Actions
     @State private var showingBatchMail = false
-    @State private var showingBatchCloudExport = false
     @State private var showingBatchShare = false
     @State private var showingBatchDelete = false
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
-        // Apply local search if conversionManager doesn't handle it dynamically
     }
     
     var body: some View {
@@ -46,40 +44,8 @@ struct LibraryView: View {
             .toolbar {
                 toolbarContent
             }
-            // Sheets and Alerts
-            .sheet(item: $selectedPDF) { pdf in
-                if showingShareSheet {
-                    ShareSheet(activityItems: [pdf.url])
-                } else if showingDevicePicker {
-                    KindleDevicePickerView(pdf: pdf)
-                }
-            }
-            .sheet(isPresented: $showingBatchMail) {
-                if let first = getSelectedPDFs().first {
-                    KindleDevicePickerView(pdf: first) // Simplified for batch
-                }
-            }
-            .confirmationDialog("Options", isPresented: $showingActionSheet, presenting: selectedPDF) { pdf in
-                Button("Send to Kindle") { showingDevicePicker = true }
-                Button("Share") { showingShareSheet = true }
-                Button("Delete", role: .destructive) { showingDeleteAlert = true }
-                Button("Cancel", role: .cancel) { }
-            }
-            .alert("Delete Comic?", isPresented: $showingDeleteAlert, presenting: selectedPDF) { pdf in
-                Button("Delete", role: .destructive) {
-                    conversionManager.removeFromLibrary(pdf)
-                }
-                Button("Cancel", role: .cancel) { }
-            }
-            .alert("Delete \(selectedPDFs.count) Items?", isPresented: $showingBatchDelete) {
-                Button("Delete", role: .destructive) {
-                    let items = getSelectedPDFs()
-                    items.forEach { conversionManager.removeFromLibrary($0) }
-                    selectedPDFs.removeAll()
-                    isSelectionMode = false
-                }
-                Button("Cancel", role: .cancel) { }
-            }
+            // Move sheets to a background element to reduce compiler complexity
+            .background(sheetHandlers)
         }
         .navigationViewStyle(.stack)
     }
@@ -133,6 +99,46 @@ struct LibraryView: View {
                 .shadow(radius: 5)
             }
         }
+    }
+    
+    // MARK: - Extracted Sheet Handlers (Fixes Compiler Timeout)
+    
+    @ViewBuilder
+    var sheetHandlers: some View {
+        EmptyView()
+            .sheet(item: $selectedPDF) { pdf in
+                if showingShareSheet {
+                    ShareSheet(activityItems: [pdf.url])
+                } else if showingDevicePicker {
+                    KindleDevicePickerView(pdf: pdf)
+                }
+            }
+            .sheet(isPresented: $showingBatchMail) {
+                if let first = getSelectedPDFs().first {
+                    KindleDevicePickerView(pdf: first)
+                }
+            }
+            .confirmationDialog("Options", isPresented: $showingActionSheet, presenting: selectedPDF) { pdf in
+                Button("Send to Kindle") { showingDevicePicker = true }
+                Button("Share") { showingShareSheet = true }
+                Button("Delete", role: .destructive) { showingDeleteAlert = true }
+                Button("Cancel", role: .cancel) { }
+            }
+            .alert("Delete Comic?", isPresented: $showingDeleteAlert, presenting: selectedPDF) { pdf in
+                Button("Delete", role: .destructive) {
+                    conversionManager.removeFromLibrary(pdf)
+                }
+                Button("Cancel", role: .cancel) { }
+            }
+            .alert("Delete \(selectedPDFs.count) Items?", isPresented: $showingBatchDelete) {
+                Button("Delete", role: .destructive) {
+                    let items = getSelectedPDFs()
+                    items.forEach { conversionManager.removeFromLibrary($0) }
+                    selectedPDFs.removeAll()
+                    isSelectionMode = false
+                }
+                Button("Cancel", role: .cancel) { }
+            }
     }
     
     // MARK: - Views
