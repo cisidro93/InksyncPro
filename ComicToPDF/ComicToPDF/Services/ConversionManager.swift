@@ -272,6 +272,16 @@ class ConversionManager: ObservableObject {
     
     @Published var activeTasks: [BackgroundTask] = []
     
+    // Performance
+    lazy var thumbnailCache = NSCache<NSString, UIImage>()
+    private var saveTimer: Timer?
+    private let fileManager = FileManager.default
+    
+    // Helper for memory mapped reading
+    func readFileMapped(at url: URL) throws -> Data {
+        return try Data(contentsOf: url, options: .mappedIfSafe)
+    }
+    
     // MARK: - Background Processing
     
     func splitFileInBackground(pdf: ConvertedPDF, maxSizeMB: Double) {
@@ -316,49 +326,55 @@ class ConversionManager: ObservableObject {
     // MARK: - Split Logic (Moved from PDFActionViews)
     
     private func performSplit(pdf: ConvertedPDF, maxSizeMB: Double, onProgress: @escaping (Double) -> Void) async throws -> [URL] {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                guard let document = PDFDocument(url: pdf.url) else {
-                    continuation.resume(throwing: NSError(domain: "SplitPDF", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open PDF"]))
-                    return
-                }
-                
-                let pageCount = document.pageCount
-                let maxBytes = Int(maxSizeMB) * 1024 * 1024
-                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
-                try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
-                
-                var parts: [URL] = []
-                var currentPart = PDFDocument()
-                var currentPartIndex = 1
-                var pagesInCurrentPart = 0
-                let baseName = pdf.name
-                
-                let avgPageSize = pdf.fileSize / Int64(max(pageCount, 1))
-                let pagesPerPart = max(1, Int(Int64(maxBytes) / max(avgPageSize, 1)))
-                
-                for i in 0..<pageCount {
-                    autoreleasepool {
-                        if let page = document.page(at: i) {
-                            currentPart.insert(page, at: pagesInCurrentPart)
-                            pagesInCurrentPart += 1
+        return try await withCheckedThrowingContinuation { continuation in
+            Task.detached(priority: .userInitiated) {
+                do {
+                    guard let document = PDFDocument(url: pdf.url) else {
+                        throw NSError(domain: "SplitPDF", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open PDF"])
+                    }
+                    
+                    let pageCount = document.pageCount
+                    let maxBytes = Int(maxSizeMB) * 1024 * 1024
+                    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    let outputDir = documentsPath.appendingPathComponent("ConvertedPDFs", isDirectory: true)
+                    try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+                    
+                    var parts: [URL] = []
+                    var currentPart = PDFDocument()
+                    var currentPartIndex = 1
+                    var pagesInCurrentPart = 0
+                    let baseName = pdf.name
+                    
+                    let avgPageSize = pdf.fileSize / Int64(max(pageCount, 1))
+                    let pagesPerPart = max(1, Int(Int64(maxBytes) / max(avgPageSize, 1)))
+                    
+                    for i in 0..<pageCount {
+                        autoreleasepool {
+                            if let page = document.page(at: i) {
+                                currentPart.insert(page, at: pagesInCurrentPart)
+                                pagesInCurrentPart += 1
+                            }
                         }
+                        
+                        // Memory cleanup
+                        if i % 10 == 0 { await Task.yield() }
+                        
+                        if pagesInCurrentPart >= pagesPerPart || i == pageCount - 1 {
+                            let partURL = outputDir.appendingPathComponent("\(baseName)_part\(currentPartIndex).pdf")
+                            if FileManager.default.fileExists(atPath: partURL.path) { try? FileManager.default.removeItem(at: partURL) }
+                            if currentPart.write(to: partURL) { parts.append(partURL) }
+                            currentPart = PDFDocument()
+                            pagesInCurrentPart = 0
+                            currentPartIndex += 1
+                        }
+                        
+                        await MainActor.run { onProgress(Double(i + 1) / Double(pageCount)) }
                     }
                     
-                    if pagesInCurrentPart >= pagesPerPart || i == pageCount - 1 {
-                        let partURL = outputDir.appendingPathComponent("\(baseName)_part\(currentPartIndex).pdf")
-                        if FileManager.default.fileExists(atPath: partURL.path) { try? FileManager.default.removeItem(at: partURL) }
-                        if currentPart.write(to: partURL) { parts.append(partURL) }
-                        currentPart = PDFDocument()
-                        pagesInCurrentPart = 0
-                        currentPartIndex += 1
-                    }
-                    
-                    Task { @MainActor in onProgress(Double(i + 1) / Double(pageCount)) }
+                    continuation.resume(returning: parts)
+                } catch {
+                    continuation.resume(throwing: error)
                 }
-                
-                continuation.resume(returning: parts)
             }
         }
     }
@@ -867,30 +883,35 @@ class ConversionManager: ObservableObject {
                 let baseName = url.deletingPathExtension().lastPathComponent
                 let originalSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
                 
-                for i in 0..<pageCount {
-                    autoreleasepool {
-                        if let page = document.page(at: i) {
-                            currentPart.insert(page, at: pagesInCurrentPart)
-                            pagesInCurrentPart += 1
-                        }
+            for i in 0..<pageCount {
+                autoreleasepool {
+                    if let page = document.page(at: i) {
+                        currentPart.insert(page, at: pagesInCurrentPart)
+                        pagesInCurrentPart += 1
                     }
-                    let estimatedPartSize = (Int64(pagesInCurrentPart) * originalSize) / Int64(pageCount)
-                    if estimatedPartSize >= maxBytes || i == pageCount - 1 {
-                        let partURL = self.outputDirectory.appendingPathComponent("\(baseName)_part\(currentPartIndex).pdf")
-                        if currentPart.write(to: partURL) { parts.append(partURL) }
-                        currentPart = PDFDocument()
-                        pagesInCurrentPart = 0
-                        currentPartIndex += 1
-                    }
-                    DispatchQueue.main.async { progressHandler(Double(i + 1) / Double(pageCount)) }
                 }
+                
+                // Memory cleanup
+                if i % 10 == 0 { await Task.yield() }
+                
+                let estimatedPartSize = (Int64(pagesInCurrentPart) * originalSize) / Int64(pageCount)
+                if estimatedPartSize >= maxBytes || i == pageCount - 1 {
+                    let partURL = self.outputDirectory.appendingPathComponent("\(baseName)_part\(currentPartIndex).pdf")
+                    if currentPart.write(to: partURL) { parts.append(partURL) }
+                    currentPart = PDFDocument()
+                    pagesInCurrentPart = 0
+                    currentPartIndex += 1
+                }
+                DispatchQueue.main.async { progressHandler(Double(i + 1) / Double(pageCount)) }
+            }
                 continuation.resume(returning: parts)
             }
         }
     }
     
     func addToLibrary(_ url: URL, collectionId: UUID? = nil, explicitPageCount: Int? = nil) {
-        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path), let fileSize = attributes[.size] as? Int64 else { return }
+        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+        let fileSize = (attributes?[.size] as? Int64) ?? 0
         
         var pageCount = 0
         if let count = explicitPageCount {
@@ -983,10 +1004,10 @@ class ConversionManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: "conversionSettings"), let settings = try? JSONDecoder().decode(ConversionSettings.self, from: data) { conversionSettings = settings }
     }
     
-    internal func savePDFs() { if let data = try? JSONEncoder().encode(convertedPDFs) { UserDefaults.standard.set(data, forKey: "convertedPDFs") } }
-    private func saveCollections() { if let data = try? JSONEncoder().encode(collections) { UserDefaults.standard.set(data, forKey: "pdfCollections") } }
-    private func saveKindleDevices() { if let data = try? JSONEncoder().encode(kindleDevices) { UserDefaults.standard.set(data, forKey: "kindleDevices") } }
-    func saveSettings() { if let data = try? JSONEncoder().encode(conversionSettings) { UserDefaults.standard.set(data, forKey: "conversionSettings") } }
+    internal func savePDFs() { markNeedsSave() }
+    private func saveCollections() { markNeedsSave() }
+    private func saveKindleDevices() { markNeedsSave() }
+    func saveSettings() { markNeedsSave() }
     
     // Force re-sync of file structure
     func scanForPDFs() {
@@ -1018,6 +1039,36 @@ class ConversionManager: ObservableObject {
         }
     }
     
+    // MARK: - Lazy Loading & Caching
+    
+    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
+        if let cached = thumbnailCache.object(forKey: pdf.id.uuidString as NSString) { return cached }
+        if let data = pdf.coverImageData, let image = UIImage(data: data) {
+            thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
+            return image
+        }
+        if pdf.coverImageData == nil { generateCoverThumbnail(for: pdf) }
+        return nil
+    }
+
+    // MARK: - Incremental Save
+    
+    func markNeedsSave() {
+        saveTimer?.invalidate()
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.saveDataNow() }
+        }
+    }
+    
+    private func saveDataNow() {
+        if let data = try? JSONEncoder().encode(convertedPDFs) { UserDefaults.standard.set(data, forKey: "convertedPDFs") }
+        if let data = try? JSONEncoder().encode(collections) { UserDefaults.standard.set(data, forKey: "pdfCollections") }
+        if let data = try? JSONEncoder().encode(kindleDevices) { UserDefaults.standard.set(data, forKey: "kindleDevices") }
+        if let data = try? JSONEncoder().encode(conversionSettings) { UserDefaults.standard.set(data, forKey: "conversionSettings") }
+        if let data = try? JSONEncoder().encode(sendHistory) { UserDefaults.standard.set(data, forKey: "sendHistory") }
+        if let data = try? JSONEncoder().encode(conversionPresets) { UserDefaults.standard.set(data, forKey: "conversionPresets") }
+    }
+    
     // MARK: - New Feature Implementation
     
     func toggleFavorite(_ pdf: ConvertedPDF) {
@@ -1031,7 +1082,7 @@ class ConversionManager: ObservableObject {
         // Accessing main-actor property convertedPDFs
         guard let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }), convertedPDFs[index].coverImageData == nil else { return }
         
-        DispatchQueue.global(qos: .utility).async {
+        Task.detached(priority: .utility) {
             let ext = pdf.url.pathExtension.lowercased()
             var imageData: Data? = nil
             
@@ -1080,12 +1131,13 @@ class ConversionManager: ObservableObject {
                 }
             }
             
-            if let finalData = imageData {
-                DispatchQueue.main.async { [weak self] in
+            if let finalData = imageData, let image = UIImage(data: finalData) {
+                await MainActor.run { [weak self] in
                     guard let self = self else { return }
                     if let idx = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                         self.convertedPDFs[idx].coverImageData = finalData
-                        self.savePDFs()
+                        self.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
+                        self.markNeedsSave()
                     }
                 }
             }
@@ -1381,8 +1433,8 @@ class ConversionManager: ObservableObject {
         saveSendHistory()
     }
     
-    private func saveSendHistory() { if let data = try? JSONEncoder().encode(sendHistory) { UserDefaults.standard.set(data, forKey: "sendHistory") } }
-    private func savePresets() { if let data = try? JSONEncoder().encode(conversionPresets) { UserDefaults.standard.set(data, forKey: "conversionPresets") } }
+    private func saveSendHistory() { markNeedsSave() }
+    private func savePresets() { markNeedsSave() }
 }
 
 // MARK: - SUPPORTING STRUCTS

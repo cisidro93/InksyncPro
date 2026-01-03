@@ -6,6 +6,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var themeManager: ThemeManager
     @State private var showingAddDevice = false
     @State private var deviceToEdit: KindleDevice?
     @State private var showingDeleteAlert = false
@@ -22,6 +23,28 @@ struct SettingsView: View {
                     }
                     Button(action: { showingAddDevice = true }) { HStack { Image(systemName: "plus.circle.fill").foregroundColor(.green); Text("Add Kindle Device") } }
                 } header: { Text("Kindle Devices") } footer: { Text("Add multiple Kindle devices and select which one to send to.") }
+                
+                Section(header: Text("Appearance")) {
+                    Picker("Theme", selection: $themeManager.selectedTheme) {
+                        ForEach(AppTheme.allCases) { theme in
+                            Text(theme.displayName).tag(theme)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    HStack {
+                        Image(systemName: "sun.max.fill")
+                            .foregroundColor(.orange)
+                        Spacer()
+                        Text("Choose your preferred theme")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Image(systemName: "moon.fill")
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.vertical, 4)
+                }
                 
                 Section {
                     Button(action: { showingCloudImport = true }) { HStack { Image(systemName: "icloud.and.arrow.down").foregroundColor(.blue).frame(width: 28); Text("Import from Cloud"); Spacer(); Image(systemName: "chevron.right").foregroundColor(.secondary) } }.foregroundColor(.primary)

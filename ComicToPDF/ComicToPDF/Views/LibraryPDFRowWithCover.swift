@@ -11,7 +11,7 @@ struct LibraryPDFRowWithCover: View {
         HStack(spacing: 12) {
             // Cover Image or Placeholder
             ZStack {
-                if let data = pdf.coverImageData, let uiImage = UIImage(data: data) {
+                if let uiImage = conversionManager.getThumbnail(for: pdf) {
                     Image(uiImage: uiImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -26,11 +26,9 @@ struct LibraryPDFRowWithCover: View {
             .frame(width: 50, height: 70)
             .cornerRadius(4)
             .clipped()
-            .onAppear {
-                if pdf.coverImageData == nil {
-                    conversionManager.generateCoverThumbnail(for: pdf)
-                }
-            }
+            .frame(width: 50, height: 70)
+            .cornerRadius(4)
+            .clipped()
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack {

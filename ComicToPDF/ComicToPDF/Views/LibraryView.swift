@@ -10,6 +10,9 @@ struct LibraryView: View {
     @State private var isSelectionMode = false
     @State private var searchText = ""
     @State private var selectedPDFs = Set<UUID>()
+    @AppStorage("gridColumns") private var gridColumns: Int = 3
+    
+    // Single Item Actions
     
     // Single Item Actions
     @State private var selectedPDF: ConvertedPDF?
@@ -22,7 +25,9 @@ struct LibraryView: View {
     @State private var showingBatchMail = false
     @State private var showingBatchShare = false
     @State private var showingBatchDelete = false
+
     @State private var showingBatchMerge = false
+    @State private var showingPanelExtractor = false
     
     @State private var readingPDF: ConvertedPDF?
     
@@ -74,12 +79,15 @@ struct LibraryView: View {
             
             if isGridView {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 16)], spacing: 16) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: gridColumns), spacing: 16) {
                         ForEach(filteredPDFs) { pdf in
                             gridItem(for: pdf)
                         }
                     }
                     .padding()
+                }
+                .refreshable {
+                    conversionManager.scanForPDFs()
                 }
             } else {
                 List {
@@ -99,6 +107,9 @@ struct LibraryView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                .refreshable {
+                    conversionManager.scanForPDFs()
+                }
             }
             
             // Bottom Action Bar (Batch)
@@ -157,6 +168,11 @@ struct LibraryView: View {
                  let ids = Set(items.map { $0.id })
                  FileMergeView(preselectedPDFs: ids)
                      .environmentObject(conversionManager)
+            }
+            .sheet(isPresented: $showingPanelExtractor) {
+                if let pdf = selectedPDF {
+                    PanelExtractionHost(pdf: pdf)
+                }
             }
             .fullScreenCover(item: $readingPDF) { pdf in
                 ReaderView(pdf: pdf)
@@ -269,7 +285,19 @@ struct LibraryView: View {
         ToolbarItem(placement: .navigationBarTrailing) {
             HStack {
                 Button(action: { isGridView.toggle() }) {
-                    Image(systemName: isGridView ? "list.bullet" : "square.grid.2x2")
+                    Image(systemName: isGridView ? "square.grid.2x2" : "list.bullet")
+                }
+                
+                if isGridView {
+                    Menu {
+                        Picker("Columns", selection: $gridColumns) {
+                            Text("2 Columns").tag(2)
+                            Text("3 Columns").tag(3)
+                            Text("4 Columns").tag(4)
+                        }
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }
                 }
                 Button(isSelectionMode ? "Done" : "Select") {
                     isSelectionMode.toggle()
@@ -295,6 +323,11 @@ struct LibraryView: View {
                 selectedPDF = pdf
                 showingDeleteAlert = true
             } label: { Label("Delete", systemImage: "trash") }
+            
+            Button {
+                selectedPDF = pdf
+                showingPanelExtractor = true
+            } label: { Label("Extract Panels", systemImage: "crop") }
         }
     }
     

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var conversionManager = ConversionManager()
+    @StateObject private var themeManager = ThemeManager()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @State private var showingOnboarding = false
     @State private var selectedTab = 0
@@ -15,7 +16,8 @@ struct ContentView: View {
         }
         .tint(.orange)
         .environmentObject(conversionManager)
-        .environmentObject(conversionManager)
+        .environmentObject(themeManager)
+        .preferredColorScheme(themeManager.selectedTheme.colorScheme)
         .fullScreenCover(isPresented: $showingOnboarding) {
             OnboardingView()
                 .onDisappear {

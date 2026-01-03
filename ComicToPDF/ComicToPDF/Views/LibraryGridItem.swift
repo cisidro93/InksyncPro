@@ -8,7 +8,7 @@ struct LibraryGridItem: View {
         VStack(alignment: .leading, spacing: 8) {
             // Cover Image
             ZStack {
-                if let data = pdf.coverImageData, let uiImage = UIImage(data: data) {
+                if let uiImage = conversionManager.getThumbnail(for: pdf) {
                     Image(uiImage: uiImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -48,10 +48,6 @@ struct LibraryGridItem: View {
         }
         .background(Color(UIColor.secondarySystemGroupedBackground))
         .cornerRadius(12)
-        .onAppear {
-            if pdf.coverImageData == nil {
-                conversionManager.generateCoverThumbnail(for: pdf)
-            }
-        }
+        .cornerRadius(12)
     }
 }
