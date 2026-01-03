@@ -298,9 +298,12 @@ class EPUBMerger {
         print("📦 Creating EPUB archive...")
         let finalEPUB = tempDir.appendingPathComponent("\(bookTitle).epub")
         
-        guard let archive = Archive(url: finalEPUB, accessMode: .create) else {
+        let archive: Archive
+        do {
+            archive = try Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8)
+        } catch {
             throw NSError(domain: "EPUBMerger", code: 500,
-                         userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to create archive: \(error.localizedDescription)"])
         }
         
         // Add mimetype first (uncompressed)

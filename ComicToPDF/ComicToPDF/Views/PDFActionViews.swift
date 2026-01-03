@@ -170,7 +170,7 @@ struct PanelExtractionHost: View {
     var body: some View {
         Group {
             if let image = coverImage {
-                PanelExtractionView(image: image)
+                PanelExtractionView(sourceImage: image)
             } else if isLoading {
                 VStack {
                     ProgressView()

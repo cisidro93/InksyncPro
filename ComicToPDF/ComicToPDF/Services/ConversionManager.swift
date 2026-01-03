@@ -267,7 +267,7 @@ class ConversionManager: ObservableObject {
     @Published var conversionPresets: [ConversionPreset] = []
     
     // Thumbnail cache
-    @Published var thumbnailCache: [UUID: Data] = [:]
+    // Thumbnail cache - using NSCache for automatic memory management
 
     // Incremental save
     private var saveTimer: Timer?
@@ -281,7 +281,7 @@ class ConversionManager: ObservableObject {
     
     // Performance
     lazy var thumbnailCache = NSCache<NSString, UIImage>()
-    private var saveTimer: Timer?
+
     private let fileManager = FileManager.default
     
     // Helper for memory mapped reading
@@ -1005,7 +1005,7 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    private func loadSavedData() {
+    func loadSavedData() {
         if let data = UserDefaults.standard.data(forKey: "convertedPDFs"), let pdfs = try? JSONDecoder().decode([ConvertedPDF].self, from: data) {
             convertedPDFs = pdfs.filter { fileManager.fileExists(atPath: $0.url.path) }
         }
@@ -1051,18 +1051,23 @@ class ConversionManager: ObservableObject {
     
     // MARK: - Lazy Loading & Caching
     
-    func getThumbnail(for pdf: ConvertedPDF) -> Data? {
-        if let cached = thumbnailCache[pdf.id] {
+    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
+        // Check NSCache first for fast lookup
+        if let cached = thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
             return cached
         }
         
-        if pdf.coverImageData == nil {
-            generateCoverThumbnail(for: pdf)
+        // Try to load from saved coverImageData
+        if let imageData = pdf.coverImageData,
+           let image = UIImage(data: imageData) {
+            // Cache it for next time
+            thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
+            return image
         }
         
-        if let data = pdf.coverImageData {
-            thumbnailCache[pdf.id] = data
-            return data
+        // Generate thumbnail if we don't have one
+        if pdf.coverImageData == nil {
+            generateCoverThumbnail(for: pdf)
         }
         
         return nil
@@ -1074,7 +1079,9 @@ class ConversionManager: ObservableObject {
         needsSave = true
         saveTimer?.invalidate()
         saveTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            self?.saveDataIfNeeded()
+            Task { @MainActor in
+                self?.saveDataIfNeeded()
+            }
         }
     }
     
