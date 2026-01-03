@@ -453,7 +453,10 @@ class EPUBGenerator {
     // MARK: - Helper Methods
     
     private func resizeImageIfNeeded(_ image: UIImage) -> UIImage {
-        let originalSize = image.size
+        // Use consistent pixel dimensions (CGImage) instead of logical points (UIImage.size) to avoid Retina scaling issues
+        let width = image.cgImage?.width ?? Int(image.size.width * image.scale)
+        let height = image.cgImage?.height ?? Int(image.size.height * image.scale)
+        let originalSize = CGSize(width: width, height: height)
         
         // Safety check for invalid dimensions or memory issues
         guard originalSize.width > 0, originalSize.height > 0,
