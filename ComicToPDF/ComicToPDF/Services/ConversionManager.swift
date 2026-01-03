@@ -379,7 +379,7 @@ class ConversionManager: ObservableObject {
         }
         switch sortOption {
         case .dateAdded: result.sort { $0.dateAdded > $1.dateAdded }
-        case .name: result.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .name: result.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         case .size: result.sort { $0.fileSize > $1.fileSize }
         case .pageCount: result.sort { $0.pageCount > $1.pageCount }
         }

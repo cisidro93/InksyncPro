@@ -1,6 +1,11 @@
 import SwiftUI
 
 struct FileMergeView: View {
+    enum MergeSortOrder {
+        case byName
+        case byDate
+    }
+
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var selectedPDFs: Set<UUID> = []
@@ -8,6 +13,7 @@ struct FileMergeView: View {
     @State private var outputName: String = "Merged Book"
     @State private var isMerging = false
     @State private var targetFormat: OutputFormat = .pdf
+    @State private var sortOrder: MergeSortOrder = .byName
     
     // Explicit list passed if triggered from selection
     var preselectedPDFs: Set<UUID>? = nil
@@ -18,11 +24,23 @@ struct FileMergeView: View {
                 Form {
                     Section(header: Text("Settings")) {
                         TextField("Output Name", text: $outputName)
+                            .textFieldStyle(.roundedBorder)
+                            .autocapitalization(.words)
+                        
+                        Text("File will be saved as: \(outputName).\(targetFormat.rawValue.lowercased())")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                         
                         Picker("Output Format", selection: $targetFormat) {
                             ForEach(OutputFormat.allCases) { format in
                                 Label(format.rawValue, systemImage: format.icon).tag(format)
                             }
+                        }
+                        .pickerStyle(.segmented)
+                        
+                        Picker("Sort Order", selection: $sortOrder) {
+                            Text("By Name").tag(MergeSortOrder.byName)
+                            Text("By Date Added").tag(MergeSortOrder.byDate)
                         }
                         .pickerStyle(.segmented)
                         
@@ -35,7 +53,7 @@ struct FileMergeView: View {
                     
                     Section(header: Text("Select Files to Merge")) {
                         List {
-                            ForEach(conversionManager.convertedPDFs) { pdf in
+                            ForEach(sortedFiles) { pdf in
                                 HStack {
                                     Image(systemName: selectedPDFs.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
                                         .foregroundColor(selectedPDFs.contains(pdf.id) ? .blue : .secondary)
@@ -88,8 +106,29 @@ struct FileMergeView: View {
                 if let preselected = preselectedPDFs {
                     selectedPDFs = preselected
                 }
-                // Auto-detect format if all same
+                
+                // Auto-detect format and smart naming
                 let selectedFiles = conversionManager.convertedPDFs.filter { selectedPDFs.contains($0.id) }
+                
+                if outputName == "Merged Book" && !selectedFiles.isEmpty {
+                    let firstFile = selectedFiles.first!.name
+                    let commonPrefix = selectedFiles.reduce(firstFile) { result, pdf in
+                        let name = pdf.name
+                        var i = 0
+                        while i < result.count && i < name.count && result[result.index(result.startIndex, offsetBy: i)] == name[name.index(name.startIndex, offsetBy: i)] {
+                            i += 1
+                        }
+                        return String(result.prefix(i))
+                    }
+                    
+                    let trimmed = commonPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
+                        
+                    if trimmed.count > 3 {
+                        outputName = trimmed
+                    }
+                }
+                
                 if !selectedFiles.isEmpty {
                     let firstExt = selectedFiles.first?.url.pathExtension.lowercased()
                     if selectedFiles.allSatisfy({ $0.url.pathExtension.lowercased() == firstExt }) {
@@ -116,14 +155,22 @@ struct FileMergeView: View {
         }
     }
     
+    private var sortedFiles: [ConvertedPDF] {
+        let allFiles = conversionManager.convertedPDFs
+        switch sortOrder {
+        case .byName:
+            return allFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .byDate:
+            return allFiles.sorted { $0.dateAdded > $1.dateAdded }
+        }
+    }
+    
     private func mergeFiles() {
         guard !outputName.isEmpty else { return }
         isMerging = true
         
-        // Sort files by name (natural order) to ensure chapters merge correctly
-        let filesToMerge = conversionManager.convertedPDFs
-            .filter { selectedPDFs.contains($0.id) }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        // Use sortedFiles filtered by selection
+        let filesToMerge = sortedFiles.filter { selectedPDFs.contains($0.id) }
         
         Task {
             do {

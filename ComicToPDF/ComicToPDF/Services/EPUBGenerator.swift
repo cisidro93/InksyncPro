@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import ZIPFoundation
+import UniformTypeIdentifiers
 
 // =============================================================================
 // MARK: - EPUB GENERATOR CLASS
@@ -185,17 +186,35 @@ class EPUBGenerator {
                     }
                     
                     if !processed {
-                        if let image = UIImage(contentsOfFile: sourceURL.path) {
-                            // 1. Resize if needed
-                            let resizedImage = resizeImageIfNeeded(image)
-                            
-                            // 2. Compress
-                            if let imageData = resizedImage.jpegData(compressionQuality: self.compressionQuality) {
-                                try imageData.write(to: destURL)
-                                finalSize += Int64(imageData.count)
-                                processed = true
+                        // FIX: Use CGImageSource/Destination to avoid UIImage tiling artifacts (horizontal strips)
+                        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
+                              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+                            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                            if let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path),
+                               let size = attrs[.size] as? Int64 {
+                                finalSize += size
                             }
+                            processed = true
+                            continue
                         }
+                        
+                        let data = NSMutableData()
+                        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil) else {
+                            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                            processed = true
+                            continue
+                        }
+                        
+                        let options: [String: Any] = [
+                            kCGImageDestinationLossyCompressionQuality as String: self.compressionQuality
+                        ]
+                        
+                        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+                        CGImageDestinationFinalize(destination)
+                        
+                        try (data as Data).write(to: destURL)
+                        finalSize += Int64((data as Data).count)
+                        processed = true
                     }
                     
                     if !processed {
