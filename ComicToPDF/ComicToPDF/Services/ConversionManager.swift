@@ -306,6 +306,9 @@ class ConversionManager: ObservableObject {
     @Published var progress: Double = 0.0
     @Published var alertMessage: String?
     
+    // ✅ ADD THIS NEW PROPERTY
+    @Published var processingStatus: String = "Waiting..."
+    
     // MARK: - Panel Editor State
     @Published var showingPanelEditor = false
     @Published var currentPanelSession: PanelEditSession?
@@ -1316,7 +1319,13 @@ class ConversionManager: ObservableObject {
                 for (fileIndex, item) in epubs.enumerated() {
                     let fileDir = sessionDir.appendingPathComponent("source_\(fileIndex)")
                     try? FileManager.default.createDirectory(at: fileDir, withIntermediateDirectories: true)
-                    try? FileManager.default.unzipItem(at: item.url, to: fileDir)
+                    try? FileManager.default.createDirectory(at: fileDir, withIntermediateDirectories: true)
+                    do {
+                        try FileManager.default.unzipItem(at: item.url, to: fileDir)
+                    } catch {
+                        print("❌ Failed to unzip for editor: \(error)")
+                        continue // Skip this file but don't crash
+                    }
                     
                     let searchPaths = [
                         fileDir.appendingPathComponent("OEBPS/images"),
@@ -1412,13 +1421,38 @@ class ConversionManager: ObservableObject {
                     outputURL: outputURL,
                     metadata: metadata,
                     settings: conversionSettings.epubSettings,
-                    precomputedManifest: manifest
+                    precomputedManifest: manifest,
+                    onStatusUpdate: { status in
+                        Task { @MainActor [weak self] in
+                            self?.processingStatus = status
+                        }
+                    }
                 )
             } else {
-                 (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(sourceURLs: urls, outputURL: outputURL, metadata: metadata, settings: conversionSettings.epubSettings)
+                 (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(
+                    sourceURLs: urls,
+                    outputURL: outputURL,
+                    metadata: metadata,
+                    settings: conversionSettings.epubSettings,
+                    onStatusUpdate: { status in
+                        Task { @MainActor [weak self] in
+                            self?.processingStatus = status
+                        }
+                    }
+                )
             }
         } else {
-            (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(sourceURLs: urls, outputURL: outputURL, metadata: metadata, settings: conversionSettings.epubSettings)
+            (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(
+                sourceURLs: urls,
+                outputURL: outputURL,
+                metadata: metadata,
+                settings: conversionSettings.epubSettings,
+                onStatusUpdate: { status in
+                    Task { @MainActor [weak self] in
+                        self?.processingStatus = status
+                    }
+                }
+            )
         }
         await MainActor.run {
              self.addToLibrary(finalEPUB, explicitPageCount: pageCount)

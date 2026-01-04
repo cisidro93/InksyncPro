@@ -219,6 +219,19 @@ struct ConvertView: View {
                     }
                 }
                 
+                // ✅ ADD THIS NEW BLOCK
+                if conversionManager.isConverting && !conversionManager.processingStatus.isEmpty {
+                    HStack {
+                        Image(systemName: "eye.fill") // Eye icon for "visual detection"
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                        Text(conversionManager.processingStatus)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                            .transition(.opacity)
+                    }
+                }
+                
                 // File size info
                 if inputFileSize > 0 {
                     Divider()

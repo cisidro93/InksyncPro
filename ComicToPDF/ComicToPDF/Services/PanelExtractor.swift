@@ -117,12 +117,15 @@ class PanelExtractor {
     // MARK: - EPUB Generation Support
     
     // Batch process multiple images for EPUB generation
-    static func extractPanelsFromImages(_ images: [UIImage], mode: ExtractionMode, settings: EPUBSettings) async throws -> EPUBPanelManifest {
+    static func extractPanelsFromImages(_ images: [UIImage], mode: ExtractionMode, settings: EPUBSettings, onStatusUpdate: ((String) -> Void)? = nil) async throws -> EPUBPanelManifest {
         
         var allPagePanels: [EPUBPanelManifest.PagePanels] = []
         
         for (index, image) in images.enumerated() {
-            print("🔍 Detecting panels on page \(index + 1)/\(images.count)...")
+            // ✅ ADD THIS STATUS UPDATE
+            let statusMsg = "Detecting Panels: Page \(index + 1) of \(images.count)"
+            print("🔍 \(statusMsg)") 
+            onStatusUpdate?(statusMsg)
             
             // For batch processing, we can yield to keep UI responsive
             await Task.yield()

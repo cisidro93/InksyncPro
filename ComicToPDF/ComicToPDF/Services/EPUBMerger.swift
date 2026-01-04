@@ -18,7 +18,7 @@ class EPUBMerger {
     ///   - settings: Settings for EPUB generation.
     ///   - precomputedManifest: Optional panel manifest if manual editing was performed.
     /// - Returns: The URL of the merged EPUB and the total page count.
-    static func mergeEPUBs(sourceURLs: [URL], outputURL: URL, metadata: PDFMetadata, settings: EPUBSettings, precomputedManifest: EPUBPanelManifest? = nil) async throws -> (URL, Int) {
+    static func mergeEPUBs(sourceURLs: [URL], outputURL: URL, metadata: PDFMetadata, settings: EPUBSettings, precomputedManifest: EPUBPanelManifest? = nil, onStatusUpdate: ((String) -> Void)? = nil) async throws -> (URL, Int) {
         
         print("🔄 Starting EPUB merge for \(sourceURLs.count) files")
         
@@ -152,7 +152,8 @@ class EPUBMerger {
                 panelManifest = try await PanelExtractor.extractPanelsFromImages(
                     pageImages,
                     mode: detectionMode,
-                    settings: settings
+                    settings: settings,
+                    onStatusUpdate: onStatusUpdate // ✅ Pass it here
                 )
                 
                 print("✅ Panel metadata generated for \(pageImages.count) pages")
