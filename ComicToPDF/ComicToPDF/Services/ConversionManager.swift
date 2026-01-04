@@ -777,35 +777,32 @@ class ConversionManager: ObservableObject {
             progressHandler(config.epubSettings.enablePanelView ? 0.5 : 1.0)
         }
         
-        // 2. CHECK: Do we need Panel Detection / Review?
+        // 2. CHECK: Do we need Panel Detection?
+        // FIX: We skipped the manual performPanelReview step to prevent UI blocking (Black Screen).
+        // We now pass `precomputedManifest: nil`.
+        // The EPUBMerger will handle auto-detection internally if enablePanelView is true.
         if config.epubSettings.enablePanelView {
             
-            // A. Run the Review (This opens the UI)
-            let (manifest, _) = try await performPanelReview(sourceEPUB: initialEPUB, settings: config.epubSettings)
+            let metadata = PDFMetadata(title: outputName) // Basic metadata
             
-            // B. Rebuild EPUB with Manifest
-            if let panelManifest = manifest {
-                let metadata = PDFMetadata(title: outputName) // Basic metadata
-                
-                // We use EPUBMerger to "Merge" the single file with itself + new metadata
-                // passing 'panelManifest' ensures we SKIP re-detection inside the merger
-                let (finalURL, finalCount) = try await EPUBMerger.mergeEPUBs(
-                    sourceURLs: [initialEPUB],
-                    outputURL: self.outputDirectory.appendingPathComponent("\(outputName)_guided.epub"),
-                    metadata: metadata,
-                    settings: config.epubSettings,
-                    precomputedManifest: panelManifest, // <<-- KEY OPTIMIZATION
-                    onStatusUpdate: { status in
-                        Task { @MainActor in self.processingStatus = status }
-                    }
-                )
-                
-                // Cleanup the temp raw file
-                try? FileManager.default.removeItem(at: initialEPUB)
-                
-                initialEPUB = finalURL
-                pageCount = finalCount
-            }
+            // We use EPUBMerger to "Merge" the single file with itself + new metadata
+            // passing nil for precomputedManifest triggers auto-detection inside the merger
+            let (finalURL, finalCount) = try await EPUBMerger.mergeEPUBs(
+                sourceURLs: [initialEPUB],
+                outputURL: self.outputDirectory.appendingPathComponent("\(outputName)_guided.epub"),
+                metadata: metadata,
+                settings: config.epubSettings,
+                precomputedManifest: nil, // <<-- FORCE AUTO-DETECTION (No UI)
+                onStatusUpdate: { status in
+                    Task { @MainActor in self.processingStatus = status }
+                }
+            )
+            
+            // Cleanup the temp raw file
+            try? FileManager.default.removeItem(at: initialEPUB)
+            
+            initialEPUB = finalURL
+            pageCount = finalCount
         }
         
         // 3. Final Split Check (Existing Logic)
