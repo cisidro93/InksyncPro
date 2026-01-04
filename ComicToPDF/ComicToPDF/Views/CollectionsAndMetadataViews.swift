@@ -97,7 +97,18 @@ struct MoveToCollectionView: View {
             List {
                 Button(action: { moveTo(nil) }) { HStack { Image(systemName: "questionmark.folder.fill").foregroundColor(.orange); Text("Uncategorized"); Spacer(); if pdf.collectionId == nil { Image(systemName: "checkmark").foregroundColor(.blue) } } }
                 ForEach(conversionManager.collections) { collection in
-                    Button(action: { moveTo(collection.id) }) { HStack { Image(systemName: collection.icon).foregroundColor(colorFor(collection.color)); Text(collection.name); Spacer(); if pdf.collectionId == collection.id { Image(systemName: "checkmark").foregroundColor(.blue) } } }
+                Button(action: { moveTo(collection.id) }) { 
+                    HStack { 
+                        Image(systemName: collection.icon)
+                            .foregroundColor(colorFor(collection.color))
+                        Text(collection.name)
+                        Spacer()
+                        if pdf.collectionId == collection.id { 
+                            Image(systemName: "checkmark")
+                                .foregroundColor(.blue) 
+                        } 
+                    } 
+                }
                 }
             }.navigationTitle("Move to Collection").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { dismiss() } } }
         }
@@ -152,7 +163,12 @@ struct CreateEditCollectionView: View {
     private func save() {
         switch mode {
         case .create: conversionManager.createCollection(name: name, icon: selectedIcon, color: selectedColor)
-        case .edit(let collection): if let index = conversionManager.collections.firstIndex(where: { $0.id == collection.id }) { conversionManager.collections[index].name = name; conversionManager.collections[index].icon = selectedIcon; conversionManager.collections[index].color = selectedColor }
+        case .edit(let collection): 
+            if let index = conversionManager.collections.firstIndex(where: { $0.id == collection.id }) {
+                conversionManager.collections[index].name = name
+                conversionManager.collections[index].icon = selectedIcon
+                conversionManager.collections[index].color = selectedColor
+            }
         }
         dismiss()
     }

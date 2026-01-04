@@ -313,6 +313,7 @@ class ConversionManager: ObservableObject {
     @Published var showingPanelEditor = false
     @Published var currentPanelSession: PanelEditSession?
     @Published var panelEditorCompletion: ((PanelEditSession?) -> Void)?
+    @Published var collections: [PDFCollection] = []
     
 
     @Published var kindleDevices: [KindleDevice] = []
@@ -1516,7 +1517,7 @@ class ConversionManager: ObservableObject {
                             self.showingPanelEditor = false
                             self.currentPanelSession = nil
                             self.panelEditorCompletion = nil
-                            continuation.resume(returning: result)
+                            continuation.resume(returning: result!)
                         }
                     }
                 }
