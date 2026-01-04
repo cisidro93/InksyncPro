@@ -193,13 +193,16 @@ class PanelEditorViewModel: ObservableObject {
     }
     
     func autoDetectCurrentPage() {
-        // Mock implementation to satisfy compiler
-        guard var page = currentPage else { return }
+        // FIX: Capture immutable copy ('let') to avoid concurrency warning
+        guard let page = currentPage else { return }
+        
         Task {
             let panels = try? await PanelExtractor.extractPanels(from: page.image, mode: .automatic)
             await MainActor.run {
-                page.panels = (panels ?? []).enumerated().map { EditablePanel(from: $0.element, order: $0.offset + 1) }
-                updatePage(page)
+                // Create mutable copy locally on MainActor
+                var updatedPage = page
+                updatedPage.panels = (panels ?? []).enumerated().map { EditablePanel(from: $0.element, order: $0.offset + 1) }
+                updatePage(updatedPage)
             }
         }
     }

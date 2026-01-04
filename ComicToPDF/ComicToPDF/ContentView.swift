@@ -39,14 +39,14 @@ struct ContentView: View {
                 PanelEditorView(session: session, onComplete: completion)
             }
         }
-    }
-    .onChange(of: conversionManager.showingPanelEditor) { newValue in
-        if newValue {
-            self.panelEditSession = conversionManager.currentPanelSession
-            self.panelEditorCompletion = conversionManager.panelEditorCompletion
-            self.showPanelEditor = true
-        } else {
-            self.showPanelEditor = false
+        .onChange(of: conversionManager.showingPanelEditor) { newValue in
+            if newValue {
+                self.panelEditSession = conversionManager.currentPanelSession
+                self.panelEditorCompletion = conversionManager.panelEditorCompletion
+                self.showPanelEditor = true
+            } else {
+                self.showPanelEditor = false
+            }
         }
     }
 }

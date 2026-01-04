@@ -425,10 +425,8 @@ class EPUBMerger {
         print("📦 Creating EPUB archive...")
         let finalEPUB = tempDir.appendingPathComponent("\(bookTitle).epub")
         
-        guard let archive = try Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8) else {
-            throw NSError(domain: "EPUBMerger", code: 500,
-                         userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
-        }
+        // FIX 2: Updated for ZIPFoundation 0.9.19+ (init throws, does not return optional)
+        let archive = try Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8)
         
         // Add mimetype first (uncompressed)
         try archive.addEntry(with: "mimetype", relativeTo: epubDir, compressionMethod: .none)
