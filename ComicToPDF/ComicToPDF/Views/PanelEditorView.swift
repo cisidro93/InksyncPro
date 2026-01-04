@@ -2,149 +2,251 @@ import SwiftUI
 import ImageIO
 
 struct PanelEditorView: View {
-    @Environment(\.dismiss) private var dismiss
-    @StateObject private var viewModel: PanelEditorViewModel
+    @ObservedObject var session: PanelEditSession
+    var onComplete: (PanelEditSession) -> Void
+    var onCancel: () -> Void
     
-    // State for drawing new panels
-    @State private var isDrawing = false
-    @State private var newPanelStart: CGPoint?
-    @State private var newPanelCurrent: CGPoint?
-    
-    init(session: PanelEditSession, onComplete: @escaping (PanelEditSession) -> Void) {
-        _viewModel = StateObject(wrappedValue: PanelEditorViewModel(session: session, onComplete: onComplete))
-    }
+    @State private var currentIndex: Int = 0
+    @State private var selectedPanelID: UUID?
+    @State private var showHelp: Bool = false
     
     var body: some View {
-        NavigationView {
-            VStack {
-                // Top controls
+        ZStack {
+            Color.black.edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 0) {
+                // --- HEADER ---
                 HStack {
-                    Button(action: { viewModel.autoDetectCurrentPage() }) {
-                        Label("Auto-Detect", systemImage: "wand.and.stars")
-                    }
+                    Button("Cancel") { onCancel() }
+                        .foregroundColor(.white)
                     Spacer()
-                    Toggle("Draw Mode", isOn: $isDrawing)
-                        .toggleStyle(.button)
-                        .tint(.orange)
+                    Text("Page \(currentIndex + 1) of \(session.pages.count)")
+                        .font(.headline)
+                        .foregroundColor(.white)
                     Spacer()
-                    Button(action: { viewModel.clearCurrentPage() }) {
-                        Label("Clear All", systemImage: "trash")
-                    }
-                    .tint(.red)
+                    Button("Done") { onComplete(session) }
+                        .font(.headline)
+                        .foregroundColor(.orange)
                 }
                 .padding()
+                .background(Color.gray.opacity(0.2))
                 
-                // Main Content
-                // Main Content
-                if let page = viewModel.currentPage {
-                    GeometryReader { geo in
-                        HStack(spacing: 0) {
-                            // Image Canvas (Refactored to PageView)
+                // --- MAIN CONTENT ---
+                // ✅ FIX: GeometryReader wraps the TabView to provide stable size
+                GeometryReader { mainGeo in
+                    TabView(selection: $currentIndex) {
+                        ForEach(session.pages.indices, id: \.self) { index in
+                            let page = session.pages[index]
+                            // We pass the OUTER geometry down to the page
                             PageView(
                                 page: page,
-                                viewModel: viewModel,
-                                isDrawing: $isDrawing,
-                                newPanelStart: $newPanelStart,
-                                newPanelCurrent: $newPanelCurrent
+                                selectedPanelID: $selectedPanelID,
+                                geometry: mainGeo, 
+                                onAddPanel: { rect in
+                                    addPanel(to: page, rect: rect)
+                                },
+                                onDeletePanel: { id in
+                                    deletePanel(from: page, id: id)
+                                },
+                                onUpdatePanel: { id, rect in
+                                    updatePanel(in: page, id: id, rect: rect)
+                                }
                             )
-                            .frame(maxWidth: .infinity)
-                            .clipped()
-                            
-                            // Right: Panel List
-                            VStack {
-                                Text("Panels: \(page.panels.count)")
-                                    .font(.headline)
-                                    .padding(.top)
-                                    .onTapGesture { viewModel.selectedPanelID = nil }
-                                
-                                List {
-                                    ForEach(page.panels) { panel in
-                                        HStack {
-                                            Text("Panel \(panel.order)")
-                                                .fontWeight(panel.id == viewModel.selectedPanelID ? .bold : .regular)
-                                            Spacer()
-                                            if panel.id == viewModel.selectedPanelID {
-                                                Image(systemName: "checkmark").foregroundColor(.blue)
-                                            }
-                                        }
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            viewModel.selectedPanelID = panel.id
-                                            isDrawing = false
-                                        }
-                                    }
-                                    .onDelete { viewModel.deletePanels(at: $0) }
-                                    .onMove { viewModel.movePanels(from: $0, to: $1) }
-                                }
-                                .listStyle(.plain)
-                                
-                                if viewModel.selectedPanelID != nil {
-                                    Button("Delete Selected") {
-                                        viewModel.deleteSelectedPanel()
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .tint(.red)
-                                    .padding()
-                                }
-                            }
-                            .frame(width: 250)
-                            .background(Color(UIColor.secondarySystemBackground))
+                            .tag(index) // Use index for tag to match selection
                         }
                     }
-                } else {
-                    VStack {
-                        ProgressView()
-                        Text("Loading Page...")
-                    }
+                    .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
                 }
                 
-                // Bottom Navigation
-                HStack {
-                    Button("Previous Page") { viewModel.previousPage() }
-                        .disabled(viewModel.session.currentPageIndex == 0)
-                    Spacer()
-                    Text("Page \(viewModel.session.currentPageIndex + 1) of \(viewModel.session.pages.count)")
-                    Spacer()
-                    Button("Next Page") { viewModel.nextPage() }
-                        .disabled(viewModel.session.currentPageIndex == viewModel.session.pages.count - 1)
+                // --- FOOTER ---
+                VStack(spacing: 12) {
+                    HStack {
+                        Text("Detected: \(currentPanels.count)")
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Button(action: { showHelp.toggle() }) {
+                            Image(systemName: "questionmark.circle")
+                        }
+                    }
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            Button(action: { autoDetect() }) {
+                                Label("Re-Detect", systemImage: "sparkles")
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue)
+                                    .cornerRadius(8)
+                            }
+                            
+                            Button(action: { clearPanels() }) {
+                                Label("Clear All", systemImage: "trash")
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Color.red.opacity(0.8))
+                                    .cornerRadius(8)
+                            }
+                            
+                            if let selected = selectedPanelID {
+                                Button(action: { deletePanel(id: selected) }) {
+                                    Label("Delete Selected", systemImage: "xmark.circle")
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Color.orange)
+                                        .cornerRadius(8)
+                                }
+                            }
+                        }
+                    }
                 }
                 .padding()
-                .background(Color(UIColor.systemBackground))
-            }
-            .navigationTitle("Panel Editor")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        viewModel.saveAndComplete()
-                        dismiss()
-                    }
-                    .fontWeight(.bold)
-                }
+                .background(Color.gray.opacity(0.2))
             }
         }
-        .navigationViewStyle(.stack)
-        .onAppear {
-            viewModel.loadImage()
+        .alert(isPresented: $showHelp) {
+            Alert(title: Text("How to Edit"), message: Text("• Tap a panel to select it\n• Drag corners to resize\n• Tap 'x' to delete\n• Drag on empty space to draw a new panel"), dismissButton: .default(Text("Got it")))
         }
     }
+    
+    // MARK: - Logic
+    
+    private var currentPanels: [EditablePanel] {
+        guard currentIndex < session.pages.count else { return [] }
+        return session.pages[currentIndex].panels
+    }
+    
+    private func addPanel(to page: PanelEditSession.PageEditData, rect: CGRect) {
+        if let idx = session.pages.firstIndex(where: { $0.id == page.id }) {
+            let newOrder = (session.pages[idx].panels.map { $0.order }.max() ?? 0) + 1
+            let panel = EditablePanel(id: UUID(), rect: rect, order: newOrder)
+            session.pages[idx].panels.append(panel)
+            selectedPanelID = panel.id
+        }
+    }
+    
+    private func deletePanel(from page: PanelEditSession.PageEditData, id: UUID) {
+        if let idx = session.pages.firstIndex(where: { $0.id == page.id }) {
+            session.pages[idx].panels.removeAll(where: { $0.id == id })
+            if selectedPanelID == id { selectedPanelID = nil }
+        }
+    }
+    
+    private func deletePanel(id: UUID) {
+        guard currentIndex < session.pages.count else { return }
+        session.pages[currentIndex].panels.removeAll(where: { $0.id == id })
+        selectedPanelID = nil
+    }
+    
+    private func updatePanel(in page: PanelEditSession.PageEditData, id: UUID, rect: CGRect) {
+        if let idx = session.pages.firstIndex(where: { $0.id == page.id }),
+           let panelIdx = session.pages[idx].panels.firstIndex(where: { $0.id == id }) {
+            session.pages[idx].panels[panelIdx].rect = rect
+        }
+    }
+    
+    private func autoDetect() {
+        print("Auto-detect requested")
+    }
+    
+    private func clearPanels() {
+        guard currentIndex < session.pages.count else { return }
+        session.pages[currentIndex].panels.removeAll()
+        selectedPanelID = nil
+    }
 }
-// MARK: - Helper Views & ViewModel
-struct DrawingOverlay: View {
-    let start: CGPoint?
-    let current: CGPoint?
+
+// MARK: - PageView & Helpers
+
+struct PageView: View {
+    let page: PanelEditSession.PageEditData
+    @Binding var selectedPanelID: UUID?
+    let geometry: GeometryProxy
+    let onAddPanel: (CGRect) -> Void
+    let onDeletePanel: (UUID) -> Void
+    let onUpdatePanel: (UUID, CGRect) -> Void
+    
+    @State private var originalImageSize: CGSize? = nil
+    @State private var newPanelStart: CGPoint?
+    @State private var newPanelCurrent: CGPoint?
+
     var body: some View {
-        if let s = start, let c = current {
-            Path { path in
-                let rect = CGRect(x: min(s.x, c.x), y: min(s.y, c.y),
-                                  width: abs(c.x - s.x), height: abs(c.y - s.y))
-                path.addRect(rect)
+        ZStack(alignment: .topLeading) {
+            // 1. Image
+            OptimizedPageImage(url: page.imageURL, targetSize: geometry.size)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .contentShape(Rectangle()) // Ensure tap/drag works on empty areas
+            
+            // 2. Overlays
+            if let imgSize = originalImageSize {
+                PanelOverlay(
+                    panels: page.panels,
+                    selectedID: selectedPanelID,
+                    imageSize: imgSize,
+                    viewSize: geometry.size,
+                    onSelect: { id in selectedPanelID = id },
+                    onUpdate: { id, rect in onUpdatePanel(id, rect) }
+                )
+                
+                // Drawing
+                if let start = newPanelStart, let current = newPanelCurrent {
+                    DrawingOverlay(start: start, current: current)
+                }
+                
+                // Gestures
+                Color.white.opacity(0.001)
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                if newPanelStart == nil { newPanelStart = value.location }
+                                newPanelCurrent = value.location
+                            }
+                            .onEnded { value in
+                                guard let start = newPanelStart else { return }
+                                let end = value.location
+                                let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                                                  width: abs(end.x - start.x), height: abs(end.y - start.y))
+                                
+                                if rect.width > 20 && rect.height > 20 {
+                                    // Convert to Image Coords
+                                    let scaleX = imgSize.width / geometry.size.width
+                                    let scaleY = imgSize.height / geometry.size.height
+                                    let imageRect = CGRect(x: rect.origin.x * scaleX, y: rect.origin.y * scaleY,
+                                                           width: rect.width * scaleX, height: rect.height * scaleY)
+                                    onAddPanel(imageRect)
+                                }
+                                newPanelStart = nil
+                                newPanelCurrent = nil
+                            }
+                    )
+                    .allowsHitTesting(selectedPanelID == nil) // Only draw if no panel selected? Or always?
+                    // User said "Drag on empty space". If over a panel, PanelOverlay handles (if selected).
+                    // If not selected, we might want to select it.
+                    // PanelOverlay has onTapGesture.
             }
-            .stroke(Color.green, lineWidth: 2)
+        }
+        .task {
+            // Load original dimensions for coordinate mapping
+            if originalImageSize == nil {
+                originalImageSize = ImageUtilities.getImageSize(url: page.imageURL)
+            }
         }
     }
 }
+
+// Re-use helper views
+struct DrawingOverlay: View {
+    let start: CGPoint
+    let current: CGPoint
+    var body: some View {
+        Path { path in
+            let rect = CGRect(x: min(start.x, current.x), y: min(start.y, current.y),
+                              width: abs(current.x - start.x), height: abs(current.y - start.y))
+            path.addRect(rect)
+        }
+        .stroke(Color.green, lineWidth: 2)
+    }
+}
+
 struct PanelOverlay: View {
     let panels: [EditablePanel]
     let selectedID: UUID?
@@ -183,20 +285,20 @@ struct PanelOverlay: View {
                         .background(Circle().fill(Color.black.opacity(0.7)))
                         .foregroundColor(.white)
                         .position(x: 20, y: 20)
-                        .allowsHitTesting(false)
-                    
+                        
                     if isSelected {
-                        Circle()
+                        // resize handle
+                         Circle()
                             .fill(Color.blue)
                             .frame(width: 20, height: 20)
-                            .position(x: viewRect.width, y: viewRect.height)
+                            .position(x: viewRect.width, y: viewRect.height) // simplified handle pos
                             .gesture(
                                 DragGesture()
                                     .onChanged { value in
-                                        let newWidth = max(20, viewRect.width + value.translation.width)
-                                        let newHeight = max(20, viewRect.height + value.translation.height)
-                                        let newRect = CGRect(x: viewRect.origin.x, y: viewRect.origin.y, width: newWidth, height: newHeight)
-                                        onUpdate(panel.id, convertToImageRect(newRect))
+                                        let newW = max(20, viewRect.width + value.translation.width)
+                                        let newH = max(20, viewRect.height + value.translation.height)
+                                        let newR = CGRect(x: viewRect.origin.x, y: viewRect.origin.y, width: newW, height: newH)
+                                        onUpdate(panel.id, convertToImageRect(newR))
                                     }
                             )
                     }
@@ -210,7 +312,6 @@ struct PanelOverlay: View {
     func convertToViewRect(_ imageRect: CGRect) -> CGRect {
         let scaleX = viewSize.width / imageSize.width
         let scaleY = viewSize.height / imageSize.height
-        
         return CGRect(
             x: imageRect.origin.x * scaleX,
             y: imageRect.origin.y * scaleY,
@@ -222,214 +323,12 @@ struct PanelOverlay: View {
     func convertToImageRect(_ viewRect: CGRect) -> CGRect {
         let scaleX = viewSize.width / imageSize.width
         let scaleY = viewSize.height / imageSize.height
-        
-        return CGRect(
+         return CGRect(
             x: viewRect.origin.x / scaleX,
             y: viewRect.origin.y / scaleY,
             width: viewRect.width / scaleX,
             height: viewRect.height / scaleY
         )
-    }
-}
-
-class PanelEditorViewModel: ObservableObject {
-    @Published var session: PanelEditSession
-    @Published var selectedPanelID: UUID?
-    @Published var currentLoadedImage: UIImage?
-    let onComplete: (PanelEditSession) -> Void
-    
-    init(session: PanelEditSession, onComplete: @escaping (PanelEditSession) -> Void) {
-        self.session = session
-        self.onComplete = onComplete
-    }
-    
-    var currentPage: PanelEditSession.PageEditData? {
-        guard session.currentPageIndex < session.pages.count else { return nil }
-        return session.pages[session.currentPageIndex]
-    }
-    
-    // MEMORY FIX: Load image on demand
-    func loadImage() {
-        guard let page = currentPage else { return }
-        if let current = currentLoadedImage, current.accessibilityIdentifier == page.imageURL.path {
-             return 
-        }
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            if let data = try? Data(contentsOf: page.imageURL), let image = UIImage(data: data) {
-                image.accessibilityIdentifier = page.imageURL.path
-                DispatchQueue.main.async {
-                    self.currentLoadedImage = image
-                }
-            }
-        }
-    }
-    
-    func updatePanelRect(id: UUID, newRect: CGRect) {
-        guard var page = currentPage, let index = page.panels.firstIndex(where: { $0.id == id }) else { return }
-        page.panels[index].rect = newRect
-        updatePage(page)
-    }
-    
-    func addPanel(rect: CGRect) {
-        guard var page = currentPage else { return }
-        let newOrder = page.panels.count + 1
-        let panel = EditablePanel(rect: rect, order: newOrder)
-        page.panels.append(panel)
-        updatePage(page)
-        selectedPanelID = panel.id
-    }
-    
-    func autoDetectCurrentPage() {
-        guard let page = currentPage, let image = currentLoadedImage else { return }
-        Task {
-            let panels = try? await PanelExtractor.extractPanels(from: image, mode: .automatic)
-            await MainActor.run {
-                var updatedPage = page
-                updatedPage.panels = (panels ?? []).enumerated().map { EditablePanel(from: $0.element, order: $0.offset + 1) }
-                updatePage(updatedPage)
-            }
-        }
-    }
-    
-    func clearCurrentPage() {
-        guard var page = currentPage else { return }
-        page.panels.removeAll()
-        updatePage(page)
-    }
-    
-    func deleteSelectedPanel() {
-        guard var page = currentPage, let id = selectedPanelID else { return }
-        page.panels.removeAll { $0.id == id }
-        updatePage(page)
-        selectedPanelID = nil
-    }
-    
-    func deletePanels(at offsets: IndexSet) {
-        guard var page = currentPage else { return }
-        page.panels.remove(atOffsets: offsets)
-        updatePage(page)
-    }
-    
-    func movePanels(from source: IndexSet, to destination: Int) {
-        guard var page = currentPage else { return }
-        page.panels.move(fromOffsets: source, toOffset: destination)
-        for (index, _) in page.panels.enumerated() {
-            page.panels[index].order = index + 1
-        }
-        updatePage(page)
-    }
-    
-    private func updatePage(_ page: PanelEditSession.PageEditData) {
-        session.pages[session.currentPageIndex] = page
-    }
-    
-    func previousPage() {
-        if session.currentPageIndex > 0 { 
-            session.currentPageIndex -= 1
-            selectedPanelID = nil
-            currentLoadedImage = nil // clear memory
-            loadImage()
-        }
-    }
-    
-    func nextPage() {
-        if session.currentPageIndex < session.pages.count - 1 { 
-            session.currentPageIndex += 1
-            selectedPanelID = nil
-            currentLoadedImage = nil // clear memory
-            loadImage()
-        }
-    }
-    
-    func saveAndComplete() {
-        onComplete(session)
-    }
-}
-
-// MARK: - Optimized Views
-
-struct PageView: View {
-    let page: PanelEditSession.PageEditData
-    @ObservedObject var viewModel: PanelEditorViewModel
-    @Binding var isDrawing: Bool
-    @Binding var newPanelStart: CGPoint?
-    @Binding var newPanelCurrent: CGPoint?
-    
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                // 1. Optimized Image Display (Low Memory)
-                OptimizedPageImage(url: page.imageURL, targetSize: geo.size)
-                
-                // 2. Overlays
-                // We rely on viewModel to hold the metadata/full image for coordinates
-                if let loadedImage = viewModel.currentLoadedImage {
-                     PanelOverlay(
-                        panels: page.panels,
-                        selectedID: viewModel.selectedPanelID,
-                        imageSize: loadedImage.size,
-                        viewSize: geo.size,
-                        onSelect: { id in
-                            if !isDrawing { viewModel.selectedPanelID = id }
-                        },
-                        onUpdate: { id, newRect in
-                            viewModel.updatePanelRect(id: id, newRect: newRect)
-                        }
-                    )
-                    
-                    if isDrawing {
-                        DrawingOverlay(start: newPanelStart, current: newPanelCurrent)
-                    }
-                    
-                    // Drawing Gestures
-                    if isDrawing {
-                        Color.white.opacity(0.001)
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { value in
-                                        if newPanelStart == nil { newPanelStart = value.location }
-                                        newPanelCurrent = value.location
-                                    }
-                                    .onEnded { value in
-                                        guard let start = newPanelStart else { return }
-                                        let end = value.location
-                                        let rect = CGRect(x: min(start.x, end.x),
-                                                          y: min(start.y, end.y),
-                                                          width: abs(end.x - start.x),
-                                                          height: abs(end.y - start.y))
-                                        
-                                        if rect.width > 20 && rect.height > 20 {
-                                            // Convert to Image Coords
-                                            let viewSize = geo.size
-                                            let imageSize = loadedImage.size
-                                            let scaleX = imageSize.width / viewSize.width
-                                            let scaleY = imageSize.height / viewSize.height
-                                            
-                                            let imageRect = CGRect(
-                                                x: rect.origin.x * scaleX,
-                                                y: rect.origin.y * scaleY,
-                                                width: rect.width * scaleX,
-                                                height: rect.height * scaleY
-                                            )
-                                            viewModel.addPanel(rect: imageRect)
-                                        }
-                                        newPanelStart = nil
-                                        newPanelCurrent = nil
-                                    }
-                            )
-                    }
-                } else {
-                    // While VM loads the logic image, we might already show the visual image via OptimizedPageImage.
-                    // But we can't show overlays yet.
-                    if viewModel.currentLoadedImage == nil {
-                         // Force VM load? It's called in onAppear.
-                         // Maybe show simple generic progress if OptimizedPageImage is also loading
-                         // But OptimizedPageImage handles its own progress.
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -443,7 +342,6 @@ struct OptimizedPageImage: View {
     
     var body: some View {
         ZStack {
-            // 1. Gray background ensures we can see the view frame even if image fails
             Color.gray.opacity(0.1)
             
             if let image = image {
@@ -462,7 +360,6 @@ struct OptimizedPageImage: View {
                         .font(.caption)
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)
-                    // Show filename for debugging
                     Text(url.lastPathComponent)
                         .font(.caption2)
                         .foregroundColor(.gray)
@@ -477,56 +374,36 @@ struct OptimizedPageImage: View {
                 }
             }
         }
-        // 2. CRITICAL FIX: Restart load if size changes (e.g. from 0 to Screen Width)
-        .task(id: targetSize) {
-            await loadImage()
-        }
-        // 3. Retry if URL changes
-        .task(id: url) {
-            await loadImage()
-        }
+        .task(id: targetSize) { await loadImage() }
+        .task(id: url) { await loadImage() }
     }
     
     private func loadImage() async {
-        // 4. Guard against 0x0 layout frames
         guard targetSize.width > 0 && targetSize.height > 0 else {
             print("⏳ OptimizedPageImage: Waiting for valid layout size...")
             return
         }
-        
-        // Reset state on retry
         await MainActor.run {
             self.errorMessage = nil
             if self.image == nil { self.isLoading = true }
         }
-        
         let currentURL = url
         let size = targetSize
-        
-        // Run off-main-thread
         let result = await Task.detached(priority: .userInitiated) { () -> Result<UIImage, Error> in
-            // Double check file existence
             guard FileManager.default.fileExists(atPath: currentURL.path) else {
                 return .failure(NSError(domain: "ImageLoader", code: 404, userInfo: [NSLocalizedDescriptionKey: "File not found at path"]))
             }
-            
             if let img = ImageUtilities.downsample(imageAt: currentURL, to: size, scale: UIScreen.main.scale) {
                 return .success(img)
             } else {
-                return .failure(NSError(domain: "ImageLoader", code: 500, userInfo: [NSLocalizedDescriptionKey: "Downsampling failed (ImageIO returned nil)"]))
+                return .failure(NSError(domain: "ImageLoader", code: 500, userInfo: [NSLocalizedDescriptionKey: "Downsampling failed"]))
             }
         }.value
-        
         await MainActor.run {
             self.isLoading = false
             switch result {
-            case .success(let img):
-                withAnimation {
-                    self.image = img
-                }
-            case .failure(let err):
-                print("❌ OptimizedPageImage Error: \(err.localizedDescription)")
-                self.errorMessage = err.localizedDescription
+            case .success(let img): withAnimation { self.image = img }
+            case .failure(let err): self.errorMessage = err.localizedDescription
             }
         }
     }
@@ -535,14 +412,11 @@ struct OptimizedPageImage: View {
 struct ImageUtilities {
     static func downsample(imageAt imageURL: URL, to pointSize: CGSize, scale: CGFloat) -> UIImage? {
         let imageSourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let imageSource = CGImageSourceCreateWithURL(imageURL as CFURL, imageSourceOptions) else {
-            print("❌ ImageUtilities: Could not create source from \(imageURL)")
-            return nil
-        }
+        guard let imageSource = CGImageSourceCreateWithURL(imageURL as CFURL, imageSourceOptions) else { return nil }
         
         // Ensure we don't pass 0 to ImageIO
         let maxDim = max(pointSize.width, pointSize.height) * scale
-        let targetPixels = max(maxDim, 1024) // Fallback to 1024px if size is tiny to avoid 0x0 errors
+        let targetPixels = max(maxDim, 1024) 
         
         let downsampleOptions = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -551,11 +425,18 @@ struct ImageUtilities {
             kCGImageSourceThumbnailMaxPixelSize: targetPixels
         ] as CFDictionary
         
-        guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions) else {
-            print("❌ ImageUtilities: Thumbnail creation failed")
-            return nil
-        }
-        
+        guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions) else { return nil }
         return UIImage(cgImage: downsampledImage)
     }
+
+    static func getImageSize(url: URL) -> CGSize? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return nil }
+        if let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
+           let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat {
+            return CGSize(width: width, height: height)
+        }
+        return nil
+    }
 }
+

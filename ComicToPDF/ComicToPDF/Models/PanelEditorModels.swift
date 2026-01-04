@@ -36,13 +36,20 @@ struct EditablePanel: Identifiable, Equatable {
 
 // Holds all pages and their panels for editing
 // Holds all pages and their panels for editing
-struct PanelEditSession: Identifiable {
+// Holds all pages and their panels for editing
+class PanelEditSession: ObservableObject, Identifiable {
     let id: UUID = UUID()
-    var pages: [PageEditData]
-    var currentPageIndex: Int = 0
+    @Published var pages: [PageEditData]
+    @Published var currentPageIndex: Int = 0
     var readingDirection: EPUBSettings.ReadingDirection = .leftToRight
     // Track the temp directory so we can clean it up later
     var sessionTempDirectory: URL? 
+    
+    init(pages: [PageEditData], readingDirection: EPUBSettings.ReadingDirection, sessionTempDirectory: URL?) {
+        self.pages = pages
+        self.readingDirection = readingDirection
+        self.sessionTempDirectory = sessionTempDirectory
+    }
     
     struct PageEditData: Identifiable {
         let id: UUID = UUID()
@@ -56,7 +63,7 @@ struct PanelEditSession: Identifiable {
         return pages[currentPageIndex]
     }
     
-    mutating func updateCurrentPage(_ page: PageEditData) {
+    func updateCurrentPage(_ page: PageEditData) {
         guard currentPageIndex < pages.count else { return }
         pages[currentPageIndex] = page
     }

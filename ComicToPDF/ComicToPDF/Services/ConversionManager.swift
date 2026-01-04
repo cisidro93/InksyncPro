@@ -312,12 +312,60 @@ class ConversionManager: ObservableObject {
     // MARK: - Panel Editor State
     @Published var showingPanelEditor = false
     @Published var currentPanelSession: PanelEditSession?
-    @Published var panelEditorCompletion: ((PanelEditSession) -> Void)?
+    @Published var panelEditorCompletion: ((PanelEditSession?) -> Void)?
     
-    
-    // MARK: - Services
-    // private let pdfConverter = PDFConverter()
-    @Published var collections: [PDFCollection] = []
+        // Change: Return optional session (nil = cancelled)
+        let editedSession: PanelEditSession? = await withCheckedContinuation { continuation in
+            Task { @MainActor in
+                self.currentPanelSession = session
+                self.showingPanelEditor = true
+                self.panelEditorCompletion = { result in
+                    print("✅ Panel Editor finished (Cancelled: \(result == nil)).")
+                    self.showingPanelEditor = false
+                    self.currentPanelSession = nil
+                    self.panelEditorCompletion = nil
+                    continuation.resume(returning: result)
+                }
+            }
+        }
+        
+        // Check for cancellation
+        guard let validSession = editedSession else {
+            print("⚠️ Panel Editor Cancelled. Proceeding without panel view.")
+            try? FileManager.default.removeItem(at: sessionDir)
+            return (nil, foundImageURLs.count)
+        }
+        
+        // 6. Convert back to Manifest
+        await MainActor.run { self.processingStatus = "Finalizing EPUB..." }
+        
+        var allPagePanels: [EPUBPanelManifest.PagePanels] = []
+        for page in validSession.pages {
+            // We can safely try? here because we already verified the data above
+            if let data = try? Data(contentsOf: page.imageURL), let image = UIImage(data: data), let cgImage = image.cgImage {
+                let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
+                let panels = page.panels.sorted(by: { $0.order < $1.order }).map { $0.toNormalizedRegion(imageSize: imageSize) }
+                
+                allPagePanels.append(EPUBPanelManifest.PagePanels(
+                    pageNumber: page.pageNumber,
+                    imageFile: "page\(page.pageNumber).jpg",
+                    panels: panels
+                ))
+            }
+        }
+        
+        // Cleanup
+        print("🧹 Cleaning up session directory: \(sessionDir.path)")
+        try? FileManager.default.removeItem(at: sessionDir)
+        
+        let manifest = EPUBPanelManifest(
+            version: "1.0",
+            readingDirection: validSession.readingDirection == .rightToLeft ? "rtl" : "ltr",
+            pages: allPagePanels
+        )
+        
+        return (manifest, foundImageURLs.count)
+    }
     @Published var kindleDevices: [KindleDevice] = []
     @Published var conversionSettings = ConversionSettings()
     @Published var sendHistory: [SendHistoryRecord] = []

@@ -10,7 +10,7 @@ struct ContentView: View {
     // Panel Editor State
     @State private var showPanelEditor = false
     @State private var panelEditSession: PanelEditSession?
-    @State private var panelEditorCompletion: ((PanelEditSession) -> Void)?
+    @State private var panelEditorCompletion: ((PanelEditSession?) -> Void)?
     
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -36,7 +36,11 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showPanelEditor) {
             if let session = panelEditSession, let completion = panelEditorCompletion {
-                PanelEditorView(session: session, onComplete: completion)
+                PanelEditorView(
+                    session: session,
+                    onComplete: { updatedSession in completion(updatedSession) },
+                    onCancel: { completion(nil) }
+                )
             }
         }
         .onChange(of: conversionManager.showingPanelEditor) { newValue in
