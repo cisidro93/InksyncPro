@@ -1768,7 +1768,7 @@ class ConversionManager: ObservableObject {
     }
     
     // Helper used by PageManagerView
-    func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
+    func extractPDFImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
         guard let document = PDFDocument(url: url) else { return [] }
         var images: [UIImage] = []
         let pageCount = document.pageCount
