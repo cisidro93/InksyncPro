@@ -161,23 +161,8 @@ struct DefaultConversionSettingsView: View {
         Form {
             Section { Toggle("Manga Mode (RTL)", isOn: $conversionManager.conversionSettings.mangaMode) } header: { Text("Reading Direction") } footer: { Text("Enable for Japanese manga to reverse page order") }
             
-            Section(header: Text("Panel View (Guided View)")) {
-                Toggle("Enable Panel Detection", isOn: $conversionManager.conversionSettings.epubSettings.enablePanelView)
-                
-                if conversionManager.conversionSettings.epubSettings.enablePanelView {
-                    Picker("Detection Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
-                        Text("Automatic (AI)").tag(EPUBSettings.PanelDetectionMode.automatic)
-                        Text("2×2 Grid").tag(EPUBSettings.PanelDetectionMode.grid2x2)
-                        Text("2×3 Grid").tag(EPUBSettings.PanelDetectionMode.grid2x3)
-                        Text("3×3 Grid").tag(EPUBSettings.PanelDetectionMode.grid3x3)
-                    }
-                    
-                    Picker("Reading Direction", selection: $conversionManager.conversionSettings.epubSettings.readingDirection) {
-                        Text("Left to Right (Western)").tag(EPUBSettings.ReadingDirection.leftToRight)
-                        Text("Right to Left (Manga)").tag(EPUBSettings.ReadingDirection.rightToLeft)
-                    }
-                }
-            }
+            // Panel View Section Moved to ConvertView
+
             
             
             Section {

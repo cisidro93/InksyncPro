@@ -623,6 +623,38 @@ struct ConvertView: View {
             Text("Fixed layout preserves original page design (recommended for comics)")
                 .font(.caption)
                 .foregroundColor(.secondary)
+            
+            // --- INSERTED PANEL VIEW SETTINGS ---
+            
+            Divider() // Optional: Adds a visual separator
+
+            Toggle(isOn: $settings.epubSettings.enablePanelView) {
+                VStack(alignment: .leading) {
+                    Text("Enable Panel Detection (Guided View)")
+                    Text("Detects individual panels for 'tap-to-zoom' reading.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if settings.epubSettings.enablePanelView {
+                // 1. Detection Mode Picker
+                Picker("Detection Mode", selection: $settings.epubSettings.panelDetectionMode) {
+                    Text("Automatic (AI)").tag(EPUBSettings.PanelDetectionMode.automatic)
+                    Text("2×2 Grid").tag(EPUBSettings.PanelDetectionMode.grid2x2)
+                    Text("2×3 Grid").tag(EPUBSettings.PanelDetectionMode.grid2x3)
+                    Text("3×3 Grid").tag(EPUBSettings.PanelDetectionMode.grid3x3)
+                }
+                .pickerStyle(.menu) // Uses a compact menu style nicely in lists
+
+                // 2. Reading Direction Picker
+                Picker("Reading Direction", selection: $settings.epubSettings.readingDirection) {
+                    Text("Left to Right (Western)").tag(EPUBSettings.ReadingDirection.leftToRight)
+                    Text("Right to Left (Manga)").tag(EPUBSettings.ReadingDirection.rightToLeft)
+                }
+                .pickerStyle(.menu)
+            }
+            // ------------------------------------
         }
         .padding()
         .background(
