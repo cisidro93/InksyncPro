@@ -137,7 +137,11 @@ class EPUBMerger {
             
             // Detect panels
             if !pageImages.isEmpty {
-                let detectionMode: PanelExtractor.ExtractionMode
+                // Check if we already have a manifest (from manual review)
+                // If so, SKIP this entire block
+                if settings.enablePanelView && panelManifest == nil {
+                    
+                    let detectionMode: PanelExtractor.ExtractionMode
                 switch settings.panelDetectionMode {
                 case .automatic:
                     detectionMode = .automatic
@@ -166,7 +170,8 @@ class EPUBMerger {
                     let manifestPath = oebpsDir.appendingPathComponent("panel-manifest.json")
                     try manifestData.write(to: manifestPath)
                 }
-            }
+            } // End if settings.enablePanelView && panelManifest == nil
+            } // End if !pageImages.isEmpty
         }
         
         var pageNumber = 1

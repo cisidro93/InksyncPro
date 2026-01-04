@@ -594,13 +594,117 @@ class ConversionManager: ObservableObject {
         return outputURLs
     }
     
+    // ✅ NEW HELPER: Handles the Panel Editor UI flow
+    private func performPanelReview(sourceEPUB: URL, settings: EPUBSettings) async throws -> (EPUBPanelManifest?, Int) {
+        
+        // 1. Notify UI
+        await MainActor.run { self.processingStatus = "Preparing Panel Editor..." }
+        
+        // 2. Extract images for the editor
+        // We use a predefined temp directory for the session
+        let sessionID = UUID().uuidString
+        let sessionDir = FileManager.default.temporaryDirectory.appendingPathComponent("EditorSession_\(sessionID)")
+        try? FileManager.default.createDirectory(at: sessionDir, withIntermediateDirectories: true)
+        
+        let fileDir = sessionDir.appendingPathComponent("source")
+        try FileManager.default.createDirectory(at: fileDir, withIntermediateDirectories: true)
+        
+        // Unzip the EPUB
+        try FileManager.default.unzipItem(at: sourceEPUB, to: fileDir)
+        
+        // Find images (Recursive search to be safe)
+        var foundImageURLs: [URL] = []
+        if let enumerator = FileManager.default.enumerator(at: fileDir, includingPropertiesForKeys: nil) {
+            while let fileURL = enumerator.nextObject() as? URL {
+                if ["jpg", "jpeg", "png", "webp"].contains(fileURL.pathExtension.lowercased()) {
+                    foundImageURLs.append(fileURL)
+                }
+            }
+        }
+        foundImageURLs.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        
+        guard !foundImageURLs.isEmpty else { return (nil, 0) }
+        
+        // 3. Run Auto-Detection
+        var pages: [PanelEditSession.PageEditData] = []
+        let detectionMode: PanelExtractor.ExtractionMode = {
+            switch settings.panelDetectionMode {
+            case .grid2x2: return .grid(rows: 2, columns: 2)
+            case .grid3x3: return .grid(rows: 3, columns: 3)
+            case .grid2x3: return .grid(rows: 2, columns: 3)
+            default: return .automatic
+            }
+        }()
+        
+        for (index, imageURL) in foundImageURLs.enumerated() {
+            await MainActor.run { self.processingStatus = "Detecting Panels: Page \(index + 1)/\(foundImageURLs.count)" }
+            
+            if let data = try? Data(contentsOf: imageURL), let image = UIImage(data: data) {
+                let panels = try? await PanelExtractor.extractPanels(from: image, mode: detectionMode)
+                let editable = (panels ?? []).enumerated().map { idx, p in EditablePanel(from: p, order: idx + 1) }
+                
+                pages.append(PanelEditSession.PageEditData(
+                    pageNumber: index + 1,
+                    imageURL: imageURL,
+                    panels: editable
+                ))
+            }
+        }
+        
+        // 4. Show UI and Wait
+        let session = PanelEditSession(pages: pages, readingDirection: settings.readingDirection, sessionTempDirectory: sessionDir)
+        
+        let editedSession: PanelEditSession = await withCheckedContinuation { continuation in
+            Task { @MainActor in
+                self.currentPanelSession = session
+                self.showingPanelEditor = true
+                self.panelEditorCompletion = { result in
+                    self.showingPanelEditor = false
+                    self.currentPanelSession = nil
+                    self.panelEditorCompletion = nil
+                    continuation.resume(returning: result)
+                }
+            }
+        }
+        
+        // 5. Convert back to Manifest
+        await MainActor.run { self.processingStatus = "Finalizing EPUB..." }
+        
+        var allPagePanels: [EPUBPanelManifest.PagePanels] = []
+        for page in editedSession.pages {
+            if let data = try? Data(contentsOf: page.imageURL), let image = UIImage(data: data), let cgImage = image.cgImage {
+                let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
+                let panels = page.panels.sorted(by: { $0.order < $1.order }).map { $0.toNormalizedRegion(imageSize: imageSize) }
+                
+                allPagePanels.append(EPUBPanelManifest.PagePanels(
+                    pageNumber: page.pageNumber,
+                    imageFile: "page\(page.pageNumber).jpg", 
+                    panels: panels
+                ))
+            }
+        }
+        
+        // Cleanup
+        try? FileManager.default.removeItem(at: sessionDir)
+        
+        let manifest = EPUBPanelManifest(
+            version: "1.0",
+            readingDirection: editedSession.readingDirection == .rightToLeft ? "rtl" : "ltr",
+            pages: allPagePanels
+        )
+        
+        return (manifest, foundImageURLs.count)
+    }
+    
     func convertToEPUB(from sourceURL: URL, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> ([URL], Int) {
         let config = settings ?? conversionSettings
         let outputName = sourceURL.deletingPathExtension().lastPathComponent
         
-        // Check if source is marked as PDF or has PDF extension
+        // 1. Generate the "Raw" EPUB first (using existing converters)
+        var initialEPUB: URL
+        var pageCount = 0
+        
         let isPDF = sourceURL.pathExtension.lowercased() == "pdf"
-
         
         if isPDF {
             let tempOutput = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("\(outputName).epub")
@@ -609,84 +713,78 @@ class ConversionManager: ObservableObject {
             let converter = PDFToEPUBConverter()
             var options = PDFToEPUBConverter.ConversionOptions.default
             
-            // Map settings to options
-            // Map settings to options
             var scale: Double = 1.0
             if config.compressionQuality == .custom {
-                options.imageQuality = config.customJpegQuality
-                scale = config.customScale
+                 options.imageQuality = config.customJpegQuality
+                 scale = config.customScale
             } else {
-                let values = config.compressionQuality.values
-                options.imageQuality = values.quality
-                scale = values.scale
+                 options.imageQuality = config.compressionQuality.values.quality
+                 scale = config.compressionQuality.values.scale
             }
-            
-            // Safety Clamps
-            scale = max(0.1, min(scale, 2.0))
-            options.imageQuality = max(0.01, min(options.imageQuality, 1.0))
-            
-            if config.optimizeForDevice {
-                let resolution = config.targetDevice.resolution
-                options.maxImageWidth = resolution.width
-                options.maxImageHeight = resolution.height
-            } else {
-                // Apply scale to default base resolution (approx 1600x2400) or just pass generic limits
-                // If user wants "Original", we give high limits. If "Low", we reduce.
-                options.maxImageWidth = 1600 * CGFloat(scale)
-                options.maxImageHeight = 2400 * CGFloat(scale)
-                
-                // If "Original", lets unlock the size a bit more to be true to source
-                if config.compressionQuality == .original {
-                    options.maxImageWidth = 4000
-                    options.maxImageHeight = 6000
-                }
-            }
+            options.maxImageWidth = 1600 * CGFloat(scale)
+            options.maxImageHeight = 2400 * CGFloat(scale)
             options.title = outputName
             
-            // Perform conversion and get result URL+PageCount
-            let (url, pageCount) = try await converter.convert(pdfURL: sourceURL, to: self.outputDirectory.appendingPathComponent("\(outputName).epub"), options: options) { progress in
-                progressHandler(progress.percentage)
+            let (url, count) = try await converter.convert(pdfURL: sourceURL, to: self.outputDirectory.appendingPathComponent("\(outputName).epub"), options: options) { p in
+                // Only go up to 50% progress if we might do panel detection
+                let maxProgress = config.epubSettings.enablePanelView ? 0.5 : 1.0
+                progressHandler(p.percentage * maxProgress)
             }
-            
-            // Check Split
-            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
-            if fileSize > 190 * 1024 * 1024 {
-                let parts = try ComicEPUBProcessor.splitEPUB(url, maxSizeMB: 190)
-                try? FileManager.default.removeItem(at: url)
-                return (parts, pageCount)
-            }
-            return ([url], pageCount)
+            initialEPUB = url
+            pageCount = count
             
         } else {
-            // Determine Compression Quality
-            var jpegQuality: Double
-            if config.compressionQuality == .custom {
-                jpegQuality = config.customJpegQuality
-            } else {
-                jpegQuality = config.compressionQuality.values.quality
-            }
-            
-            // Safety Clamp
-            jpegQuality = max(0.01, min(jpegQuality, 1.0))
-            
+            // CBZ/CBR path
+            let jpegQuality = config.compressionQuality == .custom ? config.customJpegQuality : config.compressionQuality.values.quality
             let converter = CBZToEPUBConverter()
-            let epubURL = try await converter.convertCBZToEPUB(sourceURL, compressionQuality: jpegQuality)
+            initialEPUB = try await converter.convertCBZToEPUB(sourceURL, compressionQuality: jpegQuality)
+            progressHandler(config.epubSettings.enablePanelView ? 0.5 : 1.0)
+        }
+        
+        // 2. CHECK: Do we need Panel Detection / Review?
+        if config.epubSettings.enablePanelView {
             
-            // Check Split (CBZ)
-            let fileSize = (try? FileManager.default.attributesOfItem(atPath: epubURL.path)[.size] as? Int64) ?? 0
-            if fileSize > 190 * 1024 * 1024 {
-                let parts = try ComicEPUBProcessor.splitEPUB(epubURL, maxSizeMB: 190)
-                try? FileManager.default.removeItem(at: epubURL)
-                progressHandler(1.0)
-                return (parts, 0)
+            // A. Run the Review (This opens the UI)
+            let (manifest, _) = try await performPanelReview(sourceEPUB: initialEPUB, settings: config.epubSettings)
+            
+            // B. Rebuild EPUB with Manifest
+            if let panelManifest = manifest {
+                let metadata = PDFMetadata(title: outputName) // Basic metadata
+                
+                // We use EPUBMerger to "Merge" the single file with itself + new metadata
+                // passing 'panelManifest' ensures we SKIP re-detection inside the merger
+                let (finalURL, finalCount) = try await EPUBMerger.mergeEPUBs(
+                    sourceURLs: [initialEPUB],
+                    outputURL: self.outputDirectory.appendingPathComponent("\(outputName)_guided.epub"),
+                    metadata: metadata,
+                    settings: config.epubSettings,
+                    precomputedManifest: panelManifest, // <<-- KEY OPTIMIZATION
+                    onStatusUpdate: { status in
+                        Task { @MainActor in self.processingStatus = status }
+                    }
+                )
+                
+                // Cleanup the temp raw file
+                try? FileManager.default.removeItem(at: initialEPUB)
+                
+                initialEPUB = finalURL
+                pageCount = finalCount
             }
-            
-            progressHandler(1.0)
-            return ([epubURL], 0)
         }
-            
-
+        
+        // 3. Final Split Check (Existing Logic)
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: initialEPUB.path)[.size] as? Int64) ?? 0
+        if fileSize > 190 * 1024 * 1024 {
+             await MainActor.run { self.processingStatus = "Splitting large EPUB..." }
+             let parts = try ComicEPUBProcessor.splitEPUB(initialEPUB, maxSizeMB: 190)
+             try? FileManager.default.removeItem(at: initialEPUB)
+             progressHandler(1.0)
+             return (parts, pageCount)
         }
+        
+        progressHandler(1.0)
+        return ([initialEPUB], pageCount)
+    }
 
     
 
