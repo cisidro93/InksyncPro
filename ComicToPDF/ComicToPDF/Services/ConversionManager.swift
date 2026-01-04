@@ -1665,7 +1665,6 @@ class ConversionManager: ObservableObject {
     private func saveSendHistory() { markNeedsSave() }
     private func savePresets() { markNeedsSave() }
 }
-}
 
 // MARK: - SUPPORTING STRUCTS
 
