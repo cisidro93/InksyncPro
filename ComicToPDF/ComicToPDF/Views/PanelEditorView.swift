@@ -389,11 +389,14 @@ struct OptimizedPageImage: View {
         }
         let currentURL = url
         let size = targetSize
+        // FIX: Capture scale on MainActor before detached task
+        let scale = await MainActor.run { UIScreen.main.scale }
+
         let result = await Task.detached(priority: .userInitiated) { () -> Result<UIImage, Error> in
             guard FileManager.default.fileExists(atPath: currentURL.path) else {
                 return .failure(NSError(domain: "ImageLoader", code: 404, userInfo: [NSLocalizedDescriptionKey: "File not found at path"]))
             }
-            if let img = ImageUtilities.downsample(imageAt: currentURL, to: size, scale: UIScreen.main.scale) {
+            if let img = ImageUtilities.downsample(imageAt: currentURL, to: size, scale: scale) {
                 return .success(img)
             } else {
                 return .failure(NSError(domain: "ImageLoader", code: 500, userInfo: [NSLocalizedDescriptionKey: "Downsampling failed"]))

@@ -647,19 +647,18 @@ class ConversionManager: ObservableObject {
         
         await MainActor.run { self.processingStatus = "Preparing Panel Editor..." }
         
-        // 1. Setup temporary session directory
+        // 1. Create a clean session directory
         let sessionID = UUID().uuidString
         let sessionDir = FileManager.default.temporaryDirectory.appendingPathComponent("EditorSession_\(sessionID)")
-        // Ensure we start clean
         try? FileManager.default.removeItem(at: sessionDir)
         try FileManager.default.createDirectory(at: sessionDir, withIntermediateDirectories: true)
         
+        // 2. Extract images to this directory for editing
         let fileDir = sessionDir.appendingPathComponent("source")
         try FileManager.default.createDirectory(at: fileDir, withIntermediateDirectories: true)
         
         print("📂 Panel Editor Session Dir: \(sessionDir.path)")
         
-        // 2. Unzip the EPUB
         do {
             try FileManager.default.unzipItem(at: sourceEPUB, to: fileDir)
         } catch {
@@ -699,40 +698,28 @@ class ConversionManager: ObservableObject {
         for (index, imageURL) in foundImageURLs.enumerated() {
             await MainActor.run { self.processingStatus = "Detecting Panels: Page \(index + 1)/\(foundImageURLs.count)" }
             
-            // ✅ EXPLICIT CHECK: Try to load the image data.
-            // If this fails, we skip the page instead of creating a broken session.
             do {
-                // Ensure the file is readable
-                guard FileManager.default.isReadableFile(atPath: imageURL.path) else {
-                    print("⚠️ File not readable: \(imageURL.path)")
-                    continue
-                }
+                guard FileManager.default.isReadableFile(atPath: imageURL.path) else { continue }
                 
                 let data = try Data(contentsOf: imageURL)
-                guard let image = UIImage(data: data) else {
-                    print("⚠️ Could not create UIImage from data for \(imageURL.lastPathComponent)")
-                    continue
+                if let image = UIImage(data: data) {
+                     let panels = try? await PanelExtractor.extractPanels(from: image, mode: detectionMode)
+                     let editable = (panels ?? []).enumerated().map { idx, p in EditablePanel(from: p, order: idx + 1) }
+                     
+                     pages.append(PanelEditSession.PageEditData(
+                         pageNumber: index + 1,
+                         imageURL: imageURL,
+                         panels: editable
+                     ))
                 }
-                
-                let panels = try? await PanelExtractor.extractPanels(from: image, mode: detectionMode)
-                let editable = (panels ?? []).enumerated().map { idx, p in EditablePanel(from: p, order: idx + 1) }
-                
-                pages.append(PanelEditSession.PageEditData(
-                    pageNumber: index + 1,
-                    imageURL: imageURL, // This URL is verified to be loadable
-                    panels: editable
-                ))
             } catch {
                 print("❌ Failed to verify image for \(imageURL.lastPathComponent): \(error)")
-                // Continue to next image
             }
         }
         
-        // ✅ FINAL GUARD: If no pages could be prepared, abort the review.
         guard !pages.isEmpty else {
-            print("⚠️ No valid pages could be prepared for panel review. Aborting review.")
+            print("⚠️ No valid pages could be prepared for panel review.")
             try? FileManager.default.removeItem(at: sessionDir)
-            // Return nil manifest to proceed without review
             return (nil, foundImageURLs.count)
         }
         
@@ -740,12 +727,16 @@ class ConversionManager: ObservableObject {
         let session = PanelEditSession(pages: pages, readingDirection: settings.readingDirection, sessionTempDirectory: sessionDir)
         
         print("🚀 Presenting Panel Editor UI...")
-        let editedSession: PanelEditSession = await withCheckedContinuation { continuation in
+        
+        // SUSPEND execution and wait for the UI to signal completion
+        let editedSession: PanelEditSession? = await withCheckedContinuation { continuation in
             Task { @MainActor in
                 self.currentPanelSession = session
                 self.showingPanelEditor = true
+                
+                // Define the completion handler that the UI will call
                 self.panelEditorCompletion = { result in
-                    print("✅ Panel Editor finished.")
+                    print("✅ Panel Editor finished (Cancelled: \(result == nil)).")
                     self.showingPanelEditor = false
                     self.currentPanelSession = nil
                     self.panelEditorCompletion = nil
@@ -754,12 +745,18 @@ class ConversionManager: ObservableObject {
             }
         }
         
-        // 6. Convert back to Manifest
-        await MainActor.run { self.processingStatus = "Finalizing EPUB..." }
+        // 6. Handle Cancellation or Completion
+        guard let validSession = editedSession else {
+            print("⚠️ Panel Editor Cancelled. Proceeding without panel view.")
+            try? FileManager.default.removeItem(at: sessionDir)
+            return (nil, foundImageURLs.count)
+        }
+        
+        // 7. Process the Valid Session (Generate Manifest)
+        await MainActor.run { self.processingStatus = "Finalizing Panels..." }
         
         var allPagePanels: [EPUBPanelManifest.PagePanels] = []
-        for page in editedSession.pages {
-            // We can safely try? here because we already verified the data above
+        for page in validSession.pages {
             if let data = try? Data(contentsOf: page.imageURL), let image = UIImage(data: data), let cgImage = image.cgImage {
                 let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
                 let panels = page.panels.sorted(by: { $0.order < $1.order }).map { $0.toNormalizedRegion(imageSize: imageSize) }
@@ -772,13 +769,13 @@ class ConversionManager: ObservableObject {
             }
         }
         
-        // Cleanup
+        // Clean up temp session files
         print("🧹 Cleaning up session directory: \(sessionDir.path)")
         try? FileManager.default.removeItem(at: sessionDir)
         
         let manifest = EPUBPanelManifest(
             version: "1.0",
-            readingDirection: editedSession.readingDirection == .rightToLeft ? "rtl" : "ltr",
+            readingDirection: validSession.readingDirection == .rightToLeft ? "rtl" : "ltr",
             pages: allPagePanels
         )
         
