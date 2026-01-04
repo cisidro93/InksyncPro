@@ -1287,7 +1287,7 @@ class ConversionManager: ObservableObject {
             case .grid2x3: detectionMode = .grid(rows: 2, columns: 3)
             }
             
-            // Helper to extract images from source URL for editor
+            // Helper to extract images from ALL source URLs for editor
             let preparationTask = Task { () -> (PanelEditSession) in
                 var pages: [PanelEditSession.PageEditData] = []
                 
@@ -1296,40 +1296,52 @@ class ConversionManager: ObservableObject {
                 let sessionDir = FileManager.default.temporaryDirectory.appendingPathComponent("EditorSession_\(sessionID)")
                 try? FileManager.default.createDirectory(at: sessionDir, withIntermediateDirectories: true)
                 
-                // We unzip to this persistent session directory
-                guard let item = epubs.first else { return PanelEditSession(pages: [], sessionTempDirectory: nil) }
-                try? FileManager.default.unzipItem(at: item.url, to: sessionDir)
+                var globalPageCount = 0
                 
-                let searchPaths = [
-                    sessionDir.appendingPathComponent("OEBPS/images"),
-                    sessionDir.appendingPathComponent("OPS/images"),
-                    sessionDir.appendingPathComponent("images"),
-                    sessionDir
-                ]
-                
-                var foundImageURLs: [URL] = []
-                
-                for searchPath in searchPaths {
-                    if let files = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) {
-                        let imageFiles = files
-                            .filter { ["jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }
-                            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-                        
-                        if !imageFiles.isEmpty {
-                            foundImageURLs = imageFiles
-                            break
+                // LOOP through ALL epubs, not just the first one
+                for (fileIndex, item) in epubs.enumerated() {
+                    let fileDir = sessionDir.appendingPathComponent("source_\(fileIndex)")
+                    try? FileManager.default.createDirectory(at: fileDir, withIntermediateDirectories: true)
+                    try? FileManager.default.unzipItem(at: item.url, to: fileDir)
+                    
+                    let searchPaths = [
+                        fileDir.appendingPathComponent("OEBPS/images"),
+                        fileDir.appendingPathComponent("OPS/images"),
+                        fileDir.appendingPathComponent("images"),
+                        fileDir
+                    ]
+                    
+                    var foundImageURLs: [URL] = []
+                    
+                    for searchPath in searchPaths {
+                        if let files = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) {
+                            let imageFiles = files
+                                .filter { ["jpg", "jpeg", "png", "webp"].contains($0.pathExtension.lowercased()) }
+                                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+                            
+                            if !imageFiles.isEmpty {
+                                foundImageURLs = imageFiles
+                                break
+                            }
                         }
                     }
-                }
-                
-                // Run detection
-                for (index, imageURL) in foundImageURLs.enumerated() {
-                    // Load image purely for detection, then discard from memory
-                    if let data = try? Data(contentsOf: imageURL), let image = UIImage(data: data) {
-                        let panels = try? await PanelExtractor.extractPanels(from: image, mode: detectionMode)
-                        let editable = (panels ?? []).enumerated().map { idx, p in EditablePanel(from: p, order: idx + 1) }
-                        // Store URL, not Image
-                        pages.append(PanelEditSession.PageEditData(pageNumber: index + 1, imageURL: imageURL, panels: editable))
+                    
+                    // Run detection for this file's images
+                    for imageURL in foundImageURLs {
+                        globalPageCount += 1
+                        
+                        // Load image briefly for detection
+                        if let data = try? Data(contentsOf: imageURL), let image = UIImage(data: data) {
+                            let panels = try? await PanelExtractor.extractPanels(from: image, mode: detectionMode)
+                            let editable = (panels ?? []).enumerated().map { idx, p in EditablePanel(from: p, order: idx + 1) }
+                            
+                            // Add to session with continuous page numbering
+                            pages.append(PanelEditSession.PageEditData(
+                                pageNumber: globalPageCount,
+                                imageURL: imageURL,
+                                panels: editable
+                            ))
+                        }
                     }
                 }
                 
