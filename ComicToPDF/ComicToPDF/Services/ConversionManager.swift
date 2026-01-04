@@ -135,6 +135,7 @@ struct ConversionSettings: Codable, Equatable {
     // NEW: Panel Features
     var enablePanelSplit: Bool = false
     // mangaMode is already defined above at line 125, removing duplicate.
+}
 
 struct ImageEnhancementSettings: Codable, Equatable {
     var enabled: Bool = false
@@ -1663,6 +1664,7 @@ class ConversionManager: ObservableObject {
     
     private func saveSendHistory() { markNeedsSave() }
     private func savePresets() { markNeedsSave() }
+}
 }
 
 // MARK: - SUPPORTING STRUCTS
