@@ -212,6 +212,12 @@ struct EPUBSettings: Codable, Equatable {
     var includeMetadata: Bool = true
     var embedFonts: Bool = false
     
+    // NEW: Panel View Settings
+    var enablePanelView: Bool = false
+    var panelDetectionMode: PanelDetectionMode = .automatic
+    var panelMinSize: Double = 0.05  // Minimum panel size (5% of page)
+    var panelMaxSize: Double = 0.90  // Maximum panel size (90% of page)
+    
     enum ReadingDirection: String, CaseIterable, Codable {
         case leftToRight = "ltr"
         case rightToLeft = "rtl"
@@ -220,6 +226,22 @@ struct EPUBSettings: Codable, Equatable {
             switch self {
             case .leftToRight: return "Left to Right (Western)"
             case .rightToLeft: return "Right to Left (Manga)"
+            }
+        }
+    }
+    
+    enum PanelDetectionMode: String, CaseIterable, Codable {
+        case automatic = "auto"
+        case grid2x2 = "grid_2x2"
+        case grid3x3 = "grid_3x3"
+        case grid2x3 = "grid_2x3"
+        
+        var displayName: String {
+            switch self {
+            case .automatic: return "Automatic Detection"
+            case .grid2x2: return "2×2 Grid"
+            case .grid3x3: return "3×3 Grid"
+            case .grid2x3: return "2×3 Grid"
             }
         }
     }

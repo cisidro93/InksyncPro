@@ -159,6 +159,33 @@ struct DefaultConversionSettingsView: View {
     var body: some View {
         Form {
             Section { Toggle("Manga Mode (RTL)", isOn: $conversionManager.conversionSettings.mangaMode) } header: { Text("Reading Direction") } footer: { Text("Enable for Japanese manga to reverse page order") }
+            
+            Section(header: Text("Panel View (Guided Reading)")) {
+                Toggle("Enable Panel View", isOn: $conversionManager.conversionSettings.epubSettings.enablePanelView)
+                    .tint(.orange)
+                
+                if conversionManager.conversionSettings.epubSettings.enablePanelView {
+                    Picker("Detection Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
+                        ForEach(EPUBSettings.PanelDetectionMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Panel view allows readers to navigate panel-by-panel on e-readers and small screens, similar to Kindle's guided view.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        if conversionManager.conversionSettings.epubSettings.panelDetectionMode == .automatic {
+                            Text("⚡ Automatic mode uses AI to detect panel boundaries")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            
             Section {
                 Picker("Default Quality", selection: $conversionManager.conversionSettings.compressionQuality) { ForEach(CompressionPreset.allCases, id: \.self) { preset in Text(preset.rawValue).tag(preset) } }
                 if conversionManager.conversionSettings.compressionQuality == .custom {

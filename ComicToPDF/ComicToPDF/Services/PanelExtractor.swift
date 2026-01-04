@@ -112,5 +112,90 @@ class PanelExtractor {
         }
         
         return panels
+    // MARK: - EPUB Generation Support
+    
+    // Batch process multiple images for EPUB generation
+    static func extractPanelsFromImages(_ images: [UIImage], mode: ExtractionMode, settings: EPUBSettings) async throws -> EPUBPanelManifest {
+        
+        var allPagePanels: [EPUBPanelManifest.PagePanels] = []
+        
+        for (index, image) in images.enumerated() {
+            print("🔍 Detecting panels on page \(index + 1)/\(images.count)...")
+            
+            // For batch processing, we can yield to keep UI responsive
+            await Task.yield()
+            
+            let panels = try await extractPanels(from: image, mode: mode)
+            
+            guard let cgImage = image.cgImage else { continue }
+            
+            let imageWidth = Double(cgImage.width)
+            let imageHeight = Double(cgImage.height)
+            
+            // Convert to normalized coordinates
+            let panelRegions = panels.map { panel -> PanelRegion in
+                return PanelRegion(
+                    x: Double(panel.boundingBox.origin.x) / imageWidth,
+                    y: Double(panel.boundingBox.origin.y) / imageHeight,
+                    width: Double(panel.boundingBox.width) / imageWidth,
+                    height: Double(panel.boundingBox.height) / imageHeight,
+                    pageIndex: index
+                )
+            }
+            
+            let pagePanels = EPUBPanelManifest.PagePanels(
+                pageNumber: index + 1,
+                imageFile: "page\(index + 1).jpg",
+                panels: panelRegions
+            )
+            
+            allPagePanels.append(pagePanels)
+        }
+        
+        let readingDir = settings.readingDirection == .rightToLeft ? "rtl" : "ltr"
+        
+        return EPUBPanelManifest(
+            readingDirection: readingDir,
+            pages: allPagePanels
+        )
+    }
+}
+
+// MARK: - EPUB Metadata Models
+
+struct PanelRegion: Codable {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+    let pageIndex: Int
+    
+    // Normalized coordinates (0.0 to 1.0)
+    var normalized: NormalizedRegion {
+        return NormalizedRegion(
+            x: x,
+            y: y,
+            width: width,
+            height: height
+        )
+    }
+}
+
+struct NormalizedRegion: Codable {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+}
+
+struct EPUBPanelManifest: Codable {
+    let version: String = "1.0"
+    let readingDirection: String  // "ltr" or "rtl"
+    let pages: [PagePanels]
+    
+    struct PagePanels: Codable {
+        let pageNumber: Int
+        let imageFile: String
+        let panels: [PanelRegion]
     }
 }

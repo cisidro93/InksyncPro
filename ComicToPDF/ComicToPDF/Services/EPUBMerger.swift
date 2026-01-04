@@ -94,6 +94,83 @@ class EPUBMerger {
         """
         try cssContent.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
         
+        // ---------------------------------------------------------
+        // PANEL VIEW: GENERATE METADATA
+        // ---------------------------------------------------------
+        var panelManifest: EPUBPanelManifest? = nil
+
+        if settings.enablePanelView {
+            print("🎯 Generating panel view metadata...")
+            
+            // Load all images for panel detection
+            var pageImages: [UIImage] = []
+            
+            for url in sourceURLs {
+                let tempExtract = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("PanelExtract_\(UUID().uuidString)")
+                
+                try FileManager.default.createDirectory(at: tempExtract, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: tempExtract) }
+                
+                try FileManager.default.unzipItem(at: url, to: tempExtract)
+                
+                // Find images in this EPUB
+                let searchPaths = [
+                    tempExtract.appendingPathComponent("OEBPS/images"),
+                    tempExtract.appendingPathComponent("OPS/images"),
+                    tempExtract.appendingPathComponent("images"),
+                    tempExtract
+                ]
+                
+                for searchPath in searchPaths {
+                    if let files = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) {
+                        let imageFiles = files
+                            .filter { ["jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }
+                            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+                        
+                        for imageFile in imageFiles {
+                            if let data = try? Data(contentsOf: imageFile),
+                               let image = UIImage(data: data) {
+                                pageImages.append(image)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Detect panels
+            if !pageImages.isEmpty {
+                let detectionMode: PanelExtractor.ExtractionMode
+                switch settings.panelDetectionMode {
+                case .automatic:
+                    detectionMode = .automatic
+                case .grid2x2:
+                    detectionMode = .grid(rows: 2, columns: 2)
+                case .grid3x3:
+                    detectionMode = .grid(rows: 3, columns: 3)
+                case .grid2x3:
+                    detectionMode = .grid(rows: 2, columns: 3)
+                }
+                
+                panelManifest = try await PanelExtractor.extractPanelsFromImages(
+                    pageImages,
+                    mode: detectionMode,
+                    settings: settings
+                )
+                
+                print("✅ Panel metadata generated for \(pageImages.count) pages")
+                
+                // Save JSON manifest
+                if let manifest = panelManifest {
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                    let manifestData = try encoder.encode(manifest)
+                    let manifestPath = oebpsDir.appendingPathComponent("panel-manifest.json")
+                    try manifestData.write(to: manifestPath)
+                }
+            }
+        }
+        
         var pageNumber = 1
         var manifestItems: [String] = []
         var spineItems: [String] = []
@@ -116,34 +193,44 @@ class EPUBMerger {
                 "OPS/images", 
                 "EPUB/images",
                 "images",
-                "OEBPS/Images",
-                "content/images"
+                "."
             ]
             
             for path in possiblePaths {
-                let testDir = workingDir.appendingPathComponent(path)
-                if FileManager.default.fileExists(atPath: testDir.path) {
-                    sourceImagesDir = testDir
-                    print("   ✓ Found images in: \(path)")
-                    break
+                let dir = workingDir.appendingPathComponent(path)
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir) && isDir.boolValue {
+                    // Check if folder has images
+                    if let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
+                        let hasImages = files.contains { ["jpg", "jpeg", "png", "gif", "webp"].contains($0.pathExtension.lowercased()) }
+                        if hasImages {
+                            sourceImagesDir = dir
+                            print("   ✓ Found images in: \(path)")
+                            break
+                        }
+                    }
                 }
             }
             
-            // If standard paths don't work, search recursively
             if sourceImagesDir == nil {
-                print("   ⚠️ Standard paths not found, searching recursively...")
-                sourceImagesDir = findImagesDirectory(in: workingDir)
+                print("   ⚠️ checking root for images...")
+                // Fallback check root
+                 if let files = try? FileManager.default.contentsOfDirectory(at: workingDir, includingPropertiesForKeys: nil) {
+                    let hasImages = files.contains { ["jpg", "jpeg", "png", "gif", "webp"].contains($0.pathExtension.lowercased()) }
+                    if hasImages {
+                        sourceImagesDir = workingDir
+                    }
+                }
             }
             
-            guard let imagesDirectory = sourceImagesDir else {
-                print("   ❌ ERROR: No images found in EPUB \(index + 1)")
-                throw NSError(domain: "EPUBMerger", code: 404, 
-                             userInfo: [NSLocalizedDescriptionKey: "No images found in \(sourceURL.lastPathComponent)"])
+            guard let imagesDirURL = sourceImagesDir else {
+                print("   ⚠️ WARNING: No images directory found in EPUB")
+                continue
             }
             
             // Get all image files
             let imageFiles = try FileManager.default.contentsOfDirectory(
-                at: imagesDirectory,
+                at: imagesDirURL,
                 includingPropertiesForKeys: nil
             )
             .filter { url in
@@ -195,6 +282,17 @@ class EPUBMerger {
                     <item id="image\(pageNumber)" href="images/\(destImageName)" media-type="\(mediaType)"/>
                 """)
                 
+                // Panel Data Attributes
+                var panelDataAttributes = ""
+                if let manifest = panelManifest,
+                   let pagePanels = manifest.pages.first(where: { $0.pageNumber == pageNumber }) {
+                    
+                    let panelJSON = try JSONEncoder().encode(pagePanels.panels)
+                    if let panelString = String(data: panelJSON, encoding: .utf8) {
+                        panelDataAttributes = " data-panels='\(panelString.replacingOccurrences(of: "'", with: "&apos;"))'"
+                    }
+                }
+
                 // XHTML
                 let xhtmlFileName = "page\(pageNumber).xhtml"
                 let xhtmlContent = """
@@ -207,7 +305,7 @@ class EPUBMerger {
                     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
                 </head>
                 <body>
-                    <div class="page">
+                    <div class="page"\(panelDataAttributes)>
                         <img src="../images/\(destImageName)" alt="Page \(pageNumber)"/>
                     </div>
                 </body>
@@ -219,12 +317,12 @@ class EPUBMerger {
                     <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
                 """)
                 
-                spineItems.append("""
-                    <itemref idref="page\(pageNumber)"/>
-                """)
+                spineItems.append("<itemref idref=\"page\(pageNumber)\"/>")
                 
                 pageNumber += 1
             }
+            
+            try? FileManager.default.removeItem(at: workingDir)
         }
         
         let totalPages = pageNumber - 1
@@ -257,11 +355,16 @@ class EPUBMerger {
             }
         }
         
-        // Create content.opf WITH COVER METADATA
-        let bookTitle = metadata.title.isEmpty ? "Merged Book" : metadata.title
+        let bookID = metadata.isbn ?? "urn:uuid:\(UUID().uuidString)"
+        let bookTitle = metadata.title.isEmpty ? "Comic" : metadata.title
         let bookAuthor = metadata.author.isEmpty ? "Unknown" : metadata.author
-        let bookID = UUID().uuidString
         
+        // Build panel metadata tags
+        var panelMetadata = "        <meta property=\"rendition:layout\">pre-paginated</meta>\n        <meta property=\"rendition:spread\">none</meta>\n"
+        if panelManifest != nil {
+            panelMetadata += "        <meta name=\"RegionMagnification\" content=\"true\"/>\n        <meta name=\"comic-panel-view\" content=\"enabled\"/>\n"
+        }
+
         let contentOPF = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookID">
