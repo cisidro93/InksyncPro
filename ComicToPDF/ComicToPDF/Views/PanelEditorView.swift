@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 
 struct PanelEditorView: View {
     @Environment(\.dismiss) private var dismiss
@@ -34,82 +35,18 @@ struct PanelEditorView: View {
                 .padding()
                 
                 // Main Content
-                if let page = viewModel.currentPage, let loadedImage = viewModel.currentLoadedImage {
+                // Main Content
+                if let page = viewModel.currentPage {
                     GeometryReader { geo in
                         HStack(spacing: 0) {
-                            // Left: Image Canvas
-                            ZStack(alignment: .topLeading) {
-                                Color.black.opacity(0.1)
-                                
-                                // 1. Base Image
-                                Image(uiImage: loadedImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .overlay(
-                                        GeometryReader { imageGeo in
-                                            ZStack(alignment: .topLeading) {
-                                                // 2. Existing Panels Overlay
-                                                PanelOverlay(
-                                                    panels: page.panels,
-                                                    selectedID: viewModel.selectedPanelID,
-                                                    imageSize: loadedImage.size,
-                                                    viewSize: imageGeo.size,
-                                                    onSelect: { id in
-                                                        if !isDrawing { viewModel.selectedPanelID = id }
-                                                    },
-                                                    onUpdate: { id, newRect in
-                                                        viewModel.updatePanelRect(id: id, newRect: newRect)
-                                                    }
-                                                )
-                                                
-                                                // 3. Drawing New Panel Overlay
-                                                if isDrawing {
-                                                    DrawingOverlay(start: newPanelStart, current: newPanelCurrent)
-                                                }
-                                                
-                                                // 4. Drawing Gesture Layer
-                                                if isDrawing {
-                                                    Color.white.opacity(0.001)
-                                                        .gesture(
-                                                            DragGesture(minimumDistance: 0)
-                                                                .onChanged { value in
-                                                                    if newPanelStart == nil { newPanelStart = value.location }
-                                                                    newPanelCurrent = value.location
-                                                                }
-                                                                .onEnded { value in
-                                                                    guard let start = newPanelStart else { return }
-                                                                    let end = value.location
-                                                                    let rect = CGRect(x: min(start.x, end.x),
-                                                                                      y: min(start.y, end.y),
-                                                                                      width: abs(end.x - start.x),
-                                                                                      height: abs(end.y - start.y))
-                                                                    
-                                                                    if rect.width > 20 && rect.height > 20 {
-                                                                        // Convert View Rect to Image Rect
-                                                                        let viewSize = imageGeo.size
-                                                                        let imageSize = loadedImage.size
-                                                                        let scaleX = imageSize.width / viewSize.width
-                                                                        let scaleY = imageSize.height / viewSize.height
-                                                                        
-                                                                        let imageRect = CGRect(
-                                                                            x: rect.origin.x * scaleX, // Simplified scale mapping
-                                                                            y: rect.origin.y * scaleY,
-                                                                            width: rect.width * scaleX,
-                                                                            height: rect.height * scaleY
-                                                                        )
-                                                                        // Use simpler aspect fit scale logic if needed, 
-                                                                        // but direct scaling matches overlay logic best.
-                                                                        viewModel.addPanel(rect: imageRect)
-                                                                    }
-                                                                    newPanelStart = nil
-                                                                    newPanelCurrent = nil
-                                                                }
-                                                        )
-                                                }
-                                            }
-                                        }
-                                    )
-                            }
+                            // Image Canvas (Refactored to PageView)
+                            PageView(
+                                page: page,
+                                viewModel: viewModel,
+                                isDrawing: $isDrawing,
+                                newPanelStart: $newPanelStart,
+                                newPanelCurrent: $newPanelCurrent
+                            )
                             .frame(maxWidth: .infinity)
                             .clipped()
                             
@@ -193,9 +130,7 @@ struct PanelEditorView: View {
         }
     }
 }
-
 // MARK: - Helper Views & ViewModel
-
 struct DrawingOverlay: View {
     let start: CGPoint?
     let current: CGPoint?
@@ -210,7 +145,6 @@ struct DrawingOverlay: View {
         }
     }
 }
-
 struct PanelOverlay: View {
     let panels: [EditablePanel]
     let selectedID: UUID?
@@ -410,5 +344,166 @@ class PanelEditorViewModel: ObservableObject {
     
     func saveAndComplete() {
         onComplete(session)
+    }
+}
+
+// MARK: - Optimized Views
+
+struct PageView: View {
+    let page: PanelEditSession.PageEditData
+    @ObservedObject var viewModel: PanelEditorViewModel
+    @Binding var isDrawing: Bool
+    @Binding var newPanelStart: CGPoint?
+    @Binding var newPanelCurrent: CGPoint?
+    
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                // 1. Optimized Image Display (Low Memory)
+                OptimizedPageImage(url: page.imageURL, targetSize: geo.size)
+                
+                // 2. Overlays
+                // We rely on viewModel to hold the metadata/full image for coordinates
+                if let loadedImage = viewModel.currentLoadedImage {
+                     PanelOverlay(
+                        panels: page.panels,
+                        selectedID: viewModel.selectedPanelID,
+                        imageSize: loadedImage.size,
+                        viewSize: geo.size,
+                        onSelect: { id in
+                            if !isDrawing { viewModel.selectedPanelID = id }
+                        },
+                        onUpdate: { id, newRect in
+                            viewModel.updatePanelRect(id: id, newRect: newRect)
+                        }
+                    )
+                    
+                    if isDrawing {
+                        DrawingOverlay(start: newPanelStart, current: newPanelCurrent)
+                    }
+                    
+                    // Drawing Gestures
+                    if isDrawing {
+                        Color.white.opacity(0.001)
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        if newPanelStart == nil { newPanelStart = value.location }
+                                        newPanelCurrent = value.location
+                                    }
+                                    .onEnded { value in
+                                        guard let start = newPanelStart else { return }
+                                        let end = value.location
+                                        let rect = CGRect(x: min(start.x, end.x),
+                                                          y: min(start.y, end.y),
+                                                          width: abs(end.x - start.x),
+                                                          height: abs(end.y - start.y))
+                                        
+                                        if rect.width > 20 && rect.height > 20 {
+                                            // Convert to Image Coords
+                                            let viewSize = geo.size
+                                            let imageSize = loadedImage.size
+                                            let scaleX = imageSize.width / viewSize.width
+                                            let scaleY = imageSize.height / viewSize.height
+                                            
+                                            let imageRect = CGRect(
+                                                x: rect.origin.x * scaleX,
+                                                y: rect.origin.y * scaleY,
+                                                width: rect.width * scaleX,
+                                                height: rect.height * scaleY
+                                            )
+                                            viewModel.addPanel(rect: imageRect)
+                                        }
+                                        newPanelStart = nil
+                                        newPanelCurrent = nil
+                                    }
+                            )
+                    }
+                } else {
+                    // While VM loads the logic image, we might already show the visual image via OptimizedPageImage.
+                    // But we can't show overlays yet.
+                    if viewModel.currentLoadedImage == nil {
+                         // Force VM load? It's called in onAppear.
+                         // Maybe show simple generic progress if OptimizedPageImage is also loading
+                         // But OptimizedPageImage handles its own progress.
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct OptimizedPageImage: View {
+    let url: URL
+    let targetSize: CGSize
+    
+    @State private var image: UIImage?
+    @State private var isLoading = true
+    @State private var error: String?
+    
+    var body: some View {
+        ZStack {
+            if let image = image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else if let error = error {
+                VStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(.red)
+                    Text("Error loading image")
+                        .font(.caption)
+                    Text(error)
+                        .font(.caption2)
+                        .multilineTextAlignment(.center)
+                }
+            } else {
+                ProgressView()
+            }
+        }
+        .task(id: url) {
+            await loadImage()
+        }
+        .onChange(of: targetSize) { _ in
+            // Reload if size changes significantly?
+            // For now, assume initial load is sufficient or user won't resize wildly.
+            // Re-running task if id changes is enough.
+        }
+    }
+    
+    private func loadImage() async {
+        guard image == nil else { return }
+        
+        let result = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+            return ImageUtilities.downsample(imageAt: url, to: targetSize, scale: UIScreen.main.scale)
+        }.value
+        
+        await MainActor.run {
+            if let result = result {
+                self.image = result
+                self.isLoading = false
+            } else {
+                self.error = "Failed to load"
+                self.isLoading = false
+            }
+        }
+    }
+}
+
+struct ImageUtilities {
+    static func downsample(imageAt imageURL: URL, to pointSize: CGSize, scale: CGFloat) -> UIImage? {
+        let imageSourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let imageSource = CGImageSourceCreateWithURL(imageURL as CFURL, imageSourceOptions) else { return nil }
+        
+        let maxDimensionInPixels = max(pointSize.width, pointSize.height) * scale
+        let downsampleOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxDimensionInPixels
+        ] as CFDictionary
+        
+        guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions) else { return nil }
+        return UIImage(cgImage: downsampledImage)
     }
 }
