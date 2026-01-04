@@ -67,11 +67,29 @@ class EPUBMerger {
             align-items: center; 
             justify-content: center;
             overflow: hidden;
+            background-color: #000;
         }
         img { 
-            max-width: 100%; 
-            max-height: 100%; 
-            object-fit: contain;
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover;
+            object-position: center;
+        }
+        @media (orientation: portrait) {
+            img {
+                width: 100%;
+                height: auto;
+                max-height: 100vh;
+                object-fit: contain;
+            }
+        }
+        @media (orientation: landscape) {
+            img {
+                width: auto;
+                height: 100%;
+                max-width: 100vw;
+                object-fit: contain;
+            }
         }
         """
         try cssContent.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)

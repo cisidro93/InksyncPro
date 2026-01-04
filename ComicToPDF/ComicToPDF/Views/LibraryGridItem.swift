@@ -48,5 +48,6 @@ struct LibraryGridItem: View {
         }
         .background(Color(UIColor.secondarySystemGroupedBackground))
         .cornerRadius(12)
+        .contentShape(Rectangle())
     }
 }

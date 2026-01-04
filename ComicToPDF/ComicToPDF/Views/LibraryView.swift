@@ -86,7 +86,7 @@ struct LibraryView: View {
             
             if isGridView {
                 ScrollView {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: gridColumns), spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 220), spacing: 16)], spacing: 16) {
                         ForEach(filteredPDFs) { pdf in
                             gridItem(for: pdf)
                         }
@@ -234,15 +234,13 @@ struct LibraryView: View {
                     }
                 }
             )
+            .contentShape(Rectangle())
             .onTapGesture {
                 if isSelectionMode {
                     toggleSelection(pdf)
                 } else {
                     readingPDF = pdf
                 }
-            }
-            .contextMenu {
-                menuItems(for: pdf)
             }
             .contextMenu {
                 menuItems(for: pdf)
