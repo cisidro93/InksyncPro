@@ -275,6 +275,21 @@ class BackgroundTask: Identifiable, ObservableObject {
     }
 }
 
+struct ConversionQueueItem: Identifiable {
+    let id = UUID()
+    let sourceURL: URL
+    let settings: ConversionSettings
+    var progress: Double = 0
+    var status: ConversionStatus = .pending
+    
+    enum ConversionStatus {
+        case pending
+        case converting
+        case completed
+        case failed(Error)
+    }
+}
+
 // ============================================================================
 // MARK: - CONVERSION MANAGER
 // ============================================================================
@@ -292,8 +307,9 @@ class ConversionManager: ObservableObject {
     @Published var currentPanelSession: PanelEditSession?
     @Published var panelEditorCompletion: ((PanelEditSession) -> Void)?
     
+    
     // MARK: - Services
-    private let pdfConverter = PDFConverter()
+    // private let pdfConverter = PDFConverter()
     @Published var collections: [PDFCollection] = []
     @Published var kindleDevices: [KindleDevice] = []
     @Published var conversionSettings = ConversionSettings()

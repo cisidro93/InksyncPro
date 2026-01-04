@@ -112,6 +112,8 @@ class PanelExtractor {
         }
         
         return panels
+    }
+    
     // MARK: - EPUB Generation Support
     
     // Batch process multiple images for EPUB generation

@@ -7,6 +7,11 @@ struct ContentView: View {
     @State private var showingOnboarding = false
     @State private var selectedTab = 0
     
+    // Panel Editor State
+    @State private var showPanelEditor = false
+    @State private var panelEditSession: PanelEditSession?
+    @State private var panelEditorCompletion: ((PanelEditSession) -> Void)?
+    
     var body: some View {
         TabView(selection: $selectedTab) {
             ConvertView().tabItem { Label("Convert", systemImage: "arrow.triangle.2.circlepath") }.tag(0)
@@ -29,14 +34,19 @@ struct ContentView: View {
                 showingOnboarding = true
             }
         }
-        .fullScreenCover(isPresented: $conversionManager.showingPanelEditor) {
-            if let session = conversionManager.currentPanelSession {
-                PanelEditorView(session: session) { result in
-                    conversionManager.panelEditorCompletion?(result)
-                }
-            } else {
-                Text("Error: No session")
+        .sheet(isPresented: $showPanelEditor) {
+            if let session = panelEditSession, let completion = panelEditorCompletion {
+                PanelEditorView(session: session, onComplete: completion)
             }
+        }
+    }
+    .onChange(of: conversionManager.showingPanelEditor) { newValue in
+        if newValue {
+            self.panelEditSession = conversionManager.currentPanelSession
+            self.panelEditorCompletion = conversionManager.panelEditorCompletion
+            self.showPanelEditor = true
+        } else {
+            self.showPanelEditor = false
         }
     }
 }
