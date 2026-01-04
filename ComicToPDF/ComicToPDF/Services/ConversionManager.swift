@@ -131,7 +131,10 @@ struct ConversionSettings: Codable, Equatable {
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
     var outputFormat: OutputFormat = .pdf
     var epubSettings: EPUBSettings = EPUBSettings()
-}
+    
+    // NEW: Panel Features
+    var enablePanelSplit: Bool = false
+    // mangaMode is already defined above at line 125, removing duplicate.
 
 struct ImageEnhancementSettings: Codable, Equatable {
     var enabled: Bool = false
@@ -755,6 +758,10 @@ class ConversionManager: ObservableObject {
     }
     
     private func processImages(_ images: [UIImage], scale: Double, jpegQuality: Double, enhancement: ImageEnhancementSettings, targetSize: CGSize?, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
+        // Capture safe values on MainActor
+        let enableSplit = self.conversionSettings.enablePanelSplit
+        let isMangaMode = self.conversionSettings.mangaMode
+        
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 var processedImages: [UIImage] = []
@@ -762,9 +769,14 @@ class ConversionManager: ObservableObject {
                 
                 for (index, image) in images.enumerated() {
                     autoreleasepool {
-                        var processed = image
+                        // NEW: Panel Splitting Logic
+                        // Uses ImageProcessor to split spreads if enabled
+                        let splitImages = ImageProcessor.processPage(image, splitSpreads: enableSplit, isManga: isMangaMode)
                         
-                        if enhancement.enabled, let ciImage = CIImage(image: image) {
+                        for splitImage in splitImages {
+                            var processed = splitImage
+                        
+                        if enhancement.enabled, let ciImage = CIImage(image: splitImage) {
                             var enhancedCI = ciImage
                             
                             if enhancement.brightness != 0 || enhancement.contrast != 1.0 {
@@ -838,6 +850,7 @@ class ConversionManager: ObservableObject {
                             }
                         }
                         processedImages.append(processed)
+                        } // End split loop
                     }
                     DispatchQueue.main.async { progressHandler(Double(index + 1) / Double(images.count)) }
                 }

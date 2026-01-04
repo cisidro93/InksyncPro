@@ -56,6 +56,7 @@ struct SettingsView: View {
                     NavigationLink(destination: DefaultConversionSettingsView()) { HStack { Image(systemName: "slider.horizontal.3").foregroundColor(.orange).frame(width: 28); Text("Conversion Defaults") } }
                     NavigationLink(destination: DefaultEnhancementSettingsView()) { HStack { Image(systemName: "wand.and.stars").foregroundColor(.blue).frame(width: 28); Text("Enhancement Defaults") } }
                     NavigationLink(destination: ConversionPresetsView()) { HStack { Image(systemName: "list.dash.header.rectangle").foregroundColor(.purple).frame(width: 28); Text("Conversion Presets") } }
+                    NavigationLink(destination: AdvancedOptionsView()) { HStack { Image(systemName: "gearshape.2.fill").foregroundColor(.gray).frame(width: 28); Text("Advanced Options") } }
                 } header: { Text("Default Settings") }
                 
                 Section {
