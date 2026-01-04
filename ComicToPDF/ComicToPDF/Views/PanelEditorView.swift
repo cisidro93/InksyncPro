@@ -439,52 +439,94 @@ struct OptimizedPageImage: View {
     
     @State private var image: UIImage?
     @State private var isLoading = true
-    @State private var error: String?
+    @State private var errorMessage: String?
     
     var body: some View {
         ZStack {
+            // 1. Gray background ensures we can see the view frame even if image fails
+            Color.gray.opacity(0.1)
+            
             if let image = image {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-            } else if let error = error {
-                VStack {
-                    Image(systemName: "exclamationmark.triangle")
+                    .transition(.opacity)
+            } else if let errorMessage = errorMessage {
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.largeTitle)
                         .foregroundColor(.red)
-                    Text("Error loading image")
+                    Text("Failed to Load")
+                        .font(.headline)
+                    Text(errorMessage)
                         .font(.caption)
-                    Text(error)
-                        .font(.caption2)
                         .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                    // Show filename for debugging
+                    Text(url.lastPathComponent)
+                        .font(.caption2)
+                        .foregroundColor(.gray)
                 }
+                .padding()
             } else {
-                ProgressView()
+                VStack {
+                    ProgressView()
+                    Text("Loading...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         }
-        .task(id: url) {
+        // 2. CRITICAL FIX: Restart load if size changes (e.g. from 0 to Screen Width)
+        .task(id: targetSize) {
             await loadImage()
         }
-        .onChange(of: targetSize) { _ in
-            // Reload if size changes significantly?
-            // For now, assume initial load is sufficient or user won't resize wildly.
-            // Re-running task if id changes is enough.
+        // 3. Retry if URL changes
+        .task(id: url) {
+            await loadImage()
         }
     }
     
     private func loadImage() async {
-        guard image == nil else { return }
+        // 4. Guard against 0x0 layout frames
+        guard targetSize.width > 0 && targetSize.height > 0 else {
+            print("⏳ OptimizedPageImage: Waiting for valid layout size...")
+            return
+        }
         
-        let result = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-            return ImageUtilities.downsample(imageAt: url, to: targetSize, scale: UIScreen.main.scale)
+        // Reset state on retry
+        await MainActor.run {
+            self.errorMessage = nil
+            if self.image == nil { self.isLoading = true }
+        }
+        
+        let currentURL = url
+        let size = targetSize
+        
+        // Run off-main-thread
+        let result = await Task.detached(priority: .userInitiated) { () -> Result<UIImage, Error> in
+            // Double check file existence
+            guard FileManager.default.fileExists(atPath: currentURL.path) else {
+                return .failure(NSError(domain: "ImageLoader", code: 404, userInfo: [NSLocalizedDescriptionKey: "File not found at path"]))
+            }
+            
+            if let img = ImageUtilities.downsample(imageAt: currentURL, to: size, scale: UIScreen.main.scale) {
+                return .success(img)
+            } else {
+                return .failure(NSError(domain: "ImageLoader", code: 500, userInfo: [NSLocalizedDescriptionKey: "Downsampling failed (ImageIO returned nil)"]))
+            }
         }.value
         
         await MainActor.run {
-            if let result = result {
-                self.image = result
-                self.isLoading = false
-            } else {
-                self.error = "Failed to load"
-                self.isLoading = false
+            self.isLoading = false
+            switch result {
+            case .success(let img):
+                withAnimation {
+                    self.image = img
+                }
+            case .failure(let err):
+                print("❌ OptimizedPageImage Error: \(err.localizedDescription)")
+                self.errorMessage = err.localizedDescription
             }
         }
     }
@@ -493,17 +535,27 @@ struct OptimizedPageImage: View {
 struct ImageUtilities {
     static func downsample(imageAt imageURL: URL, to pointSize: CGSize, scale: CGFloat) -> UIImage? {
         let imageSourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let imageSource = CGImageSourceCreateWithURL(imageURL as CFURL, imageSourceOptions) else { return nil }
+        guard let imageSource = CGImageSourceCreateWithURL(imageURL as CFURL, imageSourceOptions) else {
+            print("❌ ImageUtilities: Could not create source from \(imageURL)")
+            return nil
+        }
         
-        let maxDimensionInPixels = max(pointSize.width, pointSize.height) * scale
+        // Ensure we don't pass 0 to ImageIO
+        let maxDim = max(pointSize.width, pointSize.height) * scale
+        let targetPixels = max(maxDim, 1024) // Fallback to 1024px if size is tiny to avoid 0x0 errors
+        
         let downsampleOptions = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxDimensionInPixels
+            kCGImageSourceThumbnailMaxPixelSize: targetPixels
         ] as CFDictionary
         
-        guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions) else { return nil }
+        guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions) else {
+            print("❌ ImageUtilities: Thumbnail creation failed")
+            return nil
+        }
+        
         return UIImage(cgImage: downsampledImage)
     }
 }
