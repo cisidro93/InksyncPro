@@ -427,9 +427,8 @@ class EPUBMerger {
         
         // FIX: Handle Archive optional return. In some ZIPFoundation versions, init is failable (init?) and non-throwing.
         // We use guard let to unwrap it safely.
-        guard let archive = Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8) else {
-            throw NSError(domain: "EPUBMerger", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
-        }
+        // FIX: Use throwing init for Archive
+        let archive = try Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8)
         
         // Add mimetype first (uncompressed)
         try archive.addEntry(with: "mimetype", relativeTo: epubDir, compressionMethod: .none)

@@ -30,7 +30,7 @@ struct ConvertedPDF: Identifiable, Codable {
     var readingProgress: Double? = 0.0
     var format: OutputFormat? // Optional, inferred from URL if nil
     
-    init(name: String, url: URL, pageCount: Int, fileSize: Int64, collectionId: UUID? = nil) {
+    init(name: String, url: URL, pageCount: Int, fileSize: Int64, collectionId: UUID? = nil, metadata: PDFMetadata? = nil) {
         self.id = UUID()
         self.name = name
         self.url = url
@@ -38,7 +38,7 @@ struct ConvertedPDF: Identifiable, Codable {
         self.pageCount = pageCount
         self.fileSize = fileSize
         self.collectionId = collectionId
-        self.metadata = PDFMetadata()
+        self.metadata = metadata ?? PDFMetadata()
     }
     
     var formattedSize: String {
