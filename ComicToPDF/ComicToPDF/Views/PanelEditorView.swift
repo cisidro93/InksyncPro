@@ -34,7 +34,7 @@ struct PanelEditorView: View {
                 .padding()
                 
                 // Main Content
-                if let page = viewModel.currentPage {
+                if let page = viewModel.currentPage, let loadedImage = viewModel.currentLoadedImage {
                     GeometryReader { geo in
                         HStack(spacing: 0) {
                             // Left: Image Canvas
@@ -42,66 +42,72 @@ struct PanelEditorView: View {
                                 Color.black.opacity(0.1)
                                 
                                 // 1. Base Image
-                                Image(uiImage: page.image)
+                                Image(uiImage: loadedImage)
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
                                     .overlay(
                                         GeometryReader { imageGeo in
-                                            // 2. Existing Panels Overlay
-                                            PanelOverlay(
-                                                panels: page.panels,
-                                                selectedID: viewModel.selectedPanelID,
-                                                imageSize: page.image.size,
-                                                viewSize: imageGeo.size,
-                                                onSelect: { id in
-                                                    if !isDrawing { viewModel.selectedPanelID = id }
-                                                },
-                                                onUpdate: { id, newRect in
-                                                    viewModel.updatePanelRect(id: id, newRect: newRect)
+                                            ZStack(alignment: .topLeading) {
+                                                // 2. Existing Panels Overlay
+                                                PanelOverlay(
+                                                    panels: page.panels,
+                                                    selectedID: viewModel.selectedPanelID,
+                                                    imageSize: loadedImage.size,
+                                                    viewSize: imageGeo.size,
+                                                    onSelect: { id in
+                                                        if !isDrawing { viewModel.selectedPanelID = id }
+                                                    },
+                                                    onUpdate: { id, newRect in
+                                                        viewModel.updatePanelRect(id: id, newRect: newRect)
+                                                    }
+                                                )
+                                                
+                                                // 3. Drawing New Panel Overlay
+                                                if isDrawing {
+                                                    DrawingOverlay(start: newPanelStart, current: newPanelCurrent)
                                                 }
-                                            )
-                                            
-                                            // 3. Drawing New Panel Overlay
-                                            if isDrawing {
-                                                DrawingOverlay(start: newPanelStart, current: newPanelCurrent)
+                                                
+                                                // 4. Drawing Gesture Layer
+                                                if isDrawing {
+                                                    Color.white.opacity(0.001)
+                                                        .gesture(
+                                                            DragGesture(minimumDistance: 0)
+                                                                .onChanged { value in
+                                                                    if newPanelStart == nil { newPanelStart = value.location }
+                                                                    newPanelCurrent = value.location
+                                                                }
+                                                                .onEnded { value in
+                                                                    guard let start = newPanelStart else { return }
+                                                                    let end = value.location
+                                                                    let rect = CGRect(x: min(start.x, end.x),
+                                                                                      y: min(start.y, end.y),
+                                                                                      width: abs(end.x - start.x),
+                                                                                      height: abs(end.y - start.y))
+                                                                    
+                                                                    if rect.width > 20 && rect.height > 20 {
+                                                                        // Convert View Rect to Image Rect
+                                                                        let viewSize = imageGeo.size
+                                                                        let imageSize = loadedImage.size
+                                                                        let scaleX = imageSize.width / viewSize.width
+                                                                        let scaleY = imageSize.height / viewSize.height
+                                                                        
+                                                                        let imageRect = CGRect(
+                                                                            x: rect.origin.x * scaleX, // Simplified scale mapping
+                                                                            y: rect.origin.y * scaleY,
+                                                                            width: rect.width * scaleX,
+                                                                            height: rect.height * scaleY
+                                                                        )
+                                                                        // Use simpler aspect fit scale logic if needed, 
+                                                                        // but direct scaling matches overlay logic best.
+                                                                        viewModel.addPanel(rect: imageRect)
+                                                                    }
+                                                                    newPanelStart = nil
+                                                                    newPanelCurrent = nil
+                                                                }
+                                                        )
+                                                }
                                             }
                                         }
-                                    )
-                                    .gesture(
-                                        // Drawing Gesture
-                                        DragGesture(minimumDistance: 0)
-                                            .onChanged { value in
-                                                guard isDrawing else { return }
-                                                if newPanelStart == nil { newPanelStart = value.location }
-                                                newPanelCurrent = value.location
-                                            }
-                                            .onEnded { value in
-                                                guard isDrawing, let start = newPanelStart else { return }
-                                                let end = value.location
-                                                let rect = CGRect(x: min(start.x, end.x),
-                                                                  y: min(start.y, end.y),
-                                                                  width: abs(end.x - start.x),
-                                                                  height: abs(end.y - start.y))
-                                                
-                                                if rect.width > 20 && rect.height > 20 {
-                                                    // Pass the view rect + the context size (overlay size) to VM
-                                                    // VM needs to know the size of the overlay to normalize/scale correctly.
-                                                    // But simplified: we can convert right here if we had access to imageGeo.
-                                                    // Limitation: We are outside the inner GeometryReader.
-                                                    // Workaround: We will pass the rect to VM, but since we lack the scale factor here,
-                                                    // we will rely on a simpler assumption or pass the image size context.
-                                                    
-                                                    // Robust approach: Assume the image aspect fit fills the width or height.
-                                                    // We'll calculate the scale in VM using the page image size and the drawing canvas size (value.startLocation is risky context).
-                                                    // Let's pass the raw rect and handle scaling if possible, or 
-                                                    // better yet, trigger the add via a closure inside the Overlay where we know geometry.
-                                                }
-                                                // For now, to keep it compiling and working simply:
-                                                // We will just clear state. The actual 'add' logic needs the geometry context.
-                                                // Let's move the DrawingGesture INSIDE the overlay GeometryReader above to fix this context.
-                                                newPanelStart = nil
-                                                newPanelCurrent = nil
-                                            }
                                     )
                             }
                             .frame(maxWidth: .infinity)
@@ -112,9 +118,7 @@ struct PanelEditorView: View {
                                 Text("Panels: \(page.panels.count)")
                                     .font(.headline)
                                     .padding(.top)
-                                    .onTapGesture {
-                                        viewModel.selectedPanelID = nil
-                                    }
+                                    .onTapGesture { viewModel.selectedPanelID = nil }
                                 
                                 List {
                                     ForEach(page.panels) { panel in
@@ -123,8 +127,7 @@ struct PanelEditorView: View {
                                                 .fontWeight(panel.id == viewModel.selectedPanelID ? .bold : .regular)
                                             Spacer()
                                             if panel.id == viewModel.selectedPanelID {
-                                                Image(systemName: "checkmark")
-                                                    .foregroundColor(.blue)
+                                                Image(systemName: "checkmark").foregroundColor(.blue)
                                             }
                                         }
                                         .contentShape(Rectangle())
@@ -133,12 +136,8 @@ struct PanelEditorView: View {
                                             isDrawing = false
                                         }
                                     }
-                                    .onDelete { indexSet in
-                                        viewModel.deletePanels(at: indexSet)
-                                    }
-                                    .onMove { indices, newOffset in
-                                        viewModel.movePanels(from: indices, to: newOffset)
-                                    }
+                                    .onDelete { viewModel.deletePanels(at: $0) }
+                                    .onMove { viewModel.movePanels(from: $0, to: $1) }
                                 }
                                 .listStyle(.plain)
                                 
@@ -156,18 +155,19 @@ struct PanelEditorView: View {
                         }
                     }
                 } else {
-                    Text("No page selected")
+                    VStack {
+                        ProgressView()
+                        Text("Loading Page...")
+                    }
                 }
                 
                 // Bottom Navigation
                 HStack {
                     Button("Previous Page") { viewModel.previousPage() }
                         .disabled(viewModel.session.currentPageIndex == 0)
-                    
                     Spacer()
                     Text("Page \(viewModel.session.currentPageIndex + 1) of \(viewModel.session.pages.count)")
                     Spacer()
-                    
                     Button("Next Page") { viewModel.nextPage() }
                         .disabled(viewModel.session.currentPageIndex == viewModel.session.pages.count - 1)
                 }
@@ -177,9 +177,7 @@ struct PanelEditorView: View {
             .navigationTitle("Panel Editor")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
-                }
+                ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
                         viewModel.saveAndComplete()
@@ -190,24 +188,22 @@ struct PanelEditorView: View {
             }
         }
         .navigationViewStyle(.stack)
+        .onAppear {
+            viewModel.loadImage()
+        }
     }
 }
 
-// ============================================
-// HELPER VIEWS
-// ============================================
+// MARK: - Helper Views & ViewModel
 
 struct DrawingOverlay: View {
     let start: CGPoint?
     let current: CGPoint?
-    
     var body: some View {
         if let s = start, let c = current {
             Path { path in
-                let rect = CGRect(x: min(s.x, c.x),
-                                  y: min(s.y, c.y),
-                                  width: abs(c.x - s.x),
-                                  height: abs(c.y - s.y))
+                let rect = CGRect(x: min(s.x, c.x), y: min(s.y, c.y),
+                                  width: abs(c.x - s.x), height: abs(c.y - s.y))
                 path.addRect(rect)
             }
             .stroke(Color.green, lineWidth: 2)
@@ -221,43 +217,15 @@ struct PanelOverlay: View {
     let imageSize: CGSize
     let viewSize: CGSize
     let onSelect: (UUID) -> Void
-    let onUpdate: (UUID, CGRect) -> Void // Returns rect in IMAGE coordinates
-    
-    // For drawing capture
-    @Binding var isDrawing: Bool
-    let onAddPanel: (CGRect) -> Void // Receives rect in IMAGE coordinates
-    
-    // Internal state for drawing
-    @State private var dragStart: CGPoint?
-    @State private var dragCurrent: CGPoint?
-
-    // Initialize with default for binding to allow cleaner call site if needed, 
-    // but here we simply added the params.
-    // To support the parent view calling this cleanly, we need to match the init.
-    // Let's modify init to make drawing optional or handled internally? 
-    // Actually, better: Parent handles drawing, Overlay handles display/edit of existing.
-    
-    // Reverting to simple init for compatibility, assuming Parent handles drawing layer separately.
-    init(panels: [EditablePanel], selectedID: UUID?, imageSize: CGSize, viewSize: CGSize, onSelect: @escaping (UUID) -> Void, onUpdate: @escaping (UUID, CGRect) -> Void) {
-        self.panels = panels
-        self.selectedID = selectedID
-        self.imageSize = imageSize
-        self.viewSize = viewSize
-        self.onSelect = onSelect
-        self.onUpdate = onUpdate
-        self._isDrawing = .constant(false)
-        self.onAddPanel = { _ in }
-    }
+    let onUpdate: (UUID, CGRect) -> Void
     
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(panels) { panel in
-                // Convert Image Coords -> View Coords
                 let viewRect = convertToViewRect(panel.rect)
                 let isSelected = panel.id == selectedID
                 
                 ZStack {
-                    // The Rectangle (Draggable)
                     Rectangle()
                         .stroke(isSelected ? Color.blue : Color.yellow, lineWidth: isSelected ? 3 : 2)
                         .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
@@ -266,33 +234,24 @@ struct PanelOverlay: View {
                             DragGesture()
                                 .onChanged { value in
                                     if isSelected {
-                                        // Calculate new origin in View Coords
                                         let newOrigin = CGPoint(x: viewRect.origin.x + value.translation.width,
                                                                 y: viewRect.origin.y + value.translation.height)
                                         let newRect = CGRect(origin: newOrigin, size: viewRect.size)
-                                        
-                                        // Convert back to Image Coords to save
                                         onUpdate(panel.id, convertToImageRect(newRect))
                                     }
                                 }
                         )
-                        .onTapGesture {
-                            onSelect(panel.id)
-                        }
+                        .onTapGesture { onSelect(panel.id) }
                     
-                    // Order Badge
                     Text("\(panel.order)")
-                        .font(.caption)
-                        .bold()
+                        .font(.caption).bold()
                         .padding(6)
                         .background(Circle().fill(Color.black.opacity(0.7)))
                         .foregroundColor(.white)
                         .position(x: 20, y: 20)
                         .allowsHitTesting(false)
                     
-                    // Resize Handles (Only if selected)
                     if isSelected {
-                        // Bottom Right Handle
                         Circle()
                             .fill(Color.blue)
                             .frame(width: 20, height: 20)
@@ -314,43 +273,27 @@ struct PanelOverlay: View {
         }
     }
     
-    // Coordinate Conversion Helpers
     func convertToViewRect(_ imageRect: CGRect) -> CGRect {
         let scaleX = viewSize.width / imageSize.width
         let scaleY = viewSize.height / imageSize.height
-        // Aspect Fit Logic: standard scale is min of both
-        // We use the same scale for both dims to maintain aspect ratio
-        let scale = min(scaleX, scaleY)
-        
-        // Center the image in the view
-        let scaledWidth = imageSize.width * scale
-        let scaledHeight = imageSize.height * scale
-        let offsetX = (viewSize.width - scaledWidth) / 2
-        let offsetY = (viewSize.height - scaledHeight) / 2
         
         return CGRect(
-            x: (imageRect.origin.x * scale) + offsetX,
-            y: (imageRect.origin.y * scale) + offsetY,
-            width: imageRect.width * scale,
-            height: imageRect.height * scale
+            x: imageRect.origin.x * scaleX,
+            y: imageRect.origin.y * scaleY,
+            width: imageRect.width * scaleX,
+            height: imageRect.height * scaleY
         )
     }
     
     func convertToImageRect(_ viewRect: CGRect) -> CGRect {
         let scaleX = viewSize.width / imageSize.width
         let scaleY = viewSize.height / imageSize.height
-        let scale = min(scaleX, scaleY)
-        
-        let scaledWidth = imageSize.width * scale
-        let scaledHeight = imageSize.height * scale
-        let offsetX = (viewSize.width - scaledWidth) / 2
-        let offsetY = (viewSize.height - scaledHeight) / 2
         
         return CGRect(
-            x: (viewRect.origin.x - offsetX) / scale,
-            y: (viewRect.origin.y - offsetY) / scale,
-            width: viewRect.width / scale,
-            height: viewRect.height / scale
+            x: viewRect.origin.x / scaleX,
+            y: viewRect.origin.y / scaleY,
+            width: viewRect.width / scaleX,
+            height: viewRect.height / scaleY
         )
     }
 }
@@ -358,6 +301,7 @@ struct PanelOverlay: View {
 class PanelEditorViewModel: ObservableObject {
     @Published var session: PanelEditSession
     @Published var selectedPanelID: UUID?
+    @Published var currentLoadedImage: UIImage?
     let onComplete: (PanelEditSession) -> Void
     
     init(session: PanelEditSession, onComplete: @escaping (PanelEditSession) -> Void) {
@@ -370,17 +314,42 @@ class PanelEditorViewModel: ObservableObject {
         return session.pages[session.currentPageIndex]
     }
     
+    // MEMORY FIX: Load image on demand
+    func loadImage() {
+        guard let page = currentPage else { return }
+        if let current = currentLoadedImage, current.accessibilityIdentifier == page.imageURL.path {
+             return 
+        }
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let data = try? Data(contentsOf: page.imageURL), let image = UIImage(data: data) {
+                image.accessibilityIdentifier = page.imageURL.path
+                DispatchQueue.main.async {
+                    self.currentLoadedImage = image
+                }
+            }
+        }
+    }
+    
     func updatePanelRect(id: UUID, newRect: CGRect) {
         guard var page = currentPage, let index = page.panels.firstIndex(where: { $0.id == id }) else { return }
         page.panels[index].rect = newRect
         updatePage(page)
     }
     
-    // Standard methods
+    func addPanel(rect: CGRect) {
+        guard var page = currentPage else { return }
+        let newOrder = page.panels.count + 1
+        let panel = EditablePanel(rect: rect, order: newOrder)
+        page.panels.append(panel)
+        updatePage(page)
+        selectedPanelID = panel.id
+    }
+    
     func autoDetectCurrentPage() {
-        guard let page = currentPage else { return }
+        guard let page = currentPage, let image = currentLoadedImage else { return }
         Task {
-            let panels = try? await PanelExtractor.extractPanels(from: page.image, mode: .automatic)
+            let panels = try? await PanelExtractor.extractPanels(from: image, mode: .automatic)
             await MainActor.run {
                 var updatedPage = page
                 updatedPage.panels = (panels ?? []).enumerated().map { EditablePanel(from: $0.element, order: $0.offset + 1) }
@@ -422,11 +391,21 @@ class PanelEditorViewModel: ObservableObject {
     }
     
     func previousPage() {
-        if session.currentPageIndex > 0 { session.currentPageIndex -= 1; selectedPanelID = nil }
+        if session.currentPageIndex > 0 { 
+            session.currentPageIndex -= 1
+            selectedPanelID = nil
+            currentLoadedImage = nil // clear memory
+            loadImage()
+        }
     }
     
     func nextPage() {
-        if session.currentPageIndex < session.pages.count - 1 { session.currentPageIndex += 1; selectedPanelID = nil }
+        if session.currentPageIndex < session.pages.count - 1 { 
+            session.currentPageIndex += 1
+            selectedPanelID = nil
+            currentLoadedImage = nil // clear memory
+            loadImage()
+        }
     }
     
     func saveAndComplete() {

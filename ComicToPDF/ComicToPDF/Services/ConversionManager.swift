@@ -1281,37 +1281,33 @@ class ConversionManager: ObservableObject {
             // Determine detection mode
             let detectionMode: PanelExtractor.ExtractionMode
             switch conversionSettings.epubSettings.panelDetectionMode {
-            case .automatic:
-                detectionMode = conversionSettings.epubSettings.readingDirection == .rightToLeft ? .automatic : .automatic
-            case .grid2x2:
-                detectionMode = .grid(rows: 2, columns: 2)
-            case .grid3x3:
-                detectionMode = .grid(rows: 3, columns: 3)
-            case .grid2x3:
-                detectionMode = .grid(rows: 2, columns: 3)
+            case .automatic: detectionMode = .automatic
+            case .grid2x2: detectionMode = .grid(rows: 2, columns: 2)
+            case .grid3x3: detectionMode = .grid(rows: 3, columns: 3)
+            case .grid2x3: detectionMode = .grid(rows: 2, columns: 3)
             }
             
             // Helper to extract images from source URL for editor
-            // This mimics what EPUBMerger does but just for the editor session
-            let preparationTask = Task { () -> ([PanelEditSession.PageEditData]) in
+            let preparationTask = Task { () -> (PanelEditSession) in
                 var pages: [PanelEditSession.PageEditData] = []
                 
-                // Unzip to temp
-                let tempExtract = FileManager.default.temporaryDirectory.appendingPathComponent("EditorPrep_\(UUID().uuidString)")
-                try? FileManager.default.createDirectory(at: tempExtract, withIntermediateDirectories: true)
-                defer { try? FileManager.default.removeItem(at: tempExtract) }
+                // MEMORY FIX: Create a dedicated session directory that persists
+                let sessionID = UUID().uuidString
+                let sessionDir = FileManager.default.temporaryDirectory.appendingPathComponent("EditorSession_\(sessionID)")
+                try? FileManager.default.createDirectory(at: sessionDir, withIntermediateDirectories: true)
                 
-                guard let item = epubs.first else { return [] } // Should match current item
-                try? FileManager.default.unzipItem(at: item.url, to: tempExtract)
+                // We unzip to this persistent session directory
+                guard let item = epubs.first else { return PanelEditSession(pages: [], sessionTempDirectory: nil) }
+                try? FileManager.default.unzipItem(at: item.url, to: sessionDir)
                 
                 let searchPaths = [
-                    tempExtract.appendingPathComponent("OEBPS/images"),
-                    tempExtract.appendingPathComponent("OPS/images"),
-                    tempExtract.appendingPathComponent("images"),
-                    tempExtract
+                    sessionDir.appendingPathComponent("OEBPS/images"),
+                    sessionDir.appendingPathComponent("OPS/images"),
+                    sessionDir.appendingPathComponent("images"),
+                    sessionDir
                 ]
                 
-                var foundImages: [UIImage] = []
+                var foundImageURLs: [URL] = []
                 
                 for searchPath in searchPaths {
                     if let files = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) {
@@ -1319,30 +1315,30 @@ class ConversionManager: ObservableObject {
                             .filter { ["jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }
                             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
                         
-                        for imageFile in imageFiles {
-                            if let data = try? Data(contentsOf: imageFile),
-                               let image = UIImage(data: data) {
-                                foundImages.append(image)
-                            }
+                        if !imageFiles.isEmpty {
+                            foundImageURLs = imageFiles
+                            break
                         }
-                        if !foundImages.isEmpty { break }
                     }
                 }
                 
                 // Run detection
-                for (index, image) in foundImages.enumerated() {
-                     let panels = try? await PanelExtractor.extractPanels(from: image, mode: detectionMode)
-                     let editable = (panels ?? []).enumerated().map { idx, p in EditablePanel(from: p, order: idx + 1) }
-                     pages.append(PanelEditSession.PageEditData(pageNumber: index + 1, image: image, panels: editable))
+                for (index, imageURL) in foundImageURLs.enumerated() {
+                    // Load image purely for detection, then discard from memory
+                    if let data = try? Data(contentsOf: imageURL), let image = UIImage(data: data) {
+                        let panels = try? await PanelExtractor.extractPanels(from: image, mode: detectionMode)
+                        let editable = (panels ?? []).enumerated().map { idx, p in EditablePanel(from: p, order: idx + 1) }
+                        // Store URL, not Image
+                        pages.append(PanelEditSession.PageEditData(pageNumber: index + 1, imageURL: imageURL, panels: editable))
+                    }
                 }
                 
-                return pages
+                return PanelEditSession(pages: pages, readingDirection: conversionSettings.epubSettings.readingDirection, sessionTempDirectory: sessionDir)
             }
             
-            let pages = await preparationTask.value
-            if !pages.isEmpty {
-                let session = PanelEditSession(pages: pages, readingDirection: conversionSettings.epubSettings.readingDirection)
-                
+            let session = await preparationTask.value
+            
+            if !session.pages.isEmpty {
                 // Suspend and show UI
                 let editedSession: PanelEditSession = await withCheckedContinuation { continuation in
                     Task { @MainActor in
@@ -1360,36 +1356,42 @@ class ConversionManager: ObservableObject {
                 // Convert session back to manifest
                 var allPagePanels: [EPUBPanelManifest.PagePanels] = []
                 for page in editedSession.pages {
-                    guard let cgImage = page.image.cgImage else { continue }
-                    let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
-                    let panels = page.panels.sorted(by: { $0.order < $1.order }).map { $0.toNormalizedRegion(imageSize: imageSize) }
-                    
-                    allPagePanels.append(EPUBPanelManifest.PagePanels(
-                        pageNumber: page.pageNumber,
-                        imageFile: "page\(page.pageNumber).jpg", // Assumption based on EPUBMerger logic
-                        panels: panels
-                    ))
+                    // We need image size for normalization. Load briefly.
+                    if let data = try? Data(contentsOf: page.imageURL), let image = UIImage(data: data), let cgImage = image.cgImage {
+                        let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
+                        let panels = page.panels.sorted(by: { $0.order < $1.order }).map { $0.toNormalizedRegion(imageSize: imageSize) }
+                        
+                        allPagePanels.append(EPUBPanelManifest.PagePanels(
+                            pageNumber: page.pageNumber,
+                            imageFile: "page\(page.pageNumber).jpg",
+                            panels: panels
+                        ))
+                    }
+                }
+                
+                // Clean up session temp files
+                if let tempDir = editedSession.sessionTempDirectory {
+                    try? FileManager.default.removeItem(at: tempDir)
                 }
                 
                 let manifest = EPUBPanelManifest(
+                    version: "1.0",
                     readingDirection: editedSession.readingDirection == .rightToLeft ? "rtl" : "ltr",
                     pages: allPagePanels
                 )
                 
                 // Merge with precomputed manifest
                 (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(
-                    sourceURLs: urls, // Use original 'urls' here
+                    sourceURLs: urls,
                     outputURL: outputURL,
-                    metadata: metadata, // Use original 'metadata' here
+                    metadata: metadata,
                     settings: conversionSettings.epubSettings,
                     precomputedManifest: manifest
                 )
             } else {
-                 // Fallback if preparation failed
                  (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(sourceURLs: urls, outputURL: outputURL, metadata: metadata, settings: conversionSettings.epubSettings)
             }
         } else {
-            // Standard merge without manual edit
             (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(sourceURLs: urls, outputURL: outputURL, metadata: metadata, settings: conversionSettings.epubSettings)
         }
         await MainActor.run {

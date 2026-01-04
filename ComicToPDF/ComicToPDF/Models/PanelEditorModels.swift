@@ -35,16 +35,19 @@ struct EditablePanel: Identifiable, Equatable {
 }
 
 // Holds all pages and their panels for editing
+// Holds all pages and their panels for editing
 struct PanelEditSession: Identifiable {
     let id: UUID = UUID()
     var pages: [PageEditData]
     var currentPageIndex: Int = 0
     var readingDirection: EPUBSettings.ReadingDirection = .leftToRight
+    // Track the temp directory so we can clean it up later
+    var sessionTempDirectory: URL? 
     
     struct PageEditData: Identifiable {
         let id: UUID = UUID()
         let pageNumber: Int
-        let image: UIImage
+        let imageURL: URL // MEMORY FIX: Store URL, not UIImage
         var panels: [EditablePanel]
     }
     

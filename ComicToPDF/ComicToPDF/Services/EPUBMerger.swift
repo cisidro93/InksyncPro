@@ -356,8 +356,6 @@ class EPUBMerger {
             }
         }
         
-        let bookID = metadata.isbn ?? "urn:uuid:\(UUID().uuidString)"
-        // FIX: Removed metadata.isbn since it doesn't exist on PDFMetadata. used UUID fallback.
         let bookID = "urn:uuid:\(UUID().uuidString)"
         let bookTitle = metadata.title.isEmpty ? "Comic" : metadata.title
         let bookAuthor = metadata.author.isEmpty ? "Unknown" : metadata.author
@@ -426,9 +424,7 @@ class EPUBMerger {
         
         // FIX: Safely unwrap Archive because the current library version returns Archive? (Optional)
         // We remove 'try' if the compiler warns it doesn't throw, and use guard let to unwrap.
-        guard let archive = Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8) else {
-            throw NSError(domain: "EPUBMerger", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
-        }
+        let archive = try Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8)
         
         // Add mimetype first (uncompressed)
         try archive.addEntry(with: "mimetype", relativeTo: epubDir, compressionMethod: .none)
