@@ -357,6 +357,8 @@ class EPUBMerger {
         }
         
         let bookID = metadata.isbn ?? "urn:uuid:\(UUID().uuidString)"
+        // FIX: Removed metadata.isbn since it doesn't exist on PDFMetadata. used UUID fallback.
+        let bookID = "urn:uuid:\(UUID().uuidString)"
         let bookTitle = metadata.title.isEmpty ? "Comic" : metadata.title
         let bookAuthor = metadata.author.isEmpty ? "Unknown" : metadata.author
         
@@ -366,9 +368,6 @@ class EPUBMerger {
             panelMetadata += "        <meta name=\"RegionMagnification\" content=\"true\"/>\n        <meta name=\"comic-panel-view\" content=\"enabled\"/>\n"
         }
 
-        // Generate a standard book ID
-        let bookID = "urn:uuid:\(UUID().uuidString)"
-        
         let contentOPF = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
@@ -425,8 +424,11 @@ class EPUBMerger {
         print("📦 Creating EPUB archive...")
         let finalEPUB = tempDir.appendingPathComponent("\(bookTitle).epub")
         
-        // FIX 2: Updated for ZIPFoundation 0.9.19+ (init throws, does not return optional)
-        let archive = try Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8)
+        // FIX: Safely unwrap Archive because the current library version returns Archive? (Optional)
+        // We remove 'try' if the compiler warns it doesn't throw, and use guard let to unwrap.
+        guard let archive = Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8) else {
+            throw NSError(domain: "EPUBMerger", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
+        }
         
         // Add mimetype first (uncompressed)
         try archive.addEntry(with: "mimetype", relativeTo: epubDir, compressionMethod: .none)

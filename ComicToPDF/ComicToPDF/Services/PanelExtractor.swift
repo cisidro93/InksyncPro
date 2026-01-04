@@ -191,8 +191,8 @@ struct NormalizedRegion: Codable {
 }
 
 struct EPUBPanelManifest: Codable {
-    let version: String = "1.0"
-    let readingDirection: String  // "ltr" or "rtl"
+    var version: String = "1.0" // FIX: Changed from 'let' to 'var' to fix Codable warning
+    let readingDirection: String
     let pages: [PagePanels]
     
     struct PagePanels: Codable {
