@@ -1413,184 +1413,50 @@ class ConversionManager: ObservableObject {
     
     func mergeEPUBs(_ epubs: [ConvertedPDF], outputName: String) async throws -> URL {
         let urls = epubs.map { $0.url }
+        
         // Simple metadata for merged file
         var metadata = PDFMetadata()
         metadata.title = outputName
         if let first = epubs.first {
-             metadata.author = first.metadata.author
+            metadata.author = first.metadata.author
         }
         
         let outputURL = self.outputDirectory.appendingPathComponent("\(outputName).epub")
-        // 4. Merge EPUBs
-        let finalEPUB: URL
-        let pageCount: Int
         
-        // Check if panel view is enabled and manual review is requested (for now, assume always unless we add another toggle)
-        // But since this is a blocking UI operation, we need to handle it on main thread
-        
+        // Panel detection already happened during CBZ → EPUB conversion
+        // The EPUB files already contain panel manifests if enabled
         if conversionSettings.epubSettings.enablePanelView {
-            // Determine detection mode
-            let detectionMode: PanelExtractor.ExtractionMode
-            switch conversionSettings.epubSettings.panelDetectionMode {
-            case .automatic: detectionMode = .automatic
-            case .grid2x2: detectionMode = .grid(rows: 2, columns: 2)
-            case .grid3x3: detectionMode = .grid(rows: 3, columns: 3)
-            case .grid2x3: detectionMode = .grid(rows: 2, columns: 3)
+            await MainActor.run { 
+                self.processingStatus = "Merging EPUBs with panel data..." 
             }
-            
-            // Helper to extract images from ALL source URLs for editor
-            let preparationTask = Task { () -> (PanelEditSession) in
-                var pages: [PanelEditSession.PageEditData] = []
-                
-                // MEMORY FIX: Create a dedicated session directory that persists
-                let sessionID = UUID().uuidString
-                let sessionDir = FileManager.default.temporaryDirectory.appendingPathComponent("EditorSession_\(sessionID)")
-                try? FileManager.default.createDirectory(at: sessionDir, withIntermediateDirectories: true)
-                
-                var globalPageCount = 0
-                
-                // FIX: Loop through ALL epubs to support merging multiple chapters
-                for (fileIndex, item) in epubs.enumerated() {
-                    let fileDir = sessionDir.appendingPathComponent("source_\(fileIndex)")
-                    try? FileManager.default.createDirectory(at: fileDir, withIntermediateDirectories: true)
-                    try? FileManager.default.createDirectory(at: fileDir, withIntermediateDirectories: true)
-                    do {
-                        try FileManager.default.unzipItem(at: item.url, to: fileDir)
-                    } catch {
-                        print("❌ Failed to unzip for editor: \(error)")
-                        continue // Skip this file but don't crash
-                    }
-                    
-                    let searchPaths = [
-                        fileDir.appendingPathComponent("OEBPS/images"),
-                        fileDir.appendingPathComponent("OPS/images"),
-                        fileDir.appendingPathComponent("images"),
-                        fileDir
-                    ]
-                    
-                    var foundImageURLs: [URL] = []
-                    
-                    for searchPath in searchPaths {
-                        if let files = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) {
-                            let imageFiles = files
-                                .filter { ["jpg", "jpeg", "png", "webp"].contains($0.pathExtension.lowercased()) }
-                                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-                            
-                            if !imageFiles.isEmpty {
-                                foundImageURLs = imageFiles
-                                break
-                            }
-                        }
-                    }
-                    
-                    // Run detection for this file's images
-                    for imageURL in foundImageURLs {
-                        globalPageCount += 1
-                        
-                        // Load image briefly for detection
-                        if let data = try? Data(contentsOf: imageURL), let image = UIImage(data: data) {
-                            let panels = try? await PanelExtractor.extractPanels(from: image, mode: detectionMode)
-                            let editable = (panels ?? []).enumerated().map { idx, p in EditablePanel(from: p, order: idx + 1) }
-                            
-                            // Add to session with continuous page numbering
-                            pages.append(PanelEditSession.PageEditData(
-                                pageNumber: globalPageCount,
-                                imageURL: imageURL,
-                                panels: editable
-                            ))
-                        }
-                    }
-                }
-                
-                return PanelEditSession(pages: pages, readingDirection: conversionSettings.epubSettings.readingDirection, sessionTempDirectory: sessionDir)
-            }
-            
-            let session = await preparationTask.value
-            
-            if !session.pages.isEmpty {
-                // Suspend and show UI
-                let editedSession: PanelEditSession = await withCheckedContinuation { continuation in
-                    Task { @MainActor in
-                        self.currentPanelSession = session
-                        self.showingPanelEditor = true
-                        self.panelEditorCompletion = { result in
-                            self.showingPanelEditor = false
-                            self.currentPanelSession = nil
-                            self.panelEditorCompletion = nil
-                            continuation.resume(returning: result!)
-                        }
-                    }
-                }
-                
-                // Convert session back to manifest
-                var allPagePanels: [EPUBPanelManifest.PagePanels] = []
-                for page in editedSession.pages {
-                    // We need image size for normalization. Load briefly.
-                    if let data = try? Data(contentsOf: page.imageURL), let image = UIImage(data: data), let cgImage = image.cgImage {
-                        let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
-                        let panels = page.panels.sorted(by: { $0.order < $1.order }).map { $0.toNormalizedRegion(imageSize: imageSize) }
-                        
-                        allPagePanels.append(EPUBPanelManifest.PagePanels(
-                            pageNumber: page.pageNumber,
-                            imageFile: "page\(page.pageNumber).jpg",
-                            panels: panels
-                        ))
-                    }
-                }
-                
-                // Clean up session temp files
-                if let tempDir = editedSession.sessionTempDirectory {
-                    try? FileManager.default.removeItem(at: tempDir)
-                }
-                
-                let manifest = EPUBPanelManifest(
-                    version: "1.0",
-                    readingDirection: editedSession.readingDirection == .rightToLeft ? "rtl" : "ltr",
-                    pages: allPagePanels
-                )
-                
-                // Merge with precomputed manifest
-                (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(
-                    sourceURLs: urls,
-                    outputURL: outputURL,
-                    metadata: metadata,
-                    settings: conversionSettings.epubSettings,
-                    precomputedManifest: manifest,
-                    onStatusUpdate: { status in
-                        Task { @MainActor [weak self] in
-                            self?.processingStatus = status
-                        }
-                    }
-                )
-            } else {
-                 (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(
-                    sourceURLs: urls,
-                    outputURL: outputURL,
-                    metadata: metadata,
-                    settings: conversionSettings.epubSettings,
-                    onStatusUpdate: { status in
-                        Task { @MainActor [weak self] in
-                            self?.processingStatus = status
-                        }
-                    }
-                )
-            }
-        } else {
-            (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(
-                sourceURLs: urls,
-                outputURL: outputURL,
-                metadata: metadata,
-                settings: conversionSettings.epubSettings,
-                onStatusUpdate: { status in
-                    Task { @MainActor [weak self] in
-                        self?.processingStatus = status
-                    }
-                }
-            )
         }
+        
+        // Merge EPUBs - panel manifests are already embedded in source EPUBs
+        let (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(
+            sourceURLs: urls,
+            outputURL: outputURL,
+            metadata: metadata,
+            settings: conversionSettings.epubSettings,
+            precomputedManifest: nil,  // Let merger extract from source EPUBs
+            onStatusUpdate: { status in
+                Task { @MainActor in self.processingStatus = status }
+            }
+        )
+        
+        // Store the merged result
         await MainActor.run {
-             self.addToLibrary(finalEPUB, explicitPageCount: pageCount)
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: finalEPUB.path)[.size] as? Int64) ?? 0
+            let pdf = ConvertedPDF(
+                name: outputName,
+                url: finalEPUB,
+                pageCount: pageCount,
+                fileSize: fileSize,
+                metadata: metadata
+            )
+            self.convertedPDFs.append(pdf)
+            self.processingStatus = "Merge complete!"
         }
+        
         return finalEPUB
     }
     
