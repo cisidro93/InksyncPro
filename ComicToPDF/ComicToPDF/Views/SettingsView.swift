@@ -160,31 +160,24 @@ struct DefaultConversionSettingsView: View {
         Form {
             Section { Toggle("Manga Mode (RTL)", isOn: $conversionManager.conversionSettings.mangaMode) } header: { Text("Reading Direction") } footer: { Text("Enable for Japanese manga to reverse page order") }
             
-            Section(header: Text("Panel View (Guided Reading)")) {
-                Toggle("Enable Panel View", isOn: $conversionManager.conversionSettings.epubSettings.enablePanelView)
-                    .tint(.orange)
+            Section(header: Text("Panel View (Guided View)")) {
+                Toggle("Enable Panel Detection", isOn: $conversionManager.conversionSettings.epubSettings.enablePanelView)
                 
                 if conversionManager.conversionSettings.epubSettings.enablePanelView {
                     Picker("Detection Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
-                        ForEach(EPUBSettings.PanelDetectionMode.allCases, id: \.self) { mode in
-                            Text(mode.displayName).tag(mode)
-                        }
+                        Text("Automatic (AI)").tag(EPUBSettings.PanelDetectionMode.automatic)
+                        Text("2×2 Grid").tag(EPUBSettings.PanelDetectionMode.grid2x2)
+                        Text("2×3 Grid").tag(EPUBSettings.PanelDetectionMode.grid2x3)
+                        Text("3×3 Grid").tag(EPUBSettings.PanelDetectionMode.grid3x3)
                     }
                     
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Panel view allows readers to navigate panel-by-panel on e-readers and small screens, similar to Kindle's guided view.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        if conversionManager.conversionSettings.epubSettings.panelDetectionMode == .automatic {
-                            Text("⚡ Automatic mode uses AI to detect panel boundaries")
-                                .font(.caption2)
-                                .foregroundColor(.orange)
-                        }
+                    Picker("Reading Direction", selection: $conversionManager.conversionSettings.epubSettings.readingDirection) {
+                        Text("Left to Right (Western)").tag(EPUBSettings.ReadingDirection.leftToRight)
+                        Text("Right to Left (Manga)").tag(EPUBSettings.ReadingDirection.rightToLeft)
                     }
-                    .padding(.vertical, 4)
                 }
             }
+            
             
             Section {
                 Picker("Default Quality", selection: $conversionManager.conversionSettings.compressionQuality) { ForEach(CompressionPreset.allCases, id: \.self) { preset in Text(preset.rawValue).tag(preset) } }

@@ -1298,7 +1298,7 @@ class ConversionManager: ObservableObject {
                 
                 var globalPageCount = 0
                 
-                // LOOP through ALL epubs, not just the first one
+                // FIX: Loop through ALL epubs to support merging multiple chapters
                 for (fileIndex, item) in epubs.enumerated() {
                     let fileDir = sessionDir.appendingPathComponent("source_\(fileIndex)")
                     try? FileManager.default.createDirectory(at: fileDir, withIntermediateDirectories: true)
