@@ -792,7 +792,6 @@ class ConversionManager: ObservableObject {
                 let (finalURL, finalCount) = try await EPUBMerger.mergeEPUBs(
                     sourceURLs: [initialEPUB],
                     outputURL: self.outputDirectory.appendingPathComponent("\(outputName)_guided.epub"),
-                    metadata: metadata,
                     settings: config.epubSettings,
                     precomputedManifest: panelManifest, // <<-- KEY OPTIMIZATION
                     onStatusUpdate: { status in
@@ -1435,7 +1434,6 @@ class ConversionManager: ObservableObject {
         let (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(
             sourceURLs: urls,
             outputURL: outputURL,
-            metadata: metadata,
             settings: conversionSettings.epubSettings,
             precomputedManifest: nil,  // Let merger extract from source EPUBs
             onStatusUpdate: { status in
