@@ -1,3 +1,6 @@
+// ============================================
+// FILE: ComicToPDF/Services/EPUBMerger.swift
+// ============================================
 import Foundation
 import UIKit
 import ZIPFoundation
@@ -7,7 +10,6 @@ import ZIPFoundation
 // ============================================================================
 
 class EPUBMerger {
-    
     /// Merges multiple EPUB files into a single EPUB.
     /// - Parameters:
     ///   - sourceURLs: List of EPUB URLs to merge.
@@ -54,16 +56,13 @@ class EPUBMerger {
         @charset "UTF-8";
         * { margin: 0; padding: 0; border: 0; }
         html, body { 
-            width: 100%; 
-            height: 100%; 
-            margin: 0; 
-            padding: 0; 
+            width: 100%; height: 100%; 
+            margin: 0; padding: 0; 
             background-color: #000;
             overflow: hidden;
         }
         .page { 
-            width: 100vw; 
-            height: 100vh; 
+            width: 100vw; height: 100vh; 
             display: flex; 
             align-items: center; 
             justify-content: center;
@@ -71,23 +70,20 @@ class EPUBMerger {
             background-color: #000;
         }
         img { 
-            width: 100%; 
-            height: 100%; 
+            width: 100%; height: 100%; 
             object-fit: cover;
             object-position: center;
         }
         @media (orientation: portrait) {
             img {
-                width: 100%;
-                height: auto;
+                width: 100%; height: auto;
                 max-height: 100vh;
                 object-fit: contain;
             }
         }
         @media (orientation: landscape) {
             img {
-                width: auto;
-                height: 100%;
+                width: auto; height: 100%;
                 max-width: 100vw;
                 object-fit: contain;
             }
@@ -216,7 +212,7 @@ class EPUBMerger {
             if sourceImagesDir == nil {
                 print("   ⚠️ checking root for images...")
                 // Fallback check root
-                 if let files = try? FileManager.default.contentsOfDirectory(at: workingDir, includingPropertiesForKeys: nil) {
+                if let files = try? FileManager.default.contentsOfDirectory(at: workingDir, includingPropertiesForKeys: nil) {
                     let hasImages = files.contains { ["jpg", "jpeg", "png", "gif", "webp"].contains($0.pathExtension.lowercased()) }
                     if hasImages {
                         sourceImagesDir = workingDir
@@ -331,7 +327,7 @@ class EPUBMerger {
         
         if totalPages == 0 {
             throw NSError(domain: "EPUBMerger", code: 500,
-                         userInfo: [NSLocalizedDescriptionKey: "No images were found in any EPUB files"])
+                      userInfo: [NSLocalizedDescriptionKey: "No images were found in any EPUB files"])
         }
 
         // CREATE COVER IMAGE FOR KINDLE THUMBNAIL
@@ -356,6 +352,7 @@ class EPUBMerger {
             }
         }
         
+        // FIX: Removed metadata.isbn as it does not exist. Using UUID instead.
         let bookID = "urn:uuid:\(UUID().uuidString)"
         let bookTitle = metadata.title.isEmpty ? "Comic" : metadata.title
         let bookAuthor = metadata.author.isEmpty ? "Unknown" : metadata.author
@@ -422,9 +419,11 @@ class EPUBMerger {
         print("📦 Creating EPUB archive...")
         let finalEPUB = tempDir.appendingPathComponent("\(bookTitle).epub")
         
-        // FIX: Safely unwrap Archive because the current library version returns Archive? (Optional)
-        // We remove 'try' if the compiler warns it doesn't throw, and use guard let to unwrap.
-        let archive = try Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8)
+        // FIX: Handle Archive optional return. In some ZIPFoundation versions, init is failable (init?) and non-throwing.
+        // We use guard let to unwrap it safely.
+        guard let archive = Archive(url: finalEPUB, accessMode: .create, preferredEncoding: .utf8) else {
+            throw NSError(domain: "EPUBMerger", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to create EPUB archive"])
+        }
         
         // Add mimetype first (uncompressed)
         try archive.addEntry(with: "mimetype", relativeTo: epubDir, compressionMethod: .none)
@@ -448,174 +447,5 @@ class EPUBMerger {
         
         print("✅ Merge complete! \(totalPages) pages")
         return (outputURL, totalPages)
-    }
-    
-    // Helper function to find images directory recursively
-    private static func findImagesDirectory(in rootURL: URL) -> URL? {
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(at: rootURL, includingPropertiesForKeys: [.isDirectoryKey]) else {
-            return nil
-        }
-        
-        while let fileURL = enumerator.nextObject() as? URL {
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
-                  let isDirectory = resourceValues.isDirectory else {
-                continue
-            }
-            
-            if isDirectory && fileURL.lastPathComponent.lowercased() == "images" {
-                // Check if it actually contains images
-                if let contents = try? fm.contentsOfDirectory(at: fileURL, includingPropertiesForKeys: nil),
-                   contents.contains(where: { ["jpg", "jpeg", "png", "gif", "webp"].contains($0.pathExtension.lowercased()) }) {
-                    return fileURL
-                }
-            }
-        }
-        
-        return nil
-    }
-    
-    // MARK: - Extraction Logic
-    
-    private static func extractOrderedImages(from rootURL: URL) throws -> [URL] {
-        // 1. Find OEBPS/content.opf
-        // Look for META-INF/container.xml first
-        let containerURL = rootURL.appendingPathComponent("META-INF/container.xml")
-        
-        var opfPath = "OEBPS/content.opf" // Default
-        
-        if FileManager.default.fileExists(atPath: containerURL.path),
-           let data = try? Data(contentsOf: containerURL),
-           let content = String(data: data, encoding: .utf8) {
-            // Simple regex to find full-path
-            let pattern = "full-path=\"([^\"]+)\""
-            if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)) {
-                if let range = Range(match.range(at: 1), in: content) {
-                    opfPath = String(content[range])
-                }
-            }
-        }
-        
-        let opfURL = rootURL.appendingPathComponent(opfPath)
-        guard FileManager.default.fileExists(atPath: opfURL.path) else {
-            // Fallback: just search for images recursively if OPF structure fails
-            return try getAllImagesRecursively(from: rootURL)
-        }
-        
-        // 2. Parse OPF to get Manifest and Spine
-        let opfParser = OPFParser(url: opfURL)
-        guard let spineBase = opfParser.parse() else {
-             return try getAllImagesRecursively(from: rootURL)
-        }
-        
-        // 3. Walk Spine to get XHTMLs -> Images
-        var orderedImages: [URL] = []
-        let opfDir = opfURL.deletingLastPathComponent()
-        
-        for itemRef in spineBase.spine {
-            if let href = spineBase.manifest[itemRef] {
-                let xhtmlURL = opfDir.appendingPathComponent(href)
-                let imagesInPage = try extractImagesFromXHTML(at: xhtmlURL)
-                orderedImages.append(contentsOf: imagesInPage)
-            }
-        }
-        
-        if orderedImages.isEmpty {
-             return try getAllImagesRecursively(from: rootURL)
-        }
-        
-        return orderedImages
-    }
-    
-    private static func extractImagesFromXHTML(at url: URL) throws -> [URL] {
-        guard FileManager.default.fileExists(atPath: url.path),
-              let content = try? String(contentsOf: url) else { return [] }
-        
-        // Regex for <img src="...">
-        let pattern = "<img[^>]+src=\"([^\"]+)\""
-        let regex = try NSRegularExpression(pattern: pattern, options: .caseInsensitive)
-        let matches = regex.matches(in: content, range: NSRange(content.startIndex..., in: content))
-        
-        var images: [URL] = []
-        let baseDir = url.deletingLastPathComponent()
-        
-        for match in matches {
-            if let range = Range(match.range(at: 1), in: content) {
-                let src = String(content[range])
-                // Handle relative paths
-                let imageURL = baseDir.appendingPathComponent(src).standardized
-                if FileManager.default.fileExists(atPath: imageURL.path) {
-                    images.append(imageURL)
-                }
-            }
-        }
-        
-        return images
-    }
-    
-    private static func getAllImagesRecursively(from url: URL) throws -> [URL] {
-        let imageExtensions = ["jpg", "jpeg", "png", "gif", "webp"]
-        var images: [URL] = []
-        
-        if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) {
-            while let fileURL = enumerator.nextObject() as? URL {
-                if imageExtensions.contains(fileURL.pathExtension.lowercased()) {
-                    // Ignore thumbnails or cover if they duplicate others? No, keep all for now.
-                    // Filter out some system files
-                    if !fileURL.lastPathComponent.hasPrefix(".") {
-                        images.append(fileURL)
-                    }
-                }
-            }
-        }
-        return images.sorted { $0.lastPathComponent < $1.lastPathComponent }
-    }
-}
-
-// MARK: - Mini OPF Parser
-
-class OPFParser: NSObject, XMLParserDelegate {
-    let url: URL
-    var manifest: [String: String] = [:] // id -> href
-    var spine: [String] = [] // idrefs
-    
-    private var inManifest = false
-    private var inSpine = false
-    
-    init(url: URL) {
-        self.url = url
-        super.init()
-    }
-    
-    func parse() -> (manifest: [String: String], spine: [String])? {
-        guard let parser = XMLParser(contentsOf: url) else { return nil }
-        parser.delegate = self
-        if parser.parse() {
-            return (manifest, spine)
-        }
-        return nil
-    }
-    
-    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
-        if elementName == "manifest" { inManifest = true }
-        if elementName == "spine" { inSpine = true }
-        
-        if inManifest && elementName == "item" {
-            if let id = attributeDict["id"], let href = attributeDict["href"] {
-                manifest[id] = href
-            }
-        }
-        
-        if inSpine && elementName == "itemref" {
-            if let idref = attributeDict["idref"] {
-                spine.append(idref)
-            }
-        }
-    }
-    
-    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
-        if elementName == "manifest" { inManifest = false }
-        if elementName == "spine" { inSpine = false }
     }
 }
