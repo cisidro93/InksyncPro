@@ -307,7 +307,7 @@ class ConversionManager: ObservableObject {
     @Published var alertMessage: String?
     
     // ✅ ADD THIS NEW PROPERTY
-    @Published var processingStatus: String = "Waiting..."
+    @Published var processingStatus: String = ""
     
     // MARK: - Panel Editor State
     @Published var showingPanelEditor = false
