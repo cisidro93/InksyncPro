@@ -29,5 +29,14 @@ struct ContentView: View {
                 showingOnboarding = true
             }
         }
+        .fullScreenCover(isPresented: $conversionManager.showingPanelEditor) {
+            if let session = conversionManager.currentPanelSession {
+                PanelEditorView(session: session) { result in
+                    conversionManager.panelEditorCompletion?(result)
+                }
+            } else {
+                Text("Error: No session")
+            }
+        }
     }
 }

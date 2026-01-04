@@ -282,6 +282,18 @@ class BackgroundTask: Identifiable, ObservableObject {
 @MainActor
 class ConversionManager: ObservableObject {
     @Published var convertedPDFs: [ConvertedPDF] = []
+    @Published var conversionQueue: [ConversionQueueItem] = []
+    @Published var isConverting = false
+    @Published var progress: Double = 0.0
+    @Published var alertMessage: String?
+    
+    // MARK: - Panel Editor State
+    @Published var showingPanelEditor = false
+    @Published var currentPanelSession: PanelEditSession?
+    @Published var panelEditorCompletion: ((PanelEditSession) -> Void)?
+    
+    // MARK: - Services
+    private let pdfConverter = PDFConverter()
     @Published var collections: [PDFCollection] = []
     @Published var kindleDevices: [KindleDevice] = []
     @Published var conversionSettings = ConversionSettings()
@@ -1242,12 +1254,132 @@ class ConversionManager: ObservableObject {
         }
         
         let outputURL = self.outputDirectory.appendingPathComponent("\(outputName).epub")
-        let (finalURL, pageCount) = try await EPUBMerger.mergeEPUBs(sourceURLs: urls, outputURL: outputURL, metadata: metadata, settings: conversionSettings.epubSettings)
+        // 4. Merge EPUBs
+        let finalEPUB: URL
+        let pageCount: Int
         
-        await MainActor.run {
-             self.addToLibrary(finalURL, explicitPageCount: pageCount)
+        // Check if panel view is enabled and manual review is requested (for now, assume always unless we add another toggle)
+        // But since this is a blocking UI operation, we need to handle it on main thread
+        
+        if conversionSettings.epubSettings.enablePanelView {
+            // Determine detection mode
+            let detectionMode: PanelExtractor.ExtractionMode
+            switch conversionSettings.epubSettings.panelDetectionMode {
+            case .automatic:
+                detectionMode = conversionSettings.epubSettings.readingDirection == .rightToLeft ? .automatic : .automatic
+            case .grid2x2:
+                detectionMode = .grid(rows: 2, columns: 2)
+            case .grid3x3:
+                detectionMode = .grid(rows: 3, columns: 3)
+            case .grid2x3:
+                detectionMode = .grid(rows: 2, columns: 3)
+            }
+            
+            // Helper to extract images from source URL for editor
+            // This mimics what EPUBMerger does but just for the editor session
+            let preparationTask = Task { () -> ([PanelEditSession.PageEditData]) in
+                var pages: [PanelEditSession.PageEditData] = []
+                
+                // Unzip to temp
+                let tempExtract = FileManager.default.temporaryDirectory.appendingPathComponent("EditorPrep_\(UUID().uuidString)")
+                try? FileManager.default.createDirectory(at: tempExtract, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: tempExtract) }
+                
+                guard let item = epubs.first else { return [] } // Should match current item
+                try? FileManager.default.unzipItem(at: item.url, to: tempExtract)
+                
+                let searchPaths = [
+                    tempExtract.appendingPathComponent("OEBPS/images"),
+                    tempExtract.appendingPathComponent("OPS/images"),
+                    tempExtract.appendingPathComponent("images"),
+                    tempExtract
+                ]
+                
+                var foundImages: [UIImage] = []
+                
+                for searchPath in searchPaths {
+                    if let files = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) {
+                        let imageFiles = files
+                            .filter { ["jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }
+                            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+                        
+                        for imageFile in imageFiles {
+                            if let data = try? Data(contentsOf: imageFile),
+                               let image = UIImage(data: data) {
+                                foundImages.append(image)
+                            }
+                        }
+                        if !foundImages.isEmpty { break }
+                    }
+                }
+                
+                // Run detection
+                for (index, image) in foundImages.enumerated() {
+                     let panels = try? await PanelExtractor.extractPanels(from: image, mode: detectionMode)
+                     let editable = (panels ?? []).enumerated().map { idx, p in EditablePanel(from: p, order: idx + 1) }
+                     pages.append(PanelEditSession.PageEditData(pageNumber: index + 1, image: image, panels: editable))
+                }
+                
+                return pages
+            }
+            
+            let pages = await preparationTask.value
+            if !pages.isEmpty {
+                let session = PanelEditSession(pages: pages, readingDirection: conversionSettings.epubSettings.readingDirection)
+                
+                // Suspend and show UI
+                let editedSession: PanelEditSession = await withCheckedContinuation { continuation in
+                    Task { @MainActor in
+                        self.currentPanelSession = session
+                        self.showingPanelEditor = true
+                        self.panelEditorCompletion = { result in
+                            self.showingPanelEditor = false
+                            self.currentPanelSession = nil
+                            self.panelEditorCompletion = nil
+                            continuation.resume(returning: result)
+                        }
+                    }
+                }
+                
+                // Convert session back to manifest
+                var allPagePanels: [EPUBPanelManifest.PagePanels] = []
+                for page in editedSession.pages {
+                    guard let cgImage = page.image.cgImage else { continue }
+                    let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
+                    let panels = page.panels.sorted(by: { $0.order < $1.order }).map { $0.toNormalizedRegion(imageSize: imageSize) }
+                    
+                    allPagePanels.append(EPUBPanelManifest.PagePanels(
+                        pageNumber: page.pageNumber,
+                        imageFile: "page\(page.pageNumber).jpg", // Assumption based on EPUBMerger logic
+                        panels: panels
+                    ))
+                }
+                
+                let manifest = EPUBPanelManifest(
+                    readingDirection: editedSession.readingDirection == .rightToLeft ? "rtl" : "ltr",
+                    pages: allPagePanels
+                )
+                
+                // Merge with precomputed manifest
+                (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(
+                    sourceURLs: urls, // Use original 'urls' here
+                    outputURL: outputURL,
+                    metadata: metadata, // Use original 'metadata' here
+                    settings: conversionSettings.epubSettings,
+                    precomputedManifest: manifest
+                )
+            } else {
+                 // Fallback if preparation failed
+                 (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(sourceURLs: urls, outputURL: outputURL, metadata: metadata, settings: conversionSettings.epubSettings)
+            }
+        } else {
+            // Standard merge without manual edit
+            (finalEPUB, pageCount) = try await EPUBMerger.mergeEPUBs(sourceURLs: urls, outputURL: outputURL, metadata: metadata, settings: conversionSettings.epubSettings)
         }
-        return finalURL
+        await MainActor.run {
+             self.addToLibrary(finalEPUB, explicitPageCount: pageCount)
+        }
+        return finalEPUB
     }
     
     func mergeMixedFiles(files: [ConvertedPDF], outputName: String, targetFormat: OutputFormat) async throws -> URL {
