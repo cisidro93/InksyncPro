@@ -67,6 +67,8 @@ struct CollectionDetailView: View {
     var uncategorizedOnly: Bool = false
     @State private var selectedPDF: ConvertedPDF?
     @State private var showingMoveSheet = false
+    @State private var showingPageManager = false
+    @State private var pdfToManage: ConvertedPDF?
     
     var pdfs: [ConvertedPDF] {
         if uncategorizedOnly { return conversionManager.convertedPDFs.filter { $0.collectionId == nil } }
@@ -81,9 +83,30 @@ struct CollectionDetailView: View {
                 HStack {
                     VStack(alignment: .leading) { Text(pdf.name).font(.headline); Text("\(pdf.pageCount) pages • \(pdf.formattedSize)").font(.caption).foregroundColor(.secondary) }
                     Spacer()
-                }.swipeActions(edge: .leading) { Button { selectedPDF = pdf; showingMoveSheet = true } label: { Label("Move", systemImage: "folder") }.tint(.blue) }
+                }.swipeActions(edge: .leading) { 
+                    Button { selectedPDF = pdf; showingMoveSheet = true } label: { Label("Move", systemImage: "folder") }.tint(.blue)
+                    
+                    // --- NEW PAGE MANAGER BUTTON ---
+                    if pdf.url.pathExtension.lowercased() == "pdf" {
+                        Button {
+                            pdfToManage = pdf
+                            showingPageManager = true
+                        } label: {
+                            Label("Pages", systemImage: "doc.on.doc")
+                        }
+                        .tint(.purple)
+                    }
+                    // -------------------------------
+                }
             }
-        }.navigationTitle(title).sheet(isPresented: $showingMoveSheet) { if let pdf = selectedPDF { MoveToCollectionView(pdf: pdf) } }
+        }
+        .navigationTitle(title)
+        .sheet(isPresented: $showingMoveSheet) { if let pdf = selectedPDF { MoveToCollectionView(pdf: pdf) } }
+        .sheet(isPresented: $showingPageManager) {
+            if let pdf = pdfToManage {
+                PageManagerView(pdf: pdf)
+            }
+        }
     }
 }
 
