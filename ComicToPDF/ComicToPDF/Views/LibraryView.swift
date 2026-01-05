@@ -162,10 +162,57 @@ struct LibraryView: View {
             }
         }
         .overlay(alignment: .bottom) { batchMergeOverlay }
+        .overlay(alignment: .top) { taskMonitorOverlay } // ✅ ADD THIS LINE
         .onAppear { Task { await refreshLibrary() } }
     }
     
-    // MARK: - Subviews to fix compiler type-check
+    // MARK: - Subviews
+    
+    var taskMonitorOverlay: some View {
+        Group {
+            if !conversionManager.activeTasks.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(conversionManager.activeTasks) { task in
+                        HStack {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text(task.description)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(.thinMaterial)
+                        .cornerRadius(10)
+                        .shadow(radius: 2)
+                    }
+                }
+                .padding()
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+    }
+    
+    var batchMergeOverlay: some View {
+        Group {
+            if isSelectionMode && !selectedPDFs.isEmpty {
+                Button(action: { showingMergeSheet = true }) {
+                    HStack {
+                        Image(systemName: "rectangle.stack.badge.plus")
+                        Text("Merge \(selectedPDFs.count) Files")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Color.orange)
+                    .cornerRadius(12)
+                    .shadow(radius: 4)
+                }
+                .padding(.bottom, 20)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
     
     var emptyStateView: some View {
         // ✅ FIX: Wrapped in VStack to return a single View type

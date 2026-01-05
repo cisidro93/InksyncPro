@@ -14,10 +14,20 @@ struct ContentView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            ConvertView().tabItem { Label("Convert", systemImage: "arrow.triangle.2.circlepath") }.tag(0)
-            LibraryView(selectedTab: $selectedTab).tabItem { Label("Library", systemImage: "books.vertical.fill") }.tag(1)
-            CollectionsView().tabItem { Label("Collections", systemImage: "folder.fill") }.tag(2)
-            SettingsView().tabItem { Label("Settings", systemImage: "gearshape.fill") }.tag(3)
+            // Tab 0: Library (Now the Home Screen)
+            LibraryView(selectedTab: $selectedTab)
+                .tabItem { Label("Library", systemImage: "books.vertical.fill") }
+                .tag(0)
+            
+            // Tab 1: Collections
+            CollectionsView()
+                .tabItem { Label("Collections", systemImage: "folder.fill") }
+                .tag(1)
+            
+            // Tab 2: Settings
+            SettingsView()
+                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+                .tag(2)
         }
         .tint(.orange)
         .environmentObject(conversionManager)
@@ -25,14 +35,10 @@ struct ContentView: View {
         .preferredColorScheme(themeManager.selectedTheme.colorScheme)
         .fullScreenCover(isPresented: $showingOnboarding) {
             OnboardingView()
-                .onDisappear {
-                    hasCompletedOnboarding = true
-                }
+                .onDisappear { hasCompletedOnboarding = true }
         }
         .onAppear {
-            if !hasCompletedOnboarding {
-                showingOnboarding = true
-            }
+            if !hasCompletedOnboarding { showingOnboarding = true }
         }
         .sheet(isPresented: $showPanelEditor) {
             if let session = panelEditSession, let completion = panelEditorCompletion {
