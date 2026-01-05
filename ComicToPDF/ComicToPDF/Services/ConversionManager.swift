@@ -1337,8 +1337,8 @@ class ConversionManager: ObservableObject {
                     let fileSize = Int64(resources?.fileSize ?? 0)
                     
                     // Check if we have existing metadata for this file
-                    if let index = convertedPDFs.firstIndex(where: { $0.url == url }) {
-                        var existing = convertedPDFs[index]
+                        if let index = convertedPDFs.firstIndex(where: { $0.url == url }) {
+                        let existing = convertedPDFs[index]
                         // Update file size if changed
                         if existing.fileSize != fileSize {
                             hasChanges = true
@@ -1371,30 +1371,7 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    // ✅ NEW: Import Logic (Just Copy, Don't Convert Yet)
-    @MainActor
-    func processImportedFiles(urls: [URL]) {
-        for url in urls {
-            guard url.startAccessingSecurityScopedResource() else { continue }
-            defer { url.stopAccessingSecurityScopedResource() }
-            
-            do {
-                let fileName = url.lastPathComponent
-                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let destURL = docDir.appendingPathComponent(fileName)
-                
-                if FileManager.default.fileExists(atPath: destURL.path) {
-                    try? FileManager.default.removeItem(at: destURL)
-                }
-                try FileManager.default.copyItem(at: url, to: destURL)
-                print("✅ Copied \(fileName) to Library")
-                
-            } catch {
-                print("❌ Import failed: \(error.localizedDescription)")
-            }
-        }
-        scanForPDFs() // Refreshes UI immediately
-    }
+
     
     // MARK: - Lazy Loading & Caching
     
