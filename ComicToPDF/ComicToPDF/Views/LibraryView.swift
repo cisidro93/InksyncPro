@@ -416,3 +416,20 @@ struct LibraryGridCellView<MenuContent: View>: View {
         .contextMenu { menuItems() }
     }
 }
+}
+
+// ✅ FIX: Add this extension to the bottom of the file
+extension ConvertedPDF {
+    var typeColor: Color {
+        switch url.pathExtension.lowercased() {
+        case "pdf": return .red
+        case "epub": return .blue
+        case "cbz", "cbr", "zip": return .orange
+        default: return .gray
+        }
+    }
+    
+    var typeLabel: String {
+        return url.pathExtension.uppercased()
+    }
+}
