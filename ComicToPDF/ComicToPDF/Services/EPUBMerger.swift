@@ -289,12 +289,12 @@ class EPUBMerger {
                 // XHTML Generation
                 // Use safe default if no panels found
                 let pagePanels = panelManifest?.pages.first(where: { $0.pageNumber == pageNumber }) 
-                    ?? EPUBPanelManifest.PagePanels(pageNumber: pageNumber, panels: [])
+                    ?? EPUBPanelManifest.PagePanels(pageNumber: pageNumber, imageFile: "images/\(destImageName)", panels: [])
 
                 let xhtmlFileName = "page\(pageNumber).xhtml"
                 let xhtmlContent = createPageHTML(imageFilename: "../images/\(destImageName)", page: pagePanels, settings: settings)
                 
-                try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlFileName), atomically: true, encoding: .utf8)
+                try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlFileName), atomically: true, encoding: String.Encoding.utf8)
                 
                 manifestItems.append("""
                     <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
@@ -438,7 +438,8 @@ class EPUBMerger {
         
         // Serialize panels to JSON for the reader to use
         var panelDataAttributes = ""
-        if let panels = page.panels, !panels.isEmpty {
+        let panels = page.panels
+        if !panels.isEmpty {
             if let jsonData = try? JSONEncoder().encode(panels), let jsonString = String(data: jsonData, encoding: .utf8) {
                 // Escape single quotes just in case
                 let safeJSON = jsonString.replacingOccurrences(of: "'", with: "&apos;")
