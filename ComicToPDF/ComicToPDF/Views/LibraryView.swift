@@ -2,10 +2,12 @@ import SwiftUI
 import QuickLook
 import UniformTypeIdentifiers
 
-// ✅ DEFINE TYPES LOCALLY
+// ✅ 1. DEFINE TYPES (Crucial for iOS to recognize them)
 extension UTType {
     static var cbz: UTType { UTType(filenameExtension: "cbz", conformingTo: .data) ?? .data }
     static var cbr: UTType { UTType(filenameExtension: "cbr", conformingTo: .data) ?? .data }
+    // "content" matches basically any file on disk
+    static var anyContent: UTType { UTType.content }
 }
 
 struct LibraryView: View {
@@ -26,10 +28,11 @@ struct LibraryView: View {
     @State private var showingMetadataSearch = false
     @State private var showingPanelExtractor = false
     
-    // ✅ LOCAL IMPORT STATE
+    // Import State
     @State private var showingCloudImport = false
-    @State private var importError: String? = nil
-    @State private var showingImportError = false
+    @State private var isImporting = false
+    @State private var importStatusMessage = ""
+    @State private var showingImportStatus = false
     
     // Reading
     @State private var showingPageManager = false
@@ -87,6 +90,7 @@ struct LibraryView: View {
 
     var body: some View {
         NavigationView {
+            // ✅ ATTACH TO VSTACK (More Stable than NavigationView)
             VStack {
                 // FILTER BAR
                 LibraryInteractiveSearchBar(
@@ -146,7 +150,6 @@ struct LibraryView: View {
                     }
                 }
             }
-            // ✅ STABLE ANCHOR: All sheets attached to NavigationView, NOT ScrollView
             .sheet(isPresented: $showingMergeSheet) {
                 FileMergeView(filesToMerge: Array(filteredPDFs.filter { selectedPDFs.contains($0.id) }))
             }
@@ -175,29 +178,111 @@ struct LibraryView: View {
                     }.padding().presentationDetents([.medium])
                 }
             }
-            // ✅ THE FIX: Attached to the most stable view
+            // ✅ THE WILDCARD IMPORTER
             .fileImporter(
                 isPresented: $showingCloudImport,
-                allowedContentTypes: [.cbz, .cbr, .zip, .pdf, .epub, .data, .item],
+                // ALLOW EVERYTHING (.content includes images, pdfs, zips, folders, etc.)
+                allowedContentTypes: [.content, .data, .archive], 
                 allowsMultipleSelection: true
             ) { result in
                 switch result {
                 case .success(let urls):
-                    // Pass to Manager to handle logic
-                    conversionManager.processImportedFiles(urls: urls)
+                    // Run logic immediately
+                    handleImport(urls: urls)
                 case .failure(let error):
-                    importError = error.localizedDescription
-                    showingImportError = true
+                    importStatusMessage = "Selection Failed: \(error.localizedDescription)"
+                    showingImportStatus = true
                 }
             }
-            .alert("Import Error", isPresented: $showingImportError) {
+            .alert("Import Status", isPresented: $showingImportStatus) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text(importError ?? "Unknown error")
+                Text(importStatusMessage)
             }
             .overlay(alignment: .top) { taskMonitorOverlay }
             .onChange(of: conversionManager.organizationMethod) {
                 conversionManager.sortPDFs()
+            }
+        }
+    }
+    
+    // ✅ INLINE IMPORT LOGIC (Self-Contained)
+    private func handleImport(urls: [URL]) {
+        // Show status immediately so you know it worked
+        isImporting = true
+        
+        Task {
+            var successCount = 0
+            var errors: [String] = []
+            
+            for url in urls {
+                // 1. ACCESS SECURITY SCOPE
+                guard url.startAccessingSecurityScopedResource() else {
+                    errors.append("Permission denied: \(url.lastPathComponent)")
+                    continue
+                }
+                
+                // 2. DEFINE DESTINATION
+                let fileName = url.lastPathComponent
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let destURL = docDir.appendingPathComponent(fileName)
+                
+                do {
+                    // 3. COPY FILE
+                    if FileManager.default.fileExists(atPath: destURL.path) {
+                        try FileManager.default.removeItem(at: destURL)
+                    }
+                    try FileManager.default.copyItem(at: url, to: destURL)
+                    
+                    // Stop accessing ONLY after copying
+                    url.stopAccessingSecurityScopedResource()
+                    successCount += 1
+                    
+                    // 4. TRIGGER CONVERSION
+                    let ext = destURL.pathExtension.lowercased()
+                    // Allow broad set of extensions
+                    if ["cbz", "cbr", "zip", "pdf", "epub"].contains(ext) {
+                        let taskDesc = "Processing \(fileName)..."
+                        
+                        await MainActor.run {
+                            conversionManager.activeTasks.append(BackgroundTask(description: taskDesc))
+                        }
+                        
+                        // Call conversion
+                        try? await conversionManager.convertToFormat(
+                            conversionManager.conversionSettings.outputFormat,
+                            from: destURL,
+                            progressHandler: { _ in }
+                        )
+                        
+                        await MainActor.run {
+                            conversionManager.activeTasks.removeAll { $0.description == taskDesc }
+                        }
+                    }
+                    
+                } catch {
+                    url.stopAccessingSecurityScopedResource()
+                    errors.append("Copy failed: \(error.localizedDescription)")
+                }
+            }
+            
+            // 5. UPDATE UI
+            await MainActor.run {
+                conversionManager.scanForPDFs()
+                isImporting = false
+                
+                if !errors.isEmpty {
+                    importStatusMessage = "Errors:\n" + errors.joined(separator: "\n")
+                    showingImportStatus = true
+                } else {
+                    // Success!
+                    // If we successfully queued a conversion, we don't need a popup.
+                    // But if it was just a copy, let's confirm.
+                    if successCount > 0 && conversionManager.activeTasks.isEmpty {
+                        importStatusMessage = "Imported \(successCount) files."
+                        showingImportStatus = true
+                    }
+                }
             }
         }
     }
