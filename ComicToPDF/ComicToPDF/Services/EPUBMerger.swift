@@ -46,15 +46,15 @@ class EPUBMerger {
         for (index, url) in sourceURLs.enumerated() {
             let ext = url.pathExtension.lowercased()
             
-            // ✅ FIX: Handle Raw Images (for Page Deletion/Reordering) vs EPUBs
             if ["jpg", "jpeg", "png", "webp", "gif"].contains(ext) {
+                // Handle Raw Image
                 totalPageCount += 1
                 let newName = String(format: "page%04d.%@", totalPageCount, ext)
                 let destURL = imagesDir.appendingPathComponent(newName)
                 try fileManager.copyItem(at: url, to: destURL)
                 finalImageFiles.append(newName)
             } else {
-                // Assume Archive/EPUB - Extract and find images
+                // Handle Archive/EPUB
                 let extractTemp = tempDir.appendingPathComponent("extract_\(index)")
                 try fileManager.createDirectory(at: extractTemp, withIntermediateDirectories: true)
                 try fileManager.unzipItem(at: url, to: extractTemp)
@@ -76,6 +76,9 @@ class EPUBMerger {
                     try fileManager.copyItem(at: imgURL, to: destURL)
                     finalImageFiles.append(newName)
                 }
+                
+                // ✅ FIX: Delete the temp extraction folder so it doesn't get zipped up!
+                try? fileManager.removeItem(at: extractTemp)
             }
         }
         
