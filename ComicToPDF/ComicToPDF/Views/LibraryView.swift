@@ -64,7 +64,9 @@ struct LibraryView: View {
             .sheet(isPresented: $showingShareSheet) { if let pdf = selectedPDF { ShareSheet(items: [pdf.url]) } }
             .sheet(isPresented: $showingDevicePicker) { if let pdf = selectedPDF { DevicePickerView(pdf: pdf) } }
             .sheet(isPresented: $showingMergeSheet) {
-                 if let files = getSelectedPDFs(), !files.isEmpty { FileMergeView(filesToMerge: files) }
+                 // ✅ FIX: Removed 'if let' since getSelectedPDFs() returns [ConvertedPDF]
+                 let files = getSelectedPDFs()
+                 if !files.isEmpty { FileMergeView(filesToMerge: files) }
             }
             .alert("Delete Comic?", isPresented: $showingDeleteAlert) {
                 Button("Delete", role: .destructive) { if let pdf = selectedPDF { conversionManager.removeFromLibrary(pdf) } }
@@ -78,13 +80,16 @@ struct LibraryView: View {
     // MARK: - Subviews to fix compiler type-check
     
     var emptyStateView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "books.vertical").font(.system(size: 60)).foregroundColor(.gray)
-            Text("No Comics Found").font(.title2).bold()
-            Text("Tap 'Convert' to add files.").foregroundColor(.secondary)
+        // ✅ FIX: Wrapped in VStack to return a single View type
+        VStack {
+            VStack(spacing: 20) {
+                Image(systemName: "books.vertical").font(.system(size: 60)).foregroundColor(.gray)
+                Text("No Comics Found").font(.title2).bold()
+                Text("Tap 'Convert' to add files.").foregroundColor(.secondary)
+            }
+            .padding()
+            Spacer()
         }
-        .padding()
-        Spacer()
     }
     
     var libraryContentView: some View {
@@ -92,7 +97,12 @@ struct LibraryView: View {
             if isGridView {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: gridColumns), spacing: 20) {
                     ForEach(filteredPDFs) { pdf in
-                        LibraryGridItem(pdf: pdf, isSelected: selectedPDFs.contains(pdf.id))
+                        // ✅ FIX: Removed 'isSelected' param. Added visual selection effect manually.
+                        LibraryGridItem(pdf: pdf)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.blue, lineWidth: selectedPDFs.contains(pdf.id) ? 3 : 0)
+                            )
                             .onTapGesture { handleTap(pdf) }
                             .contextMenu { menuItems(for: pdf) }
                     }

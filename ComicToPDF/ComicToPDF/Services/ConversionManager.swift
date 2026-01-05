@@ -1150,6 +1150,24 @@ class ConversionManager: ObservableObject {
         savePDFs()
     }
     
+    // Helper for FileMergeView to add a manually created file with metadata
+    func addConvertedPDF(url: URL, name: String, pageCount: Int, fileSize: Int64, metadata: PDFMetadata) {
+        let pdf = ConvertedPDF(
+            name: name,
+            url: url,
+            pageCount: pageCount,
+            fileSize: fileSize,
+            collectionId: nil,
+            metadata: metadata
+        )
+        // Dedupe
+        if let existingIndex = convertedPDFs.firstIndex(where: { $0.url == url }) {
+            convertedPDFs.remove(at: existingIndex)
+        }
+        convertedPDFs.insert(pdf, at: 0)
+        savePDFs()
+    }
+    
     func removeFromLibrary(_ pdf: ConvertedPDF) {
         try? fileManager.removeItem(at: pdf.url)
         convertedPDFs.removeAll { $0.id == pdf.id }
