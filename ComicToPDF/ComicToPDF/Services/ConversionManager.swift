@@ -2067,7 +2067,7 @@ extension ConversionManager {
     }
     
     // ✅ UPDATED: Scribe Optimization Helper
-    private func optimizeImage(_ image: UIImage) -> Data? {
+    nonisolated private func optimizeImage(_ image: UIImage) -> Data? {
         // ✅ UPDATED: 3200px is better for the 11" Scribe screen (300 PPI)
         let maxDimension: CGFloat = 3200.0 
         

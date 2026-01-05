@@ -50,91 +50,69 @@ struct LibraryView: View {
                     ProgressView("Loading Library...").padding()
                     Spacer()
                 } else if filteredPDFs.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "books.vertical").font(.system(size: 60)).foregroundColor(.gray)
-                        Text("No Comics Found").font(.title2).bold()
-                        Text("Tap 'Convert' to add files.").foregroundColor(.secondary)
-                    }
-                    .padding()
-                    Spacer()
+                    emptyStateView
                 } else {
-                    ScrollView {
-                        if isGridView {
-                            // GRID VIEW
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: gridColumns), spacing: 20) {
-                                ForEach(filteredPDFs) { pdf in
-                                    LibraryGridItem(pdf: pdf, isSelected: selectedPDFs.contains(pdf.id))
-                                        .onTapGesture {
-                                            if isSelectionMode {
-                                                toggleSelection(pdf)
-                                            } else {
-                                                // ✅ FIX: Use State to trigger Reader
-                                                readingPDF = pdf
-                                            }
-                                        }
-                                        .contextMenu { menuItems(for: pdf) } // Long Press Menu
-                                }
-                            }
-                            .padding()
-                        } else {
-                            // LIST VIEW
-                            LazyVStack {
-                                ForEach(filteredPDFs) { pdf in
-                                    LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDFs.contains(pdf.id))
-                                        .onTapGesture {
-                                            if isSelectionMode {
-                                                toggleSelection(pdf)
-                                            } else {
-                                                // ✅ FIX: Use State to trigger Reader
-                                                readingPDF = pdf
-                                            }
-                                        }
-                                        .contextMenu { menuItems(for: pdf) }
-                                }
-                            }
-                            .padding()
-                        }
-                    }
+                    libraryContentView
                 }
             }
             .navigationTitle("Library")
             .navigationBarHidden(true)
             
-            // ✅ READER PRESENTER (Full Screen Modal)
-            .fullScreenCover(item: $readingPDF) { pdf in
-                ReaderView(fileURL: pdf.url)
-            }
-            
-            // ✅ PAGE MANAGER PRESENTER
-            .sheet(isPresented: $showingPageManager) {
-                if let pdf = pdfToManage {
-                    PageManagerView(pdf: pdf)
-                }
-            }
-            // Other Sheets
-            .sheet(isPresented: $showingShareSheet) {
-                if let pdf = selectedPDF { ShareSheet(items: [pdf.url]) }
-            }
-            .sheet(isPresented: $showingDevicePicker) {
-                if let pdf = selectedPDF { DevicePickerView(pdf: pdf) }
-            }
-            // Batch Merge Sheet
+            // ✅ FILES MODALS
+            .fullScreenCover(item: $readingPDF) { pdf in ReaderView(fileURL: pdf.url) }
+            .sheet(isPresented: $showingPageManager) { if let pdf = pdfToManage { PageManagerView(pdf: pdf) } }
+            .sheet(isPresented: $showingShareSheet) { if let pdf = selectedPDF { ShareSheet(items: [pdf.url]) } }
+            .sheet(isPresented: $showingDevicePicker) { if let pdf = selectedPDF { DevicePickerView(pdf: pdf) } }
             .sheet(isPresented: $showingMergeSheet) {
-                let files = getSelectedPDFs()
-                if !files.isEmpty {
-                    FileMergeView(filesToMerge: files)
-                }
+                 if let files = getSelectedPDFs(), !files.isEmpty { FileMergeView(filesToMerge: files) }
             }
             .alert("Delete Comic?", isPresented: $showingDeleteAlert) {
-                Button("Delete", role: .destructive) {
-                    if let pdf = selectedPDF {
-                        conversionManager.removeFromLibrary(pdf)
-                    }
-                }
+                Button("Delete", role: .destructive) { if let pdf = selectedPDF { conversionManager.removeFromLibrary(pdf) } }
                 Button("Cancel", role: .cancel) {}
             }
         }
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: .bottom) { batchMergeOverlay }
+        .onAppear { Task { await refreshLibrary() } }
+    }
+    
+    // MARK: - Subviews to fix compiler type-check
+    
+    var emptyStateView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "books.vertical").font(.system(size: 60)).foregroundColor(.gray)
+            Text("No Comics Found").font(.title2).bold()
+            Text("Tap 'Convert' to add files.").foregroundColor(.secondary)
+        }
+        .padding()
+        Spacer()
+    }
+    
+    var libraryContentView: some View {
+        ScrollView {
+            if isGridView {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: gridColumns), spacing: 20) {
+                    ForEach(filteredPDFs) { pdf in
+                        LibraryGridItem(pdf: pdf, isSelected: selectedPDFs.contains(pdf.id))
+                            .onTapGesture { handleTap(pdf) }
+                            .contextMenu { menuItems(for: pdf) }
+                    }
+                }
+                .padding()
+            } else {
+                LazyVStack {
+                    ForEach(filteredPDFs) { pdf in
+                        LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDFs.contains(pdf.id))
+                            .onTapGesture { handleTap(pdf) }
+                            .contextMenu { menuItems(for: pdf) }
+                    }
+                }
+                .padding()
+            }
+        }
+    }
+    
+    var batchMergeOverlay: some View {
+        Group {
             if isSelectionMode && !selectedPDFs.isEmpty {
                 Button(action: { showingMergeSheet = true }) {
                     HStack {
@@ -152,8 +130,13 @@ struct LibraryView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .onAppear {
-            Task { await refreshLibrary() }
+    }
+    
+    func handleTap(_ pdf: ConvertedPDF) {
+        if isSelectionMode {
+             toggleSelection(pdf)
+        } else {
+             readingPDF = pdf
         }
     }
     

@@ -91,7 +91,7 @@ struct FileMergeView: View {
             // 2. Prepare Metadata
             var metadata = PDFMetadata()
             metadata.title = volumeTitle
-            metadata.author = filesToMerge.first?.metadata.author
+            metadata.author = filesToMerge.first?.metadata.author ?? ""
             
             let outputURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(volumeTitle)

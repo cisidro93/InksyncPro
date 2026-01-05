@@ -42,7 +42,6 @@ struct AdvancedOptionsView: View {
                          conversionManager.conversionSettings.epubSettings.enablePanelView = false
                     }
                 }
-                }
             }
             
             Section(footer: Text("These settings apply to all new conversions.")) {
