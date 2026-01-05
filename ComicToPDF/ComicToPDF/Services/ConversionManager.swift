@@ -125,6 +125,7 @@ enum KindleDeviceType: String, Codable, CaseIterable {
 enum OutputFormat: String, CaseIterable, Identifiable, Codable {
     case pdf = "PDF"
     case epub = "EPUB"
+    case both = "Both"
     
     var id: String { rawValue }
     
@@ -132,6 +133,7 @@ enum OutputFormat: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .pdf: return "doc.text.fill"
         case .epub: return "book.fill"
+        case .both: return "doc.on.doc.fill"
         }
     }
 }
@@ -200,9 +202,7 @@ enum ConversionError: LocalizedError {
     }
 }
 
-        }
-    }
-}
+
 
 struct EPUBSettings: Codable, Equatable {
     var useFixedLayout: Bool = true
