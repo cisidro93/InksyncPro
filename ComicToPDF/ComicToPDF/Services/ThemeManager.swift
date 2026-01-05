@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum AppTheme: String, CaseIterable, Identifiable, Codable {
+enum AppearanceMode: String, CaseIterable, Identifiable, Codable {
     case system = "System"
     case light = "Light"
     case dark = "Dark"
@@ -17,5 +17,5 @@ enum AppTheme: String, CaseIterable, Identifiable, Codable {
 }
 
 class ThemeManager: ObservableObject {
-    @AppStorage("selectedTheme") var selectedTheme: AppTheme = .system
+    @AppStorage("selectedTheme") var selectedTheme: AppearanceMode = .system
 }
