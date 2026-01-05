@@ -1,46 +1,32 @@
-// ============================================
-// FILE: ComicToPDF/Services/EPUBMerger.swift
-// ============================================
 import Foundation
 import UIKit
 import ZIPFoundation
 
-// ============================================================================
-// MARK: - EPUB MERGER
-// ============================================================================
-
 class EPUBMerger {
-    /// Merges multiple EPUB files into a single EPUB.
-    /// - Parameters:
-    ///   - sourceURLs: List of EPUB URLs to merge.
-    ///   - outputURL: Destination URL for the merged EPUB.
-    ///   - metadata: Metadata for the new EPUB.
-    ///   - settings: Settings for EPUB generation.
-    ///   - precomputedManifest: Optional panel manifest if manual editing was performed.
-    /// - Returns: The URL of the merged EPUB and the total page count.
+    
     static func mergeEPUBs(sourceURLs: [URL], outputURL: URL, metadata: PDFMetadata, settings: EPUBSettings, precomputedManifest: EPUBPanelManifest? = nil, onStatusUpdate: ((String) -> Void)? = nil) async throws -> (URL, Int) {
         
-        print("🔄 Starting EPUB merge for \(sourceURLs.count) files")
+        print("🔄 Starting EPUB merge/generation...")
+        onStatusUpdate?("Preparing EPUB structure...")
         
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("EPUBMerge_\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent("EPUBGen_\(UUID().uuidString)")
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDir) }
         
-        // Create EPUB structure
-        let epubDir = tempDir.appendingPathComponent("epub")
-        let metaInfDir = epubDir.appendingPathComponent("META-INF")
-        let oebpsDir = epubDir.appendingPathComponent("OEBPS")
+        // 1. Setup Standard Directory Structure
+        let oebpsDir = tempDir.appendingPathComponent("OEBPS")
         let imagesDir = oebpsDir.appendingPathComponent("images")
         let textDir = oebpsDir.appendingPathComponent("text")
+        let metaInfDir = tempDir.appendingPathComponent("META-INF")
         
-        for dir in [epubDir, metaInfDir, oebpsDir, imagesDir, textDir] {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        }
+        try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: textDir, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
         
-        // Write mimetype
-        try "application/epub+zip".write(to: epubDir.appendingPathComponent("mimetype"), atomically: true, encoding: .ascii)
+        // 2. Create Mimetype and Container
+        try "application/epub+zip".write(to: tempDir.appendingPathComponent("mimetype"), atomically: true, encoding: .ascii)
         
-        // Write container.xml
         let containerXML = """
         <?xml version="1.0" encoding="UTF-8"?>
         <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -51,425 +37,163 @@ class EPUBMerger {
         """
         try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
-        // Write CSS
-        let cssContent = """
-        @charset "UTF-8";
-        * { margin: 0; padding: 0; border: 0; }
-        html, body { 
-            width: 100%; height: 100%; 
-            margin: 0; padding: 0; 
-            background-color: #000;
-            overflow: hidden;
-        }
-        .page { 
-            width: 100vw; height: 100vh; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center;
-            overflow: hidden;
-            background-color: #000;
-        }
-        img { 
-            width: 100%; height: 100%; 
-            object-fit: cover;
-            object-position: center;
-        }
-        @media (orientation: portrait) {
-            img {
-                width: 100%; height: auto;
-                max-height: 100vh;
-                object-fit: contain;
-            }
-        }
-        @media (orientation: landscape) {
-            img {
-                width: auto; height: 100%;
-                max-width: 100vw;
-                object-fit: contain;
-            }
-        }
-        """
-        try cssContent.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
+        // 3. Extract and Organize Images
+        onStatusUpdate?("Processing images...")
+        var pagePanels: [EPUBPanelManifest.PagePanels] = []
+        if let manifest = precomputedManifest { pagePanels = manifest.pages }
         
-        // ---------------------------------------------------------
-        // PANEL VIEW: GENERATE METADATA
-        // ---------------------------------------------------------
-        var panelManifest: EPUBPanelManifest? = precomputedManifest
-
-        if settings.enablePanelView && panelManifest == nil {
-            print("🎯 Generating panel view metadata...")
-            
-            // Load all images for panel detection
-            var pageImages: [UIImage] = []
-            
-            for url in sourceURLs {
-                let tempExtract = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("PanelExtract_\(UUID().uuidString)")
-                
-                try FileManager.default.createDirectory(at: tempExtract, withIntermediateDirectories: true)
-                defer { try? FileManager.default.removeItem(at: tempExtract) }
-                
-                try FileManager.default.unzipItem(at: url, to: tempExtract)
-                
-                // Find images in this EPUB
-                let searchPaths = [
-                    tempExtract.appendingPathComponent("OEBPS/images"),
-                    tempExtract.appendingPathComponent("OPS/images"),
-                    tempExtract.appendingPathComponent("images"),
-                    tempExtract
-                ]
-                
-                for searchPath in searchPaths {
-                    if let files = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) {
-                        let imageFiles = files
-                            .filter { ["jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }
-                            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-                        
-                        for imageFile in imageFiles {
-                            if let data = try? Data(contentsOf: imageFile),
-                               let image = UIImage(data: data) {
-                                pageImages.append(image)
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Detect panels
-            if !pageImages.isEmpty {
-                // Check if we already have a manifest (from manual review)
-                // If so, SKIP this entire block
-                if settings.enablePanelView && panelManifest == nil {
-                    
-                    let detectionMode: PanelExtractor.ExtractionMode
-                switch settings.panelDetectionMode {
-                case .automatic:
-                    detectionMode = .automatic
-                case .grid2x2:
-                    detectionMode = .grid(rows: 2, columns: 2)
-                case .grid3x3:
-                    detectionMode = .grid(rows: 3, columns: 3)
-                case .grid2x3:
-                    detectionMode = .grid(rows: 2, columns: 3)
-                }
-                
-                panelManifest = try await PanelExtractor.extractPanelsFromImages(
-                    pageImages,
-                    mode: detectionMode,
-                    settings: settings,
-                    onStatusUpdate: onStatusUpdate // ✅ Pass it here
-                )
-                
-                print("✅ Panel metadata generated for \(pageImages.count) pages")
-                
-                // Save JSON manifest
-                if let manifest = panelManifest {
-                    let encoder = JSONEncoder()
-                    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                    let manifestData = try encoder.encode(manifest)
-                    let manifestPath = oebpsDir.appendingPathComponent("panel-manifest.json")
-                    try manifestData.write(to: manifestPath)
-                }
-            } // End if settings.enablePanelView && panelManifest == nil
-            } // End if !pageImages.isEmpty
-        }
+        var finalImageFiles: [String] = []
+        var totalPageCount = 0
         
-        var pageNumber = 1
-        var manifestItems: [String] = []
-        var spineItems: [String] = []
-        
-        // Process each source EPUB
-        for (index, sourceURL) in sourceURLs.enumerated() {
-            print("📖 Processing EPUB \(index + 1)/\(sourceURLs.count): \(sourceURL.lastPathComponent)")
+        for (index, url) in sourceURLs.enumerated() {
+            // If it's an EPUB, extract images. If it's an image, copy it.
+            // Simplified: We assume sourceURLs are paths to valid input (likely temp EPUBs from converters)
             
-            let workingDir = tempDir.appendingPathComponent("source_\(index)")
-            try FileManager.default.createDirectory(at: workingDir, withIntermediateDirectories: true)
+            // Extraction Strategy:
+            // Unzip to a temp location, find images, move to `OEBPS/images` renaming sequentially
+            let extractTemp = tempDir.appendingPathComponent("extract_\(index)")
+            try fileManager.createDirectory(at: extractTemp, withIntermediateDirectories: true)
+            try fileManager.unzipItem(at: url, to: extractTemp)
             
-            // Unzip
-            try FileManager.default.unzipItem(at: sourceURL, to: workingDir)
-            print("   ✓ Unzipped to \(workingDir.path)")
+            let enumerator = fileManager.enumerator(at: extractTemp, includingPropertiesForKeys: nil)
+            var foundImages: [URL] = []
             
-            // Try multiple possible image directory locations
-            var sourceImagesDir: URL? = nil
-            let possiblePaths = [
-                "OEBPS/images",
-                "OPS/images", 
-                "EPUB/images",
-                "images",
-                "."
-            ]
-            
-            for path in possiblePaths {
-                let dir = workingDir.appendingPathComponent(path)
-                var isDir: ObjCBool = false
-                if FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir) && isDir.boolValue {
-                    // Check if folder has images
-                    if let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
-                        let hasImages = files.contains { ["jpg", "jpeg", "png", "gif", "webp"].contains($0.pathExtension.lowercased()) }
-                        if hasImages {
-                            sourceImagesDir = dir
-                            print("   ✓ Found images in: \(path)")
-                            break
-                        }
-                    }
+            while let fileURL = enumerator?.nextObject() as? URL {
+                if ["jpg", "jpeg", "png", "webp"].contains(fileURL.pathExtension.lowercased()) {
+                    foundImages.append(fileURL)
                 }
             }
             
-            if sourceImagesDir == nil {
-                print("   ⚠️ checking root for images...")
-                // Fallback check root
-                if let files = try? FileManager.default.contentsOfDirectory(at: workingDir, includingPropertiesForKeys: nil) {
-                    let hasImages = files.contains { ["jpg", "jpeg", "png", "gif", "webp"].contains($0.pathExtension.lowercased()) }
-                    if hasImages {
-                        sourceImagesDir = workingDir
-                    }
-                }
-            }
+            // Sort to ensure page order
+            foundImages.sort { $0.path < $1.path }
             
-            guard let imagesDirURL = sourceImagesDir else {
-                print("   ⚠️ WARNING: No images directory found in EPUB")
-                continue
-            }
-            
-            // Get all image files
-            let imageFiles = try FileManager.default.contentsOfDirectory(
-                at: imagesDirURL,
-                includingPropertiesForKeys: nil
-            )
-            .filter { url in
-                let ext = url.pathExtension.lowercased()
-                return ["jpg", "jpeg", "png", "gif", "webp", "bmp"].contains(ext)
-            }
-            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-            
-            print("   ✓ Found \(imageFiles.count) images")
-            
-            if imageFiles.isEmpty {
-                print("   ⚠️ WARNING: Images directory exists but contains no images")
-                continue
-            }
-            
-            // Copy each image
-            for (imgIndex, imageURL) in imageFiles.enumerated() {
-                let ext = imageURL.pathExtension
-                let destImageName = "page\(pageNumber).\(ext)"
-                let destImageURL = imagesDir.appendingPathComponent(destImageName)
-                
-                // DIRECT COPY - NO PROCESSING
-                do {
-                    try FileManager.default.copyItem(at: imageURL, to: destImageURL)
-                    
-                    // Verify file was copied
-                    let attrs = try FileManager.default.attributesOfItem(atPath: destImageURL.path)
-                    let size = attrs[.size] as? Int64 ?? 0
-                    
-                    if imgIndex == 0 || imgIndex == imageFiles.count - 1 {
-                        print("      Page \(pageNumber): \(destImageName) (\(size) bytes)")
-                    }
-                } catch {
-                    print("   ❌ ERROR copying \(imageURL.lastPathComponent): \(error)")
-                    throw error
-                }
-                
-                // Media type
-                let mediaType: String
-                switch ext.lowercased() {
-                case "png": mediaType = "image/png"
-                case "gif": mediaType = "image/gif"
-                case "webp": mediaType = "image/webp"
-                default: mediaType = "image/jpeg"
-                }
-                
-                // Manifest
-                manifestItems.append("""
-                    <item id="image\(pageNumber)" href="images/\(destImageName)" media-type="\(mediaType)"/>
-                """)
-                
-                // Panel Data Attributes
-                // XHTML Generation
-                // Use safe default if no panels found
-                let pagePanels = panelManifest?.pages.first(where: { $0.pageNumber == pageNumber }) 
-                    ?? EPUBPanelManifest.PagePanels(pageNumber: pageNumber, imageFile: "images/\(destImageName)", panels: [])
-
-                let xhtmlFileName = "page\(pageNumber).xhtml"
-                let xhtmlContent = createPageHTML(imageFilename: "../images/\(destImageName)", page: pagePanels, settings: settings)
-                
-                try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlFileName), atomically: true, encoding: String.Encoding.utf8)
-                
-                manifestItems.append("""
-                    <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
-                """)
-                
-                spineItems.append("<itemref idref=\"page\(pageNumber)\"/>")
-                
-                pageNumber += 1
-            }
-            
-            try? FileManager.default.removeItem(at: workingDir)
-        }
-        
-        let totalPages = pageNumber - 1
-        print("📊 Total pages merged: \(totalPages)")
-        
-        if totalPages == 0 {
-            throw NSError(domain: "EPUBMerger", code: 500,
-                      userInfo: [NSLocalizedDescriptionKey: "No images were found in any EPUB files"])
-        }
-
-        // CREATE COVER IMAGE FOR KINDLE THUMBNAIL
-        if totalPages > 0 {
-            // Find the first page image (could be jpg, jpeg, or png)
-            var coverCreated = false
-            let possibleExts = ["jpg", "jpeg", "png", "webp"]
-            
-            for ext in possibleExts {
-                let firstPageURL = imagesDir.appendingPathComponent("page1.\(ext)")
-                if FileManager.default.fileExists(atPath: firstPageURL.path) {
-                    let coverURL = imagesDir.appendingPathComponent("cover.jpg")
-                    try FileManager.default.copyItem(at: firstPageURL, to: coverURL)
-                    print("📖 Created cover.jpg from page1.\(ext) for Kindle thumbnail")
-                    coverCreated = true
-                    break
-                }
-            }
-            
-            if !coverCreated {
-                print("⚠️ Warning: Could not create cover image")
+            for imgURL in foundImages {
+                totalPageCount += 1
+                let newName = String(format: "page%04d.%@", totalPageCount, imgURL.pathExtension)
+                let destURL = imagesDir.appendingPathComponent(newName)
+                try fileManager.copyItem(at: imgURL, to: destURL)
+                finalImageFiles.append(newName)
             }
         }
         
-        // FIX: Removed metadata.isbn as it does not exist. Using UUID instead.
-        let bookID = "urn:uuid:\(UUID().uuidString)"
-        let bookTitle = metadata.title.isEmpty ? "Comic" : metadata.title
-        let bookAuthor = metadata.author.isEmpty ? "Unknown" : metadata.author
-        
-        // Build panel metadata tags
-        var panelMetadata = "        <meta property=\"rendition:layout\">pre-paginated</meta>\n        <meta property=\"rendition:spread\">none</meta>\n"
-        if panelManifest != nil {
-            panelMetadata += "        <meta name=\"RegionMagnification\" content=\"true\"/>\n        <meta name=\"comic-panel-view\" content=\"enabled\"/>\n"
+        if finalImageFiles.isEmpty {
+            throw NSError(domain: "EPUBGen", code: 404, userInfo: [NSLocalizedDescriptionKey: "No images found in source files."])
         }
-
-        let contentOPF = """
+        
+        // 4. Generate HTML Pages (XHTML)
+        onStatusUpdate?("Creating pages...")
+        for (index, imageFilename) in finalImageFiles.enumerated() {
+            let pageNum = index + 1
+            
+            // Check for panels
+            var panelData = ""
+            if let panels = precomputedManifest?.pages.first(where: { $0.pageNumber == pageNum })?.panels,
+               let data = try? JSONEncoder().encode(panels),
+               let json = String(data: data, encoding: .utf8) {
+                let safeJSON = json.replacingOccurrences(of: "'", with: "&apos;")
+                panelData = " data-panels='\(safeJSON)'"
+            }
+            
+            // IMPORTANT: Image path is relative to the HTML file in `text/`
+            // So we need `../images/filename`
+            let html = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <!DOCTYPE html>
+            <html xmlns="http://www.w3.org/1999/xhtml">
+            <head>
+                <title>Page \(pageNum)</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <style>
+                    body { margin:0; padding:0; background:black; height:100vh; display:flex; justify-content:center; align-items:center; }
+                    img { max-width:100%; max-height:100%; object-fit:contain; }
+                </style>
+            </head>
+            <body>
+                <div class="page"\(panelData)>
+                    <img src="../images/\(imageFilename)" alt="Page \(pageNum)" loading="lazy" />
+                </div>
+            </body>
+            </html>
+            """
+            
+            let pageName = String(format: "page%04d.xhtml", pageNum)
+            try html.write(to: textDir.appendingPathComponent(pageName), atomically: true, encoding: .utf8)
+        }
+        
+        // 5. Generate OPF (Manifest & Spine)
+        onStatusUpdate?("Finalizing metadata...")
+        var manifestItems = ""
+        var spineItems = ""
+        
+        for (index, imgFile) in finalImageFiles.enumerated() {
+            let pageNum = index + 1
+            let pageID = "page\(pageNum)"
+            let imgID = "img\(pageNum)"
+            let mime = (imgFile.hasSuffix("png")) ? "image/png" : "image/jpeg"
+            
+            manifestItems += """
+            <item id="\(pageID)" href="text/page\(String(format: "%04d", pageNum)).xhtml" media-type="application/xhtml+xml"/>
+            <item id="\(imgID)" href="images/\(imgFile)" media-type="\(mime)"/>
+            """
+            spineItems += "<itemref idref=\"\(pageID)\"/>\n"
+        }
+        
+        let opfContent = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
-            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-                <dc:title>\(bookTitle)</dc:title>
-                <dc:identifier id="BookID">\(bookID)</dc:identifier>
-                <dc:creator>\(bookAuthor)</dc:creator>
-                <dc:language>en</dc:language>
-                <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-                <meta name="cover" content="cover-image"/>
-        \(panelMetadata)
-            </metadata>
-            <manifest>
-                <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                <item id="css" href="style.css" media-type="text/css"/>
-                <item id="cover-image" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>
-        \(manifestItems.joined(separator: "\n"))
-            </manifest>
-            <spine toc="ncx">
-        \(spineItems.joined(separator: "\n"))
-            </spine>
-            <guide>
-                <reference type="cover" title="Cover" href="text/page1.xhtml"/>
-            </guide>
+        <package version="3.0" unique-identifier="pub-id" xmlns="http://www.idpf.org/2007/opf">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:identifier id="pub-id">urn:uuid:\(UUID().uuidString)</dc:identifier>
+            <dc:title>\(metadata.title)</dc:title>
+            <dc:language>en</dc:language>
+            <meta property="dcterms:modified">\(Date().ISO8601Format())</meta>
+            \(settings.enablePanelView ? "<meta name=\"comic-panel-view\" content=\"enabled\"/>" : "")
+          </metadata>
+          <manifest>
+            \(manifestItems)
+            <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+          </manifest>
+          <spine toc="ncx">
+            \(spineItems)
+          </spine>
         </package>
         """
-        try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: String.Encoding.utf8)
+        try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
-        // Create toc.ncx
-        let pageCount = totalPages
-        let tocNCX = """
+        // 6. Generate NCX (TOC)
+        let ncxContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-            <head>
-                <meta name="dtb:uid" content="\(bookID)"/>
-                <meta name="dtb:depth" content="1"/>
-                <meta name="dtb:totalPageCount" content="\(pageCount)"/>
-                <meta name="dtb:maxPageNumber" content="\(pageCount)"/>
-            </head>
-            <docTitle>
-                <text>\(bookTitle)</text>
-            </docTitle>
+            <head><meta name="dtb:uid" content="urn:uuid:12345"/></head>
+            <docTitle><text>\(metadata.title)</text></docTitle>
             <navMap>
-                <navPoint id="navPoint-1" playOrder="1">
+                <navPoint id="nav1" playOrder="1">
                     <navLabel><text>Start</text></navLabel>
-                    <content src="page1.xhtml"/>
+                    <content src="text/page0001.xhtml"/>
                 </navPoint>
             </navMap>
         </ncx>
         """
-        try tocNCX.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
+        try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
         
-        // Create archive
-        print("📦 Creating EPUB archive...")
-        let finalEPUB = tempDir.appendingPathComponent("\(bookTitle).epub")
-        
-        // FIX: Handle Archive optional return. In some ZIPFoundation versions, init is failable (init?) and non-throwing.
-        // We use guard let to unwrap it safely.
-        // FIX: Use throwing init for Archive but handle optionality just in case
-        // FIX: Use throwing init for Archive (modern ZIPFoundation)
-        let archive = try Archive(url: finalEPUB, accessMode: .create)
-        
-        // Add mimetype first (uncompressed)
-        try archive.addEntry(with: "mimetype", relativeTo: epubDir, compressionMethod: .none)
-        
-        // Add all other files
-        let allFiles = try FileManager.default.subpathsOfDirectory(atPath: epubDir.path)
-        for file in allFiles where file != "mimetype" {
-            try archive.addEntry(with: file, relativeTo: epubDir, compressionMethod: .deflate)
-        }
-        
-        // Check final file size
-        let finalAttrs = try FileManager.default.attributesOfItem(atPath: finalEPUB.path)
-        let finalSize = finalAttrs[.size] as? Int64 ?? 0
-        print("✅ EPUB created: \(ByteCountFormatter.string(fromByteCount: finalSize, countStyle: .file))")
-        
-        // Move to destination
+        // 7. Zip it up
         if FileManager.default.fileExists(atPath: outputURL.path) {
             try FileManager.default.removeItem(at: outputURL)
         }
-        try FileManager.default.moveItem(at: finalEPUB, to: outputURL)
         
-        print("✅ Merge complete! \(totalPages) pages")
-        return (outputURL, totalPages)
-    }
-    private static func createPageHTML(imageFilename: String, page: EPUBPanelManifest.PagePanels, settings: EPUBSettings) -> String {
-        
-        // Serialize panels to JSON for the reader to use
-        var panelDataAttributes = ""
-        let panels = page.panels
-        if !panels.isEmpty {
-            if let jsonData = try? JSONEncoder().encode(panels), let jsonString = String(data: jsonData, encoding: .utf8) {
-                // Escape single quotes just in case
-                let safeJSON = jsonString.replacingOccurrences(of: "'", with: "&apos;")
-                panelDataAttributes = " data-panels='\(safeJSON)'"
-            }
+        guard let archive = try? Archive(url: outputURL, accessMode: .create) else {
+            throw NSError(domain: "EPUBGen", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
         }
         
-        let metaTags = settings.enablePanelView ? "<meta name=\"comic-panel-view\" content=\"enabled\"/>" : ""
+        // Add mimetype (Uncompressed)
+        try archive.addEntry(with: "mimetype", relativeTo: tempDir, compressionMethod: .none)
         
-        // OPTIMIZATION: Added loading="lazy" and decoding="async"
-        return """
-        <?xml version="1.0" encoding="utf-8"?>
-        <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml">
-        <head>
-        <title>Page \(page.pageNumber)</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-        \(metaTags)
-        <style>
-            body { margin: 0; padding: 0; background-color: #000; height: 100vh; width: 100vw; overflow: hidden; }
-            .page { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
-            img { max-width: 100%; max-height: 100%; object-fit: contain; }
-        </style>
-        </head>
-        <body>
-        <div class="page"\(panelDataAttributes)>
-            <img src="\(imageFilename)" loading="lazy" decoding="async" alt="Page \(page.pageNumber)" />
-        </div>
-        </body>
-        </html>
-        """
+        // Add META-INF and OEBPS
+        for subpath in try fileManager.subpathsOfDirectory(atPath: tempDir.path) {
+            if subpath == "mimetype" { continue } // Already added
+            try archive.addEntry(with: subpath, relativeTo: tempDir, compressionMethod: .deflate)
+        }
+        
+        print("✅ EPUB Generated Successfully at \(outputURL.path)")
+        return (outputURL, totalPageCount)
     }
 }

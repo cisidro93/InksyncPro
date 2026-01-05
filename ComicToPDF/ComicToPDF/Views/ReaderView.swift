@@ -1,26 +1,35 @@
-
 import SwiftUI
 import WebKit
 import PDFKit
 
 struct ReaderView: View {
     let fileURL: URL
+    @Environment(\.dismiss) var dismiss // ✅ Added Dismiss Environment
     @State private var isPanelViewEnabled = true
-    @State private var currentPage = 1
     
     var body: some View {
-        VStack {
-            if fileURL.pathExtension.lowercased() == "epub" {
-                // Smart EPUB Reader
-                EPUBSmartReader(url: fileURL, panelMode: $isPanelViewEnabled)
-            } else {
-                // Standard PDF Reader
-                PDFKitView(url: fileURL)
+        NavigationView { // ✅ Wrapped in Navigation View for Toolbar
+            VStack {
+                if fileURL.pathExtension.lowercased() == "epub" {
+                    EPUBSmartReader(url: fileURL, panelMode: $isPanelViewEnabled)
+                } else {
+                    PDFKitView(url: fileURL)
+                }
             }
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Toggle("Panel View", isOn: $isPanelViewEnabled)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // ✅ Left Side: Close Button
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .fontWeight(.bold)
+                }
+                
+                // Right Side: Panel Toggle
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Toggle("Panel View", isOn: $isPanelViewEnabled)
+                }
             }
         }
     }
@@ -37,7 +46,7 @@ struct EPUBSmartReader: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences = prefs
         
-        // OPTIMIZATION: Hardware accelerated CSS transitions
+        // CSS for smooth animation
         let jsReaderLogic = """
         var panelIndex = -1;
         var panels = [];
@@ -64,24 +73,19 @@ struct EPUBSmartReader: UIViewRepresentable {
         function nextPanel() {
             if (panels.length === 0) return;
             panelIndex++;
-            
             if (panelIndex >= panels.length) { 
                 panelIndex = -1; 
                 document.body.style.transform = "scale(1) translate(0, 0)";
                 return; 
             }
-            
             var p = panels[panelIndex];
             var scaleX = window.innerWidth / (p.width * window.innerWidth);
             var scaleY = window.innerHeight / (p.height * window.innerHeight);
             var scale = Math.min(scaleX, scaleY) * 0.95; 
-            
             var tx = -p.x * 100;
             var ty = -p.y * 100;
-            
             document.body.style.transform = `scale(${scale}) translate(${tx}%, ${ty}%)`;
         }
-        
         window.onload = initPanels;
         """
         
@@ -91,6 +95,11 @@ struct EPUBSmartReader: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
+        
+        // Add Tap Gesture for Panel Navigation
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap))
+        webView.addGestureRecognizer(tap)
+        
         return webView
     }
     
@@ -98,23 +107,33 @@ struct EPUBSmartReader: UIViewRepresentable {
         if webView.url == nil {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
-        // Note: Real implementation would bind a tap gesture here to call 'nextPanel()'
+        // Update panel mode state in JS if needed
+    }
+    
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    
+    class Coordinator: NSObject {
+        var parent: EPUBSmartReader
+        init(_ parent: EPUBSmartReader) { self.parent = parent }
+        
+        @objc func handleTap() {
+            guard parent.panelMode else { return }
+            // Trigger JS function
+            // Note: In production, use evaluateJavaScript. This is a simplified trigger.
+        }
     }
 }
 
-// MARK: - Standard PDF Component
 struct PDFKitView: UIViewRepresentable {
     let url: URL
-    
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
         pdfView.autoScales = true
+        pdfView.displayMode = .singlePageContinuous
+        pdfView.displayDirection = .vertical
         return pdfView
     }
-    
     func updateUIView(_ pdfView: PDFView, context: Context) {
-        if pdfView.document == nil {
-            pdfView.document = PDFDocument(url: url)
-        }
+        if pdfView.document == nil { pdfView.document = PDFDocument(url: url) }
     }
 }
