@@ -305,6 +305,7 @@ class ConversionManager: ObservableObject {
     @Published var isConverting = false
     @Published var progress: Double = 0.0
     @Published var alertMessage: String?
+    @Published var isLoading = false // Added for library loading state
     
     // ✅ ADD THIS NEW PROPERTY
     @Published var processingStatus: String = ""
