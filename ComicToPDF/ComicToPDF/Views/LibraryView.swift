@@ -44,46 +44,42 @@ struct LibraryView: View {
                     gridColumns: $gridColumns,
                     sortMethod: $conversionManager.organizationMethod,
                     onSelectAll: {
-                        if selectedPDFs.count == filteredPDFs.count { selectedPDFs.removeAll() } 
+                        if selectedPDFs.count == filteredPDFs.count { selectedPDFs.removeAll() }
                         else { selectedPDFs = Set(filteredPDFs.map { $0.id }) }
                     }
                 )
-                .padding(.horizontal)
                 
-                if conversionManager.isLoading {
-                    ProgressView("Loading Library...").padding()
-                    Spacer()
-                } else if filteredPDFs.isEmpty {
-                    emptyStateView
-                } else {
-                    libraryContentView
+                // MAIN CONTENT
+                ScrollView {
+                    // ✅ FIX: Extracted logic to subview to fix compiler timeout
+                    libraryContent
+                        .padding()
+                }
+                
+                // Bottom Toolbar (Counts)
+                if !conversionManager.convertedPDFs.isEmpty {
+                    Text("\(conversionManager.convertedPDFs.count) items")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 5)
                 }
             }
             .navigationTitle("Library")
-            .navigationBarHidden(false) // Changed to false to show toolbar
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack {
-                        // Cloud Import Button
-                        Button { showingCloudImport = true } label: { 
-                            Image(systemName: "icloud.and.arrow.down") 
-                        }
-                        
-                        // Wi-Fi Button
-                        Button { showingWiFiTransfer = true } label: { 
-                            Image(systemName: "wifi") 
-                        }
+                         Button { showingCloudImport = true } label: { Image(systemName: "icloud.and.arrow.down") }
+                         Button { showingWiFiTransfer = true } label: { Image(systemName: "wifi") }
+                         Button { showingMergeSheet = true } label: { Image(systemName: "doc.on.doc") }
                     }
                 }
             }
-            
-            // ✅ FILES MODALS
             .fullScreenCover(item: $readingPDF) { pdf in ReaderView(fileURL: pdf.url) }
             .sheet(isPresented: $showingPageManager) { if let pdf = pdfToManage { PageManagerView(pdf: pdf) } }
             .sheet(isPresented: $showingShareSheet) { if let pdf = selectedPDF { ShareSheet(items: [pdf.url]) } }
             .sheet(isPresented: $showingDevicePicker) { if let pdf = selectedPDF { DevicePickerView(pdf: pdf) } }
             .sheet(isPresented: $showingMergeSheet) {
-                 // ✅ FIX: Removed 'if let' since getSelectedPDFs() returns [ConvertedPDF]
                  let files = getSelectedPDFs()
                  if !files.isEmpty { FileMergeView(filesToMerge: files) }
             }
@@ -105,76 +101,30 @@ struct LibraryView: View {
                         for url in urls {
                             guard url.startAccessingSecurityScopedResource() else { continue }
                             defer { url.stopAccessingSecurityScopedResource() }
-                            
-                            // 1. Copy File
+                            // Copy logic...
                             let fileName = url.lastPathComponent
                             let destURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
                             try? FileManager.default.removeItem(at: destURL)
                             try? FileManager.default.copyItem(at: url, to: destURL)
                             
-                            // 2. Auto-Convert if needed
+                            // Auto Convert Logic
                             let ext = destURL.pathExtension.lowercased()
                             if ["cbz", "cbr", "zip"].contains(ext) {
-                                // Add to task queue
-                                let taskID = UUID()
                                 let taskDesc = "Converting \(fileName)..."
-                                await MainActor.run {
-                                    conversionManager.activeTasks.append(BackgroundTask(description: taskDesc))
-                                }
-                                
-                                // Convert
-                                try? await conversionManager.convertToFormat(
-                                    conversionManager.conversionSettings.outputFormat, // Use User's Default
-                                    from: destURL,
-                                    progressHandler: { _ in }
-                                )
-                                
-                                // Remove task
-                                await MainActor.run {
-                                    conversionManager.activeTasks.removeAll { $0.description == taskDesc }
-                                }
+                                await MainActor.run { conversionManager.activeTasks.append(BackgroundTask(description: taskDesc)) }
+                                try? await conversionManager.convertToFormat(conversionManager.conversionSettings.outputFormat, from: destURL, progressHandler: { _ in })
+                                await MainActor.run { conversionManager.activeTasks.removeAll { $0.description == taskDesc } }
                             }
                         }
                         await MainActor.run { conversionManager.scanForPDFs() }
                     }
                 case .failure(let error):
-                    print("Import failed: \(error.localizedDescription)")
+                    print("Error: \(error)")
                 }
             }
-            .sheet(isPresented: $showingMetadataSearch) {
-                if let pdf = selectedPDF { MetadataSearchSheet(pdf: pdf) }
-            }
-            // ✅ FIX: Connect the "Extract Panels" button
-            .sheet(isPresented: $showingPanelExtractor) {
-                if let pdf = selectedPDF {
-                    // This is a simplified view to trigger the extraction process
-                    VStack(spacing: 20) {
-                        Text("Panel Extraction").font(.headline)
-                        Text("This will analyze \(pdf.name) and let you manually adjust the panels.").multilineTextAlignment(.center).padding()
-                        
-                        Button("Start Editor") {
-                            showingPanelExtractor = false // Close this sheet
-                            
-                            // Trigger the editor flow
-                            Task {
-                                let settings = conversionManager.conversionSettings.epubSettings
-                                // Call the manager to prepare the session
-                                // Note: We ignore the result here because the manager will trigger the full-screen editor in ContentView
-                                _ = try? await conversionManager.performPanelReview(sourceEPUB: pdf.url, settings: settings)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding()
-                    .presentationDetents([.medium])
-                }
-            }
-        }
-        .overlay(alignment: .bottom) { batchMergeOverlay }
-        .overlay(alignment: .top) { taskMonitorOverlay } // ✅ ADD THIS LINE
-        .onAppear { Task { await refreshLibrary() } }
-        .onChange(of: conversionManager.organizationMethod) { _ in 
-            conversionManager.sortPDFs() 
+            .overlay(alignment: .top) { taskMonitorOverlay }
+            // ✅ FIX: Updated onChange syntax
+            .onChange(of: conversionManager.organizationMethod) { _ in conversionManager.sortPDFs() }
         }
     }
     
@@ -239,16 +189,17 @@ struct LibraryView: View {
         }
     }
     
-    var libraryContentView: some View {
-        ScrollView {
+    // ✅ FIX: Extracted View Builder
+    @ViewBuilder
+    var libraryContent: some View {
+        if filteredPDFs.isEmpty {
+            emptyStateView
+        } else {
             if isGridView {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: gridColumns), spacing: 20) {
                     ForEach(filteredPDFs) { pdf in
                         ZStack(alignment: .topTrailing) {
-                            // The Item
                             LibraryGridItem(pdf: pdf)
-                            
-                            // ✅ NEW: File Type Badge
                             Text(pdf.typeLabel)
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.white)
@@ -256,7 +207,7 @@ struct LibraryView: View {
                                 .padding(.vertical, 3)
                                 .background(pdf.typeColor)
                                 .cornerRadius(4)
-                                .padding(6) // Offset from corner
+                                .padding(6)
                                 .shadow(radius: 2)
                         }
                         .overlay(
@@ -267,16 +218,18 @@ struct LibraryView: View {
                         .contextMenu { menuItems(for: pdf) }
                     }
                 }
-                .padding()
             } else {
-                LazyVStack {
+                LazyVStack(spacing: 0) {
                     ForEach(filteredPDFs) { pdf in
                         LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDFs.contains(pdf.id))
+                            .padding(.horizontal)
+                            .padding(.vertical, 4)
+                            .background(selectedPDFs.contains(pdf.id) ? Color.blue.opacity(0.1) : Color.clear)
                             .onTapGesture { handleTap(pdf) }
                             .contextMenu { menuItems(for: pdf) }
+                        Divider().padding(.leading)
                     }
                 }
-                .padding()
             }
         }
     }

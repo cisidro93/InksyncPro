@@ -1428,9 +1428,8 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    // ✅ FIX: Use 'organizationMethod' instead of 'sortOption'
     func sortPDFs() {
-        // Ensure sorting happens on the main thread if needed, but array mutation is here
+        // ✅ FIX: Use 'organizationMethod', not 'sortOption'
         switch organizationMethod {
         case .alphabetical:
             convertedPDFs.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
