@@ -176,17 +176,11 @@ struct LibraryView: View {
                 }
             }
             // ✅ THE WILDCARD IMPORTER
-            .fileImporter(
-                isPresented: $showingCloudImport,
-                allowedContentTypes: [.content, .data, .archive], 
-                allowsMultipleSelection: true
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    // JUST COPY. DO NOT CONVERT YET.
+            // ✅ REPLACED .fileImporter with standard .sheet using DocumentPicker
+            .sheet(isPresented: $showingCloudImport) {
+                DocumentPicker { urls in
+                    // Pass the files to the manager
                     conversionManager.processImportedFiles(urls: urls)
-                case .failure(let error):
-                    print("Error: \(error)")
                 }
             }
             .overlay(alignment: .top) { taskMonitorOverlay }

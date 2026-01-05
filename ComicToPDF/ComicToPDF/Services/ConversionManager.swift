@@ -332,6 +332,39 @@ class ConversionManager: ObservableObject {
     
     @Published var activeTasks: [BackgroundTask] = []
     
+    // ✅ ADDED: Explicit File Import Logic
+    @MainActor
+    func processImportedFiles(urls: [URL]) {
+        for url in urls {
+            // 1. Basic Security Check
+            // Even though 'asCopy: true' usually handles this, we play it safe.
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
+            do {
+                // 2. Define Destination
+                let fileName = url.lastPathComponent
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let destURL = docDir.appendingPathComponent(fileName)
+                
+                // 3. Remove existing file if it exists (overwrite)
+                if FileManager.default.fileExists(atPath: destURL.path) {
+                    try FileManager.default.removeItem(at: destURL)
+                }
+                
+                // 4. Copy the file
+                try FileManager.default.copyItem(at: url, to: destURL)
+                print("✅ Successfully imported: \(fileName)")
+                
+            } catch {
+                print("❌ Import failed for \(url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        
+        // 5. Refresh the UI
+        scanForPDFs()
+    }
+    
     // Performance
     lazy var thumbnailCache = NSCache<NSString, UIImage>()
 
