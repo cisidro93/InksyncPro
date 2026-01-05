@@ -135,6 +135,31 @@ struct LibraryView: View {
             .sheet(isPresented: $showingMetadataSearch) {
                 if let pdf = selectedPDF { MetadataSearchSheet(pdf: pdf) }
             }
+            // ✅ FIX: Connect the "Extract Panels" button
+            .sheet(isPresented: $showingPanelExtractor) {
+                if let pdf = selectedPDF {
+                    // This is a simplified view to trigger the extraction process
+                    VStack(spacing: 20) {
+                        Text("Panel Extraction").font(.headline)
+                        Text("This will analyze \(pdf.name) and let you manually adjust the panels.").multilineTextAlignment(.center).padding()
+                        
+                        Button("Start Editor") {
+                            showingPanelExtractor = false // Close this sheet
+                            
+                            // Trigger the editor flow
+                            Task {
+                                let settings = conversionManager.conversionSettings.epubSettings
+                                // Call the manager to prepare the session
+                                // Note: We ignore the result here because the manager will trigger the full-screen editor in ContentView
+                                _ = try? await conversionManager.performPanelReview(sourceEPUB: pdf.url, settings: settings)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding()
+                    .presentationDetents([.medium])
+                }
+            }
         }
         .overlay(alignment: .bottom) { batchMergeOverlay }
         .onAppear { Task { await refreshLibrary() } }

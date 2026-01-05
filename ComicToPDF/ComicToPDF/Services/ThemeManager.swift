@@ -1,20 +1,11 @@
 import SwiftUI
 
-// Renamed to avoid conflict with existing AppTheme struct
-enum AppearanceTheme: String, CaseIterable, Identifiable {
-    case system
-    case light
-    case dark
+enum AppTheme: String, CaseIterable, Identifiable, Codable {
+    case system = "System"
+    case light = "Light"
+    case dark = "Dark"
     
     var id: String { rawValue }
-    
-    var displayName: String {
-        switch self {
-        case .system: return "System"
-        case .light: return "Light"
-        case .dark: return "Dark"
-        }
-    }
     
     var colorScheme: ColorScheme? {
         switch self {
@@ -26,17 +17,5 @@ enum AppearanceTheme: String, CaseIterable, Identifiable {
 }
 
 class ThemeManager: ObservableObject {
-    @AppStorage("selectedTheme") private var selectedThemeRaw: String = AppearanceTheme.system.rawValue
-    
-    @Published var selectedTheme: AppearanceTheme = .system {
-        didSet {
-            selectedThemeRaw = selectedTheme.rawValue
-        }
-    }
-    
-    init() {
-        if let theme = AppearanceTheme(rawValue: selectedThemeRaw) {
-            selectedTheme = theme
-        }
-    }
+    @AppStorage("selectedTheme") var selectedTheme: AppTheme = .system
 }
