@@ -80,7 +80,7 @@ struct MetadataSearchSheet: View {
                 // Pre-fill query with filename
                 query = pdf.name.replacingOccurrences(of: "_", with: " ")
                 // Load API Key from Settings
-                service.apiKey = conversionManager.conversionSettings.comicVineKey
+                service.apiKey = conversionManager.conversionSettings.comicVineAPIKey
             }
         }
     }

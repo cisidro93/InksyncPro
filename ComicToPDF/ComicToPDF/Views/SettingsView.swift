@@ -46,6 +46,34 @@ struct SettingsView: View {
                     .padding(.vertical, 4)
                 }
                 
+                Section(header: Text("Metadata & Covers")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("ComicVine API Key")
+                            .font(.headline)
+                        
+                        SecureField("Paste your API Key here", text: $conversionManager.conversionSettings.comicVineAPIKey)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        
+                        HStack {
+                            Text("Don't have a key?")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Link("Get one for free here", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                        
+                        Text("Required to automatically fetch cover art, summaries, and release dates. Your key is stored locally on this device.")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                            .padding(.top, 4)
+                    }
+                    .padding(.vertical, 8)
+                }
+
                 Section {
                     Button(action: { showingCloudImport = true }) { HStack { Image(systemName: "icloud.and.arrow.down").foregroundColor(.blue).frame(width: 28); Text("Import from Cloud"); Spacer(); Image(systemName: "chevron.right").foregroundColor(.secondary) } }.foregroundColor(.primary)
                     HStack { Image(systemName: "icloud.fill").foregroundColor(.blue).frame(width: 28); Text("iCloud Status"); Spacer(); Text(CloudManager.shared.isICloudAvailable ? "Connected" : "Not Available").foregroundColor(CloudManager.shared.isICloudAvailable ? .green : .orange) }
