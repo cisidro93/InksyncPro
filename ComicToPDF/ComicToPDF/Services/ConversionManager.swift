@@ -1693,6 +1693,70 @@ class ConversionManager: ObservableObject {
         saveSendHistory()
     }
     
+    // MARK: - Post-Conversion Panel Editing
+    
+    func launchPanelEditor(for pdf: ConvertedPDF) {
+        guard pdf.url.pathExtension.lowercased() == "epub" else {
+            print("⚠️ Panel editing is only supported for EPUB files.")
+            return
+        }
+        
+        Task {
+            await MainActor.run { self.processingStatus = "Preparing Editor..." }
+            
+            let sessionID = UUID().uuidString
+            let sessionDir = FileManager.default.temporaryDirectory.appendingPathComponent("EditSession_\(sessionID)")
+            try? FileManager.default.createDirectory(at: sessionDir, withIntermediateDirectories: true)
+            
+            do {
+                let images = try await extractImages(from: pdf.url) { _ in }
+                var pages: [PanelEditSession.PageEditData] = []
+                
+                for (index, image) in images.enumerated() {
+                    // OPTIMIZATION: Use autoreleasepool to prevent memory spikes
+                    try autoreleasepool {
+                        let pageURL = sessionDir.appendingPathComponent("page_\(index).jpg")
+                        if let data = image.jpegData(compressionQuality: 0.8) {
+                            try data.write(to: pageURL)
+                            // Initialize with empty panels
+                            pages.append(PanelEditSession.PageEditData(
+                                pageNumber: index + 1,
+                                imageURL: pageURL,
+                                panels: []
+                            ))
+                        }
+                    }
+                }
+                
+                let session = PanelEditSession(
+                    pages: pages, 
+                    readingDirection: conversionSettings.epubSettings.readingDirection, 
+                    sessionTempDirectory: sessionDir
+                )
+                
+                await MainActor.run {
+                    self.currentPanelSession = session
+                    self.showingPanelEditor = true
+                    
+                    self.panelEditorCompletion = { [weak self] result in
+                        guard let self = self else { return }
+                        self.showingPanelEditor = false
+                        self.currentPanelSession = nil
+                        
+                        if let validSession = result {
+                            Task { await self.saveEditedPanels(session: validSession, originalPDF: pdf) }
+                        } else {
+                            try? FileManager.default.removeItem(at: sessionDir)
+                        }
+                    }
+                }
+            } catch {
+                print("Error launching editor: \(error)")
+                await MainActor.run { self.processingStatus = "Error launching editor." }
+            }
+        }
+    }
+
     private func saveSendHistory() { markNeedsSave() }
     private func savePresets() { markNeedsSave() }
 

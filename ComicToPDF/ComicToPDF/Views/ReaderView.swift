@@ -37,44 +37,68 @@ struct EPUBSmartReader: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences = prefs
         
-        // INJECT JAVASCRIPT READER LOGIC
-        let jsParams = """
+        // OPTIMIZATION: Hardware accelerated CSS transitions
+        let jsReaderLogic = """
         var panelIndex = -1;
         var panels = [];
         
+        var style = document.createElement('style');
+        style.innerHTML = `
+            body { 
+                transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1); 
+                transform-origin: top left; 
+                will-change: transform;
+                overflow: hidden; 
+            }
+        `;
+        document.head.appendChild(style);
+
         function initPanels() {
-            // Find the page container and get data-panels
             var page = document.querySelector('.page');
             if (page && page.dataset.panels) {
-                panels = JSON.parse(page.dataset.panels);
+                try { panels = JSON.parse(page.dataset.panels); } 
+                catch(e) { console.error("Invalid panel data"); }
             }
         }
         
         function nextPanel() {
             if (panels.length === 0) return;
             panelIndex++;
-            if (panelIndex >= panels.length) { panelIndex = -1; resetZoom(); return; }
+            
+            if (panelIndex >= panels.length) { 
+                panelIndex = -1; 
+                document.body.style.transform = "scale(1) translate(0, 0)";
+                return; 
+            }
             
             var p = panels[panelIndex];
-            // Zoom to specific panel coordinates (p.x, p.y, p.width, p.height)
-            // Implementation of CSS transform/zoom goes here
-            document.body.style.transform = `scale(${1/p.width}) translate(${-p.x * 100}%, ${-p.y * 100}%)`;
+            var scaleX = window.innerWidth / (p.width * window.innerWidth);
+            var scaleY = window.innerHeight / (p.height * window.innerHeight);
+            var scale = Math.min(scaleX, scaleY) * 0.95; 
+            
+            var tx = -p.x * 100;
+            var ty = -p.y * 100;
+            
+            document.body.style.transform = `scale(${scale}) translate(${tx}%, ${ty}%)`;
         }
+        
+        window.onload = initPanels;
         """
         
-        let script = WKUserScript(source: jsParams, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        let script = WKUserScript(source: jsReaderLogic, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         config.userContentController.addUserScript(script)
         
-        return WKWebView(frame: .zero, configuration: config)
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.isOpaque = false
+        webView.backgroundColor = .systemBackground
+        return webView
     }
     
     func updateUIView(_ webView: WKWebView, context: Context) {
-        // Load file if needed
         if webView.url == nil {
-            // Logic to unzip/load local EPUB HTML goes here
-            // For now, load raw file URL
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
+        // Note: Real implementation would bind a tap gesture here to call 'nextPanel()'
     }
 }
 

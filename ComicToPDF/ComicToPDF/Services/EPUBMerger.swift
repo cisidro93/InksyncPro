@@ -286,34 +286,14 @@ class EPUBMerger {
                 """)
                 
                 // Panel Data Attributes
-                var panelDataAttributes = ""
-                if let manifest = panelManifest,
-                   let pagePanels = manifest.pages.first(where: { $0.pageNumber == pageNumber }) {
-                    
-                    let panelJSON = try JSONEncoder().encode(pagePanels.panels)
-                    if let panelString = String(data: panelJSON, encoding: .utf8) {
-                        panelDataAttributes = " data-panels='\(panelString.replacingOccurrences(of: "'", with: "&apos;"))'"
-                    }
-                }
+                // XHTML Generation
+                // Use safe default if no panels found
+                let pagePanels = panelManifest?.pages.first(where: { $0.pageNumber == pageNumber }) 
+                    ?? EPUBPanelManifest.PagePanels(pageNumber: pageNumber, panels: [])
 
-                // XHTML
                 let xhtmlFileName = "page\(pageNumber).xhtml"
-                let xhtmlContent = """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <!DOCTYPE html>
-                <html xmlns="http://www.w3.org/1999/xhtml">
-                <head>
-                    <title>Page \(pageNumber)</title>
-                    <link rel="stylesheet" type="text/css" href="../style.css"/>
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-                </head>
-                <body>
-                    <div class="page"\(panelDataAttributes)>
-                        <img src="../images/\(destImageName)" alt="Page \(pageNumber)"/>
-                    </div>
-                </body>
-                </html>
-                """
+                let xhtmlContent = createPageHTML(imageFilename: "../images/\(destImageName)", page: pagePanels, settings: settings)
+                
                 try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlFileName), atomically: true, encoding: .utf8)
                 
                 manifestItems.append("""
@@ -453,5 +433,42 @@ class EPUBMerger {
         
         print("✅ Merge complete! \(totalPages) pages")
         return (outputURL, totalPages)
+    }
+    private static func createPageHTML(imageFilename: String, page: EPUBPanelManifest.PagePanels, settings: EPUBSettings) -> String {
+        
+        // Serialize panels to JSON for the reader to use
+        var panelDataAttributes = ""
+        if let panels = page.panels, !panels.isEmpty {
+            if let jsonData = try? JSONEncoder().encode(panels), let jsonString = String(data: jsonData, encoding: .utf8) {
+                // Escape single quotes just in case
+                let safeJSON = jsonString.replacingOccurrences(of: "'", with: "&apos;")
+                panelDataAttributes = " data-panels='\(safeJSON)'"
+            }
+        }
+        
+        let metaTags = settings.enablePanelView ? "<meta name=\"comic-panel-view\" content=\"enabled\"/>" : ""
+        
+        // OPTIMIZATION: Added loading="lazy" and decoding="async"
+        return """
+        <?xml version="1.0" encoding="utf-8"?>
+        <!DOCTYPE html>
+        <html xmlns="http://www.w3.org/1999/xhtml">
+        <head>
+        <title>Page \(page.pageNumber)</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+        \(metaTags)
+        <style>
+            body { margin: 0; padding: 0; background-color: #000; height: 100vh; width: 100vw; overflow: hidden; }
+            .page { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+            img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        </style>
+        </head>
+        <body>
+        <div class="page"\(panelDataAttributes)>
+            <img src="\(imageFilename)" loading="lazy" decoding="async" alt="Page \(page.pageNumber)" />
+        </div>
+        </body>
+        </html>
+        """
     }
 }
