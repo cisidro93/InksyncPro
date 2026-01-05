@@ -1695,155 +1695,79 @@ class ConversionManager: ObservableObject {
     
     // MARK: - Post-Conversion Panel Editing
     
-    func saveEditedPanels(session: PanelEditSession, originalPDF: ConvertedPDF) async {
-        await MainActor.run { self.processingStatus = "Saving panels..." }
+    // MARK: - Helpers
+    private func markNeedsSave() {
+        objectWillChange.send()
+    }
+
+    // MARK: - Save Logic
+    private func saveEditedPanels(session: PanelEditSession, originalPDF: ConvertedPDF) async {
+        await MainActor.run { self.processingStatus = "Saving changes..." }
+        
+        // Convert Session back to Manifest
+        var allPagePanels: [EPUBPanelManifest.PagePanels] = []
+        
+        for page in session.pages {
+            // Memory Optimization: Load data safely
+            if let data = try? Data(contentsOf: page.imageURL), 
+               let image = UIImage(data: data), 
+               let cgImage = image.cgImage {
+                
+                let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
+                
+                // FIX: Use 'origin.x' and 'origin.y' for CGRect access
+                let panels = page.panels.sorted { $0.order < $1.order }
+                                      .map { rect -> PanelRegion in
+                                          // Calculate normalized coordinates
+                                          return PanelRegion(
+                                              x: rect.rect.origin.x / Double(imageSize.width),
+                                              y: rect.rect.origin.y / Double(imageSize.height),
+                                              width: rect.rect.width / Double(imageSize.width),
+                                              height: rect.rect.height / Double(imageSize.height),
+                                              pageIndex: page.pageNumber - 1
+                                          )
+                                      }
+                
+                if !panels.isEmpty {
+                    allPagePanels.append(EPUBPanelManifest.PagePanels(
+                        pageNumber: page.pageNumber,
+                        imageFile: "page\(page.pageNumber).jpg", 
+                        panels: panels
+                    ))
+                }
+            }
+        }
+        
+        let newManifest = EPUBPanelManifest(
+            version: "1.0",
+            readingDirection: session.readingDirection == .rightToLeft ? "rtl" : "ltr",
+            pages: allPagePanels
+        )
         
         do {
-            // 1. Create Manifest from Session
-            var pages: [EPUBPanelManifest.PagePanels] = []
-            
-            for page in session.pages {
-                // Convert PanelRect to PanelRegion
-                let regions = page.panels.map { rect -> PanelRegion in
-                    return PanelRegion(x: rect.rect.origin.x, y: rect.rect.origin.y, width: rect.rect.width, height: rect.rect.height, pageIndex: page.pageNumber - 1)
-                }
-                
-                let pagePanel = EPUBPanelManifest.PagePanels(
-                    pageNumber: page.pageNumber,
-                    imageFile: "images/page\(page.pageNumber).jpg", // Standard naming
-                    panels: regions
-                )
-                pages.append(pagePanel)
-            }
-            
-            let manifest = EPUBPanelManifest(
-                readingDirection: session.readingDirection == .rightToLeft ? "rtl" : "ltr",
-                pages: pages
+            // Re-merge with new manifest
+            let _ = try await EPUBMerger.mergeEPUBs(
+                sourceURLs: [originalPDF.url],
+                outputURL: originalPDF.url, // Overwrite
+                metadata: originalPDF.metadata,
+                settings: conversionSettings.epubSettings,
+                precomputedManifest: newManifest,
+                onStatusUpdate: { _ in }
             )
             
-            // 2. Serialize Manifest
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let jsonData = try encoder.encode(manifest)
-            
-            // 3. Update EPUB (Replace panel-manifest.json)
-            // We use a temporary file to rewrite the archive
-            let fileManager = FileManager.default
-            let sourceURL = originalPDF.url
-            let tempDir = fileManager.temporaryDirectory.appendingPathComponent("UpdateEPUB_\(UUID().uuidString)")
-            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            let tempEPUB = tempDir.appendingPathComponent(sourceURL.lastPathComponent)
-            
-            try fileManager.copyItem(at: sourceURL, to: tempEPUB)
-            
-            // Modify Archive
-            // FIX: Use throwing init
-            let archive = try Archive(url: tempEPUB, accessMode: .update)
-            
-            let manifestPath = "OEBPS/panel-manifest.json"
-            // Remove existing if present
-            if let entry = archive[manifestPath] {
-                try? archive.remove(entry)
-            }
-            
-            // Add new
-            try archive.addEntry(with: manifestPath, type: .file, uncompressedSize: Int64(jsonData.count), provider: { (position, size) -> Data in
-                return jsonData.subdata(in: Int(position)..<Int(position) + size)
-            })
-            
-            // 4. Replace Original
-            // Backup
-            let backupURL = sourceURL.appendingPathExtension("bak")
-            try? fileManager.removeItem(at: backupURL)
-            try? fileManager.moveItem(at: sourceURL, to: backupURL)
-            
-            // Move new
-            try fileManager.moveItem(at: tempEPUB, to: sourceURL)
-            try? fileManager.removeItem(at: tempDir)
-            try? fileManager.removeItem(at: backupURL)
-            
             await MainActor.run { 
-                self.processingStatus = "Saved!" 
-                // Could verify or reload here
+                self.processingStatus = "Saved!"
+                self.scanForPDFs()
             }
-            
         } catch {
-            print("Error saving edited panels: \(error)")
-            await MainActor.run { self.processingStatus = "Error saving panels." }
-        }
-    }
-    func launchPanelEditor(for pdf: ConvertedPDF) {
-        guard pdf.url.pathExtension.lowercased() == "epub" else {
-            print("⚠️ Panel editing is only supported for EPUB files.")
-            return
+            print("Failed to save: \(error)")
+            await MainActor.run { self.processingStatus = "Save failed." }
         }
         
-        Task {
-            await MainActor.run { self.processingStatus = "Preparing Editor..." }
-            
-            let sessionID = UUID().uuidString
-            let sessionDir = FileManager.default.temporaryDirectory.appendingPathComponent("EditSession_\(sessionID)")
-            try? FileManager.default.createDirectory(at: sessionDir, withIntermediateDirectories: true)
-            
-            do {
-                let images = try await extractImages(from: pdf.url) { _ in }
-                var pages: [PanelEditSession.PageEditData] = []
-                
-                for (index, image) in images.enumerated() {
-                    // OPTIMIZATION: Use autoreleasepool to prevent memory spikes
-                    try autoreleasepool {
-                        let pageURL = sessionDir.appendingPathComponent("page_\(index).jpg")
-                        if let data = image.jpegData(compressionQuality: 0.8) {
-                            try data.write(to: pageURL)
-                            // Initialize with empty panels
-                            pages.append(PanelEditSession.PageEditData(
-                                pageNumber: index + 1,
-                                imageURL: pageURL,
-                                panels: []
-                            ))
-                        }
-                    }
-                }
-                
-                let session = PanelEditSession(
-                    pages: pages, 
-                    readingDirection: conversionSettings.epubSettings.readingDirection, 
-                    sessionTempDirectory: sessionDir
-                )
-                
-                await MainActor.run {
-                    self.currentPanelSession = session
-                    self.showingPanelEditor = true
-                    
-                    self.panelEditorCompletion = { [weak self] result in
-                        guard let self = self else { return }
-                        self.showingPanelEditor = false
-                        self.currentPanelSession = nil
-                        
-                        if let validSession = result {
-                            Task { await self.saveEditedPanels(session: validSession, originalPDF: pdf) }
-                        } else {
-                            try? FileManager.default.removeItem(at: sessionDir)
-                        }
-                    }
-                }
-            } catch {
-                print("Error launching editor: \(error)")
-                await MainActor.run { self.processingStatus = "Error launching editor." }
-            }
+        // Final cleanup
+        if let tempDir = session.sessionTempDirectory {
+            try? FileManager.default.removeItem(at: tempDir)
         }
-    }
-
-
-    private func saveSendHistory() { markNeedsSave() }
-    private func savePresets() { markNeedsSave() }
-    
-    private func markNeedsSave() {
-        // Trigger UI update and persistence
-        DispatchQueue.main.async {
-            self.objectWillChange.send()
-        }
-        // In a real app, this might also trigger disk persistence
     }
 
     // MARK: - Page Manager Logic

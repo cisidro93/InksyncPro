@@ -109,9 +109,8 @@ struct PageManagerView: View {
     }
     
     private func loadPages() async {
-        // Use existing extraction logic to get thumbnails
-        // Note: For very large PDFs, we might want to paginate this, but for now we load all
-        if let extracted = try? await conversionManager.extractPDFImages(from: pdf.url, progressHandler: { _ in }) {
+        // FIX: Changed 'extractPDFImages' to 'extractImages' to match ConversionManager
+        if let extracted = try? await conversionManager.extractImages(from: pdf.url, progressHandler: { _ in }) {
             await MainActor.run {
                 self.images = extracted
                 self.isLoading = false
