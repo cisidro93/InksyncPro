@@ -44,6 +44,17 @@ struct AdvancedOptionsView: View {
                 }
             }
             
+            Section(header: Text("Metadata Services")) {
+                VStack(alignment: .leading) {
+                    Text("ComicVine API Key")
+                    SecureField("Enter API Key", text: $conversionManager.conversionSettings.comicVineKey)
+                        .textContentType(.password)
+                    Text("Required to fetch metadata and covers.")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            }
+            
             Section(footer: Text("These settings apply to all new conversions.")) {
                 // Placeholder for future advanced options
             }

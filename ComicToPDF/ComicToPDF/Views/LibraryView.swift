@@ -27,6 +27,7 @@ struct LibraryView: View {
     @State private var showingMergeSheet = false // Batch Merge Sheet
     @State private var showingWiFiTransfer = false // Wi-Fi Transfer Sheet
     @State private var showingCloudImport = false // Cloud Import Sheet
+    @State private var showingMetadataSearch = false // Metadata Search Sheet
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
@@ -130,6 +131,9 @@ struct LibraryView: View {
                 case .failure(let error):
                     print("Cloud import failed: \(error.localizedDescription)")
                 }
+            }
+            .sheet(isPresented: $showingMetadataSearch) {
+                if let pdf = selectedPDF { MetadataSearchSheet(pdf: pdf) }
             }
         }
         .overlay(alignment: .bottom) { batchMergeOverlay }
@@ -236,6 +240,11 @@ struct LibraryView: View {
                     showingPageManager = true
                 } label: { Label("Manage Pages", systemImage: "doc.on.doc") }
             }
+            
+            Button {
+                selectedPDF = pdf
+                showingMetadataSearch = true
+            } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
             
             Button {
                 selectedPDF = pdf

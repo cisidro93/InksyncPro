@@ -134,6 +134,7 @@ struct ConversionSettings: Codable, Equatable {
     
     // NEW: Panel Features
     var enablePanelSplit: Bool = false
+    var comicVineKey: String = ""
     // mangaMode is already defined above at line 125, removing duplicate.
 }
 
