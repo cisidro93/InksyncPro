@@ -1773,30 +1773,82 @@ class ConversionManager: ObservableObject {
     // MARK: - Page Manager Logic
 
     func deletePages(from pdf: ConvertedPDF, pagesToDelete: Set<Int>) async throws {
-        // 1. Validation
-        guard pdf.url.pathExtension.lowercased() == "pdf" else {
-            throw NSError(domain: "PageManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Page deletion is currently only supported for PDF files."])
-        }
-        
         await MainActor.run { self.processingStatus = "Removing pages..." }
         
         let sourceURL = pdf.url
         let fileManager = FileManager.default
+        let ext = sourceURL.pathExtension.lowercased()
         
-        // 2. Create Temp Output
+        // Create Temp Output
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        // Cleanup Closure
+        defer { try? fileManager.removeItem(at: tempDir) }
+        
+        // ✅ EPUB HANDLING
+        if ext == "epub" {
+            let tempOutput = tempDir.appendingPathComponent(sourceURL.lastPathComponent)
+            
+            // 1. Extract All Images
+            let allImages = try await extractImageURLs(from: sourceURL)
+            
+            // 2. Filter Kept Images
+            var keptImages: [URL] = []
+            for (index, url) in allImages.enumerated() {
+                if !pagesToDelete.contains(index) {
+                    keptImages.append(url)
+                }
+            }
+            
+            if keptImages.isEmpty {
+                throw NSError(domain: "PageManager", code: 400, userInfo: [NSLocalizedDescriptionKey: "Cannot delete all pages."])
+            }
+            
+            // 3. Rebuild EPUB from Kept Images
+            let _ = try await EPUBMerger.mergeEPUBs(
+                sourceURLs: keptImages,
+                outputURL: tempOutput,
+                metadata: pdf.metadata,
+                settings: conversionSettings.epubSettings,
+                onStatusUpdate: { status in
+                    Task { @MainActor in self.processingStatus = status }
+                }
+            )
+            
+            // 4. Swap Files
+            let backupURL = sourceURL.appendingPathExtension("bak")
+            try? fileManager.moveItem(at: sourceURL, to: backupURL)
+            
+            do {
+                try fileManager.moveItem(at: tempOutput, to: sourceURL)
+                try? fileManager.removeItem(at: backupURL)
+                await MainActor.run {
+                    self.processingStatus = "Pages removed!"
+                    self.scanForPDFs()
+                }
+            } catch {
+                // Restore backup
+                try? fileManager.moveItem(at: backupURL, to: sourceURL)
+                throw error
+            }
+            return
+        }
+        
+        // ✅ EXISTING PDF HANDLING
+        guard ext == "pdf" else {
+             throw NSError(domain: "PageManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unsupported format."])
+        }
+        
         let tempOutput = tempDir.appendingPathComponent("temp_trimmed.pdf")
         
         return try await withCheckedThrowingContinuation { continuation in
             Task.detached(priority: .userInitiated) {
                 do {
-                    // 3. Load PDF
                     guard let document = PDFDocument(url: sourceURL) else {
                         throw NSError(domain: "PageManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not load source PDF."])
                     }
                     
-                    // 4. Rebuild PDF without deleted pages
                     let newDocument = PDFDocument()
                     var newIndex = 0
                     
@@ -1809,25 +1861,19 @@ class ConversionManager: ObservableObject {
                         }
                     }
                     
-                    // 5. Save and Swap
                     if newDocument.write(to: tempOutput) {
-                        // Replace original file safely
                         let backupURL = sourceURL.appendingPathExtension("bak")
                         try? fileManager.moveItem(at: sourceURL, to: backupURL)
                         
                         do {
                             try fileManager.moveItem(at: tempOutput, to: sourceURL)
-                            try? fileManager.removeItem(at: backupURL) // Delete backup if successful
-                            try? fileManager.removeItem(at: tempDir)
-                            
-                            // 6. Update Library Data
+                            try? fileManager.removeItem(at: backupURL)
                             await MainActor.run {
                                 self.processingStatus = "Pages removed!"
-                                self.scanForPDFs() // Refreshes page count and file size in the list
+                                self.scanForPDFs()
                             }
                             continuation.resume()
                         } catch {
-                            // Restore backup if move failed
                             try? fileManager.moveItem(at: backupURL, to: sourceURL)
                             throw error
                         }

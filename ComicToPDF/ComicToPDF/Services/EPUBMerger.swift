@@ -1,3 +1,4 @@
+
 import Foundation
 import UIKit
 import ZIPFoundation
@@ -39,40 +40,42 @@ class EPUBMerger {
         
         // 3. Extract and Organize Images
         onStatusUpdate?("Processing images...")
-        var pagePanels: [EPUBPanelManifest.PagePanels] = []
-        if let manifest = precomputedManifest { pagePanels = manifest.pages }
-        
         var finalImageFiles: [String] = []
         var totalPageCount = 0
         
         for (index, url) in sourceURLs.enumerated() {
-            // If it's an EPUB, extract images. If it's an image, copy it.
-            // Simplified: We assume sourceURLs are paths to valid input (likely temp EPUBs from converters)
+            let ext = url.pathExtension.lowercased()
             
-            // Extraction Strategy:
-            // Unzip to a temp location, find images, move to `OEBPS/images` renaming sequentially
-            let extractTemp = tempDir.appendingPathComponent("extract_\(index)")
-            try fileManager.createDirectory(at: extractTemp, withIntermediateDirectories: true)
-            try fileManager.unzipItem(at: url, to: extractTemp)
-            
-            let enumerator = fileManager.enumerator(at: extractTemp, includingPropertiesForKeys: nil)
-            var foundImages: [URL] = []
-            
-            while let fileURL = enumerator?.nextObject() as? URL {
-                if ["jpg", "jpeg", "png", "webp"].contains(fileURL.pathExtension.lowercased()) {
-                    foundImages.append(fileURL)
-                }
-            }
-            
-            // Sort to ensure page order
-            foundImages.sort { $0.path < $1.path }
-            
-            for imgURL in foundImages {
+            // ✅ FIX: Handle Raw Images (for Page Deletion/Reordering) vs EPUBs
+            if ["jpg", "jpeg", "png", "webp", "gif"].contains(ext) {
                 totalPageCount += 1
-                let newName = String(format: "page%04d.%@", totalPageCount, imgURL.pathExtension)
+                let newName = String(format: "page%04d.%@", totalPageCount, ext)
                 let destURL = imagesDir.appendingPathComponent(newName)
-                try fileManager.copyItem(at: imgURL, to: destURL)
+                try fileManager.copyItem(at: url, to: destURL)
                 finalImageFiles.append(newName)
+            } else {
+                // Assume Archive/EPUB - Extract and find images
+                let extractTemp = tempDir.appendingPathComponent("extract_\(index)")
+                try fileManager.createDirectory(at: extractTemp, withIntermediateDirectories: true)
+                try fileManager.unzipItem(at: url, to: extractTemp)
+                
+                let enumerator = fileManager.enumerator(at: extractTemp, includingPropertiesForKeys: nil)
+                var foundImages: [URL] = []
+                
+                while let fileURL = enumerator?.nextObject() as? URL {
+                    if ["jpg", "jpeg", "png", "webp"].contains(fileURL.pathExtension.lowercased()) {
+                        foundImages.append(fileURL)
+                    }
+                }
+                foundImages.sort { $0.path < $1.path }
+                
+                for imgURL in foundImages {
+                    totalPageCount += 1
+                    let newName = String(format: "page%04d.%@", totalPageCount, imgURL.pathExtension)
+                    let destURL = imagesDir.appendingPathComponent(newName)
+                    try fileManager.copyItem(at: imgURL, to: destURL)
+                    finalImageFiles.append(newName)
+                }
             }
         }
         
@@ -94,8 +97,6 @@ class EPUBMerger {
                 panelData = " data-panels='\(safeJSON)'"
             }
             
-            // IMPORTANT: Image path is relative to the HTML file in `text/`
-            // So we need `../images/filename`
             let html = """
             <?xml version="1.0" encoding="utf-8"?>
             <!DOCTYPE html>
@@ -184,12 +185,10 @@ class EPUBMerger {
             throw NSError(domain: "EPUBGen", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
         }
         
-        // Add mimetype (Uncompressed)
         try archive.addEntry(with: "mimetype", relativeTo: tempDir, compressionMethod: .none)
         
-        // Add META-INF and OEBPS
         for subpath in try fileManager.subpathsOfDirectory(atPath: tempDir.path) {
-            if subpath == "mimetype" { continue } // Already added
+            if subpath == "mimetype" { continue }
             try archive.addEntry(with: subpath, relativeTo: tempDir, compressionMethod: .deflate)
         }
         

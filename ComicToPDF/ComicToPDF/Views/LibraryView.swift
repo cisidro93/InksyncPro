@@ -37,6 +37,8 @@ struct LibraryView: View {
     @State private var showingPanelExtractor = false
     
     @State private var readingPDF: ConvertedPDF?
+    @State private var showingPageManager = false
+    @State private var pdfToManage: ConvertedPDF?
     
     
     var filteredPDFs: [ConvertedPDF] {
@@ -210,6 +212,10 @@ struct LibraryView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             }
+            .sheet(item: $pdfToManage) { pdf in
+                PageManagerView(pdf: pdf)
+                    .environmentObject(conversionManager)
+            }
     }
     
     // MARK: - Views
@@ -366,6 +372,14 @@ struct LibraryView: View {
                 selectedPDF = pdf
                 showingPanelExtractor = true
             } label: { Label("Extract Panels", systemImage: "crop") }
+            
+            // Updated condition to include EPUB
+            if ["pdf", "epub"].contains(pdf.url.pathExtension.lowercased()) {
+                Button {
+                    pdfToManage = pdf
+                    showingPageManager = true
+                } label: { Label("Manage Pages", systemImage: "doc.on.doc") }
+            }
         }
     }
     
