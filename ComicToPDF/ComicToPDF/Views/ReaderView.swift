@@ -1,3 +1,4 @@
+
 import SwiftUI
 import WebKit
 import PDFKit
@@ -95,16 +96,15 @@ struct ReaderView: View {
             try fileManager.unzipItem(at: fileURL, to: dest)
             self.unzippedDir = dest
             
-            // Find all XHTML files in OEBPS/text or root
-            // We search recursively
+            // Find all XHTML files recursively
             if let enumerator = fileManager.enumerator(at: dest, includingPropertiesForKeys: nil) {
                 var foundPages: [URL] = []
                 while let file = enumerator.nextObject() as? URL {
-                    if file.pathExtension == "xhtml" || file.pathExtension == "html" {
+                    if ["xhtml", "html"].contains(file.pathExtension.lowercased()) {
                         foundPages.append(file)
                     }
                 }
-                // Sort by name (page0001, page0002)
+                // Sort strictly by filename (page0001, page0002)
                 foundPages.sort { $0.lastPathComponent < $1.lastPathComponent }
                 
                 await MainActor.run {
@@ -144,14 +144,15 @@ struct EPUBSmartReader: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences = prefs
         
-        // JAVASCRIPT: Handle Panels AND Tap Navigation
+        // JAVASCRIPT: Handle Panels & Navigation internally
         let js = """
         var panelIndex = -1;
         var panels = [];
-        
+        var isPanelMode = \(panelMode);
+
         // CSS for Zoom
         var style = document.createElement('style');
-        style.innerHTML = `body { transition: transform 0.4s ease; transform-origin: top left; overflow: hidden; }`;
+        style.innerHTML = `body { transition: transform 0.4s ease; transform-origin: top left; overflow: hidden; touch-action: none; }`;
         document.head.appendChild(style);
 
         function initPanels() {
@@ -161,38 +162,52 @@ struct EPUBSmartReader: UIViewRepresentable {
             }
         }
         
-        function tap(x) {
-            // Right side (next), Left side (prev)
-            if (x > window.innerWidth * 0.5) {
-                // Next
-                if (panels.length > 0 && panelIndex < panels.length - 1) {
-                    panelIndex++;
-                    zoomToPanel();
-                    return "panel_adv";
-                } else {
-                    return "next_page";
+        // Main Tap Logic
+        document.addEventListener('click', function(e) {
+            e.preventDefault(); // Stop standard browser handling
+            
+            var x = e.clientX;
+            var width = window.innerWidth;
+            
+            // Right Side Tap (Next)
+            if (x > width * 0.4) {
+                if (isPanelMode && panels.length > 0) {
+                    // Try to advance panel
+                    if (panelIndex < panels.length - 1) {
+                        panelIndex++;
+                        zoomToPanel();
+                        return; // Stay on this page
+                    }
                 }
-            } else {
-                // Prev
-                if (panels.length > 0 && panelIndex > 0) {
-                    panelIndex--;
-                    zoomToPanel();
-                    return "panel_rev";
-                } else {
-                    return "prev_page";
+                // No panels left, go to next page
+                window.webkit.messageHandlers.navHandler.postMessage("next");
+            } 
+            // Left Side Tap (Prev)
+            else {
+                if (isPanelMode && panels.length > 0) {
+                    // Try to reverse panel
+                    if (panelIndex > 0) {
+                        panelIndex--;
+                        zoomToPanel();
+                        return; // Stay on this page
+                    } else if (panelIndex === 0) {
+                        // Reset zoom before going back
+                        panelIndex = -1;
+                        document.body.style.transform = "scale(1) translate(0,0)";
+                        return;
+                    }
                 }
+                // No panels left (or at start), go to prev page
+                window.webkit.messageHandlers.navHandler.postMessage("prev");
             }
-        }
+        });
         
         function zoomToPanel() {
             var p = panels[panelIndex];
-            var scale = Math.min(window.innerWidth/p.width, window.innerHeight/p.height) * 0.95;
-            // Native scaling logic would go here
-            // For simplicity, we stick to transform:
+            var scale = Math.min(window.innerWidth/p.width, window.innerHeight/p.height) * 0.98;
             var tx = -p.x * 100;
             var ty = -p.y * 100;
             document.body.style.transform = `scale(${1/p.width}) translate(${tx}%, ${ty}%)`; 
-            // Note: Simplistic zoom. 
         }
         
         window.onload = initPanels;
@@ -205,10 +220,7 @@ struct EPUBSmartReader: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
-        
-        // Add Tap Gesture (Native to Swift)
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
-        webView.addGestureRecognizer(tap)
+        webView.scrollView.isScrollEnabled = false // Disable scrolling to prevent interference
         
         return webView
     }
@@ -225,25 +237,19 @@ struct EPUBSmartReader: UIViewRepresentable {
         var parent: EPUBSmartReader
         init(_ parent: EPUBSmartReader) { self.parent = parent }
         
-        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
-            let loc = gesture.location(in: gesture.view)
-            let width = gesture.view?.bounds.width ?? 300
-            
-            // Simple logic: Left 30% = Prev, Right 30% = Next, Center = Toggle Panels?
-            // For now: Right half Next, Left half Prev
-            if loc.x > width / 2 {
-                parent.onNextPage()
-            } else {
-                parent.onPrevPage()
-            }
-        }
-        
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            // Handle JS events if needed
+            if let body = message.body as? String {
+                if body == "next" {
+                    parent.onNextPage()
+                } else if body == "prev" {
+                    parent.onPrevPage()
+                }
+            }
         }
     }
 }
 
+// MARK: - Standard PDF Component
 struct PDFKitView: UIViewRepresentable {
     let url: URL
     func makeUIView(context: Context) -> PDFView {
