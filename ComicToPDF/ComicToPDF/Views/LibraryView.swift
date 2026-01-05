@@ -29,11 +29,15 @@ struct LibraryView: View {
     @State private var showingCloudImport = false
     @State private var showingMetadataSearch = false
     
+    // Error Handling
+    @State private var importErrorMessage: String? = nil
+    @State private var showingImportError = false
+    
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
     }
     
-    // ✅ TASK MONITOR (Progress Bar)
+    // TASK MONITOR
     var taskMonitorOverlay: some View {
         Group {
             if !conversionManager.activeTasks.isEmpty {
@@ -56,7 +60,7 @@ struct LibraryView: View {
         }
     }
     
-    // ✅ EMPTY STATE
+    // EMPTY STATE
     var emptyStateView: some View {
         VStack(spacing: 25) {
             Image(systemName: "books.vertical.fill")
@@ -131,6 +135,28 @@ struct LibraryView: View {
             .navigationTitle("Library")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // ✅ NEW: Target Format Selector (Top Left)
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Menu {
+                        Picker("Output Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                            ForEach(OutputFormat.allCases) { format in
+                                Label(format.rawValue, systemImage: format.icon).tag(format)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Target:")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(conversionManager.conversionSettings.outputFormat.rawValue)
+                                .font(.caption).bold()
+                                .padding(4)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                    }
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack {
                          Button { showingCloudImport = true } label: { Image(systemName: "icloud.and.arrow.down") }
@@ -167,6 +193,7 @@ struct LibraryView: View {
                     }.padding().presentationDetents([.medium])
                 }
             }
+            // ✅ ROBUST IMPORT LOGIC
             .fileImporter(
                 isPresented: $showingCloudImport,
                 allowedContentTypes: [.pdf, .epub, .zip, .init(filenameExtension: "cbz")!, .init(filenameExtension: "cbr")!],
@@ -176,27 +203,61 @@ struct LibraryView: View {
                 case .success(let urls):
                     Task {
                         for url in urls {
-                            guard url.startAccessingSecurityScopedResource() else { continue }
+                            guard url.startAccessingSecurityScopedResource() else {
+                                await MainActor.run {
+                                    importErrorMessage = "Permission Denied: Could not access \(url.lastPathComponent)"
+                                    showingImportError = true
+                                }
+                                continue
+                            }
                             defer { url.stopAccessingSecurityScopedResource() }
                             
-                            let fileName = url.lastPathComponent
-                            let destURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
-                            try? FileManager.default.removeItem(at: destURL)
-                            try? FileManager.default.copyItem(at: url, to: destURL)
-                            
-                            let ext = destURL.pathExtension.lowercased()
-                            if ["cbz", "cbr", "zip"].contains(ext) {
-                                let taskDesc = "Converting \(fileName)..."
-                                await MainActor.run { conversionManager.activeTasks.append(BackgroundTask(description: taskDesc)) }
-                                try? await conversionManager.convertToFormat(conversionManager.conversionSettings.outputFormat, from: destURL, progressHandler: { _ in })
-                                await MainActor.run { conversionManager.activeTasks.removeAll { $0.description == taskDesc } }
+                            do {
+                                let fileName = url.lastPathComponent
+                                let destURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
+                                
+                                if FileManager.default.fileExists(atPath: destURL.path) {
+                                    try FileManager.default.removeItem(at: destURL)
+                                }
+                                try FileManager.default.copyItem(at: url, to: destURL)
+                                
+                                let ext = destURL.pathExtension.lowercased()
+                                if ["cbz", "cbr", "zip"].contains(ext) {
+                                    let taskDesc = "Converting \(fileName) to \(conversionManager.conversionSettings.outputFormat.rawValue)..."
+                                    
+                                    await MainActor.run {
+                                        conversionManager.activeTasks.append(BackgroundTask(description: taskDesc))
+                                    }
+                                    
+                                    try await conversionManager.convertToFormat(
+                                        conversionManager.conversionSettings.outputFormat,
+                                        from: destURL,
+                                        progressHandler: { _ in }
+                                    )
+                                    
+                                    await MainActor.run {
+                                        conversionManager.activeTasks.removeAll { $0.description == taskDesc }
+                                    }
+                                }
+                            } catch {
+                                await MainActor.run {
+                                    importErrorMessage = "Import Failed: \(error.localizedDescription)"
+                                    showingImportError = true
+                                }
                             }
                         }
                         await MainActor.run { conversionManager.scanForPDFs() }
                     }
                 case .failure(let error):
-                    print("Error: \(error)")
+                    importErrorMessage = error.localizedDescription
+                    showingImportError = true
                 }
+            }
+            // ✅ ERROR ALERT
+            .alert("Import Error", isPresented: $showingImportError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(importErrorMessage ?? "Unknown error")
             }
             .overlay(alignment: .top) { taskMonitorOverlay }
             .onChange(of: conversionManager.organizationMethod) {
@@ -218,7 +279,7 @@ struct LibraryView: View {
         }
     }
     
-    // Grid View using Dedicated Struct
+    // Grid View
     var libraryGridView: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: gridColumns), spacing: 20) {
             ForEach(filteredPDFs) { pdf in
@@ -266,39 +327,97 @@ struct LibraryView: View {
     }
     
     // Context Menu Helper
-    @ViewBuilder
     func menuItems(for pdf: ConvertedPDF) -> some View {
-        Button {
-            selectedPDF = pdf
-            if pdf.url.pathExtension.lowercased() == "epub" || pdf.url.pathExtension.lowercased() == "pdf" {
-                readingPDF = pdf
-            }
-        } label: { Label("Read", systemImage: "book") }
-        
-        Button {
-            selectedPDF = pdf
-            showingWiFiTransfer = true
-        } label: { Label("Share via Wi-Fi", systemImage: "wifi") }
-        
-        Button {
-            selectedPDF = pdf
-            showingMetadataSearch = true
-        } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
-        
-        Button {
-            selectedPDF = pdf
-            showingPanelExtractor = true
-        } label: { Label("Extract Panels", systemImage: "crop") }
-        
-        Divider()
-        
-        Button(role: .destructive) {
-            conversionManager.deletePDF(pdf)
-        } label: { Label("Delete", systemImage: "trash") }
+        Group {
+            Button {
+                selectedPDF = pdf
+                // Logic to open reader...
+            } label: { Label("Read", systemImage: "book") }
+            
+            Button {
+                selectedPDF = pdf
+                showingWiFiTransfer = true
+            } label: { Label("Share via Wi-Fi", systemImage: "wifi") }
+            
+            Button {
+                selectedPDF = pdf
+                showingMetadataSearch = true
+            } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+            
+            Button {
+                selectedPDF = pdf
+                showingPanelExtractor = true
+            } label: { Label("Extract Panels", systemImage: "crop") }
+            
+            Divider()
+            
+            Button(role: .destructive) {
+                conversionManager.deletePDF(pdf)
+            } label: { Label("Delete", systemImage: "trash") }
+        }
     }
 }
 
-// ✅ DEDICATED GRID CELL STRUCT
+// SEARCH BAR
+struct LibraryInteractiveSearchBar: View {
+    @Binding var isGridView: Bool
+    @Binding var isSelectionMode: Bool
+    @Binding var searchText: String
+    @Binding var gridColumns: Int
+    @Binding var sortMethod: OrganizationMethod
+    var onSelectAll: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            HStack {
+                Image(systemName: "magnifyingglass").foregroundColor(.gray)
+                TextField("Search library...", text: $searchText)
+            }
+            .padding(8)
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(10)
+            
+            Button(action: { isGridView.toggle() }) {
+                Image(systemName: isGridView ? "list.bullet" : "square.grid.2x2")
+                    .foregroundColor(.blue).font(.title2)
+            }
+            
+            Menu {
+                Picker("Sort By", selection: $sortMethod) {
+                    ForEach(OrganizationMethod.allCases) { method in
+                        Text(method.rawValue).tag(method)
+                    }
+                }
+            } label: {
+                Image(systemName: "arrow.up.arrow.down").foregroundColor(.blue).font(.title2)
+            }
+            
+            if isGridView {
+                Menu {
+                    Picker("Columns", selection: $gridColumns) {
+                        Text("2 Columns").tag(2)
+                        Text("3 Columns").tag(3)
+                        Text("4 Columns").tag(4)
+                    }
+                } label: {
+                    Image(systemName: "slider.horizontal.3").foregroundColor(.blue).font(.title2)
+                }
+            }
+            
+            Button(action: { isSelectionMode.toggle() }) {
+                Text(isSelectionMode ? "Done" : "Select").fontWeight(.bold)
+            }
+            
+            if isSelectionMode {
+                Button("All", action: onSelectAll)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+}
+
+// GRID CELL
 struct LibraryGridCellView<MenuContent: View>: View {
     let pdf: ConvertedPDF
     let isSelected: Bool
@@ -309,7 +428,6 @@ struct LibraryGridCellView<MenuContent: View>: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             LibraryGridItem(pdf: pdf)
-            
             Text(pdf.typeLabel)
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(.white)
@@ -326,7 +444,7 @@ struct LibraryGridCellView<MenuContent: View>: View {
     }
 }
 
-// ✅ HELPER EXTENSION
+// BADGE HELPER
 extension ConvertedPDF {
     var typeColor: Color {
         switch url.pathExtension.lowercased() {

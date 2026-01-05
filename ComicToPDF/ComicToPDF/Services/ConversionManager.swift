@@ -121,6 +121,21 @@ enum KindleDeviceType: String, Codable, CaseIterable {
     }
 }
 
+// ✅ ENSURE THIS ENUM IS VISIBLE
+enum OutputFormat: String, CaseIterable, Identifiable, Codable {
+    case pdf = "PDF"
+    case epub = "EPUB"
+    
+    var id: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .pdf: return "doc.text.fill"
+        case .epub: return "book.fill"
+        }
+    }
+}
+
 struct ConversionSettings: Codable, Equatable {
     var mangaMode: Bool = false
     var compressionQuality: CompressionPreset = .high
@@ -185,26 +200,6 @@ enum ConversionError: LocalizedError {
     }
 }
 
-enum OutputFormat: String, CaseIterable, Identifiable, Codable {
-    case pdf = "PDF"
-    case epub = "EPUB"
-    case both = "Both"
-    
-    var id: String { rawValue }
-    
-    var icon: String {
-        switch self {
-        case .pdf: return "doc.fill"
-        case .epub: return "book.fill"
-        case .both: return "doc.on.doc.fill"
-        }
-    }
-    
-    var description: String {
-        switch self {
-        case .pdf: return "PDF (Kindle, universal)"
-        case .epub: return "EPUB (Apple Books, Kobo, etc.)"
-        case .both: return "PDF + EPUB (maximum compatibility)"
         }
     }
 }
