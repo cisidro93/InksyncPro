@@ -266,34 +266,35 @@ struct LibraryView: View {
     }
     
     // Context Menu Helper
+    @ViewBuilder
     func menuItems(for pdf: ConvertedPDF) -> some View {
-        Group {
-            Button {
-                selectedPDF = pdf
-                // Logic to open reader...
-            } label: { Label("Read", systemImage: "book") }
-            
-            Button {
-                selectedPDF = pdf
-                showingWiFiTransfer = true
-            } label: { Label("Share via Wi-Fi", systemImage: "wifi") }
-            
-            Button {
-                selectedPDF = pdf
-                showingMetadataSearch = true
-            } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
-            
-            Button {
-                selectedPDF = pdf
-                showingPanelExtractor = true
-            } label: { Label("Extract Panels", systemImage: "crop") }
-            
-            Divider()
-            
-            Button(role: .destructive) {
-                conversionManager.deletePDF(pdf)
-            } label: { Label("Delete", systemImage: "trash") }
-        }
+        Button {
+            selectedPDF = pdf
+            if pdf.url.pathExtension.lowercased() == "epub" || pdf.url.pathExtension.lowercased() == "pdf" {
+                readingPDF = pdf
+            }
+        } label: { Label("Read", systemImage: "book") }
+        
+        Button {
+            selectedPDF = pdf
+            showingWiFiTransfer = true
+        } label: { Label("Share via Wi-Fi", systemImage: "wifi") }
+        
+        Button {
+            selectedPDF = pdf
+            showingMetadataSearch = true
+        } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+        
+        Button {
+            selectedPDF = pdf
+            showingPanelExtractor = true
+        } label: { Label("Extract Panels", systemImage: "crop") }
+        
+        Divider()
+        
+        Button(role: .destructive) {
+            conversionManager.deletePDF(pdf)
+        } label: { Label("Delete", systemImage: "trash") }
     }
 }
 

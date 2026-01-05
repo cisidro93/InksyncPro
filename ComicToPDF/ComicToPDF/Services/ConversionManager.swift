@@ -472,6 +472,15 @@ class ConversionManager: ObservableObject {
         return result
     }
     
+    // ✅ FIX: Added missing delete function
+    func deletePDF(_ pdf: ConvertedPDF) {
+        if let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs.remove(at: index)
+            try? FileManager.default.removeItem(at: pdf.url)
+            savePDFs()
+        }
+    }
+    
     var kindleEmail: String {
         get { kindleDevices.first(where: { $0.isDefault })?.email ?? kindleDevices.first?.email ?? "" }
         set {
