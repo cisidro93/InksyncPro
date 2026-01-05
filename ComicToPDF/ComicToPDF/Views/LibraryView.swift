@@ -173,7 +173,9 @@ struct LibraryView: View {
         .overlay(alignment: .bottom) { batchMergeOverlay }
         .overlay(alignment: .top) { taskMonitorOverlay } // ✅ ADD THIS LINE
         .onAppear { Task { await refreshLibrary() } }
-        .onChange(of: conversionManager.organizationMethod) { _ in conversionManager.sortPDFs() }
+        .onChange(of: conversionManager.organizationMethod) { _ in 
+            conversionManager.sortPDFs() 
+        }
     }
     
     // MARK: - Subviews
@@ -279,26 +281,7 @@ struct LibraryView: View {
         }
     }
     
-    var batchMergeOverlay: some View {
-        Group {
-            if isSelectionMode && !selectedPDFs.isEmpty {
-                Button(action: { showingMergeSheet = true }) {
-                    HStack {
-                        Image(systemName: "rectangle.stack.badge.plus")
-                        Text("Merge \(selectedPDFs.count) Files")
-                    }
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(Color.orange)
-                    .cornerRadius(12)
-                    .shadow(radius: 4)
-                }
-                .padding(.bottom, 20)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-    }
+
     
     func handleTap(_ pdf: ConvertedPDF) {
         if isSelectionMode {

@@ -1428,6 +1428,28 @@ class ConversionManager: ObservableObject {
         }
     }
     
+    // ✅ FIX: Use 'organizationMethod' instead of 'sortOption'
+    func sortPDFs() {
+        // Ensure sorting happens on the main thread if needed, but array mutation is here
+        switch organizationMethod {
+        case .alphabetical:
+            convertedPDFs.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .dateAdded:
+            convertedPDFs.sort { $0.dateAdded > $1.dateAdded }
+        case .fileSize:
+            convertedPDFs.sort { $0.fileSize > $1.fileSize }
+        case .fileType:
+            convertedPDFs.sort {
+                let ext1 = $0.url.pathExtension.lowercased()
+                let ext2 = $1.url.pathExtension.lowercased()
+                if ext1 == ext2 {
+                    return $0.name < $1.name
+                }
+                return ext1 < ext2
+            }
+        }
+    }
+    
     func recordSend(pdf: ConvertedPDF, device: KindleDevice) {
         let record = SendHistoryRecord(pdf: pdf, device: device.deviceType)
         sendHistory.insert(record, at: 0)
