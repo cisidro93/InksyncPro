@@ -115,7 +115,7 @@ struct FileMergeView: View {
                         url: finalURL,
                         name: volumeTitle,
                         pageCount: count,
-                        fileSize: (try? finalURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0,
+                        fileSize: Int64((try? finalURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0),
                         metadata: metadata
                     )
                     dismiss()
