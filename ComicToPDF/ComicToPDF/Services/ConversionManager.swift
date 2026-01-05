@@ -859,7 +859,8 @@ class ConversionManager: ObservableObject {
         }
     }
 
-    private func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
+    // Changed from 'private' to 'internal' so PageManagerView can access it
+    func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
@@ -1216,6 +1217,8 @@ class ConversionManager: ObservableObject {
     private func saveCollections() { markNeedsSave() }
     private func saveKindleDevices() { markNeedsSave() }
     func saveSettings() { markNeedsSave() }
+    func savePresets() { markNeedsSave() }
+    func saveSendHistory() { markNeedsSave() }
     
     // Force re-sync of file structure
     func scanForPDFs() {
@@ -1696,9 +1699,6 @@ class ConversionManager: ObservableObject {
     // MARK: - Post-Conversion Panel Editing
     
     // MARK: - Helpers
-    private func markNeedsSave() {
-        objectWillChange.send()
-    }
 
     // MARK: - Save Logic
     private func saveEditedPanels(session: PanelEditSession, originalPDF: ConvertedPDF) async {
