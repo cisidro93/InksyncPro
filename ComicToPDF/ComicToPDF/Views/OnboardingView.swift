@@ -1,99 +1,135 @@
 import SwiftUI
 
 struct OnboardingView: View {
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @Environment(\.dismiss) var dismiss
     @State private var currentPage = 0
     
+    // Feature List
+    let pages: [OnboardingPageModel] = [
+        OnboardingPageModel(
+            image: "book.fill",
+            color: .orange,
+            title: "Welcome to ComicToPDF",
+            description: "The ultimate tool to convert, organize, and transfer your digital comic library to Kindle and iPad."
+        ),
+        OnboardingPageModel(
+            image: "rectangle.split.3x3.fill",
+            color: .blue,
+            title: "Smart Panel Detection",
+            description: "We automatically detect panels in double-page spreads and split them into single pages for perfect reading on Kindle."
+        ),
+        OnboardingPageModel(
+            image: "wifi",
+            color: .green,
+            title: "Wi-Fi & Cloud Transfer",
+            description: "Tap the Wi-Fi icon to start a local server and drag-and-drop comics from your computer, or import directly from Google Drive."
+        ),
+        OnboardingPageModel(
+            image: "sparkles",
+            color: .purple,
+            title: "Auto-Metadata",
+            description: "Add your ComicVine API Key in Settings to automatically fetch cover art, summaries, and release dates."
+        )
+    ]
+    
     var body: some View {
         ZStack {
-            Color(.systemBackground).ignoresSafeArea()
+            Color(UIColor.systemBackground).ignoresSafeArea()
             
-            TabView(selection: $currentPage) {
-                OnboardingPage(
-                    imageName: "doc.text.image.fill",
-                    title: "Convert Comics",
-                    description: "Easily convert your CBZ and CBR comic files into PDF or EPUB formats specifically optimized for reading.",
-                    color: .blue
-                )
-                .tag(0)
+            VStack {
+                // Skip Button
+                HStack {
+                    Spacer()
+                    Button("Skip") { dismiss() }
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding()
+                        .opacity(currentPage == pages.count - 1 ? 0 : 1)
+                }
                 
-                OnboardingPage(
-                    imageName: "paperplane.fill",
-                    title: "Send to Kindle",
-                    description: "Send your converted comics directly to your Kindle device with a single tap using the 'Send to Kindle' feature.",
-                    color: .orange
-                )
-                .tag(1)
-                
-                OnboardingPage(
-                    imageName: "books.vertical.fill",
-                    title: "Your Library",
-                    description: "Organize your collection, manage metadata, and keep track of your reading history all in one place.",
-                    color: .green,
-                    isLastPage: true,
-                    action: {
-                        HapticManager.shared.notification(.success)
-                        hasCompletedOnboarding = true
-                        dismiss()
+                // Swipeable Pages
+                TabView(selection: $currentPage) {
+                    ForEach(0..<pages.count, id: \.self) { index in
+                        OnboardingPageView(page: pages[index])
+                            .tag(index)
                     }
-                )
-                .tag(2)
+                }
+                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .always))
+                .indexViewStyle(PageIndexViewStyle(backgroundDisplayMode: .always))
+                
+                // Bottom Controls
+                VStack(spacing: 20) {
+                    if currentPage == pages.count - 1 {
+                        Button(action: { dismiss() }) {
+                            Text("Get Started")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.orange)
+                                .cornerRadius(14)
+                                .padding(.horizontal)
+                        }
+                    } else {
+                        Button(action: { withAnimation { currentPage += 1 } }) {
+                            Text("Next")
+                                .font(.headline)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+                .padding(.bottom, 50)
             }
-            .tabViewStyle(.page)
-            .indexViewStyle(.page(backgroundDisplayMode: .always))
         }
     }
 }
 
-struct OnboardingPage: View {
-    let imageName: String
+// MARK: - Subviews & Models
+
+struct OnboardingPageModel {
+    let image: String
+    let color: Color
     let title: String
     let description: String
-    let color: Color
-    var isLastPage: Bool = false
-    var action: (() -> Void)? = nil
+}
+
+struct OnboardingPageView: View {
+    let page: OnboardingPageModel
     
     var body: some View {
-        VStack(spacing: 30) {
+        VStack(spacing: 20) {
             Spacer()
             
-            Image(systemName: imageName)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 120, height: 120)
-                .foregroundColor(color)
+            Image(systemName: page.image)
+                .font(.system(size: 100))
+                .foregroundColor(page.color)
                 .padding()
-                .background(Circle().fill(color.opacity(0.1)).frame(width: 200, height: 200))
+                .background(
+                    Circle()
+                        .fill(page.color.opacity(0.1))
+                        .frame(width: 200, height: 200)
+                )
             
-            VStack(spacing: 16) {
-                Text(title)
-                    .font(.system(size: 32, weight: .bold))
-                
-                Text(description)
-                    .font(.body)
-                    .multilineTextAlignment(.center)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 32)
-            }
+            Text(page.title)
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .multilineTextAlignment(.center)
+                .padding(.top, 20)
+            
+            Text(page.description)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 40)
             
             Spacer()
-            
-            if isLastPage {
-                Button(action: { action?() }) {
-                    Text("Get Started")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(14)
-                }
-                .padding(.horizontal, 40)
-                .padding(.bottom, 50)
-            } else {
-                Spacer().frame(height: 50 + 44) // Placeholder to balance layout
-            }
         }
+    }
+}
+
+// Preview Provider
+struct OnboardingView_Previews: PreviewProvider {
+    static var previews: some View {
+        OnboardingView()
     }
 }
