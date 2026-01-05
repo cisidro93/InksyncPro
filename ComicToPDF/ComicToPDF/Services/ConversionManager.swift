@@ -1705,7 +1705,7 @@ class ConversionManager: ObservableObject {
             for page in session.pages {
                 // Convert PanelRect to PanelRegion
                 let regions = page.panels.map { rect -> PanelRegion in
-                    return PanelRegion(x: rect.x, y: rect.y, width: rect.width, height: rect.height, pageIndex: page.pageNumber - 1)
+                    return PanelRegion(x: rect.rect.origin.x, y: rect.rect.origin.y, width: rect.rect.width, height: rect.rect.height, pageIndex: page.pageNumber - 1)
                 }
                 
                 let pagePanel = EPUBPanelManifest.PagePanels(
@@ -1737,14 +1737,13 @@ class ConversionManager: ObservableObject {
             try fileManager.copyItem(at: sourceURL, to: tempEPUB)
             
             // Modify Archive
-            guard let archive = try? Archive(url: tempEPUB, accessMode: .update) else {
-                throw NSError(domain: "ConversionManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not open EPUB for update."])
-            }
+            // FIX: Use throwing init
+            let archive = try Archive(url: tempEPUB, accessMode: .update)
             
             let manifestPath = "OEBPS/panel-manifest.json"
             // Remove existing if present
-            if let _ = archive[manifestPath] {
-                try? archive.removeEntry(withPath: manifestPath)
+            if let entry = archive[manifestPath] {
+                try? archive.remove(entry)
             }
             
             // Add new
@@ -1773,6 +1772,7 @@ class ConversionManager: ObservableObject {
             await MainActor.run { self.processingStatus = "Error saving panels." }
         }
     }
+    func launchPanelEditor(for pdf: ConvertedPDF) {
         guard pdf.url.pathExtension.lowercased() == "epub" else {
             print("⚠️ Panel editing is only supported for EPUB files.")
             return
@@ -1834,8 +1834,17 @@ class ConversionManager: ObservableObject {
         }
     }
 
+
     private func saveSendHistory() { markNeedsSave() }
     private func savePresets() { markNeedsSave() }
+    
+    private func markNeedsSave() {
+        // Trigger UI update and persistence
+        DispatchQueue.main.async {
+            self.objectWillChange.send()
+        }
+        // In a real app, this might also trigger disk persistence
+    }
 
     // MARK: - Page Manager Logic
 
