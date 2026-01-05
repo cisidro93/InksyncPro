@@ -458,11 +458,16 @@ class ConversionManager: ObservableObject {
         if let collectionId = filterCollection {
             result = result.filter { $0.collectionId == collectionId }
         }
-        switch sortOption {
+        switch organizationMethod {
         case .dateAdded: result.sort { $0.dateAdded > $1.dateAdded }
-        case .name: result.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        case .size: result.sort { $0.fileSize > $1.fileSize }
-        case .pageCount: result.sort { $0.pageCount > $1.pageCount }
+        case .alphabetical: result.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .fileSize: result.sort { $0.fileSize > $1.fileSize }
+        case .fileType: result.sort {
+             let ext1 = $0.url.pathExtension.lowercased()
+             let ext2 = $1.url.pathExtension.lowercased()
+             if ext1 == ext2 { return $0.name < $1.name }
+             return ext1 < ext2
+        }
         }
         return result
     }
