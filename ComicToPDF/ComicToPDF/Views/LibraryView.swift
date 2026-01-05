@@ -37,6 +37,7 @@ struct LibraryView: View {
     @State private var showingPanelExtractor = false
     
     @State private var readingPDF: ConvertedPDF?
+
     @State private var showingPageManager = false
     @State private var pdfToManage: ConvertedPDF?
     
@@ -381,7 +382,6 @@ struct LibraryView: View {
                 } label: { Label("Manage Pages", systemImage: "doc.on.doc") }
             }
         }
-    }
     
     func toggleSelection(_ pdf: ConvertedPDF) {
         if selectedPDFs.contains(pdf.id) {
