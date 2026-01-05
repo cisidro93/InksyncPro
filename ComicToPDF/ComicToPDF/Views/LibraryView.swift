@@ -2,6 +2,12 @@ import SwiftUI
 import QuickLook
 import UniformTypeIdentifiers
 
+// ✅ DEFINE TYPES LOCALLY
+extension UTType {
+    static var cbz: UTType { UTType(filenameExtension: "cbz", conformingTo: .data) ?? .data }
+    static var cbr: UTType { UTType(filenameExtension: "cbr", conformingTo: .data) ?? .data }
+}
+
 struct LibraryView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject var conversionManager: ConversionManager
@@ -17,19 +23,18 @@ struct LibraryView: View {
     @State private var selectedPDF: ConvertedPDF?
     @State private var showingMergeSheet = false
     @State private var showingWiFiTransfer = false
-    @State private var showingCloudImport = false
     @State private var showingMetadataSearch = false
     @State private var showingPanelExtractor = false
+    
+    // ✅ LOCAL IMPORT STATE
+    @State private var showingCloudImport = false
+    @State private var importError: String? = nil
+    @State private var showingImportError = false
     
     // Reading
     @State private var showingPageManager = false
     @State private var pdfToManage: ConvertedPDF?
     @State private var readingPDF: ConvertedPDF?
-    
-    // ✅ DEBUG LOGGING STATE
-    @State private var debugLog: String = "Ready to import..."
-    @State private var showErrorAlert = false
-    @State private var lastErrorMessage = ""
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
@@ -68,8 +73,13 @@ struct LibraryView: View {
             Text("Your Library is Empty")
                 .font(.title2).bold()
             
-            Text("Tap the Cloud icon to import a file.")
-                .foregroundColor(.secondary)
+            Button(action: { showingCloudImport = true }) {
+                Text("Tap here to Import Comic")
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -93,23 +103,7 @@ struct LibraryView: View {
                 
                 // MAIN CONTENT
                 ScrollView {
-                    VStack {
-                        libraryContent.padding()
-                        
-                        // ✅ DEBUG LOG (Visible at bottom of scroll)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("DEBUG LOG:")
-                                .font(.caption).bold().foregroundColor(.secondary)
-                            Text(debugLog)
-                                .font(.caption2)
-                                .fontDesign(.monospaced)
-                                .foregroundColor(.secondary)
-                                .padding(8)
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(8)
-                        }
-                        .padding()
-                    }
+                    libraryContent.padding()
                 }
                 
                 // Bottom Toolbar (Counts)
@@ -152,6 +146,7 @@ struct LibraryView: View {
                     }
                 }
             }
+            // ✅ STABLE ANCHOR: All sheets attached to NavigationView, NOT ScrollView
             .sheet(isPresented: $showingMergeSheet) {
                 FileMergeView(filesToMerge: Array(filteredPDFs.filter { selectedPDFs.contains($0.id) }))
             }
@@ -180,86 +175,25 @@ struct LibraryView: View {
                     }.padding().presentationDetents([.medium])
                 }
             }
-            // ✅ UPDATED IMPORTER: Accepts ANY file type ([.item]) to prevent graying out
+            // ✅ THE FIX: Attached to the most stable view
             .fileImporter(
                 isPresented: $showingCloudImport,
-                allowedContentTypes: [.item], // Allow EVERYTHING to debug selection issues
+                allowedContentTypes: [.cbz, .cbr, .zip, .pdf, .epub, .data, .item],
                 allowsMultipleSelection: true
             ) { result in
                 switch result {
                 case .success(let urls):
-                    debugLog += "\n📂 Picker returned \(urls.count) files."
-                    
-                    Task {
-                        for url in urls {
-                            debugLog += "\nProcessing: \(url.lastPathComponent)"
-                            
-                            // 1. Security Access
-                            guard url.startAccessingSecurityScopedResource() else {
-                                debugLog += "\n❌ PERMISSION DENIED."
-                                continue
-                            }
-                            defer { url.stopAccessingSecurityScopedResource() }
-                            
-                            do {
-                                let fileName = url.lastPathComponent
-                                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                                let destURL = docDir.appendingPathComponent(fileName)
-                                
-                                // 2. Copy File
-                                if FileManager.default.fileExists(atPath: destURL.path) {
-                                    try FileManager.default.removeItem(at: destURL)
-                                }
-                                try FileManager.default.copyItem(at: url, to: destURL)
-                                debugLog += "\n✅ Copied to Documents."
-                                
-                                // 3. Check Extension
-                                let ext = destURL.pathExtension.lowercased()
-                                debugLog += "\nExtension detected: .\(ext)"
-                                
-                                if ["cbz", "cbr", "zip"].contains(ext) {
-                                    debugLog += "\n⚙️ Starting Conversion..."
-                                    
-                                    let taskDesc = "Converting \(fileName)..."
-                                    await MainActor.run {
-                                        conversionManager.activeTasks.append(BackgroundTask(description: taskDesc))
-                                    }
-                                    
-                                    // Trigger Conversion
-                                    try await conversionManager.convertToFormat(
-                                        conversionManager.conversionSettings.outputFormat,
-                                        from: destURL,
-                                        progressHandler: { prog in
-                                            // Optional: Update progress
-                                        }
-                                    )
-                                    debugLog += "\n✨ Conversion Finished."
-                                    
-                                    await MainActor.run {
-                                        conversionManager.activeTasks.removeAll { $0.description == taskDesc }
-                                    }
-                                } else {
-                                    debugLog += "\nℹ️ Skipped conversion (Not a comic archive)."
-                                }
-                                
-                            } catch {
-                                debugLog += "\n❌ Error: \(error.localizedDescription)"
-                                lastErrorMessage = error.localizedDescription
-                                showErrorAlert = true
-                            }
-                        }
-                        await MainActor.run { conversionManager.scanForPDFs() }
-                    }
+                    // Pass to Manager to handle logic
+                    conversionManager.processImportedFiles(urls: urls)
                 case .failure(let error):
-                    debugLog += "\n❌ Picker Error: \(error.localizedDescription)"
-                    lastErrorMessage = error.localizedDescription
-                    showErrorAlert = true
+                    importError = error.localizedDescription
+                    showingImportError = true
                 }
             }
-            .alert("Import Error", isPresented: $showErrorAlert) {
+            .alert("Import Error", isPresented: $showingImportError) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text(lastErrorMessage)
+                Text(importError ?? "Unknown error")
             }
             .overlay(alignment: .top) { taskMonitorOverlay }
             .onChange(of: conversionManager.organizationMethod) {

@@ -588,6 +588,51 @@ class ConversionManager: ObservableObject {
         return pdfURL
     }
     
+    // ✅ ADD THIS TO CONVERSION MANAGER
+    @MainActor
+    func processImportedFiles(urls: [URL]) {
+        for url in urls {
+            // 1. Security Access
+            guard url.startAccessingSecurityScopedResource() else {
+                print("❌ Permission denied for \(url.lastPathComponent)")
+                continue
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+            
+            do {
+                // 2. Copy to Documents
+                let fileName = url.lastPathComponent
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let destURL = docDir.appendingPathComponent(fileName)
+                
+                if FileManager.default.fileExists(atPath: destURL.path) {
+                    try? FileManager.default.removeItem(at: destURL)
+                }
+                try FileManager.default.copyItem(at: url, to: destURL)
+                
+                // 3. Queue for Conversion
+                let ext = destURL.pathExtension.lowercased()
+                if ["cbz", "cbr", "zip"].contains(ext) {
+                    let taskDesc = "Converting \(fileName)..."
+                    activeTasks.append(BackgroundTask(description: taskDesc))
+                    
+                    Task {
+                        try? await convertToFormat(conversionSettings.outputFormat, from: destURL, progressHandler: { _ in })
+                        await MainActor.run {
+                            activeTasks.removeAll { $0.description == taskDesc }
+                        }
+                    }
+                }
+                
+                // 4. Refresh List
+                scanForPDFs()
+                
+            } catch {
+                print("❌ Failed to import: \(error.localizedDescription)")
+            }
+        }
+    }
+
     // MARK: - Universal Conversion
     
     func convertToFormat(_ format: OutputFormat, from sourceURL: URL, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> [URL] {
