@@ -23,20 +23,86 @@ struct LibraryView: View {
     // Page Management & Reading
     @State private var showingPageManager = false
     @State private var pdfToManage: ConvertedPDF?
-    @State private var readingPDF: ConvertedPDF? // <--- Controls the Reader
-    @State private var showingMergeSheet = false // Batch Merge Sheet
-    @State private var showingWiFiTransfer = false // Wi-Fi Transfer Sheet
-    @State private var showingCloudImport = false // Cloud Import Sheet
-    @State private var showingMetadataSearch = false // Metadata Search Sheet
+    @State private var readingPDF: ConvertedPDF?
+    @State private var showingMergeSheet = false
+    @State private var showingWiFiTransfer = false
+    @State private var showingCloudImport = false
+    @State private var showingMetadataSearch = false
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
     }
     
+    // ✅ TASK MONITOR (Progress Bar)
+    var taskMonitorOverlay: some View {
+        Group {
+            if !conversionManager.activeTasks.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(conversionManager.activeTasks) { task in
+                        HStack {
+                            ProgressView().scaleEffect(0.8)
+                            Text(task.description).font(.caption).fontWeight(.medium)
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(.thinMaterial)
+                        .cornerRadius(10)
+                        .shadow(radius: 2)
+                    }
+                }
+                .padding()
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+    }
+    
+    // ✅ EMPTY STATE
+    var emptyStateView: some View {
+        VStack(spacing: 25) {
+            Image(systemName: "books.vertical.fill")
+                .font(.system(size: 80))
+                .foregroundColor(.gray.opacity(0.5))
+            
+            Text("Your Library is Empty")
+                .font(.title2).bold()
+            
+            Text("Import your comics to get started.")
+                .foregroundColor(.secondary)
+            
+            HStack(spacing: 20) {
+                Button(action: { showingWiFiTransfer = true }) {
+                    VStack {
+                        Image(systemName: "wifi")
+                            .font(.title)
+                        Text("Wi-Fi")
+                            .font(.caption)
+                    }
+                    .frame(width: 80, height: 80)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(12)
+                }
+                
+                Button(action: { showingCloudImport = true }) {
+                    VStack {
+                        Image(systemName: "icloud.and.arrow.down")
+                            .font(.title)
+                        Text("Cloud")
+                            .font(.caption)
+                    }
+                    .frame(width: 80, height: 80)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(12)
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     var body: some View {
         NavigationView {
             VStack {
-                // ✅ FIX: Added missing 'sortMethod' argument
+                // FILTER BAR
                 LibraryInteractiveSearchBar(
                     isGridView: $isGridView,
                     isSelectionMode: $isSelectionMode,
@@ -49,13 +115,17 @@ struct LibraryView: View {
                     }
                 )
                 
+                // MAIN CONTENT
                 ScrollView {
                     libraryContent.padding()
                 }
                 
+                // Bottom Toolbar (Counts)
                 if !conversionManager.convertedPDFs.isEmpty {
                     Text("\(conversionManager.convertedPDFs.count) items")
-                        .font(.caption).foregroundColor(.secondary).padding(.bottom, 5)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 5)
                 }
             }
             .navigationTitle("Library")
@@ -134,68 +204,7 @@ struct LibraryView: View {
             }
         }
     }
-    
-    // MARK: - Subviews
-    
-    var taskMonitorOverlay: some View {
-        Group {
-            if !conversionManager.activeTasks.isEmpty {
-                VStack(spacing: 8) {
-                    ForEach(conversionManager.activeTasks) { task in
-                        HStack {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Text(task.description)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                            Spacer()
-                        }
-                        .padding(12)
-                        .background(.thinMaterial)
-                        .cornerRadius(10)
-                        .shadow(radius: 2)
-                    }
-                }
-                .padding()
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-    }
-    
-    var batchMergeOverlay: some View {
-        Group {
-            if isSelectionMode && !selectedPDFs.isEmpty {
-                Button(action: { showingMergeSheet = true }) {
-                    HStack {
-                        Image(systemName: "rectangle.stack.badge.plus")
-                        Text("Merge \(selectedPDFs.count) Files")
-                    }
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(Color.orange)
-                    .cornerRadius(12)
-                    .shadow(radius: 4)
-                }
-                .padding(.bottom, 20)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-    }
-    
-    var emptyStateView: some View {
-        // ✅ FIX: Wrapped in VStack to return a single View type
-        VStack {
-            VStack(spacing: 20) {
-                Image(systemName: "books.vertical").font(.system(size: 60)).foregroundColor(.gray)
-                Text("No Comics Found").font(.title2).bold()
-                Text("Tap 'Convert' to add files.").foregroundColor(.secondary)
-            }
-            .padding()
-            Spacer()
-        }
-    }
-    
+
     @ViewBuilder
     var libraryContent: some View {
         if filteredPDFs.isEmpty {
@@ -209,7 +218,7 @@ struct LibraryView: View {
         }
     }
     
-    // ✅ FIX: Extracted Grid Logic to dedicated View Struct (See Below)
+    // Grid View using Dedicated Struct
     var libraryGridView: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: gridColumns), spacing: 20) {
             ForEach(filteredPDFs) { pdf in
@@ -233,6 +242,7 @@ struct LibraryView: View {
         }
     }
     
+    // List View
     var libraryListView: some View {
         LazyVStack(spacing: 0) {
             ForEach(filteredPDFs) { pdf in
@@ -255,43 +265,18 @@ struct LibraryView: View {
         }
     }
     
-
-    
-    func handleTap(_ pdf: ConvertedPDF) {
-        if isSelectionMode {
-             toggleSelection(pdf)
-        } else {
-             readingPDF = pdf
-        }
-    }
-    
-    func refreshLibrary() async {
-        conversionManager.loadSavedData()
-        for pdf in conversionManager.convertedPDFs where pdf.coverImageData == nil {
-            conversionManager.generateCoverThumbnail(for: pdf)
-        }
-    }
-    
-    // MARK: - Context Menu Actions
+    // Context Menu Helper
     func menuItems(for pdf: ConvertedPDF) -> some View {
         Group {
             Button {
                 selectedPDF = pdf
-                showingDevicePicker = true
-            } label: { Label("Send to Kindle", systemImage: "paperplane") }
+                // Logic to open reader...
+            } label: { Label("Read", systemImage: "book") }
             
             Button {
                 selectedPDF = pdf
-                showingShareSheet = true
-            } label: { Label("Share", systemImage: "square.and.arrow.up") }
-            
-            // ✅ Manage Pages Action
-            if ["pdf", "epub"].contains(pdf.url.pathExtension.lowercased()) {
-                Button {
-                    pdfToManage = pdf
-                    showingPageManager = true
-                } label: { Label("Manage Pages", systemImage: "doc.on.doc") }
-            }
+                showingWiFiTransfer = true
+            } label: { Label("Share via Wi-Fi", systemImage: "wifi") }
             
             Button {
                 selectedPDF = pdf
@@ -303,93 +288,16 @@ struct LibraryView: View {
                 showingPanelExtractor = true
             } label: { Label("Extract Panels", systemImage: "crop") }
             
+            Divider()
+            
             Button(role: .destructive) {
-                selectedPDF = pdf
-                showingDeleteAlert = true
+                conversionManager.deletePDF(pdf)
             } label: { Label("Delete", systemImage: "trash") }
         }
     }
-    
-    // MARK: - Helpers
-    func toggleSelection(_ pdf: ConvertedPDF) {
-        if selectedPDFs.contains(pdf.id) {
-            selectedPDFs.remove(pdf.id)
-        } else {
-            selectedPDFs.insert(pdf.id)
-        }
-    }
-    
-    func getSelectedPDFs() -> [ConvertedPDF] {
-        return conversionManager.convertedPDFs.filter { selectedPDFs.contains($0.id) }
-    }
 }
 
-// MARK: - Local Device Picker Adapter
-struct DevicePickerView: View {
-    let pdf: ConvertedPDF
-    var body: some View {
-        KindleDevicePickerView(pdfURLs: [pdf.url])
-    }
-}
-
-// MARK: - Local Search Bar (To avoid modifying SearchFilterBar.swift)
-struct LibraryInteractiveSearchBar: View {
-    @Binding var isGridView: Bool
-    @Binding var isSelectionMode: Bool
-    @Binding var searchText: String
-    @Binding var gridColumns: Int
-    @Binding var sortMethod: OrganizationMethod
-    var onSelectAll: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Search Field
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundColor(.gray)
-                TextField("Search library...", text: $searchText)
-            }
-            .padding(8)
-            .background(Color(.secondarySystemBackground))
-            .cornerRadius(10)
-            
-            // View Toggle
-            Button(action: { isGridView.toggle() }) {
-                Image(systemName: isGridView ? "list.bullet" : "square.grid.2x2")
-                    .foregroundColor(.blue)
-                    .font(.title2)
-            }
-            
-            // Grid Columns (Only in Grid Mode)
-            if isGridView {
-                Menu {
-                    Picker("Columns", selection: $gridColumns) {
-                        Text("2 Columns").tag(2)
-                        Text("3 Columns").tag(3)
-                        Text("4 Columns").tag(4)
-                    }
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .foregroundColor(.blue)
-                        .font(.title2)
-                }
-            }
-            
-            // Selection Mode
-            Button(action: { isSelectionMode.toggle() }) {
-                Text(isSelectionMode ? "Done" : "Select")
-                    .fontWeight(.bold)
-            }
-            
-            // Select All (Only in Selection Mode)
-            if isSelectionMode {
-                Button("All", action: onSelectAll)
-            }
-        }
-        .padding(.vertical, 8)
-    }
-}
-
-// ✅ NEW: Dedicated Struct to Fix Compiler Timeout
+// ✅ DEDICATED GRID CELL STRUCT
 struct LibraryGridCellView<MenuContent: View>: View {
     let pdf: ConvertedPDF
     let isSelected: Bool
@@ -416,9 +324,8 @@ struct LibraryGridCellView<MenuContent: View>: View {
         .contextMenu { menuItems() }
     }
 }
-}
 
-// ✅ FIX: Add this extension to the bottom of the file
+// ✅ HELPER EXTENSION
 extension ConvertedPDF {
     var typeColor: Color {
         switch url.pathExtension.lowercased() {

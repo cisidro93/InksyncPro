@@ -29,6 +29,7 @@ struct AdvancedOptionsView: View {
                 }
                 
                 // ✅ KEYWORD: Kindle Optimization
+                // ✅ KEYWORD: Kindle Optimization
                 Toggle(isOn: $conversionManager.conversionSettings.epubSettings.splitPanels) {
                     VStack(alignment: .leading) {
                         Text("Optimize for Kindle")
@@ -37,8 +38,9 @@ struct AdvancedOptionsView: View {
                             .foregroundColor(.gray)
                     }
                 }
-                .onChange(of: conversionManager.conversionSettings.epubSettings.splitPanels) { newValue in
-                    if newValue {
+                // ✅ FIX: iOS 17 .onChange Syntax
+                .onChange(of: conversionManager.conversionSettings.epubSettings.splitPanels) {
+                    if conversionManager.conversionSettings.epubSettings.splitPanels {
                          conversionManager.conversionSettings.epubSettings.enablePanelView = false
                     }
                 }

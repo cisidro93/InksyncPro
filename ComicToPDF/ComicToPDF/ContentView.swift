@@ -49,8 +49,9 @@ struct ContentView: View {
                 )
             }
         }
-        .onChange(of: conversionManager.showingPanelEditor) { newValue in
-            if newValue {
+        // ✅ FIX: iOS 17 .onChange Syntax
+        .onChange(of: conversionManager.showingPanelEditor) {
+            if conversionManager.showingPanelEditor {
                 self.panelEditSession = conversionManager.currentPanelSession
                 self.panelEditorCompletion = conversionManager.panelEditorCompletion
                 self.showPanelEditor = true
