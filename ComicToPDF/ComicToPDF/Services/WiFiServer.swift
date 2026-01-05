@@ -167,7 +167,12 @@ class WiFiServer: ObservableObject {
                 let interface = ptr?.pointee
                 let addrFamily = interface?.ifa_addr.pointee.sa_family
                 if addrFamily == UInt8(AF_INET) || addrFamily == UInt8(AF_INET6) {
-                    if let name = String(cString: interface?.ifa_name, encoding: .utf8), name == "en0" {
+                    
+                    // ✅ FIX: Safely unwrap the C-String pointer first
+                    if let cString = interface?.ifa_name,
+                       let name = String(cString: cString, encoding: .utf8),
+                       name == "en0" {
+                        
                         var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                         getnameinfo(interface?.ifa_addr, socklen_t(interface?.ifa_addr.pointee.sa_len ?? 0), &hostname, socklen_t(hostname.count), nil, socklen_t(0), NI_NUMERICHOST)
                         address = String(cString: hostname)

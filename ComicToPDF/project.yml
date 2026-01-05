@@ -2,7 +2,7 @@ name: ComicToPDF
 options:
   bundleIdPrefix: com.antigravity
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
 packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation.git
