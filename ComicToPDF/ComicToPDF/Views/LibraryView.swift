@@ -24,6 +24,7 @@ struct LibraryView: View {
     @State private var showingPageManager = false
     @State private var pdfToManage: ConvertedPDF?
     @State private var readingPDF: ConvertedPDF? // <--- Controls the Reader
+    @State private var showingMergeSheet = false // Batch Merge Sheet
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
@@ -117,6 +118,13 @@ struct LibraryView: View {
             .sheet(isPresented: $showingDevicePicker) {
                 if let pdf = selectedPDF { DevicePickerView(pdf: pdf) }
             }
+            // Batch Merge Sheet
+            .sheet(isPresented: $showingMergeSheet) {
+                let files = getSelectedPDFs()
+                if !files.isEmpty {
+                    FileMergeView(filesToMerge: files)
+                }
+            }
             .alert("Delete Comic?", isPresented: $showingDeleteAlert) {
                 Button("Delete", role: .destructive) {
                     if let pdf = selectedPDF {
@@ -124,6 +132,24 @@ struct LibraryView: View {
                     }
                 }
                 Button("Cancel", role: .cancel) {}
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if isSelectionMode && !selectedPDFs.isEmpty {
+                Button(action: { showingMergeSheet = true }) {
+                    HStack {
+                        Image(systemName: "rectangle.stack.badge.plus")
+                        Text("Merge \(selectedPDFs.count) Files")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Color.orange)
+                    .cornerRadius(12)
+                    .shadow(radius: 4)
+                }
+                .padding(.bottom, 20)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .onAppear {
