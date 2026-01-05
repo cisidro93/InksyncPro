@@ -25,6 +25,7 @@ struct LibraryView: View {
     @State private var pdfToManage: ConvertedPDF?
     @State private var readingPDF: ConvertedPDF? // <--- Controls the Reader
     @State private var showingMergeSheet = false // Batch Merge Sheet
+    @State private var showingWiFiTransfer = false // Wi-Fi Transfer Sheet
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
@@ -56,7 +57,12 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Library")
-            .navigationBarHidden(true)
+            .navigationBarHidden(false) // Changed to false to show toolbar
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                     Button { showingWiFiTransfer = true } label: { Image(systemName: "wifi") }
+                }
+            }
             
             // ✅ FILES MODALS
             .fullScreenCover(item: $readingPDF) { pdf in ReaderView(fileURL: pdf.url) }
@@ -71,6 +77,9 @@ struct LibraryView: View {
             .alert("Delete Comic?", isPresented: $showingDeleteAlert) {
                 Button("Delete", role: .destructive) { if let pdf = selectedPDF { conversionManager.removeFromLibrary(pdf) } }
                 Button("Cancel", role: .cancel) {}
+            }
+            .sheet(isPresented: $showingWiFiTransfer) {
+                WiFiView()
             }
         }
         .overlay(alignment: .bottom) { batchMergeOverlay }
