@@ -42,6 +42,7 @@ struct LibraryView: View {
                     isSelectionMode: $isSelectionMode,
                     searchText: $searchText,
                     gridColumns: $gridColumns,
+                    sortMethod: $conversionManager.organizationMethod,
                     onSelectAll: {
                         if selectedPDFs.count == filteredPDFs.count { selectedPDFs.removeAll() } 
                         else { selectedPDFs = Set(filteredPDFs.map { $0.id }) }
@@ -172,6 +173,7 @@ struct LibraryView: View {
         .overlay(alignment: .bottom) { batchMergeOverlay }
         .overlay(alignment: .top) { taskMonitorOverlay } // ✅ ADD THIS LINE
         .onAppear { Task { await refreshLibrary() } }
+        .onChange(of: conversionManager.organizationMethod) { _ in conversionManager.sortPDFs() }
     }
     
     // MARK: - Subviews
@@ -240,14 +242,27 @@ struct LibraryView: View {
             if isGridView {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: gridColumns), spacing: 20) {
                     ForEach(filteredPDFs) { pdf in
-                        // ✅ FIX: Removed 'isSelected' param. Added visual selection effect manually.
-                        LibraryGridItem(pdf: pdf)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.blue, lineWidth: selectedPDFs.contains(pdf.id) ? 3 : 0)
-                            )
-                            .onTapGesture { handleTap(pdf) }
-                            .contextMenu { menuItems(for: pdf) }
+                        ZStack(alignment: .topTrailing) {
+                            // The Item
+                            LibraryGridItem(pdf: pdf)
+                            
+                            // ✅ NEW: File Type Badge
+                            Text(pdf.typeLabel)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(pdf.typeColor)
+                                .cornerRadius(4)
+                                .padding(6) // Offset from corner
+                                .shadow(radius: 2)
+                        }
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.blue, lineWidth: selectedPDFs.contains(pdf.id) ? 3 : 0)
+                        )
+                        .onTapGesture { handleTap(pdf) }
+                        .contextMenu { menuItems(for: pdf) }
                     }
                 }
                 .padding()
@@ -366,6 +381,7 @@ struct LibraryInteractiveSearchBar: View {
     @Binding var isSelectionMode: Bool
     @Binding var searchText: String
     @Binding var gridColumns: Int
+    @Binding var sortMethod: OrganizationMethod
     var onSelectAll: () -> Void
     
     var body: some View {

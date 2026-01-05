@@ -333,7 +333,7 @@ class ConversionManager: ObservableObject {
     @Published var searchText: String = ""
     @Published var filterFavoritesOnly: Bool = false
     @Published var filterCollection: UUID? = nil
-    @Published var sortOption: SortOption = .name
+    @Published var organizationMethod: OrganizationMethod = .alphabetical
     
     @Published var activeTasks: [BackgroundTask] = []
     
@@ -2141,8 +2141,10 @@ extension ConversionManager {
 enum OrganizationMethod: String, CaseIterable, Identifiable {
     case alphabetical = "Alphabetical"
     case dateAdded = "Date Added"
+    case fileSize = "File Size"
+    case fileType = "File Type" // ✅ NEW
     
-    var id: String { rawValue }
+    var id: String { self.rawValue }
 }
 
 // EPUBtoPDFConverter moved to its own file.
