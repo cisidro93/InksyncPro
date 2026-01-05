@@ -26,6 +26,7 @@ struct LibraryView: View {
     @State private var readingPDF: ConvertedPDF? // <--- Controls the Reader
     @State private var showingMergeSheet = false // Batch Merge Sheet
     @State private var showingWiFiTransfer = false // Wi-Fi Transfer Sheet
+    @State private var showingCloudImport = false // Cloud Import Sheet
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
@@ -60,7 +61,17 @@ struct LibraryView: View {
             .navigationBarHidden(false) // Changed to false to show toolbar
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                     Button { showingWiFiTransfer = true } label: { Image(systemName: "wifi") }
+                    HStack {
+                        // Cloud Import Button
+                        Button { showingCloudImport = true } label: { 
+                            Image(systemName: "icloud.and.arrow.down") 
+                        }
+                        
+                        // Wi-Fi Button
+                        Button { showingWiFiTransfer = true } label: { 
+                            Image(systemName: "wifi") 
+                        }
+                    }
                 }
             }
             
@@ -80,6 +91,45 @@ struct LibraryView: View {
             }
             .sheet(isPresented: $showingWiFiTransfer) {
                 WiFiView()
+            }
+            .fileImporter(
+                isPresented: $showingCloudImport,
+                allowedContentTypes: [.pdf, .epub, .zip, .init(filenameExtension: "cbz")!, .init(filenameExtension: "cbr")!],
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    Task {
+                        // Start accessing security scoped resources
+                        let secureURLs = urls.compactMap { url -> URL? in
+                            guard url.startAccessingSecurityScopedResource() else { return nil }
+                            return url
+                        }
+                        
+                        // Copy to Documents and Import
+                        for url in secureURLs {
+                            defer { url.stopAccessingSecurityScopedResource() }
+                            do {
+                                let fileName = url.lastPathComponent
+                                let destURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
+                                
+                                if FileManager.default.fileExists(atPath: destURL.path) {
+                                    try? FileManager.default.removeItem(at: destURL)
+                                }
+                                try FileManager.default.copyItem(at: url, to: destURL)
+                            } catch {
+                                print("Failed to import \(url.lastPathComponent): \(error)")
+                            }
+                        }
+                        
+                        // Refresh Library
+                        await MainActor.run {
+                            conversionManager.scanForPDFs()
+                        }
+                    }
+                case .failure(let error):
+                    print("Cloud import failed: \(error.localizedDescription)")
+                }
             }
         }
         .overlay(alignment: .bottom) { batchMergeOverlay }

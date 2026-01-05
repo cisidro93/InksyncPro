@@ -8,6 +8,7 @@ struct ReaderView: View {
     let fileURL: URL
     @Environment(\.dismiss) var dismiss
     @State private var isPanelViewEnabled = true
+    @State private var isVerticalScroll = false
     
     // Unzip State
     @State private var unzippedDir: URL?
@@ -27,26 +28,42 @@ struct ReaderView: View {
                         Text("Error: \(error)").padding()
                     }
                 } else {
-                    // READER CONTENT
-                    if fileURL.pathExtension.lowercased() == "epub" {
-                        // EPUB: Show current HTML Page
-                        if !pages.isEmpty && currentPageIndex < pages.count {
-                            EPUBSmartReader(
-                                pageURL: pages[currentPageIndex],
-                                panelMode: $isPanelViewEnabled,
-                                onNextPage: nextPage,
-                                onPrevPage: prevPage
-                            )
-                            .id(pages[currentPageIndex]) // Force refresh when page changes
+                    // ✅ READER CONTENT
+                    if isVerticalScroll {
+                        // VERTICAL WEBTOON MODE
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                ForEach(pages, id: \.self) { pageURL in
+                                    AsyncImage(url: pageURL) { phase in
+                                        if let image = phase.image {
+                                            image.resizable().aspectRatio(contentMode: .fit)
+                                        } else {
+                                            Color.gray.opacity(0.1).frame(height: 300)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     } else {
-                        // PDF: Standard Viewer
-                        PDFKitView(url: fileURL)
+                        // PAGED MODE (Existing Logic)
+                        if fileURL.pathExtension.lowercased() == "epub" {
+                            if !pages.isEmpty && currentPageIndex < pages.count {
+                                EPUBSmartReader(
+                                    pageURL: pages[currentPageIndex],
+                                    panelMode: $isPanelViewEnabled,
+                                    onNextPage: nextPage,
+                                    onPrevPage: prevPage
+                                )
+                                .id(pages[currentPageIndex])
+                            }
+                        } else {
+                            PDFKitView(url: fileURL)
+                        }
                     }
                 }
                 
-                // Page Indicator Overlay (EPUB Only)
-                if !pages.isEmpty && !isLoading {
+                // Page Indicator (Only show in Paged Mode)
+                if !isVerticalScroll && !pages.isEmpty && !isLoading {
                     VStack {
                         Spacer()
                         HStack {
@@ -66,7 +83,12 @@ struct ReaderView: View {
                     Button("Done") { dismiss() }.fontWeight(.bold)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Toggle("Panel View", isOn: $isPanelViewEnabled)
+                    Menu {
+                        Toggle("Vertical Scroll", isOn: $isVerticalScroll)
+                        Toggle("Panel View", isOn: $isPanelViewEnabled)
+                    } label: {
+                        Image(systemName: "gear")
+                    }
                 }
             }
             .task {
