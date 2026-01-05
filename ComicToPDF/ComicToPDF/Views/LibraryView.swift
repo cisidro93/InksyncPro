@@ -352,8 +352,10 @@ struct LibraryView: View {
         }
     }
     
+    // MARK: - Context Menu
     func menuItems(for pdf: ConvertedPDF) -> some View {
-        Group {
+        // FIX: Added explicit return for the Group
+        return Group {
             Button {
                 selectedPDF = pdf
                 showingDevicePicker = true
@@ -364,6 +366,13 @@ struct LibraryView: View {
                 showingShareSheet = true
             } label: { Label("Share", systemImage: "square.and.arrow.up") }
             
+            if ["pdf", "epub"].contains(pdf.url.pathExtension.lowercased()) {
+                Button {
+                    pdfToManage = pdf
+                    showingPageManager = true
+                } label: { Label("Manage Pages", systemImage: "doc.on.doc") }
+            }
+            
             Button(role: .destructive) {
                 selectedPDF = pdf
                 showingDeleteAlert = true
@@ -373,15 +382,11 @@ struct LibraryView: View {
                 selectedPDF = pdf
                 showingPanelExtractor = true
             } label: { Label("Extract Panels", systemImage: "crop") }
-            
-            // Updated condition to include EPUB
-            if ["pdf", "epub"].contains(pdf.url.pathExtension.lowercased()) {
-                Button {
-                    pdfToManage = pdf
-                    showingPageManager = true
-                } label: { Label("Manage Pages", systemImage: "doc.on.doc") }
-            }
         }
+    }
+    
+    // MARK: - Missing Helper Functions
+    // These were missing, causing "cannot find in scope" errors
     
     func toggleSelection(_ pdf: ConvertedPDF) {
         if selectedPDFs.contains(pdf.id) {
@@ -392,6 +397,6 @@ struct LibraryView: View {
     }
     
     func getSelectedPDFs() -> [ConvertedPDF] {
-        conversionManager.convertedPDFs.filter { selectedPDFs.contains($0.id) }
+        return conversionManager.convertedPDFs.filter { selectedPDFs.contains($0.id) }
     }
 }

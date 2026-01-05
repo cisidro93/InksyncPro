@@ -181,9 +181,8 @@ class EPUBMerger {
             try FileManager.default.removeItem(at: outputURL)
         }
         
-        guard let archive = try? Archive(url: outputURL, accessMode: .create) else {
-            throw NSError(domain: "EPUBGen", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
-        }
+        // FIX: Use modern ZIPFoundation init
+        let archive = try Archive(url: outputURL, accessMode: .create)
         
         try archive.addEntry(with: "mimetype", relativeTo: tempDir, compressionMethod: .none)
         
