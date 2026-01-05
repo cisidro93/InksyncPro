@@ -42,7 +42,6 @@ struct LibraryView: View {
                     isSelectionMode: $isSelectionMode,
                     searchText: $searchText,
                     gridColumns: $gridColumns,
-                    sortMethod: $conversionManager.organizationMethod,
                     onSelectAll: {
                         if selectedPDFs.count == filteredPDFs.count { selectedPDFs.removeAll() }
                         else { selectedPDFs = Set(filteredPDFs.map { $0.id }) }
@@ -51,7 +50,7 @@ struct LibraryView: View {
                 
                 // MAIN CONTENT
                 ScrollView {
-                    // ✅ FIX: Extracted logic to subview to fix compiler timeout
+                    // ✅ FIX: Logic is now split into sub-views to prevent compiler timeout
                     libraryContent
                         .padding()
                 }
@@ -75,20 +74,36 @@ struct LibraryView: View {
                     }
                 }
             }
-            .fullScreenCover(item: $readingPDF) { pdf in ReaderView(fileURL: pdf.url) }
-            .sheet(isPresented: $showingPageManager) { if let pdf = pdfToManage { PageManagerView(pdf: pdf) } }
-            .sheet(isPresented: $showingShareSheet) { if let pdf = selectedPDF { ShareSheet(items: [pdf.url]) } }
-            .sheet(isPresented: $showingDevicePicker) { if let pdf = selectedPDF { DevicePickerView(pdf: pdf) } }
             .sheet(isPresented: $showingMergeSheet) {
-                 let files = getSelectedPDFs()
-                 if !files.isEmpty { FileMergeView(filesToMerge: files) }
+                FileMergeView(filesToMerge: Array(filteredPDFs.filter { selectedPDFs.contains($0.id) }))
             }
-            .alert("Delete Comic?", isPresented: $showingDeleteAlert) {
-                Button("Delete", role: .destructive) { if let pdf = selectedPDF { conversionManager.removeFromLibrary(pdf) } }
-                Button("Cancel", role: .cancel) {}
+            .sheet(isPresented: $showingWiFiTransfer) { WiFiView() }
+            .sheet(isPresented: $showingPageManager) {
+                if let pdf = pdfToManage { PageManagerView(pdf: pdf) }
             }
-            .sheet(isPresented: $showingWiFiTransfer) {
-                WiFiView()
+            .fullScreenCover(item: $readingPDF) { pdf in
+                ReaderView(fileURL: pdf.url)
+            }
+            .sheet(isPresented: $showingMetadataSearch) {
+                if let pdf = selectedPDF { MetadataSearchSheet(pdf: pdf) }
+            }
+            .sheet(isPresented: $showingPanelExtractor) {
+                if let pdf = selectedPDF {
+                    VStack(spacing: 20) {
+                        Text("Panel Extraction").font(.headline)
+                        Text("Analyze \(pdf.name) and adjust panels?").multilineTextAlignment(.center).padding()
+                        Button("Start Editor") {
+                            showingPanelExtractor = false
+                            Task {
+                                let settings = conversionManager.conversionSettings.epubSettings
+                                _ = try? await conversionManager.performPanelReview(sourceEPUB: pdf.url, settings: settings)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding()
+                    .presentationDetents([.medium])
+                }
             }
             .fileImporter(
                 isPresented: $showingCloudImport,
@@ -101,13 +116,12 @@ struct LibraryView: View {
                         for url in urls {
                             guard url.startAccessingSecurityScopedResource() else { continue }
                             defer { url.stopAccessingSecurityScopedResource() }
-                            // Copy logic...
+                            
                             let fileName = url.lastPathComponent
                             let destURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
                             try? FileManager.default.removeItem(at: destURL)
                             try? FileManager.default.copyItem(at: url, to: destURL)
                             
-                            // Auto Convert Logic
                             let ext = destURL.pathExtension.lowercased()
                             if ["cbz", "cbr", "zip"].contains(ext) {
                                 let taskDesc = "Converting \(fileName)..."
@@ -123,8 +137,10 @@ struct LibraryView: View {
                 }
             }
             .overlay(alignment: .top) { taskMonitorOverlay }
-            // ✅ FIX: Updated onChange syntax
-            .onChange(of: conversionManager.organizationMethod) { _ in conversionManager.sortPDFs() }
+            // ✅ FIX: iOS 17 Syntax (Zero Parameter Closure)
+            .onChange(of: conversionManager.organizationMethod) {
+                conversionManager.sortPDFs()
+            }
         }
     }
     
@@ -189,47 +205,75 @@ struct LibraryView: View {
         }
     }
     
-    // ✅ FIX: Extracted View Builder
+    // ✅ FIX: Broken down into smaller pieces for the compiler
     @ViewBuilder
     var libraryContent: some View {
         if filteredPDFs.isEmpty {
             emptyStateView
         } else {
             if isGridView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: gridColumns), spacing: 20) {
-                    ForEach(filteredPDFs) { pdf in
-                        ZStack(alignment: .topTrailing) {
-                            LibraryGridItem(pdf: pdf)
-                            Text(pdf.typeLabel)
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(pdf.typeColor)
-                                .cornerRadius(4)
-                                .padding(6)
-                                .shadow(radius: 2)
-                        }
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.blue, lineWidth: selectedPDFs.contains(pdf.id) ? 3 : 0)
-                        )
-                        .onTapGesture { handleTap(pdf) }
-                        .contextMenu { menuItems(for: pdf) }
-                    }
-                }
+                libraryGridView
             } else {
-                LazyVStack(spacing: 0) {
-                    ForEach(filteredPDFs) { pdf in
-                        LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDFs.contains(pdf.id))
-                            .padding(.horizontal)
-                            .padding(.vertical, 4)
-                            .background(selectedPDFs.contains(pdf.id) ? Color.blue.opacity(0.1) : Color.clear)
-                            .onTapGesture { handleTap(pdf) }
-                            .contextMenu { menuItems(for: pdf) }
-                        Divider().padding(.leading)
+                libraryListView
+            }
+        }
+    }
+    
+    // ✅ FIX: Sub-component 1
+    @ViewBuilder
+    var libraryGridView: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: gridColumns), spacing: 20) {
+            ForEach(filteredPDFs) { pdf in
+                ZStack(alignment: .topTrailing) {
+                    LibraryGridItem(pdf: pdf)
+                    Text(pdf.typeLabel)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(pdf.typeColor)
+                        .cornerRadius(4)
+                        .padding(6)
+                        .shadow(radius: 2)
+                }
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.blue, lineWidth: selectedPDFs.contains(pdf.id) ? 3 : 0))
+                .onTapGesture {
+                    if isSelectionMode {
+                        if selectedPDFs.contains(pdf.id) { selectedPDFs.remove(pdf.id) } else { selectedPDFs.insert(pdf.id) }
+                    } else {
+                        selectedPDF = pdf
+                        // Open Reader
+                        if pdf.url.pathExtension.lowercased() == "epub" || pdf.url.pathExtension.lowercased() == "pdf" {
+                            readingPDF = pdf
+                        }
                     }
                 }
+                .contextMenu { menuItems(for: pdf) }
+            }
+        }
+    }
+    
+    // ✅ FIX: Sub-component 2
+    @ViewBuilder
+    var libraryListView: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(filteredPDFs) { pdf in
+                LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDFs.contains(pdf.id))
+                    .padding(.horizontal)
+                    .padding(.vertical, 4)
+                    .background(selectedPDFs.contains(pdf.id) ? Color.blue.opacity(0.1) : Color.clear)
+                    .onTapGesture {
+                        if isSelectionMode {
+                            if selectedPDFs.contains(pdf.id) { selectedPDFs.remove(pdf.id) } else { selectedPDFs.insert(pdf.id) }
+                        } else {
+                            selectedPDF = pdf
+                            if pdf.url.pathExtension.lowercased() == "epub" || pdf.url.pathExtension.lowercased() == "pdf" {
+                                readingPDF = pdf
+                            }
+                        }
+                    }
+                    .contextMenu { menuItems(for: pdf) }
+                Divider().padding(.leading)
             }
         }
     }
