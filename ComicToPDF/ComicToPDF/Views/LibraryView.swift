@@ -198,7 +198,7 @@ struct LibraryView: View {
                 }
             }
             .fullScreenCover(item: $readingPDF) { pdf in
-                ReaderView(pdf: pdf)
+                ReaderView(fileURL: pdf.url)
                     .environmentObject(conversionManager)
             }
             .alert("Delete \(selectedPDFs.count) Items?", isPresented: $showingBatchDelete) {
