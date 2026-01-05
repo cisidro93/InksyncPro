@@ -88,24 +88,25 @@ class EPUBMerger {
         
         // 4. Generate HTML Pages (XHTML)
         onStatusUpdate?("Creating pages...")
-        for (index, imageFilename) in finalImageFiles.enumerated() {
-            let pageNum = index + 1
-            
-            // Check for panels
-            var panelData = ""
-            if let panels = precomputedManifest?.pages.first(where: { $0.pageNumber == pageNum })?.panels,
-               let data = try? JSONEncoder().encode(panels),
-               let json = String(data: data, encoding: .utf8) {
-                let safeJSON = json.replacingOccurrences(of: "'", with: "&apos;")
-                panelData = " data-panels='\(safeJSON)'"
-            }
+        
+        var spineItems = ""
+        var manifestItems = ""
+        var ncxNavPoints = ""
+        var finalPageCount = 0
+        
+        // Helper to write a page to disk and add to manifest/spine
+        func writePage(imageFilename: String, title: String, isFullPage: Bool) throws {
+            finalPageCount += 1
+            let pageID = "page\(String(format: "%04d", finalPageCount))"
+            let imgID = "img\(String(format: "%04d", finalPageCount))"
+            let pageFile = "\(pageID).xhtml"
             
             let html = """
             <?xml version="1.0" encoding="utf-8"?>
             <!DOCTYPE html>
             <html xmlns="http://www.w3.org/1999/xhtml">
             <head>
-                <title>Page \(pageNum)</title>
+                <title>\(title)</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
                 <style>
                     body { margin:0; padding:0; background:black; height:100vh; display:flex; justify-content:center; align-items:center; }
@@ -113,34 +114,82 @@ class EPUBMerger {
                 </style>
             </head>
             <body>
-                <div class="page"\(panelData)>
-                    <img src="../images/\(imageFilename)" alt="Page \(pageNum)" loading="lazy" />
+                <div class="page">
+                    <img src="../images/\(imageFilename)" alt="\(title)" />
                 </div>
             </body>
             </html>
             """
             
-            let pageName = String(format: "page%04d.xhtml", pageNum)
-            try html.write(to: textDir.appendingPathComponent(pageName), atomically: true, encoding: .utf8)
+            try html.write(to: textDir.appendingPathComponent(pageFile), atomically: true, encoding: .utf8)
+            
+            let mime = imageFilename.hasSuffix("png") ? "image/png" : "image/jpeg"
+            
+            manifestItems += """
+            <item id="\(pageID)" href="text/\(pageFile)" media-type="application/xhtml+xml"/>
+            <item id="\(imgID)" href="images/\(imageFilename)" media-type="\(mime)"/>
+            """
+            spineItems += "<itemref idref=\"\(pageID)\"/>\n"
+            
+            // Add to Table of Contents (only for full pages to keep it clean)
+            if isFullPage {
+                ncxNavPoints += """
+                <navPoint id="nav\(finalPageCount)" playOrder="\(finalPageCount)">
+                    <navLabel><text>\(title)</text></navLabel>
+                    <content src="text/\(pageFile)"/>
+                </navPoint>
+                """
+            }
+        }
+        
+        // Main Loop
+        for (index, imageFilename) in finalImageFiles.enumerated() {
+            let pageNum = index + 1
+            
+            // 1. Add the Full Page
+            try writePage(imageFilename: imageFilename, title: "Page \(pageNum)", isFullPage: true)
+            
+            // 2. Kindle Optimization: Physical Panel Splitting
+            if settings.splitPanels,
+               let panels = precomputedManifest?.pages.first(where: { $0.pageNumber == pageNum })?.panels {
+                
+                // Load the full image to crop it
+                let imageURL = imagesDir.appendingPathComponent(imageFilename)
+                if let imageData = try? Data(contentsOf: imageURL),
+                   let uiImage = UIImage(data: imageData),
+                   let cgImage = uiImage.cgImage {
+                    
+                    let width = CGFloat(cgImage.width)
+                    let height = CGFloat(cgImage.height)
+                    
+                    for (pIndex, panel) in panels.enumerated() {
+                        // Convert normalized coords (0-1) to pixels
+                        let cropRect = CGRect(
+                            x: panel.x * width,
+                            y: panel.y * height,
+                            width: panel.width * width,
+                            height: panel.height * height
+                        )
+                        
+                        if let croppedCG = cgImage.cropping(to: cropRect) {
+                            let croppedImage = UIImage(cgImage: croppedCG)
+                            let panelFilename = "p\(pageNum)_panel\(pIndex).jpg"
+                            
+                            // Save Panel Image
+                            if let panelData = croppedImage.jpegData(compressionQuality: 0.7) { // 0.7 is Kindle Sweet Spot
+                                try panelData.write(to: imagesDir.appendingPathComponent(panelFilename))
+                                
+                                // Add Panel as a new Page
+                                try writePage(imageFilename: panelFilename, title: "Page \(pageNum) - Panel \(pIndex + 1)", isFullPage: false)
+                            }
+                        }
+                    }
+                }
+            }
         }
         
         // 5. Generate OPF (Manifest & Spine)
         onStatusUpdate?("Finalizing metadata...")
-        var manifestItems = ""
-        var spineItems = ""
-        
-        for (index, imgFile) in finalImageFiles.enumerated() {
-            let pageNum = index + 1
-            let pageID = "page\(pageNum)"
-            let imgID = "img\(pageNum)"
-            let mime = (imgFile.hasSuffix("png")) ? "image/png" : "image/jpeg"
-            
-            manifestItems += """
-            <item id="\(pageID)" href="text/page\(String(format: "%04d", pageNum)).xhtml" media-type="application/xhtml+xml"/>
-            <item id="\(imgID)" href="images/\(imgFile)" media-type="\(mime)"/>
-            """
-            spineItems += "<itemref idref=\"\(pageID)\"/>\n"
-        }
         
         let opfContent = """
         <?xml version="1.0" encoding="UTF-8"?>

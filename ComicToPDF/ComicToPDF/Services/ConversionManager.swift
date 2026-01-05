@@ -221,6 +221,7 @@ struct EPUBSettings: Codable, Equatable {
     var panelDetectionMode: PanelDetectionMode = .automatic
     var panelMinSize: Double = 0.05  // Minimum panel size (5% of page)
     var panelMaxSize: Double = 0.90  // Maximum panel size (90% of page)
+    var splitPanels: Bool = false // ✅ NEW: Kindle Optimization Flag
     
     enum ReadingDirection: String, CaseIterable, Codable {
         case leftToRight = "ltr"

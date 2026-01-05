@@ -27,6 +27,22 @@ struct AdvancedOptionsView: View {
                         }
                     }
                 }
+                
+                // ✅ KEYWORD: Kindle Optimization
+                Toggle(isOn: $conversionManager.conversionSettings.epubSettings.splitPanels) {
+                    VStack(alignment: .leading) {
+                        Text("Optimize for Kindle")
+                        Text("Physically splits detected panels into separate pages for better reading on E-Ink.")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+                .onChange(of: conversionManager.conversionSettings.epubSettings.splitPanels) { newValue in
+                    if newValue {
+                         conversionManager.conversionSettings.epubSettings.enablePanelView = false
+                    }
+                }
+                }
             }
             
             Section(footer: Text("These settings apply to all new conversions.")) {
