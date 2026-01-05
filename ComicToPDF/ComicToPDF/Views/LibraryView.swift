@@ -1,5 +1,6 @@
 import SwiftUI
 import QuickLook
+import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @Binding var selectedTab: Int
@@ -14,24 +15,21 @@ struct LibraryView: View {
     
     // Actions
     @State private var selectedPDF: ConvertedPDF?
-    @State private var showingActionSheet = false
-    @State private var showingShareSheet = false
-    @State private var showingDevicePicker = false
-    @State private var showingDeleteAlert = false
-    @State private var showingPanelExtractor = false
-    
-    // Page Management & Reading
-    @State private var showingPageManager = false
-    @State private var pdfToManage: ConvertedPDF?
-    @State private var readingPDF: ConvertedPDF?
     @State private var showingMergeSheet = false
     @State private var showingWiFiTransfer = false
     @State private var showingCloudImport = false
     @State private var showingMetadataSearch = false
+    @State private var showingPanelExtractor = false
     
-    // Error Handling
-    @State private var importErrorMessage: String? = nil
-    @State private var showingImportError = false
+    // Reading
+    @State private var showingPageManager = false
+    @State private var pdfToManage: ConvertedPDF?
+    @State private var readingPDF: ConvertedPDF?
+    
+    // ✅ DEBUG LOGGING STATE
+    @State private var debugLog: String = "Ready to import..."
+    @State private var showErrorAlert = false
+    @State private var lastErrorMessage = ""
     
     var filteredPDFs: [ConvertedPDF] {
         conversionManager.filteredPDFs
@@ -70,34 +68,8 @@ struct LibraryView: View {
             Text("Your Library is Empty")
                 .font(.title2).bold()
             
-            Text("Import your comics to get started.")
+            Text("Tap the Cloud icon to import a file.")
                 .foregroundColor(.secondary)
-            
-            HStack(spacing: 20) {
-                Button(action: { showingWiFiTransfer = true }) {
-                    VStack {
-                        Image(systemName: "wifi")
-                            .font(.title)
-                        Text("Wi-Fi")
-                            .font(.caption)
-                    }
-                    .frame(width: 80, height: 80)
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(12)
-                }
-                
-                Button(action: { showingCloudImport = true }) {
-                    VStack {
-                        Image(systemName: "icloud.and.arrow.down")
-                            .font(.title)
-                        Text("Cloud")
-                            .font(.caption)
-                    }
-                    .frame(width: 80, height: 80)
-                    .background(Color.orange.opacity(0.1))
-                    .cornerRadius(12)
-                }
-            }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -121,7 +93,23 @@ struct LibraryView: View {
                 
                 // MAIN CONTENT
                 ScrollView {
-                    libraryContent.padding()
+                    VStack {
+                        libraryContent.padding()
+                        
+                        // ✅ DEBUG LOG (Visible at bottom of scroll)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("DEBUG LOG:")
+                                .font(.caption).bold().foregroundColor(.secondary)
+                            Text(debugLog)
+                                .font(.caption2)
+                                .fontDesign(.monospaced)
+                                .foregroundColor(.secondary)
+                                .padding(8)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(8)
+                        }
+                        .padding()
+                    }
                 }
                 
                 // Bottom Toolbar (Counts)
@@ -135,7 +123,7 @@ struct LibraryView: View {
             .navigationTitle("Library")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // ✅ NEW: Target Format Selector (Top Left)
+                // Target Format Selector
                 ToolbarItem(placement: .navigationBarLeading) {
                     Menu {
                         Picker("Output Format", selection: $conversionManager.conversionSettings.outputFormat) {
@@ -146,8 +134,7 @@ struct LibraryView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text("Target:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(.caption).foregroundColor(.secondary)
                             Text(conversionManager.conversionSettings.outputFormat.rawValue)
                                 .font(.caption).bold()
                                 .padding(4)
@@ -193,71 +180,86 @@ struct LibraryView: View {
                     }.padding().presentationDetents([.medium])
                 }
             }
-            // ✅ ROBUST IMPORT LOGIC
+            // ✅ UPDATED IMPORTER: Accepts ANY file type ([.item]) to prevent graying out
             .fileImporter(
                 isPresented: $showingCloudImport,
-                allowedContentTypes: [.pdf, .epub, .zip, .init(filenameExtension: "cbz")!, .init(filenameExtension: "cbr")!],
+                allowedContentTypes: [.item], // Allow EVERYTHING to debug selection issues
                 allowsMultipleSelection: true
             ) { result in
                 switch result {
                 case .success(let urls):
+                    debugLog += "\n📂 Picker returned \(urls.count) files."
+                    
                     Task {
                         for url in urls {
+                            debugLog += "\nProcessing: \(url.lastPathComponent)"
+                            
+                            // 1. Security Access
                             guard url.startAccessingSecurityScopedResource() else {
-                                await MainActor.run {
-                                    importErrorMessage = "Permission Denied: Could not access \(url.lastPathComponent)"
-                                    showingImportError = true
-                                }
+                                debugLog += "\n❌ PERMISSION DENIED."
                                 continue
                             }
                             defer { url.stopAccessingSecurityScopedResource() }
                             
                             do {
                                 let fileName = url.lastPathComponent
-                                let destURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
+                                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                                let destURL = docDir.appendingPathComponent(fileName)
                                 
+                                // 2. Copy File
                                 if FileManager.default.fileExists(atPath: destURL.path) {
                                     try FileManager.default.removeItem(at: destURL)
                                 }
                                 try FileManager.default.copyItem(at: url, to: destURL)
+                                debugLog += "\n✅ Copied to Documents."
                                 
+                                // 3. Check Extension
                                 let ext = destURL.pathExtension.lowercased()
+                                debugLog += "\nExtension detected: .\(ext)"
+                                
                                 if ["cbz", "cbr", "zip"].contains(ext) {
-                                    let taskDesc = "Converting \(fileName) to \(conversionManager.conversionSettings.outputFormat.rawValue)..."
+                                    debugLog += "\n⚙️ Starting Conversion..."
                                     
+                                    let taskDesc = "Converting \(fileName)..."
                                     await MainActor.run {
                                         conversionManager.activeTasks.append(BackgroundTask(description: taskDesc))
                                     }
                                     
+                                    // Trigger Conversion
                                     try await conversionManager.convertToFormat(
                                         conversionManager.conversionSettings.outputFormat,
                                         from: destURL,
-                                        progressHandler: { _ in }
+                                        progressHandler: { prog in
+                                            // Optional: Update progress
+                                        }
                                     )
+                                    debugLog += "\n✨ Conversion Finished."
                                     
                                     await MainActor.run {
                                         conversionManager.activeTasks.removeAll { $0.description == taskDesc }
                                     }
+                                } else {
+                                    debugLog += "\nℹ️ Skipped conversion (Not a comic archive)."
                                 }
+                                
                             } catch {
-                                await MainActor.run {
-                                    importErrorMessage = "Import Failed: \(error.localizedDescription)"
-                                    showingImportError = true
-                                }
+                                debugLog += "\n❌ Error: \(error.localizedDescription)"
+                                lastErrorMessage = error.localizedDescription
+                                showErrorAlert = true
                             }
                         }
                         await MainActor.run { conversionManager.scanForPDFs() }
                     }
                 case .failure(let error):
-                    importErrorMessage = error.localizedDescription
-                    showingImportError = true
+                    debugLog += "\n❌ Picker Error: \(error.localizedDescription)"
+                    lastErrorMessage = error.localizedDescription
+                    showErrorAlert = true
                 }
             }
-            // ✅ ERROR ALERT
-            .alert("Import Error", isPresented: $showingImportError) {
+            .alert("Import Error", isPresented: $showErrorAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text(importErrorMessage ?? "Unknown error")
+                Text(lastErrorMessage)
             }
             .overlay(alignment: .top) { taskMonitorOverlay }
             .onChange(of: conversionManager.organizationMethod) {
@@ -326,39 +328,19 @@ struct LibraryView: View {
         }
     }
     
-    // Context Menu Helper
     func menuItems(for pdf: ConvertedPDF) -> some View {
         Group {
-            Button {
-                selectedPDF = pdf
-                // Logic to open reader...
-            } label: { Label("Read", systemImage: "book") }
-            
-            Button {
-                selectedPDF = pdf
-                showingWiFiTransfer = true
-            } label: { Label("Share via Wi-Fi", systemImage: "wifi") }
-            
-            Button {
-                selectedPDF = pdf
-                showingMetadataSearch = true
-            } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
-            
-            Button {
-                selectedPDF = pdf
-                showingPanelExtractor = true
-            } label: { Label("Extract Panels", systemImage: "crop") }
-            
+            Button { selectedPDF = pdf } label: { Label("Read", systemImage: "book") }
+            Button { selectedPDF = pdf; showingWiFiTransfer = true } label: { Label("Share via Wi-Fi", systemImage: "wifi") }
+            Button { selectedPDF = pdf; showingMetadataSearch = true } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+            Button { selectedPDF = pdf; showingPanelExtractor = true } label: { Label("Extract Panels", systemImage: "crop") }
             Divider()
-            
-            Button(role: .destructive) {
-                conversionManager.deletePDF(pdf)
-            } label: { Label("Delete", systemImage: "trash") }
+            Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
         }
     }
 }
 
-// SEARCH BAR
+// SEARCH BAR STRUCT
 struct LibraryInteractiveSearchBar: View {
     @Binding var isGridView: Bool
     @Binding var isSelectionMode: Bool
@@ -417,7 +399,7 @@ struct LibraryInteractiveSearchBar: View {
     }
 }
 
-// GRID CELL
+// GRID CELL STRUCT
 struct LibraryGridCellView<MenuContent: View>: View {
     let pdf: ConvertedPDF
     let isSelected: Bool
@@ -444,7 +426,7 @@ struct LibraryGridCellView<MenuContent: View>: View {
     }
 }
 
-// BADGE HELPER
+// EXTENSION
 extension ConvertedPDF {
     var typeColor: Color {
         switch url.pathExtension.lowercased() {
