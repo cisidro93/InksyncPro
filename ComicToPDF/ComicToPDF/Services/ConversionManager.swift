@@ -1429,7 +1429,7 @@ class ConversionManager: ObservableObject {
     }
     
     func sortPDFs() {
-        // ✅ FIX: Use 'organizationMethod', not 'sortOption'
+        // ✅ FIX: Use 'organizationMethod'
         switch organizationMethod {
         case .alphabetical:
             convertedPDFs.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -1441,9 +1441,7 @@ class ConversionManager: ObservableObject {
             convertedPDFs.sort {
                 let ext1 = $0.url.pathExtension.lowercased()
                 let ext2 = $1.url.pathExtension.lowercased()
-                if ext1 == ext2 {
-                    return $0.name < $1.name
-                }
+                if ext1 == ext2 { return $0.name < $1.name }
                 return ext1 < ext2
             }
         }

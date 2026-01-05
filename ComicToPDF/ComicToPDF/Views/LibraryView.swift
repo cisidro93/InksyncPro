@@ -36,31 +36,26 @@ struct LibraryView: View {
     var body: some View {
         NavigationView {
             VStack {
-                // FILTER BAR
+                // ✅ FIX: Added missing 'sortMethod' argument
                 LibraryInteractiveSearchBar(
                     isGridView: $isGridView,
                     isSelectionMode: $isSelectionMode,
                     searchText: $searchText,
                     gridColumns: $gridColumns,
+                    sortMethod: $conversionManager.organizationMethod,
                     onSelectAll: {
                         if selectedPDFs.count == filteredPDFs.count { selectedPDFs.removeAll() }
                         else { selectedPDFs = Set(filteredPDFs.map { $0.id }) }
                     }
                 )
                 
-                // MAIN CONTENT
                 ScrollView {
-                    // ✅ FIX: Logic is now split into sub-views to prevent compiler timeout
-                    libraryContent
-                        .padding()
+                    libraryContent.padding()
                 }
                 
-                // Bottom Toolbar (Counts)
                 if !conversionManager.convertedPDFs.isEmpty {
                     Text("\(conversionManager.convertedPDFs.count) items")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.bottom, 5)
+                        .font(.caption).foregroundColor(.secondary).padding(.bottom, 5)
                 }
             }
             .navigationTitle("Library")
@@ -91,7 +86,6 @@ struct LibraryView: View {
                 if let pdf = selectedPDF {
                     VStack(spacing: 20) {
                         Text("Panel Extraction").font(.headline)
-                        Text("Analyze \(pdf.name) and adjust panels?").multilineTextAlignment(.center).padding()
                         Button("Start Editor") {
                             showingPanelExtractor = false
                             Task {
@@ -100,9 +94,7 @@ struct LibraryView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                    }
-                    .padding()
-                    .presentationDetents([.medium])
+                    }.padding().presentationDetents([.medium])
                 }
             }
             .fileImporter(
@@ -137,7 +129,6 @@ struct LibraryView: View {
                 }
             }
             .overlay(alignment: .top) { taskMonitorOverlay }
-            // ✅ FIX: iOS 17 Syntax (Zero Parameter Closure)
             .onChange(of: conversionManager.organizationMethod) {
                 conversionManager.sortPDFs()
             }
@@ -205,7 +196,6 @@ struct LibraryView: View {
         }
     }
     
-    // ✅ FIX: Broken down into smaller pieces for the compiler
     @ViewBuilder
     var libraryContent: some View {
         if filteredPDFs.isEmpty {
@@ -219,48 +209,35 @@ struct LibraryView: View {
         }
     }
     
-    // ✅ FIX: Sub-component 1
-    @ViewBuilder
+    // ✅ FIX: Extracted Grid Logic to dedicated View Struct (See Below)
     var libraryGridView: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: gridColumns), spacing: 20) {
             ForEach(filteredPDFs) { pdf in
-                ZStack(alignment: .topTrailing) {
-                    LibraryGridItem(pdf: pdf)
-                    Text(pdf.typeLabel)
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(pdf.typeColor)
-                        .cornerRadius(4)
-                        .padding(6)
-                        .shadow(radius: 2)
-                }
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.blue, lineWidth: selectedPDFs.contains(pdf.id) ? 3 : 0))
-                .onTapGesture {
-                    if isSelectionMode {
-                        if selectedPDFs.contains(pdf.id) { selectedPDFs.remove(pdf.id) } else { selectedPDFs.insert(pdf.id) }
-                    } else {
-                        selectedPDF = pdf
-                        // Open Reader
-                        if pdf.url.pathExtension.lowercased() == "epub" || pdf.url.pathExtension.lowercased() == "pdf" {
-                            readingPDF = pdf
+                LibraryGridCellView(
+                    pdf: pdf,
+                    isSelected: selectedPDFs.contains(pdf.id),
+                    isSelectionMode: isSelectionMode,
+                    onTap: {
+                        if isSelectionMode {
+                            if selectedPDFs.contains(pdf.id) { selectedPDFs.remove(pdf.id) } else { selectedPDFs.insert(pdf.id) }
+                        } else {
+                            selectedPDF = pdf
+                            if pdf.url.pathExtension.lowercased() == "epub" || pdf.url.pathExtension.lowercased() == "pdf" {
+                                readingPDF = pdf
+                            }
                         }
-                    }
-                }
-                .contextMenu { menuItems(for: pdf) }
+                    },
+                    menuItems: { menuItems(for: pdf) }
+                )
             }
         }
     }
     
-    // ✅ FIX: Sub-component 2
-    @ViewBuilder
     var libraryListView: some View {
         LazyVStack(spacing: 0) {
             ForEach(filteredPDFs) { pdf in
                 LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDFs.contains(pdf.id))
-                    .padding(.horizontal)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal).padding(.vertical, 4)
                     .background(selectedPDFs.contains(pdf.id) ? Color.blue.opacity(0.1) : Color.clear)
                     .onTapGesture {
                         if isSelectionMode {
@@ -409,5 +386,33 @@ struct LibraryInteractiveSearchBar: View {
             }
         }
         .padding(.vertical, 8)
+    }
+}
+
+// ✅ NEW: Dedicated Struct to Fix Compiler Timeout
+struct LibraryGridCellView<MenuContent: View>: View {
+    let pdf: ConvertedPDF
+    let isSelected: Bool
+    let isSelectionMode: Bool
+    let onTap: () -> Void
+    @ViewBuilder let menuItems: () -> MenuContent
+    
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            LibraryGridItem(pdf: pdf)
+            
+            Text(pdf.typeLabel)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(pdf.typeColor)
+                .cornerRadius(4)
+                .padding(6)
+                .shadow(radius: 2)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.blue, lineWidth: isSelected ? 3 : 0))
+        .onTapGesture { onTap() }
+        .contextMenu { menuItems() }
     }
 }
