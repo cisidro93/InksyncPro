@@ -1003,7 +1003,15 @@ class ConversionManager: ObservableObject {
                 let pdfDocument = PDFDocument()
                 for (index, image) in images.enumerated() {
                     autoreleasepool {
-                        if let pdfPage = PDFPage(image: image) { pdfDocument.insert(pdfPage, at: index) }
+                        // Optimize image for Scribe (Resolution Cap)
+                        if let optimizedData = self.optimizeImage(image),
+                           let optimizedImage = UIImage(data: optimizedData),
+                           let pdfPage = PDFPage(image: optimizedImage) {
+                            pdfDocument.insert(pdfPage, at: index)
+                        } else if let pdfPage = PDFPage(image: image) {
+                             // Fallback
+                             pdfDocument.insert(pdfPage, at: index)
+                        }
                     }
                     DispatchQueue.main.async { progressHandler(Double(index + 1) / Double(images.count)) }
                 }
@@ -2056,6 +2064,35 @@ extension ConversionManager {
         // Logic to iterate through PDFs and rename them
         // Stub to fix build
         objectWillChange.send()
+    }
+    
+    // ✅ UPDATED: Scribe Optimization Helper
+    private func optimizeImage(_ image: UIImage) -> Data? {
+        // ✅ UPDATED: 3200px is better for the 11" Scribe screen (300 PPI)
+        let maxDimension: CGFloat = 3200.0 
+        
+        var newSize = image.size
+        let aspectRatio = newSize.width / newSize.height
+        
+        if newSize.width > maxDimension || newSize.height > maxDimension {
+            if aspectRatio > 1 {
+                newSize.width = maxDimension
+                newSize.height = maxDimension / aspectRatio
+            } else {
+                newSize.height = maxDimension
+                newSize.width = maxDimension * aspectRatio
+            }
+            
+            let renderer = UIGraphicsImageRenderer(size: newSize)
+            let resizedImage = renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: newSize))
+            }
+            
+            // Keep 0.7 quality for Scribe to manage file size
+            return resizedImage.jpegData(compressionQuality: 0.7)
+        }
+        
+        return image.jpegData(compressionQuality: 0.7)
     }
 }
 
