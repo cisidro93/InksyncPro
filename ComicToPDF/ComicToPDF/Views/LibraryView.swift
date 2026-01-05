@@ -2,11 +2,10 @@ import SwiftUI
 import QuickLook
 import UniformTypeIdentifiers
 
-// ✅ 1. DEFINE TYPES (Crucial for iOS to recognize them)
+// ✅ 1. DEFINE TYPES
 extension UTType {
     static var cbz: UTType { UTType(filenameExtension: "cbz", conformingTo: .data) ?? .data }
     static var cbr: UTType { UTType(filenameExtension: "cbr", conformingTo: .data) ?? .data }
-    // "content" matches basically any file on disk
     static var anyContent: UTType { UTType.content }
 }
 
@@ -30,9 +29,8 @@ struct LibraryView: View {
     
     // Import State
     @State private var showingCloudImport = false
-    @State private var isImporting = false
-    @State private var importStatusMessage = ""
-    @State private var showingImportStatus = false
+    @State private var showingConvertAlert = false
+    @State private var fileToConvert: ConvertedPDF?
     
     // Reading
     @State private var showingPageManager = false
@@ -90,7 +88,6 @@ struct LibraryView: View {
 
     var body: some View {
         NavigationView {
-            // ✅ ATTACH TO VSTACK (More Stable than NavigationView)
             VStack {
                 // FILTER BAR
                 LibraryInteractiveSearchBar(
@@ -181,108 +178,63 @@ struct LibraryView: View {
             // ✅ THE WILDCARD IMPORTER
             .fileImporter(
                 isPresented: $showingCloudImport,
-                // ALLOW EVERYTHING (.content includes images, pdfs, zips, folders, etc.)
                 allowedContentTypes: [.content, .data, .archive], 
                 allowsMultipleSelection: true
             ) { result in
                 switch result {
                 case .success(let urls):
-                    // Run logic immediately
-                    handleImport(urls: urls)
+                    // JUST COPY. DO NOT CONVERT YET.
+                    conversionManager.processImportedFiles(urls: urls)
                 case .failure(let error):
-                    importStatusMessage = "Selection Failed: \(error.localizedDescription)"
-                    showingImportStatus = true
+                    print("Error: \(error)")
                 }
-            }
-            .alert("Import Status", isPresented: $showingImportStatus) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(importStatusMessage)
             }
             .overlay(alignment: .top) { taskMonitorOverlay }
             .onChange(of: conversionManager.organizationMethod) {
                 conversionManager.sortPDFs()
             }
+            // ✅ CONVERSION ALERT
+            .alert("Convert File?", isPresented: $showingConvertAlert) {
+                Button("Convert", role: .none) {
+                    if let pdf = fileToConvert {
+                        startConversion(pdf)
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This file needs to be converted before reading.")
+            }
         }
     }
     
-    // ✅ INLINE IMPORT LOGIC (Self-Contained)
-    private func handleImport(urls: [URL]) {
-        // Show status immediately so you know it worked
-        isImporting = true
+    // ✅ Logic to handle taps on items
+    func handleItemTap(_ pdf: ConvertedPDF) {
+        let ext = pdf.url.pathExtension.lowercased()
+        
+        if ["pdf", "epub"].contains(ext) {
+            // READY TO READ
+            readingPDF = pdf
+        } else {
+            // RAW FILE -> PROMPT CONVERSION
+            fileToConvert = pdf
+            showingConvertAlert = true
+        }
+    }
+    
+    func startConversion(_ pdf: ConvertedPDF) {
+        let taskDesc = "Converting \(pdf.name)..."
         
         Task {
-            var successCount = 0
-            var errors: [String] = []
-            
-            for url in urls {
-                // 1. ACCESS SECURITY SCOPE
-                guard url.startAccessingSecurityScopedResource() else {
-                    errors.append("Permission denied: \(url.lastPathComponent)")
-                    continue
-                }
-                
-                // 2. DEFINE DESTINATION
-                let fileName = url.lastPathComponent
-                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let destURL = docDir.appendingPathComponent(fileName)
-                
-                do {
-                    // 3. COPY FILE
-                    if FileManager.default.fileExists(atPath: destURL.path) {
-                        try FileManager.default.removeItem(at: destURL)
-                    }
-                    try FileManager.default.copyItem(at: url, to: destURL)
-                    
-                    // Stop accessing ONLY after copying
-                    url.stopAccessingSecurityScopedResource()
-                    successCount += 1
-                    
-                    // 4. TRIGGER CONVERSION
-                    let ext = destURL.pathExtension.lowercased()
-                    // Allow broad set of extensions
-                    if ["cbz", "cbr", "zip", "pdf", "epub"].contains(ext) {
-                        let taskDesc = "Processing \(fileName)..."
-                        
-                        await MainActor.run {
-                            conversionManager.activeTasks.append(BackgroundTask(description: taskDesc))
-                        }
-                        
-                        // Call conversion
-                        try? await conversionManager.convertToFormat(
-                            conversionManager.conversionSettings.outputFormat,
-                            from: destURL,
-                            progressHandler: { _ in }
-                        )
-                        
-                        await MainActor.run {
-                            conversionManager.activeTasks.removeAll { $0.description == taskDesc }
-                        }
-                    }
-                    
-                } catch {
-                    url.stopAccessingSecurityScopedResource()
-                    errors.append("Copy failed: \(error.localizedDescription)")
-                }
-            }
-            
-            // 5. UPDATE UI
             await MainActor.run {
-                conversionManager.scanForPDFs()
-                isImporting = false
-                
-                if !errors.isEmpty {
-                    importStatusMessage = "Errors:\n" + errors.joined(separator: "\n")
-                    showingImportStatus = true
-                } else {
-                    // Success!
-                    // If we successfully queued a conversion, we don't need a popup.
-                    // But if it was just a copy, let's confirm.
-                    if successCount > 0 && conversionManager.activeTasks.isEmpty {
-                        importStatusMessage = "Imported \(successCount) files."
-                        showingImportStatus = true
-                    }
-                }
+                conversionManager.activeTasks.append(BackgroundTask(description: taskDesc))
+            }
+            try? await conversionManager.convertToFormat(
+                conversionManager.conversionSettings.outputFormat,
+                from: pdf.url,
+                progressHandler: { _ in }
+            )
+            await MainActor.run {
+                conversionManager.activeTasks.removeAll { $0.description == taskDesc }
             }
         }
     }
@@ -312,10 +264,8 @@ struct LibraryView: View {
                         if isSelectionMode {
                             if selectedPDFs.contains(pdf.id) { selectedPDFs.remove(pdf.id) } else { selectedPDFs.insert(pdf.id) }
                         } else {
-                            selectedPDF = pdf
-                            if pdf.url.pathExtension.lowercased() == "epub" || pdf.url.pathExtension.lowercased() == "pdf" {
-                                readingPDF = pdf
-                            }
+                            // ✅ Updated Tap Logic
+                            handleItemTap(pdf)
                         }
                     },
                     menuItems: { menuItems(for: pdf) }
@@ -335,10 +285,7 @@ struct LibraryView: View {
                         if isSelectionMode {
                             if selectedPDFs.contains(pdf.id) { selectedPDFs.remove(pdf.id) } else { selectedPDFs.insert(pdf.id) }
                         } else {
-                            selectedPDF = pdf
-                            if pdf.url.pathExtension.lowercased() == "epub" || pdf.url.pathExtension.lowercased() == "pdf" {
-                                readingPDF = pdf
-                            }
+                            handleItemTap(pdf)
                         }
                     }
                     .contextMenu { menuItems(for: pdf) }
@@ -349,7 +296,7 @@ struct LibraryView: View {
     
     func menuItems(for pdf: ConvertedPDF) -> some View {
         Group {
-            Button { selectedPDF = pdf } label: { Label("Read", systemImage: "book") }
+            Button { handleItemTap(pdf) } label: { Label("Open / Convert", systemImage: "book") }
             Button { selectedPDF = pdf; showingWiFiTransfer = true } label: { Label("Share via Wi-Fi", systemImage: "wifi") }
             Button { selectedPDF = pdf; showingMetadataSearch = true } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
             Button { selectedPDF = pdf; showingPanelExtractor = true } label: { Label("Extract Panels", systemImage: "crop") }

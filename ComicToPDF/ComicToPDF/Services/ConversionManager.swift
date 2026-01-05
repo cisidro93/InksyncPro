@@ -588,50 +588,7 @@ class ConversionManager: ObservableObject {
         return pdfURL
     }
     
-    // ✅ ADD THIS TO CONVERSION MANAGER
-    @MainActor
-    func processImportedFiles(urls: [URL]) {
-        for url in urls {
-            // 1. Security Access
-            guard url.startAccessingSecurityScopedResource() else {
-                print("❌ Permission denied for \(url.lastPathComponent)")
-                continue
-            }
-            defer { url.stopAccessingSecurityScopedResource() }
-            
-            do {
-                // 2. Copy to Documents
-                let fileName = url.lastPathComponent
-                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let destURL = docDir.appendingPathComponent(fileName)
-                
-                if FileManager.default.fileExists(atPath: destURL.path) {
-                    try? FileManager.default.removeItem(at: destURL)
-                }
-                try FileManager.default.copyItem(at: url, to: destURL)
-                
-                // 3. Queue for Conversion
-                let ext = destURL.pathExtension.lowercased()
-                if ["cbz", "cbr", "zip"].contains(ext) {
-                    let taskDesc = "Converting \(fileName)..."
-                    activeTasks.append(BackgroundTask(description: taskDesc))
-                    
-                    Task {
-                        try? await convertToFormat(conversionSettings.outputFormat, from: destURL, progressHandler: { _ in })
-                        await MainActor.run {
-                            activeTasks.removeAll { $0.description == taskDesc }
-                        }
-                    }
-                }
-                
-                // 4. Refresh List
-                scanForPDFs()
-                
-            } catch {
-                print("❌ Failed to import: \(error.localizedDescription)")
-            }
-        }
-    }
+
 
     // MARK: - Universal Conversion
     
@@ -1327,33 +1284,83 @@ class ConversionManager: ObservableObject {
     func saveSendHistory() { markNeedsSave() }
     
     // Force re-sync of file structure
+    // ✅ UPDATED: Scan for EVERYTHING (Raw + Converted)
     func scanForPDFs() {
         loadSavedData()
+        let fileManager = FileManager.default
+        let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         
-        // Scan directory for new files
-        guard let files = try? fileManager.contentsOfDirectory(at: outputDirectory, includingPropertiesForKeys: [.fileSizeKey], options: .skipsHiddenFiles) else { return }
-        
-        var hasChanges = false
-        for fileURL in files {
-            let ext = fileURL.pathExtension.lowercased()
-            guard ext == "pdf" || ext == "epub" else { continue }
+        do {
+            let fileURLs = try fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: [.creationDateKey, .fileSizeKey], options: [.skipsHiddenFiles])
             
-            // Check if already known
-            if !convertedPDFs.contains(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) {
-                let name = fileURL.deletingPathExtension().lastPathComponent
-                let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                // Minimal metadata fetch
-                let pageCount = (PDFDocument(url: fileURL)?.pageCount) ?? 0
-                let newPDF = ConvertedPDF(name: name, url: fileURL, pageCount: pageCount, fileSize: Int64(fileSize))
-                convertedPDFs.append(newPDF)
-                hasChanges = true
+            // Allow CBZ, CBR, ZIP, PDF, EPUB
+            let validExtensions = ["pdf", "epub", "cbz", "cbr", "zip"]
+            
+            var hasChanges = false
+            let pdfs = fileURLs.compactMap { url -> ConvertedPDF? in
+                let ext = url.pathExtension.lowercased()
+                if validExtensions.contains(ext) {
+                    let resources = try? url.resourceValues(forKeys: [.fileSizeKey, .creationDateKey])
+                    let fileSize = Int64(resources?.fileSize ?? 0)
+                    
+                    // Check if we have existing metadata for this file
+                    if let index = convertedPDFs.firstIndex(where: { $0.url == url }) {
+                        var existing = convertedPDFs[index]
+                        // Update file size if changed
+                        if existing.fileSize != fileSize {
+                            hasChanges = true
+                            return ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: existing.pageCount, fileSize: fileSize, collectionId: existing.collectionId, metadata: existing.metadata)
+                        }
+                        return existing
+                    }
+                    
+                    // New File Found
+                    hasChanges = true
+                    // Try to get page count if PDF, else 0
+                    var pageCount = 0
+                    if ext == "pdf" {
+                        pageCount = (PDFDocument(url: url)?.pageCount) ?? 0
+                    }
+                    return ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: pageCount, fileSize: fileSize)
+                }
+                return nil
+            }
+            
+            if hasChanges || pdfs.count != convertedPDFs.count {
+                DispatchQueue.main.async {
+                    self.convertedPDFs = pdfs
+                    self.sortPDFs()
+                    self.markNeedsSave()
+                }
+            }
+        } catch {
+            print("Error scanning dir: \(error)")
+        }
+    }
+    
+    // ✅ NEW: Import Logic (Just Copy, Don't Convert Yet)
+    @MainActor
+    func processImportedFiles(urls: [URL]) {
+        for url in urls {
+            guard url.startAccessingSecurityScopedResource() else { continue }
+            defer { url.stopAccessingSecurityScopedResource() }
+            
+            do {
+                let fileName = url.lastPathComponent
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let destURL = docDir.appendingPathComponent(fileName)
+                
+                if FileManager.default.fileExists(atPath: destURL.path) {
+                    try? FileManager.default.removeItem(at: destURL)
+                }
+                try FileManager.default.copyItem(at: url, to: destURL)
+                print("✅ Copied \(fileName) to Library")
+                
+            } catch {
+                print("❌ Import failed: \(error.localizedDescription)")
             }
         }
-        
-        if hasChanges {
-            convertedPDFs.sort { $0.dateAdded > $1.dateAdded }
-            savePDFs()
-        }
+        scanForPDFs() // Refreshes UI immediately
     }
     
     // MARK: - Lazy Loading & Caching
