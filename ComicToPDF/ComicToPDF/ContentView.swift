@@ -5,7 +5,7 @@ struct ContentView: View {
     @StateObject private var themeManager = ThemeManager()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @State private var showingOnboarding = false
-    @State private var selectedTab = 0
+    @State private var selectedTab = 0 // 0 is now Library
     
     // Panel Editor State
     @State private var showPanelEditor = false
@@ -14,7 +14,7 @@ struct ContentView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            // Tab 0: Library (Now the Home Screen)
+            // Tab 0: Library (Home)
             LibraryView(selectedTab: $selectedTab)
                 .tabItem { Label("Library", systemImage: "books.vertical.fill") }
                 .tag(0)
@@ -34,12 +34,12 @@ struct ContentView: View {
         .environmentObject(themeManager)
         .preferredColorScheme(themeManager.selectedTheme.colorScheme)
         .fullScreenCover(isPresented: $showingOnboarding) {
-            OnboardingView()
-                .onDisappear { hasCompletedOnboarding = true }
+            OnboardingView().onDisappear { hasCompletedOnboarding = true }
         }
         .onAppear {
             if !hasCompletedOnboarding { showingOnboarding = true }
         }
+        // Global Sheet for Panel Editor
         .sheet(isPresented: $showPanelEditor) {
             if let session = panelEditSession, let completion = panelEditorCompletion {
                 PanelEditorView(

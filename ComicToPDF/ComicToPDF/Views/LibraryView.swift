@@ -101,35 +101,43 @@ struct LibraryView: View {
                 switch result {
                 case .success(let urls):
                     Task {
-                        // Start accessing security scoped resources
-                        let secureURLs = urls.compactMap { url -> URL? in
-                            guard url.startAccessingSecurityScopedResource() else { return nil }
-                            return url
-                        }
-                        
-                        // Copy to Documents and Import
-                        for url in secureURLs {
+                        for url in urls {
+                            guard url.startAccessingSecurityScopedResource() else { continue }
                             defer { url.stopAccessingSecurityScopedResource() }
-                            do {
-                                let fileName = url.lastPathComponent
-                                let destURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
-                                
-                                if FileManager.default.fileExists(atPath: destURL.path) {
-                                    try? FileManager.default.removeItem(at: destURL)
+                            
+                            // 1. Copy File
+                            let fileName = url.lastPathComponent
+                            let destURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
+                            try? FileManager.default.removeItem(at: destURL)
+                            try? FileManager.default.copyItem(at: url, to: destURL)
+                            
+                            // 2. Auto-Convert if needed
+                            let ext = destURL.pathExtension.lowercased()
+                            if ["cbz", "cbr", "zip"].contains(ext) {
+                                // Add to task queue
+                                let taskID = UUID()
+                                let taskDesc = "Converting \(fileName)..."
+                                await MainActor.run {
+                                    conversionManager.activeTasks.append(BackgroundTask(description: taskDesc))
                                 }
-                                try FileManager.default.copyItem(at: url, to: destURL)
-                            } catch {
-                                print("Failed to import \(url.lastPathComponent): \(error)")
+                                
+                                // Convert
+                                try? await conversionManager.convertToFormat(
+                                    conversionManager.conversionSettings.outputFormat, // Use User's Default
+                                    from: destURL,
+                                    progressHandler: { _ in }
+                                )
+                                
+                                // Remove task
+                                await MainActor.run {
+                                    conversionManager.activeTasks.removeAll { $0.description == taskDesc }
+                                }
                             }
                         }
-                        
-                        // Refresh Library
-                        await MainActor.run {
-                            conversionManager.scanForPDFs()
-                        }
+                        await MainActor.run { conversionManager.scanForPDFs() }
                     }
                 case .failure(let error):
-                    print("Cloud import failed: \(error.localizedDescription)")
+                    print("Import failed: \(error.localizedDescription)")
                 }
             }
             .sheet(isPresented: $showingMetadataSearch) {

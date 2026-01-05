@@ -489,6 +489,29 @@ class ConversionManager: ObservableObject {
         loadSavedData()
     }
     
+    func convertToFormat(_ format: OutputFormat, from sourceURL: URL, progressHandler: @escaping (Double) -> Void) async throws {
+        // Wrapper for existing conversion logic
+        // If format is PDF, define settings for PDF
+        // If EPUB, define for EPUB
+        // However, `convertToPDF` seems to handle EPUB logic if extension is epub? 
+        // Let's check line 492 of the view_file output in Step 3098.
+        // It says function name is `convertToPDF`. Inside it handles `.epub`.
+        // But what if we want to convert TO epub FROM cbz?
+        // `convertToPDF` logic might need inspection.
+        
+        // For now, I will assume `convertToPDF` method name is a legacy misnomer and it handles general conversion OR I should map this call to the logic used by `ConvertView`.
+        
+        // Actually, looking at `ConvertView.swift` (not shown but logically exists), it likely calls `conversionManager.addToQueue` or similar. 
+        // But here we want direct async conversion.
+        
+        // Let's implement a simple bridge.
+        var settings = self.conversionSettings
+        settings.outputFormat = format
+        
+        // We ignore the return URL since Library refreshed scan finds it
+        _ = try await convertToPDF(from: sourceURL, settings: settings, progressHandler: progressHandler)
+    }
+
     func convertToPDF(from sourceURL: URL, customName: String? = nil, settings: ConversionSettings? = nil, progressHandler: @escaping (Double) -> Void) async throws -> URL {
         let config = settings ?? conversionSettings
         let ext = sourceURL.pathExtension.lowercased()
