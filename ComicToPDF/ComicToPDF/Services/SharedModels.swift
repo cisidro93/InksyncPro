@@ -8,7 +8,7 @@ struct ConvertedPDF: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var name: String
     let url: URL
-    let pageCount: Int
+    var pageCount: Int // ✅ Fix: Changed let to var
     let fileSize: Int64
     var metadata: PDFMetadata
     var collectionId: UUID?
@@ -104,19 +104,6 @@ struct ConversionSettings: Codable, Equatable {
 }
 
 struct EPUBSettings: Codable, Equatable {
-    enum PanelDetectionMode: String, Codable, CaseIterable {
-        case automatic
-        case conservative
-        case aggressive
-        case grid // Special case handled in logic
-        
-        // Helper for UI
-        var title: String { rawValue.capitalized }
-    }
-    
-    // Since 'grid' needs associated values in logic but we need Codable here,
-    // we store the mode as an enum and separate grid config if needed.
-    // For simplicity in this fix, we map the Logic Mode to a simple Codable struct.
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
 }
 
@@ -165,7 +152,6 @@ struct ConversionPreset: Identifiable, Codable {
 
 // MARK: - Editor Models
 
-// ✅ Fix: Simplified Session for Single Page Editing
 struct PanelEditSession: Identifiable {
     let id: UUID
     var originalImage: UIImage?
@@ -178,10 +164,17 @@ struct PanelEditSession: Identifiable {
     }
 }
 
-struct AppBackgroundTask: Identifiable {
+// ✅ Fix: Changed to class and added ObservableObject for TaskMonitorRow
+class AppBackgroundTask: Identifiable, ObservableObject {
     let id: UUID
-    var title: String
-    var progress: Double
+    @Published var title: String
+    @Published var progress: Double
+    
+    init(id: UUID = UUID(), title: String, progress: Double) {
+        self.id = id
+        self.title = title
+        self.progress = progress
+    }
 }
 
 struct DuplicateGroup: Identifiable {
@@ -205,4 +198,12 @@ struct BackupData: Codable {
     let settings: ConversionSettings
     let collections: [PDFCollection]
     let presets: [ConversionPreset]
+}
+
+// ✅ Fix: Added PageItem struct for PageReorderView
+struct PageItem: Identifiable, Equatable {
+    let id = UUID()
+    let originalIndex: Int
+    var currentIndex: Int
+    let thumbnail: UIImage
 }
