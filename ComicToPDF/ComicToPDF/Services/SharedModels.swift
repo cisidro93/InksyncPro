@@ -12,14 +12,15 @@ struct ConvertedPDF: Identifiable, Codable, Equatable, Hashable {
     let fileSize: Int64
     var metadata: PDFMetadata
     var collectionId: UUID?
-    var isFavorite: Bool = false // ✅ Added
+    var isFavorite: Bool = false
+    var coverImageData: Data? // ✅ Added for Metadata Search
     
     var formattedSize: String {
         let mb = Double(fileSize) / 1024 / 1024
         return String(format: "%.1f MB", mb)
     }
     
-    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false) {
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, coverImageData: Data? = nil) {
         self.id = id
         self.name = name
         self.url = url
@@ -28,6 +29,7 @@ struct ConvertedPDF: Identifiable, Codable, Equatable, Hashable {
         self.metadata = metadata
         self.collectionId = collectionId
         self.isFavorite = isFavorite
+        self.coverImageData = coverImageData
     }
 }
 
@@ -40,19 +42,7 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
-    var tags: [String] = [] // ✅ Added
-}
-
-// ... (Rest of file remains unchanged until EPUBPanelManifest)
-
-// ✅ Stub for EPUBMerger legacy code
-struct EPUBPanelManifest: Codable {
-    var pages: [PageInfo] = []
-    
-    struct PageInfo: Codable {
-        var pageNumber: Int
-        var panels: [PanelExtractor.Panel]
-    }
+    var tags: [String] = [] // Ensure tags are present from previous fix
 }
 
 struct PDFCollection: Identifiable, Codable, Equatable {
@@ -63,7 +53,6 @@ struct PDFCollection: Identifiable, Codable, Equatable {
     var creationDate: Date
 }
 
-// ✅ Helper for LibraryGridItem
 func colorFor(_ name: String) -> Color {
     switch name.lowercased() {
     case "red": return .red
@@ -126,16 +115,22 @@ struct ConversionSettings: Codable, Equatable {
     var targetDevice: KindleDeviceType = .scribe
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
-    var comicVineAPIKey: String = "" // ✅ Added
+    var comicVineAPIKey: String = ""
     var epubSettings: EPUBSettings = EPUBSettings()
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
 }
 
 struct EPUBSettings: Codable, Equatable {
+    enum ReadingDirection: String, Codable {
+        case ltr = "ltr"
+        case rtl = "rtl"
+    }
+    
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
-    var includeTableOfContents: Bool = true // ✅ Added
-    var splitPanels: Bool = false // ✅ Added (Legacy alias)
-    var enablePanelView: Bool = false // ✅ Added (Legacy alias)
+    var includeTableOfContents: Bool = true
+    var splitPanels: Bool = false
+    var enablePanelView: Bool = false
+    var readingDirection: ReadingDirection = .ltr // ✅ Added
 }
 
 struct ImageEnhancementSettings: Codable, Equatable {
@@ -239,13 +234,28 @@ struct BackupData: Codable {
     let presets: [ConversionPreset]
 }
 
-// ✅ Stub for EPUBMerger legacy code
-// ✅ Stub for EPUBMerger legacy code
-struct EPUBPanelManifest: Codable {
-    var pages: [PageInfo] = []
+// ✅ Fix: Ensure Panel is Codable for the Manifest
+extension PanelExtractor.Panel: Codable {
+    enum CodingKeys: String, CodingKey {
+        case boundingBox
+    }
     
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rect = try container.decode(CGRect.self, forKey: .boundingBox)
+        self.init(boundingBox: rect)
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(boundingBox, forKey: .boundingBox)
+    }
+}
+
+struct EPUBPanelManifest: Codable {
     struct PageInfo: Codable {
-        var pageNumber: Int
+        let pageIndex: Int
         var panels: [PanelExtractor.Panel]
     }
+    var pages: [PageInfo] = []
 }
