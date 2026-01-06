@@ -130,3 +130,35 @@ struct KindleDevicePickerView: View {
         }
     }
 }
+
+// Append this struct to the file
+struct AddEditKindleDeviceView: View {
+    enum Mode { case add, edit(KindleDevice) }
+    var mode: Mode
+    @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.dismiss) var dismiss
+    
+    @State private var name = ""
+    @State private var email = ""
+    
+    var body: some View {
+        Form {
+            TextField("Device Name", text: $name)
+            TextField("Kindle Email", text: $email)
+            Button("Save") {
+                // Simple save logic
+                let device = KindleDevice(name: name, email: email, deviceType: .scribe, isDefault: false)
+                conversionManager.addKindleDevice(device)
+                dismiss()
+            }
+        }
+        .navigationTitle(title)
+    }
+    
+    var title: String {
+        switch mode {
+        case .add: return "Add Device"
+        case .edit: return "Edit Device"
+        }
+    }
+}
