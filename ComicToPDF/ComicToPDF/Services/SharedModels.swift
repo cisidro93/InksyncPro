@@ -5,16 +5,15 @@ import SwiftUI
 // MARK: - Core Models
 
 struct ConvertedPDF: Identifiable, Codable, Equatable {
-    let id = UUID()
+    var id = UUID()
     let name: String
     let url: URL
     var dateAdded: Date = Date()
-    var pageCount: Int // Changed to var for updates
+    var pageCount: Int
     let fileSize: Int64
     var metadata: PDFMetadata = PDFMetadata(title: "Untitled")
     var collectionId: UUID?
     var isFavorite: Bool = false
-    // Stub for cover extraction
     var coverImageData: Data? = nil 
     
     var formattedSize: String {
@@ -30,6 +29,7 @@ struct PDFMetadata: Codable, Equatable {
     var author: String = ""
     var publisher: String = ""
     var series: String = ""
+    var volume: String = "" // ✅ Added
     var summary: String = ""
     var tags: [String] = []
     
@@ -39,7 +39,7 @@ struct PDFMetadata: Codable, Equatable {
 }
 
 struct PDFCollection: Identifiable, Codable, Equatable {
-    let id: UUID
+    var id: UUID
     var name: String
     var icon: String
     var color: String
@@ -64,6 +64,12 @@ struct ConversionSettings: Codable, Equatable {
     var comicVineAPIKey: String = ""
     var optimizeForDevice: Bool = false
     var imageEnhancement = ImageEnhancementSettings()
+    
+    // UI Helpers
+    var mangaMode: Bool {
+        get { epubSettings.mangaMode }
+        set { epubSettings.mangaMode = newValue }
+    }
 }
 
 struct ImageEnhancementSettings: Codable, Equatable {
@@ -72,6 +78,7 @@ struct ImageEnhancementSettings: Codable, Equatable {
     var grayscale: Bool = false
     var invertColors: Bool = false
     var contrast: Double = 1.0
+    var brightness: Double = 0.0 // ✅ Added
 }
 
 struct EPUBSettings: Codable, Equatable {
@@ -112,8 +119,7 @@ enum KindleDeviceType: String, CaseIterable, Codable {
     case oasis = "Kindle Oasis"
     case basic = "Kindle Basic"
     case app = "Kindle App"
-    
-    var icon: String { "ipad.gen2" } // Placeholder icon
+    var icon: String { "ipad.gen2" }
 }
 
 struct KindleDevice: Identifiable, Codable, Equatable {
@@ -128,12 +134,12 @@ struct KindleDevice: Identifiable, Codable, Equatable {
 
 struct StorageInfo {
     let used: Int64
-    let total: Int64
+    let totalSize: Int64 // ✅ Renamed from 'total' to match View
     let appUsage: Int64
 }
 
 struct ConversionPreset: Identifiable, Codable {
-    let id = UUID()
+    var id = UUID()
     var name: String
     var settings: ConversionSettings
     var icon: String = "gearshape"
@@ -150,7 +156,6 @@ struct BackupData: Codable {
 
 // MARK: - Tasks
 
-// Changed to ObservableObject so Views can observe progress
 class BackgroundTask: ObservableObject, Identifiable {
     let id = UUID()
     let description: String
@@ -177,7 +182,9 @@ struct EditablePanel: Identifiable, Equatable {
 
 class PanelEditSession: ObservableObject, Identifiable {
     let id = UUID()
-    struct PageEditData {
+    
+    struct PageEditData: Identifiable {
+        let id = UUID() // ✅ Added ID
         let pageNumber: Int
         let imageURL: URL
         var panels: [EditablePanel]
@@ -194,7 +201,6 @@ class PanelEditSession: ObservableObject, Identifiable {
     }
 }
 
-// Stub for Reorder View
 struct PageItem: Identifiable, Equatable {
     let id = UUID()
     let originalIndex: Int
