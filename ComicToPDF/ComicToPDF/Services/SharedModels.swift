@@ -29,7 +29,7 @@ struct PDFMetadata: Codable, Equatable {
     var author: String = ""
     var publisher: String = ""
     var series: String = ""
-    var volume: String = "" // ✅ Added
+    var volume: String = ""
     var summary: String = ""
     var tags: [String] = []
     
@@ -65,7 +65,7 @@ struct ConversionSettings: Codable, Equatable {
     var optimizeForDevice: Bool = false
     var imageEnhancement = ImageEnhancementSettings()
     
-    // UI Helpers
+    // Helper so binding works
     var mangaMode: Bool {
         get { epubSettings.mangaMode }
         set { epubSettings.mangaMode = newValue }
@@ -78,7 +78,8 @@ struct ImageEnhancementSettings: Codable, Equatable {
     var grayscale: Bool = false
     var invertColors: Bool = false
     var contrast: Double = 1.0
-    var brightness: Double = 0.0 // ✅ Added
+    var brightness: Double = 0.0
+    var sharpness: Double = 0.0 // ✅ Added
 }
 
 struct EPUBSettings: Codable, Equatable {
@@ -134,7 +135,7 @@ struct KindleDevice: Identifiable, Codable, Equatable {
 
 struct StorageInfo {
     let used: Int64
-    let totalSize: Int64 // ✅ Renamed from 'total' to match View
+    let totalSize: Int64
     let appUsage: Int64
 }
 
@@ -154,6 +155,13 @@ struct BackupData: Codable {
     let presets: [ConversionPreset]
 }
 
+struct SendHistoryRecord: Identifiable, Codable { // ✅ Added
+    let id: UUID
+    let fileName: String
+    let dateSent: Date
+    let deviceName: String
+}
+
 // MARK: - Tasks
 
 class BackgroundTask: ObservableObject, Identifiable {
@@ -166,7 +174,26 @@ class BackgroundTask: ObservableObject, Identifiable {
     }
 }
 
-// MARK: - Panels
+// MARK: - Panels & Manifest
+
+struct EPUBPanelManifest: Codable, Equatable { // ✅ Added
+    struct PagePanels: Codable, Equatable {
+        let pageNumber: Int
+        let imageFile: String
+        let panels: [PanelRegion]
+    }
+    let pages: [PagePanels]
+}
+
+struct PanelRegion: Codable, Equatable { // ✅ Added
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+    let pageIndex: Int
+    
+    var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
+}
 
 struct EditablePanel: Identifiable, Equatable {
     let id: UUID
@@ -184,7 +211,7 @@ class PanelEditSession: ObservableObject, Identifiable {
     let id = UUID()
     
     struct PageEditData: Identifiable {
-        let id = UUID() // ✅ Added ID
+        let id = UUID()
         let pageNumber: Int
         let imageURL: URL
         var panels: [EditablePanel]

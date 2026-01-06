@@ -153,4 +153,10 @@ class ConversionManager: ObservableObject {
     func generateCoverThumbnail(for pdf: ConvertedPDF) {
         // Generate cover logic
     }
+    // Add this to ConversionManager class
+    func updatePDFMetadata(_ pdf: ConvertedPDF, metadata: PDFMetadata) {
+        if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs[idx].metadata = metadata
+        }
+    }
 }
