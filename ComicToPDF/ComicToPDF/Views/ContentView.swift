@@ -31,10 +31,17 @@ struct ContentView: View {
         // Global Panel Editor Overlay
         .fullScreenCover(isPresented: $conversionManager.showingPanelEditor) {
             if let session = conversionManager.currentPanelSession {
-                PanelEditorView(session: session) { resultSession in
-                    conversionManager.panelEditorCompletion?(resultSession)
-                    conversionManager.showingPanelEditor = false
-                }
+                // ✅ Fix: Added explicit onCompletion and onCancel closures
+                PanelEditorView(
+                    session: session,
+                    onCompletion: { resultSession in
+                        conversionManager.panelEditorCompletion?(resultSession)
+                        conversionManager.showingPanelEditor = false
+                    },
+                    onCancel: {
+                        conversionManager.showingPanelEditor = false
+                    }
+                )
             }
         }
     }
