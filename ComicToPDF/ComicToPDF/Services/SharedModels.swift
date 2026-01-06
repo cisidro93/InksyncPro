@@ -53,19 +53,27 @@ struct DuplicateGroup: Identifiable {
     var files: [ConvertedPDF] { items }
 }
 
+struct SendHistoryRecord: Identifiable, Codable {
+    let id: UUID
+    let fileName: String
+    let dateSent: Date
+    let deviceName: String
+}
+
 // MARK: - Settings
 
 struct ConversionSettings: Codable, Equatable {
     var outputFormat: OutputFormat = .epub
-    var compressionQuality: Double = 0.8
+    // ✅ Changed to Enum to match View expectations
+    var compressionQuality: CompressionPreset = .balanced
     var epubSettings: EPUBSettings = EPUBSettings()
-    var targetDevice: String = "Kindle Scribe"
+    // ✅ Changed to Enum to match View expectations
+    var targetDevice: KindleDeviceType = .scribe
     var enablePanelSplit: Bool = false
     var comicVineAPIKey: String = ""
     var optimizeForDevice: Bool = false
     var imageEnhancement = ImageEnhancementSettings()
     
-    // Helper so binding works
     var mangaMode: Bool {
         get { epubSettings.mangaMode }
         set { epubSettings.mangaMode = newValue }
@@ -79,7 +87,7 @@ struct ImageEnhancementSettings: Codable, Equatable {
     var invertColors: Bool = false
     var contrast: Double = 1.0
     var brightness: Double = 0.0
-    var sharpness: Double = 0.0 // ✅ Added
+    var sharpness: Double = 0.0
 }
 
 struct EPUBSettings: Codable, Equatable {
@@ -90,6 +98,9 @@ struct EPUBSettings: Codable, Equatable {
     var enablePanelView: Bool = true
     var includeTableOfContents: Bool = true
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
+    
+    // ✅ Typealias to fix "EPUBSettings.PanelDetectionMode" lookup error
+    typealias PanelDetectionMode = PanelExtractor.ExtractionMode
     
     enum ReadingDirection: String, Codable, Equatable, CaseIterable {
         case leftToRight = "Left to Right"
@@ -112,6 +123,17 @@ enum CompressionPreset: String, CaseIterable, Codable {
     case balanced = "Balanced"
     case compact = "Compact"
     case custom = "Custom"
+    
+    // Helper for logic
+    var value: Double {
+        switch self {
+        case .original: return 1.0
+        case .high: return 0.8
+        case .balanced: return 0.6
+        case .compact: return 0.4
+        case .custom: return 0.6
+        }
+    }
 }
 
 enum KindleDeviceType: String, CaseIterable, Codable {
@@ -131,7 +153,7 @@ struct KindleDevice: Identifiable, Codable, Equatable {
     var isDefault: Bool
 }
 
-// MARK: - Storage & System
+// MARK: - System
 
 struct StorageInfo {
     let used: Int64
@@ -155,28 +177,9 @@ struct BackupData: Codable {
     let presets: [ConversionPreset]
 }
 
-struct SendHistoryRecord: Identifiable, Codable { // ✅ Added
-    let id: UUID
-    let fileName: String
-    let dateSent: Date
-    let deviceName: String
-}
+// MARK: - Panels
 
-// MARK: - Tasks
-
-class BackgroundTask: ObservableObject, Identifiable {
-    let id = UUID()
-    let description: String
-    @Published var progress: Double = 0.0
-    
-    init(description: String) {
-        self.description = description
-    }
-}
-
-// MARK: - Panels & Manifest
-
-struct EPUBPanelManifest: Codable, Equatable { // ✅ Added
+struct EPUBPanelManifest: Codable, Equatable {
     struct PagePanels: Codable, Equatable {
         let pageNumber: Int
         let imageFile: String
@@ -185,13 +188,12 @@ struct EPUBPanelManifest: Codable, Equatable { // ✅ Added
     let pages: [PagePanels]
 }
 
-struct PanelRegion: Codable, Equatable { // ✅ Added
+struct PanelRegion: Codable, Equatable {
     let x: Double
     let y: Double
     let width: Double
     let height: Double
     let pageIndex: Int
-    
     var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
 }
 
@@ -209,14 +211,12 @@ struct EditablePanel: Identifiable, Equatable {
 
 class PanelEditSession: ObservableObject, Identifiable {
     let id = UUID()
-    
     struct PageEditData: Identifiable {
         let id = UUID()
         let pageNumber: Int
         let imageURL: URL
         var panels: [EditablePanel]
     }
-    
     @Published var pages: [PageEditData]
     let readingDirection: EPUBSettings.ReadingDirection
     let sessionTempDirectory: URL
