@@ -65,7 +65,7 @@ class CBZToEPUBConverter {
             
             let mimeType = (fileExt == "png") ? "image/png" : "image/jpeg"
             
-            // ✅ Fix: Mark first image explicitly as cover-image
+            // Mark first image as cover-image
             let properties = (index == 0) ? "properties=\"cover-image\"" : ""
             manifestItems.append("<item id=\"img_\(index)\" href=\"images/\(newName)\" media-type=\"\(mimeType)\" \(properties)/>")
             
@@ -91,13 +91,17 @@ class CBZToEPUBConverter {
             try htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
             
             manifestItems.append("<item id=\"page_\(index)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-            spineItems.append("<itemref idref=\"page_\(index)\"/>")
+            
+            // ✅ Fix: All pages are linear="yes"
+            spineItems.append("<itemref idref=\"page_\(index)\" linear=\"yes\"/>")
             
             progressHandler(0.2 + (0.7 * Double(index) / Double(imageURLs.count)))
         }
         
-        // 6. Metadata (OPF) with GUIDE
-        // ✅ Fix: Added <guide> section to force start at Page 0
+        // ✅ Fix: Add Nav to spine LAST and mark linear="no" to hide it from swipe flow
+        spineItems.append("<itemref idref=\"nav\" linear=\"no\"/>")
+        
+        // 6. Metadata (OPF)
         let opfContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
@@ -111,25 +115,29 @@ class CBZToEPUBConverter {
                 \(manifestItems.joined(separator: "\n"))
                 <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
             </manifest>
-            <spine>
+            <spine page-progression-direction="ltr">
                 \(spineItems.joined(separator: "\n"))
             </spine>
             <guide>
                 <reference type="cover" title="Cover" href="page_0.xhtml"/>
-                <reference type="text" title="Start" href="page_0.xhtml"/>
             </guide>
         </package>
         """
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
-        // 7. Navigation
+        // 7. Navigation (Hidden Style)
+        // ✅ Fix: Added 'hidden' attribute and empty list to prevent visual rendering if reader forces it
         let navContent = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" hidden="">
         <head><title>Navigation</title></head>
-        <body><nav epub:type="toc" id="toc"><ol>
-            <li><a href="page_0.xhtml">Cover</a></li>
-        </ol></nav></body>
+        <body>
+            <nav epub:type="toc" id="toc" hidden="">
+                <ol hidden="">
+                    <li><a href="page_0.xhtml">Cover</a></li>
+                </ol>
+            </nav>
+        </body>
         </html>
         """
         try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
