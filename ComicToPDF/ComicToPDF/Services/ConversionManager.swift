@@ -168,11 +168,76 @@ class ConversionManager: ObservableObject {
     func deletePreset(_ preset: ConversionPreset) { conversionPresets.removeAll { $0.id == preset.id } }
     func createBackupData() -> BackupData { BackupData(version: "1.0", date: Date(), settings: conversionSettings, collections: collections, presets: conversionPresets) }
     func restoreFromBackup(_ backup: BackupData) { conversionSettings = backup.settings }
+    // MARK: - Real Thumbnail Logic
+    
     func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
-        if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }
-        return UIImage(systemName: "doc.text")
+        // 1. Check Cache
+        if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) {
+            return cached
+        }
+        
+        // 2. Generate on demand (Synchronous for UI, but fast for covers)
+        if let image = extractCoverImage(from: pdf.url) {
+            thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
+            return image
+        }
+        
+        // 3. Fallback
+        return UIImage(systemName: "doc.text.fill")
     }
-    func generateCoverThumbnail(for pdf: ConvertedPDF) {}
+    
+    func generateCoverThumbnail(for pdf: ConvertedPDF) {
+        // Async version for background loading
+        DispatchQueue.global(qos: .background).async {
+            if let image = self.extractCoverImage(from: pdf.url) {
+                self.thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
+                DispatchQueue.main.async {
+                    self.objectWillChange.send() // Refresh UI
+                }
+            }
+        }
+    }
+    
+    // Helper: Opens CBZ/Zip and grabs the first image
+    private func extractCoverImage(from url: URL) -> UIImage? {
+        let ext = url.pathExtension.lowercased()
+        
+        // Handle PDF
+        if ext == "pdf" {
+            if let doc = PDFDocument(url: url), let page = doc.page(at: 0) {
+                return page.thumbnail(of: CGSize(width: 300, height: 400), for: .mediaBox)
+            }
+            return nil
+        }
+        
+        // Handle CBZ/ZIP/EPUB
+        if ["cbz", "cbr", "zip", "epub"].contains(ext) {
+            guard let archive = Archive(url: url, accessMode: .read) else { return nil }
+            
+            // Find first image file alphabetically
+            let imageExtensions = ["jpg", "jpeg", "png", "webp"]
+            let sortedEntries = archive.sorted { $0.path < $1.path }
+            
+            for entry in sortedEntries {
+                let entryExt = (entry.path as NSString).pathExtension.lowercased()
+                if imageExtensions.contains(entryExt) {
+                    // Extract data
+                    var imageData = Data()
+                    do {
+                        _ = try archive.extract(entry) { data in
+                            imageData.append(data)
+                        }
+                        if let image = UIImage(data: imageData) {
+                            return image
+                        }
+                    } catch {
+                        print("Failed to extract cover: \(error)")
+                    }
+                }
+            }
+        }
+        return nil
+    }
     func updatePDFMetadata(_ pdf: ConvertedPDF, metadata: PDFMetadata) {
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].metadata = metadata }
     }
