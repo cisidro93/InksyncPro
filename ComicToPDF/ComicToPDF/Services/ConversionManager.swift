@@ -77,13 +77,51 @@ class ConversionManager: ObservableObject {
 
     // MARK: - Conversion
     
+    // Replace the old convertComic function with this REAL one:
     func convertComic(_ pdf: ConvertedPDF) async {
-        await MainActor.run { isConverting = true; processingStatus = "Converting..." }
+        await MainActor.run {
+            isConverting = true
+            processingStatus = "Converting..."
+            statusMessage = "Unzipping & Processing..." // Updates UI
+        }
+        
         let converter = CBZToEPUBConverter()
-        // Stubbing the call to avoid 'no member convert' error if the file is missing/wrong
-        // In real app: try? await converter.convert(...)
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-        await MainActor.run { isConverting = false; scanLibrary() }
+        
+        do {
+            // ✅ THE REAL CALL
+            let newURL = try await converter.convert(sourceURL: pdf.url, settings: conversionSettings.epubSettings) { progress in
+                // Log progress
+                print("Conversion Progress: \(Int(progress * 100))%")
+            }
+            
+            // Success!
+            await MainActor.run {
+                // Add the new file to our list
+                let newFile = ConvertedPDF(
+                    name: newURL.lastPathComponent,
+                    url: newURL,
+                    pageCount: 0,
+                    fileSize: (try? newURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0,
+                    metadata: PDFMetadata(title: newURL.lastPathComponent)
+                )
+                
+                convertedPDFs.append(newFile)
+                isConverting = false
+                statusMessage = "✅ Conversion Complete!"
+                scanLibrary() // Refresh full list
+                
+                // Clear success message after 3 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    self.statusMessage = nil
+                }
+            }
+        } catch {
+            print("Conversion Failed: \(error)")
+            await MainActor.run {
+                isConverting = false
+                statusMessage = "❌ Error: \(error.localizedDescription)"
+            }
+        }
     }
     
     func convertToFormat(_ format: OutputFormat, from url: URL, settings: ConversionSettings, progressHandler: @escaping (Double) -> Void) async throws -> URL {
