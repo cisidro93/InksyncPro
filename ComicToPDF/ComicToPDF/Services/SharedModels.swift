@@ -1,171 +1,202 @@
 import Foundation
-import CoreGraphics
 import SwiftUI
+import CoreGraphics
 
-// MARK: - Core Models
+// MARK: - Core Data Models
 
-struct ConvertedPDF: Identifiable, Codable, Equatable {
-    var id = UUID()
-    let name: String
+struct ConvertedPDF: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var name: String
     let url: URL
-    var dateAdded: Date = Date()
-    var pageCount: Int
+    let pageCount: Int
     let fileSize: Int64
-    var metadata: PDFMetadata = PDFMetadata(title: "Untitled")
+    var metadata: PDFMetadata
     var collectionId: UUID?
-    var isFavorite: Bool = false
-    var coverImageData: Data? = nil 
     
+    // Quick Formatted Size
     var formattedSize: String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useMB, .useKB]
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: fileSize)
+        let mb = Double(fileSize) / 1024 / 1024
+        return String(format: "%.1f MB", mb)
+    }
+    
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil) {
+        self.id = id
+        self.name = name
+        self.url = url
+        self.pageCount = pageCount
+        self.fileSize = fileSize
+        self.metadata = metadata
+        self.collectionId = collectionId
     }
 }
 
-struct PDFMetadata: Codable, Equatable {
-    var title: String = ""
-    var author: String = ""
-    var publisher: String = ""
-    var series: String = ""
-    var volume: String = ""
-    var summary: String = ""
-    var tags: [String] = []
-    
-    init(title: String = "") {
-        self.title = title
-    }
+struct PDFMetadata: Codable, Equatable, Hashable {
+    var title: String
+    var author: String?
+    var series: String?
+    var issueNumber: String?
+    var publisher: String?
+    var publicationDate: Date?
+    var summary: String?
 }
 
 struct PDFCollection: Identifiable, Codable, Equatable {
-    var id: UUID
+    let id: UUID
     var name: String
     var icon: String
-    var color: String
+    var color: String // Hex or name
     var creationDate: Date
 }
 
-struct DuplicateGroup: Identifiable {
-    let id = UUID()
-    let fileHash: String
-    let items: [ConvertedPDF]
-    var files: [ConvertedPDF] { items }
-}
-
-struct SendHistoryRecord: Identifiable, Codable {
+struct KindleDevice: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
-    let fileName: String
-    let dateSent: Date
-    let deviceName: String
-}
-
-// MARK: - Settings
-
-struct ConversionSettings: Codable, Equatable {
-    var outputFormat: OutputFormat = .epub
-    var compressionQuality: CompressionPreset = .balanced
-    var epubSettings: EPUBSettings = EPUBSettings()
-    var targetDevice: KindleDeviceType = .scribe
-    var enablePanelSplit: Bool = false
-    var comicVineAPIKey: String = ""
-    var optimizeForDevice: Bool = false
-    var imageEnhancement = ImageEnhancementSettings()
+    var name: String
+    var email: String
+    var type: KindleDeviceType
+    var isDefault: Bool
     
-    var mangaMode: Bool {
-        get { epubSettings.mangaMode }
-        set { epubSettings.mangaMode = newValue }
+    init(id: UUID = UUID(), name: String, email: String, type: KindleDeviceType, isDefault: Bool = false) {
+        self.id = id
+        self.name = name
+        self.email = email
+        self.type = type
+        self.isDefault = isDefault
     }
 }
 
-struct ImageEnhancementSettings: Codable, Equatable {
-    var enabled: Bool = false
-    var autoContrast: Bool = false
-    var grayscale: Bool = false
-    var invertColors: Bool = false
-    var contrast: Double = 1.0
-    var brightness: Double = 0.0
-    var sharpness: Double = 0.0
-}
-
-struct EPUBSettings: Codable, Equatable {
-    var splitPanels: Bool = false
-    var mangaMode: Bool = false
-    var readingDirection: ReadingDirection = .leftToRight
-    var useFixedLayout: Bool = true
-    var enablePanelView: Bool = true
-    var includeTableOfContents: Bool = true
-    var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
-    
-    typealias PanelDetectionMode = PanelExtractor.ExtractionMode
-    
-    enum ReadingDirection: String, Codable, Equatable, CaseIterable {
-        case leftToRight = "Left to Right"
-        case rightToLeft = "Right to Left"
-        case vertical = "Vertical"
-    }
-}
-
-enum OutputFormat: String, CaseIterable, Identifiable, Codable {
-    case pdf = "PDF"
-    case epub = "EPUB"
-    case both = "PDF & EPUB"
-    var id: String { rawValue }
-    var icon: String { "doc.on.doc" }
-}
-
-enum CompressionPreset: String, CaseIterable, Codable {
-    case original = "Original"
-    case high = "High Quality"
-    case balanced = "Balanced"
-    case compact = "Compact"
-    case custom = "Custom"
-    
-    var value: Double {
-        switch self {
-        case .original: return 1.0
-        case .high: return 0.8
-        case .balanced: return 0.6
-        case .compact: return 0.4
-        case .custom: return 0.6
-        }
-    }
-}
-
-enum KindleDeviceType: String, CaseIterable, Codable {
+enum KindleDeviceType: String, CaseIterable, Codable, Hashable {
     case scribe = "Kindle Scribe"
     case paperwhite = "Kindle Paperwhite"
     case oasis = "Kindle Oasis"
     case basic = "Kindle Basic"
-    case app = "Kindle App"
-    var icon: String { "ipad.gen2" }
+    case tablet = "Fire Tablet"
     
-    // Stub resolution
-    var resolution: CGSize { CGSize(width: 1860, height: 2480) }
+    var resolution: CGSize {
+        switch self {
+        case .scribe: return CGSize(width: 1860, height: 2480)
+        case .paperwhite: return CGSize(width: 1236, height: 1648)
+        case .oasis: return CGSize(width: 1264, height: 1680)
+        case .basic: return CGSize(width: 1080, height: 1440)
+        case .tablet: return CGSize(width: 1200, height: 1920)
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .scribe: return "ipad.gen2"
+        case .tablet: return "ipad.landscape"
+        default: return "book.closed"
+        }
+    }
 }
 
-struct KindleDevice: Identifiable, Codable, Equatable {
-    var id = UUID()
+// MARK: - Settings Models
+
+struct ConversionSettings: Codable, Equatable {
+    var outputFormat: OutputFormat = .epub
+    var compressionQuality: CompressionPreset = .balanced
+    var optimizeForDevice: Bool = false
+    var targetDevice: KindleDeviceType = .scribe
+    var mangaMode: Bool = false // Right-to-Left
+    var enablePanelSplit: Bool = false
+    var epubSettings: EPUBSettings = EPUBSettings()
+    var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
+}
+
+struct EPUBSettings: Codable, Equatable {
+    enum PanelDetectionMode: String, Codable, CaseIterable {
+        case automatic
+        case conservative
+        case aggressive
+        case grid // Special case handled in logic
+        
+        // Helper for UI
+        var title: String { rawValue.capitalized }
+    }
+    
+    // Since 'grid' needs associated values in logic but we need Codable here,
+    // we store the mode as an enum and separate grid config if needed.
+    // For simplicity in this fix, we map the Logic Mode to a simple Codable struct.
+    var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
+}
+
+struct ImageEnhancementSettings: Codable, Equatable {
+    var grayscale: Bool = false
+    var autoContrast: Bool = false
+    var invertColors: Bool = false
+    var brightness: Double = 0.0
+    var sharpness: Double = 0.0
+}
+
+enum OutputFormat: String, CaseIterable, Codable, Identifiable {
+    case epub = "EPUB (Kindle)"
+    case pdf = "PDF"
+    case cbz = "CBZ"
+    
+    var id: String { rawValue }
+    var icon: String {
+        switch self {
+        case .epub: return "book.fill"
+        case .pdf: return "doc.text.fill"
+        case .cbz: return "archivebox.fill"
+        }
+    }
+}
+
+enum CompressionPreset: String, CaseIterable, Codable {
+    case high = "High Quality"
+    case balanced = "Balanced"
+    case compact = "Compact"
+    
+    var value: CGFloat {
+        switch self {
+        case .high: return 0.9
+        case .balanced: return 0.75
+        case .compact: return 0.5
+        }
+    }
+}
+
+struct ConversionPreset: Identifiable, Codable {
+    var id: UUID = UUID()
     var name: String
-    var email: String
-    var deviceType: KindleDeviceType
-    var isDefault: Bool
+    var settings: ConversionSettings
 }
 
-// MARK: - System
+// MARK: - Editor Models
+
+// ✅ Fix: Simplified Session for Single Page Editing
+struct PanelEditSession: Identifiable {
+    let id: UUID
+    var originalImage: UIImage?
+    var panels: [PanelExtractor.Panel]
+    
+    init(id: UUID = UUID(), originalImage: UIImage?, panels: [PanelExtractor.Panel]) {
+        self.id = id
+        self.originalImage = originalImage
+        self.panels = panels
+    }
+}
+
+struct AppBackgroundTask: Identifiable {
+    let id: UUID
+    var title: String
+    var progress: Double
+}
+
+struct DuplicateGroup: Identifiable {
+    let id = UUID()
+    let files: [ConvertedPDF]
+    let totalSize: Int64
+}
 
 struct StorageInfo {
     let used: Int64
     let totalSize: Int64
     let appUsage: Int64
-}
-
-struct ConversionPreset: Identifiable, Codable {
-    var id = UUID()
-    var name: String
-    var settings: ConversionSettings
-    var icon: String = "gearshape"
-    var isDefault: Bool = false
+    
+    var usedFormatted: String { ByteCountFormatter.string(fromByteCount: used, countStyle: .file) }
+    var totalFormatted: String { ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file) }
 }
 
 struct BackupData: Codable {
@@ -174,75 +205,4 @@ struct BackupData: Codable {
     let settings: ConversionSettings
     let collections: [PDFCollection]
     let presets: [ConversionPreset]
-}
-
-// MARK: - Tasks
-
-// Renamed from BackgroundTask to AppBackgroundTask
-class AppBackgroundTask: ObservableObject, Identifiable {
-    let id = UUID()
-    let description: String
-    @Published var progress: Double = 0.0
-    
-    init(description: String) {
-        self.description = description
-    }
-}
-
-// MARK: - Panels
-
-struct EPUBPanelManifest: Codable, Equatable {
-    struct PagePanels: Codable, Equatable {
-        let pageNumber: Int
-        let imageFile: String
-        let panels: [PanelRegion]
-    }
-    let pages: [PagePanels]
-}
-
-struct PanelRegion: Codable, Equatable {
-    let x: Double
-    let y: Double
-    let width: Double
-    let height: Double
-    let pageIndex: Int
-    var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
-}
-
-struct EditablePanel: Identifiable, Equatable {
-    let id: UUID
-    var rect: CGRect
-    var order: Int
-    
-    init(id: UUID = UUID(), rect: CGRect, order: Int) {
-        self.id = id
-        self.rect = rect
-        self.order = order
-    }
-}
-
-class PanelEditSession: ObservableObject, Identifiable {
-    let id = UUID()
-    struct PageEditData: Identifiable {
-        let id = UUID()
-        let pageNumber: Int
-        let imageURL: URL
-        var panels: [EditablePanel]
-    }
-    @Published var pages: [PageEditData]
-    let readingDirection: EPUBSettings.ReadingDirection
-    let sessionTempDirectory: URL
-    
-    init(pages: [PageEditData], readingDirection: EPUBSettings.ReadingDirection, sessionTempDirectory: URL) {
-        self.pages = pages
-        self.readingDirection = readingDirection
-        self.sessionTempDirectory = sessionTempDirectory
-    }
-}
-
-struct PageItem: Identifiable, Equatable {
-    let id = UUID()
-    let originalIndex: Int
-    var currentIndex: Int
-    let thumbnail: UIImage
 }
