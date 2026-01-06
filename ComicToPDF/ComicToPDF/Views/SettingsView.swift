@@ -2,15 +2,90 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @State private var showingAddDevice = false
+    
+    // UI State for Alerts
+    @State private var showingDeleteAlert = false
+    @State private var deviceToDelete: KindleDevice?
     
     var body: some View {
         Form {
+            // MARK: - General Settings
+            Section(header: Text("General")) {
+                Picker("Output Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                    ForEach(OutputFormat.allCases) { format in
+                        Label(format.rawValue, systemImage: format.icon).tag(format)
+                    }
+                }
+                
+                Picker("Compression", selection: $conversionManager.conversionSettings.compressionQuality) {
+                    ForEach(CompressionPreset.allCases, id: \.self) { preset in
+                        Text(preset.rawValue).tag(preset)
+                    }
+                }
+            }
+            
+            // MARK: - Kindle Optimization
+            Section(header: Text("Kindle & E-Reader")) {
+                Toggle("Optimize for Device", isOn: $conversionManager.conversionSettings.optimizeForDevice)
+                
+                if conversionManager.conversionSettings.optimizeForDevice {
+                    Picker("Target Device", selection: $conversionManager.conversionSettings.targetDevice) {
+                        ForEach(KindleDeviceType.allCases, id: \.self) { device in
+                            HStack {
+                                Image(systemName: device.icon)
+                                Text(device.rawValue)
+                            }
+                            .tag(device)
+                        }
+                    }
+                }
+            }
+            
+            // MARK: - Image Processing
+            Section(header: Text("Image Enhancements")) {
+                Toggle("Grayscale (E-Ink Mode)", isOn: $conversionManager.conversionSettings.imageEnhancement.grayscale)
+                Toggle("Auto Contrast", isOn: $conversionManager.conversionSettings.imageEnhancement.autoContrast)
+                Toggle("Invert Colors (Dark Mode)", isOn: $conversionManager.conversionSettings.imageEnhancement.invertColors)
+                
+                if conversionManager.conversionSettings.imageEnhancement.grayscale == false {
+                    // Only show brightness/sharpness if not in strict grayscale mode
+                    HStack {
+                        Text("Brightness")
+                        Slider(value: $conversionManager.conversionSettings.imageEnhancement.brightness, in: -0.5...0.5)
+                    }
+                    HStack {
+                        Text("Sharpness")
+                        Slider(value: $conversionManager.conversionSettings.imageEnhancement.sharpness, in: 0.0...1.0)
+                    }
+                }
+            }
+            
+            // MARK: - Reading Options
+            Section(header: Text("Reading Options")) {
+                Toggle("Manga Mode (Right-to-Left)", isOn: $conversionManager.conversionSettings.mangaMode)
+                Toggle("Enable Panel Detection", isOn: $conversionManager.conversionSettings.enablePanelSplit)
+                
+                if conversionManager.conversionSettings.enablePanelSplit {
+                    Picker("Detection Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
+                        Text("Automatic").tag(PanelExtractor.ExtractionMode.automatic)
+                        Text("Grid (2x2)").tag(PanelExtractor.ExtractionMode.grid(rows: 2, columns: 2))
+                    }
+                }
+            }
+            
+            // MARK: - System
             Section {
-                Text("Settings")
-            } header: {
-                Text("General")
+                Button("Save as Default Preset") {
+                    let newPreset = ConversionPreset(name: "Custom Settings", settings: conversionManager.conversionSettings)
+                    conversionManager.savePreset(newPreset)
+                }
             }
         }
         .navigationTitle("Settings")
+        // Trigger save whenever settings change
+        .onChange(of: conversionManager.conversionSettings) { _ in
+            conversionManager.saveSettings()
+        }
     }
 }
