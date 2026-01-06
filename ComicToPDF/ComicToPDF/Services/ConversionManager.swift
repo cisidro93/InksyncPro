@@ -1,6 +1,6 @@
 import SwiftUI
 import PDFKit
-import ZIPFoundation // ✅ Added Missing Import
+import ZIPFoundation
 
 class ConversionManager: ObservableObject {
     @Published var convertedPDFs: [ConvertedPDF] = []
@@ -11,20 +11,84 @@ class ConversionManager: ObservableObject {
     @Published var activeTasks: [AppBackgroundTask] = []
     @Published var conversionSettings = ConversionSettings()
     
+    // UI State
     @Published var isConverting = false
     @Published var processingStatus = ""
     @Published var statusMessage: String?
     @Published var showingPanelEditor = false
     @Published var currentPanelSession: PanelEditSession?
-    @Published var panelEditorCompletion: ((PanelEditSession?) -> Void)?
     
     let thumbnailCache = NSCache<NSString, UIImage>()
+    private let libraryFileName = "library_index.json"
     
     init() {
-        scanLibrary()
+        loadLibrary() // ✅ Load saved data first
+        scanLibrary() // Then check for new files
     }
     
-    // MARK: - File Management
+    // MARK: - Persistence (The Brains)
+    
+    func saveLibrary() {
+        let data = BackupData(
+            version: "1.0",
+            date: Date(),
+            settings: conversionSettings,
+            collections: collections,
+            presets: conversionPresets
+        )
+        
+        // We also need to save the PDF list separately or include it in BackupData.
+        // For simplicity, we'll save the PDF metadata list to a separate file or modify BackupData.
+        // Let's use a custom struct just for the library index.
+        
+        struct LibraryIndex: Codable {
+            let files: [ConvertedPDF]
+            let collections: [PDFCollection]
+            let settings: ConversionSettings
+            let history: [ConvertedPDF]
+            let devices: [KindleDevice]
+        }
+        
+        let index = LibraryIndex(
+            files: convertedPDFs,
+            collections: collections,
+            settings: conversionSettings,
+            history: sendHistory,
+            devices: kindleDevices
+        )
+        
+        if let url = fileURL(for: libraryFileName),
+           let encoded = try? JSONEncoder().encode(index) {
+            try? encoded.write(to: url)
+        }
+    }
+    
+    func loadLibrary() {
+        guard let url = fileURL(for: libraryFileName),
+              let data = try? Data(contentsOf: url),
+              let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) else { return }
+        
+        self.convertedPDFs = index.files
+        self.collections = index.collections
+        self.conversionSettings = index.settings
+        self.sendHistory = index.history
+        self.kindleDevices = index.devices
+    }
+    
+    // Helper struct for saving
+    struct LibraryIndex: Codable {
+        let files: [ConvertedPDF]
+        let collections: [PDFCollection]
+        let settings: ConversionSettings
+        let history: [ConvertedPDF]
+        let devices: [KindleDevice]
+    }
+    
+    private func fileURL(for name: String) -> URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(name)
+    }
+    
+    // MARK: - File Management (Smart Scan)
     
     func scanLibrary() {
         let fileManager = FileManager.default
@@ -33,48 +97,80 @@ class ConversionManager: ObservableObject {
             let fileURLs = try fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles])
             let allowed = ["cbz", "cbr", "pdf", "epub", "zip"]
             
-            let foundFiles = fileURLs.compactMap { url -> ConvertedPDF? in
-                if allowed.contains(url.pathExtension.lowercased()) {
-                    let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-                    if let existing = convertedPDFs.first(where: { $0.url == url }) { return existing }
-                    return ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: 0, fileSize: Int64(size), metadata: PDFMetadata(title: url.lastPathComponent), collectionId: nil)
-                }
-                return nil
+            // 1. Identify valid files on disk
+            let diskFiles = fileURLs.filter { allowed.contains($0.pathExtension.lowercased()) }
+            
+            // 2. Remove "Ghost" entries (files in memory that were deleted from disk)
+            convertedPDFs.removeAll { pdf in
+                !diskFiles.contains(where: { $0.lastPathComponent == pdf.url.lastPathComponent })
             }
-            DispatchQueue.main.async { self.convertedPDFs = foundFiles }
+            
+            // 3. Add "New" entries (files on disk not yet in memory)
+            for url in diskFiles {
+                if !convertedPDFs.contains(where: { $0.url.lastPathComponent == url.lastPathComponent }) {
+                    let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+                    let newPDF = ConvertedPDF(
+                        name: url.lastPathComponent,
+                        url: url,
+                        pageCount: 0,
+                        fileSize: Int64(size),
+                        metadata: PDFMetadata(title: url.lastPathComponent),
+                        collectionId: nil
+                    )
+                    convertedPDFs.append(newPDF)
+                }
+            }
+            
+            DispatchQueue.main.async {
+                self.saveLibrary() // Save the reconciled list
+            }
         } catch { print("Scan Error: \(error)") }
     }
     
-    @MainActor
-    func processImportedFiles(urls: [URL]) {
-        for url in urls {
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let fileName = url.lastPathComponent
-                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let destURL = docDir.appendingPathComponent(fileName)
-                if FileManager.default.fileExists(atPath: destURL.path) { try FileManager.default.removeItem(at: destURL) }
-                try FileManager.default.copyItem(at: url, to: destURL)
-            } catch { print("Import Failed: \(error)") }
-        }
-        scanLibrary()
-    }
+    // MARK: - CRUD Operations (With Auto-Save)
     
     func deletePDF(_ pdf: ConvertedPDF) {
         try? FileManager.default.removeItem(at: pdf.url)
-        scanLibrary()
+        if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs.remove(at: idx)
+            saveLibrary()
+        }
     }
     
     func addConvertedPDF(url: URL, pageCount: Int = 0, fileSize: Int64 = 0, duration: TimeInterval = 0) {
         let pdf = ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: pageCount, fileSize: fileSize, metadata: PDFMetadata(title: url.lastPathComponent), collectionId: nil)
         convertedPDFs.append(pdf)
-        scanLibrary()
+        saveLibrary()
     }
     
-    func savePDFs() { /* Stub */ }
-
-    // MARK: - Conversion
+    // MARK: - Collections
+    
+    func createCollection(name: String, icon: String, color: String) {
+        let newCollection = PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date())
+        collections.append(newCollection)
+        saveLibrary()
+    }
+    
+    func deleteCollection(_ collection: PDFCollection) {
+        // Remove collection
+        collections.removeAll { $0.id == collection.id }
+        // Reset files that were in this collection
+        for i in 0..<convertedPDFs.count {
+            if convertedPDFs[i].collectionId == collection.id {
+                convertedPDFs[i].collectionId = nil
+            }
+        }
+        saveLibrary()
+    }
+    
+    func movePDFToCollection(_ pdf: ConvertedPDF, collectionId: UUID?) {
+        if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs[idx].collectionId = collectionId
+            saveLibrary()
+        }
+    }
+    
+    // MARK: - Conversion Logic (Unchanged)
     
     func convertComic(_ pdf: ConvertedPDF) async {
         await MainActor.run { isConverting = true; processingStatus = "Converting..."; statusMessage = "Processing..." }
@@ -97,7 +193,7 @@ class ConversionManager: ObservableObject {
                 convertedPDFs.append(newFile)
                 isConverting = false
                 statusMessage = "✅ Conversion Complete!"
-                scanLibrary()
+                scanLibrary() // This will also trigger a save
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.statusMessage = nil }
             }
@@ -106,15 +202,10 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    func convertToFormat(_ format: OutputFormat, from url: URL, settings: ConversionSettings, progressHandler: @escaping (Double) -> Void) async throws -> URL {
-        return url
-    }
-    
-    // MARK: - Thumbnails (Real Logic)
+    // MARK: - Thumbnails & Import (Unchanged)
     
     func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
         if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }
-        // Synchronous load attempt for UI responsiveness
         if let image = extractCoverImage(from: pdf.url) {
             thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
             return image
@@ -122,14 +213,23 @@ class ConversionManager: ObservableObject {
         return UIImage(systemName: "doc.text.fill")
     }
     
-    func generateCoverThumbnail(for pdf: ConvertedPDF) {
-        DispatchQueue.global(qos: .background).async {
-            if let image = self.extractCoverImage(from: pdf.url) {
-                self.thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
-                DispatchQueue.main.async { self.objectWillChange.send() }
-            }
+    @MainActor
+    func processImportedFiles(urls: [URL]) {
+        for url in urls {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let fileName = url.lastPathComponent
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let destURL = docDir.appendingPathComponent(fileName)
+                if FileManager.default.fileExists(atPath: destURL.path) { try FileManager.default.removeItem(at: destURL) }
+                try FileManager.default.copyItem(at: url, to: destURL)
+            } catch { print("Import Failed: \(error)") }
         }
+        scanLibrary()
     }
+    
+    // MARK: - Stubs & Helpers
     
     private func extractCoverImage(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
@@ -139,12 +239,10 @@ class ConversionManager: ObservableObject {
             }
             return nil
         }
-        
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
             guard let archive = Archive(url: url, accessMode: .read) else { return nil }
             let imageExtensions = ["jpg", "jpeg", "png", "webp"]
             let sortedEntries = archive.sorted { $0.path < $1.path }
-            
             for entry in sortedEntries {
                 let entryExt = (entry.path as NSString).pathExtension.lowercased()
                 if imageExtensions.contains(entryExt) {
@@ -152,34 +250,29 @@ class ConversionManager: ObservableObject {
                     do {
                         _ = try archive.extract(entry) { data in imageData.append(data) }
                         if let image = UIImage(data: imageData) { return image }
-                    } catch {
-                        print("Extract Error: \(error)")
-                    }
+                    } catch { print("Extract Error: \(error)") }
                 }
             }
         }
         return nil
     }
-
-    // MARK: - Stubs
     
-    func createCollection(name: String, icon: String, color: String) {
-        collections.append(PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date()))
-    }
-    func deleteCollection(_ collection: PDFCollection) { collections.removeAll { $0.id == collection.id } }
-    func movePDFToCollection(_ pdf: ConvertedPDF, collectionId: UUID?) {
-        if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].collectionId = collectionId }
-    }
-    func addKindleDevice(_ device: KindleDevice) { kindleDevices.append(device) }
-    func removeKindleDevice(_ device: KindleDevice) { kindleDevices.removeAll { $0.id == device.id } }
+    func addKindleDevice(_ device: KindleDevice) { kindleDevices.append(device); saveLibrary() }
+    func removeKindleDevice(_ device: KindleDevice) { kindleDevices.removeAll { $0.id == device.id }; saveLibrary() }
     func updateKindleDevice(_ device: KindleDevice) {
-        if let idx = kindleDevices.firstIndex(where: { $0.id == device.id }) { kindleDevices[idx] = device }
+        if let idx = kindleDevices.firstIndex(where: { $0.id == device.id }) { kindleDevices[idx] = device; saveLibrary() }
     }
     func setDefaultKindleDevice(_ device: KindleDevice) {
         for i in 0..<kindleDevices.count { kindleDevices[i].isDefault = (kindleDevices[i].id == device.id) }
+        saveLibrary()
     }
+    func clearSendHistory() { sendHistory.removeAll(); saveLibrary() }
+    func saveSettings() { saveLibrary() }
+    func savePreset(_ preset: ConversionPreset) { conversionPresets.append(preset); saveLibrary() }
+    func deletePreset(_ preset: ConversionPreset) { conversionPresets.removeAll { $0.id == preset.id }; saveLibrary() }
+    
+    // Required Stubs
     func recordSend(pdf: ConvertedPDF, device: KindleDevice) {}
-    func clearSendHistory() { sendHistory.removeAll() }
     func batchRename(pdfs: [ConvertedPDF], pattern: String, startNumber: Int) {}
     func autoOrganize() {}
     func findDuplicates() async -> [DuplicateGroup] { return [] }
@@ -191,12 +284,14 @@ class ConversionManager: ObservableObject {
     func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL { return url }
     func splitFileInBackground(pdf: ConvertedPDF, maxSizeMB: Double) {}
     func calculateStorageInfo() -> StorageInfo { return StorageInfo(used: 0, totalSize: 1000, appUsage: 0) }
-    func saveSettings() {}
-    func savePreset(_ preset: ConversionPreset) { conversionPresets.append(preset) }
-    func deletePreset(_ preset: ConversionPreset) { conversionPresets.removeAll { $0.id == preset.id } }
     func createBackupData() -> BackupData { BackupData(version: "1.0", date: Date(), settings: conversionSettings, collections: collections, presets: conversionPresets) }
-    func restoreFromBackup(_ backup: BackupData) { conversionSettings = backup.settings }
+    func restoreFromBackup(_ backup: BackupData) { conversionSettings = backup.settings; saveLibrary() }
+    func convertToFormat(_ format: OutputFormat, from url: URL, settings: ConversionSettings, progressHandler: @escaping (Double) -> Void) async throws -> URL { return url }
     func updatePDFMetadata(_ pdf: ConvertedPDF, metadata: PDFMetadata) {
-        if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].metadata = metadata }
+        if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs[idx].metadata = metadata
+            saveLibrary()
+        }
     }
+    func generateCoverThumbnail(for pdf: ConvertedPDF) {}
 }
