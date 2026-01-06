@@ -1,5 +1,6 @@
 import SwiftUI
 import PDFKit
+import ZIPFoundation // ✅ Added Missing Import
 
 class ConversionManager: ObservableObject {
     @Published var convertedPDFs: [ConvertedPDF] = []
@@ -7,7 +8,6 @@ class ConversionManager: ObservableObject {
     @Published var conversionPresets: [ConversionPreset] = []
     @Published var kindleDevices: [KindleDevice] = []
     @Published var sendHistory: [ConvertedPDF] = []
-    // Updated to AppBackgroundTask
     @Published var activeTasks: [AppBackgroundTask] = []
     @Published var conversionSettings = ConversionSettings()
     
@@ -66,7 +66,6 @@ class ConversionManager: ObservableObject {
         scanLibrary()
     }
     
-    // ✅ Updated to match View signature with defaults
     func addConvertedPDF(url: URL, pageCount: Int = 0, fileSize: Int64 = 0, duration: TimeInterval = 0) {
         let pdf = ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: pageCount, fileSize: fileSize, metadata: PDFMetadata(title: url.lastPathComponent), collectionId: nil)
         convertedPDFs.append(pdf)
@@ -77,24 +76,15 @@ class ConversionManager: ObservableObject {
 
     // MARK: - Conversion
     
-    // Replace the old convertComic function with this REAL one:
     func convertComic(_ pdf: ConvertedPDF) async {
-        await MainActor.run {
-            isConverting = true
-            processingStatus = "Converting..."
-            statusMessage = "Unzipping & Processing..." // Updates UI
-        }
-        
+        await MainActor.run { isConverting = true; processingStatus = "Converting..."; statusMessage = "Processing..." }
         let converter = CBZToEPUBConverter()
         
         do {
-            // ✅ THE REAL CALL
             let newURL = try await converter.convert(sourceURL: pdf.url, settings: conversionSettings) { progress in
-                // Log progress
-                print("Conversion Progress: \(Int(progress * 100))%")
+                print("Progress: \(progress)")
             }
             
-            // Success!
             await MainActor.run {
                 // Add the new file to our list
                 let newFile = ConvertedPDF(
@@ -104,31 +94,74 @@ class ConversionManager: ObservableObject {
                     fileSize: (try? newURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0,
                     metadata: PDFMetadata(title: newURL.lastPathComponent)
                 )
-                
                 convertedPDFs.append(newFile)
                 isConverting = false
                 statusMessage = "✅ Conversion Complete!"
-                scanLibrary() // Refresh full list
+                scanLibrary()
                 
-                // Clear success message after 3 seconds
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                    self.statusMessage = nil
-                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.statusMessage = nil }
             }
         } catch {
-            print("Conversion Failed: \(error)")
-            await MainActor.run {
-                isConverting = false
-                statusMessage = "❌ Error: \(error.localizedDescription)"
-            }
+            await MainActor.run { isConverting = false; statusMessage = "Error: \(error.localizedDescription)" }
         }
     }
     
     func convertToFormat(_ format: OutputFormat, from url: URL, settings: ConversionSettings, progressHandler: @escaping (Double) -> Void) async throws -> URL {
         return url
     }
+    
+    // MARK: - Thumbnails (Real Logic)
+    
+    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
+        if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }
+        // Synchronous load attempt for UI responsiveness
+        if let image = extractCoverImage(from: pdf.url) {
+            thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
+            return image
+        }
+        return UIImage(systemName: "doc.text.fill")
+    }
+    
+    func generateCoverThumbnail(for pdf: ConvertedPDF) {
+        DispatchQueue.global(qos: .background).async {
+            if let image = self.extractCoverImage(from: pdf.url) {
+                self.thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
+                DispatchQueue.main.async { self.objectWillChange.send() }
+            }
+        }
+    }
+    
+    private func extractCoverImage(from url: URL) -> UIImage? {
+        let ext = url.pathExtension.lowercased()
+        if ext == "pdf" {
+            if let doc = PDFDocument(url: url), let page = doc.page(at: 0) {
+                return page.thumbnail(of: CGSize(width: 300, height: 400), for: .mediaBox)
+            }
+            return nil
+        }
+        
+        if ["cbz", "cbr", "zip", "epub"].contains(ext) {
+            guard let archive = Archive(url: url, accessMode: .read) else { return nil }
+            let imageExtensions = ["jpg", "jpeg", "png", "webp"]
+            let sortedEntries = archive.sorted { $0.path < $1.path }
+            
+            for entry in sortedEntries {
+                let entryExt = (entry.path as NSString).pathExtension.lowercased()
+                if imageExtensions.contains(entryExt) {
+                    var imageData = Data()
+                    do {
+                        _ = try archive.extract(entry) { data in imageData.append(data) }
+                        if let image = UIImage(data: imageData) { return image }
+                    } catch {
+                        print("Extract Error: \(error)")
+                    }
+                }
+            }
+        }
+        return nil
+    }
 
-    // MARK: - Collections & Kindle
+    // MARK: - Stubs
     
     func createCollection(name: String, icon: String, color: String) {
         collections.append(PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date()))
@@ -154,12 +187,7 @@ class ConversionManager: ObservableObject {
     func extractImageURLs(from url: URL) async throws -> [URL] { return [] }
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL { return pdf.url }
     func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL { return pdf.url }
-    
-    // ✅ Updated to return UIImages as expected by PageManagerView
-    func extractImages(from url: URL, progressHandler: (Double) -> Void) async throws -> [UIImage] {
-        return [UIImage(systemName: "doc.text")!] // Stub
-    }
-    
+    func extractImages(from url: URL, progressHandler: (Double) -> Void) async throws -> [UIImage] { return [UIImage(systemName: "doc.text")!] }
     func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL { return url }
     func splitFileInBackground(pdf: ConvertedPDF, maxSizeMB: Double) {}
     func calculateStorageInfo() -> StorageInfo { return StorageInfo(used: 0, totalSize: 1000, appUsage: 0) }
@@ -168,76 +196,6 @@ class ConversionManager: ObservableObject {
     func deletePreset(_ preset: ConversionPreset) { conversionPresets.removeAll { $0.id == preset.id } }
     func createBackupData() -> BackupData { BackupData(version: "1.0", date: Date(), settings: conversionSettings, collections: collections, presets: conversionPresets) }
     func restoreFromBackup(_ backup: BackupData) { conversionSettings = backup.settings }
-    // MARK: - Real Thumbnail Logic
-    
-    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
-        // 1. Check Cache
-        if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) {
-            return cached
-        }
-        
-        // 2. Generate on demand (Synchronous for UI, but fast for covers)
-        if let image = extractCoverImage(from: pdf.url) {
-            thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
-            return image
-        }
-        
-        // 3. Fallback
-        return UIImage(systemName: "doc.text.fill")
-    }
-    
-    func generateCoverThumbnail(for pdf: ConvertedPDF) {
-        // Async version for background loading
-        DispatchQueue.global(qos: .background).async {
-            if let image = self.extractCoverImage(from: pdf.url) {
-                self.thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
-                DispatchQueue.main.async {
-                    self.objectWillChange.send() // Refresh UI
-                }
-            }
-        }
-    }
-    
-    // Helper: Opens CBZ/Zip and grabs the first image
-    private func extractCoverImage(from url: URL) -> UIImage? {
-        let ext = url.pathExtension.lowercased()
-        
-        // Handle PDF
-        if ext == "pdf" {
-            if let doc = PDFDocument(url: url), let page = doc.page(at: 0) {
-                return page.thumbnail(of: CGSize(width: 300, height: 400), for: .mediaBox)
-            }
-            return nil
-        }
-        
-        // Handle CBZ/ZIP/EPUB
-        if ["cbz", "cbr", "zip", "epub"].contains(ext) {
-            guard let archive = Archive(url: url, accessMode: .read) else { return nil }
-            
-            // Find first image file alphabetically
-            let imageExtensions = ["jpg", "jpeg", "png", "webp"]
-            let sortedEntries = archive.sorted { $0.path < $1.path }
-            
-            for entry in sortedEntries {
-                let entryExt = (entry.path as NSString).pathExtension.lowercased()
-                if imageExtensions.contains(entryExt) {
-                    // Extract data
-                    var imageData = Data()
-                    do {
-                        _ = try archive.extract(entry) { data in
-                            imageData.append(data)
-                        }
-                        if let image = UIImage(data: imageData) {
-                            return image
-                        }
-                    } catch {
-                        print("Failed to extract cover: \(error)")
-                    }
-                }
-            }
-        }
-        return nil
-    }
     func updatePDFMetadata(_ pdf: ConvertedPDF, metadata: PDFMetadata) {
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].metadata = metadata }
     }
