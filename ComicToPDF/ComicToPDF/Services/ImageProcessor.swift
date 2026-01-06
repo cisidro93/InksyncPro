@@ -1,36 +1,76 @@
 import UIKit
+import CoreImage
 
 struct ImageProcessor {
-    static func processPage(_ image: UIImage, splitSpreads: Bool, isManga: Bool) -> [UIImage] {
-        // If splitting is disabled or image is Portrait/Square, return original
-        if !splitSpreads || image.size.height >= image.size.width {
-            return [image]
+    
+    // Process a single image based on settings
+    static func process(imageURL: URL, settings: ConversionSettings) -> UIImage? {
+        guard let image = UIImage(contentsOfFile: imageURL.path) else { return nil }
+        
+        var finalImage = image
+        
+        // 1. Resize if needed (Optimize for Device)
+        if settings.optimizeForDevice {
+            // Get target resolution (Default to Scribe if not found)
+            let targetSize = settings.targetDevice.resolution
+            finalImage = resize(image: finalImage, toFit: targetSize)
         }
         
-        // It's a Landscape Spread -> Split it!
-        let width = image.size.width
-        let height = image.size.height
-        let halfWidth = width / 2.0
-        
-        // Create Crop Rects
-        let leftRect = CGRect(x: 0, y: 0, width: halfWidth, height: height)
-        let rightRect = CGRect(x: halfWidth, y: 0, width: halfWidth, height: height)
-        
-        guard let cgImage = image.cgImage,
-              let leftCG = cgImage.cropping(to: leftRect),
-              let rightCG = cgImage.cropping(to: rightRect) else {
-            return [image] // Fallback if crop fails
+        // 2. Apply Image Enhancements
+        if settings.imageEnhancement.grayscale {
+            finalImage = convertToGrayscale(image: finalImage)
         }
         
-        let leftPage = UIImage(cgImage: leftCG)
-        let rightPage = UIImage(cgImage: rightCG)
-        
-        // Manga (RTL): Right side is Page 1, Left side is Page 2
-        // Western (LTR): Left side is Page 1, Right side is Page 2
-        if isManga {
-            return [rightPage, leftPage]
-        } else {
-            return [leftPage, rightPage]
+        if settings.imageEnhancement.autoContrast {
+            finalImage = applyAutoContrast(image: finalImage)
         }
+        
+        return finalImage
+    }
+    
+    // MARK: - Helper Functions
+    
+    private static func resize(image: UIImage, toFit targetSize: CGSize) -> UIImage {
+        let widthRatio = targetSize.width / image.size.width
+        let heightRatio = targetSize.height / image.size.height
+        let scaleFactor = min(widthRatio, heightRatio)
+        
+        // Don't upscale small images
+        if scaleFactor >= 1.0 { return image }
+        
+        let newSize = CGSize(width: image.size.width * scaleFactor, height: image.size.height * scaleFactor)
+        
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        return resizedImage ?? image
+    }
+    
+    private static func convertToGrayscale(image: UIImage) -> UIImage {
+        guard let ciImage = CIImage(image: image) else { return image }
+        let filter = CIFilter(name: "CIPhotoEffectMono")
+        filter?.setValue(ciImage, forKey: kCIInputImageKey)
+        
+        if let output = filter?.outputImage,
+           let cgImage = CIContext().createCGImage(output, from: output.extent) {
+            return UIImage(cgImage: cgImage)
+        }
+        return image
+    }
+    
+    private static func applyAutoContrast(image: UIImage) -> UIImage {
+        guard let ciImage = CIImage(image: image) else { return image }
+        let filter = CIFilter(name: "CIColorControls")
+        filter?.setValue(ciImage, forKey: kCIInputImageKey)
+        filter?.setValue(1.1, forKey: kCIInputContrastKey) // Boost contrast slightly
+        filter?.setValue(0.1, forKey: kCIInputBrightnessKey)
+        
+        if let output = filter?.outputImage,
+           let cgImage = CIContext().createCGImage(output, from: output.extent) {
+            return UIImage(cgImage: cgImage)
+        }
+        return image
     }
 }
