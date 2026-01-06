@@ -4,7 +4,6 @@ import ZIPFoundation
 
 class CBZToEPUBConverter {
     
-    // ✅ Change: Now accepts 'ConversionSettings' to access Kindle/Grayscale prefs
     func convert(sourceURL: URL, settings: ConversionSettings, progressHandler: @escaping (Double) -> Void) async throws -> URL {
         
         let fileManager = FileManager.default
@@ -14,7 +13,7 @@ class CBZToEPUBConverter {
         defer { try? fileManager.removeItem(at: tempDir) }
         
         // 1. Unzip
-        progressHandler(0.1)
+        progressHandler(0.05)
         try fileManager.unzipItem(at: sourceURL, to: tempDir)
         
         // 2. Find Images
@@ -24,7 +23,7 @@ class CBZToEPUBConverter {
         }
         
         // 3. Structure
-        progressHandler(0.2)
+        progressHandler(0.1)
         let epubDir = tempDir.appendingPathComponent("EPUB_Build")
         let oebpsDir = epubDir.appendingPathComponent("OEBPS")
         let imagesDir = oebpsDir.appendingPathComponent("images")
@@ -33,7 +32,7 @@ class CBZToEPUBConverter {
         try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: cssDir, withIntermediateDirectories: true)
         
-        // 4. CSS (Strict Reset)
+        // 4. CSS
         let cssContent = """
         @page { margin: 0; padding: 0; }
         body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
@@ -42,62 +41,93 @@ class CBZToEPUBConverter {
         """
         try cssContent.write(to: cssDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
         
-        // 5. Process Images
+        // 5. Process Images (The Smart Loop)
         var manifestItems: [String] = []
         var spineItems: [String] = []
         manifestItems.append("<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>")
         
-        for (index, imgURL) in imageURLs.enumerated() {
-            let fileExt = imgURL.pathExtension.lowercased()
-            // Always convert to JPG if we processed it (processing strips transparency/format)
-            let newName = "page_\(String(format: "%03d", index + 1)).jpg"
-            let destURL = imagesDir.appendingPathComponent(newName)
+        var globalPageIndex = 0
+        
+        for (sourceIndex, imgURL) in imageURLs.enumerated() {
+            // Load Image
+            guard let originalImage = UIImage(contentsOfFile: imgURL.path) else { continue }
             
-            // ✅ FEATURE RESTORED: Image Processing
-            // We verify if we need to process (resize/grayscale) or just copy
-            if settings.optimizeForDevice || settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast {
-                if let processed = ImageProcessor.process(imageURL: imgURL, settings: settings),
-                   let data = processed.jpegData(compressionQuality: settings.compressionQuality.value) {
-                    try data.write(to: destURL)
-                } else {
-                    // Fallback if processing fails
-                    try fileManager.copyItem(at: imgURL, to: destURL)
+            // Determine "Sub-Pages" (1 if normal, N if splitting)
+            var pagesToProcess: [UIImage] = [originalImage]
+            
+            // ✅ FEATURE: Panel Detection
+            if settings.enablePanelSplit {
+                // Use the AI Engine we built
+                let extracted = try? await PanelExtractor.extractPanels(
+                    from: originalImage,
+                    mode: settings.epubSettings.panelDetectionMode
+                )
+                if let panels = extracted, !panels.isEmpty {
+                    pagesToProcess = panels
                 }
-            } else {
-                // Just copy if no settings enabled (Fast Mode)
-                try fileManager.copyItem(at: imgURL, to: destURL)
             }
             
-            // Manifest & HTML Generation
-            let properties = (index == 0) ? "properties=\"cover-image\"" : ""
-            manifestItems.append("<item id=\"img_\(index)\" href=\"images/\(newName)\" media-type=\"image/jpeg\" \(properties)/>")
+            // Process each sub-page (Panel or Full Page)
+            for (subIndex, image) in pagesToProcess.enumerated() {
+                var finalImage = image
+                
+                // ✅ FEATURE: Optimization (Resize/Grayscale)
+                if settings.optimizeForDevice || settings.imageEnhancement.grayscale {
+                    // Temporarily write to disk to pass to processor (simplifies logic)
+                    let tempImgURL = tempDir.appendingPathComponent("temp_\(globalPageIndex).jpg")
+                    if let data = finalImage.jpegData(compressionQuality: 1.0) {
+                        try? data.write(to: tempImgURL)
+                        if let processed = ImageProcessor.process(imageURL: tempImgURL, settings: settings) {
+                            finalImage = processed
+                        }
+                    }
+                }
+                
+                // Save Final Image
+                let newName = "page_\(String(format: "%04d", globalPageIndex)).jpg"
+                let destURL = imagesDir.appendingPathComponent(newName)
+                
+                if let data = finalImage.jpegData(compressionQuality: settings.compressionQuality.value) {
+                    try data.write(to: destURL)
+                }
+                
+                // Manifest & HTML
+                let isCover = (globalPageIndex == 0)
+                let properties = isCover ? "properties=\"cover-image\"" : ""
+                manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/jpeg\" \(properties)/>")
+                
+                let htmlContent = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE html>
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                <head>
+                    <title>Page \(globalPageIndex)</title>
+                    <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
+                    <link rel="stylesheet" type="text/css" href="css/style.css"/>
+                </head>
+                <body>
+                    <div class="svg-wrapper"><img src="images/\(newName)" alt=""/></div>
+                </body>
+                </html>
+                """
+                
+                let htmlName = "page_\(globalPageIndex).xhtml"
+                try htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
+                manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
+                spineItems.append("<itemref idref=\"page_\(globalPageIndex)\" linear=\"yes\"/>")
+                
+                globalPageIndex += 1
+            }
             
-            let htmlContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE html>
-            <html xmlns="http://www.w3.org/1999/xhtml">
-            <head>
-                <title>Page \(index + 1)</title>
-                <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-                <link rel="stylesheet" type="text/css" href="css/style.css"/>
-            </head>
-            <body>
-                <div class="svg-wrapper"><img src="images/\(newName)" alt=""/></div>
-            </body>
-            </html>
-            """
-            
-            let htmlName = "page_\(index).xhtml"
-            try htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
-            manifestItems.append("<item id=\"page_\(index)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-            spineItems.append("<itemref idref=\"page_\(index)\" linear=\"yes\"/>")
-            
-            progressHandler(0.2 + (0.7 * Double(index) / Double(imageURLs.count)))
+            // Update Progress Bar
+            let progress = 0.1 + (0.8 * Double(sourceIndex) / Double(imageURLs.count))
+            progressHandler(progress)
         }
         
+        // Add Hidden Nav at End
         spineItems.append("<itemref idref=\"nav\" linear=\"no\"/>")
         
-        // 6. Metadata (OPF)
+        // 6. Metadata
         let opfContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
@@ -121,7 +151,7 @@ class CBZToEPUBConverter {
         """
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
-        // 7. Navigation
+        // 7. Nav
         let navContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" hidden="">
@@ -141,13 +171,12 @@ class CBZToEPUBConverter {
         </container>
         """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
-        progressHandler(0.95)
+        progressHandler(1.0)
         let finalName = sourceURL.deletingPathExtension().lastPathComponent + ".epub"
         let destURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(finalName)
         if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
         try fileManager.zipItem(at: epubDir, to: destURL)
         
-        progressHandler(1.0)
         return destURL
     }
     
