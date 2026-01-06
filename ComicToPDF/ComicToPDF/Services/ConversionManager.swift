@@ -6,9 +6,10 @@ class ConversionManager: ObservableObject {
     @Published var convertedPDFs: [ConvertedPDF] = []
     @Published var collections: [PDFCollection] = []
     @Published var conversionPresets: [ConversionPreset] = []
+    @Published var kindleDevices: [KindleDevice] = []
+    @Published var sendHistory: [ConvertedPDF] = [] // Stub
     @Published var activeTasks: [BackgroundTask] = []
     @Published var conversionSettings = ConversionSettings()
-    @Published var organizationMethod: OrganizationMethod = .dateAdded
     
     // UI State
     @Published var isConverting = false
@@ -66,23 +67,20 @@ class ConversionManager: ObservableObject {
         scanLibrary()
     }
 
-    // MARK: - Conversion Logic
+    // MARK: - Conversion
     
     func convertComic(_ pdf: ConvertedPDF) async {
         await MainActor.run { isConverting = true; processingStatus = "Converting..." }
-        
         let converter = CBZToEPUBConverter()
         try? await converter.convert(sourceURL: pdf.url, settings: conversionSettings.epubSettings) { _ in }
-        
         await MainActor.run { isConverting = false; scanLibrary() }
     }
     
     func convertToFormat(_ format: OutputFormat, from url: URL, settings: ConversionSettings, progressHandler: @escaping (Double) -> Void) async throws -> URL {
-        // Stub for ConvertView calls
-        return url
+        return url // Stub
     }
 
-    // MARK: - Collections & Meta (Restored Stubs)
+    // MARK: - Collections & Kindle (Restored Stubs)
     
     func createCollection(name: String, icon: String, color: String) {
         collections.append(PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date()))
@@ -93,22 +91,33 @@ class ConversionManager: ObservableObject {
     func movePDFToCollection(_ pdf: ConvertedPDF, collectionId: UUID?) {
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].collectionId = collectionId }
     }
+    func addKindleDevice(_ device: KindleDevice) { kindleDevices.append(device) }
+    func updateKindleDevice(_ device: KindleDevice) {
+        if let idx = kindleDevices.firstIndex(where: { $0.id == device.id }) { kindleDevices[idx] = device }
+    }
+    func setDefaultKindleDevice(_ device: KindleDevice) {
+        for i in 0..<kindleDevices.count { kindleDevices[i].isDefault = (kindleDevices[i].id == device.id) }
+    }
+    func recordSend(pdf: ConvertedPDF, device: KindleDevice) { /* Stub */ }
+    func clearSendHistory() { sendHistory.removeAll() }
+
+    // MARK: - Advanced Ops (Restored Stubs)
+    
     func batchRename(pdfs: [ConvertedPDF], pattern: String, startNumber: Int) { /* Stub */ }
     func autoOrganize() { /* Stub */ }
     func findDuplicates() async -> [DuplicateGroup] { return [] }
     func removeFromLibrary(_ pdf: ConvertedPDF) { deletePDF(pdf) }
-    
-    // MARK: - Page & Image Ops (Restored Stubs)
-    
     func extractImageURLs(from url: URL) async throws -> [URL] { return [] }
     func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL { return pdf.url }
     func extractImages(from url: URL, progressHandler: (Double) -> Void) async throws -> [URL] { return [] }
     func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL { return url }
     func splitFileInBackground(pdf: ConvertedPDF, maxSizeMB: Double) { /* Stub */ }
+    func calculateStorageInfo() -> StorageInfo { return StorageInfo(used: 0, total: 1000, appUsage: 0) }
     
     // MARK: - Settings & Backup
     
     func saveSettings() { /* Stub */ }
+    func savePreset(_ preset: ConversionPreset) { conversionPresets.append(preset) }
     func deletePreset(_ preset: ConversionPreset) { conversionPresets.removeAll { $0.id == preset.id } }
     func createBackupData() -> BackupData {
         BackupData(version: "1.0", date: Date(), settings: conversionSettings, collections: collections, presets: conversionPresets)
@@ -118,8 +127,6 @@ class ConversionManager: ObservableObject {
         collections = backup.collections
         conversionPresets = backup.presets
     }
-    
-    // MARK: - Thumbnails
     
     func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
         if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }

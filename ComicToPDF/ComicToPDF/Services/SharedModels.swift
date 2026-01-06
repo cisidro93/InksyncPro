@@ -9,11 +9,13 @@ struct ConvertedPDF: Identifiable, Codable, Equatable {
     let name: String
     let url: URL
     var dateAdded: Date = Date()
-    let pageCount: Int
+    var pageCount: Int // Changed to var for updates
     let fileSize: Int64
-    var metadata: PDFMetadata?
+    var metadata: PDFMetadata = PDFMetadata(title: "Untitled")
     var collectionId: UUID?
-    var isFavorite: Bool = false // Fixed missing member
+    var isFavorite: Bool = false
+    // Stub for cover extraction
+    var coverImageData: Data? = nil 
     
     var formattedSize: String {
         let formatter = ByteCountFormatter()
@@ -24,12 +26,16 @@ struct ConvertedPDF: Identifiable, Codable, Equatable {
 }
 
 struct PDFMetadata: Codable, Equatable {
-    var title: String
+    var title: String = ""
     var author: String = ""
     var publisher: String = ""
-    var series: String = "" // Fixed missing member
-    var summary: String = "" // Fixed missing member
+    var series: String = ""
+    var summary: String = ""
     var tags: [String] = []
+    
+    init(title: String = "") {
+        self.title = title
+    }
 }
 
 struct PDFCollection: Identifiable, Codable, Equatable {
@@ -44,7 +50,6 @@ struct DuplicateGroup: Identifiable {
     let id = UUID()
     let fileHash: String
     let items: [ConvertedPDF]
-    // Helper for UI
     var files: [ConvertedPDF] { items }
 }
 
@@ -56,30 +61,25 @@ struct ConversionSettings: Codable, Equatable {
     var epubSettings: EPUBSettings = EPUBSettings()
     var targetDevice: String = "Kindle Scribe"
     var enablePanelSplit: Bool = false
-    var comicVineAPIKey: String = "" // Fixed missing member
-    
-    // Proxy for UI convenience if needed, though Views should use epubSettings
-    var mangaMode: Bool {
-        get { epubSettings.mangaMode }
-        set { epubSettings.mangaMode = newValue }
-    }
-    
-    var imageEnhancement = ImageEnhancementSettings()
+    var comicVineAPIKey: String = ""
     var optimizeForDevice: Bool = false
+    var imageEnhancement = ImageEnhancementSettings()
 }
 
 struct ImageEnhancementSettings: Codable, Equatable {
     var enabled: Bool = false
+    var autoContrast: Bool = false
+    var grayscale: Bool = false
+    var invertColors: Bool = false
     var contrast: Double = 1.0
 }
 
 struct EPUBSettings: Codable, Equatable {
     var splitPanels: Bool = false
-    var mangaMode: Bool = false {
-        didSet { readingDirection = mangaMode ? .rightToLeft : .leftToRight }
-    }
-    var enablePanelView: Bool = true
+    var mangaMode: Bool = false
+    var readingDirection: ReadingDirection = .leftToRight
     var useFixedLayout: Bool = true
+    var enablePanelView: Bool = true
     var includeTableOfContents: Bool = true
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
     
@@ -88,23 +88,48 @@ struct EPUBSettings: Codable, Equatable {
         case rightToLeft = "Right to Left"
         case vertical = "Vertical"
     }
-    
-    var readingDirection: ReadingDirection = .leftToRight
 }
 
 enum OutputFormat: String, CaseIterable, Identifiable, Codable {
     case pdf = "PDF"
     case epub = "EPUB"
-    case both = "PDF & EPUB" // Fixed missing case
+    case both = "PDF & EPUB"
     var id: String { rawValue }
     var icon: String { "doc.on.doc" }
 }
 
-enum OrganizationMethod: String, CaseIterable, Identifiable, Codable {
-    case dateAdded = "Date Added"
-    case alphabetical = "Alphabetical"
-    case fileSize = "File Size"
-    var id: String { rawValue }
+enum CompressionPreset: String, CaseIterable, Codable {
+    case original = "Original"
+    case high = "High Quality"
+    case balanced = "Balanced"
+    case compact = "Compact"
+    case custom = "Custom"
+}
+
+enum KindleDeviceType: String, CaseIterable, Codable {
+    case scribe = "Kindle Scribe"
+    case paperwhite = "Kindle Paperwhite"
+    case oasis = "Kindle Oasis"
+    case basic = "Kindle Basic"
+    case app = "Kindle App"
+    
+    var icon: String { "ipad.gen2" } // Placeholder icon
+}
+
+struct KindleDevice: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var name: String
+    var email: String
+    var deviceType: KindleDeviceType
+    var isDefault: Bool
+}
+
+// MARK: - Storage & System
+
+struct StorageInfo {
+    let used: Int64
+    let total: Int64
+    let appUsage: Int64
 }
 
 struct ConversionPreset: Identifiable, Codable {
@@ -112,7 +137,7 @@ struct ConversionPreset: Identifiable, Codable {
     var name: String
     var settings: ConversionSettings
     var icon: String = "gearshape"
-    var isDefault: Bool = false // Fixed missing member
+    var isDefault: Bool = false
 }
 
 struct BackupData: Codable {
@@ -123,7 +148,20 @@ struct BackupData: Codable {
     let presets: [ConversionPreset]
 }
 
-// MARK: - Panel Editing (Consolidated here)
+// MARK: - Tasks
+
+// Changed to ObservableObject so Views can observe progress
+class BackgroundTask: ObservableObject, Identifiable {
+    let id = UUID()
+    let description: String
+    @Published var progress: Double = 0.0
+    
+    init(description: String) {
+        self.description = description
+    }
+}
+
+// MARK: - Panels
 
 struct EditablePanel: Identifiable, Equatable {
     let id: UUID
@@ -156,14 +194,7 @@ class PanelEditSession: ObservableObject, Identifiable {
     }
 }
 
-// MARK: - Tasks
-
-struct BackgroundTask: Identifiable {
-    let id = UUID()
-    let description: String
-}
-
-// Stub for PageItem to satisfy PageReorderView
+// Stub for Reorder View
 struct PageItem: Identifiable, Equatable {
     let id = UUID()
     let originalIndex: Int
