@@ -10,7 +10,7 @@ struct LibraryView: View {
     // Logic State
     @State private var fileToConvert: ConvertedPDF?
     @State private var showingConvertAlert = false
-    @State private var readingPDF: ConvertedPDF? // Triggers the Reader
+    @State private var readingPDF: ConvertedPDF?
     
     var body: some View {
         NavigationView {
@@ -33,40 +33,60 @@ struct LibraryView: View {
                 } 
                 // Library List
                 else {
-                    List(conversionManager.convertedPDFs) { pdf in
-                        HStack {
-                            // Icon Color Coding
-                            Image(systemName: iconForType(pdf))
-                                .foregroundColor(colorForType(pdf))
-                                .font(.title2)
-                            
-                            VStack(alignment: .leading) {
-                                Text(pdf.name)
-                                    .font(.headline)
-                                Text(pdf.formattedSize)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                    List {
+                        ForEach(conversionManager.convertedPDFs) { pdf in
+                            HStack {
+                                // 1. Tappable Area (Icon + Name)
+                                HStack {
+                                    Image(systemName: iconForType(pdf))
+                                        .foregroundColor(colorForType(pdf))
+                                        .font(.title2)
+                                    
+                                    VStack(alignment: .leading) {
+                                        Text(pdf.name)
+                                            .font(.headline)
+                                            .lineLimit(1)
+                                        Text(pdf.formattedSize)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .contentShape(Rectangle()) // Makes empty space tappable
+                                .onTapGesture {
+                                    handleTap(on: pdf)
+                                }
+                                
+                                Spacer()
+                                
+                                // 2. The Missing "..." Action Menu
+                                PDFActionViews(pdf: pdf)
+                                    .buttonStyle(BorderlessButtonStyle()) // Prevents row selection when tapping dots
                             }
+                            .padding(.vertical, 4)
                         }
-                        .contentShape(Rectangle()) // Makes whole row tappable
-                        .onTapGesture {
-                            handleTap(on: pdf)
-                        }
-                        .swipeActions {
-                            Button("Delete", role: .destructive) {
+                        .onDelete { indexSet in
+                            for index in indexSet {
+                                let pdf = conversionManager.convertedPDFs[index]
                                 conversionManager.deletePDF(pdf)
                             }
                         }
                     }
+                    .listStyle(InsetGroupedListStyle())
                 }
                 
                 // Status Bar
                 if let status = conversionManager.statusMessage {
-                    Text(status)
-                        .padding()
-                        .background(Color.yellow.opacity(0.2))
-                        .cornerRadius(8)
-                        .padding()
+                    HStack {
+                        if conversionManager.isConverting {
+                            ProgressView()
+                                .padding(.trailing, 5)
+                        }
+                        Text(status)
+                    }
+                    .padding()
+                    .background(Color.yellow.opacity(0.2))
+                    .cornerRadius(8)
+                    .padding()
                 }
             }
             .navigationTitle("Library")
