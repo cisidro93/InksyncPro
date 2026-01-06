@@ -3,62 +3,54 @@ import SwiftUI
 struct PDFActionViews: View {
     let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
-    
-    @State private var showingRename = false
-    @State private var showingDelete = false
-    @State private var showingExtraction = false
-    @State private var newName = ""
+    @State private var showingShareSheet = false
+    @State private var showingDeleteConfirmation = false
     
     var body: some View {
         Menu {
+            // Section 1: Read/Open
             Button {
-                newName = pdf.name
-                showingRename = true
+                showingShareSheet = true
             } label: {
-                Label("Rename", systemImage: "pencil")
+                Label("Export / Send to Kindle", systemImage: "square.and.arrow.up")
             }
             
+            // Section 2: Tools
             Button {
-                showingExtraction = true
+                conversionManager.generateCoverThumbnail(for: pdf) // Refresh thumb
+                // Trigger the "Extract Panels" editor (Cover Mode)
+                if let image = conversionManager.getThumbnail(for: pdf) {
+                    let session = PanelEditSession(id: UUID(), originalImage: image, panels: [])
+                    conversionManager.currentPanelSession = session
+                    conversionManager.showingPanelEditor = true
+                }
             } label: {
-                Label("Extract Panels", systemImage: "crop")
+                Label("Extract Panels (Cover)", systemImage: "scissors")
             }
             
-            Divider()
-            
+            // Section 3: Destructive
             Button(role: .destructive) {
-                showingDelete = true
+                showingDeleteConfirmation = true
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+            
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.title2)
                 .padding(8)
         }
-        // Rename Alert
-        .alert("Rename File", isPresented: $showingRename) {
-            TextField("New Name", text: $newName)
-            Button("Rename") {
-                // Rename logic stub
-            }
-            Button("Cancel", role: .cancel) { }
+        // Sheets
+        .sheet(isPresented: $showingShareSheet) {
+            ShareSheet(activityItems: [pdf.url])
         }
-        // Delete Alert
-        .alert("Delete File", isPresented: $showingDelete) {
+        .alert("Delete File?", isPresented: $showingDeleteConfirmation) {
             Button("Delete", role: .destructive) {
                 conversionManager.deletePDF(pdf)
             }
             Button("Cancel", role: .cancel) { }
-        }
-        // Extraction Sheet
-        .sheet(isPresented: $showingExtraction) {
-            if let thumbnail = conversionManager.getThumbnail(for: pdf) {
-                // ✅ FIX: Passed 'isPresented' binding
-                PanelExtractionView(sourceImage: thumbnail, isPresented: $showingExtraction)
-            } else {
-                Text("No image available")
-            }
+        } message: {
+            Text("This action cannot be undone.")
         }
     }
 }
