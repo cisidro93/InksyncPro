@@ -89,7 +89,7 @@ class ConversionManager: ObservableObject {
         
         do {
             // ✅ THE REAL CALL
-            let newURL = try await converter.convert(sourceURL: pdf.url, settings: conversionSettings.epubSettings) { progress in
+            let newURL = try await converter.convert(sourceURL: pdf.url, settings: conversionSettings) { progress in
                 // Log progress
                 print("Conversion Progress: \(Int(progress * 100))%")
             }

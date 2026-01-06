@@ -4,7 +4,8 @@ import ZIPFoundation
 
 class CBZToEPUBConverter {
     
-    func convert(sourceURL: URL, settings: EPUBSettings, progressHandler: @escaping (Double) -> Void) async throws -> URL {
+    // ✅ Change: Now accepts 'ConversionSettings' to access Kindle/Grayscale prefs
+    func convert(sourceURL: URL, settings: ConversionSettings, progressHandler: @escaping (Double) -> Void) async throws -> URL {
         
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -35,20 +36,9 @@ class CBZToEPUBConverter {
         // 4. CSS (Strict Reset)
         let cssContent = """
         @page { margin: 0; padding: 0; }
-        body { 
-            margin: 0; padding: 0; 
-            width: 100vw; height: 100vh; 
-            background-color: #000000;
-        }
-        div.svg-wrapper {
-            width: 100%; height: 100%;
-            margin: 0; padding: 0;
-            text-align: center;
-        }
-        img { 
-            height: 100%; width: auto; 
-            max-width: 100%; object-fit: contain; 
-        }
+        body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
+        div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+        img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
         """
         try cssContent.write(to: cssDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
         
@@ -59,17 +49,29 @@ class CBZToEPUBConverter {
         
         for (index, imgURL) in imageURLs.enumerated() {
             let fileExt = imgURL.pathExtension.lowercased()
-            let newName = "page_\(String(format: "%03d", index + 1)).\(fileExt)"
+            // Always convert to JPG if we processed it (processing strips transparency/format)
+            let newName = "page_\(String(format: "%03d", index + 1)).jpg"
             let destURL = imagesDir.appendingPathComponent(newName)
-            try fileManager.moveItem(at: imgURL, to: destURL)
             
-            let mimeType = (fileExt == "png") ? "image/png" : "image/jpeg"
+            // ✅ FEATURE RESTORED: Image Processing
+            // We verify if we need to process (resize/grayscale) or just copy
+            if settings.optimizeForDevice || settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast {
+                if let processed = ImageProcessor.process(imageURL: imgURL, settings: settings),
+                   let data = processed.jpegData(compressionQuality: settings.compressionQuality.value) {
+                    try data.write(to: destURL)
+                } else {
+                    // Fallback if processing fails
+                    try fileManager.copyItem(at: imgURL, to: destURL)
+                }
+            } else {
+                // Just copy if no settings enabled (Fast Mode)
+                try fileManager.copyItem(at: imgURL, to: destURL)
+            }
             
-            // Mark first image as cover-image
+            // Manifest & HTML Generation
             let properties = (index == 0) ? "properties=\"cover-image\"" : ""
-            manifestItems.append("<item id=\"img_\(index)\" href=\"images/\(newName)\" media-type=\"\(mimeType)\" \(properties)/>")
+            manifestItems.append("<item id=\"img_\(index)\" href=\"images/\(newName)\" media-type=\"image/jpeg\" \(properties)/>")
             
-            // HTML
             let htmlContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE html>
@@ -80,25 +82,19 @@ class CBZToEPUBConverter {
                 <link rel="stylesheet" type="text/css" href="css/style.css"/>
             </head>
             <body>
-                <div class="svg-wrapper">
-                    <img src="images/\(newName)" alt=""/>
-                </div>
+                <div class="svg-wrapper"><img src="images/\(newName)" alt=""/></div>
             </body>
             </html>
             """
             
             let htmlName = "page_\(index).xhtml"
             try htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
-            
             manifestItems.append("<item id=\"page_\(index)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-            
-            // ✅ Fix: All pages are linear="yes"
             spineItems.append("<itemref idref=\"page_\(index)\" linear=\"yes\"/>")
             
             progressHandler(0.2 + (0.7 * Double(index) / Double(imageURLs.count)))
         }
         
-        // ✅ Fix: Add Nav to spine LAST and mark linear="no" to hide it from swipe flow
         spineItems.append("<itemref idref=\"nav\" linear=\"no\"/>")
         
         // 6. Metadata (OPF)
@@ -125,40 +121,29 @@ class CBZToEPUBConverter {
         """
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
-        // 7. Navigation (Hidden Style)
-        // ✅ Fix: Added 'hidden' attribute and empty list to prevent visual rendering if reader forces it
+        // 7. Navigation
         let navContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" hidden="">
         <head><title>Navigation</title></head>
-        <body>
-            <nav epub:type="toc" id="toc" hidden="">
-                <ol hidden="">
-                    <li><a href="page_0.xhtml">Cover</a></li>
-                </ol>
-            </nav>
-        </body>
+        <body><nav epub:type="toc" id="toc" hidden=""><ol hidden=""><li><a href="page_0.xhtml">Cover</a></li></ol></nav></body>
         </html>
         """
         try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
         
-        // 8. Container
+        // 8. Container & Zip
         let metaInfDir = epubDir.appendingPathComponent("META-INF")
         try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
         try """
         <?xml version="1.0"?>
         <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-            <rootfiles>
-                <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-            </rootfiles>
+            <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
         </container>
         """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
-        // 9. Zip
         progressHandler(0.95)
         let finalName = sourceURL.deletingPathExtension().lastPathComponent + ".epub"
         let destURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(finalName)
-        
         if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
         try fileManager.zipItem(at: epubDir, to: destURL)
         
