@@ -64,10 +64,8 @@ struct SendHistoryRecord: Identifiable, Codable {
 
 struct ConversionSettings: Codable, Equatable {
     var outputFormat: OutputFormat = .epub
-    // ✅ Changed to Enum to match View expectations
     var compressionQuality: CompressionPreset = .balanced
     var epubSettings: EPUBSettings = EPUBSettings()
-    // ✅ Changed to Enum to match View expectations
     var targetDevice: KindleDeviceType = .scribe
     var enablePanelSplit: Bool = false
     var comicVineAPIKey: String = ""
@@ -99,7 +97,6 @@ struct EPUBSettings: Codable, Equatable {
     var includeTableOfContents: Bool = true
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
     
-    // ✅ Typealias to fix "EPUBSettings.PanelDetectionMode" lookup error
     typealias PanelDetectionMode = PanelExtractor.ExtractionMode
     
     enum ReadingDirection: String, Codable, Equatable, CaseIterable {
@@ -124,7 +121,6 @@ enum CompressionPreset: String, CaseIterable, Codable {
     case compact = "Compact"
     case custom = "Custom"
     
-    // Helper for logic
     var value: Double {
         switch self {
         case .original: return 1.0
@@ -143,6 +139,9 @@ enum KindleDeviceType: String, CaseIterable, Codable {
     case basic = "Kindle Basic"
     case app = "Kindle App"
     var icon: String { "ipad.gen2" }
+    
+    // Stub resolution
+    var resolution: CGSize { CGSize(width: 1860, height: 2480) }
 }
 
 struct KindleDevice: Identifiable, Codable, Equatable {
@@ -175,6 +174,19 @@ struct BackupData: Codable {
     let settings: ConversionSettings
     let collections: [PDFCollection]
     let presets: [ConversionPreset]
+}
+
+// MARK: - Tasks
+
+// Renamed from BackgroundTask to AppBackgroundTask
+class AppBackgroundTask: ObservableObject, Identifiable {
+    let id = UUID()
+    let description: String
+    @Published var progress: Double = 0.0
+    
+    init(description: String) {
+        self.description = description
+    }
 }
 
 // MARK: - Panels

@@ -7,7 +7,8 @@ class ConversionManager: ObservableObject {
     @Published var conversionPresets: [ConversionPreset] = []
     @Published var kindleDevices: [KindleDevice] = []
     @Published var sendHistory: [ConvertedPDF] = []
-    @Published var activeTasks: [BackgroundTask] = []
+    // Updated to AppBackgroundTask
+    @Published var activeTasks: [AppBackgroundTask] = []
     @Published var conversionSettings = ConversionSettings()
     
     @Published var isConverting = false
@@ -65,8 +66,8 @@ class ConversionManager: ObservableObject {
         scanLibrary()
     }
     
-    // ✅ Updated to match View signature
-    func addConvertedPDF(url: URL, pageCount: Int, fileSize: Int64, duration: TimeInterval) {
+    // ✅ Updated to match View signature with defaults
+    func addConvertedPDF(url: URL, pageCount: Int = 0, fileSize: Int64 = 0, duration: TimeInterval = 0) {
         let pdf = ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: pageCount, fileSize: fileSize, metadata: PDFMetadata(title: url.lastPathComponent), collectionId: nil)
         convertedPDFs.append(pdf)
         scanLibrary()
@@ -89,7 +90,7 @@ class ConversionManager: ObservableObject {
         return url
     }
 
-    // MARK: - Stubs
+    // MARK: - Collections & Kindle
     
     func createCollection(name: String, icon: String, color: String) {
         collections.append(PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date()))
@@ -115,7 +116,12 @@ class ConversionManager: ObservableObject {
     func extractImageURLs(from url: URL) async throws -> [URL] { return [] }
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL { return pdf.url }
     func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL { return pdf.url }
-    func extractImages(from url: URL, progressHandler: (Double) -> Void) async throws -> [URL] { return [] }
+    
+    // ✅ Updated to return UIImages as expected by PageManagerView
+    func extractImages(from url: URL, progressHandler: (Double) -> Void) async throws -> [UIImage] {
+        return [UIImage(systemName: "doc.text")!] // Stub
+    }
+    
     func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL { return url }
     func splitFileInBackground(pdf: ConvertedPDF, maxSizeMB: Double) {}
     func calculateStorageInfo() -> StorageInfo { return StorageInfo(used: 0, totalSize: 1000, appUsage: 0) }
@@ -124,7 +130,10 @@ class ConversionManager: ObservableObject {
     func deletePreset(_ preset: ConversionPreset) { conversionPresets.removeAll { $0.id == preset.id } }
     func createBackupData() -> BackupData { BackupData(version: "1.0", date: Date(), settings: conversionSettings, collections: collections, presets: conversionPresets) }
     func restoreFromBackup(_ backup: BackupData) { conversionSettings = backup.settings }
-    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? { return UIImage(systemName: "doc.text") }
+    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
+        if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }
+        return UIImage(systemName: "doc.text")
+    }
     func generateCoverThumbnail(for pdf: ConvertedPDF) {}
     func updatePDFMetadata(_ pdf: ConvertedPDF, metadata: PDFMetadata) {
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].metadata = metadata }
