@@ -59,8 +59,8 @@ struct LibraryPDFRowWithCover: View {
                         .foregroundColor(.secondary)
                 }
                 
-                if !pdf.metadata.series.isEmpty {
-                    Text(pdf.metadata.series)
+                if let series = pdf.metadata.series, !series.isEmpty {
+                    Text(series)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }

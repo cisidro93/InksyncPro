@@ -36,10 +36,23 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var author: String?
     var series: String?
     var issueNumber: String?
-    var volume: String? // ✅ Added
+    var volume: String?
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
+    var tags: [String] = [] // ✅ Added
+}
+
+// ... (Rest of file remains unchanged until EPUBPanelManifest)
+
+// ✅ Stub for EPUBMerger legacy code
+struct EPUBPanelManifest: Codable {
+    var pages: [PageInfo] = []
+    
+    struct PageInfo: Codable {
+        var pageNumber: Int
+        var panels: [PanelExtractor.Panel]
+    }
 }
 
 struct PDFCollection: Identifiable, Codable, Equatable {
@@ -227,6 +240,12 @@ struct BackupData: Codable {
 }
 
 // ✅ Stub for EPUBMerger legacy code
+// ✅ Stub for EPUBMerger legacy code
 struct EPUBPanelManifest: Codable {
-    // Empty stub to satisfy legacy signature
+    var pages: [PageInfo] = []
+    
+    struct PageInfo: Codable {
+        var pageNumber: Int
+        var panels: [PanelExtractor.Panel]
+    }
 }

@@ -338,10 +338,10 @@ class EPUBGenerator {
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
                 <dc:identifier id="BookID">\(UUID().uuidString)</dc:identifier>
                 <dc:title>\(metadata.title.isEmpty ? "Comic Book" : metadata.title)</dc:title>
-                <dc:creator>\(metadata.author.isEmpty ? "Unknown" : metadata.author)</dc:creator>
+                <dc:creator>\((metadata.author?.isEmpty ?? true) ? "Unknown" : metadata.author!)</dc:creator>
                 <dc:language>en</dc:language>
-                <dc:description>\(metadata.summary.isEmpty ? "Comic book converted from CBZ/CBR" : metadata.summary)</dc:description>
-                <dc:publisher>\(metadata.publisher.isEmpty ? "ComicToPDF" : metadata.publisher)</dc:publisher>
+                <dc:description>\((metadata.summary?.isEmpty ?? true) ? "Comic book converted from CBZ/CBR" : metadata.summary!)</dc:description>
+                <dc:publisher>\((metadata.publisher?.isEmpty ?? true) ? "ComicToPDF" : metadata.publisher!)</dc:publisher>
                 <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
