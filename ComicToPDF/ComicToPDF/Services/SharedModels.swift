@@ -8,18 +8,18 @@ struct ConvertedPDF: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var name: String
     let url: URL
-    var pageCount: Int // ✅ Fix: Changed let to var
+    var pageCount: Int
     let fileSize: Int64
     var metadata: PDFMetadata
     var collectionId: UUID?
+    var isFavorite: Bool = false // ✅ Added
     
-    // Quick Formatted Size
     var formattedSize: String {
         let mb = Double(fileSize) / 1024 / 1024
         return String(format: "%.1f MB", mb)
     }
     
-    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil) {
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false) {
         self.id = id
         self.name = name
         self.url = url
@@ -27,6 +27,7 @@ struct ConvertedPDF: Identifiable, Codable, Equatable, Hashable {
         self.fileSize = fileSize
         self.metadata = metadata
         self.collectionId = collectionId
+        self.isFavorite = isFavorite
     }
 }
 
@@ -35,6 +36,7 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var author: String?
     var series: String?
     var issueNumber: String?
+    var volume: String? // ✅ Added
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
@@ -44,8 +46,20 @@ struct PDFCollection: Identifiable, Codable, Equatable {
     let id: UUID
     var name: String
     var icon: String
-    var color: String // Hex or name
+    var color: String
     var creationDate: Date
+}
+
+// ✅ Helper for LibraryGridItem
+func colorFor(_ name: String) -> Color {
+    switch name.lowercased() {
+    case "red": return .red
+    case "blue": return .blue
+    case "green": return .green
+    case "orange": return .orange
+    case "purple": return .purple
+    default: return .blue
+    }
 }
 
 struct KindleDevice: Identifiable, Codable, Equatable, Hashable {
@@ -97,14 +111,18 @@ struct ConversionSettings: Codable, Equatable {
     var compressionQuality: CompressionPreset = .balanced
     var optimizeForDevice: Bool = false
     var targetDevice: KindleDeviceType = .scribe
-    var mangaMode: Bool = false // Right-to-Left
+    var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
+    var comicVineAPIKey: String = "" // ✅ Added
     var epubSettings: EPUBSettings = EPUBSettings()
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
 }
 
 struct EPUBSettings: Codable, Equatable {
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
+    var includeTableOfContents: Bool = true // ✅ Added
+    var splitPanels: Bool = false // ✅ Added (Legacy alias)
+    var enablePanelView: Bool = false // ✅ Added (Legacy alias)
 }
 
 struct ImageEnhancementSettings: Codable, Equatable {
@@ -164,7 +182,15 @@ struct PanelEditSession: Identifiable {
     }
 }
 
-// ✅ Fix: Changed to class and added ObservableObject for TaskMonitorRow
+struct PageItem: Identifiable, Equatable {
+    let id = UUID()
+    let originalIndex: Int
+    var currentIndex: Int
+    let thumbnail: UIImage
+}
+
+// MARK: - Task & App Models
+
 class AppBackgroundTask: Identifiable, ObservableObject {
     let id: UUID
     @Published var title: String
@@ -200,10 +226,7 @@ struct BackupData: Codable {
     let presets: [ConversionPreset]
 }
 
-// ✅ Fix: Added PageItem struct for PageReorderView
-struct PageItem: Identifiable, Equatable {
-    let id = UUID()
-    let originalIndex: Int
-    var currentIndex: Int
-    let thumbnail: UIImage
+// ✅ Stub for EPUBMerger legacy code
+struct EPUBPanelManifest: Codable {
+    // Empty stub to satisfy legacy signature
 }
