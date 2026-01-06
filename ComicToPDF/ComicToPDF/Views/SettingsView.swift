@@ -49,7 +49,6 @@ struct SettingsView: View {
                 Toggle("Invert Colors (Dark Mode)", isOn: $conversionManager.conversionSettings.imageEnhancement.invertColors)
                 
                 if conversionManager.conversionSettings.imageEnhancement.grayscale == false {
-                    // Only show brightness/sharpness if not in strict grayscale mode
                     HStack {
                         Text("Brightness")
                         Slider(value: $conversionManager.conversionSettings.imageEnhancement.brightness, in: -0.5...0.5)
@@ -68,7 +67,10 @@ struct SettingsView: View {
                 
                 if conversionManager.conversionSettings.enablePanelSplit {
                     Picker("Detection Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
-                        Text("Automatic").tag(PanelExtractor.ExtractionMode.automatic)
+                        Text("Automatic (Standard)").tag(PanelExtractor.ExtractionMode.automatic)
+                        // ✅ Fix: Added Missing Modes
+                        Text("Aggressive (Find More)").tag(PanelExtractor.ExtractionMode.aggressive)
+                        Text("Conservative (Strict)").tag(PanelExtractor.ExtractionMode.conservative)
                         Text("Grid (2x2)").tag(PanelExtractor.ExtractionMode.grid(rows: 2, columns: 2))
                     }
                 }
@@ -83,7 +85,6 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
-        // Trigger save whenever settings change
         .onChange(of: conversionManager.conversionSettings) { _ in
             conversionManager.saveSettings()
         }
