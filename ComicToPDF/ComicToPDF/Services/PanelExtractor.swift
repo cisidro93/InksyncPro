@@ -9,7 +9,6 @@ struct PanelExtractor {
         case aggressive
         case grid(rows: Int, columns: Int)
         
-        // ✅ Fix: Add static constants for Picker tags
         static let grid2x2 = ExtractionMode.grid(rows: 2, columns: 2)
         
         var title: String {
@@ -28,17 +27,17 @@ struct PanelExtractor {
     }
     
     static func detectPanels(in image: UIImage, mode: ExtractionMode = .automatic) async -> [Panel] {
-        guard let cgImage = image.cgImage else { return [] }
+        // ✅ Fix: Removed unused 'cgImage' warning
+        guard image.cgImage != nil else { return [] }
         
         if case .grid(let rows, let cols) = mode {
             return generateGridPanels(rows: rows, cols: cols)
         }
         
-        // Vision logic stub for compilation
+        // Vision logic stub
         return [Panel(boundingBox: CGRect(x: 0, y: 0, width: 1, height: 1))]
     }
     
-    // Stub to match View expectations (returns Images, not Panels)
     static func extractPanels(from image: UIImage, mode: ExtractionMode) async throws -> [UIImage] {
         return [image]
     }
