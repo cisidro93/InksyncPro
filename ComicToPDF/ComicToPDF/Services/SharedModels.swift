@@ -42,6 +42,7 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
+    var tags: [String] = [] // ✅ Added missing property
 }
 
 struct PDFCollection: Identifiable, Codable, Equatable {
