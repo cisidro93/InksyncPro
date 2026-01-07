@@ -4,11 +4,18 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject var conversionManager: ConversionManager
+    
+    // UI State
     @State private var showingDocumentPicker = false
     @State private var showingSortMenu = false
     @State private var searchText = ""
     @State private var sortOption: SortOption = .dateAdded
     @State private var isImporting = false
+    
+    // Feature State (Sharing & Editing)
+    @State private var activePDF: ConvertedPDF?
+    @State private var showingShareSheet = false
+    @State private var showingPageManager = false
     
     enum SortOption {
         case dateAdded, name, size
@@ -86,8 +93,8 @@ struct LibraryView: View {
                     }
                 }
             }
+            // ✅ Feature Sheets
             .sheet(isPresented: $showingDocumentPicker) {
-                // ✅ Fix: Correct parameter name
                 DocumentPicker(onDocumentsPicked: { urls in
                     isImporting = true
                     Task {
@@ -95,6 +102,16 @@ struct LibraryView: View {
                         isImporting = false
                     }
                 })
+            }
+            .sheet(isPresented: $showingShareSheet) {
+                if let pdf = activePDF {
+                    ShareSheet(activityItems: [pdf.url])
+                }
+            }
+            .sheet(isPresented: $showingPageManager) {
+                if let pdf = activePDF {
+                    PageManagerView(pdf: pdf)
+                }
             }
         }
     }
@@ -128,7 +145,6 @@ struct LibraryView: View {
         List {
             ForEach(filteredPDFs) { pdf in
                 NavigationLink(destination: ConvertView(pdf: pdf)) {
-                    // ✅ Fix: Added isSelected: false
                     LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
                 }
                 .swipeActions(edge: .leading) {
@@ -147,6 +163,24 @@ struct LibraryView: View {
                     }
                 }
                 .contextMenu {
+                    // 1. Export (Share)
+                    Button {
+                        activePDF = pdf
+                        showingShareSheet = true
+                    } label: {
+                        Label("Export / Send to Kindle", systemImage: "square.and.arrow.up")
+                    }
+                    
+                    // 2. V1.1 Feature (Edit)
+                    Button {
+                        activePDF = pdf
+                        showingPageManager = true
+                    } label: {
+                        Label("Edit Book & Pages", systemImage: "doc.on.doc")
+                    }
+                    
+                    Divider()
+                    
                     Button {
                         Task {
                             await conversionManager.convertComic(
