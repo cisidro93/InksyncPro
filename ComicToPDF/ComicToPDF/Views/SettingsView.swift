@@ -16,7 +16,6 @@ struct SettingsView: View {
                 }
             }
             
-            // ✅ UPDATED: Compression & Splitting
             Section(header: Text("Optimization")) {
                 Picker("Compression", selection: $conversionManager.conversionSettings.compressionQuality) {
                     ForEach(CompressionPreset.allCases, id: \.self) { preset in
@@ -37,6 +36,9 @@ struct SettingsView: View {
             
             Section(header: Text("Kindle & E-Reader")) {
                 Toggle("Optimize for Device", isOn: $conversionManager.conversionSettings.optimizeForDevice)
+                
+                // ✅ NEW: Toggle for Table of Contents
+                Toggle("Include Table of Contents", isOn: $conversionManager.conversionSettings.epubSettings.includeTableOfContents)
                 
                 if conversionManager.conversionSettings.optimizeForDevice {
                     Picker("Target Device", selection: $conversionManager.conversionSettings.targetDevice) {

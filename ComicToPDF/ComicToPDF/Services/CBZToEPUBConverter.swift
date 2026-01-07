@@ -63,7 +63,11 @@ class CBZToEPUBConverter {
             // Manifest
             var finalManifest = manifestItems
             finalManifest.insert("<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>", at: 0)
-            finalManifest.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
+            
+            // ✅ CHECK: Only add Nav if enabled
+            if settings.epubSettings.includeTableOfContents {
+                finalManifest.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
+            }
             
             // Move Images & Write XHTML
             for (id, url) in currentImages {
@@ -110,15 +114,17 @@ class CBZToEPUBConverter {
             """
             try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
             
-            // Nav
-            let navContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" hidden="">
-            <head><title>Navigation</title></head>
-            <body><nav epub:type="toc" id="toc" hidden=""><ol hidden=""><li><a href="page_0000.xhtml">Start</a></li></ol></nav></body>
-            </html>
-            """
-            try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+            // ✅ CHECK: Only Write Nav if enabled
+            if settings.epubSettings.includeTableOfContents {
+                let navContent = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" hidden="">
+                <head><title>Navigation</title></head>
+                <body><nav epub:type="toc" id="toc" hidden=""><ol hidden=""><li><a href="page_0000.xhtml">Start</a></li></ol></nav></body>
+                </html>
+                """
+                try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+            }
             
             // Container
             let metaInfDir = epubBuildDir.appendingPathComponent("META-INF")
