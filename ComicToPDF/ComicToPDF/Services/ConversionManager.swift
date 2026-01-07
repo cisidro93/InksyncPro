@@ -54,9 +54,7 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    func savePDFs() {
-        saveLibrary() // Alias for older views
-    }
+    func savePDFs() { saveLibrary() }
     
     func loadLibrary() {
         struct LibraryIndex: Codable {
@@ -126,7 +124,17 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    // MARK: - Page Management (The Missing Piece!)
+    func removeFromLibrary(_ pdf: ConvertedPDF) {
+        deletePDF(pdf)
+    }
+    
+    func addConvertedPDF(url: URL, pageCount: Int = 0, fileSize: Int64 = 0, duration: TimeInterval = 0) {
+         let pdf = ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: pageCount, fileSize: fileSize, metadata: PDFMetadata(title: url.lastPathComponent), collectionId: nil)
+         convertedPDFs.append(pdf)
+         saveLibrary()
+     }
+    
+    // MARK: - Page Management (Core & Advanced)
     
     func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
         let fileManager = FileManager.default
@@ -134,10 +142,8 @@ class ConversionManager: ObservableObject {
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: tempDir) }
         
-        // Unzip
         try fileManager.unzipItem(at: url, to: tempDir)
         
-        // Find Images
         let keys: [URLResourceKey] = [.nameKey]
         let enumerator = fileManager.enumerator(at: tempDir, includingPropertiesForKeys: keys)
         var imageURLs: [URL] = []
@@ -158,7 +164,6 @@ class ConversionManager: ObservableObject {
             }
             progressHandler(Double(index) / Double(imageURLs.count))
         }
-        
         return images
     }
     
@@ -169,10 +174,8 @@ class ConversionManager: ObservableObject {
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: tempDir) }
         
-        // Unzip
         try fileManager.unzipItem(at: sourceURL, to: tempDir)
         
-        // Find Images
         let keys: [URLResourceKey] = [.nameKey]
         guard let enumerator = fileManager.enumerator(at: tempDir, includingPropertiesForKeys: keys) else { return }
         var imageURLs: [URL] = []
@@ -185,30 +188,42 @@ class ConversionManager: ObservableObject {
         }
         imageURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
         
-        // Delete Selected
         for (index, url) in imageURLs.enumerated() {
             if pageIndices.contains(index) {
                 try fileManager.removeItem(at: url)
             }
         }
         
-        // Re-Zip
         let newURL = tempDir.appendingPathComponent("repacked.cbz")
         try fileManager.zipItem(at: tempDir, to: newURL)
         
-        // Replace Original
         if fileManager.fileExists(atPath: sourceURL.path) {
             try fileManager.removeItem(at: sourceURL)
         }
         try fileManager.moveItem(at: newURL, to: sourceURL)
         
-        // Refresh Library
-        await MainActor.run {
-            self.scanLibrary()
-        }
+        await MainActor.run { self.scanLibrary() }
     }
     
-    // MARK: - Collections
+    func extractImageURLs(from url: URL) async throws -> [URL] {
+        let fileManager = FileManager.default
+        // In a real app, this should cache the unzipped content.
+        // For this stub, we return empty or implement a temporary unzip similar to above.
+        // Returning empty to satisfy compiler for non-core features, or implement if needed.
+        return []
+    }
+    
+    func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL {
+        // Stub implementation
+        return pdf.url
+    }
+    
+    func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL {
+        // Stub implementation
+        return url
+    }
+    
+    // MARK: - Collections & Organization
     
     func createCollection(name: String, icon: String, color: String) {
         let newCollection = PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date())
@@ -231,6 +246,40 @@ class ConversionManager: ObservableObject {
             convertedPDFs[idx].collectionId = collectionId
             saveLibrary()
         }
+    }
+    
+    func autoOrganize() {
+        // Stub: Implement auto-grouping by series name
+        print("Auto-organize triggered")
+    }
+    
+    func findDuplicates() async -> [DuplicateGroup] {
+        // Stub
+        return []
+    }
+    
+    func calculateStorageInfo() -> StorageInfo {
+        let total = convertedPDFs.reduce(0) { $0 + $1.fileSize }
+        return StorageInfo(used: total, totalSize: 10_000_000_000, appUsage: total)
+    }
+    
+    // MARK: - Backup & Restore
+    
+    func createBackupData() -> BackupData {
+        return BackupData(
+            version: "1.0",
+            date: Date(),
+            settings: conversionSettings,
+            collections: collections,
+            presets: conversionPresets
+        )
+    }
+    
+    func restoreFromBackup(_ backup: BackupData) {
+        self.conversionSettings = backup.settings
+        self.collections = backup.collections
+        self.conversionPresets = backup.presets
+        saveLibrary()
     }
     
     // MARK: - Conversion
@@ -265,13 +314,12 @@ class ConversionManager: ObservableObject {
     }
     
     func generateCoverThumbnail(for pdf: ConvertedPDF) {
-        // Force refresh logic if needed
         if let image = extractCoverImage(from: pdf.url) {
             thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
         }
     }
     
-    // MARK: - Thumbnails
+    // MARK: - Thumbnails & Helpers
     
     func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
         if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }
@@ -324,7 +372,7 @@ class ConversionManager: ObservableObject {
         return nil
     }
     
-    // MARK: - Stubs & Helpers
+    // MARK: - Stubs for Kindle Devices
     
     func addKindleDevice(_ device: KindleDevice) { kindleDevices.append(device); saveLibrary() }
     func removeKindleDevice(_ device: KindleDevice) { kindleDevices.removeAll { $0.id == device.id }; saveLibrary() }
