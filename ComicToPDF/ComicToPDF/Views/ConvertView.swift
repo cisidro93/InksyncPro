@@ -4,8 +4,10 @@ struct ConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     let pdf: ConvertedPDF
     
-    @State private var showingPreview = false
-    @State private var estimatedSize: String = "Calculating..."
+    // Local State for this specific conversion job
+    @State private var isMangaMode = false
+    @State private var enablePanelDetection = true
+    @State private var detectionMode: PanelExtractor.ExtractionMode = .automatic
     
     var body: some View {
         Form {
@@ -24,26 +26,40 @@ struct ConvertView: View {
                 Text("Source Details")
             }
             
+            // ✅ Enterprise UI: Configure the Asset, not the App
             Section {
-                Toggle("Enable Panel Detection", isOn: $conversionManager.conversionSettings.enablePanelSplit)
-                if conversionManager.conversionSettings.enablePanelSplit {
-                    Picker("Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
+                Picker("Reading Direction", selection: $isMangaMode) {
+                    Text("Left-to-Right (Western)").tag(false)
+                    Text("Right-to-Left (Manga)").tag(true)
+                }
+                .pickerStyle(.segmented) // Nice visual toggle
+                
+                Toggle("Enable Panel Detection", isOn: $enablePanelDetection)
+                
+                if enablePanelDetection {
+                    Picker("Detection Mode", selection: $detectionMode) {
                         Text("Automatic").tag(PanelExtractor.ExtractionMode.automatic)
                         Text("Aggressive").tag(PanelExtractor.ExtractionMode.aggressive)
                         Text("Grid (2x2)").tag(PanelExtractor.ExtractionMode.grid)
                     }
                 }
                 
-                Toggle("Grayscale", isOn: $conversionManager.conversionSettings.imageEnhancement.grayscale)
-                Toggle("Manga Mode (RTL)", isOn: $conversionManager.conversionSettings.mangaMode)
+                Toggle("Grayscale (E-Ink)", isOn: $conversionManager.conversionSettings.imageEnhancement.grayscale)
             } header: {
-                Text("Conversion Options") // ✅ Fix: Explicit Header Closure
+                Text("Conversion Options")
+            } footer: {
+                Text(isMangaMode ? "Panels will be ordered Right-to-Left." : "Panels will be ordered Left-to-Right.")
             }
             
             Section {
                 Button(action: {
                     Task {
-                        await conversionManager.convertComic(pdf)
+                        // Apply temporary UI overrides to settings
+                        conversionManager.conversionSettings.enablePanelSplit = enablePanelDetection
+                        conversionManager.conversionSettings.epubSettings.panelDetectionMode = detectionMode
+                        
+                        // Pass the specific direction
+                        await conversionManager.convertComic(pdf, mangaMode: isMangaMode)
                     }
                 }) {
                     if conversionManager.isConverting {
@@ -55,6 +71,7 @@ struct ConvertView: View {
                         Text("Start Conversion")
                             .frame(maxWidth: .infinity)
                             .foregroundColor(.blue)
+                            .bold()
                     }
                 }
             }
@@ -68,5 +85,10 @@ struct ConvertView: View {
             }
         }
         .navigationTitle("Convert Comic")
+        .onAppear {
+            // Load defaults from global settings initially
+            isMangaMode = conversionManager.conversionSettings.mangaMode
+            enablePanelDetection = conversionManager.conversionSettings.enablePanelSplit
+        }
     }
 }

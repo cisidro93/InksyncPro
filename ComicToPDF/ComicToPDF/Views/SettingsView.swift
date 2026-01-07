@@ -55,9 +55,9 @@ struct SettingsView: View {
                 }
             }
             
-            Section(header: Text("Reading Options")) {
-                Toggle("Manga Mode (Right-to-Left)", isOn: $conversionManager.conversionSettings.mangaMode)
-                Toggle("Enable Panel Detection", isOn: $conversionManager.conversionSettings.enablePanelSplit)
+            Section(header: Text("Defaults (Applied at Start)")) {
+                Toggle("Default to Manga Mode", isOn: $conversionManager.conversionSettings.mangaMode)
+                Toggle("Default Panel Detection", isOn: $conversionManager.conversionSettings.enablePanelSplit)
                 
                 if conversionManager.conversionSettings.enablePanelSplit {
                     Picker("Detection Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {

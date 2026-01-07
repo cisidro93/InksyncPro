@@ -308,12 +308,19 @@ class ConversionManager: ObservableObject {
     
     // MARK: - Conversion
     
-    func convertComic(_ pdf: ConvertedPDF) async {
+    // ✅ Enterprise Update: Accept mangaMode as a parameter specific to this job
+    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool) async {
         await MainActor.run { isConverting = true; processingStatus = "Converting..."; statusMessage = "Processing..." }
         let converter = CBZToEPUBConverter()
         
+        // Create a temporary settings object for this specific job
+        // This ensures we don't pollute the global defaults
+        var jobSettings = conversionSettings
+        jobSettings.mangaMode = mangaMode // Apply the specific rule
+        
         do {
-            let newURL = try await converter.convert(sourceURL: pdf.url, settings: conversionSettings) { progress in
+            // Pass the modified jobSettings
+            let newURL = try await converter.convert(sourceURL: pdf.url, settings: jobSettings) { progress in
                 print("Progress: \(progress)")
             }
             
