@@ -4,7 +4,8 @@ import ZIPFoundation
 
 class CBZToEPUBConverter {
     
-    func convert(sourceURL: URL, settings: ConversionSettings, progressHandler: @escaping (Double) -> Void) async throws -> URL {
+    // ✅ Updated Signature
+    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]? = nil, progressHandler: @escaping (Double) -> Void) async throws -> URL {
         
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -41,7 +42,7 @@ class CBZToEPUBConverter {
         """
         try cssContent.write(to: cssDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
         
-        // 5. Process Images (The Smart Loop)
+        // 5. Process Images
         var manifestItems: [String] = []
         var spineItems: [String] = []
         manifestItems.append("<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>")
@@ -49,31 +50,38 @@ class CBZToEPUBConverter {
         var globalPageIndex = 0
         
         for (sourceIndex, imgURL) in imageURLs.enumerated() {
-            // Load Image
             guard let originalImage = UIImage(contentsOfFile: imgURL.path) else { continue }
             
-            // Determine "Sub-Pages" (1 if normal, N if splitting)
             var pagesToProcess: [UIImage] = [originalImage]
             
-            // ✅ FEATURE: Panel Detection
+            // ✅ ENTERPRISE LOGIC: Manual Overrides vs AI
             if settings.enablePanelSplit {
-                // Use the AI Engine we built
-                let extracted = try? await PanelExtractor.extractPanels(
-                    from: originalImage,
-                    mode: settings.epubSettings.panelDetectionMode
-                )
-                if let panels = extracted, !panels.isEmpty {
-                    pagesToProcess = panels
+                var extractedPages: [UIImage]?
+                
+                // A. Check for Human Overrides
+                if let manualPanels = manualManifest?[sourceIndex] {
+                    print("Using human overrides for page \(sourceIndex)")
+                    extractedPages = try? await PanelExtractor.cropPanels(from: originalImage, panels: manualPanels)
+                } 
+                // B. Fallback to AI
+                else {
+                    extractedPages = try? await PanelExtractor.extractPanels(
+                        from: originalImage,
+                        mode: settings.epubSettings.panelDetectionMode,
+                        mangaMode: settings.mangaMode
+                    )
+                }
+                
+                if let validPages = extractedPages, !validPages.isEmpty {
+                    pagesToProcess = validPages
                 }
             }
             
-            // Process each sub-page (Panel or Full Page)
-            for (subIndex, image) in pagesToProcess.enumerated() {
+            // Process sub-pages...
+            for (_, image) in pagesToProcess.enumerated() {
                 var finalImage = image
                 
-                // ✅ FEATURE: Optimization (Resize/Grayscale)
                 if settings.optimizeForDevice || settings.imageEnhancement.grayscale {
-                    // Temporarily write to disk to pass to processor (simplifies logic)
                     let tempImgURL = tempDir.appendingPathComponent("temp_\(globalPageIndex).jpg")
                     if let data = finalImage.jpegData(compressionQuality: 1.0) {
                         try? data.write(to: tempImgURL)
@@ -83,7 +91,6 @@ class CBZToEPUBConverter {
                     }
                 }
                 
-                // Save Final Image
                 let newName = "page_\(String(format: "%04d", globalPageIndex)).jpg"
                 let destURL = imagesDir.appendingPathComponent(newName)
                 
@@ -91,7 +98,6 @@ class CBZToEPUBConverter {
                     try data.write(to: destURL)
                 }
                 
-                // Manifest & HTML
                 let isCover = (globalPageIndex == 0)
                 let properties = isCover ? "properties=\"cover-image\"" : ""
                 manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/jpeg\" \(properties)/>")
@@ -119,15 +125,15 @@ class CBZToEPUBConverter {
                 globalPageIndex += 1
             }
             
-            // Update Progress Bar
             let progress = 0.1 + (0.8 * Double(sourceIndex) / Double(imageURLs.count))
             progressHandler(progress)
         }
         
-        // Add Hidden Nav at End
         spineItems.append("<itemref idref=\"nav\" linear=\"no\"/>")
         
         // 6. Metadata
+        let direction = settings.mangaMode ? "rtl" : "ltr"
+        
         let opfContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
@@ -141,7 +147,7 @@ class CBZToEPUBConverter {
                 \(manifestItems.joined(separator: "\n"))
                 <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
             </manifest>
-            <spine page-progression-direction="ltr">
+            <spine page-progression-direction="\(direction)">
                 \(spineItems.joined(separator: "\n"))
             </spine>
             <guide>
@@ -161,7 +167,7 @@ class CBZToEPUBConverter {
         """
         try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
         
-        // 8. Container & Zip
+        // 8. Zip
         let metaInfDir = epubDir.appendingPathComponent("META-INF")
         try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
         try """

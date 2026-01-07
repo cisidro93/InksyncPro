@@ -3,7 +3,6 @@ import UIKit
 
 struct PanelExtractor {
     
-    // ✅ Fix: Simple enum for settings compatibility
     enum ExtractionMode: String, Codable, Equatable, Hashable {
         case automatic
         case conservative
@@ -20,7 +19,6 @@ struct PanelExtractor {
         }
     }
     
-    // ✅ Fix: Native CodingKeys here
     struct Panel: Codable, Equatable, Identifiable {
         let id = UUID()
         let boundingBox: CGRect // Normalized 0..1
@@ -32,7 +30,7 @@ struct PanelExtractor {
     
     // MARK: - Core Logic
     
-    static func detectPanels(in image: UIImage, mode: ExtractionMode = .automatic) async -> [Panel] {
+    static func detectPanels(in image: UIImage, mode: ExtractionMode = .automatic, mangaMode: Bool = false) async -> [Panel] {
         guard let cgImage = image.cgImage else { return [] }
         
         if mode == .grid {
@@ -46,7 +44,6 @@ struct PanelExtractor {
                     return
                 }
                 
-                // Sensitivity
                 let confidenceThreshold: Float = (mode == .aggressive) ? 0.3 : 0.85
                 let minSize: CGFloat = (mode == .aggressive) ? 0.1 : 0.15
                 
@@ -55,8 +52,7 @@ struct PanelExtractor {
                     .filter { $0.boundingBox.width > minSize && $0.boundingBox.height > minSize }
                     .map { Panel(boundingBox: $0.boundingBox) }
                 
-                // Use Smart Sort
-                let sorted = sortPanelsByReadingOrder(rawPanels)
+                let sorted = sortPanelsByReadingOrder(rawPanels, mangaMode: mangaMode)
                 continuation.resume(returning: sorted)
             }
             
@@ -71,42 +67,16 @@ struct PanelExtractor {
         }
     }
     
-    private static func sortPanelsByReadingOrder(_ panels: [Panel]) -> [Panel] {
-        let primarySort = panels.sorted { $0.boundingBox.maxY > $1.boundingBox.maxY }
-        var sortedRows: [[Panel]] = []
-        var currentRow: [Panel] = []
-        
-        for panel in primarySort {
-            if currentRow.isEmpty {
-                currentRow.append(panel)
-            } else {
-                let rowAvgY = currentRow.map { $0.boundingBox.midY }.reduce(0, +) / CGFloat(currentRow.count)
-                if abs(panel.boundingBox.midY - rowAvgY) < (panel.boundingBox.height * 0.5) {
-                    currentRow.append(panel)
-                } else {
-                    sortedRows.append(currentRow)
-                    currentRow = [panel]
-                }
-            }
-        }
-        if !currentRow.isEmpty { sortedRows.append(currentRow) }
-        
-        return sortedRows.flatMap { row in
-            row.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
-        }
-    }
-    
-    static func extractPanels(from image: UIImage, mode: ExtractionMode) async throws -> [UIImage] {
+    // ✅ NEW: Helper to crop specific panels (Manual Override Support)
+    static func cropPanels(from image: UIImage, panels: [Panel]) async throws -> [UIImage] {
         guard let cgImage = image.cgImage else { return [image] }
-        let panels = await detectPanels(in: image, mode: mode)
-        
-        if panels.isEmpty { return [image] }
         
         return panels.compactMap { panel in
             let width = CGFloat(cgImage.width)
             let height = CGFloat(cgImage.height)
             let r = panel.boundingBox
             
+            // Flip Y for CoreGraphics (Top-Left origin) vs Vision (Bottom-Left origin)
             let cropRect = CGRect(
                 x: r.minX * width,
                 y: (1.0 - r.maxY) * height,
@@ -116,6 +86,34 @@ struct PanelExtractor {
             
             guard let cropped = cgImage.cropping(to: cropRect) else { return nil }
             return UIImage(cgImage: cropped)
+        }
+    }
+    
+    // Legacy helper (wraps detection + cropping)
+    static func extractPanels(from image: UIImage, mode: ExtractionMode, mangaMode: Bool = false) async throws -> [UIImage] {
+        let panels = await detectPanels(in: image, mode: mode, mangaMode: mangaMode)
+        if panels.isEmpty { return [image] }
+        return try await cropPanels(from: image, panels: panels)
+    }
+    
+    private static func sortPanelsByReadingOrder(_ panels: [Panel], mangaMode: Bool) -> [Panel] {
+        return panels.sorted { p1, p2 in
+            let y1 = p1.boundingBox.midY
+            let y2 = p2.boundingBox.midY
+            
+            // Fuzzy Sort (15% threshold)
+            let yDiff = abs(y1 - y2)
+            let threshold: CGFloat = 0.15
+            
+            if yDiff < threshold {
+                if mangaMode {
+                    return p1.boundingBox.minX > p2.boundingBox.minX // Right to Left
+                } else {
+                    return p1.boundingBox.minX < p2.boundingBox.minX // Left to Right
+                }
+            } else {
+                return y1 > y2 // Top to Bottom
+            }
         }
     }
     
