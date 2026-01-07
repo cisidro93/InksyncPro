@@ -5,7 +5,7 @@ import ImageIO
 
 class CBZToEPUBConverter {
     
-    // ✅ Returns ARRAY of URLs (Smart Split Support)
+    // Returns ARRAY of URLs (Smart Split Support)
     func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]? = nil, progressHandler: @escaping (Double) -> Void) async throws -> [URL] {
         
         let fileManager = FileManager.default
@@ -150,10 +150,6 @@ class CBZToEPUBConverter {
         let processedDir = tempDir.appendingPathComponent("Processed")
         try fileManager.createDirectory(at: processedDir, withIntermediateDirectories: true)
         
-        // Determine Target Max Dimension based on settings
-        // Compact: ~1500px height (Kindle Paperwhite range)
-        // Balanced: ~2000px height
-        // High: Full size
         let maxDim: CGFloat? = {
             switch settings.compressionQuality {
             case .compact: return 1600
@@ -165,29 +161,26 @@ class CBZToEPUBConverter {
         for (sourceIndex, imgURL) in imageURLs.enumerated() {
             await Task.yield()
             
-            // Force Memory Cleanup every 20 pages
-            if sourceIndex % 20 == 0 {
-                // This forces the OS to release any lingering autoreleased objects
-            }
+            // Step A: Load Image & Async Extraction (Cannot be in autoreleasepool)
+            guard let originalImage = loadDownsampledImage(at: imgURL, maxDimension: maxDim) else { continue }
             
-            try await autoreleasepool {
-                // ✅ FIX: Downsample on load using ImageIO (Low Memory Impact)
-                guard let originalImage = loadDownsampledImage(at: imgURL, maxDimension: maxDim) else { return }
-                
-                var pagesToProcess: [UIImage] = []
-                var extractedPanels: [UIImage] = []
-                
-                if settings.enablePanelSplit {
-                    if let manualPanels = manualManifest?[sourceIndex] {
-                        if let cropped = try? await PanelExtractor.cropPanels(from: originalImage, panels: manualPanels) {
-                            extractedPanels = cropped
-                        }
-                    } else {
-                        if let aiPanels = try? await PanelExtractor.extractPanels(from: originalImage, mode: settings.epubSettings.panelDetectionMode, mangaMode: settings.mangaMode) {
-                            extractedPanels = aiPanels
-                        }
+            var extractedPanels: [UIImage] = []
+            
+            if settings.enablePanelSplit {
+                if let manualPanels = manualManifest?[sourceIndex] {
+                    if let cropped = try? await PanelExtractor.cropPanels(from: originalImage, panels: manualPanels) {
+                        extractedPanels = cropped
+                    }
+                } else {
+                    if let aiPanels = try? await PanelExtractor.extractPanels(from: originalImage, mode: settings.epubSettings.panelDetectionMode, mangaMode: settings.mangaMode) {
+                        extractedPanels = aiPanels
                     }
                 }
+            }
+            
+            // Step B: Heavy Processing (Must be in autoreleasepool)
+            try autoreleasepool {
+                var pagesToProcess: [UIImage] = []
                 
                 if settings.enablePanelSplit && !extractedPanels.isEmpty {
                     if settings.epubSettings.includeFullPage {
@@ -200,7 +193,7 @@ class CBZToEPUBConverter {
                     pagesToProcess.append(originalImage)
                 }
                 
-                // Process
+                // Process each sub-page
                 for (_, image) in pagesToProcess.enumerated() {
                     var finalImage = image
                     
@@ -250,12 +243,9 @@ class CBZToEPUBConverter {
         return outputURLs
     }
     
-    // ✅ NEW: Memory-Safe Image Loader
+    // Memory-Safe Image Loader
     private func loadDownsampledImage(at url: URL, maxDimension: CGFloat?) -> UIImage? {
-        let options: [CFString: Any] = [
-            kCGImageSourceShouldCache: false
-        ]
-        
+        let options: [CFString: Any] = [ kCGImageSourceShouldCache: false ]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, options as CFDictionary) else { return nil }
         
         if let maxDim = maxDimension {
@@ -265,11 +255,9 @@ class CBZToEPUBConverter {
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceThumbnailMaxPixelSize: maxDim
             ]
-            
             guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions as CFDictionary) else { return nil }
             return UIImage(cgImage: cgImage)
         } else {
-            // Load full size but without caching
             return UIImage(contentsOfFile: url.path)
         }
     }

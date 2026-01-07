@@ -167,7 +167,7 @@ struct LibrarySidebarList: View {
                 }
             }
             
-            // ✅ 2. NEW: Permanent Actions Section
+            // 2. Permanent Actions Section
             Section(header: Text("Quick Actions")) {
                 Button(action: { activeSheet = .importer }) {
                     Label("Import Comic", systemImage: "plus")
@@ -230,6 +230,22 @@ struct LibrarySidebarList: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// ✅ PLACEHOLDER (Fixes "CloudBrowserView not found")
+struct CloudBrowserView: View {
+    var body: some View {
+        VStack {
+            Image(systemName: "icloud.slash")
+                .font(.largeTitle)
+                .padding()
+            Text("Cloud Feature Pending")
+                .font(.headline)
+            Text("Please ensure CloudViews.swift is added to your target.")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
     }
 }
