@@ -4,7 +4,8 @@ import ZIPFoundation
 
 class CBZToEPUBConverter {
     
-    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]? = nil, progressHandler: @escaping (Double) -> Void) async throws -> URL {
+    // ✅ Updated Signature: Returns ARRAY of URLs
+    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]? = nil, progressHandler: @escaping (Double) -> Void) async throws -> [URL] {
         
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -22,82 +23,172 @@ class CBZToEPUBConverter {
             throw NSError(domain: "Conversion", code: 1, userInfo: [NSLocalizedDescriptionKey: "No images found"])
         }
         
-        // 3. Structure
-        progressHandler(0.1)
-        let epubDir = tempDir.appendingPathComponent("EPUB_Build")
-        let oebpsDir = epubDir.appendingPathComponent("OEBPS")
-        let imagesDir = oebpsDir.appendingPathComponent("images")
-        let cssDir = oebpsDir.appendingPathComponent("css")
+        // 3. Setup Split Logic
+        var outputURLs: [URL] = []
+        var currentVolumeIndex = 1
+        var currentVolumeSize: Int64 = 0
+        let splitLimit = settings.splitMode.limit
         
-        try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: cssDir, withIntermediateDirectories: true)
-        
-        // 4. CSS
-        let cssContent = """
-        @page { margin: 0; padding: 0; }
-        body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-        div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-        img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
-        """
-        try cssContent.write(to: cssDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
-        
-        // 5. Process Images
+        // Current Volume Containers
         var manifestItems: [String] = []
         var spineItems: [String] = []
-        manifestItems.append("<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>")
+        var currentImages: [(String, URL)] = [] // (ID, SourcePath)
         
+        // Base Name
+        let baseName = sourceURL.deletingPathExtension().lastPathComponent
+        
+        // Helper to Flush Volume
+        func flushVolume() throws {
+            if currentImages.isEmpty { return }
+            
+            let volumeName = "\(baseName) - Part \(currentVolumeIndex).epub"
+            let epubBuildDir = tempDir.appendingPathComponent("Build_Vol\(currentVolumeIndex)")
+            try fileManager.createDirectory(at: epubBuildDir, withIntermediateDirectories: true)
+            
+            let oebpsDir = epubBuildDir.appendingPathComponent("OEBPS")
+            let imagesDir = oebpsDir.appendingPathComponent("images")
+            let cssDir = oebpsDir.appendingPathComponent("css")
+            try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: cssDir, withIntermediateDirectories: true)
+            
+            // Write CSS
+            let cssContent = """
+            @page { margin: 0; padding: 0; }
+            body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
+            div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+            img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+            """
+            try cssContent.write(to: cssDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
+            
+            // Write Manifest Items
+            var finalManifest = manifestItems
+            finalManifest.insert("<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>", at: 0)
+            finalManifest.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
+            
+            // Copy Images & Write XHTML
+            for (id, url) in currentImages {
+                let destURL = imagesDir.appendingPathComponent(url.lastPathComponent)
+                if fileManager.fileExists(atPath: destURL.path) {
+                    try fileManager.removeItem(at: destURL)
+                }
+                try fileManager.copyItem(at: url, to: destURL)
+                
+                let pageIndex = id.replacingOccurrences(of: "img_", with: "")
+                let htmlName = "page_\(pageIndex).xhtml"
+                let htmlContent = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE html>
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                <head>
+                    <title>Page</title>
+                    <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
+                    <link rel="stylesheet" type="text/css" href="css/style.css"/>
+                </head>
+                <body>
+                    <div class="svg-wrapper"><img src="images/\(url.lastPathComponent)" alt=""/></div>
+                </body>
+                </html>
+                """
+                try htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
+            }
+            
+            // Write OPF
+            let direction = settings.mangaMode ? "rtl" : "ltr"
+            let opfContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
+                <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:title>\(baseName) (Part \(currentVolumeIndex))</dc:title>
+                    <dc:language>en</dc:language>
+                    <meta property="dcterms:modified">\(Date().ISO8601Format())</meta>
+                </metadata>
+                <manifest>
+                    \(finalManifest.joined(separator: "\n"))
+                </manifest>
+                <spine page-progression-direction="\(direction)">
+                    \(spineItems.joined(separator: "\n"))
+                </spine>
+            </package>
+            """
+            try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+            
+            // Write Nav
+            let navContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" hidden="">
+            <head><title>Navigation</title></head>
+            <body><nav epub:type="toc" id="toc" hidden=""><ol hidden=""><li><a href="page_0000.xhtml">Start</a></li></ol></nav></body>
+            </html>
+            """
+            try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+            
+            // Write Container
+            let metaInfDir = epubBuildDir.appendingPathComponent("META-INF")
+            try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+            try """
+            <?xml version="1.0"?>
+            <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+            </container>
+            """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+            
+            // Zip it
+            let finalDest = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(volumeName)
+            if fileManager.fileExists(atPath: finalDest.path) { try fileManager.removeItem(at: finalDest) }
+            try fileManager.zipItem(at: epubBuildDir, to: finalDest)
+            outputURLs.append(finalDest)
+            
+            // Clean up
+            try? fileManager.removeItem(at: epubBuildDir)
+            currentVolumeIndex += 1
+            currentVolumeSize = 0
+            manifestItems = []
+            spineItems = []
+            currentImages = []
+        }
+        
+        // 4. Process Images Loop
         var globalPageIndex = 0
+        let processedDir = tempDir.appendingPathComponent("Processed")
+        try fileManager.createDirectory(at: processedDir, withIntermediateDirectories: true)
         
         for (sourceIndex, imgURL) in imageURLs.enumerated() {
             guard let originalImage = UIImage(contentsOfFile: imgURL.path) else { continue }
             
-            // ✅ FEATURE: Hybrid Guided View (Hard Slicing)
+            // Detect/Slice Pages
             var pagesToProcess: [UIImage] = []
             var extractedPanels: [UIImage] = []
             
-            // 1. Detect Panels
             if settings.enablePanelSplit {
-                // A. Check for Human Overrides
                 if let manualPanels = manualManifest?[sourceIndex] {
-                    print("Using human overrides for page \(sourceIndex)")
                     if let cropped = try? await PanelExtractor.cropPanels(from: originalImage, panels: manualPanels) {
                         extractedPanels = cropped
                     }
-                } 
-                // B. Fallback to AI
-                else {
-                    if let aiPanels = try? await PanelExtractor.extractPanels(
-                        from: originalImage,
-                        mode: settings.epubSettings.panelDetectionMode,
-                        mangaMode: settings.mangaMode
-                    ) {
+                } else {
+                    if let aiPanels = try? await PanelExtractor.extractPanels(from: originalImage, mode: settings.epubSettings.panelDetectionMode, mangaMode: settings.mangaMode) {
                         extractedPanels = aiPanels
                     }
                 }
             }
             
-            // 2. Build Sequence
             if settings.enablePanelSplit && !extractedPanels.isEmpty {
-                // If "Guided View" is ON, show full page first
                 if settings.epubSettings.includeFullPage {
-                    pagesToProcess.append(originalImage) // Context
-                    pagesToProcess.append(contentsOf: extractedPanels) // Details
+                    pagesToProcess.append(originalImage)
+                    pagesToProcess.append(contentsOf: extractedPanels)
                 } else {
-                    // Just panels
                     pagesToProcess.append(contentsOf: extractedPanels)
                 }
             } else {
-                // No panels or disabled -> Just Full Page
                 pagesToProcess.append(originalImage)
             }
             
-            // 3. Output Pages
+            // Compress & Track Size
             for (_, image) in pagesToProcess.enumerated() {
                 var finalImage = image
                 
-                // Image Enhancements
+                // Enhance
                 if settings.optimizeForDevice || settings.imageEnhancement.grayscale {
-                    let tempImgURL = tempDir.appendingPathComponent("temp_\(globalPageIndex).jpg")
+                    let tempImgURL = tempDir.appendingPathComponent("enhance_temp.jpg")
                     if let data = finalImage.jpegData(compressionQuality: 1.0) {
                         try? data.write(to: tempImgURL)
                         if let processed = ImageProcessor.process(imageURL: tempImgURL, settings: settings) {
@@ -106,101 +197,46 @@ class CBZToEPUBConverter {
                     }
                 }
                 
-                let newName = "page_\(String(format: "%04d", globalPageIndex)).jpg"
-                let destURL = imagesDir.appendingPathComponent(newName)
+                // Compress
+                guard let data = finalImage.jpegData(compressionQuality: settings.compressionQuality.value) else { continue }
+                let dataSize = Int64(data.count)
                 
-                // Save JPEG
-                if let data = finalImage.jpegData(compressionQuality: settings.compressionQuality.value) {
-                    try data.write(to: destURL)
+                // ✅ CHECK SPLIT LIMIT
+                // If adding this image would exceed limit (and we have at least 1 image already), flush.
+                if settings.splitMode != .none {
+                    if (currentVolumeSize + dataSize) > splitLimit && !currentImages.isEmpty {
+                        print("Volume limit reached (\(currentVolumeSize / 1024 / 1024) MB). Flushing...")
+                        try flushVolume()
+                    }
                 }
                 
-                // Manifest & HTML
-                let isCover = (globalPageIndex == 0)
-                let properties = isCover ? "properties=\"cover-image\"" : ""
-                manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/jpeg\" \(properties)/>")
+                // Save processed image
+                let pageName = String(format: "page_%05d.jpg", globalPageIndex)
+                let pageURL = processedDir.appendingPathComponent(pageName)
+                try data.write(to: pageURL)
                 
-                let htmlContent = """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <!DOCTYPE html>
-                <html xmlns="http://www.w3.org/1999/xhtml">
-                <head>
-                    <title>Page \(globalPageIndex)</title>
-                    <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-                    <link rel="stylesheet" type="text/css" href="css/style.css"/>
-                </head>
-                <body>
-                    <div class="svg-wrapper"><img src="images/\(newName)" alt=""/></div>
-                </body>
-                </html>
-                """
+                // Add to Current Volume
+                currentVolumeSize += dataSize
+                currentImages.append(("img_\(globalPageIndex)", pageURL))
                 
                 let htmlName = "page_\(globalPageIndex).xhtml"
-                try htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
                 manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
+                manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(pageName)\" media-type=\"image/jpeg\"/>")
                 spineItems.append("<itemref idref=\"page_\(globalPageIndex)\" linear=\"yes\"/>")
                 
                 globalPageIndex += 1
             }
             
-            let progress = 0.1 + (0.8 * Double(sourceIndex) / Double(imageURLs.count))
+            let progress = Double(sourceIndex) / Double(imageURLs.count)
             progressHandler(progress)
         }
         
-        spineItems.append("<itemref idref=\"nav\" linear=\"no\"/>")
+        // Final Flush
+        if !currentImages.isEmpty {
+            try flushVolume()
+        }
         
-        // 6. Metadata
-        let direction = settings.mangaMode ? "rtl" : "ltr"
-        
-        let opfContent = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
-            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                <dc:title>\(sourceURL.deletingPathExtension().lastPathComponent)</dc:title>
-                <dc:language>en</dc:language>
-                <meta property="dcterms:modified">\(Date().ISO8601Format())</meta>
-                <meta name="cover" content="img_0"/>
-            </metadata>
-            <manifest>
-                \(manifestItems.joined(separator: "\n"))
-                <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-            </manifest>
-            <spine page-progression-direction="\(direction)">
-                \(spineItems.joined(separator: "\n"))
-            </spine>
-            <guide>
-                <reference type="cover" title="Cover" href="page_0.xhtml"/>
-            </guide>
-        </package>
-        """
-        try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
-        
-        // 7. Nav
-        let navContent = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" hidden="">
-        <head><title>Navigation</title></head>
-        <body><nav epub:type="toc" id="toc" hidden=""><ol hidden=""><li><a href="page_0.xhtml">Cover</a></li></ol></nav></body>
-        </html>
-        """
-        try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
-        
-        // 8. Zip
-        let metaInfDir = epubDir.appendingPathComponent("META-INF")
-        try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
-        try """
-        <?xml version="1.0"?>
-        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-            <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
-        </container>
-        """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
-        
-        progressHandler(1.0)
-        let finalName = sourceURL.deletingPathExtension().lastPathComponent + ".epub"
-        let destURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(finalName)
-        if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-        try fileManager.zipItem(at: epubDir, to: destURL)
-        
-        return destURL
+        return outputURLs
     }
     
     private func findImages(in directory: URL) throws -> [URL] {

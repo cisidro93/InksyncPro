@@ -108,6 +108,35 @@ enum KindleDeviceType: String, CaseIterable, Codable, Hashable {
 
 // MARK: - Settings Models
 
+// ✅ NEW: File Split Modes
+enum FileSizeSplitMode: String, CaseIterable, Codable, Identifiable {
+    case none = "No Limit (One File)"
+    case email = "Email Safe (23 MB)"
+    case app = "App Share Safe (47 MB)"
+    case web = "Web Safe (190 MB)"
+    
+    var id: String { rawValue }
+    
+    // The limit in Bytes
+    var limit: Int64 {
+        switch self {
+        case .none: return Int64.max
+        case .email: return 23 * 1024 * 1024
+        case .app: return 47 * 1024 * 1024
+        case .web: return 190 * 1024 * 1024
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .none: return "Keep as one large file."
+        case .email: return "Splits for 'Send-to-Kindle' Email."
+        case .app: return "Splits for Kindle App sharing."
+        case .web: return "Splits for 'Send-to-Kindle' Web."
+        }
+    }
+}
+
 struct ConversionSettings: Codable, Equatable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
@@ -115,6 +144,10 @@ struct ConversionSettings: Codable, Equatable {
     var targetDevice: KindleDeviceType = .scribe
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
+    
+    // ✅ NEW: Splitting Strategy
+    var splitMode: FileSizeSplitMode = .none
+    
     var comicVineAPIKey: String = ""
     var epubSettings: EPUBSettings = EPUBSettings()
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
@@ -129,10 +162,8 @@ struct EPUBSettings: Codable, Equatable {
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
     var includeTableOfContents: Bool = true
     var splitPanels: Bool = false
-    
-    // ✅ FEATURE: Guided View Control
     var includeFullPage: Bool = true
-    
+    var panelDetectionConfidence: Double = 0.6
     var readingDirection: ReadingDirection = .ltr
 }
 

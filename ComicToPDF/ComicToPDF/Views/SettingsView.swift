@@ -14,12 +14,25 @@ struct SettingsView: View {
                         Label(format.rawValue, systemImage: format.icon).tag(format)
                     }
                 }
-                
+            }
+            
+            // ✅ UPDATED: Compression & Splitting
+            Section(header: Text("Optimization")) {
                 Picker("Compression", selection: $conversionManager.conversionSettings.compressionQuality) {
                     ForEach(CompressionPreset.allCases, id: \.self) { preset in
                         Text(preset.rawValue).tag(preset)
                     }
                 }
+                
+                Picker("Auto-Split Files", selection: $conversionManager.conversionSettings.splitMode) {
+                    ForEach(FileSizeSplitMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text(conversionManager.conversionSettings.splitMode.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             
             Section(header: Text("Kindle & E-Reader")) {
@@ -59,7 +72,6 @@ struct SettingsView: View {
                 Toggle("Default to Manga Mode", isOn: $conversionManager.conversionSettings.mangaMode)
                 Toggle("Default Panel Detection", isOn: $conversionManager.conversionSettings.enablePanelSplit)
                 
-                // ✅ FEATURE: Guided View Settings
                 if conversionManager.conversionSettings.enablePanelSplit {
                     Toggle("Guided View (Show Full Page First)", isOn: $conversionManager.conversionSettings.epubSettings.includeFullPage)
                         .foregroundColor(.blue)
