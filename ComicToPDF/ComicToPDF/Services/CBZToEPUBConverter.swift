@@ -8,23 +8,33 @@ class CBZToEPUBConverter {
     // Returns ARRAY of URLs (Smart Split Support)
     func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]? = nil, progressHandler: @escaping (Double) -> Void) async throws -> [URL] {
         
+        // 1. Validate File Format (Magic Bytes Check)
+        // This prevents crashes when users rename .cbr (Rar) to .cbz (Zip)
+        try validateFileFormat(at: sourceURL)
+        
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
         defer { try? fileManager.removeItem(at: tempDir) }
         
-        // 1. Unzip
+        // 2. Unzip (With specific error handling)
         progressHandler(0.05)
-        try fileManager.unzipItem(at: sourceURL, to: tempDir)
-        
-        // 2. Find Images
-        let imageURLs = try findImages(in: tempDir)
-        guard !imageURLs.isEmpty else {
-            throw NSError(domain: "Conversion", code: 1, userInfo: [NSLocalizedDescriptionKey: "No images found"])
+        do {
+            try fileManager.unzipItem(at: sourceURL, to: tempDir)
+        } catch {
+            throw NSError(domain: "Unzip", code: 13, userInfo: [
+                NSLocalizedDescriptionKey: "Failed to read archive. The file might be corrupted or encrypted. (System: \(error.localizedDescription))"
+            ])
         }
         
-        // 3. Setup Split Logic
+        // 3. Find Images
+        let imageURLs = try findImages(in: tempDir)
+        guard !imageURLs.isEmpty else {
+            throw NSError(domain: "Conversion", code: 1, userInfo: [NSLocalizedDescriptionKey: "No images found inside archive."])
+        }
+        
+        // 4. Setup Split Logic
         var outputURLs: [URL] = []
         var currentVolumeIndex = 1
         var currentVolumeSize: Int64 = 0
@@ -64,7 +74,6 @@ class CBZToEPUBConverter {
             var finalManifest = manifestItems
             finalManifest.insert("<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>", at: 0)
             
-            // ✅ CHECK: Only add Nav if enabled
             if settings.epubSettings.includeTableOfContents {
                 finalManifest.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
             }
@@ -114,7 +123,7 @@ class CBZToEPUBConverter {
             """
             try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
             
-            // ✅ CHECK: Only Write Nav if enabled
+            // Nav
             if settings.epubSettings.includeTableOfContents {
                 let navContent = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -151,7 +160,7 @@ class CBZToEPUBConverter {
             currentImages = []
         }
         
-        // 4. Process Images Loop
+        // 5. Process Images Loop
         var globalPageIndex = 0
         let processedDir = tempDir.appendingPathComponent("Processed")
         try fileManager.createDirectory(at: processedDir, withIntermediateDirectories: true)
@@ -249,7 +258,23 @@ class CBZToEPUBConverter {
         return outputURLs
     }
     
-    // Memory-Safe Image Loader
+    // ✅ NEW: Verify Magic Bytes
+    private func validateFileFormat(at url: URL) throws {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        
+        let magicData = try handle.read(upToCount: 4) ?? Data()
+        let magicString = String(data: magicData, encoding: .ascii)
+        
+        // Check for RAR signature ("Rar!")
+        if let str = magicString, str.hasPrefix("Rar") {
+            throw NSError(domain: "Validation", code: 400, userInfo: [
+                NSLocalizedDescriptionKey: "This file is a RAR (CBR) archive disguised as a CBZ. Renaming the extension does not work. Please convert it to ZIP format using a file tool."
+            ])
+        }
+    }
+    
+    // Memory-Safe Loader
     private func loadDownsampledImage(at url: URL, maxDimension: CGFloat?) -> UIImage? {
         let options: [CFString: Any] = [ kCGImageSourceShouldCache: false ]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, options as CFDictionary) else { return nil }
