@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(\.horizontalSizeClass) var sizeClass
@@ -9,7 +10,7 @@ struct ContentView: View {
     // Selection state for iPad Sidebar
     @State private var selectedPDF: ConvertedPDF?
     
-    // Feature Sheets
+    // Global Sheets
     @State private var pdfToShare: ConvertedPDF?
     @State private var pdfToEdit: ConvertedPDF?
     
@@ -24,7 +25,7 @@ struct ContentView: View {
             }
         }
         .environmentObject(conversionManager)
-        // Global Sheets for iPad Actions
+        // Global Sheets for Detail Actions
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
         .sheet(item: $pdfToEdit) { pdf in PageManagerView(pdf: pdf) }
     }
@@ -55,7 +56,7 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - iPad Layout (Sidebar + Detail)
+    // MARK: - iPad Layout (Split View)
     var iPadLayout: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             // COLUMN 1: Sidebar
@@ -84,9 +85,8 @@ struct ContentView: View {
             NavigationStack {
                 if let pdf = selectedPDF {
                     ConvertView(pdf: pdf)
-                        // ✅ FIX: Custom Toolbar for iPad Detail
                         .toolbar {
-                            // 1. Close Button (Unselect)
+                            // Close Button
                             ToolbarItem(placement: .topBarLeading) {
                                 Button(action: { selectedPDF = nil }) {
                                     Image(systemName: "xmark.circle.fill")
@@ -94,8 +94,7 @@ struct ContentView: View {
                                         .font(.title3)
                                 }
                             }
-                            
-                            // 2. Menu Button (Replaces the 3 dots)
+                            // Menu Button
                             ToolbarItem(placement: .topBarTrailing) {
                                 Menu {
                                     Button { pdfToShare = pdf } label: { Label("Export / Share", systemImage: "square.and.arrow.up") }
@@ -111,7 +110,7 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        .id(pdf.id) // Force refresh when selection changes
+                        .id(pdf.id)
                 } else {
                     // Empty State
                     VStack(spacing: 20) {
@@ -121,7 +120,7 @@ struct ContentView: View {
                         Text("Select a Comic")
                             .font(.title)
                             .foregroundColor(.secondary)
-                        Text("Select a file from the sidebar to convert or edit.")
+                        Text("Select a file from the sidebar or use the buttons below.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -132,16 +131,21 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Helper: iPad-Specific Library List
+// MARK: - Robust Library Sidebar
 struct LibrarySidebarList: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Binding var selectedPDF: ConvertedPDF?
     @State private var searchText = ""
     
-    // Sheet States
-    @State private var showingImporter = false
-    @State private var showingWiFi = false
-    @State private var showingCloud = false
+    enum SidebarSheet: Identifiable {
+        case importer
+        case wifi
+        case cloud
+        
+        var id: Int { hashValue }
+    }
+    
+    @State private var activeSheet: SidebarSheet?
     
     var filteredPDFs: [ConvertedPDF] {
         if searchText.isEmpty { return conversionManager.convertedPDFs.reversed() }
@@ -150,6 +154,7 @@ struct LibrarySidebarList: View {
     
     var body: some View {
         List(selection: $selectedPDF) {
+            // 1. The Comic Files
             ForEach(filteredPDFs) { pdf in
                 NavigationLink(value: pdf) {
                     LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
@@ -157,36 +162,74 @@ struct LibrarySidebarList: View {
                 .swipeActions(edge: .trailing) {
                     Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
                 }
-                // Also keep context menu for power users
                 .contextMenu {
                     Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+                }
+            }
+            
+            // ✅ 2. NEW: Permanent Actions Section
+            Section(header: Text("Quick Actions")) {
+                Button(action: { activeSheet = .importer }) {
+                    Label("Import Comic", systemImage: "plus")
+                        .foregroundColor(.blue)
+                }
+                Button(action: { activeSheet = .wifi }) {
+                    Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right")
+                        .foregroundColor(.blue)
+                }
+                Button(action: { activeSheet = .cloud }) {
+                    Label("Cloud Import", systemImage: "icloud.and.arrow.down")
+                        .foregroundColor(.blue)
                 }
             }
         }
         .listStyle(.sidebar)
         .searchable(text: $searchText)
+        // Drag & Drop
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
+            loadFiles(from: providers)
+            return true
+        }
+        // Toolbar (Backup)
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button(action: { showingWiFi = true }) {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
-                        .help("WiFi Transfer")
-                }
-                Button(action: { showingCloud = true }) {
-                    Image(systemName: "icloud.and.arrow.down")
-                        .help("Cloud Import")
-                }
-                Button(action: { showingImporter = true }) {
-                    Image(systemName: "plus")
-                        .help("Import File")
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(action: { activeSheet = .importer }) { Label("Import File", systemImage: "plus") }
+                    Button(action: { activeSheet = .wifi }) { Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right") }
+                    Button(action: { activeSheet = .cloud }) { Label("Cloud Import", systemImage: "icloud.and.arrow.down") }
+                } label: {
+                    Image(systemName: "plus.circle")
+                        .font(.title3)
                 }
             }
         }
-        .sheet(isPresented: $showingImporter) {
-            DocumentPicker(onDocumentsPicked: { urls in
-                Task { await conversionManager.processImportedFiles(urls: urls) }
-            })
+        .sheet(item: $activeSheet) { item in
+            switch item {
+            case .importer:
+                DocumentPicker(onDocumentsPicked: { urls in
+                    Task { await conversionManager.processImportedFiles(urls: urls) }
+                    activeSheet = nil
+                })
+            case .wifi:
+                WiFiView()
+            case .cloud:
+                CloudBrowserView()
+            }
         }
-        .sheet(isPresented: $showingWiFi) { WiFiView() }
-        .sheet(isPresented: $showingCloud) { CloudImportView() }
+    }
+    
+    private func loadFiles(from providers: [NSItemProvider]) {
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (data, error) in
+                    if let urlData = data as? Data,
+                       let url = URL(dataRepresentation: urlData, relativeTo: nil) {
+                        Task { await conversionManager.processImportedFiles(urls: [url]) }
+                    } else if let url = data as? URL {
+                        Task { await conversionManager.processImportedFiles(urls: [url]) }
+                    }
+                }
+            }
+        }
     }
 }
