@@ -1,160 +1,177 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject var conversionManager: ConversionManager
-    
-    // UI State
     @State private var showingDocumentPicker = false
+    @State private var showingSortMenu = false
+    @State private var searchText = ""
+    @State private var sortOption: SortOption = .dateAdded
+    @State private var isImporting = false
     
-    // Logic State
-    @State private var fileToConvert: ConvertedPDF?
-    @State private var showingConvertAlert = false
-    @State private var readingPDF: ConvertedPDF?
+    enum SortOption {
+        case dateAdded, name, size
+    }
+    
+    var filteredPDFs: [ConvertedPDF] {
+        let pdfs = conversionManager.convertedPDFs
+        if searchText.isEmpty {
+            return sortPDFs(pdfs)
+        } else {
+            return sortPDFs(pdfs.filter { $0.name.localizedCaseInsensitiveContains(searchText) })
+        }
+    }
+    
+    func sortPDFs(_ pdfs: [ConvertedPDF]) -> [ConvertedPDF] {
+        switch sortOption {
+        case .dateAdded: return pdfs.reversed() // Newest first
+        case .name: return pdfs.sorted { $0.name < $1.name }
+        case .size: return pdfs.sorted { $0.fileSize > $1.fileSize }
+        }
+    }
     
     var body: some View {
         NavigationView {
-            VStack {
-                // Empty State
+            ZStack {
                 if conversionManager.convertedPDFs.isEmpty {
                     VStack(spacing: 20) {
-                        Image(systemName: "folder.badge.questionmark")
+                        Image(systemName: "books.vertical")
                             .font(.system(size: 60))
                             .foregroundColor(.gray)
-                        Text("No Files Found")
-                            .font(.headline)
+                        Text("Your Library is Empty")
+                            .font(.title2)
+                            .bold()
+                        Text("Import a CBZ, CBR, or PDF file to get started.")
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
                         
-                        Button("Import File") {
-                            showingDocumentPicker = true
+                        Button(action: { showingDocumentPicker = true }) {
+                            Label("Import Comic", systemImage: "plus")
+                                .font(.headline)
+                                .padding()
+                                .frame(width: 200)
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
                         }
-                        .buttonStyle(.borderedProminent)
                     }
-                    .frame(maxHeight: .infinity)
-                } 
-                // Library List
-                else {
+                } else {
                     List {
-                        ForEach(conversionManager.convertedPDFs) { pdf in
-                            HStack {
-                                // 1. Tappable Area (Icon + Name)
-                                HStack {
-                                    Image(systemName: iconForType(pdf))
-                                        .foregroundColor(colorForType(pdf))
-                                        .font(.title2)
-                                    
-                                    VStack(alignment: .leading) {
-                                        Text(pdf.name)
-                                            .font(.headline)
-                                            .lineLimit(1)
-                                        Text(pdf.formattedSize)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                .contentShape(Rectangle()) // Makes empty space tappable
-                                .onTapGesture {
-                                    handleTap(on: pdf)
-                                }
-                                
-                                Spacer()
-                                
-                                // 2. The Missing "..." Action Menu
-                                PDFActionViews(pdf: pdf)
-                                    .buttonStyle(BorderlessButtonStyle()) // Prevents row selection when tapping dots
+                        ForEach(filteredPDFs) { pdf in
+                            NavigationLink(destination: ConvertView(pdf: pdf)) {
+                                LibraryPDFRowWithCover(pdf: pdf)
                             }
-                            .padding(.vertical, 4)
-                        }
-                        .onDelete { indexSet in
-                            for index in indexSet {
-                                let pdf = conversionManager.convertedPDFs[index]
-                                conversionManager.deletePDF(pdf)
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    conversionManager.toggleFavorite(pdf)
+                                } label: {
+                                    Label("Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
+                                }
+                                .tint(.yellow)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    conversionManager.deletePDF(pdf)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            .contextMenu {
+                                Button {
+                                    // ✅ Fix: Use the Global Default for Quick Actions
+                                    Task {
+                                        await conversionManager.convertComic(
+                                            pdf,
+                                            mangaMode: conversionManager.conversionSettings.mangaMode
+                                        )
+                                    }
+                                } label: {
+                                    Label("Quick Convert", systemImage: "bolt.fill")
+                                }
+                                
+                                Button {
+                                    conversionManager.toggleFavorite(pdf)
+                                } label: {
+                                    Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
+                                }
+                                
+                                Button(role: .destructive) {
+                                    conversionManager.deletePDF(pdf)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
                     }
-                    .listStyle(InsetGroupedListStyle())
+                    .listStyle(.plain)
+                    .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
                 }
                 
-                // Status Bar
-                if let status = conversionManager.statusMessage {
-                    HStack {
-                        if conversionManager.isConverting {
-                            ProgressView()
-                                .padding(.trailing, 5)
+                // Floating Action Button
+                if !conversionManager.convertedPDFs.isEmpty {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button(action: { showingDocumentPicker = true }) {
+                                Image(systemName: "plus")
+                                    .font(.title)
+                                    .foregroundColor(.white)
+                                    .frame(width: 60, height: 60)
+                                    .background(Color.blue)
+                                    .clipShape(Circle())
+                                    .shadow(radius: 4)
+                            }
+                            .padding()
                         }
-                        Text(status)
                     }
-                    .padding()
-                    .background(Color.yellow.opacity(0.2))
-                    .cornerRadius(8)
-                    .padding()
+                }
+                
+                if isImporting {
+                    Color.black.opacity(0.4).edgesIgnoringSafeArea(.all)
+                    ProgressView("Importing...")
+                        .padding()
+                        .background(Color(UIColor.systemBackground))
+                        .cornerRadius(10)
                 }
             }
             .navigationTitle("Library")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showingDocumentPicker = true } label: {
-                        Image(systemName: "plus.circle.fill").font(.title2)
-                    }
-                }
-            }
-            // 1. File Picker Sheet
-            .sheet(isPresented: $showingDocumentPicker) {
-                DocumentPicker(
-                    onDocumentsPicked: { urls in
-                        conversionManager.processImportedFiles(urls: urls)
-                    },
-                    onError: { error in
-                        print("Picker Error: \(error)")
-                    }
-                )
-            }
-            // 2. Conversion Alert
-            .alert("Convert Comic?", isPresented: $showingConvertAlert) {
-                Button("Convert") {
-                    if let pdf = fileToConvert {
-                        Task {
-                            await conversionManager.convertComic(pdf)
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Menu {
+                        Picker("Sort By", selection: $sortOption) {
+                            Label("Date Added", systemImage: "calendar").tag(SortOption.dateAdded)
+                            Label("Name", systemImage: "textformat").tag(SortOption.name)
+                            Label("Size", systemImage: "externaldrive").tag(SortOption.size)
                         }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
                     }
                 }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("This file needs to be processed before you can read it.")
             }
-            // 3. Reader (Full Screen)
-            .fullScreenCover(item: $readingPDF) { pdf in
-                ReaderView(fileURL: pdf.url)
+            .sheet(isPresented: $showingDocumentPicker) {
+                DocumentPicker(onPick: { urls in
+                    isImporting = true
+                    Task {
+                        await conversionManager.processImportedFiles(urls: urls)
+                        isImporting = false
+                    }
+                })
             }
         }
     }
-    
-    // Helper: Logic for Taps
-    func handleTap(on pdf: ConvertedPDF) {
-        let ext = pdf.url.pathExtension.lowercased()
-        
-        // Ready to Read?
-        if ["pdf", "epub"].contains(ext) {
-            readingPDF = pdf
-        } 
-        // Needs Conversion?
-        else {
-            fileToConvert = pdf
-            showingConvertAlert = true
+}
+
+// Helper Extension for simple Favorite toggling if not in Manager
+extension ConversionManager {
+    func toggleFavorite(_ pdf: ConvertedPDF) {
+        if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            var newPDF = pdf
+            newPDF.isFavorite.toggle()
+            convertedPDFs[idx] = newPDF
+            saveLibrary()
         }
-    }
-    
-    // Helpers: Icons
-    func iconForType(_ pdf: ConvertedPDF) -> String {
-        let ext = pdf.url.pathExtension.lowercased()
-        if ext == "pdf" { return "doc.text.fill" }
-        if ext == "epub" { return "book.fill" }
-        return "archivebox.fill"
-    }
-    
-    func colorForType(_ pdf: ConvertedPDF) -> Color {
-        let ext = pdf.url.pathExtension.lowercased()
-        if ext == "pdf" { return .red }
-        if ext == "epub" { return .blue }
-        return .orange
     }
 }
