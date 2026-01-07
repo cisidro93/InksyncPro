@@ -20,10 +20,6 @@ struct ContentView: View {
             }
         }
         .environmentObject(conversionManager)
-        // Global Modifier to ensure sheets work everywhere
-        .onAppear {
-            // Any global setup
-        }
     }
     
     // MARK: - iPhone Layout
@@ -83,13 +79,16 @@ struct ContentView: View {
             if let pdf = selectedPDF {
                 ConvertView(pdf: pdf)
             } else {
-                // Empty State (The "Black Void" from your screenshot)
+                // Empty State
                 VStack(spacing: 20) {
                     Image(systemName: "book.closed")
                         .font(.system(size: 80))
                         .foregroundColor(.gray.opacity(0.3))
                     Text("Select a Comic")
                         .font(.title)
+                        .foregroundColor(.secondary)
+                    Text("Select a file from the sidebar to convert or edit.")
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
@@ -99,15 +98,17 @@ struct ContentView: View {
 }
 
 // MARK: - Helper: iPad-Specific Library List
-// This strips out the navigation/toolbar from the main LibraryView 
-// so it fits cleanly inside the sidebar.
 struct LibrarySidebarList: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Binding var selectedPDF: ConvertedPDF?
     @State private var searchText = ""
-    @State private var showingImporter = false
     
-    // Reuse the sheet states for iPad
+    // Sheet States
+    @State private var showingImporter = false
+    @State private var showingWiFi = false
+    @State private var showingCloud = false
+    
+    // Feature States
     @State private var pdfToShare: ConvertedPDF?
     @State private var pdfToEdit: ConvertedPDF?
     
@@ -135,18 +136,36 @@ struct LibrarySidebarList: View {
         .listStyle(.sidebar)
         .searchable(text: $searchText)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            // ✅ Fix: Added WiFi and Cloud buttons to the sidebar toolbar
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button(action: { showingWiFi = true }) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .help("WiFi Transfer")
+                }
+                
+                Button(action: { showingCloud = true }) {
+                    Image(systemName: "icloud.and.arrow.down")
+                        .help("Cloud Import")
+                }
+                
                 Button(action: { showingImporter = true }) {
                     Image(systemName: "plus")
+                        .help("Import File")
                 }
             }
         }
+        // Sheet Presentations
         .sheet(isPresented: $showingImporter) {
             DocumentPicker(onDocumentsPicked: { urls in
                 Task { await conversionManager.processImportedFiles(urls: urls) }
             })
         }
-        // iPad Feature Sheets
+        .sheet(isPresented: $showingWiFi) {
+            WiFiView() // Launches the Web Server
+        }
+        .sheet(isPresented: $showingCloud) {
+            CloudImportView() 
+        }
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
         .sheet(item: $pdfToEdit) { pdf in PageManagerView(pdf: pdf) }
     }
