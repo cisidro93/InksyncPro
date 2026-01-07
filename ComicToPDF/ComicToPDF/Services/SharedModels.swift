@@ -13,7 +13,7 @@ struct ConvertedPDF: Identifiable, Codable, Equatable, Hashable {
     var metadata: PDFMetadata
     var collectionId: UUID?
     var isFavorite: Bool = false
-    var coverImageData: Data? // ✅ Added for Metadata Search
+    var coverImageData: Data?
     
     var formattedSize: String {
         let mb = Double(fileSize) / 1024 / 1024
@@ -42,7 +42,6 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
-    var tags: [String] = [] // Ensure tags are present from previous fix
 }
 
 struct PDFCollection: Identifiable, Codable, Equatable {
@@ -130,7 +129,7 @@ struct EPUBSettings: Codable, Equatable {
     var includeTableOfContents: Bool = true
     var splitPanels: Bool = false
     var enablePanelView: Bool = false
-    var readingDirection: ReadingDirection = .ltr // ✅ Added
+    var readingDirection: ReadingDirection = .ltr
 }
 
 struct ImageEnhancementSettings: Codable, Equatable {
@@ -234,24 +233,7 @@ struct BackupData: Codable {
     let presets: [ConversionPreset]
 }
 
-// ✅ Fix: Ensure Panel is Codable for the Manifest
-extension PanelExtractor.Panel: Codable {
-    enum CodingKeys: String, CodingKey {
-        case boundingBox
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let rect = try container.decode(CGRect.self, forKey: .boundingBox)
-        self.init(boundingBox: rect)
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(boundingBox, forKey: .boundingBox)
-    }
-}
-
+// MARK: - Manifest
 struct EPUBPanelManifest: Codable {
     struct PageInfo: Codable {
         let pageIndex: Int

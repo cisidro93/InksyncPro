@@ -3,14 +3,11 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var showingAddDevice = false
-    
-    // UI State for Alerts
     @State private var showingDeleteAlert = false
     @State private var deviceToDelete: KindleDevice?
     
     var body: some View {
         Form {
-            // MARK: - General Settings
             Section(header: Text("General")) {
                 Picker("Output Format", selection: $conversionManager.conversionSettings.outputFormat) {
                     ForEach(OutputFormat.allCases) { format in
@@ -25,7 +22,6 @@ struct SettingsView: View {
                 }
             }
             
-            // MARK: - Kindle Optimization
             Section(header: Text("Kindle & E-Reader")) {
                 Toggle("Optimize for Device", isOn: $conversionManager.conversionSettings.optimizeForDevice)
                 
@@ -42,7 +38,6 @@ struct SettingsView: View {
                 }
             }
             
-            // MARK: - Image Processing
             Section(header: Text("Image Enhancements")) {
                 Toggle("Grayscale (E-Ink Mode)", isOn: $conversionManager.conversionSettings.imageEnhancement.grayscale)
                 Toggle("Auto Contrast", isOn: $conversionManager.conversionSettings.imageEnhancement.autoContrast)
@@ -60,7 +55,6 @@ struct SettingsView: View {
                 }
             }
             
-            // MARK: - Reading Options
             Section(header: Text("Reading Options")) {
                 Toggle("Manga Mode (Right-to-Left)", isOn: $conversionManager.conversionSettings.mangaMode)
                 Toggle("Enable Panel Detection", isOn: $conversionManager.conversionSettings.enablePanelSplit)
@@ -68,15 +62,14 @@ struct SettingsView: View {
                 if conversionManager.conversionSettings.enablePanelSplit {
                     Picker("Detection Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
                         Text("Automatic (Standard)").tag(PanelExtractor.ExtractionMode.automatic)
-                        // ✅ Fix: Added Missing Modes
                         Text("Aggressive (Find More)").tag(PanelExtractor.ExtractionMode.aggressive)
                         Text("Conservative (Strict)").tag(PanelExtractor.ExtractionMode.conservative)
-                        Text("Grid (2x2)").tag(PanelExtractor.ExtractionMode.grid(rows: 2, columns: 2))
+                        // ✅ Fix: No arguments needed for grid
+                        Text("Grid (2x2)").tag(PanelExtractor.ExtractionMode.grid)
                     }
                 }
             }
             
-            // MARK: - System
             Section {
                 Button("Save as Default Preset") {
                     let newPreset = ConversionPreset(name: "Custom Settings", settings: conversionManager.conversionSettings)
