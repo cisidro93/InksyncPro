@@ -16,7 +16,7 @@ class ConversionManager: ObservableObject {
     
     // UI State
     @Published var isConverting = false
-    @Published var conversionProgress: Double = 0.0 // ✅ NEW: Progress Tracker
+    @Published var conversionProgress: Double = 0.0
     @Published var processingStatus = ""
     @Published var statusMessage: String?
     
@@ -84,8 +84,6 @@ class ConversionManager: ObservableObject {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(name)
     }
     
-    // MARK: - Manual Panel Management
-    
     func savePanelOverrides(for pdfID: UUID, pageIndex: Int, panels: [PanelExtractor.Panel]) async {
         await MainActor.run {
             if panelOverrides[pdfID] == nil {
@@ -122,8 +120,22 @@ class ConversionManager: ObservableObject {
                         collectionId: nil
                     )
                     convertedPDFs.append(newPDF)
+                    // Trigger thumbnail generation for new file
+                    DispatchQueue.global(qos: .background).async {
+                        self.generateCoverThumbnail(for: newPDF)
+                    }
                 }
             }
+            
+            // Re-check existing files for missing thumbnails
+            for pdf in convertedPDFs {
+                 if thumbnailCache.object(forKey: pdf.url.path as NSString) == nil {
+                     DispatchQueue.global(qos: .background).async {
+                         self.generateCoverThumbnail(for: pdf)
+                     }
+                 }
+            }
+            
             DispatchQueue.main.async { self.saveLibrary() }
         } catch { print("Scan Error: \(error)") }
     }
@@ -142,6 +154,9 @@ class ConversionManager: ObservableObject {
          let pdf = ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: pageCount, fileSize: fileSize, metadata: PDFMetadata(title: url.lastPathComponent), collectionId: nil)
          convertedPDFs.append(pdf)
          saveLibrary()
+         DispatchQueue.global(qos: .background).async {
+             self.generateCoverThumbnail(for: pdf)
+         }
      }
     
     // MARK: - Page Management
@@ -296,7 +311,6 @@ class ConversionManager: ObservableObject {
     // MARK: - Conversion
     
     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool) async {
-        // ✅ START: Reset progress
         await MainActor.run { 
             isConverting = true
             conversionProgress = 0.0
@@ -315,7 +329,6 @@ class ConversionManager: ObservableObject {
                 settings: jobSettings,
                 manualManifest: fileOverrides
             ) { progress in
-                // ✅ UPDATE: Post progress to Main Actor
                 Task { @MainActor in
                     self.conversionProgress = progress
                     self.processingStatus = "Converting \(Int(progress * 100))%"
@@ -343,6 +356,66 @@ class ConversionManager: ObservableObject {
         } catch {
             await MainActor.run { isConverting = false; statusMessage = "Error: \(error.localizedDescription)" }
         }
+    }
+    
+    // MARK: - Thumbnail Generation (RESTORED)
+    
+    func generateCoverThumbnail(for pdf: ConvertedPDF) {
+        if let image = extractCoverImage(from: pdf.url) {
+            thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
+            // Trigger UI update
+            DispatchQueue.main.async { self.objectWillChange.send() }
+        }
+    }
+    
+    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
+        if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }
+        // If not cached, trigger generation (async) and return placeholder
+        DispatchQueue.global(qos: .userInteractive).async {
+            self.generateCoverThumbnail(for: pdf)
+        }
+        return UIImage(systemName: "doc.text.fill")
+    }
+    
+    private func extractCoverImage(from url: URL) -> UIImage? {
+        let ext = url.pathExtension.lowercased()
+        
+        // 1. PDF Handling
+        if ext == "pdf" {
+            guard let document = PDFDocument(url: url),
+                  let page = document.page(at: 0) else { return nil }
+            return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
+        }
+        
+        // 2. Archive Handling (CBZ, EPUB, ZIP)
+        if ["cbz", "cbr", "zip", "epub"].contains(ext) {
+            guard let archive = Archive(url: url, accessMode: .read) else { return nil }
+            
+            // Find first image
+            let imageExtensions = ["jpg", "jpeg", "png", "webp"]
+            // Sort entries to find "page_0001" or "cover.jpg"
+            let sortedEntries = archive.makeIterator().sorted { $0.path < $1.path }
+            
+            for entry in sortedEntries {
+                let entryExt = (entry.path as NSString).pathExtension.lowercased()
+                if imageExtensions.contains(entryExt) {
+                    // Skip MacOS metadata
+                    if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
+                    
+                    var data = Data()
+                    do {
+                        _ = try archive.extract(entry) { chunk in
+                            data.append(chunk)
+                        }
+                        return UIImage(data: data)
+                    } catch {
+                        print("Thumbnail extraction error: \(error)")
+                        continue
+                    }
+                }
+            }
+        }
+        return nil
     }
     
     // MARK: - Helpers
@@ -379,17 +452,7 @@ class ConversionManager: ObservableObject {
         self.conversionPresets = backup.presets
         saveLibrary()
     }
-    func generateCoverThumbnail(for pdf: ConvertedPDF) {
-        if let image = extractCoverImage(from: pdf.url) { thumbnailCache.setObject(image, forKey: pdf.url.path as NSString) }
-    }
-    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
-        if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }
-        if let image = extractCoverImage(from: pdf.url) {
-            thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
-            return image
-        }
-        return UIImage(systemName: "doc.text.fill")
-    }
+    
     @MainActor
     func processImportedFiles(urls: [URL]) {
         for url in urls {
@@ -405,7 +468,6 @@ class ConversionManager: ObservableObject {
         }
         scanLibrary()
     }
-    private func extractCoverImage(from url: URL) -> UIImage? { return nil }
     func addKindleDevice(_ device: KindleDevice) { kindleDevices.append(device); saveLibrary() }
     func removeKindleDevice(_ device: KindleDevice) { kindleDevices.removeAll { $0.id == device.id }; saveLibrary() }
     func updateKindleDevice(_ device: KindleDevice) { if let idx = kindleDevices.firstIndex(where: { $0.id == device.id }) { kindleDevices[idx] = device; saveLibrary() } }
