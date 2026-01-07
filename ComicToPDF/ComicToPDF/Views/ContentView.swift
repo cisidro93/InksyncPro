@@ -6,8 +6,6 @@ struct ContentView: View {
     @StateObject private var conversionManager = ConversionManager()
     @State private var selectedTab = 0
     @State private var columnVisibility = NavigationSplitViewVisibility.all
-    
-    // Selection state for iPad Sidebar
     @State private var selectedPDF: ConvertedPDF?
     
     // Global Sheets
@@ -17,49 +15,29 @@ struct ContentView: View {
     var body: some View {
         Group {
             if sizeClass == .compact {
-                // MARK: - iPhone Layout (Tab Bar)
                 iPhoneLayout
             } else {
-                // MARK: - iPad Layout (Split View)
                 iPadLayout
             }
         }
         .environmentObject(conversionManager)
-        // Global Sheets for Detail Actions
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
         .sheet(item: $pdfToEdit) { pdf in PageManagerView(pdf: pdf) }
     }
     
-    // MARK: - iPhone Layout
     var iPhoneLayout: some View {
         TabView(selection: $selectedTab) {
             LibraryView(selectedTab: $selectedTab)
-                .tabItem {
-                    Image(systemName: "books.vertical")
-                    Text("Library")
-                }
-                .tag(0)
-            
+                .tabItem { Label("Library", systemImage: "books.vertical") }.tag(0)
             CollectionsView()
-                .tabItem {
-                    Image(systemName: "folder")
-                    Text("Collections")
-                }
-                .tag(1)
-            
+                .tabItem { Label("Collections", systemImage: "folder") }.tag(1)
             SettingsView()
-                .tabItem {
-                    Image(systemName: "gear")
-                    Text("Settings")
-                }
-                .tag(2)
+                .tabItem { Label("Settings", systemImage: "gear") }.tag(2)
         }
     }
     
-    // MARK: - iPad Layout (Split View)
     var iPadLayout: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            // COLUMN 1: Sidebar
             VStack(spacing: 0) {
                 Picker("Section", selection: $selectedTab) {
                     Text("Library").tag(0)
@@ -81,12 +59,10 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             
         } detail: {
-            // COLUMN 2: Detail View
             NavigationStack {
                 if let pdf = selectedPDF {
                     ConvertView(pdf: pdf)
                         .toolbar {
-                            // Close Button
                             ToolbarItem(placement: .topBarLeading) {
                                 Button(action: { selectedPDF = nil }) {
                                     Image(systemName: "xmark.circle.fill")
@@ -94,7 +70,6 @@ struct ContentView: View {
                                         .font(.title3)
                                 }
                             }
-                            // Menu Button
                             ToolbarItem(placement: .topBarTrailing) {
                                 Menu {
                                     Button { pdfToShare = pdf } label: { Label("Export / Share", systemImage: "square.and.arrow.up") }
@@ -105,24 +80,16 @@ struct ContentView: View {
                                         selectedPDF = nil
                                     } label: { Label("Delete", systemImage: "trash") }
                                 } label: {
-                                    Image(systemName: "ellipsis.circle")
-                                        .font(.title3)
+                                    Image(systemName: "ellipsis.circle").font(.title3)
                                 }
                             }
                         }
                         .id(pdf.id)
                 } else {
-                    // Empty State
                     VStack(spacing: 20) {
-                        Image(systemName: "book.closed")
-                            .font(.system(size: 80))
-                            .foregroundColor(.gray.opacity(0.3))
-                        Text("Select a Comic")
-                            .font(.title)
-                            .foregroundColor(.secondary)
-                        Text("Select a file from the sidebar or use the buttons below.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Image(systemName: "book.closed").font(.system(size: 80)).foregroundColor(.gray.opacity(0.3))
+                        Text("Select a Comic").font(.title).foregroundColor(.secondary)
+                        Text("Select a file from the sidebar or use the buttons below.").font(.caption).foregroundColor(.secondary)
                     }
                 }
             }
@@ -131,17 +98,13 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Robust Library Sidebar
 struct LibrarySidebarList: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Binding var selectedPDF: ConvertedPDF?
     @State private var searchText = ""
     
     enum SidebarSheet: Identifiable {
-        case importer
-        case wifi
-        case cloud
-        
+        case importer, wifi, cloud, merge
         var id: Int { hashValue }
     }
     
@@ -154,7 +117,6 @@ struct LibrarySidebarList: View {
     
     var body: some View {
         List(selection: $selectedPDF) {
-            // 1. The Comic Files
             ForEach(filteredPDFs) { pdf in
                 NavigationLink(value: pdf) {
                     LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
@@ -167,53 +129,36 @@ struct LibrarySidebarList: View {
                 }
             }
             
-            // 2. Permanent Actions Section
             Section(header: Text("Quick Actions")) {
-                Button(action: { activeSheet = .importer }) {
-                    Label("Import Comic", systemImage: "plus")
-                        .foregroundColor(.blue)
-                }
-                Button(action: { activeSheet = .wifi }) {
-                    Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right")
-                        .foregroundColor(.blue)
-                }
-                Button(action: { activeSheet = .cloud }) {
-                    Label("Cloud Import", systemImage: "icloud.and.arrow.down")
-                        .foregroundColor(.blue)
-                }
+                Button(action: { activeSheet = .importer }) { Label("Import Comic", systemImage: "plus").foregroundColor(.blue) }
+                Button(action: { activeSheet = .wifi }) { Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right").foregroundColor(.blue) }
+                Button(action: { activeSheet = .cloud }) { Label("Cloud Import", systemImage: "icloud.and.arrow.down").foregroundColor(.blue) }
+                // ✅ NEW MERGE BUTTON
+                Button(action: { activeSheet = .merge }) { Label("Merge Files", systemImage: "arrow.triangle.merge").foregroundColor(.blue) }
             }
         }
         .listStyle(.sidebar)
         .searchable(text: $searchText)
-        // Drag & Drop
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
             loadFiles(from: providers)
             return true
         }
-        // Toolbar (Backup)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button(action: { activeSheet = .importer }) { Label("Import File", systemImage: "plus") }
                     Button(action: { activeSheet = .wifi }) { Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right") }
-                    Button(action: { activeSheet = .cloud }) { Label("Cloud Import", systemImage: "icloud.and.arrow.down") }
-                } label: {
-                    Image(systemName: "plus.circle")
-                        .font(.title3)
-                }
+                    Button(action: { activeSheet = .merge }) { Label("Merge Files", systemImage: "arrow.triangle.merge") }
+                } label: { Image(systemName: "plus.circle").font(.title3) }
             }
         }
         .sheet(item: $activeSheet) { item in
             switch item {
             case .importer:
-                DocumentPicker(onDocumentsPicked: { urls in
-                    Task { await conversionManager.processImportedFiles(urls: urls) }
-                    activeSheet = nil
-                })
-            case .wifi:
-                WiFiView()
-            case .cloud:
-                CloudBrowserView()
+                DocumentPicker(onDocumentsPicked: { urls in Task { await conversionManager.processImportedFiles(urls: urls); activeSheet = nil } })
+            case .wifi: WiFiView()
+            case .cloud: CloudBrowserView()
+            case .merge: FileMergeView() // ✅ NEW MERGE VIEW
             }
         }
     }
@@ -222,8 +167,7 @@ struct LibrarySidebarList: View {
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (data, error) in
-                    if let urlData = data as? Data,
-                       let url = URL(dataRepresentation: urlData, relativeTo: nil) {
+                    if let urlData = data as? Data, let url = URL(dataRepresentation: urlData, relativeTo: nil) {
                         Task { await conversionManager.processImportedFiles(urls: [url]) }
                     } else if let url = data as? URL {
                         Task { await conversionManager.processImportedFiles(urls: [url]) }
@@ -234,18 +178,74 @@ struct LibrarySidebarList: View {
     }
 }
 
-// ✅ PLACEHOLDER (Fixes "CloudBrowserView not found")
 struct CloudBrowserView: View {
     var body: some View {
         VStack {
-            Image(systemName: "icloud.slash")
-                .font(.largeTitle)
+            Image(systemName: "icloud.slash").font(.largeTitle).padding()
+            Text("Cloud Feature Pending").font(.headline)
+            Text("Please ensure CloudViews.swift is added to your target.").font(.caption).foregroundColor(.secondary)
+        }
+    }
+}
+
+// ✅ NEW MERGE UI
+struct FileMergeView: View {
+    @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.dismiss) var dismiss
+    @State private var selectedIDs: Set<UUID> = []
+    @State private var mergedName: String = ""
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                TextField("Collection Name (e.g. Omnibus Vol 1)", text: $mergedName)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding()
+                
+                List(conversionManager.convertedPDFs, id: \.id) { pdf in
+                    HStack {
+                        Image(systemName: selectedIDs.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(selectedIDs.contains(pdf.id) ? .blue : .gray)
+                        Text(pdf.name)
+                        Spacer()
+                        Text(pdf.formattedSize).font(.caption).foregroundColor(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if selectedIDs.contains(pdf.id) {
+                            selectedIDs.remove(pdf.id)
+                        } else {
+                            selectedIDs.insert(pdf.id)
+                        }
+                    }
+                }
+                
+                Button(action: {
+                    let selectedFiles = conversionManager.convertedPDFs.filter { selectedIDs.contains($0.id) }
+                    Task {
+                        await conversionManager.mergePDFs(selectedFiles, outputName: mergedName)
+                        dismiss()
+                    }
+                }) {
+                    HStack {
+                        if conversionManager.isConverting { ProgressView().padding(.trailing, 5) }
+                        Text("Merge \(selectedIDs.count) Files")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(selectedIDs.count < 2 ? Color.gray : Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
+                .disabled(selectedIDs.count < 2 || conversionManager.isConverting)
                 .padding()
-            Text("Cloud Feature Pending")
-                .font(.headline)
-            Text("Please ensure CloudViews.swift is added to your target.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            }
+            .navigationTitle("Merge Files")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
         }
     }
 }

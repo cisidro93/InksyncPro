@@ -120,14 +120,12 @@ class ConversionManager: ObservableObject {
                         collectionId: nil
                     )
                     convertedPDFs.append(newPDF)
-                    // Trigger thumbnail generation for new file
                     DispatchQueue.global(qos: .background).async {
                         self.generateCoverThumbnail(for: newPDF)
                     }
                 }
             }
             
-            // Re-check existing files for missing thumbnails
             for pdf in convertedPDFs {
                  if thumbnailCache.object(forKey: pdf.url.path as NSString) == nil {
                      DispatchQueue.global(qos: .background).async {
@@ -158,6 +156,55 @@ class ConversionManager: ObservableObject {
              self.generateCoverThumbnail(for: pdf)
          }
      }
+    
+    // MARK: - MERGE FUNCTION (NEW)
+    
+    func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String) async {
+        await MainActor.run {
+            isConverting = true
+            processingStatus = "Merging..."
+            statusMessage = "Starting merge..."
+        }
+        
+        let fileManager = FileManager.default
+        let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let safeName = outputName.isEmpty ? "Merged_Collection" : outputName
+        let outputURL = docDir.appendingPathComponent("\(safeName).epub")
+        
+        let merger = EPUBMerger()
+        let sourceURLs = pdfs.map { $0.url }
+        
+        do {
+            try await merger.mergeEPUBs(sourceURLs: sourceURLs, outputURL: outputURL, settings: conversionSettings)
+            
+            await MainActor.run {
+                // Add the new omnibus to library
+                let fileSize = (try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                let newPDF = ConvertedPDF(
+                    name: outputURL.lastPathComponent,
+                    url: outputURL,
+                    pageCount: 0,
+                    fileSize: fileSize,
+                    metadata: PDFMetadata(title: safeName)
+                )
+                convertedPDFs.append(newPDF)
+                
+                isConverting = false
+                statusMessage = "✅ Merge Complete!"
+                scanLibrary()
+                DispatchQueue.global(qos: .background).async {
+                    self.generateCoverThumbnail(for: newPDF)
+                }
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.statusMessage = nil }
+            }
+        } catch {
+            await MainActor.run {
+                isConverting = false
+                statusMessage = "Merge Error: \(error.localizedDescription)"
+            }
+        }
+    }
     
     // MARK: - Page Management
     
@@ -358,19 +405,17 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    // MARK: - Thumbnail Generation (RESTORED)
+    // MARK: - Thumbnail Generation
     
     func generateCoverThumbnail(for pdf: ConvertedPDF) {
         if let image = extractCoverImage(from: pdf.url) {
             thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
-            // Trigger UI update
             DispatchQueue.main.async { self.objectWillChange.send() }
         }
     }
     
     func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
         if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }
-        // If not cached, trigger generation (async) and return placeholder
         DispatchQueue.global(qos: .userInteractive).async {
             self.generateCoverThumbnail(for: pdf)
         }
@@ -380,38 +425,28 @@ class ConversionManager: ObservableObject {
     private func extractCoverImage(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         
-        // 1. PDF Handling
         if ext == "pdf" {
             guard let document = PDFDocument(url: url),
                   let page = document.page(at: 0) else { return nil }
             return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
         }
         
-        // 2. Archive Handling (CBZ, EPUB, ZIP)
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
             guard let archive = Archive(url: url, accessMode: .read) else { return nil }
-            
-            // Find first image
             let imageExtensions = ["jpg", "jpeg", "png", "webp"]
-            // Sort entries to find "page_0001" or "cover.jpg"
             let sortedEntries = archive.makeIterator().sorted { $0.path < $1.path }
             
             for entry in sortedEntries {
                 let entryExt = (entry.path as NSString).pathExtension.lowercased()
                 if imageExtensions.contains(entryExt) {
-                    // Skip MacOS metadata
                     if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
-                    
                     var data = Data()
                     do {
                         _ = try archive.extract(entry) { chunk in
                             data.append(chunk)
                         }
                         return UIImage(data: data)
-                    } catch {
-                        print("Thumbnail extraction error: \(error)")
-                        continue
-                    }
+                    } catch { continue }
                 }
             }
         }
