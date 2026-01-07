@@ -12,10 +12,9 @@ struct LibraryView: View {
     @State private var sortOption: SortOption = .dateAdded
     @State private var isImporting = false
     
-    // Feature State (Sharing & Editing)
-    @State private var activePDF: ConvertedPDF?
-    @State private var showingShareSheet = false
-    @State private var showingPageManager = false
+    // ✅ Fix: Data-Driven Sheet State (Prevents Blank Pages)
+    @State private var pdfToShare: ConvertedPDF?
+    @State private var pdfToEdit: ConvertedPDF?
     
     enum SortOption {
         case dateAdded, name, size
@@ -93,7 +92,6 @@ struct LibraryView: View {
                     }
                 }
             }
-            // ✅ Feature Sheets
             .sheet(isPresented: $showingDocumentPicker) {
                 DocumentPicker(onDocumentsPicked: { urls in
                     isImporting = true
@@ -103,15 +101,13 @@ struct LibraryView: View {
                     }
                 })
             }
-            .sheet(isPresented: $showingShareSheet) {
-                if let pdf = activePDF {
-                    ShareSheet(activityItems: [pdf.url])
-                }
+            // ✅ Fix: Sheet only presents when 'pdfToShare' is not nil
+            .sheet(item: $pdfToShare) { pdf in
+                ShareSheet(activityItems: [pdf.url])
             }
-            .sheet(isPresented: $showingPageManager) {
-                if let pdf = activePDF {
-                    PageManagerView(pdf: pdf)
-                }
+            // ✅ Fix: Sheet only presents when 'pdfToEdit' is not nil
+            .sheet(item: $pdfToEdit) { pdf in
+                PageManagerView(pdf: pdf)
             }
         }
     }
@@ -163,18 +159,16 @@ struct LibraryView: View {
                     }
                 }
                 .contextMenu {
-                    // 1. Export (Share)
+                    // 1. Export (Sets pdfToShare, triggers sheet)
                     Button {
-                        activePDF = pdf
-                        showingShareSheet = true
+                        pdfToShare = pdf
                     } label: {
                         Label("Export / Send to Kindle", systemImage: "square.and.arrow.up")
                     }
                     
-                    // 2. V1.1 Feature (Edit)
+                    // 2. Edit (Sets pdfToEdit, triggers sheet)
                     Button {
-                        activePDF = pdf
-                        showingPageManager = true
+                        pdfToEdit = pdf
                     } label: {
                         Label("Edit Book & Pages", systemImage: "doc.on.doc")
                     }
