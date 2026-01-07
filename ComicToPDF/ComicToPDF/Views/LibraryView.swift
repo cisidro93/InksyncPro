@@ -14,7 +14,6 @@ struct LibraryView: View {
         case dateAdded, name, size
     }
     
-    // ✅ Fix: Simplified Logic for Compiler
     var filteredPDFs: [ConvertedPDF] {
         let pdfs = conversionManager.convertedPDFs
         let result: [ConvertedPDF]
@@ -88,7 +87,8 @@ struct LibraryView: View {
                 }
             }
             .sheet(isPresented: $showingDocumentPicker) {
-                DocumentPicker(onPick: { urls in
+                // ✅ Fix: Correct parameter name
+                DocumentPicker(onDocumentsPicked: { urls in
                     isImporting = true
                     Task {
                         await conversionManager.processImportedFiles(urls: urls)
@@ -99,7 +99,6 @@ struct LibraryView: View {
         }
     }
     
-    // ✅ Fix: Extracted Subview to reduce complexity
     var emptyStateView: some View {
         VStack(spacing: 20) {
             Image(systemName: "books.vertical")
@@ -125,12 +124,12 @@ struct LibraryView: View {
         }
     }
     
-    // ✅ Fix: Extracted List Logic
     var pdfListView: some View {
         List {
             ForEach(filteredPDFs) { pdf in
                 NavigationLink(destination: ConvertView(pdf: pdf)) {
-                    LibraryPDFRowWithCover(pdf: pdf)
+                    // ✅ Fix: Added isSelected: false
+                    LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
                 }
                 .swipeActions(edge: .leading) {
                     Button {
@@ -178,7 +177,6 @@ struct LibraryView: View {
     }
 }
 
-// Helper Extension
 extension ConversionManager {
     func toggleFavorite(_ pdf: ConvertedPDF) {
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
