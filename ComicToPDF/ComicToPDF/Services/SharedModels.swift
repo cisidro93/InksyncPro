@@ -42,7 +42,7 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
-    var tags: [String] = [] // ✅ Added missing property
+    var tags: [String] = []
 }
 
 struct PDFCollection: Identifiable, Codable, Equatable {
@@ -129,7 +129,10 @@ struct EPUBSettings: Codable, Equatable {
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
     var includeTableOfContents: Bool = true
     var splitPanels: Bool = false
-    var enablePanelView: Bool = false
+    
+    // ✅ FEATURE: Guided View Control
+    var includeFullPage: Bool = true
+    
     var readingDirection: ReadingDirection = .ltr
 }
 

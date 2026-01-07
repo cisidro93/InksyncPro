@@ -59,12 +59,15 @@ struct SettingsView: View {
                 Toggle("Default to Manga Mode", isOn: $conversionManager.conversionSettings.mangaMode)
                 Toggle("Default Panel Detection", isOn: $conversionManager.conversionSettings.enablePanelSplit)
                 
+                // ✅ FEATURE: Guided View Settings
                 if conversionManager.conversionSettings.enablePanelSplit {
+                    Toggle("Guided View (Show Full Page First)", isOn: $conversionManager.conversionSettings.epubSettings.includeFullPage)
+                        .foregroundColor(.blue)
+                    
                     Picker("Detection Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
                         Text("Automatic (Standard)").tag(PanelExtractor.ExtractionMode.automatic)
                         Text("Aggressive (Find More)").tag(PanelExtractor.ExtractionMode.aggressive)
                         Text("Conservative (Strict)").tag(PanelExtractor.ExtractionMode.conservative)
-                        // ✅ Fix: No arguments needed for grid
                         Text("Grid (2x2)").tag(PanelExtractor.ExtractionMode.grid)
                     }
                 }

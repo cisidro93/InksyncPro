@@ -4,7 +4,6 @@ import ZIPFoundation
 
 class CBZToEPUBConverter {
     
-    // ✅ Updated Signature
     func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]? = nil, progressHandler: @escaping (Double) -> Void) async throws -> URL {
         
         let fileManager = FileManager.default
@@ -52,35 +51,51 @@ class CBZToEPUBConverter {
         for (sourceIndex, imgURL) in imageURLs.enumerated() {
             guard let originalImage = UIImage(contentsOfFile: imgURL.path) else { continue }
             
-            var pagesToProcess: [UIImage] = [originalImage]
+            // ✅ FEATURE: Hybrid Guided View (Hard Slicing)
+            var pagesToProcess: [UIImage] = []
+            var extractedPanels: [UIImage] = []
             
-            // ✅ ENTERPRISE LOGIC: Manual Overrides vs AI
+            // 1. Detect Panels
             if settings.enablePanelSplit {
-                var extractedPages: [UIImage]?
-                
                 // A. Check for Human Overrides
                 if let manualPanels = manualManifest?[sourceIndex] {
                     print("Using human overrides for page \(sourceIndex)")
-                    extractedPages = try? await PanelExtractor.cropPanels(from: originalImage, panels: manualPanels)
+                    if let cropped = try? await PanelExtractor.cropPanels(from: originalImage, panels: manualPanels) {
+                        extractedPanels = cropped
+                    }
                 } 
                 // B. Fallback to AI
                 else {
-                    extractedPages = try? await PanelExtractor.extractPanels(
+                    if let aiPanels = try? await PanelExtractor.extractPanels(
                         from: originalImage,
                         mode: settings.epubSettings.panelDetectionMode,
                         mangaMode: settings.mangaMode
-                    )
-                }
-                
-                if let validPages = extractedPages, !validPages.isEmpty {
-                    pagesToProcess = validPages
+                    ) {
+                        extractedPanels = aiPanels
+                    }
                 }
             }
             
-            // Process sub-pages...
+            // 2. Build Sequence
+            if settings.enablePanelSplit && !extractedPanels.isEmpty {
+                // If "Guided View" is ON, show full page first
+                if settings.epubSettings.includeFullPage {
+                    pagesToProcess.append(originalImage) // Context
+                    pagesToProcess.append(contentsOf: extractedPanels) // Details
+                } else {
+                    // Just panels
+                    pagesToProcess.append(contentsOf: extractedPanels)
+                }
+            } else {
+                // No panels or disabled -> Just Full Page
+                pagesToProcess.append(originalImage)
+            }
+            
+            // 3. Output Pages
             for (_, image) in pagesToProcess.enumerated() {
                 var finalImage = image
                 
+                // Image Enhancements
                 if settings.optimizeForDevice || settings.imageEnhancement.grayscale {
                     let tempImgURL = tempDir.appendingPathComponent("temp_\(globalPageIndex).jpg")
                     if let data = finalImage.jpegData(compressionQuality: 1.0) {
@@ -94,10 +109,12 @@ class CBZToEPUBConverter {
                 let newName = "page_\(String(format: "%04d", globalPageIndex)).jpg"
                 let destURL = imagesDir.appendingPathComponent(newName)
                 
+                // Save JPEG
                 if let data = finalImage.jpegData(compressionQuality: settings.compressionQuality.value) {
                     try data.write(to: destURL)
                 }
                 
+                // Manifest & HTML
                 let isCover = (globalPageIndex == 0)
                 let properties = isCover ? "properties=\"cover-image\"" : ""
                 manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/jpeg\" \(properties)/>")
