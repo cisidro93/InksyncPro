@@ -15,6 +15,8 @@ class ConversionManager: ObservableObject {
     @Published var isConverting = false
     @Published var processingStatus = ""
     @Published var statusMessage: String?
+    
+    // Editor State
     @Published var showingPanelEditor = false
     @Published var currentPanelSession: PanelEditSession?
     @Published var panelEditorCompletion: ((PanelEditSession?) -> Void)?
@@ -52,9 +54,8 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    // ✅ Fix: Alias for older views
     func savePDFs() {
-        saveLibrary()
+        saveLibrary() // Alias for older views
     }
     
     func loadLibrary() {
@@ -125,10 +126,86 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    func addConvertedPDF(url: URL, pageCount: Int = 0, fileSize: Int64 = 0, duration: TimeInterval = 0) {
-        let pdf = ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: pageCount, fileSize: fileSize, metadata: PDFMetadata(title: url.lastPathComponent), collectionId: nil)
-        convertedPDFs.append(pdf)
-        saveLibrary()
+    // MARK: - Page Management (The Missing Piece!)
+    
+    func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDir) }
+        
+        // Unzip
+        try fileManager.unzipItem(at: url, to: tempDir)
+        
+        // Find Images
+        let keys: [URLResourceKey] = [.nameKey]
+        let enumerator = fileManager.enumerator(at: tempDir, includingPropertiesForKeys: keys)
+        var imageURLs: [URL] = []
+        let validExts = ["jpg", "jpeg", "png", "webp"]
+        
+        while let fileURL = enumerator?.nextObject() as? URL {
+            if validExts.contains(fileURL.pathExtension.lowercased()) {
+                imageURLs.append(fileURL)
+            }
+        }
+        
+        imageURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
+        
+        var images: [UIImage] = []
+        for (index, imgURL) in imageURLs.enumerated() {
+            if let image = UIImage(contentsOfFile: imgURL.path) {
+                images.append(image)
+            }
+            progressHandler(Double(index) / Double(imageURLs.count))
+        }
+        
+        return images
+    }
+    
+    func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>) async throws {
+        let fileManager = FileManager.default
+        let sourceURL = pdf.url
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDir) }
+        
+        // Unzip
+        try fileManager.unzipItem(at: sourceURL, to: tempDir)
+        
+        // Find Images
+        let keys: [URLResourceKey] = [.nameKey]
+        guard let enumerator = fileManager.enumerator(at: tempDir, includingPropertiesForKeys: keys) else { return }
+        var imageURLs: [URL] = []
+        let validExts = ["jpg", "jpeg", "png", "webp"]
+        
+        while let fileURL = enumerator?.nextObject() as? URL {
+            if validExts.contains(fileURL.pathExtension.lowercased()) {
+                imageURLs.append(fileURL)
+            }
+        }
+        imageURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
+        
+        // Delete Selected
+        for (index, url) in imageURLs.enumerated() {
+            if pageIndices.contains(index) {
+                try fileManager.removeItem(at: url)
+            }
+        }
+        
+        // Re-Zip
+        let newURL = tempDir.appendingPathComponent("repacked.cbz")
+        try fileManager.zipItem(at: tempDir, to: newURL)
+        
+        // Replace Original
+        if fileManager.fileExists(atPath: sourceURL.path) {
+            try fileManager.removeItem(at: sourceURL)
+        }
+        try fileManager.moveItem(at: newURL, to: sourceURL)
+        
+        // Refresh Library
+        await MainActor.run {
+            self.scanLibrary()
+        }
     }
     
     // MARK: - Collections
@@ -184,6 +261,13 @@ class ConversionManager: ObservableObject {
             }
         } catch {
             await MainActor.run { isConverting = false; statusMessage = "Error: \(error.localizedDescription)" }
+        }
+    }
+    
+    func generateCoverThumbnail(for pdf: ConvertedPDF) {
+        // Force refresh logic if needed
+        if let image = extractCoverImage(from: pdf.url) {
+            thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
         }
     }
     
@@ -261,21 +345,4 @@ class ConversionManager: ObservableObject {
             saveLibrary()
         }
     }
-    
-    func recordSend(pdf: ConvertedPDF, device: KindleDevice) {}
-    func batchRename(pdfs: [ConvertedPDF], pattern: String, startNumber: Int) {}
-    func autoOrganize() {}
-    func findDuplicates() async -> [DuplicateGroup] { return [] }
-    func removeFromLibrary(_ pdf: ConvertedPDF) { deletePDF(pdf) }
-    func extractImageURLs(from url: URL) async throws -> [URL] { return [] }
-    func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL { return pdf.url }
-    func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL { return pdf.url }
-    func extractImages(from url: URL, progressHandler: (Double) -> Void) async throws -> [UIImage] { return [UIImage(systemName: "doc.text")!] }
-    func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL { return url }
-    func splitFileInBackground(pdf: ConvertedPDF, maxSizeMB: Double) {}
-    func calculateStorageInfo() -> StorageInfo { return StorageInfo(used: 0, totalSize: 1000, appUsage: 0) }
-    func createBackupData() -> BackupData { BackupData(version: "1.0", date: Date(), settings: conversionSettings, collections: collections, presets: conversionPresets) }
-    func restoreFromBackup(_ backup: BackupData) { conversionSettings = backup.settings; saveLibrary() }
-    func convertToFormat(_ format: OutputFormat, from url: URL, settings: ConversionSettings, progressHandler: @escaping (Double) -> Void) async throws -> URL { return url }
-    func generateCoverThumbnail(for pdf: ConvertedPDF) {}
 }
