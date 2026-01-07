@@ -46,7 +46,6 @@ struct ConvertView: View {
                     Spacer()
                     Text(pdf.formattedSize).foregroundColor(.secondary)
                 }
-                // ✅ Context: Show active Split Mode so they know it's on
                 if conversionManager.conversionSettings.splitMode != .none {
                     HStack {
                         Text("Auto-Split")
@@ -100,6 +99,8 @@ struct ConvertView: View {
                             )
                         }
                         .buttonStyle(PlainButtonStyle())
+                        .disabled(conversionManager.isConverting) // Lock selection during convert
+                        .opacity(conversionManager.isConverting ? 0.6 : 1.0)
                     }
                 }
                 .padding(.vertical, 5)
@@ -114,13 +115,14 @@ struct ConvertView: View {
                     Text("Right-to-Left (Manga)").tag(true)
                 }
                 .pickerStyle(.segmented)
+                .disabled(conversionManager.isConverting)
             } header: {
                 Text("Layout")
             } footer: {
                 Text(isMangaMode ? "Panels ordered Right-to-Left." : "Panels ordered Left-to-Right.")
             }
             
-            // ✅ FEATURE: Conflict Warning
+            // Warning Conflict
             if conversionManager.conversionSettings.splitMode != .none &&
                conversionManager.conversionSettings.enablePanelSplit {
                 Section {
@@ -141,20 +143,32 @@ struct ConvertView: View {
                 }
             }
             
+            // ✅ PROGRESS BAR REPLACEMENT
             Section {
-                Button(action: {
-                    Task {
-                        // Ensure settings are synced before converting
-                        updateSettings(for: selectedMode)
-                        await conversionManager.convertComic(pdf, mangaMode: isMangaMode)
-                    }
-                }) {
-                    if conversionManager.isConverting {
+                if conversionManager.isConverting {
+                    VStack(spacing: 8) {
                         HStack {
-                            ProgressView()
-                            Text(conversionManager.processingStatus)
+                            Text("Processing...")
+                                .font(.headline)
+                                .foregroundColor(.blue)
+                            Spacer()
+                            Text("\(Int(conversionManager.conversionProgress * 100))%")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .monospacedDigit()
                         }
-                    } else {
+                        
+                        ProgressView(value: conversionManager.conversionProgress, total: 1.0)
+                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                    }
+                    .padding(.vertical, 10)
+                } else {
+                    Button(action: {
+                        Task {
+                            updateSettings(for: selectedMode)
+                            await conversionManager.convertComic(pdf, mangaMode: isMangaMode)
+                        }
+                    }) {
                         Text("Start Conversion")
                             .frame(maxWidth: .infinity)
                             .foregroundColor(.blue)
@@ -167,16 +181,13 @@ struct ConvertView: View {
                 Section {
                     Text(status)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(status.contains("Error") ? .red : .secondary)
                 }
             }
         }
         .navigationTitle("Convert Comic")
         .onAppear {
-            // Load initial state from global defaults
             isMangaMode = conversionManager.conversionSettings.mangaMode
-            
-            // Reverse-engineer the mode from current settings
             if !conversionManager.conversionSettings.enablePanelSplit {
                 selectedMode = .standard
             } else if conversionManager.conversionSettings.epubSettings.includeFullPage {
@@ -187,7 +198,6 @@ struct ConvertView: View {
         }
     }
     
-    // Helper to map UI Card -> Backend Booleans
     func updateSettings(for mode: ConversionMode) {
         switch mode {
         case .standard:

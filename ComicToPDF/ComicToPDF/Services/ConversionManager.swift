@@ -11,11 +11,12 @@ class ConversionManager: ObservableObject {
     @Published var activeTasks: [AppBackgroundTask] = []
     @Published var conversionSettings = ConversionSettings()
     
-    // Enterprise: Manual Overrides [PDF_ID: [PageIndex: [Panels]]]
+    // Enterprise: Manual Overrides
     @Published var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]] = [:]
     
     // UI State
     @Published var isConverting = false
+    @Published var conversionProgress: Double = 0.0 // ✅ NEW: Progress Tracker
     @Published var processingStatus = ""
     @Published var statusMessage: String?
     
@@ -83,7 +84,7 @@ class ConversionManager: ObservableObject {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(name)
     }
     
-    // MARK: - Manual Panel Management (V1.1)
+    // MARK: - Manual Panel Management
     
     func savePanelOverrides(for pdfID: UUID, pageIndex: Int, panels: [PanelExtractor.Panel]) async {
         await MainActor.run {
@@ -143,7 +144,7 @@ class ConversionManager: ObservableObject {
          saveLibrary()
      }
     
-    // MARK: - Page Management (Fixes for PageExtractionView)
+    // MARK: - Page Management
     
     func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
         let fileManager = FileManager.default
@@ -167,7 +168,6 @@ class ConversionManager: ObservableObject {
         return images
     }
     
-    // ✅ RESTORED: Delete specific pages
     func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>) async throws {
         let fileManager = FileManager.default
         let sourceURL = pdf.url
@@ -185,7 +185,6 @@ class ConversionManager: ObservableObject {
             }
         }
         
-        // Repack
         let newURL = tempDir.appendingPathComponent("repacked.cbz")
         try fileManager.zipItem(at: tempDir, to: newURL)
         
@@ -194,12 +193,10 @@ class ConversionManager: ObservableObject {
         await MainActor.run { self.scanLibrary() }
     }
     
-    // ✅ RESTORED: Extract Pages (Range Variant)
     func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL {
         return try await extractPages(from: pdf, pageIndices: Array(pageIndices), asImages: asImages)
     }
     
-    // ✅ RESTORED: Extract Pages (Array Variant)
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -209,7 +206,6 @@ class ConversionManager: ObservableObject {
         try fileManager.unzipItem(at: pdf.url, to: tempDir)
         let imageURLs = try findSortedImages(in: tempDir)
         
-        // Filter images to keep
         let indicesSet = Set(pageIndices)
         var keptURLs: [URL] = []
         
@@ -221,7 +217,6 @@ class ConversionManager: ObservableObject {
         
         guard !keptURLs.isEmpty else { throw NSError(domain: "Extraction", code: 1, userInfo: [NSLocalizedDescriptionKey: "No pages selected"]) }
         
-        // Create destination
         let destDir = fileManager.temporaryDirectory.appendingPathComponent("Extracted_\(UUID().uuidString)")
         try fileManager.createDirectory(at: destDir, withIntermediateDirectories: true)
         
@@ -230,7 +225,6 @@ class ConversionManager: ObservableObject {
             try fileManager.copyItem(at: url, to: destDir.appendingPathComponent(newName))
         }
         
-        // Zip result
         let finalName = "\(pdf.name)_extracted.cbz"
         let finalURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(finalName)
         if fileManager.fileExists(atPath: finalURL.path) { try fileManager.removeItem(at: finalURL) }
@@ -241,7 +235,6 @@ class ConversionManager: ObservableObject {
         return finalURL
     }
     
-    // ✅ RESTORED: Reorder Pages
     func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -255,7 +248,6 @@ class ConversionManager: ObservableObject {
             throw NSError(domain: "Reorder", code: 1, userInfo: [NSLocalizedDescriptionKey: "Page count mismatch"])
         }
         
-        // Move to staging to avoid name conflicts
         let stagingDir = tempDir.appendingPathComponent("staging")
         try fileManager.createDirectory(at: stagingDir, withIntermediateDirectories: true)
         
@@ -268,7 +260,6 @@ class ConversionManager: ObservableObject {
             }
         }
         
-        // Overwrite original temp files with staged files
         for url in imageURLs { try? fileManager.removeItem(at: url) }
         let stageContents = try fileManager.contentsOfDirectory(at: stagingDir, includingPropertiesForKeys: nil)
         for url in stageContents {
@@ -276,8 +267,7 @@ class ConversionManager: ObservableObject {
         }
         try fileManager.removeItem(at: stagingDir)
         
-        // Re-Zip
-        let finalURL = url // Overwrite existing
+        let finalURL = url 
         let tempZip = fileManager.temporaryDirectory.appendingPathComponent("temp_reorder.cbz")
         try fileManager.zipItem(at: tempDir, to: tempZip)
         
@@ -300,19 +290,23 @@ class ConversionManager: ObservableObject {
     }
     
     func extractImageURLs(from url: URL) async throws -> [URL] {
-        // Simple stub or implement using findSortedImages logic if needed
         return []
     }
     
     // MARK: - Conversion
     
     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool) async {
-        await MainActor.run { isConverting = true; processingStatus = "Converting..."; statusMessage = "Processing..." }
-        let converter = CBZToEPUBConverter()
+        // ✅ START: Reset progress
+        await MainActor.run { 
+            isConverting = true
+            conversionProgress = 0.0
+            processingStatus = "Converting..."
+            statusMessage = "Starting..."
+        }
         
+        let converter = CBZToEPUBConverter()
         var jobSettings = conversionSettings
         jobSettings.mangaMode = mangaMode
-        
         let fileOverrides = panelOverrides[pdf.id]
         
         do {
@@ -321,7 +315,11 @@ class ConversionManager: ObservableObject {
                 settings: jobSettings,
                 manualManifest: fileOverrides
             ) { progress in
-                print("Progress: \(progress)")
+                // ✅ UPDATE: Post progress to Main Actor
+                Task { @MainActor in
+                    self.conversionProgress = progress
+                    self.processingStatus = "Converting \(Int(progress * 100))%"
+                }
             }
             
             await MainActor.run {
@@ -337,6 +335,7 @@ class ConversionManager: ObservableObject {
                 }
                 
                 isConverting = false
+                conversionProgress = 1.0
                 statusMessage = "✅ Conversion Complete! (\(newURLs.count) files)"
                 scanLibrary()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.statusMessage = nil }

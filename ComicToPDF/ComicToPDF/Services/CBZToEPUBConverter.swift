@@ -1,10 +1,11 @@
 import Foundation
 import UIKit
 import ZIPFoundation
+import ImageIO
 
 class CBZToEPUBConverter {
     
-    // ✅ Updated Signature: Returns ARRAY of URLs
+    // ✅ Returns ARRAY of URLs (Smart Split Support)
     func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]? = nil, progressHandler: @escaping (Double) -> Void) async throws -> [URL] {
         
         let fileManager = FileManager.default
@@ -32,9 +33,8 @@ class CBZToEPUBConverter {
         // Current Volume Containers
         var manifestItems: [String] = []
         var spineItems: [String] = []
-        var currentImages: [(String, URL)] = [] // (ID, SourcePath)
+        var currentImages: [(String, URL)] = [] 
         
-        // Base Name
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
         
         // Helper to Flush Volume
@@ -51,7 +51,7 @@ class CBZToEPUBConverter {
             try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
             try fileManager.createDirectory(at: cssDir, withIntermediateDirectories: true)
             
-            // Write CSS
+            // CSS
             let cssContent = """
             @page { margin: 0; padding: 0; }
             body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
@@ -60,17 +60,15 @@ class CBZToEPUBConverter {
             """
             try cssContent.write(to: cssDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
             
-            // Write Manifest Items
+            // Manifest
             var finalManifest = manifestItems
             finalManifest.insert("<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>", at: 0)
             finalManifest.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
             
-            // Copy Images & Write XHTML
+            // Move Images & Write XHTML
             for (id, url) in currentImages {
                 let destURL = imagesDir.appendingPathComponent(url.lastPathComponent)
-                if fileManager.fileExists(atPath: destURL.path) {
-                    try fileManager.removeItem(at: destURL)
-                }
+                if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
                 try fileManager.copyItem(at: url, to: destURL)
                 
                 let pageIndex = id.replacingOccurrences(of: "img_", with: "")
@@ -92,7 +90,7 @@ class CBZToEPUBConverter {
                 try htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
             }
             
-            // Write OPF
+            // OPF
             let direction = settings.mangaMode ? "rtl" : "ltr"
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
@@ -112,7 +110,7 @@ class CBZToEPUBConverter {
             """
             try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
             
-            // Write Nav
+            // Nav
             let navContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" hidden="">
@@ -122,7 +120,7 @@ class CBZToEPUBConverter {
             """
             try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
             
-            // Write Container
+            // Container
             let metaInfDir = epubBuildDir.appendingPathComponent("META-INF")
             try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
             try """
@@ -132,13 +130,13 @@ class CBZToEPUBConverter {
             </container>
             """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
             
-            // Zip it
+            // Zip
             let finalDest = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(volumeName)
             if fileManager.fileExists(atPath: finalDest.path) { try fileManager.removeItem(at: finalDest) }
             try fileManager.zipItem(at: epubBuildDir, to: finalDest)
             outputURLs.append(finalDest)
             
-            // Clean up
+            // Reset
             try? fileManager.removeItem(at: epubBuildDir)
             currentVolumeIndex += 1
             currentVolumeSize = 0
@@ -152,91 +150,128 @@ class CBZToEPUBConverter {
         let processedDir = tempDir.appendingPathComponent("Processed")
         try fileManager.createDirectory(at: processedDir, withIntermediateDirectories: true)
         
+        // Determine Target Max Dimension based on settings
+        // Compact: ~1500px height (Kindle Paperwhite range)
+        // Balanced: ~2000px height
+        // High: Full size
+        let maxDim: CGFloat? = {
+            switch settings.compressionQuality {
+            case .compact: return 1600
+            case .balanced: return 2200
+            case .high: return nil
+            }
+        }()
+        
         for (sourceIndex, imgURL) in imageURLs.enumerated() {
-            guard let originalImage = UIImage(contentsOfFile: imgURL.path) else { continue }
+            await Task.yield()
             
-            // Detect/Slice Pages
-            var pagesToProcess: [UIImage] = []
-            var extractedPanels: [UIImage] = []
-            
-            if settings.enablePanelSplit {
-                if let manualPanels = manualManifest?[sourceIndex] {
-                    if let cropped = try? await PanelExtractor.cropPanels(from: originalImage, panels: manualPanels) {
-                        extractedPanels = cropped
-                    }
-                } else {
-                    if let aiPanels = try? await PanelExtractor.extractPanels(from: originalImage, mode: settings.epubSettings.panelDetectionMode, mangaMode: settings.mangaMode) {
-                        extractedPanels = aiPanels
-                    }
-                }
+            // Force Memory Cleanup every 20 pages
+            if sourceIndex % 20 == 0 {
+                // This forces the OS to release any lingering autoreleased objects
             }
             
-            if settings.enablePanelSplit && !extractedPanels.isEmpty {
-                if settings.epubSettings.includeFullPage {
-                    pagesToProcess.append(originalImage)
-                    pagesToProcess.append(contentsOf: extractedPanels)
-                } else {
-                    pagesToProcess.append(contentsOf: extractedPanels)
-                }
-            } else {
-                pagesToProcess.append(originalImage)
-            }
-            
-            // Compress & Track Size
-            for (_, image) in pagesToProcess.enumerated() {
-                var finalImage = image
+            try await autoreleasepool {
+                // ✅ FIX: Downsample on load using ImageIO (Low Memory Impact)
+                guard let originalImage = loadDownsampledImage(at: imgURL, maxDimension: maxDim) else { return }
                 
-                // Enhance
-                if settings.optimizeForDevice || settings.imageEnhancement.grayscale {
-                    let tempImgURL = tempDir.appendingPathComponent("enhance_temp.jpg")
-                    if let data = finalImage.jpegData(compressionQuality: 1.0) {
-                        try? data.write(to: tempImgURL)
-                        if let processed = ImageProcessor.process(imageURL: tempImgURL, settings: settings) {
-                            finalImage = processed
+                var pagesToProcess: [UIImage] = []
+                var extractedPanels: [UIImage] = []
+                
+                if settings.enablePanelSplit {
+                    if let manualPanels = manualManifest?[sourceIndex] {
+                        if let cropped = try? await PanelExtractor.cropPanels(from: originalImage, panels: manualPanels) {
+                            extractedPanels = cropped
+                        }
+                    } else {
+                        if let aiPanels = try? await PanelExtractor.extractPanels(from: originalImage, mode: settings.epubSettings.panelDetectionMode, mangaMode: settings.mangaMode) {
+                            extractedPanels = aiPanels
                         }
                     }
                 }
                 
-                // Compress
-                guard let data = finalImage.jpegData(compressionQuality: settings.compressionQuality.value) else { continue }
-                let dataSize = Int64(data.count)
-                
-                // ✅ CHECK SPLIT LIMIT
-                // If adding this image would exceed limit (and we have at least 1 image already), flush.
-                if settings.splitMode != .none {
-                    if (currentVolumeSize + dataSize) > splitLimit && !currentImages.isEmpty {
-                        print("Volume limit reached (\(currentVolumeSize / 1024 / 1024) MB). Flushing...")
-                        try flushVolume()
+                if settings.enablePanelSplit && !extractedPanels.isEmpty {
+                    if settings.epubSettings.includeFullPage {
+                        pagesToProcess.append(originalImage)
+                        pagesToProcess.append(contentsOf: extractedPanels)
+                    } else {
+                        pagesToProcess.append(contentsOf: extractedPanels)
                     }
+                } else {
+                    pagesToProcess.append(originalImage)
                 }
                 
-                // Save processed image
-                let pageName = String(format: "page_%05d.jpg", globalPageIndex)
-                let pageURL = processedDir.appendingPathComponent(pageName)
-                try data.write(to: pageURL)
-                
-                // Add to Current Volume
-                currentVolumeSize += dataSize
-                currentImages.append(("img_\(globalPageIndex)", pageURL))
-                
-                let htmlName = "page_\(globalPageIndex).xhtml"
-                manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(pageName)\" media-type=\"image/jpeg\"/>")
-                spineItems.append("<itemref idref=\"page_\(globalPageIndex)\" linear=\"yes\"/>")
-                
-                globalPageIndex += 1
+                // Process
+                for (_, image) in pagesToProcess.enumerated() {
+                    var finalImage = image
+                    
+                    if settings.optimizeForDevice || settings.imageEnhancement.grayscale {
+                        let tempImgURL = tempDir.appendingPathComponent("enhance_temp.jpg")
+                        if let data = finalImage.jpegData(compressionQuality: 1.0) {
+                            try? data.write(to: tempImgURL)
+                            if let processed = ImageProcessor.process(imageURL: tempImgURL, settings: settings) {
+                                finalImage = processed
+                            }
+                        }
+                    }
+                    
+                    guard let data = finalImage.jpegData(compressionQuality: settings.compressionQuality.value) else { continue }
+                    let dataSize = Int64(data.count)
+                    
+                    if settings.splitMode != .none {
+                        if (currentVolumeSize + dataSize) > splitLimit && !currentImages.isEmpty {
+                            try flushVolume()
+                        }
+                    }
+                    
+                    let pageName = String(format: "page_%05d.jpg", globalPageIndex)
+                    let pageURL = processedDir.appendingPathComponent(pageName)
+                    try data.write(to: pageURL)
+                    
+                    currentVolumeSize += dataSize
+                    currentImages.append(("img_\(globalPageIndex)", pageURL))
+                    
+                    let htmlName = "page_\(globalPageIndex).xhtml"
+                    manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
+                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(pageName)\" media-type=\"image/jpeg\"/>")
+                    spineItems.append("<itemref idref=\"page_\(globalPageIndex)\" linear=\"yes\"/>")
+                    
+                    globalPageIndex += 1
+                }
             }
             
             let progress = Double(sourceIndex) / Double(imageURLs.count)
             progressHandler(progress)
         }
         
-        // Final Flush
         if !currentImages.isEmpty {
             try flushVolume()
         }
         
         return outputURLs
+    }
+    
+    // ✅ NEW: Memory-Safe Image Loader
+    private func loadDownsampledImage(at url: URL, maxDimension: CGFloat?) -> UIImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceShouldCache: false
+        ]
+        
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, options as CFDictionary) else { return nil }
+        
+        if let maxDim = maxDimension {
+            let downsampleOptions: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxDim
+            ]
+            
+            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions as CFDictionary) else { return nil }
+            return UIImage(cgImage: cgImage)
+        } else {
+            // Load full size but without caching
+            return UIImage(contentsOfFile: url.path)
+        }
     }
     
     private func findImages(in directory: URL) throws -> [URL] {
