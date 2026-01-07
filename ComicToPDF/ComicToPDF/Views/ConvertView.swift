@@ -46,11 +46,20 @@ struct ConvertView: View {
                     Spacer()
                     Text(pdf.formattedSize).foregroundColor(.secondary)
                 }
+                // ✅ Context: Show active Split Mode so they know it's on
+                if conversionManager.conversionSettings.splitMode != .none {
+                    HStack {
+                        Text("Auto-Split")
+                        Spacer()
+                        Text(conversionManager.conversionSettings.splitMode.rawValue)
+                            .foregroundColor(.orange)
+                    }
+                }
             } header: {
                 Text("Source Details")
             }
             
-            // ✅ PRO UI: 3-Card Selector
+            // PRO UI: 3-Card Selector
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Reading Experience")
@@ -98,7 +107,7 @@ struct ConvertView: View {
                 Text("Output Format")
             }
             
-            // Layout Direction (Enterprise Toggle)
+            // Layout Direction
             Section {
                 Picker("Reading Direction", selection: $isMangaMode) {
                     Text("Left-to-Right (Western)").tag(false)
@@ -109,6 +118,27 @@ struct ConvertView: View {
                 Text("Layout")
             } footer: {
                 Text(isMangaMode ? "Panels ordered Right-to-Left." : "Panels ordered Left-to-Right.")
+            }
+            
+            // ✅ FEATURE: Conflict Warning
+            if conversionManager.conversionSettings.splitMode != .none &&
+               conversionManager.conversionSettings.enablePanelSplit {
+                Section {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                            .font(.title2)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Potential Split Issue")
+                                .font(.headline)
+                            Text("You have enabled both Auto-Split and Panel Detection. Large chapters may be split in the middle of a page sequence (e.g., Panel 1 in Part 1, Panel 2 in Part 2).")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 5)
+                }
             }
             
             Section {
