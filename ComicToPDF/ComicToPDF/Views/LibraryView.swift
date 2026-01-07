@@ -14,18 +14,23 @@ struct LibraryView: View {
         case dateAdded, name, size
     }
     
+    // ✅ Fix: Simplified Logic for Compiler
     var filteredPDFs: [ConvertedPDF] {
         let pdfs = conversionManager.convertedPDFs
+        let result: [ConvertedPDF]
+        
         if searchText.isEmpty {
-            return sortPDFs(pdfs)
+            result = pdfs
         } else {
-            return sortPDFs(pdfs.filter { $0.name.localizedCaseInsensitiveContains(searchText) })
+            result = pdfs.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
         }
+        
+        return sortPDFs(result)
     }
     
     func sortPDFs(_ pdfs: [ConvertedPDF]) -> [ConvertedPDF] {
         switch sortOption {
-        case .dateAdded: return pdfs.reversed() // Newest first
+        case .dateAdded: return pdfs.reversed()
         case .name: return pdfs.sorted { $0.name < $1.name }
         case .size: return pdfs.sorted { $0.fileSize > $1.fileSize }
         }
@@ -35,78 +40,9 @@ struct LibraryView: View {
         NavigationView {
             ZStack {
                 if conversionManager.convertedPDFs.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "books.vertical")
-                            .font(.system(size: 60))
-                            .foregroundColor(.gray)
-                        Text("Your Library is Empty")
-                            .font(.title2)
-                            .bold()
-                        Text("Import a CBZ, CBR, or PDF file to get started.")
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                        
-                        Button(action: { showingDocumentPicker = true }) {
-                            Label("Import Comic", systemImage: "plus")
-                                .font(.headline)
-                                .padding()
-                                .frame(width: 200)
-                                .background(Color.blue)
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
-                        }
-                    }
+                    emptyStateView
                 } else {
-                    List {
-                        ForEach(filteredPDFs) { pdf in
-                            NavigationLink(destination: ConvertView(pdf: pdf)) {
-                                LibraryPDFRowWithCover(pdf: pdf)
-                            }
-                            .swipeActions(edge: .leading) {
-                                Button {
-                                    conversionManager.toggleFavorite(pdf)
-                                } label: {
-                                    Label("Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
-                                }
-                                .tint(.yellow)
-                            }
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    conversionManager.deletePDF(pdf)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                            .contextMenu {
-                                Button {
-                                    // ✅ Fix: Use the Global Default for Quick Actions
-                                    Task {
-                                        await conversionManager.convertComic(
-                                            pdf,
-                                            mangaMode: conversionManager.conversionSettings.mangaMode
-                                        )
-                                    }
-                                } label: {
-                                    Label("Quick Convert", systemImage: "bolt.fill")
-                                }
-                                
-                                Button {
-                                    conversionManager.toggleFavorite(pdf)
-                                } label: {
-                                    Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
-                                }
-                                
-                                Button(role: .destructive) {
-                                    conversionManager.deletePDF(pdf)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                    .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
+                    pdfListView
                 }
                 
                 // Floating Action Button
@@ -162,9 +98,87 @@ struct LibraryView: View {
             }
         }
     }
+    
+    // ✅ Fix: Extracted Subview to reduce complexity
+    var emptyStateView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "books.vertical")
+                .font(.system(size: 60))
+                .foregroundColor(.gray)
+            Text("Your Library is Empty")
+                .font(.title2)
+                .bold()
+            Text("Import a CBZ, CBR, or PDF file to get started.")
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            
+            Button(action: { showingDocumentPicker = true }) {
+                Label("Import Comic", systemImage: "plus")
+                    .font(.headline)
+                    .padding()
+                    .frame(width: 200)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
+        }
+    }
+    
+    // ✅ Fix: Extracted List Logic
+    var pdfListView: some View {
+        List {
+            ForEach(filteredPDFs) { pdf in
+                NavigationLink(destination: ConvertView(pdf: pdf)) {
+                    LibraryPDFRowWithCover(pdf: pdf)
+                }
+                .swipeActions(edge: .leading) {
+                    Button {
+                        conversionManager.toggleFavorite(pdf)
+                    } label: {
+                        Label("Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
+                    }
+                    .tint(.yellow)
+                }
+                .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) {
+                        conversionManager.deletePDF(pdf)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+                .contextMenu {
+                    Button {
+                        Task {
+                            await conversionManager.convertComic(
+                                pdf,
+                                mangaMode: conversionManager.conversionSettings.mangaMode
+                            )
+                        }
+                    } label: {
+                        Label("Quick Convert", systemImage: "bolt.fill")
+                    }
+                    
+                    Button {
+                        conversionManager.toggleFavorite(pdf)
+                    } label: {
+                        Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
+                    }
+                    
+                    Button(role: .destructive) {
+                        conversionManager.deletePDF(pdf)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
+    }
 }
 
-// Helper Extension for simple Favorite toggling if not in Manager
+// Helper Extension
 extension ConversionManager {
     func toggleFavorite(_ pdf: ConvertedPDF) {
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
