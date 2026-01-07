@@ -157,7 +157,7 @@ class ConversionManager: ObservableObject {
          }
      }
     
-    // MARK: - MERGE FUNCTION (NEW)
+    // MARK: - MERGE FUNCTION (UPDATED)
     
     func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String) async {
         await MainActor.run {
@@ -174,6 +174,12 @@ class ConversionManager: ObservableObject {
         let merger = EPUBMerger()
         let sourceURLs = pdfs.map { $0.url }
         
+        // ✅ SMART THUMBNAIL: Grab cover from the first file in the list
+        var inheritedCover: UIImage?
+        if let firstPDF = pdfs.first {
+            inheritedCover = getThumbnail(for: firstPDF)
+        }
+        
         do {
             try await merger.mergeEPUBs(sourceURLs: sourceURLs, outputURL: outputURL, settings: conversionSettings)
             
@@ -189,12 +195,20 @@ class ConversionManager: ObservableObject {
                 )
                 convertedPDFs.append(newPDF)
                 
+                // ✅ APPLY INHERITED THUMBNAIL INSTANTLY
+                if let cover = inheritedCover {
+                    thumbnailCache.setObject(cover, forKey: outputURL.path as NSString)
+                    self.objectWillChange.send()
+                } else {
+                    // Fallback to extraction if fails
+                    DispatchQueue.global(qos: .background).async {
+                        self.generateCoverThumbnail(for: newPDF)
+                    }
+                }
+                
                 isConverting = false
                 statusMessage = "✅ Merge Complete!"
                 scanLibrary()
-                DispatchQueue.global(qos: .background).async {
-                    self.generateCoverThumbnail(for: newPDF)
-                }
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.statusMessage = nil }
             }
