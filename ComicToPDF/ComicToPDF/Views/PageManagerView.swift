@@ -8,7 +8,7 @@ struct PageManagerView: View {
     @State private var pages: [UIImage] = []
     @State private var selectedPages: Set<Int> = []
     @State private var isLoading = true
-    @State private var pageToEdit: Int? // ✅ Track which page to edit
+    @State private var pageToEdit: Int?
     
     let columns = [GridItem(.adaptive(minimum: 100))]
     
@@ -16,7 +16,7 @@ struct PageManagerView: View {
         NavigationView {
             VStack {
                 if isLoading {
-                    ProgressView("Loading Pages...")
+                    ProgressView("Loading Thumbnails...")
                 } else {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 15) {
@@ -78,9 +78,7 @@ struct PageManagerView: View {
                 ToolbarItem(placement: .bottomBar) {
                     if !selectedPages.isEmpty {
                         Button(role: .destructive) {
-                            Task {
-                                await deleteSelected()
-                            }
+                            Task { await deleteSelected() }
                         } label: {
                             Text("Delete \(selectedPages.count) Pages")
                         }
@@ -94,10 +92,9 @@ struct PageManagerView: View {
             .task {
                 await loadPages()
             }
+            // ✅ FIX: Clean sheet init
             .sheet(item: $pageToEdit) { index in
-                if index < pages.count {
-                    PanelEditorView(pdf: pdf, pageIndex: index, pageImage: pages[index])
-                }
+                PanelEditorView(pdf: pdf, pageIndex: index)
             }
         }
     }
@@ -112,11 +109,8 @@ struct PageManagerView: View {
     }
     
     func toggleSelection(_ index: Int) {
-        if selectedPages.contains(index) {
-            selectedPages.remove(index)
-        } else {
-            selectedPages.insert(index)
-        }
+        if selectedPages.contains(index) { selectedPages.remove(index) }
+        else { selectedPages.insert(index) }
     }
     
     func deleteSelected() async {
@@ -126,14 +120,11 @@ struct PageManagerView: View {
             try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
             selectedPages.removeAll()
             await loadPages()
-        } catch {
-            print("Delete failed: \(error)")
-        }
+        } catch { print("Delete failed: \(error)") }
         isLoading = false
     }
 }
 
-// ✅ FIX: Silence Swift 6 Warning
 extension Int: @retroactive Identifiable {
     public var id: Int { self }
 }
