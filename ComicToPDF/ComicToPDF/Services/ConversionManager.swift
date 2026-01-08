@@ -308,7 +308,6 @@ class ConversionManager: ObservableObject {
     
     func generateCoverThumbnail(for pdf: ConvertedPDF) async {
         let url = pdf.url
-        // ✅ Call nonisolated static method without awaiting self context
         let image = await Task.detached(priority: .userInitiated) {
             return ConversionManager.extractCoverImageStatic(from: url)
         }.value
@@ -325,7 +324,6 @@ class ConversionManager: ObservableObject {
         return UIImage(systemName: "doc.text.fill")
     }
     
-    // ✅ NONISOLATED: Safe for background tasks
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         
@@ -336,8 +334,8 @@ class ConversionManager: ObservableObject {
         }
         
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
-            // ✅ FIX: Use simple init, removing 'try?' to fix "no calls to throwing" warning
-            guard let archive = Archive(url: url, accessMode: .read) else { return nil }
+            // ✅ FIX: Modern throwing init usage
+            guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
             let imageExtensions = ["jpg", "jpeg", "png", "webp"]
             let sortedEntries = archive.makeIterator().sorted { $0.path < $1.path }
             
@@ -358,7 +356,6 @@ class ConversionManager: ObservableObject {
         return nil
     }
     
-    // ✅ ASYNC: Fixes the 'await' warning in LibraryView
     func processImportedFiles(urls: [URL]) async {
         for url in urls {
             let accessing = url.startAccessingSecurityScopedResource()
@@ -372,6 +369,34 @@ class ConversionManager: ObservableObject {
             } catch { print("Import Failed: \(error)") }
         }
         scanLibrary()
+    }
+    
+    // MARK: - Helpers (Ensured Public)
+    
+    func autoOrganize() {
+        // Implementation stub for AutoOrganizeView
+        print("Auto Organizing...")
+    }
+    
+    func findDuplicates() async -> [DuplicateGroup] {
+        // Implementation stub for DuplicateDetectionView
+        return []
+    }
+    
+    func calculateStorageInfo() -> StorageInfo {
+        let total = convertedPDFs.reduce(0) { $0 + $1.fileSize }
+        return StorageInfo(used: total, totalSize: 10_000_000_000, appUsage: total)
+    }
+    
+    func createBackupData() -> BackupData {
+        return BackupData(version: "1.0", date: Date(), settings: conversionSettings, collections: collections, presets: conversionPresets)
+    }
+    
+    func restoreFromBackup(_ backup: BackupData) {
+        self.conversionSettings = backup.settings
+        self.collections = backup.collections
+        self.conversionPresets = backup.presets
+        saveLibrary()
     }
     
     func addKindleDevice(_ device: KindleDevice) { kindleDevices.append(device); saveLibrary() }

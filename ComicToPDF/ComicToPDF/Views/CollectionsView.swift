@@ -8,38 +8,18 @@ struct CollectionsView: View {
     var body: some View {
         NavigationView {
             List {
-                // "All Files" Special Row
-                NavigationLink(destination: LibraryFilteredView(collectionId: nil)) {
-                    HStack {
-                        Image(systemName: "books.vertical.fill")
-                            .foregroundColor(.blue)
-                            .font(.title2)
-                        Text("All Comics")
-                        Spacer()
-                        Text("\(conversionManager.convertedPDFs.count)")
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                // User Collections
-                Section(header: Text("Your Collections")) {
+                if conversionManager.collections.isEmpty {
+                    Text("No collections yet. Create one to organize your comics.")
+                        .foregroundColor(.secondary)
+                        .padding()
+                } else {
                     ForEach(conversionManager.collections) { collection in
-                        NavigationLink(destination: LibraryFilteredView(collectionId: collection.id)) {
-                            HStack {
-                                Image(systemName: collection.icon)
-                                    .foregroundColor(Color(collection.color)) // Requires Color extension or simple string mapping
-                                    .font(.title2)
-                                Text(collection.name)
-                                Spacer()
-                                Text("\(countFiles(in: collection))")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
+                        CollectionRow(collection: collection)
                     }
                     .onDelete { indexSet in
-                        for index in indexSet {
-                            let col = conversionManager.collections[index]
-                            conversionManager.deleteCollection(col)
+                        indexSet.forEach { index in
+                            let collection = conversionManager.collections[index]
+                            conversionManager.deleteCollection(collection)
                         }
                     }
                 }
@@ -47,56 +27,68 @@ struct CollectionsView: View {
             .navigationTitle("Collections")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showingAddCollection = true } label: {
+                    Button(action: { showingAddCollection = true }) {
                         Image(systemName: "folder.badge.plus")
                     }
                 }
             }
             .alert("New Collection", isPresented: $showingAddCollection) {
                 TextField("Collection Name", text: $newCollectionName)
+                Button("Cancel", role: .cancel) { newCollectionName = "" }
                 Button("Create") {
                     if !newCollectionName.isEmpty {
-                        conversionManager.createCollection(name: newCollectionName, icon: "folder.fill", color: "blue")
+                        conversionManager.createCollection(name: newCollectionName, icon: "folder", color: "Blue")
                         newCollectionName = ""
                     }
                 }
-                Button("Cancel", role: .cancel) { }
             }
         }
-    }
-    
-    func countFiles(in collection: PDFCollection) -> Int {
-        conversionManager.convertedPDFs.filter { $0.collectionId == collection.id }.count
     }
 }
 
-// Helper View to show files inside a specific collection
-struct LibraryFilteredView: View {
-    @EnvironmentObject var conversionManager: ConversionManager
-    let collectionId: UUID?
+// Extracting Row to Subview helps the compiler
+struct CollectionRow: View {
+    let collection: PDFCollection
     
-    var filteredFiles: [ConvertedPDF] {
-        if let id = collectionId {
-            return conversionManager.convertedPDFs.filter { $0.collectionId == id }
-        } else {
-            return conversionManager.convertedPDFs
+    var body: some View {
+        NavigationLink(destination: CollectionDetailView(collection: collection)) {
+            HStack {
+                Image(systemName: collection.icon)
+                    .foregroundColor(.blue)
+                    .font(.title2)
+                VStack(alignment: .leading) {
+                    Text(collection.name)
+                        .font(.headline)
+                    Text("\(collection.items.count) items")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
         }
+    }
+}
+
+struct CollectionDetailView: View {
+    @EnvironmentObject var conversionManager: ConversionManager
+    let collection: PDFCollection
+    
+    var collectionPDFs: [ConvertedPDF] {
+        conversionManager.convertedPDFs.filter { $0.collectionId == collection.id }
     }
     
     var body: some View {
-        List(filteredFiles) { pdf in
-            HStack {
-                Image(systemName: "doc.text")
-                Text(pdf.name)
+        List {
+            ForEach(collectionPDFs) { pdf in
+                NavigationLink(destination: ConvertView(pdf: pdf)) {
+                    HStack {
+                        Image(systemName: "doc.text.fill")
+                            .foregroundColor(.orange)
+                        Text(pdf.name)
+                    }
+                }
             }
         }
-        .navigationTitle(collectionName)
-    }
-    
-    var collectionName: String {
-        if let id = collectionId, let col = conversionManager.collections.first(where: { $0.id == id }) {
-            return col.name
-        }
-        return "All Comics"
+        .navigationTitle(collection.name)
     }
 }
