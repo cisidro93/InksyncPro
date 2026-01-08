@@ -52,7 +52,7 @@ struct PanelEditorView: View {
                             }
                         }
                     } else if isLoading {
-                        ProgressView("Loading High-Res Page...")
+                        ProgressView("Loading...")
                     }
                     
                     if isProcessing {
@@ -77,8 +77,11 @@ struct PanelEditorView: View {
             .background(Color(UIColor.secondarySystemBackground))
         }
         .task {
-            // Load High Res Page on Appear
+            // Memory Cleanup before loading new heavy image
+            conversionManager.cleanupMemory()
+            
             do {
+                // Load 1920px image (Good for eyes, okay for RAM)
                 if let image = try await conversionManager.extractFullPage(from: pdf, index: pageIndex) {
                     self.pageImage = image
                     loadExistingPanels()
@@ -87,6 +90,11 @@ struct PanelEditorView: View {
             } catch {
                 print("Failed to load editor image: \(error)")
             }
+        }
+        .onDisappear {
+            // Dump the image immediately when closing
+            self.pageImage = nil
+            conversionManager.cleanupMemory()
         }
     }
     
@@ -101,13 +109,30 @@ struct PanelEditorView: View {
     func runAutoDetection() {
         guard let img = pageImage else { return }
         isProcessing = true
-        Task {
-            if (try? await PanelExtractor.extractPanels(from: img, mode: .automatic, mangaMode: false)) != nil {
+        
+        Task(priority: .userInitiated) {
+            // ✅ FIX: Create a tiny 800px copy for the AI to chew on
+            // This prevents the "Vision Framework OOM" crash
+            let smallImage = resizeImageForAI(image: img, targetSize: 800)
+            
+            if (try? await PanelExtractor.extractPanels(from: smallImage, mode: .automatic, mangaMode: false)) != nil {
                 await MainActor.run {
                     if self.panels.isEmpty { self.panels = [CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)] }
                     self.isProcessing = false
                 }
             }
+        }
+    }
+    
+    // Helper: Tiny Image Generator
+    func resizeImageForAI(image: UIImage, targetSize: CGFloat) -> UIImage {
+        let size = image.size
+        let ratio = min(targetSize / size.width, targetSize / size.height)
+        let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1 // No retina needed for AI
+        return UIGraphicsImageRenderer(size: newSize, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
         }
     }
     

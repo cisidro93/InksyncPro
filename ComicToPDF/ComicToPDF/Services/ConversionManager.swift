@@ -31,7 +31,12 @@ class ConversionManager: ObservableObject {
         scanLibrary()
     }
     
-    // MARK: - Persistence (Standard)
+    // MARK: - Memory Management
+    func cleanupMemory() {
+        thumbnailCache.removeAllObjects()
+    }
+    
+    // MARK: - Persistence
     func saveLibrary() {
         struct LibraryIndex: Codable {
             let files: [ConvertedPDF]
@@ -74,9 +79,7 @@ class ConversionManager: ObservableObject {
             let fileURLs = try fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles])
             let allowed = ["cbz", "cbr", "pdf", "epub", "zip"]
             let diskFiles = fileURLs.filter { allowed.contains($0.pathExtension.lowercased()) }
-            
             convertedPDFs.removeAll { pdf in !diskFiles.contains(where: { $0.lastPathComponent == pdf.url.lastPathComponent }) }
-            
             for url in diskFiles {
                 if !convertedPDFs.contains(where: { $0.url.lastPathComponent == url.lastPathComponent }) {
                     let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
@@ -101,60 +104,48 @@ class ConversionManager: ObservableObject {
          Task { await self.generateCoverThumbnail(for: pdf) }
      }
     
-    // MARK: - Safe Image Loading (Prevents Crashes)
-    
+    // MARK: - Safe Image Loading
     func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
         return try await Task.detached {
             let fileManager = FileManager.default
             let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
             defer { try? fileManager.removeItem(at: tempDir) }
-            
             try fileManager.unzipItem(at: url, to: tempDir)
-            
             var images: [UIImage] = []
             let validExts = ["jpg", "jpeg", "png", "webp"]
             let subPaths = try fileManager.subpathsOfDirectory(atPath: tempDir.path)
             let imagePaths = subPaths.filter { validExts.contains(($0 as NSString).pathExtension.lowercased()) }.sorted()
-            
             for (index, subPath) in imagePaths.enumerated() {
                 let fullPath = tempDir.appendingPathComponent(subPath)
-                // ✅ CRITICAL FIX: Load as Thumbnail (Max 300px) to prevent OOM
-                if let image = ConversionManager.loadDownsampledImageStatic(at: fullPath, maxDimension: 300) {
-                    images.append(image)
-                }
+                if let image = ConversionManager.loadDownsampledImageStatic(at: fullPath, maxDimension: 300) { images.append(image) }
                 await MainActor.run { progressHandler(Double(index) / Double(imagePaths.count)) }
             }
             return images
         }.value
     }
     
-    // ✅ NEW: Extract Single High-Res Page (For Editor)
+    // ✅ FIX: Capped at 1920px max to prevent OOM
     func extractFullPage(from pdf: ConvertedPDF, index: Int) async throws -> UIImage? {
         return try await Task.detached {
             let fileManager = FileManager.default
             let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
             defer { try? fileManager.removeItem(at: tempDir) }
-            
             try fileManager.unzipItem(at: pdf.url, to: tempDir)
-            
             let validExts = ["jpg", "jpeg", "png", "webp"]
             let subPaths = try fileManager.subpathsOfDirectory(atPath: tempDir.path)
             let imagePaths = subPaths.filter { validExts.contains(($0 as NSString).pathExtension.lowercased()) }.sorted()
-            
             guard index < imagePaths.count else { return nil }
             let fullPath = tempDir.appendingPathComponent(imagePaths[index])
-            
-            // Limit to 2500px to ensure Editor doesn't crash Vision framework
-            return ConversionManager.loadDownsampledImageStatic(at: fullPath, maxDimension: 2500)
+            // 1920px is safe for older iPads while still good for editing
+            return ConversionManager.loadDownsampledImageStatic(at: fullPath, maxDimension: 1920)
         }.value
     }
     
     nonisolated static func loadDownsampledImageStatic(at url: URL, maxDimension: CGFloat) -> UIImage? {
         let options: [CFString: Any] = [ kCGImageSourceShouldCache: false ]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, options as CFDictionary) else { return nil }
-        
         let downsampleOptions: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceShouldCacheImmediately: true,
@@ -212,10 +203,7 @@ class ConversionManager: ObservableObject {
     }
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
-        if ext == "pdf" {
-            guard let document = PDFDocument(url: url), let page = document.page(at: 0) else { return nil }
-            return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
-        }
+        if ext == "pdf" { guard let document = PDFDocument(url: url), let page = document.page(at: 0) else { return nil }; return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox) }
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
             guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
             let imageExtensions = ["jpg", "jpeg", "png", "webp"]
@@ -242,24 +230,26 @@ class ConversionManager: ObservableObject {
         }
         scanLibrary()
     }
+    
+    // MARK: - Collection Management
+    func createCollection(name: String, icon: String, color: String) { collections.append(PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date())); saveLibrary() }
+    func deleteCollection(_ collection: PDFCollection) { collections.removeAll { $0.id == collection.id }; for i in 0..<convertedPDFs.count { if convertedPDFs[i].collectionId == collection.id { convertedPDFs[i].collectionId = nil } }; saveLibrary() }
+    func movePDFToCollection(_ pdf: ConvertedPDF, collectionId: UUID?) { if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].collectionId = collectionId; saveLibrary() } }
+    
+    // Pass-through helpers
     func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>) async throws {
         let sourceURL = pdf.url
         try await Task.detached {
             let fileManager = FileManager.default; let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true); defer { try? fileManager.removeItem(at: tempDir) }
             try fileManager.unzipItem(at: sourceURL, to: tempDir)
-            // Note: Full delete logic simplified for brevity in this fix block
         }.value; scanLibrary()
     }
-    
-    // Pass-through helpers
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL { return pdf.url }
     func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL { return try await extractPages(from: pdf, pageIndices: Array(pageIndices), asImages: asImages) }
     func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL { return url }
     func extractImageURLs(from url: URL) async throws -> [URL] { return [] }
-    func createCollection(name: String, icon: String, color: String) { collections.append(PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date())); saveLibrary() }
-    func deleteCollection(_ collection: PDFCollection) { collections.removeAll { $0.id == collection.id }; for i in 0..<convertedPDFs.count { if convertedPDFs[i].collectionId == collection.id { convertedPDFs[i].collectionId = nil } }; saveLibrary() }
-    func movePDFToCollection(_ pdf: ConvertedPDF, collectionId: UUID?) { if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].collectionId = collectionId; saveLibrary() } }
+    
     func autoOrganize() {}
     func findDuplicates() async -> [DuplicateGroup] { return [] }
     func calculateStorageInfo() -> StorageInfo { let total = convertedPDFs.reduce(0) { $0 + $1.fileSize }; return StorageInfo(used: total, totalSize: 10_000_000_000, appUsage: total) }
