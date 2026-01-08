@@ -17,6 +17,9 @@ struct PanelEditorView: View {
     @State private var imageSize: CGSize = .zero
     @State private var loadError: String?
     
+    // Magic Wand State
+    @State private var isMagicWandActive = false
+    
     var body: some View {
         VStack(spacing: 0) {
             // MARK: - Top Toolbar
@@ -33,16 +36,20 @@ struct PanelEditorView: View {
                 }
                 .disabled(panels.isEmpty)
                 
-                // Reset/Auto Button
-                Button(action: runAutoDetection) {
-                    Label("Reset AI", systemImage: "arrow.counterclockwise")
+                // Magic Wand Toggle
+                Button(action: { isMagicWandActive.toggle(); selectedPanelIndex = nil }) {
+                    Label("Magic Wand", systemImage: isMagicWandActive ? "wand.and.stars.inverse" : "wand.and.stars")
+                        .bold()
+                        .foregroundColor(isMagicWandActive ? .white : .blue)
+                        .padding(6)
+                        .background(isMagicWandActive ? Color.blue : Color.clear)
+                        .cornerRadius(8)
                 }
                 .disabled(isLoading || isProcessing)
                 
-                // Add Manual Box Button
+                // Manual Add Button
                 Button(action: addNewPanel) {
                     Label("Add Box", systemImage: "plus.rectangle.on.rectangle")
-                        .bold()
                 }
                 .disabled(isLoading)
             }
@@ -52,7 +59,7 @@ struct PanelEditorView: View {
             // MARK: - Main Canvas
             GeometryReader { geo in
                 ZStack {
-                    // Background Layer (Image)
+                    // 1. Background Layer (Image) + Tap Detection
                     if let image = pageImage {
                         Image(uiImage: image)
                             .resizable()
@@ -62,8 +69,16 @@ struct PanelEditorView: View {
                                 Color.clear.onAppear { self.imageSize = imageGeo.size }
                                     .onChange(of: imageGeo.size) { newSize in self.imageSize = newSize }
                             })
+                            // BACKGROUND TAP: Runs Magic Wand
+                            .onTapGesture(coordinateSpace: .local) { location in
+                                if isMagicWandActive {
+                                    detectPanelAt(tapPoint: location, in: imageGeoSize(geo))
+                                } else {
+                                    selectedPanelIndex = nil
+                                }
+                            }
                         
-                        // Interaction Layer (Boxes)
+                        // 2. Interaction Layer (Boxes)
                         if imageSize != .zero {
                             ForEach(0..<panels.count, id: \.self) { index in
                                 DraggablePanelBox(
@@ -72,7 +87,10 @@ struct PanelEditorView: View {
                                     containerSize: imageSize,
                                     index: index + 1
                                 )
-                                .onTapGesture { selectedPanelIndex = index }
+                                // BOX TAP: Selects the box (Even if Wand is active!)
+                                .onTapGesture {
+                                    selectedPanelIndex = index
+                                }
                             }
                         }
                     } else if let error = loadError {
@@ -87,17 +105,33 @@ struct PanelEditorView: View {
                     
                     // Loading Overlay
                     if isProcessing {
-                        ProgressView("Detecting Panels...")
-                            .padding()
-                            .background(.ultraThinMaterial)
-                            .cornerRadius(12)
+                        VStack {
+                            ProgressView()
+                            Text("Scanning...").font(.caption).bold().foregroundColor(.white)
+                        }
+                        .padding()
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(12)
+                    }
+                    
+                    // Helper Text
+                    if isMagicWandActive && !isProcessing {
+                        VStack {
+                            Spacer()
+                            Text("Tap image to detect • Tap box to adjust")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .padding()
+                                .background(Color.blue.opacity(0.8))
+                                .cornerRadius(20)
+                                .padding(.bottom, 50)
+                        }
+                        .allowsHitTesting(false)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black.opacity(0.9))
                 .clipped()
-                .contentShape(Rectangle())
-                .onTapGesture { selectedPanelIndex = nil } // Deselect on background tap
             }
             
             // MARK: - Bottom Toolbar
@@ -120,75 +154,126 @@ struct PanelEditorView: View {
             .padding()
             .background(Color(UIColor.secondarySystemBackground))
         }
-        .task {
-            await loadPageSafe()
-        }
-        .onDisappear {
-            conversionManager.cleanupMemory()
-        }
+        .task { await loadPageSafe() }
+        .onDisappear { conversionManager.cleanupMemory() }
     }
     
-    // MARK: - Logic
+    // MARK: - Logic Helpers
     
+    func imageGeoSize(_ geo: GeometryProxy) -> CGSize {
+        guard let img = pageImage else { return .zero }
+        let aspect = img.size.width / img.size.height
+        let viewAspect = geo.size.width / geo.size.height
+        
+        var renderSize = CGSize.zero
+        if aspect > viewAspect {
+            renderSize.width = geo.size.width
+            renderSize.height = geo.size.width / aspect
+        } else {
+            renderSize.height = geo.size.height
+            renderSize.width = geo.size.height * aspect
+        }
+        return renderSize
+    }
+    
+    func detectPanelAt(tapPoint: CGPoint, in renderSize: CGSize) {
+        guard let image = pageImage, renderSize.width > 0 else { return }
+        isProcessing = true
+        
+        // Convert Tap to Normalized Coordinates
+        let normalizedX = tapPoint.x / imageSize.width
+        let normalizedY = tapPoint.y / imageSize.height
+        let normalizedPoint = CGPoint(x: normalizedX, y: normalizedY)
+        
+        guard normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1 else {
+            isProcessing = false
+            return
+        }
+        
+        Task(priority: .userInitiated) {
+            // Resize for AI (Prevents Crash)
+            let smallImage = resizeImageForAI(image: image, targetSize: 1000)
+            let request = VNDetectRectanglesRequest()
+            request.minimumConfidence = 0.6
+            request.minimumAspectRatio = 0.1
+            request.maximumAspectRatio = 3.0
+            request.quadratureTolerance = 20
+            request.minimumSize = 0.05
+            
+            let handler = VNImageRequestHandler(cgImage: smallImage.cgImage!, options: [:])
+            try? handler.perform([request])
+            
+            guard let results = request.results else {
+                await MainActor.run { isProcessing = false }
+                return
+            }
+            
+            // Vision coordinates are flipped (Y=0 is bottom)
+            let visionPoint = CGPoint(x: normalizedPoint.x, y: 1.0 - normalizedPoint.y)
+            
+            let candidates = results.filter { observation in
+                observation.boundingBox.contains(visionPoint)
+            }
+            
+            // Pick smallest rect containing point (most specific panel)
+            let bestMatch = candidates.sorted {
+                ($0.boundingBox.width * $0.boundingBox.height) < ($1.boundingBox.width * $1.boundingBox.height)
+            }.first
+            
+            await MainActor.run {
+                if let match = bestMatch {
+                    let finalRect = CGRect(
+                        x: match.boundingBox.origin.x,
+                        y: 1.0 - match.boundingBox.origin.y - match.boundingBox.height,
+                        width: match.boundingBox.width,
+                        height: match.boundingBox.height
+                    )
+                    
+                    self.panels.append(finalRect)
+                    self.selectedPanelIndex = self.panels.count - 1
+                    
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                } else {
+                    // Fallback: Default box if no clear panel found
+                    let boxSize = 0.3
+                    let fallbackRect = CGRect(
+                        x: normalizedPoint.x - (boxSize/2),
+                        y: normalizedPoint.y - (boxSize/2),
+                        width: boxSize,
+                        height: boxSize
+                    )
+                    self.panels.append(fallbackRect)
+                    self.selectedPanelIndex = self.panels.count - 1
+                }
+                self.isProcessing = false
+            }
+        }
+    }
+
     func loadPageSafe() async {
         conversionManager.cleanupMemory()
         do {
-            // Try requested page
             if let image = try await conversionManager.extractFullPage(from: pdf, index: pageIndex) {
                 self.pageImage = image
                 loadExistingPanels()
                 self.isLoading = false
             } else {
-                // Fallback: If Page 4 doesn't exist, try Page 1 (index 0)
-                if pageIndex != 0 {
+                 if pageIndex != 0 {
+                     // Fallback to Page 1 if Page 4 doesn't exist
                     if let image = try await conversionManager.extractFullPage(from: pdf, index: 0) {
                         self.pageImage = image
                         loadExistingPanels()
                         self.isLoading = false
-                    } else {
-                        loadError = "Could not load image."
-                        isLoading = false
-                    }
-                } else {
-                    loadError = "Page not found."
-                    isLoading = false
-                }
+                    } else { loadError = "Could not load image."; isLoading = false }
+                } else { loadError = "Page not found."; isLoading = false }
             }
-        } catch {
-            loadError = error.localizedDescription
-            isLoading = false
-        }
+        } catch { loadError = error.localizedDescription; isLoading = false }
     }
     
     func loadExistingPanels() {
         if let overrides = conversionManager.panelOverrides[pdf.id]?[pageIndex] {
-            // Load saved Manual Edits
             self.panels = overrides.map { $0.boundingBox }
-        } else {
-            // Or run Auto-Detect
-            runAutoDetection()
-        }
-    }
-    
-    func runAutoDetection() {
-        guard let img = pageImage else { return }
-        isProcessing = true
-        
-        Task(priority: .userInitiated) {
-            // Resize for AI (Safety Fix)
-            let smallImage = resizeImageForAI(image: img, targetSize: 800)
-            
-            if (try? await PanelExtractor.extractPanels(from: smallImage, mode: .automatic, mangaMode: false)) != nil {
-                await MainActor.run {
-                    // If AI returns nothing, we default to 1 big box so the user isn't confused
-                    if self.panels.isEmpty {
-                        self.panels = [CGRect(x: 0.05, y: 0.05, width: 0.9, height: 0.9)]
-                    }
-                    self.isProcessing = false
-                }
-            } else {
-                await MainActor.run { self.isProcessing = false }
-            }
         }
     }
     
@@ -198,123 +283,78 @@ struct PanelEditorView: View {
         let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        return UIGraphicsImageRenderer(size: newSize, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-        }
+        return UIGraphicsImageRenderer(size: newSize, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
     }
     
-    func addNewPanel() {
-        // Add a box in the center
-        panels.append(CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
-        selectedPanelIndex = panels.count - 1
-    }
-    
-    func deleteSelectedPanel() {
-        guard let index = selectedPanelIndex else { return }
-        panels.remove(at: index)
-        selectedPanelIndex = nil
-    }
-    
-    func clearAllPanels() {
-        panels.removeAll()
-        selectedPanelIndex = nil
-    }
+    func addNewPanel() { panels.append(CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)); selectedPanelIndex = panels.count - 1 }
+    func deleteSelectedPanel() { guard let index = selectedPanelIndex else { return }; panels.remove(at: index); selectedPanelIndex = nil }
+    func clearAllPanels() { panels.removeAll(); selectedPanelIndex = nil }
     
     func saveAndClose() {
-        // This is the CRITICAL step. We save your boxes to the Manager.
-        // The Converter checks this specific dictionary before running ANY AI.
         let finalPanels = panels.map { PanelExtractor.Panel(boundingBox: $0) }
-        Task {
-            await conversionManager.savePanelOverrides(for: pdf.id, pageIndex: pageIndex, panels: finalPanels)
-            dismiss()
-        }
+        Task { await conversionManager.savePanelOverrides(for: pdf.id, pageIndex: pageIndex, panels: finalPanels); dismiss() }
     }
 }
 
-// MARK: - Improved Box Component
+// MARK: - Box Component (With Smooth Dragging)
 struct DraggablePanelBox: View {
     @Binding var rect: CGRect
     let isSelected: Bool
     let containerSize: CGSize
     let index: Int
-    
-    // State to track drag start position for smoother movement
     @State private var initialRect: CGRect? = nil
     
     var screenRect: CGRect {
-        CGRect(
-            x: rect.origin.x * containerSize.width,
-            y: rect.origin.y * containerSize.height,
-            width: rect.width * containerSize.width,
-            height: rect.height * containerSize.height
-        )
+        CGRect(x: rect.origin.x * containerSize.width, y: rect.origin.y * containerSize.height, width: rect.width * containerSize.width, height: rect.height * containerSize.height)
     }
     
     var body: some View {
         ZStack(alignment: .topLeading) {
             // Box Border
-            Rectangle()
-                .stroke(isSelected ? Color.yellow : Color.blue.opacity(0.8), lineWidth: isSelected ? 3 : 2)
-                .background(Color.blue.opacity(0.05)) // Faint tint to show active area
+            Rectangle().stroke(isSelected ? Color.yellow : Color.blue.opacity(0.8), lineWidth: isSelected ? 3 : 2)
+                .background(Color.blue.opacity(0.05))
                 .offset(x: screenRect.origin.x, y: screenRect.origin.y)
                 .frame(width: screenRect.width, height: screenRect.height)
-                // ✅ FIXED: Smooth Move Gesture
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            if isSelected {
-                                if initialRect == nil { initialRect = rect }
-                                guard let startRect = initialRect else { return }
-                                
-                                let dx = value.translation.width / containerSize.width
-                                let dy = value.translation.height / containerSize.height
-                                
-                                let newX = startRect.origin.x + dx
-                                let newY = startRect.origin.y + dy
-                                
-                                // Clamp to keep roughly on screen (allow slight overhang for edge adjustments)
-                                rect.origin.x = min(max(newX, -0.1), 1.0 - rect.width + 0.1)
-                                rect.origin.y = min(max(newY, -0.1), 1.0 - rect.height + 0.1)
-                            }
+                .gesture(DragGesture()
+                    .onChanged { value in
+                        if isSelected {
+                            // Smooth Drag Logic
+                            if initialRect == nil { initialRect = rect }
+                            guard let startRect = initialRect else { return }
+                            let dx = value.translation.width / containerSize.width
+                            let dy = value.translation.height / containerSize.height
+                            let newX = startRect.origin.x + dx
+                            let newY = startRect.origin.y + dy
+                            
+                            // Clamp to screen edges
+                            rect.origin.x = min(max(newX, -0.1), 1.0 - rect.width + 0.1)
+                            rect.origin.y = min(max(newY, -0.1), 1.0 - rect.height + 0.1)
                         }
-                        .onEnded { _ in initialRect = nil }
+                    }
+                    .onEnded { _ in initialRect = nil }
                 )
             
             // Resize Handle
             if isSelected {
                 Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
-                    .foregroundColor(.yellow)
-                    .background(Circle().fill(.black))
-                    .font(.title2)
+                    .foregroundColor(.yellow).background(Circle().fill(.black)).font(.title2)
                     .offset(x: screenRect.maxX - 10, y: screenRect.maxY - 10)
-                    // ✅ FIXED: Smooth Resize Gesture
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                if initialRect == nil { initialRect = rect }
-                                guard let startRect = initialRect else { return }
-                                
-                                let dx = value.translation.width / containerSize.width
-                                let dy = value.translation.height / containerSize.height
-                                
-                                // Clamp minimum size so it doesn't invert
-                                rect.size.width = max(0.05, startRect.width + dx)
-                                rect.size.height = max(0.05, startRect.height + dy)
-                            }
-                            .onEnded { _ in initialRect = nil }
+                    .gesture(DragGesture()
+                        .onChanged { value in
+                            if initialRect == nil { initialRect = rect }
+                            guard let startRect = initialRect else { return }
+                            let dx = value.translation.width / containerSize.width
+                            let dy = value.translation.height / containerSize.height
+                            rect.size.width = max(0.05, startRect.width + dx)
+                            rect.size.height = max(0.05, startRect.height + dy)
+                        }
+                        .onEnded { _ in initialRect = nil }
                     )
             }
             
             // Number Badge
-            Text("\(index)")
-                .font(.caption2)
-                .bold()
-                .padding(6)
-                .background(Circle().fill(Color.blue))
-                .foregroundColor(.white)
-                .offset(x: screenRect.origin.x - 10, y: screenRect.origin.y - 10)
-                .shadow(radius: 2)
-        }
-        .frame(width: containerSize.width, height: containerSize.height)
+            Text("\(index)").font(.caption2).bold().padding(6).background(Circle().fill(Color.blue)).foregroundColor(.white)
+                .offset(x: screenRect.origin.x - 10, y: screenRect.origin.y - 10).shadow(radius: 2)
+        }.frame(width: containerSize.width, height: containerSize.height)
     }
 }
