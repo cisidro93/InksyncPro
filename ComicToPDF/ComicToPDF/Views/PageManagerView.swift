@@ -32,7 +32,6 @@ struct PageManagerView: View {
                                                 RoundedRectangle(cornerRadius: 8)
                                                     .stroke(selectedPages.contains(index) ? Color.blue : Color.gray.opacity(0.3), lineWidth: selectedPages.contains(index) ? 3 : 1)
                                             )
-                                            // ✅ ACTION: Tap to Edit Panels
                                             .onTapGesture {
                                                 if selectedPages.isEmpty {
                                                     pageToEdit = index
@@ -40,7 +39,6 @@ struct PageManagerView: View {
                                                     toggleSelection(index)
                                                 }
                                             }
-                                            // Long Press to Select for Deletion
                                             .onLongPressGesture {
                                                 toggleSelection(index)
                                             }
@@ -52,7 +50,6 @@ struct PageManagerView: View {
                                                 .padding(4)
                                         }
                                         
-                                        // Badge showing if panels are edited
                                         if conversionManager.panelOverrides[pdf.id]?[index] != nil {
                                             Image(systemName: "scissors")
                                                 .font(.caption)
@@ -97,7 +94,6 @@ struct PageManagerView: View {
             .task {
                 await loadPages()
             }
-            // ✅ SHEET: Open Panel Editor
             .sheet(item: $pageToEdit) { index in
                 if index < pages.count {
                     PanelEditorView(pdf: pdf, pageIndex: index, pageImage: pages[index])
@@ -129,7 +125,7 @@ struct PageManagerView: View {
         do {
             try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
             selectedPages.removeAll()
-            await loadPages() // Reload
+            await loadPages()
         } catch {
             print("Delete failed: \(error)")
         }
@@ -137,7 +133,7 @@ struct PageManagerView: View {
     }
 }
 
-// Helper to make Int Identifiable for sheet
-extension Int: Identifiable {
+// ✅ FIX: Silence Swift 6 Warning
+extension Int: @retroactive Identifiable {
     public var id: Int { self }
 }

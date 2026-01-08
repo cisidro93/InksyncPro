@@ -110,7 +110,6 @@ struct PanelEditorView: View {
     
     func loadExistingPanels() {
         if let overrides = conversionManager.panelOverrides[pdf.id]?[pageIndex] {
-            // ✅ FIX: Use boundingBox instead of bounds
             self.panels = overrides.map { $0.boundingBox }
         } else {
             runAutoDetection()
@@ -120,12 +119,11 @@ struct PanelEditorView: View {
     func runAutoDetection() {
         isProcessing = true
         Task {
-            // ✅ FIX: Ignore result but trigger UI update
+            // Trigger AI detection (ignoring return value, relying on side effect or manual fallback for now)
             if (try? await PanelExtractor.extractPanels(from: pageImage, mode: .automatic, mangaMode: false)) != nil {
                 await MainActor.run {
-                    // Placeholder default if detection runs but we don't have rects exposed yet
-                    // Ideally PanelExtractor should return [CGRect] in future update
                     if self.panels.isEmpty {
+                        // Default fallback if AI returns images but we need rects
                         self.panels = [CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)]
                     }
                     self.isProcessing = false
@@ -147,8 +145,8 @@ struct PanelEditorView: View {
     }
     
     func saveAndClose() {
-        // ✅ FIX: Correct Initializer for Panel
-        let finalPanels = panels.map { PanelExtractor.Panel(id: UUID(), boundingBox: $0) }
+        // ✅ FIX: Removed 'id' from initializer to match struct definition
+        let finalPanels = panels.map { PanelExtractor.Panel(boundingBox: $0) }
         
         Task {
             await conversionManager.savePanelOverrides(for: pdf.id, pageIndex: pageIndex, panels: finalPanels)
