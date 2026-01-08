@@ -16,36 +16,56 @@ struct PanelEditorView: View {
     @State private var isProcessing = false
     @State private var loadError: String?
     
-    // Magic Wand State
+    // UI State
     @State private var isMagicWandActive = false
     
     var body: some View {
         VStack(spacing: 0) {
             // MARK: - Top Toolbar
-            HStack {
+            HStack(spacing: 8) {
                 Text("Page \(pageIndex + 1)")
                     .font(.headline)
+                    .layoutPriority(1)
                 
                 Spacer()
                 
+                // Clear All
                 Button(action: clearAllPanels) {
-                    Label("Clear", systemImage: "trash.slash")
+                    Image(systemName: "trash.slash")
                         .foregroundColor(.red)
+                        .padding(8)
+                        .background(Color.red.opacity(0.1))
+                        .clipShape(Circle())
                 }
                 .disabled(panels.isEmpty)
                 
+                // Magic Wand Toggle (Fixed Layout)
                 Button(action: { isMagicWandActive.toggle(); selectedPanelIndex = nil }) {
-                    Label("Magic Wand", systemImage: isMagicWandActive ? "wand.and.stars.inverse" : "wand.and.stars")
-                        .bold()
-                        .foregroundColor(isMagicWandActive ? .white : .blue)
-                        .padding(6)
-                        .background(isMagicWandActive ? Color.blue : Color.clear)
-                        .cornerRadius(8)
+                    HStack(spacing: 4) {
+                        Image(systemName: isMagicWandActive ? "wand.and.stars.inverse" : "wand.and.stars")
+                        Text("Magic Wand")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .bold()
+                    .foregroundColor(isMagicWandActive ? .white : .blue)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(isMagicWandActive ? Color.blue : Color.clear)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.blue, lineWidth: 1)
+                    )
                 }
                 .disabled(isLoading || isProcessing)
                 
+                // Add Manual Box
                 Button(action: addNewPanel) {
-                    Label("Add Box", systemImage: "plus.rectangle.on.rectangle")
+                    Image(systemName: "plus.rectangle.on.rectangle")
+                        .padding(8)
+                        .background(Color.blue.opacity(0.1))
+                        .clipShape(Circle())
                 }
                 .disabled(isLoading)
             }
@@ -58,19 +78,16 @@ struct PanelEditorView: View {
                     Color.black.opacity(0.9).edgesIgnoringSafeArea(.all)
                     
                     if let image = pageImage {
-                        // 1. Calculate the exact frame where the image sits inside the view
                         let imgFrame = calculateImageFrame(image: image, inside: geo.size)
                         
-                        // 2. The Container ZStack (Exactly matches Image Size)
+                        // Image Container
                         ZStack(alignment: .topLeading) {
-                            
-                            // The Image
                             Image(uiImage: image)
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: imgFrame.width, height: imgFrame.height)
                             
-                            // The Boxes
+                            // Boxes
                             ForEach(0..<panels.count, id: \.self) { index in
                                 DraggablePanelBox(
                                     rect: $panels[index],
@@ -84,11 +101,10 @@ struct PanelEditorView: View {
                             }
                         }
                         .frame(width: imgFrame.width, height: imgFrame.height)
-                        .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY) // Center the Container
-                        .contentShape(Rectangle()) // Ensure entire area is tappable
+                        .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
+                        .contentShape(Rectangle())
                         .onTapGesture(coordinateSpace: .local) { location in
                             if isMagicWandActive {
-                                // Calculate tap relative to the image frame
                                 let normalizedPoint = CGPoint(x: location.x / imgFrame.width, y: location.y / imgFrame.height)
                                 detectPanelAt(normalizedPoint: normalizedPoint)
                             } else {
@@ -106,6 +122,7 @@ struct PanelEditorView: View {
                         ProgressView("Loading High-Res Page...")
                     }
                     
+                    // Loading Overlay
                     if isProcessing {
                         VStack {
                             ProgressView()
@@ -115,36 +132,40 @@ struct PanelEditorView: View {
                         .background(.ultraThinMaterial)
                         .cornerRadius(12)
                     }
-                    
-                    if isMagicWandActive && !isProcessing && pageImage != nil {
-                        VStack {
-                            Spacer()
-                            Text("Tap image to detect • Tap box to adjust")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Color.blue.opacity(0.8))
-                                .cornerRadius(20)
-                                .padding(.bottom, 50)
-                        }
-                        .allowsHitTesting(false)
-                    }
                 }
             }
             
-            // MARK: - Bottom Toolbar
+            // MARK: - Bottom Toolbar (Instructions Moved Here)
             HStack {
                 Button(role: .destructive, action: deleteSelectedPanel) {
-                    Label("Delete Selected", systemImage: "trash")
+                    Image(systemName: "trash")
+                        .foregroundColor(selectedPanelIndex == nil ? .gray : .red)
+                        .padding(10)
                 }
                 .disabled(selectedPanelIndex == nil)
                 
                 Spacer()
                 
-                Button(action: saveAndClose) {
-                    Text("Save & Close")
+                // ✅ FIX: Instructions live here now (Non-intrusive)
+                if isMagicWandActive {
+                    Text("Tap image to detect")
+                        .font(.caption)
                         .bold()
-                        .frame(width: 120)
+                        .foregroundColor(.blue)
+                        .padding(.horizontal)
+                        .transition(.opacity)
+                } else if let idx = selectedPanelIndex {
+                    Text("Panel #\(idx + 1) Selected")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Button(action: saveAndClose) {
+                    Text("Save")
+                        .bold()
+                        .frame(width: 80)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isLoading)
@@ -172,7 +193,6 @@ struct PanelEditorView: View {
             targetHeight = containerSize.height
             targetWidth = containerSize.height * imageAspect
         }
-        
         return CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight)
     }
     
@@ -230,7 +250,6 @@ struct PanelEditorView: View {
                         width: boxSize,
                         height: boxSize
                     )
-                    // Clamp fallback
                     var constrained = fallbackRect
                     constrained.origin.x = max(0.0, min(fallbackRect.origin.x, 1.0 - boxSize))
                     constrained.origin.y = max(0.0, min(fallbackRect.origin.y, 1.0 - boxSize))
@@ -287,7 +306,7 @@ struct PanelEditorView: View {
     }
 }
 
-// MARK: - Box Component (Fixed Coordinates)
+// MARK: - Box Component (Preserved)
 struct DraggablePanelBox: View {
     @Binding var rect: CGRect
     let isSelected: Bool
@@ -295,7 +314,6 @@ struct DraggablePanelBox: View {
     let index: Int
     @State private var initialRect: CGRect? = nil
     
-    // ✅ FIX: Using .position requires center coordinates, not top-left
     var centerPosition: CGPoint {
         let centerX = (rect.origin.x + rect.width / 2) * containerSize.width
         let centerY = (rect.origin.y + rect.height / 2) * containerSize.height
@@ -308,7 +326,6 @@ struct DraggablePanelBox: View {
     
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Box Border
             Rectangle().stroke(isSelected ? Color.yellow : Color.blue.opacity(0.8), lineWidth: isSelected ? 3 : 2)
                 .background(Color.blue.opacity(0.05))
                 .frame(width: pixelSize.width, height: pixelSize.height)
@@ -322,7 +339,6 @@ struct DraggablePanelBox: View {
                             let newX = startRect.origin.x + dx
                             let newY = startRect.origin.y + dy
                             
-                            // Clamp exactly to 0.0 - 1.0 (Stay inside image)
                             rect.origin.x = min(max(newX, 0.0), 1.0 - rect.width)
                             rect.origin.y = min(max(newY, 0.0), 1.0 - rect.height)
                         }
@@ -330,11 +346,10 @@ struct DraggablePanelBox: View {
                     .onEnded { _ in initialRect = nil }
                 )
             
-            // Resize Handle (Bottom Right)
             if isSelected {
                 Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
                     .foregroundColor(.yellow).background(Circle().fill(.black)).font(.title2)
-                    .position(x: pixelSize.width, y: pixelSize.height) // Stick to bottom-right corner
+                    .position(x: pixelSize.width, y: pixelSize.height)
                     .gesture(DragGesture()
                         .onChanged { value in
                             if initialRect == nil { initialRect = rect }
@@ -348,12 +363,10 @@ struct DraggablePanelBox: View {
                     )
             }
             
-            // Number Badge (Top Left)
             Text("\(index)").font(.caption2).bold().padding(6).background(Circle().fill(Color.blue)).foregroundColor(.white)
-                .position(x: 0, y: 0)
-                .shadow(radius: 2)
+                .position(x: 0, y: 0).shadow(radius: 2)
         }
         .frame(width: pixelSize.width, height: pixelSize.height)
-        .position(centerPosition) // ✅ FIX: Absolute positioning from Top-Left (0,0) via ZStack alignment
+        .position(centerPosition)
     }
 }
