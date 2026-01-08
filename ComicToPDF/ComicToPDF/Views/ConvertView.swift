@@ -4,11 +4,10 @@ struct ConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     let pdf: ConvertedPDF
     
-    // Local State
     @State private var isMangaMode = false
     @State private var selectedMode: ConversionMode = .hybrid
+    @State private var showingPreview = false
     
-    // Enum for the 3-Card UI
     enum ConversionMode: String, CaseIterable, Identifiable {
         case standard = "Standard"
         case hybrid = "Guided View"
@@ -36,79 +35,53 @@ struct ConvertView: View {
     var body: some View {
         Form {
             Section {
-                HStack {
-                    Text("File Name")
-                    Spacer()
-                    Text(pdf.name).foregroundColor(.secondary)
-                }
-                HStack {
-                    Text("File Size")
-                    Spacer()
-                    Text(pdf.formattedSize).foregroundColor(.secondary)
-                }
+                HStack { Text("File Name"); Spacer(); Text(pdf.name).foregroundColor(.secondary) }
+                HStack { Text("File Size"); Spacer(); Text(pdf.formattedSize).foregroundColor(.secondary) }
                 if conversionManager.conversionSettings.splitMode != .none {
-                    HStack {
-                        Text("Auto-Split")
-                        Spacer()
-                        Text(conversionManager.conversionSettings.splitMode.rawValue)
-                            .foregroundColor(.orange)
-                    }
+                    HStack { Text("Auto-Split"); Spacer(); Text(conversionManager.conversionSettings.splitMode.rawValue).foregroundColor(.orange) }
                 }
-            } header: {
-                Text("Source Details")
-            }
+            } header: { Text("Source Details") }
             
-            // PRO UI: 3-Card Selector
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Reading Experience")
-                        .font(.headline)
-                        .padding(.bottom, 5)
-                    
+                    Text("Reading Experience").font(.headline).padding(.bottom, 5)
                     ForEach(ConversionMode.allCases) { mode in
-                        Button(action: {
-                            selectedMode = mode
-                            updateSettings(for: mode)
-                        }) {
+                        Button(action: { selectedMode = mode; updateSettings(for: mode) }) {
                             HStack(spacing: 15) {
-                                Image(systemName: mode.icon)
-                                    .font(.title2)
-                                    .frame(width: 30)
+                                Image(systemName: mode.icon).font(.title2).frame(width: 30)
                                     .foregroundColor(selectedMode == mode ? .white : .blue)
-                                
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(mode.rawValue)
-                                        .font(.headline)
+                                    Text(mode.rawValue).font(.headline)
                                         .foregroundColor(selectedMode == mode ? .white : .primary)
-                                    Text(mode.description)
-                                        .font(.caption)
+                                    Text(mode.description).font(.caption)
                                         .foregroundColor(selectedMode == mode ? .white.opacity(0.8) : .secondary)
                                 }
                                 Spacer()
-                                if selectedMode == mode {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.white)
-                                }
+                                if selectedMode == mode { Image(systemName: "checkmark.circle.fill").foregroundColor(.white) }
                             }
                             .padding()
                             .background(selectedMode == mode ? Color.blue : Color(UIColor.secondarySystemGroupedBackground))
                             .cornerRadius(12)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(selectedMode == mode ? Color.blue : Color.gray.opacity(0.2), lineWidth: 1)
-                            )
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(selectedMode == mode ? Color.blue : Color.gray.opacity(0.2), lineWidth: 1))
                         }
                         .buttonStyle(PlainButtonStyle())
-                        .disabled(conversionManager.isConverting) // Lock selection during convert
+                        .disabled(conversionManager.isConverting)
                         .opacity(conversionManager.isConverting ? 0.6 : 1.0)
                     }
                 }
                 .padding(.vertical, 5)
-            } header: {
-                Text("Output Format")
-            }
+                
+                // ✅ PREVIEW BUTTON
+                if selectedMode != .standard {
+                    Button(action: { showingPreview = true }) {
+                        Label("Preview Panel Detection (Page 4)", systemImage: "eye")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .padding(.top, 5)
+                }
+                
+            } header: { Text("Output Format") }
             
-            // Layout Direction
             Section {
                 Picker("Reading Direction", selection: $isMangaMode) {
                     Text("Left-to-Right (Western)").tag(false)
@@ -116,50 +89,19 @@ struct ConvertView: View {
                 }
                 .pickerStyle(.segmented)
                 .disabled(conversionManager.isConverting)
-            } header: {
-                Text("Layout")
-            } footer: {
+            } header: { Text("Layout") } footer: {
                 Text(isMangaMode ? "Panels ordered Right-to-Left." : "Panels ordered Left-to-Right.")
             }
             
-            // Warning Conflict
-            if conversionManager.conversionSettings.splitMode != .none &&
-               conversionManager.conversionSettings.enablePanelSplit {
-                Section {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                            .font(.title2)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Potential Split Issue")
-                                .font(.headline)
-                            Text("You have enabled both Auto-Split and Panel Detection. Large chapters may be split in the middle of a page sequence (e.g., Panel 1 in Part 1, Panel 2 in Part 2).")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 5)
-                }
-            }
-            
-            // ✅ PROGRESS BAR REPLACEMENT
             Section {
                 if conversionManager.isConverting {
                     VStack(spacing: 8) {
                         HStack {
-                            Text("Processing...")
-                                .font(.headline)
-                                .foregroundColor(.blue)
+                            Text("Processing...").font(.headline).foregroundColor(.blue)
                             Spacer()
-                            Text("\(Int(conversionManager.conversionProgress * 100))%")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .monospacedDigit()
+                            Text("\(Int(conversionManager.conversionProgress * 100))%").font(.subheadline).foregroundColor(.secondary).monospacedDigit()
                         }
-                        
-                        ProgressView(value: conversionManager.conversionProgress, total: 1.0)
-                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                        ProgressView(value: conversionManager.conversionProgress, total: 1.0).progressViewStyle(LinearProgressViewStyle(tint: .blue))
                     }
                     .padding(.vertical, 10)
                 } else {
@@ -169,32 +111,27 @@ struct ConvertView: View {
                             await conversionManager.convertComic(pdf, mangaMode: isMangaMode)
                         }
                     }) {
-                        Text("Start Conversion")
-                            .frame(maxWidth: .infinity)
-                            .foregroundColor(.blue)
-                            .bold()
+                        Text("Start Conversion").frame(maxWidth: .infinity).foregroundColor(.blue).bold()
                     }
                 }
             }
             
             if let status = conversionManager.statusMessage {
                 Section {
-                    Text(status)
-                        .font(.caption)
-                        .foregroundColor(status.contains("Error") ? .red : .secondary)
+                    Text(status).font(.caption).foregroundColor(status.contains("Error") ? .red : .secondary)
                 }
             }
         }
         .navigationTitle("Convert Comic")
         .onAppear {
             isMangaMode = conversionManager.conversionSettings.mangaMode
-            if !conversionManager.conversionSettings.enablePanelSplit {
-                selectedMode = .standard
-            } else if conversionManager.conversionSettings.epubSettings.includeFullPage {
-                selectedMode = .hybrid
-            } else {
-                selectedMode = .panels
-            }
+            if !conversionManager.conversionSettings.enablePanelSplit { selectedMode = .standard }
+            else if conversionManager.conversionSettings.epubSettings.includeFullPage { selectedMode = .hybrid }
+            else { selectedMode = .panels }
+        }
+        .sheet(isPresented: $showingPreview) {
+            // ✅ FIX: Default to Page 3 (4th page) for better panel check, fallback to 0 if short doc
+            PanelEditorView(pdf: pdf, pageIndex: 3)
         }
     }
     
