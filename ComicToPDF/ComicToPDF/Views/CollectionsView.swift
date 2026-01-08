@@ -14,7 +14,9 @@ struct CollectionsView: View {
                         .padding()
                 } else {
                     ForEach(conversionManager.collections) { collection in
-                        CollectionRow(collection: collection)
+                        // ✅ FIX: Calculate count here and pass it down
+                        let count = conversionManager.convertedPDFs.filter { $0.collectionId == collection.id }.count
+                        CollectionRow(collection: collection, itemCount: count)
                     }
                     .onDelete { indexSet in
                         indexSet.forEach { index in
@@ -46,9 +48,10 @@ struct CollectionsView: View {
     }
 }
 
-// Extracting Row to Subview helps the compiler
+// ✅ FIX: Simplified Row (Values only, no logic)
 struct CollectionRow: View {
     let collection: PDFCollection
+    let itemCount: Int
     
     var body: some View {
         NavigationLink(destination: CollectionDetailView(collection: collection)) {
@@ -59,7 +62,7 @@ struct CollectionRow: View {
                 VStack(alignment: .leading) {
                     Text(collection.name)
                         .font(.headline)
-                    Text("\(collection.items.count) items")
+                    Text("\(itemCount) items")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
