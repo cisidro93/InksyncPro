@@ -1,69 +1,71 @@
 import SwiftUI
 
 struct PageManagerView: View {
-    let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
+    let pdf: ConvertedPDF
     
-    @State private var images: [UIImage] = []
+    @State private var pages: [UIImage] = []
+    @State private var selectedPages: Set<Int> = []
     @State private var isLoading = true
-    @State private var loadingProgress = 0.0
+    @State private var pageToEdit: Int? // ✅ Track which page to edit
     
-    // Selection Mode (For Deleting)
-    @State private var isSelectionMode = false
-    @State private var selectedIndices: Set<Int> = []
-    
-    let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
+    let columns = [GridItem(.adaptive(minimum: 100))]
     
     var body: some View {
         NavigationView {
             VStack {
                 if isLoading {
-                    VStack {
-                        ProgressView("Unpacking Comic...", value: loadingProgress, total: 1.0)
-                            .progressViewStyle(.linear)
-                            .padding()
-                        Text("This may take a moment.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                    ProgressView("Loading Pages...")
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 10) {
-                            ForEach(0..<images.count, id: \.self) { index in
-                                ZStack(alignment: .topTrailing) {
-                                    // Image
-                                    if index < images.count {
-                                        Image(uiImage: images[index])
+                        LazyVGrid(columns: columns, spacing: 15) {
+                            ForEach(0..<pages.count, id: \.self) { index in
+                                VStack {
+                                    ZStack(alignment: .topTrailing) {
+                                        Image(uiImage: pages[index])
                                             .resizable()
-                                            .aspectRatio(contentMode: .fill)
+                                            .scaledToFit()
                                             .frame(height: 150)
-                                            .clipped()
                                             .cornerRadius(8)
-                                            .opacity(isSelectionMode && selectedIndices.contains(index) ? 0.5 : 1.0)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(selectedPages.contains(index) ? Color.blue : Color.gray.opacity(0.3), lineWidth: selectedPages.contains(index) ? 3 : 1)
+                                            )
+                                            // ✅ ACTION: Tap to Edit Panels
                                             .onTapGesture {
-                                                handleTap(at: index)
+                                                if selectedPages.isEmpty {
+                                                    pageToEdit = index
+                                                } else {
+                                                    toggleSelection(index)
+                                                }
                                             }
+                                            // Long Press to Select for Deletion
+                                            .onLongPressGesture {
+                                                toggleSelection(index)
+                                            }
+                                        
+                                        if selectedPages.contains(index) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.blue)
+                                                .background(Circle().fill(.white))
+                                                .padding(4)
+                                        }
+                                        
+                                        // Badge showing if panels are edited
+                                        if conversionManager.panelOverrides[pdf.id]?[index] != nil {
+                                            Image(systemName: "scissors")
+                                                .font(.caption)
+                                                .padding(4)
+                                                .background(Color.yellow)
+                                                .clipShape(Circle())
+                                                .padding(4)
+                                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                        }
                                     }
-                                    
-                                    // Selection Indicator
-                                    if isSelectionMode {
-                                        Image(systemName: selectedIndices.contains(index) ? "checkmark.circle.fill" : "circle")
-                                            .foregroundColor(selectedIndices.contains(index) ? .blue : .white)
-                                            .padding(5)
-                                            .background(Color.black.opacity(0.3))
-                                            .clipShape(Circle())
-                                            .padding(4)
-                                    } else {
-                                        // Page Number
-                                        Text("\(index + 1)")
-                                            .font(.caption2)
-                                            .padding(4)
-                                            .background(Color.black.opacity(0.6))
-                                            .foregroundColor(.white)
-                                            .cornerRadius(4)
-                                            .padding(4)
-                                    }
+                                    Text("Page \(index + 1)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
                             }
                         }
@@ -71,108 +73,71 @@ struct PageManagerView: View {
                     }
                 }
             }
-            .navigationTitle("Page Manager")
+            .navigationTitle("Edit Pages")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
                 }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack {
-                        if !isLoading {
-                            if isSelectionMode {
-                                Button(role: .destructive) {
-                                    deleteSelectedPages()
-                                } label: {
-                                    Image(systemName: "trash")
-                                }
-                                .disabled(selectedIndices.isEmpty)
-                                
-                                Button("Cancel") {
-                                    isSelectionMode = false
-                                    selectedIndices.removeAll()
-                                }
-                            } else {
-                                Button("Select") {
-                                    isSelectionMode = true
-                                }
+                ToolbarItem(placement: .bottomBar) {
+                    if !selectedPages.isEmpty {
+                        Button(role: .destructive) {
+                            Task {
+                                await deleteSelected()
                             }
+                        } label: {
+                            Text("Delete \(selectedPages.count) Pages")
                         }
+                    } else {
+                        Text("Tap a page to edit panels. Long press to select.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
             .task {
-                loadImages()
+                await loadPages()
+            }
+            // ✅ SHEET: Open Panel Editor
+            .sheet(item: $pageToEdit) { index in
+                if index < pages.count {
+                    PanelEditorView(pdf: pdf, pageIndex: index, pageImage: pages[index])
+                }
             }
         }
     }
     
-    func loadImages() {
-        Task {
-            do {
-                let extracted = try await conversionManager.extractImages(from: pdf.url) { progress in
-                    Task { @MainActor in self.loadingProgress = progress }
-                }
-                await MainActor.run {
-                    self.images = extracted
-                    self.isLoading = false
-                }
-            } catch {
-                print("Error loading pages: \(error)")
-            }
+    func loadPages() async {
+        do {
+            self.pages = try await conversionManager.extractImages(from: pdf.url) { _ in }
+            self.isLoading = false
+        } catch {
+            print("Error loading pages: \(error)")
         }
     }
     
-    func handleTap(at index: Int) {
-        if isSelectionMode {
-            if selectedIndices.contains(index) {
-                selectedIndices.remove(index)
-            } else {
-                selectedIndices.insert(index)
-            }
+    func toggleSelection(_ index: Int) {
+        if selectedPages.contains(index) {
+            selectedPages.remove(index)
         } else {
-            // ✅ Fix: Properly Open Panel Editor AND Handle Save
-            let image = images[index]
-            
-            // 1. Run AI detection first so the user has something to edit
-            Task {
-                let panels = await PanelExtractor.detectPanels(in: image, mode: conversionManager.conversionSettings.epubSettings.panelDetectionMode)
-                
-                await MainActor.run {
-                    let session = PanelEditSession(id: UUID(), originalImage: image, panels: panels)
-                    
-                    conversionManager.currentPanelSession = session
-                    
-                    // 2. Define what happens when they click "Save"
-                    conversionManager.panelEditorCompletion = { resultSession in
-                        if let result = resultSession {
-                            print("User saved \(result.panels.count) panels for page \(index)")
-                            // NOTE: In a full implementation, you would save 'result.panels'
-                            // to a 'manifest.json' file here so the Converter uses it later.
-                            // For now, this confirms the UI loop works.
-                        }
-                    }
-                    
-                    conversionManager.showingPanelEditor = true
-                }
-            }
+            selectedPages.insert(index)
         }
     }
     
-    func deleteSelectedPages() {
-        guard !selectedIndices.isEmpty else { return }
+    func deleteSelected() async {
+        guard !selectedPages.isEmpty else { return }
         isLoading = true
-        
-        Task {
-            do {
-                try await conversionManager.deletePages(from: pdf, pageIndices: selectedIndices)
-                selectedIndices.removeAll()
-                isSelectionMode = false
-                loadImages()
-            } catch {
-                print("Delete failed: \(error)")
-                isLoading = false
-            }
+        do {
+            try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
+            selectedPages.removeAll()
+            await loadPages() // Reload
+        } catch {
+            print("Delete failed: \(error)")
         }
+        isLoading = false
     }
+}
+
+// Helper to make Int Identifiable for sheet
+extension Int: Identifiable {
+    public var id: Int { self }
 }
