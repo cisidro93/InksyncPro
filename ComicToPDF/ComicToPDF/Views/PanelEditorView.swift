@@ -14,7 +14,6 @@ struct PanelEditorView: View {
     @State private var panels: [CGRect] = []
     @State private var selectedPanelIndex: Int?
     @State private var isProcessing = false
-    // We no longer need imageSize state, it's calculated dynamically
     @State private var loadError: String?
     
     // Magic Wand State
@@ -29,14 +28,12 @@ struct PanelEditorView: View {
                 
                 Spacer()
                 
-                // Clear All Button
                 Button(action: clearAllPanels) {
                     Label("Clear", systemImage: "trash.slash")
                         .foregroundColor(.red)
                 }
                 .disabled(panels.isEmpty)
                 
-                // Magic Wand Toggle
                 Button(action: { isMagicWandActive.toggle(); selectedPanelIndex = nil }) {
                     Label("Magic Wand", systemImage: isMagicWandActive ? "wand.and.stars.inverse" : "wand.and.stars")
                         .bold()
@@ -47,7 +44,6 @@ struct PanelEditorView: View {
                 }
                 .disabled(isLoading || isProcessing)
                 
-                // Manual Add Button
                 Button(action: addNewPanel) {
                     Label("Add Box", systemImage: "plus.rectangle.on.rectangle")
                 }
@@ -62,18 +58,19 @@ struct PanelEditorView: View {
                     Color.black.opacity(0.9).edgesIgnoringSafeArea(.all)
                     
                     if let image = pageImage {
-                        // ✅ FIX: Calculate the exact frame of the image fits inside the view
+                        // 1. Calculate the exact frame where the image sits inside the view
                         let imgFrame = calculateImageFrame(image: image, inside: geo.size)
                         
-                        // ✅ FIX: Create a container exactly the size of the image
+                        // 2. The Container ZStack (Exactly matches Image Size)
                         ZStack(alignment: .topLeading) {
-                            // 1. The Image
+                            
+                            // The Image
                             Image(uiImage: image)
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: imgFrame.width, height: imgFrame.height)
                             
-                            // 2. The Boxes (Now share the exact same coordinate space)
+                            // The Boxes
                             ForEach(0..<panels.count, id: \.self) { index in
                                 DraggablePanelBox(
                                     rect: $panels[index],
@@ -87,11 +84,11 @@ struct PanelEditorView: View {
                             }
                         }
                         .frame(width: imgFrame.width, height: imgFrame.height)
-                        .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
-                        // ✅ FIX: Tap gesture is on the image container, ensuring correct coordinates
+                        .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY) // Center the Container
+                        .contentShape(Rectangle()) // Ensure entire area is tappable
                         .onTapGesture(coordinateSpace: .local) { location in
                             if isMagicWandActive {
-                                // Normalize point based on the container size
+                                // Calculate tap relative to the image frame
                                 let normalizedPoint = CGPoint(x: location.x / imgFrame.width, y: location.y / imgFrame.height)
                                 detectPanelAt(normalizedPoint: normalizedPoint)
                             } else {
@@ -109,7 +106,6 @@ struct PanelEditorView: View {
                         ProgressView("Loading High-Res Page...")
                     }
                     
-                    // Loading Overlay
                     if isProcessing {
                         VStack {
                             ProgressView()
@@ -120,7 +116,6 @@ struct PanelEditorView: View {
                         .cornerRadius(12)
                     }
                     
-                    // Helper Text
                     if isMagicWandActive && !isProcessing && pageImage != nil {
                         VStack {
                             Spacer()
@@ -163,7 +158,6 @@ struct PanelEditorView: View {
     
     // MARK: - Logic Helpers
     
-    // ✅ NEW HELPER: Calculates the actual rendered frame of the image "Aspect Fit"
     func calculateImageFrame(image: UIImage, inside containerSize: CGSize) -> CGRect {
         let imageAspect = image.size.width / image.size.height
         let containerAspect = containerSize.width / containerSize.height
@@ -172,26 +166,22 @@ struct PanelEditorView: View {
         var targetHeight: CGFloat
         
         if imageAspect > containerAspect {
-            // Image is wider than container (fit to width)
             targetWidth = containerSize.width
             targetHeight = containerSize.width / imageAspect
         } else {
-            // Image is taller than container (fit to height)
             targetHeight = containerSize.height
             targetWidth = containerSize.height * imageAspect
         }
         
-        // We don't need X/Y offsets because we center the ZStack container itself
         return CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight)
     }
     
-    // ✅ UPDATED: Takes a pre-normalized point
     func detectPanelAt(normalizedPoint: CGPoint) {
         guard let image = pageImage else { return }
         
-        // Check bounds
+        // Safety Bounds Check
         guard normalizedPoint.x >= 0 && normalizedPoint.x <= 1 &&
-                normalizedPoint.y >= 0 && normalizedPoint.y <= 1 else { return }
+              normalizedPoint.y >= 0 && normalizedPoint.y <= 1 else { return }
         
         isProcessing = true
         
@@ -212,35 +202,27 @@ struct PanelEditorView: View {
                 return
             }
             
-            // Vision coordinates are flipped (Y=0 is bottom)
             let visionPoint = CGPoint(x: normalizedPoint.x, y: 1.0 - normalizedPoint.y)
+            let candidates = results.filter { $0.boundingBox.contains(visionPoint) }
             
-            let candidates = results.filter { observation in
-                observation.boundingBox.contains(visionPoint)
-            }
-            
-            // Pick smallest rect containing point
             let bestMatch = candidates.sorted {
                 ($0.boundingBox.width * $0.boundingBox.height) < ($1.boundingBox.width * $1.boundingBox.height)
             }.first
             
             await MainActor.run {
                 if let match = bestMatch {
-                    // Convert back to SwiftUI coordinates (Flip Y again)
                     let finalRect = CGRect(
                         x: match.boundingBox.origin.x,
                         y: 1.0 - match.boundingBox.origin.y - match.boundingBox.height,
                         width: match.boundingBox.width,
                         height: match.boundingBox.height
                     )
-                    
                     self.panels.append(finalRect)
                     self.selectedPanelIndex = self.panels.count - 1
                     
                     let generator = UIImpactFeedbackGenerator(style: .medium)
                     generator.impactOccurred()
                 } else {
-                    // Fallback: Place box centered on tap
                     let boxSize = 0.3
                     let fallbackRect = CGRect(
                         x: normalizedPoint.x - (boxSize/2),
@@ -248,12 +230,12 @@ struct PanelEditorView: View {
                         width: boxSize,
                         height: boxSize
                     )
-                    // Ensure fallback is within bounds
-                    var constrainedRect = fallbackRect
-                    constrainedRect.origin.x = max(0.0, min(fallbackRect.origin.x, 1.0 - boxSize))
-                    constrainedRect.origin.y = max(0.0, min(fallbackRect.origin.y, 1.0 - boxSize))
+                    // Clamp fallback
+                    var constrained = fallbackRect
+                    constrained.origin.x = max(0.0, min(fallbackRect.origin.x, 1.0 - boxSize))
+                    constrained.origin.y = max(0.0, min(fallbackRect.origin.y, 1.0 - boxSize))
                     
-                    self.panels.append(constrainedRect)
+                    self.panels.append(constrained)
                     self.selectedPanelIndex = self.panels.count - 1
                 }
                 self.isProcessing = false
@@ -313,8 +295,15 @@ struct DraggablePanelBox: View {
     let index: Int
     @State private var initialRect: CGRect? = nil
     
-    var screenRect: CGRect {
-        CGRect(x: rect.origin.x * containerSize.width, y: rect.origin.y * containerSize.height, width: rect.width * containerSize.width, height: rect.height * containerSize.height)
+    // ✅ FIX: Using .position requires center coordinates, not top-left
+    var centerPosition: CGPoint {
+        let centerX = (rect.origin.x + rect.width / 2) * containerSize.width
+        let centerY = (rect.origin.y + rect.height / 2) * containerSize.height
+        return CGPoint(x: centerX, y: centerY)
+    }
+    
+    var pixelSize: CGSize {
+        CGSize(width: rect.width * containerSize.width, height: rect.height * containerSize.height)
     }
     
     var body: some View {
@@ -322,8 +311,7 @@ struct DraggablePanelBox: View {
             // Box Border
             Rectangle().stroke(isSelected ? Color.yellow : Color.blue.opacity(0.8), lineWidth: isSelected ? 3 : 2)
                 .background(Color.blue.opacity(0.05))
-                .offset(x: screenRect.origin.x, y: screenRect.origin.y)
-                .frame(width: screenRect.width, height: screenRect.height)
+                .frame(width: pixelSize.width, height: pixelSize.height)
                 .gesture(DragGesture()
                     .onChanged { value in
                         if isSelected {
@@ -334,7 +322,7 @@ struct DraggablePanelBox: View {
                             let newX = startRect.origin.x + dx
                             let newY = startRect.origin.y + dy
                             
-                            // ✅ FIX: Clamp exactly to image edges (0.0 to 1.0)
+                            // Clamp exactly to 0.0 - 1.0 (Stay inside image)
                             rect.origin.x = min(max(newX, 0.0), 1.0 - rect.width)
                             rect.origin.y = min(max(newY, 0.0), 1.0 - rect.height)
                         }
@@ -342,11 +330,11 @@ struct DraggablePanelBox: View {
                     .onEnded { _ in initialRect = nil }
                 )
             
-            // Resize Handle
+            // Resize Handle (Bottom Right)
             if isSelected {
                 Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
                     .foregroundColor(.yellow).background(Circle().fill(.black)).font(.title2)
-                    .offset(x: screenRect.maxX - 10, y: screenRect.maxY - 10)
+                    .position(x: pixelSize.width, y: pixelSize.height) // Stick to bottom-right corner
                     .gesture(DragGesture()
                         .onChanged { value in
                             if initialRect == nil { initialRect = rect }
@@ -360,9 +348,12 @@ struct DraggablePanelBox: View {
                     )
             }
             
-            // Number Badge
+            // Number Badge (Top Left)
             Text("\(index)").font(.caption2).bold().padding(6).background(Circle().fill(Color.blue)).foregroundColor(.white)
-                .offset(x: screenRect.origin.x - 10, y: screenRect.origin.y - 10).shadow(radius: 2)
-        }.frame(width: containerSize.width, height: containerSize.height)
+                .position(x: 0, y: 0)
+                .shadow(radius: 2)
+        }
+        .frame(width: pixelSize.width, height: pixelSize.height)
+        .position(centerPosition) // ✅ FIX: Absolute positioning from Top-Left (0,0) via ZStack alignment
     }
 }
