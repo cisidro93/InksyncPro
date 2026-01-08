@@ -14,7 +14,7 @@ struct PanelEditorView: View {
     @State private var panels: [CGRect] = []
     @State private var selectedPanelIndex: Int?
     @State private var isProcessing = false
-    @State private var imageSize: CGSize = .zero
+    // We no longer need imageSize state, it's calculated dynamically
     @State private var loadError: String?
     
     // Magic Wand State
@@ -59,40 +59,46 @@ struct PanelEditorView: View {
             // MARK: - Main Canvas
             GeometryReader { geo in
                 ZStack {
-                    // 1. Background Layer (Image) + Tap Detection
+                    Color.black.opacity(0.9).edgesIgnoringSafeArea(.all)
+                    
                     if let image = pageImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
-                            .background(GeometryReader { imageGeo in
-                                Color.clear.onAppear { self.imageSize = imageGeo.size }
-                                    .onChange(of: imageGeo.size) { newSize in self.imageSize = newSize }
-                            })
-                            // BACKGROUND TAP: Runs Magic Wand
-                            .onTapGesture(coordinateSpace: .local) { location in
-                                if isMagicWandActive {
-                                    detectPanelAt(tapPoint: location, in: imageGeoSize(geo))
-                                } else {
-                                    selectedPanelIndex = nil
-                                }
-                            }
+                        // ✅ FIX: Calculate the exact frame of the image fits inside the view
+                        let imgFrame = calculateImageFrame(image: image, inside: geo.size)
                         
-                        // 2. Interaction Layer (Boxes)
-                        if imageSize != .zero {
+                        // ✅ FIX: Create a container exactly the size of the image
+                        ZStack(alignment: .topLeading) {
+                            // 1. The Image
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: imgFrame.width, height: imgFrame.height)
+                            
+                            // 2. The Boxes (Now share the exact same coordinate space)
                             ForEach(0..<panels.count, id: \.self) { index in
                                 DraggablePanelBox(
                                     rect: $panels[index],
                                     isSelected: selectedPanelIndex == index,
-                                    containerSize: imageSize,
+                                    containerSize: imgFrame.size,
                                     index: index + 1
                                 )
-                                // BOX TAP: Selects the box (Even if Wand is active!)
                                 .onTapGesture {
                                     selectedPanelIndex = index
                                 }
                             }
                         }
+                        .frame(width: imgFrame.width, height: imgFrame.height)
+                        .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
+                        // ✅ FIX: Tap gesture is on the image container, ensuring correct coordinates
+                        .onTapGesture(coordinateSpace: .local) { location in
+                            if isMagicWandActive {
+                                // Normalize point based on the container size
+                                let normalizedPoint = CGPoint(x: location.x / imgFrame.width, y: location.y / imgFrame.height)
+                                detectPanelAt(normalizedPoint: normalizedPoint)
+                            } else {
+                                selectedPanelIndex = nil
+                            }
+                        }
+                        
                     } else if let error = loadError {
                         VStack {
                             Image(systemName: "exclamationmark.triangle")
@@ -115,7 +121,7 @@ struct PanelEditorView: View {
                     }
                     
                     // Helper Text
-                    if isMagicWandActive && !isProcessing {
+                    if isMagicWandActive && !isProcessing && pageImage != nil {
                         VStack {
                             Spacer()
                             Text("Tap image to detect • Tap box to adjust")
@@ -129,9 +135,6 @@ struct PanelEditorView: View {
                         .allowsHitTesting(false)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black.opacity(0.9))
-                .clipped()
             }
             
             // MARK: - Bottom Toolbar
@@ -160,38 +163,39 @@ struct PanelEditorView: View {
     
     // MARK: - Logic Helpers
     
-    func imageGeoSize(_ geo: GeometryProxy) -> CGSize {
-        guard let img = pageImage else { return .zero }
-        let aspect = img.size.width / img.size.height
-        let viewAspect = geo.size.width / geo.size.height
+    // ✅ NEW HELPER: Calculates the actual rendered frame of the image "Aspect Fit"
+    func calculateImageFrame(image: UIImage, inside containerSize: CGSize) -> CGRect {
+        let imageAspect = image.size.width / image.size.height
+        let containerAspect = containerSize.width / containerSize.height
         
-        var renderSize = CGSize.zero
-        if aspect > viewAspect {
-            renderSize.width = geo.size.width
-            renderSize.height = geo.size.width / aspect
+        var targetWidth: CGFloat
+        var targetHeight: CGFloat
+        
+        if imageAspect > containerAspect {
+            // Image is wider than container (fit to width)
+            targetWidth = containerSize.width
+            targetHeight = containerSize.width / imageAspect
         } else {
-            renderSize.height = geo.size.height
-            renderSize.width = geo.size.height * aspect
+            // Image is taller than container (fit to height)
+            targetHeight = containerSize.height
+            targetWidth = containerSize.height * imageAspect
         }
-        return renderSize
+        
+        // We don't need X/Y offsets because we center the ZStack container itself
+        return CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight)
     }
     
-    func detectPanelAt(tapPoint: CGPoint, in renderSize: CGSize) {
-        guard let image = pageImage, renderSize.width > 0 else { return }
+    // ✅ UPDATED: Takes a pre-normalized point
+    func detectPanelAt(normalizedPoint: CGPoint) {
+        guard let image = pageImage else { return }
+        
+        // Check bounds
+        guard normalizedPoint.x >= 0 && normalizedPoint.x <= 1 &&
+                normalizedPoint.y >= 0 && normalizedPoint.y <= 1 else { return }
+        
         isProcessing = true
         
-        // Convert Tap to Normalized Coordinates
-        let normalizedX = tapPoint.x / imageSize.width
-        let normalizedY = tapPoint.y / imageSize.height
-        let normalizedPoint = CGPoint(x: normalizedX, y: normalizedY)
-        
-        guard normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1 else {
-            isProcessing = false
-            return
-        }
-        
         Task(priority: .userInitiated) {
-            // Resize for AI (Prevents Crash)
             let smallImage = resizeImageForAI(image: image, targetSize: 1000)
             let request = VNDetectRectanglesRequest()
             request.minimumConfidence = 0.6
@@ -215,13 +219,14 @@ struct PanelEditorView: View {
                 observation.boundingBox.contains(visionPoint)
             }
             
-            // Pick smallest rect containing point (most specific panel)
+            // Pick smallest rect containing point
             let bestMatch = candidates.sorted {
                 ($0.boundingBox.width * $0.boundingBox.height) < ($1.boundingBox.width * $1.boundingBox.height)
             }.first
             
             await MainActor.run {
                 if let match = bestMatch {
+                    // Convert back to SwiftUI coordinates (Flip Y again)
                     let finalRect = CGRect(
                         x: match.boundingBox.origin.x,
                         y: 1.0 - match.boundingBox.origin.y - match.boundingBox.height,
@@ -235,7 +240,7 @@ struct PanelEditorView: View {
                     let generator = UIImpactFeedbackGenerator(style: .medium)
                     generator.impactOccurred()
                 } else {
-                    // Fallback: Default box if no clear panel found
+                    // Fallback: Place box centered on tap
                     let boxSize = 0.3
                     let fallbackRect = CGRect(
                         x: normalizedPoint.x - (boxSize/2),
@@ -243,7 +248,12 @@ struct PanelEditorView: View {
                         width: boxSize,
                         height: boxSize
                     )
-                    self.panels.append(fallbackRect)
+                    // Ensure fallback is within bounds
+                    var constrainedRect = fallbackRect
+                    constrainedRect.origin.x = max(0.0, min(fallbackRect.origin.x, 1.0 - boxSize))
+                    constrainedRect.origin.y = max(0.0, min(fallbackRect.origin.y, 1.0 - boxSize))
+                    
+                    self.panels.append(constrainedRect)
                     self.selectedPanelIndex = self.panels.count - 1
                 }
                 self.isProcessing = false
@@ -260,7 +270,6 @@ struct PanelEditorView: View {
                 self.isLoading = false
             } else {
                  if pageIndex != 0 {
-                     // Fallback to Page 1 if Page 4 doesn't exist
                     if let image = try await conversionManager.extractFullPage(from: pdf, index: 0) {
                         self.pageImage = image
                         loadExistingPanels()
@@ -296,7 +305,7 @@ struct PanelEditorView: View {
     }
 }
 
-// MARK: - Box Component (With Smooth Dragging)
+// MARK: - Box Component (Fixed Coordinates)
 struct DraggablePanelBox: View {
     @Binding var rect: CGRect
     let isSelected: Bool
@@ -318,7 +327,6 @@ struct DraggablePanelBox: View {
                 .gesture(DragGesture()
                     .onChanged { value in
                         if isSelected {
-                            // Smooth Drag Logic
                             if initialRect == nil { initialRect = rect }
                             guard let startRect = initialRect else { return }
                             let dx = value.translation.width / containerSize.width
@@ -326,9 +334,9 @@ struct DraggablePanelBox: View {
                             let newX = startRect.origin.x + dx
                             let newY = startRect.origin.y + dy
                             
-                            // Clamp to screen edges
-                            rect.origin.x = min(max(newX, -0.1), 1.0 - rect.width + 0.1)
-                            rect.origin.y = min(max(newY, -0.1), 1.0 - rect.height + 0.1)
+                            // ✅ FIX: Clamp exactly to image edges (0.0 to 1.0)
+                            rect.origin.x = min(max(newX, 0.0), 1.0 - rect.width)
+                            rect.origin.y = min(max(newY, 0.0), 1.0 - rect.height)
                         }
                     }
                     .onEnded { _ in initialRect = nil }
