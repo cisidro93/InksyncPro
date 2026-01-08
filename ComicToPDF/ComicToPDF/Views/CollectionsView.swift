@@ -13,17 +13,11 @@ struct CollectionsView: View {
                         .foregroundColor(.secondary)
                         .padding()
                 } else {
+                    // Logic extracted to helper to fix compiler timeout
                     ForEach(conversionManager.collections) { collection in
-                        // ✅ FIX: Calculate count here and pass it down
-                        let count = conversionManager.convertedPDFs.filter { $0.collectionId == collection.id }.count
-                        CollectionRow(collection: collection, itemCount: count)
+                        CollectionRow(collection: collection, itemCount: getPDFCount(for: collection))
                     }
-                    .onDelete { indexSet in
-                        indexSet.forEach { index in
-                            let collection = conversionManager.collections[index]
-                            conversionManager.deleteCollection(collection)
-                        }
-                    }
+                    .onDelete(perform: deleteCollections)
                 }
             }
             .navigationTitle("Collections")
@@ -46,9 +40,22 @@ struct CollectionsView: View {
             }
         }
     }
+    
+    // MARK: - Helpers (Keeps the View Builder simple)
+    
+    func getPDFCount(for collection: PDFCollection) -> Int {
+        return conversionManager.convertedPDFs.filter { $0.collectionId == collection.id }.count
+    }
+    
+    func deleteCollections(at offsets: IndexSet) {
+        offsets.forEach { index in
+            let collection = conversionManager.collections[index]
+            conversionManager.deleteCollection(collection)
+        }
+    }
 }
 
-// ✅ FIX: Simplified Row (Values only, no logic)
+// Subview for the Row
 struct CollectionRow: View {
     let collection: PDFCollection
     let itemCount: Int
@@ -72,6 +79,7 @@ struct CollectionRow: View {
     }
 }
 
+// Subview for the Detail List
 struct CollectionDetailView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     let collection: PDFCollection
