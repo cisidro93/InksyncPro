@@ -26,7 +26,7 @@ struct PanelEditorView: View {
                 
                 Spacer()
                 
-                // Clear All Button (New)
+                // Clear All Button
                 Button(action: clearAllPanels) {
                     Label("Clear", systemImage: "trash.slash")
                         .foregroundColor(.red)
@@ -238,6 +238,9 @@ struct DraggablePanelBox: View {
     let containerSize: CGSize
     let index: Int
     
+    // State to track drag start position for smoother movement
+    @State private var initialRect: CGRect? = nil
+    
     var screenRect: CGRect {
         CGRect(
             x: rect.origin.x * containerSize.width,
@@ -255,16 +258,26 @@ struct DraggablePanelBox: View {
                 .background(Color.blue.opacity(0.05)) // Faint tint to show active area
                 .offset(x: screenRect.origin.x, y: screenRect.origin.y)
                 .frame(width: screenRect.width, height: screenRect.height)
+                // ✅ FIXED: Smooth Move Gesture
                 .gesture(
                     DragGesture()
                         .onChanged { value in
                             if isSelected {
+                                if initialRect == nil { initialRect = rect }
+                                guard let startRect = initialRect else { return }
+                                
                                 let dx = value.translation.width / containerSize.width
                                 let dy = value.translation.height / containerSize.height
-                                rect.origin.x += dx
-                                rect.origin.y += dy
+                                
+                                let newX = startRect.origin.x + dx
+                                let newY = startRect.origin.y + dy
+                                
+                                // Clamp to keep roughly on screen (allow slight overhang for edge adjustments)
+                                rect.origin.x = min(max(newX, -0.1), 1.0 - rect.width + 0.1)
+                                rect.origin.y = min(max(newY, -0.1), 1.0 - rect.height + 0.1)
                             }
                         }
+                        .onEnded { _ in initialRect = nil }
                 )
             
             // Resize Handle
@@ -274,14 +287,21 @@ struct DraggablePanelBox: View {
                     .background(Circle().fill(.black))
                     .font(.title2)
                     .offset(x: screenRect.maxX - 10, y: screenRect.maxY - 10)
+                    // ✅ FIXED: Smooth Resize Gesture
                     .gesture(
                         DragGesture()
                             .onChanged { value in
+                                if initialRect == nil { initialRect = rect }
+                                guard let startRect = initialRect else { return }
+                                
                                 let dx = value.translation.width / containerSize.width
                                 let dy = value.translation.height / containerSize.height
-                                rect.size.width += dx
-                                rect.size.height += dy
+                                
+                                // Clamp minimum size so it doesn't invert
+                                rect.size.width = max(0.05, startRect.width + dx)
+                                rect.size.height = max(0.05, startRect.height + dy)
                             }
+                            .onEnded { _ in initialRect = nil }
                     )
             }
             
