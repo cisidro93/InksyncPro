@@ -126,6 +126,11 @@ struct PanelExtractor {
         return intersectionHeight > (minHeight * 0.5)
     }
     
+    static func extractPanelRects(from image: UIImage, mode: ExtractionMode) async throws -> [CGRect] {
+        let panels = await detectPanels(in: image, mode: mode)
+        return panels.map { $0.boundingBox }
+    }
+    
     // MARK: - Helpers
     
     static func cropPanels(from image: UIImage, panels: [Panel]) async throws -> [UIImage] {

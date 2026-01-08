@@ -91,12 +91,12 @@ class CBZToEPUBConverter {
                 <!DOCTYPE html>
                 <html xmlns="http://www.w3.org/1999/xhtml">
                 <head>
-                    <title>Page</title>
-                    <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-                    <link rel="stylesheet" type="text/css" href="css/style.css"/>
+                	<title>Page</title>
+                	<meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
+                	<link rel="stylesheet" type="text/css" href="css/style.css"/>
                 </head>
                 <body>
-                    <div class="svg-wrapper"><img src="images/\(url.lastPathComponent)" alt=""/></div>
+                	<div class="svg-wrapper"><img src="images/\(url.lastPathComponent)" alt=""/></div>
                 </body>
                 </html>
                 """
@@ -173,42 +173,65 @@ class CBZToEPUBConverter {
             }
         }()
         
+        // ✅ NEW: Smart Conversion Loop
         for (sourceIndex, imgURL) in imageURLs.enumerated() {
             await Task.yield()
             
-            // Step A: Load Image & Async Extraction (Cannot be in autoreleasepool)
+            // 1. Load Image
             guard let originalImage = loadDownsampledImage(at: imgURL, maxDimension: maxDim) else { continue }
             
-            var extractedPanels: [UIImage] = []
+            // 2. Determine Coordinates (The "Reconfigure" Logic)
+            var panelRects: [CGRect] = [] // We store Rects first, then decide what to do with them
             
             if settings.enablePanelSplit {
+                // ✅ PRIORITY 1: Check for User Edits (Manual Manifest)
                 if let manualPanels = manualManifest?[sourceIndex] {
-                    if let cropped = try? await PanelExtractor.cropPanels(from: originalImage, panels: manualPanels) {
-                        extractedPanels = cropped
-                    }
-                } else {
-                    if let aiPanels = try? await PanelExtractor.extractPanels(from: originalImage, mode: settings.epubSettings.panelDetectionMode, mangaMode: settings.mangaMode) {
-                        extractedPanels = aiPanels
+                    // User has edited this page! Use their exact boxes.
+                    panelRects = manualPanels.map { $0.boundingBox }
+                } 
+                // ✅ PRIORITY 2: Run Neural Engine (AI)
+                else {
+                    if let aiPanels = try? await PanelExtractor.extractPanelRects(from: originalImage, mode: settings.epubSettings.panelDetectionMode) {
+                         panelRects = aiPanels
                     }
                 }
             }
             
-            // Step B: Heavy Processing (Must be in autoreleasepool)
+            // 3. Execute Strategy
             try autoreleasepool {
                 var pagesToProcess: [UIImage] = []
                 
-                if settings.enablePanelSplit && !extractedPanels.isEmpty {
+                // Strategy A: Physical Splitting (Crop & Save)
+                if settings.panelStrategy == .physical {
+                    
+                    // Add Full Page First?
                     if settings.epubSettings.includeFullPage {
                         pagesToProcess.append(originalImage)
-                        pagesToProcess.append(contentsOf: extractedPanels)
-                    } else {
-                        pagesToProcess.append(contentsOf: extractedPanels)
                     }
-                } else {
+                    
+                    // Crop the images based on the Rects
+                    for rect in panelRects {
+                        if let cropped = ImageProcessor.crop(image: originalImage, to: rect) {
+                            pagesToProcess.append(cropped)
+                        }
+                    }
+                    
+                    // Fallback: If no panels found/cropped, just keep original
+                    if pagesToProcess.isEmpty {
+                        pagesToProcess.append(originalImage)
+                    }
+                } 
+                
+                // Strategy B: Virtual Layout (Experimental)
+                else if settings.panelStrategy == .virtual {
+                    // For now, Virtual behaves like "Full Page Only" but we prepare the Metadata
+                    // In a future update, we would write 'panelRects' to an XML file here.
                     pagesToProcess.append(originalImage)
+                    
+                    // TODO: Append 'panelRects' to a 'region-magnification.xml' generator
                 }
                 
-                // Process each sub-page
+                // 4. Save Processed Pages
                 for (_, image) in pagesToProcess.enumerated() {
                     var finalImage = image
                     
@@ -226,9 +249,9 @@ class CBZToEPUBConverter {
                     let dataSize = Int64(data.count)
                     
                     if settings.splitMode != .none {
-                        if (currentVolumeSize + dataSize) > splitLimit && !currentImages.isEmpty {
-                            try flushVolume()
-                        }
+                         if (currentVolumeSize + dataSize) > splitLimit && !currentImages.isEmpty {
+                             try flushVolume()
+                         }
                     }
                     
                     let pageName = String(format: "page_%05d.jpg", globalPageIndex)

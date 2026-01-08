@@ -32,6 +32,27 @@ struct SettingsView: View {
                 Text(conversionManager.conversionSettings.splitMode.description)
                     .font(.caption)
                     .foregroundColor(.secondary)
+                
+                // ✅ NEW: Panel Strategy Picker
+                if conversionManager.conversionSettings.enablePanelSplit {
+                    Divider()
+                    
+                    Picker("Panel Strategy", selection: $conversionManager.conversionSettings.panelStrategy) {
+                        ForEach(PanelStrategy.allCases) { strategy in
+                            Text(strategy.rawValue).tag(strategy)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    // Helper text to educate the user
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "info.circle").font(.caption)
+                        Text(conversionManager.conversionSettings.panelStrategy.description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
             }
             
             Section(header: Text("Kindle & E-Reader")) {

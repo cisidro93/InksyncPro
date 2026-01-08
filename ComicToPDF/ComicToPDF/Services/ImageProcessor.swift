@@ -30,6 +30,22 @@ struct ImageProcessor {
     
     // MARK: - Helper Functions
     
+    static func crop(image: UIImage, to rect: CGRect) -> UIImage? {
+        guard let cgImage = image.cgImage else { return nil }
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        
+        let cropRect = CGRect(
+            x: rect.minX * width,
+            y: (1.0 - rect.maxY) * height,
+            width: rect.width * width,
+            height: rect.height * height
+        )
+        
+        guard let cropped = cgImage.cropping(to: cropRect) else { return nil }
+        return UIImage(cgImage: cropped)
+    }
+
     private static func resize(image: UIImage, toFit targetSize: CGSize) -> UIImage {
         let widthRatio = targetSize.width / image.size.width
         let heightRatio = targetSize.height / image.size.height

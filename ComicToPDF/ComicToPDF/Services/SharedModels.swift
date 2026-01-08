@@ -137,6 +137,21 @@ enum FileSizeSplitMode: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+// ✅ NEW: Panel Generation Strategy
+enum PanelStrategy: String, CaseIterable, Codable, Identifiable {
+    case physical = "Physical Splitting (Compatible)"
+    case virtual = "Virtual Layout (Experimental)"
+    
+    var id: String { rawValue }
+    
+    var description: String {
+        switch self {
+        case .physical: return "Creates separate images for each panel. Best for Send-to-Kindle Email."
+        case .virtual: return "Uses metadata to zoom. Smaller file size, but requires USB transfer."
+        }
+    }
+}
+
 struct ConversionSettings: Codable, Equatable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
@@ -144,9 +159,10 @@ struct ConversionSettings: Codable, Equatable {
     var targetDevice: KindleDeviceType = .scribe
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
-    
-    // ✅ NEW: Splitting Strategy
     var splitMode: FileSizeSplitMode = .none
+    
+    // ✅ ADD THIS NEW FIELD
+    var panelStrategy: PanelStrategy = .physical 
     
     var comicVineAPIKey: String = ""
     var epubSettings: EPUBSettings = EPUBSettings()
