@@ -39,7 +39,7 @@ struct PanelEditorView: View {
                 }
                 .disabled(panels.isEmpty)
                 
-                // Magic Wand Toggle (Fixed Layout)
+                // Magic Wand Toggle
                 Button(action: { isMagicWandActive.toggle(); selectedPanelIndex = nil }) {
                     HStack(spacing: 4) {
                         Image(systemName: isMagicWandActive ? "wand.and.stars.inverse" : "wand.and.stars")
@@ -102,6 +102,8 @@ struct PanelEditorView: View {
                         }
                         .frame(width: imgFrame.width, height: imgFrame.height)
                         .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
+                        // ✅ FIX: Define a static coordinate space for smooth dragging
+                        .coordinateSpace(name: "ImageCanvas")
                         .contentShape(Rectangle())
                         .onTapGesture(coordinateSpace: .local) { location in
                             if isMagicWandActive {
@@ -135,7 +137,7 @@ struct PanelEditorView: View {
                 }
             }
             
-            // MARK: - Bottom Toolbar (Instructions Moved Here)
+            // MARK: - Bottom Toolbar
             HStack {
                 Button(role: .destructive, action: deleteSelectedPanel) {
                     Image(systemName: "trash")
@@ -146,7 +148,6 @@ struct PanelEditorView: View {
                 
                 Spacer()
                 
-                // ✅ FIX: Instructions live here now (Non-intrusive)
                 if isMagicWandActive {
                     Text("Tap image to detect")
                         .font(.caption)
@@ -198,8 +199,6 @@ struct PanelEditorView: View {
     
     func detectPanelAt(normalizedPoint: CGPoint) {
         guard let image = pageImage else { return }
-        
-        // Safety Bounds Check
         guard normalizedPoint.x >= 0 && normalizedPoint.x <= 1 &&
               normalizedPoint.y >= 0 && normalizedPoint.y <= 1 else { return }
         
@@ -306,7 +305,7 @@ struct PanelEditorView: View {
     }
 }
 
-// MARK: - Box Component (Preserved)
+// MARK: - Box Component (Smooth Dragging with Coordinate Space)
 struct DraggablePanelBox: View {
     @Binding var rect: CGRect
     let isSelected: Bool
@@ -329,13 +328,17 @@ struct DraggablePanelBox: View {
             Rectangle().stroke(isSelected ? Color.yellow : Color.blue.opacity(0.8), lineWidth: isSelected ? 3 : 2)
                 .background(Color.blue.opacity(0.05))
                 .frame(width: pixelSize.width, height: pixelSize.height)
-                .gesture(DragGesture()
+                // ✅ FIX: Use named coordinate space "ImageCanvas"
+                .gesture(DragGesture(coordinateSpace: .named("ImageCanvas"))
                     .onChanged { value in
                         if isSelected {
                             if initialRect == nil { initialRect = rect }
                             guard let startRect = initialRect else { return }
+                            
+                            // Calculate movement relative to static canvas, not the moving box
                             let dx = value.translation.width / containerSize.width
                             let dy = value.translation.height / containerSize.height
+                            
                             let newX = startRect.origin.x + dx
                             let newY = startRect.origin.y + dy
                             
@@ -350,7 +353,7 @@ struct DraggablePanelBox: View {
                 Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
                     .foregroundColor(.yellow).background(Circle().fill(.black)).font(.title2)
                     .position(x: pixelSize.width, y: pixelSize.height)
-                    .gesture(DragGesture()
+                    .gesture(DragGesture(coordinateSpace: .named("ImageCanvas"))
                         .onChanged { value in
                             if initialRect == nil { initialRect = rect }
                             guard let startRect = initialRect else { return }
