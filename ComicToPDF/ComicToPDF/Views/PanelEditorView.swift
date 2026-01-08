@@ -15,22 +15,44 @@ struct PanelEditorView: View {
     @State private var selectedPanelIndex: Int?
     @State private var isProcessing = false
     @State private var imageSize: CGSize = .zero
+    @State private var loadError: String?
     
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
+            // MARK: - Top Toolbar
             HStack {
-                Text("Page \(pageIndex + 1)").font(.headline)
+                Text("Page \(pageIndex + 1)")
+                    .font(.headline)
+                
                 Spacer()
-                Button(action: runAutoDetection) { Label("Auto-Detect", systemImage: "sparkles") }
-                    .disabled(isLoading || isProcessing)
-                Button(action: addNewPanel) { Label("Add Box", systemImage: "plus.rectangle") }
-                    .disabled(isLoading)
+                
+                // Clear All Button (New)
+                Button(action: clearAllPanels) {
+                    Label("Clear", systemImage: "trash.slash")
+                        .foregroundColor(.red)
+                }
+                .disabled(panels.isEmpty)
+                
+                // Reset/Auto Button
+                Button(action: runAutoDetection) {
+                    Label("Reset AI", systemImage: "arrow.counterclockwise")
+                }
+                .disabled(isLoading || isProcessing)
+                
+                // Add Manual Box Button
+                Button(action: addNewPanel) {
+                    Label("Add Box", systemImage: "plus.rectangle.on.rectangle")
+                        .bold()
+                }
+                .disabled(isLoading)
             }
             .padding()
             .background(Color(UIColor.secondarySystemBackground))
             
+            // MARK: - Main Canvas
             GeometryReader { geo in
                 ZStack {
+                    // Background Layer (Image)
                     if let image = pageImage {
                         Image(uiImage: image)
                             .resizable()
@@ -41,67 +63,109 @@ struct PanelEditorView: View {
                                     .onChange(of: imageGeo.size) { newSize in self.imageSize = newSize }
                             })
                         
+                        // Interaction Layer (Boxes)
                         if imageSize != .zero {
                             ForEach(0..<panels.count, id: \.self) { index in
                                 DraggablePanelBox(
                                     rect: $panels[index],
                                     isSelected: selectedPanelIndex == index,
-                                    containerSize: imageSize
+                                    containerSize: imageSize,
+                                    index: index + 1
                                 )
                                 .onTapGesture { selectedPanelIndex = index }
                             }
                         }
-                    } else if isLoading {
-                        ProgressView("Loading...")
+                    } else if let error = loadError {
+                        VStack {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.largeTitle).foregroundColor(.orange)
+                            Text(error).font(.caption).foregroundColor(.secondary)
+                        }
+                    } else {
+                        ProgressView("Loading High-Res Page...")
                     }
                     
+                    // Loading Overlay
                     if isProcessing {
-                        ProgressView().scaleEffect(2).padding().background(.ultraThinMaterial).cornerRadius(12)
+                        ProgressView("Detecting Panels...")
+                            .padding()
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(12)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black.opacity(0.9))
                 .clipped()
-                .onTapGesture { selectedPanelIndex = nil }
+                .contentShape(Rectangle())
+                .onTapGesture { selectedPanelIndex = nil } // Deselect on background tap
             }
             
+            // MARK: - Bottom Toolbar
             HStack {
-                Button(role: .destructive, action: deleteSelectedPanel) { Label("Delete Box", systemImage: "trash") }
-                    .disabled(selectedPanelIndex == nil)
+                Button(role: .destructive, action: deleteSelectedPanel) {
+                    Label("Delete Selected", systemImage: "trash")
+                }
+                .disabled(selectedPanelIndex == nil)
+                
                 Spacer()
-                Button("Save Changes") { saveAndClose() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isLoading)
+                
+                Button(action: saveAndClose) {
+                    Text("Save & Close")
+                        .bold()
+                        .frame(width: 120)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isLoading)
             }
             .padding()
             .background(Color(UIColor.secondarySystemBackground))
         }
         .task {
-            // Memory Cleanup before loading new heavy image
-            conversionManager.cleanupMemory()
-            
-            do {
-                // Load 1920px image (Good for eyes, okay for RAM)
-                if let image = try await conversionManager.extractFullPage(from: pdf, index: pageIndex) {
-                    self.pageImage = image
-                    loadExistingPanels()
-                    self.isLoading = false
-                }
-            } catch {
-                print("Failed to load editor image: \(error)")
-            }
+            await loadPageSafe()
         }
         .onDisappear {
-            // Dump the image immediately when closing
-            self.pageImage = nil
             conversionManager.cleanupMemory()
+        }
+    }
+    
+    // MARK: - Logic
+    
+    func loadPageSafe() async {
+        conversionManager.cleanupMemory()
+        do {
+            // Try requested page
+            if let image = try await conversionManager.extractFullPage(from: pdf, index: pageIndex) {
+                self.pageImage = image
+                loadExistingPanels()
+                self.isLoading = false
+            } else {
+                // Fallback: If Page 4 doesn't exist, try Page 1 (index 0)
+                if pageIndex != 0 {
+                    if let image = try await conversionManager.extractFullPage(from: pdf, index: 0) {
+                        self.pageImage = image
+                        loadExistingPanels()
+                        self.isLoading = false
+                    } else {
+                        loadError = "Could not load image."
+                        isLoading = false
+                    }
+                } else {
+                    loadError = "Page not found."
+                    isLoading = false
+                }
+            }
+        } catch {
+            loadError = error.localizedDescription
+            isLoading = false
         }
     }
     
     func loadExistingPanels() {
         if let overrides = conversionManager.panelOverrides[pdf.id]?[pageIndex] {
+            // Load saved Manual Edits
             self.panels = overrides.map { $0.boundingBox }
         } else {
+            // Or run Auto-Detect
             runAutoDetection()
         }
     }
@@ -111,32 +175,36 @@ struct PanelEditorView: View {
         isProcessing = true
         
         Task(priority: .userInitiated) {
-            // ✅ FIX: Create a tiny 800px copy for the AI to chew on
-            // This prevents the "Vision Framework OOM" crash
+            // Resize for AI (Safety Fix)
             let smallImage = resizeImageForAI(image: img, targetSize: 800)
             
             if (try? await PanelExtractor.extractPanels(from: smallImage, mode: .automatic, mangaMode: false)) != nil {
                 await MainActor.run {
-                    if self.panels.isEmpty { self.panels = [CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)] }
+                    // If AI returns nothing, we default to 1 big box so the user isn't confused
+                    if self.panels.isEmpty {
+                        self.panels = [CGRect(x: 0.05, y: 0.05, width: 0.9, height: 0.9)]
+                    }
                     self.isProcessing = false
                 }
+            } else {
+                await MainActor.run { self.isProcessing = false }
             }
         }
     }
     
-    // Helper: Tiny Image Generator
     func resizeImageForAI(image: UIImage, targetSize: CGFloat) -> UIImage {
         let size = image.size
         let ratio = min(targetSize / size.width, targetSize / size.height)
         let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1 // No retina needed for AI
+        format.scale = 1
         return UIGraphicsImageRenderer(size: newSize, format: format).image { _ in
             image.draw(in: CGRect(origin: .zero, size: newSize))
         }
     }
     
     func addNewPanel() {
+        // Add a box in the center
         panels.append(CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
         selectedPanelIndex = panels.count - 1
     }
@@ -147,7 +215,14 @@ struct PanelEditorView: View {
         selectedPanelIndex = nil
     }
     
+    func clearAllPanels() {
+        panels.removeAll()
+        selectedPanelIndex = nil
+    }
+    
     func saveAndClose() {
+        // This is the CRITICAL step. We save your boxes to the Manager.
+        // The Converter checks this specific dictionary before running ANY AI.
         let finalPanels = panels.map { PanelExtractor.Panel(boundingBox: $0) }
         Task {
             await conversionManager.savePanelOverrides(for: pdf.id, pageIndex: pageIndex, panels: finalPanels)
@@ -156,35 +231,70 @@ struct PanelEditorView: View {
     }
 }
 
+// MARK: - Improved Box Component
 struct DraggablePanelBox: View {
     @Binding var rect: CGRect
     let isSelected: Bool
     let containerSize: CGSize
+    let index: Int
+    
     var screenRect: CGRect {
-        CGRect(x: rect.origin.x * containerSize.width, y: rect.origin.y * containerSize.height, width: rect.width * containerSize.width, height: rect.height * containerSize.height)
+        CGRect(
+            x: rect.origin.x * containerSize.width,
+            y: rect.origin.y * containerSize.height,
+            width: rect.width * containerSize.width,
+            height: rect.height * containerSize.height
+        )
     }
+    
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Rectangle().stroke(isSelected ? Color.yellow : Color.blue, lineWidth: isSelected ? 3 : 2)
-                .background(Color.blue.opacity(0.1))
+            // Box Border
+            Rectangle()
+                .stroke(isSelected ? Color.yellow : Color.blue.opacity(0.8), lineWidth: isSelected ? 3 : 2)
+                .background(Color.blue.opacity(0.05)) // Faint tint to show active area
                 .offset(x: screenRect.origin.x, y: screenRect.origin.y)
                 .frame(width: screenRect.width, height: screenRect.height)
-                .gesture(DragGesture().onChanged { value in
-                    if isSelected {
-                        rect.origin.x += value.translation.width / containerSize.width
-                        rect.origin.y += value.translation.height / containerSize.height
-                    }
-                })
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            if isSelected {
+                                let dx = value.translation.width / containerSize.width
+                                let dy = value.translation.height / containerSize.height
+                                rect.origin.x += dx
+                                rect.origin.y += dy
+                            }
+                        }
+                )
+            
+            // Resize Handle
             if isSelected {
-                Circle().fill(Color.yellow).frame(width: 20, height: 20)
+                Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
+                    .foregroundColor(.yellow)
+                    .background(Circle().fill(.black))
+                    .font(.title2)
                     .offset(x: screenRect.maxX - 10, y: screenRect.maxY - 10)
-                    .gesture(DragGesture().onChanged { value in
-                        rect.size.width += value.translation.width / containerSize.width
-                        rect.size.height += value.translation.height / containerSize.height
-                    })
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let dx = value.translation.width / containerSize.width
+                                let dy = value.translation.height / containerSize.height
+                                rect.size.width += dx
+                                rect.size.height += dy
+                            }
+                    )
             }
-            Text("#").font(.caption2).bold().padding(4).background(Color.blue).foregroundColor(.white)
-                .offset(x: screenRect.origin.x, y: screenRect.origin.y - 20)
-        }.frame(width: containerSize.width, height: containerSize.height)
+            
+            // Number Badge
+            Text("\(index)")
+                .font(.caption2)
+                .bold()
+                .padding(6)
+                .background(Circle().fill(Color.blue))
+                .foregroundColor(.white)
+                .offset(x: screenRect.origin.x - 10, y: screenRect.origin.y - 10)
+                .shadow(radius: 2)
+        }
+        .frame(width: containerSize.width, height: containerSize.height)
     }
 }
