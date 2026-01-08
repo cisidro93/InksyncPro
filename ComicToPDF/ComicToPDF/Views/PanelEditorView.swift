@@ -47,7 +47,6 @@ struct PanelEditorView: View {
                         .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
                         .background(GeometryReader { imageGeo in
                             Color.clear.onAppear {
-                                // Capture the actual displayed size of the image
                                 self.imageSize = imageGeo.size
                             }
                             .onChange(of: imageGeo.size) { newSize in
@@ -80,7 +79,6 @@ struct PanelEditorView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black.opacity(0.9))
                 .clipped()
-                // Tap background to deselect
                 .onTapGesture {
                     selectedPanelIndex = nil
                 }
@@ -111,12 +109,10 @@ struct PanelEditorView: View {
     // MARK: - Logic
     
     func loadExistingPanels() {
-        // 1. Check for Manual Overrides first
         if let overrides = conversionManager.panelOverrides[pdf.id]?[pageIndex] {
-            self.panels = overrides.map { $0.bounds }
+            // ✅ FIX: Use boundingBox instead of bounds
+            self.panels = overrides.map { $0.boundingBox }
         } else {
-            // 2. Default: Start with 0 panels (let user detect) or run auto?
-            // Let's run auto if empty to be helpful
             runAutoDetection()
         }
     }
@@ -124,16 +120,14 @@ struct PanelEditorView: View {
     func runAutoDetection() {
         isProcessing = true
         Task {
-            // Run Vision AI
-            if let detected = try? await PanelExtractor.extractPanels(from: pageImage, mode: .automatic, mangaMode: false) {
-                // Convert UIImages back to CGRects (Simulation since logic usually returns images)
-                // For the editor, we technically need the "Rects" from the extractor, not the cropped images.
-                // Assuming we update PanelExtractor later to return Rects. 
-                // For now, let's create a single full box as placeholder or use simple heuristic.
-                
-                // FALLBACK: Just add a default box if extractor only returns images
+            // ✅ FIX: Ignore result but trigger UI update
+            if (try? await PanelExtractor.extractPanels(from: pageImage, mode: .automatic, mangaMode: false)) != nil {
                 await MainActor.run {
-                    self.panels = [CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)]
+                    // Placeholder default if detection runs but we don't have rects exposed yet
+                    // Ideally PanelExtractor should return [CGRect] in future update
+                    if self.panels.isEmpty {
+                        self.panels = [CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)]
+                    }
                     self.isProcessing = false
                 }
             }
@@ -141,7 +135,6 @@ struct PanelEditorView: View {
     }
     
     func addNewPanel() {
-        // Add a 50% box in the center
         let newPanel = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
         panels.append(newPanel)
         selectedPanelIndex = panels.count - 1
@@ -154,8 +147,8 @@ struct PanelEditorView: View {
     }
     
     func saveAndClose() {
-        // Convert CGRects back to Panel Objects
-        let finalPanels = panels.map { PanelExtractor.Panel(id: UUID(), bounds: $0, image: nil) }
+        // ✅ FIX: Correct Initializer for Panel
+        let finalPanels = panels.map { PanelExtractor.Panel(id: UUID(), boundingBox: $0) }
         
         Task {
             await conversionManager.savePanelOverrides(for: pdf.id, pageIndex: pageIndex, panels: finalPanels)
@@ -170,7 +163,6 @@ struct DraggablePanelBox: View {
     let isSelected: Bool
     let containerSize: CGSize
     
-    // Helpers to convert Norm <-> Screen
     var screenRect: CGRect {
         CGRect(
             x: rect.origin.x * containerSize.width,
@@ -182,13 +174,11 @@ struct DraggablePanelBox: View {
     
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // The Box Outline
             Rectangle()
                 .stroke(isSelected ? Color.yellow : Color.blue, lineWidth: isSelected ? 3 : 2)
                 .background(Color.blue.opacity(0.1))
                 .offset(x: screenRect.origin.x, y: screenRect.origin.y)
                 .frame(width: screenRect.width, height: screenRect.height)
-                // Drag Gesture (Move)
                 .gesture(
                     DragGesture()
                         .onChanged { value in
@@ -201,7 +191,6 @@ struct DraggablePanelBox: View {
                         }
                 )
             
-            // Resize Handle (Bottom Right)
             if isSelected {
                 Circle()
                     .fill(Color.yellow)
@@ -218,7 +207,6 @@ struct DraggablePanelBox: View {
                     )
             }
             
-            // Panel Number Badge
             Text("#")
                 .font(.caption2)
                 .bold()
@@ -227,7 +215,6 @@ struct DraggablePanelBox: View {
                 .foregroundColor(.white)
                 .offset(x: screenRect.origin.x, y: screenRect.origin.y - 20)
         }
-        // Center the coordinate system roughly
         .frame(width: containerSize.width, height: containerSize.height)
     }
 }
