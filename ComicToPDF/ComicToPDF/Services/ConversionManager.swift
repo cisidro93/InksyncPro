@@ -334,7 +334,6 @@ class ConversionManager: ObservableObject {
         }
         
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
-            // ✅ FIX: Modern throwing init usage
             guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
             let imageExtensions = ["jpg", "jpeg", "png", "webp"]
             let sortedEntries = archive.makeIterator().sorted { $0.path < $1.path }
@@ -371,15 +370,36 @@ class ConversionManager: ObservableObject {
         scanLibrary()
     }
     
+    // MARK: - Collection Management (RESTORED)
+    
+    func createCollection(name: String, icon: String, color: String) {
+        let newCollection = PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date())
+        collections.append(newCollection)
+        saveLibrary()
+    }
+    
+    func deleteCollection(_ collection: PDFCollection) {
+        collections.removeAll { $0.id == collection.id }
+        for i in 0..<convertedPDFs.count {
+            if convertedPDFs[i].collectionId == collection.id { convertedPDFs[i].collectionId = nil }
+        }
+        saveLibrary()
+    }
+    
+    func movePDFToCollection(_ pdf: ConvertedPDF, collectionId: UUID?) {
+        if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs[idx].collectionId = collectionId
+            saveLibrary()
+        }
+    }
+    
     // MARK: - Helpers (Ensured Public)
     
     func autoOrganize() {
-        // Implementation stub for AutoOrganizeView
         print("Auto Organizing...")
     }
     
     func findDuplicates() async -> [DuplicateGroup] {
-        // Implementation stub for DuplicateDetectionView
         return []
     }
     
