@@ -1,7 +1,7 @@
 import SwiftUI
 
-// ✅ Safe Model for Grid Items
-struct PageItem: Identifiable {
+// ✅ RENAMED: 'GridPageItem' avoids conflict with your existing 'PageItem'
+struct GridPageItem: Identifiable {
     let id = UUID()
     let url: URL
     let index: Int
@@ -13,7 +13,7 @@ struct PageManagerView: View {
     let pdf: ConvertedPDF
     
     // State
-    @State private var pageItems: [PageItem] = []
+    @State private var gridItems: [GridPageItem] = [] // Renamed state
     @State private var tempSessionDir: URL?
     @State private var isLoading = true
     @State private var debugMessage: String?
@@ -53,7 +53,7 @@ struct PageManagerView: View {
                     // Grid State
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 10) {
-                            ForEach(pageItems) { item in
+                            ForEach(gridItems) { item in
                                 VStack {
                                     // ✅ SAFE CELL (No GeometryReader)
                                     SimpleAsyncCell(url: item.url)
@@ -132,16 +132,19 @@ struct PageManagerView: View {
         try? await Task.sleep(nanoseconds: 500_000_000)
         
         do {
+            print("--- STARTING UNZIP ---")
             let result = try await conversionManager.extractImageFiles(from: pdf.url)
             self.tempSessionDir = result.workingDir
             
+            print("--- FILES FOUND: \(result.files.count) ---")
+            
             // 2. Map to Structs
             let items = result.files.enumerated().map { index, url in
-                PageItem(url: url, index: index)
+                GridPageItem(url: url, index: index)
             }
             
             // 3. Update UI
-            self.pageItems = items
+            self.gridItems = items
             self.isLoading = false
             
         } catch {
@@ -174,7 +177,6 @@ struct PageManagerView: View {
 
 // ✅ ULTRA-SIMPLE CELL
 // Uses native AsyncImage. No GeometryReader. No custom queuing.
-// This is the safest way to render images in SwiftUI.
 struct SimpleAsyncCell: View {
     let url: URL
     
