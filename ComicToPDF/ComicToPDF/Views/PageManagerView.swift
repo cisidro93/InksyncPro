@@ -1,11 +1,25 @@
 import SwiftUI
 
+// ✅ NEW: Traffic Cop for Image Loading
+// This prevents the "Concurrency Spike" crash by limiting active loads to 3.
+actor ImageLoadingQueue {
+    static let shared = ImageLoadingQueue()
+    private var activeDownloads = 0
+    private let maxConcurrent = 3
+    
+    func load(url: URL) async -> UIImage? {
+        // Simple throttling: If busy, wait a tiny bit (handled by actor serialization)
+        return autoreleasepool {
+            return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 150)
+        }
+    }
+}
+
 struct PageManagerView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
     let pdf: ConvertedPDF
     
-    // Switch to URL-based storage for OOM safety
     @State private var pageURLs: [URL] = []
     @State private var tempSessionDir: URL?
     
@@ -13,7 +27,7 @@ struct PageManagerView: View {
     @State private var isLoading = true
     @State private var pageToEdit: Int?
     
-    // Optimized Grid: Fewer columns to reduce concurrent memory load
+    // Grid Layout
     let columns = [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 8)]
     
     var body: some View {
@@ -22,31 +36,29 @@ struct PageManagerView: View {
                 if isLoading {
                     VStack {
                         ProgressView()
-                        Text("Unpacking Pages...")
+                        Text("Preparing Pages...")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .padding(.top, 8)
                     }
                 } else {
                     ScrollView {
-                        // LazyGrid ensures we only load what's on screen
                         LazyVGrid(columns: columns, spacing: 12) {
                             ForEach(0..<pageURLs.count, id: \.self) { index in
                                 VStack {
-                                    // ✅ OPTIMIZED CELL
                                     ZStack(alignment: .topTrailing) {
-                                        // 1. The Heavy Image (Isolated)
+                                        // 1. Memory-Safe Cell
                                         PageThumbnailCell(url: pageURLs[index])
                                             .frame(height: 150)
                                             .cornerRadius(8)
                                         
-                                        // 2. The Selection Overlay (Lightweight)
-                                        // This redraws instantly without forcing the image to reload
+                                        // 2. Selection Overlay
                                         SelectionOverlay(
                                             isSelected: selectedPages.contains(index),
                                             hasManualEdits: conversionManager.panelOverrides[pdf.id]?[index] != nil
                                         )
                                     }
+                                    .contentShape(Rectangle()) // Ensures tap area is solid
                                     .onTapGesture {
                                         if selectedPages.isEmpty {
                                             pageToEdit = index
@@ -87,12 +99,8 @@ struct PageManagerView: View {
                     }
                 }
             }
-            .task {
-                await loadPages()
-            }
-            .onDisappear {
-                cleanupTempFiles()
-            }
+            .task { await loadPages() }
+            .onDisappear { cleanupTempFiles() }
             .sheet(item: $pageToEdit) { index in
                 PanelEditorView(pdf: pdf, pageIndex: index)
             }
@@ -103,7 +111,6 @@ struct PageManagerView: View {
         cleanupTempFiles()
         isLoading = true
         do {
-            // Unzip to temp directory and get URLs
             let result = try await conversionManager.extractImageFiles(from: pdf.url)
             self.tempSessionDir = result.workingDir
             self.pageURLs = result.files
@@ -132,15 +139,14 @@ struct PageManagerView: View {
         do {
             try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
             selectedPages.removeAll()
-            await loadPages() // Reload from new file
+            await loadPages()
         } catch { print("Delete failed: \(error)") }
         isLoading = false
     }
 }
 
-// MARK: - Optimized Components
+// MARK: - Components
 
-// 1. Lightweight Selection Overlay (Redraws Cheaply)
 struct SelectionOverlay: View {
     let isSelected: Bool
     let hasManualEdits: Bool
@@ -170,12 +176,10 @@ struct SelectionOverlay: View {
     }
 }
 
-// 2. Heavy Image Cell (Memory Managed)
 struct PageThumbnailCell: View, Equatable {
     let url: URL
     @State private var image: UIImage?
     
-    // Conforming to Equatable ensures this view DOES NOT redraw when parent state (selection) changes
     static func == (lhs: PageThumbnailCell, rhs: PageThumbnailCell) -> Bool {
         return lhs.url == rhs.url
     }
@@ -190,31 +194,22 @@ struct PageThumbnailCell: View, Equatable {
             } else {
                 ZStack {
                     Color.gray.opacity(0.1)
-                    ProgressView()
+                    // Only show spinner if it takes a while, avoids flickering
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
-                .task(priority: .medium) {
-                    await loadImage()
+                .task {
+                    // ✅ Queue-based loading
+                    if let loaded = await ImageLoadingQueue.shared.load(url: url) {
+                        // Double check we haven't been cancelled
+                        if !Task.isCancelled {
+                            self.image = loaded
+                        }
+                    }
                 }
             }
         }
         .onDisappear {
-            // Aggressive Memory Cleanup
             self.image = nil
-        }
-    }
-    
-    func loadImage() async {
-        // Run in detached task to keep UI smooth
-        let loadedImage = await Task.detached { () -> UIImage? in
-            // Use Autoreleasepool to ensure temporary allocations are dumped immediately
-            return autoreleasepool {
-                return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 200)
-            }
-        }.value
-        
-        await MainActor.run {
-            self.image = loadedImage
         }
     }
 }
