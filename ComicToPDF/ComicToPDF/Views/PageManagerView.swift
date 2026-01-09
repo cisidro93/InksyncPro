@@ -1,12 +1,8 @@
 import SwiftUI
 
-// ✅ GLOBAL SERIAL LOADER
-// Prevents memory spikes by forcing images to load one at a time.
-class ImageLoaderModel: ObservableObject {
-    @Published var image: UIImage?
-    private var currentOperation: Operation?
-    
-    // Static queue shared by all cells
+// ✅ LIGHTWEIGHT STATIC LOADER
+// No ObservableObject overhead. Just a dumb function that uses a queue.
+struct SerialLoader {
     private static let queue: OperationQueue = {
         let q = OperationQueue()
         q.maxConcurrentOperationCount = 1 // Strict serial loading
@@ -14,33 +10,22 @@ class ImageLoaderModel: ObservableObject {
         return q
     }()
     
-    func load(url: URL) {
-        // Cancel previous request
-        currentOperation?.cancel()
-        
-        let operation = BlockOperation { [weak self] in
-            if self?.currentOperation?.isCancelled == true { return }
-            
-            // 🛑 Heavy Lifting: Downsample from disk
-            // Uses autoreleasepool to ensure RAM is dumped instantly
-            let downsampled = autoreleasepool {
+    static func load(url: URL, completion: @escaping (UIImage?) -> Void) -> Operation {
+        let operation = BlockOperation {
+            // 1. Safe Downsample from disk
+            let image = autoreleasepool {
                 return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 200)
             }
             
-            if self?.currentOperation?.isCancelled == true { return }
-            
-            // 🚀 Update UI
-            DispatchQueue.main.async {
-                self?.image = downsampled
+            // 2. Return to Main Thread
+            if !Task.isCancelled {
+                DispatchQueue.main.async {
+                    completion(image)
+                }
             }
         }
-        
-        currentOperation = operation
-        ImageLoaderModel.queue.addOperation(operation)
-    }
-    
-    func cancel() {
-        currentOperation?.cancel()
+        queue.addOperation(operation)
+        return operation
     }
 }
 
@@ -60,13 +45,10 @@ struct PageManagerView: View {
     @State private var pageURLs: [URL] = []
     @State private var tempSessionDir: URL?
     
-    // Traffic Light System
-    @State private var canLoadImages = false
-    
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
     
-    // ✅ Fixed column size (Removes need for GeometryReader)
+    // Fixed columns (Safe Layout)
     let columns = [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 10)]
     
     var body: some View {
@@ -100,9 +82,10 @@ struct PageManagerView: View {
                         LazyVGrid(columns: columns, spacing: 10) {
                             ForEach(0..<pageURLs.count, id: \.self) { index in
                                 VStack {
-                                    // ✅ FIXED CELL (No GeometryReader)
-                                    QueueThumbnailCell(url: pageURLs[index], shouldLoad: canLoadImages)
-                                        .frame(height: 150) // Fixed height prevents layout loops
+                                    // ✅ LIGHTWEIGHT CELL
+                                    // No StateObject. No geometry calculations.
+                                    SimpleThumbnailCell(url: pageURLs[index])
+                                        .frame(height: 150)
                                         .cornerRadius(8)
                                         .overlay(
                                             ZStack(alignment: .topTrailing) {
@@ -138,8 +121,6 @@ struct PageManagerView: View {
                             }
                         }
                         .padding()
-                        // ✅ GPU Offloading (Helps main thread performance)
-                        .drawingGroup()
                     }
                 }
             }
@@ -170,29 +151,24 @@ struct PageManagerView: View {
         }
     }
     
-    // ✅ Safe Loading Sequence
+    // ✅ Main Actor Safe Loading
+    @MainActor
     func loadContent() async {
         viewState = .loading
-        canLoadImages = false
         
-        // Wait for transition to finish
+        // Brief pause to let transition finish
         try? await Task.sleep(nanoseconds: 500_000_000)
         
         do {
-            // Background unzip
+            // Unzip in background
             let result = try await conversionManager.extractImageFiles(from: pdf.url)
             self.tempSessionDir = result.workingDir
             self.pageURLs = result.files
             
-            // Show grid
+            // Switch to grid
             withAnimation {
                 viewState = .displaying
             }
-            
-            // Start loading images slightly after grid appears
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            self.canLoadImages = true
-            
         } catch {
             viewState = .error(error.localizedDescription)
         }
@@ -213,41 +189,41 @@ struct PageManagerView: View {
     func deleteSelected() async {
         guard !selectedPages.isEmpty else { return }
         viewState = .loading
-        canLoadImages = false
         try? await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
         selectedPages.removeAll()
         await loadContent()
     }
 }
 
-// ✅ SAFE CELL: No GeometryReader, strict loading
-struct QueueThumbnailCell: View {
+// ✅ ULTRA-LIGHT CELL (No Objects, Just State)
+struct SimpleThumbnailCell: View {
     let url: URL
-    let shouldLoad: Bool
-    @StateObject private var loader = ImageLoaderModel()
+    @State private var image: UIImage?
+    @State private var currentOperation: Operation?
     
     var body: some View {
         ZStack {
-            if let img = loader.image {
+            if let img = image {
                 Image(uiImage: img)
                     .resizable()
                     .scaledToFit()
             } else {
                 Color.gray.opacity(0.1)
-                if shouldLoad {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                }
+                ProgressView()
+                    .scaleEffect(0.8)
             }
         }
-        .onChange(of: shouldLoad) { newValue in
-            if newValue { loader.load(url: url) }
-        }
         .onAppear {
-            if shouldLoad { loader.load(url: url) }
+            // Start loading when visible
+            currentOperation = SerialLoader.load(url: url) { loadedImage in
+                self.image = loadedImage
+            }
         }
         .onDisappear {
-            loader.cancel()
+            // Cancel immediately if scrolled away
+            currentOperation?.cancel()
+            currentOperation = nil
+            image = nil // Dump memory
         }
     }
 }
