@@ -1,6 +1,6 @@
 import SwiftUI
 
-// ✅ RENAMED: 'GridPageItem' avoids conflict with your existing 'PageItem'
+// Safe Model for Grid Items
 struct GridPageItem: Identifiable {
     let id = UUID()
     let url: URL
@@ -13,16 +13,13 @@ struct PageManagerView: View {
     let pdf: ConvertedPDF
     
     // State
-    @State private var gridItems: [GridPageItem] = [] // Renamed state
+    @State private var pageItems: [GridPageItem] = []
     @State private var tempSessionDir: URL?
     @State private var isLoading = true
     @State private var debugMessage: String?
     
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
-    
-    // Standard Grid
-    let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
     var body: some View {
         NavigationView {
@@ -44,57 +41,46 @@ struct PageManagerView: View {
                     VStack {
                         ProgressView()
                             .scaleEffect(1.5)
-                        Text("Reading Pages...")
+                        Text("Extracting...")
                             .font(.headline)
                             .foregroundColor(.secondary)
                             .padding(.top, 10)
                     }
                 } else {
-                    // Grid State
-                    ScrollView {
-                        LazyVGrid(columns: columns, spacing: 10) {
-                            ForEach(gridItems) { item in
-                                VStack {
-                                    // ✅ SAFE CELL (No GeometryReader)
-                                    SimpleAsyncCell(url: item.url)
-                                        .frame(height: 150) // Fixed height is critical for stability
-                                        .cornerRadius(8)
-                                        .overlay(
-                                            ZStack(alignment: .topTrailing) {
-                                                RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(selectedPages.contains(item.index) ? Color.blue : Color.clear, lineWidth: 3)
-                                                
-                                                // Guided View Indicator
-                                                if conversionManager.panelOverrides[pdf.id]?[item.index] != nil {
-                                                    Image(systemName: "scissors")
-                                                        .font(.caption)
-                                                        .padding(4)
-                                                        .background(Color.yellow)
-                                                        .clipShape(Circle())
-                                                        .padding(4)
-                                                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                                                }
-                                            }
-                                        )
-                                        .onTapGesture {
-                                            if selectedPages.isEmpty {
-                                                pageToEdit = item.index
-                                            } else {
-                                                toggleSelection(item.index)
-                                            }
-                                        }
-                                        .onLongPressGesture {
-                                            toggleSelection(item.index)
-                                        }
-                                    
-                                    Text("\(item.index + 1)")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
+                    // ✅ LIST VIEW (Most Stable Layout)
+                    List(pageItems) { item in
+                        HStack {
+                            SimpleAsyncCell(url: item.url)
+                                .frame(width: 60, height: 90)
+                                .cornerRadius(4)
+                            
+                            Text("Page \(item.index + 1)")
+                                .font(.headline)
+                            
+                            Spacer()
+                            
+                            // Guided View Indicator
+                            if conversionManager.panelOverrides[pdf.id]?[item.index] != nil {
+                                Image(systemName: "scissors")
+                                    .foregroundColor(.orange)
+                            }
+                            
+                            // Checkmark
+                            if selectedPages.contains(item.index) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.blue)
                             }
                         }
-                        .padding()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if selectedPages.isEmpty {
+                                pageToEdit = item.index
+                            } else {
+                                toggleSelection(item.index)
+                            }
+                        }
                     }
+                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Edit Pages")
@@ -128,23 +114,21 @@ struct PageManagerView: View {
         isLoading = true
         debugMessage = nil
         
-        // 1. Brief pause to let transition finish
+        // 1. Brief pause
         try? await Task.sleep(nanoseconds: 500_000_000)
         
         do {
-            print("--- STARTING UNZIP ---")
+            // Unzip using the new ROBUST MANUAL method
             let result = try await conversionManager.extractImageFiles(from: pdf.url)
             self.tempSessionDir = result.workingDir
             
-            print("--- FILES FOUND: \(result.files.count) ---")
-            
-            // 2. Map to Structs
+            // 2. Map
             let items = result.files.enumerated().map { index, url in
                 GridPageItem(url: url, index: index)
             }
             
             // 3. Update UI
-            self.gridItems = items
+            self.pageItems = items
             self.isLoading = false
             
         } catch {
@@ -175,31 +159,15 @@ struct PageManagerView: View {
     }
 }
 
-// ✅ ULTRA-SIMPLE CELL
-// Uses native AsyncImage. No GeometryReader. No custom queuing.
+// Simple Cell
 struct SimpleAsyncCell: View {
     let url: URL
-    
     var body: some View {
         AsyncImage(url: url) { phase in
-            switch phase {
-            case .empty:
-                ZStack {
-                    Color.gray.opacity(0.1)
-                    ProgressView()
-                }
-            case .success(let image):
-                image
-                    .resizable()
-                    .scaledToFit()
-            case .failure:
-                ZStack {
-                    Color.gray.opacity(0.1)
-                    Image(systemName: "photo")
-                        .foregroundColor(.gray)
-                }
-            @unknown default:
-                EmptyView()
+            if let image = phase.image {
+                image.resizable().scaledToFit()
+            } else {
+                Color.gray.opacity(0.1)
             }
         }
     }
