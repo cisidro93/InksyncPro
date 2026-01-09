@@ -104,71 +104,26 @@ class ConversionManager: ObservableObject {
          Task { await self.generateCoverThumbnail(for: pdf) }
      }
     
-    // MARK: - Crash-Proof Page Loading
+    // MARK: - Safe File Extraction (NO LOADING)
     
-    struct PageSession {
-        let baseDir: URL
-        let fullImages: [URL]
-        let thumbnails: [URL]
-    }
-    
-    func preparePageSession(for pdf: ConvertedPDF, progress: @escaping (Double) -> Void) async throws -> PageSession {
-        return try await Task.detached {
-            let fileManager = FileManager.default
-            let baseDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            let fullDir = baseDir.appendingPathComponent("Full")
-            let thumbDir = baseDir.appendingPathComponent("Thumbs")
-            
-            try fileManager.createDirectory(at: fullDir, withIntermediateDirectories: true)
-            try fileManager.createDirectory(at: thumbDir, withIntermediateDirectories: true)
-            
-            try fileManager.unzipItem(at: pdf.url, to: fullDir)
-            
-            let validExts = ["jpg", "jpeg", "png", "webp"]
-            let subPaths = try fileManager.subpathsOfDirectory(atPath: fullDir.path)
-            let fullPaths = subPaths.filter { validExts.contains(($0 as NSString).pathExtension.lowercased()) }.sorted()
-            
-            var thumbURLs: [URL] = []
-            var fullURLs: [URL] = []
-            
-            for (index, subPath) in fullPaths.enumerated() {
-                try autoreleasepool {
-                    let fullURL = fullDir.appendingPathComponent(subPath)
-                    let thumbName = String(format: "thumb_%05d.jpg", index)
-                    let thumbURL = thumbDir.appendingPathComponent(thumbName)
-                    
-                    if let image = ConversionManager.loadDownsampledImageStatic(at: fullURL, maxDimension: 150),
-                       let data = image.jpegData(compressionQuality: 0.6) {
-                        try data.write(to: thumbURL)
-                        thumbURLs.append(thumbURL)
-                    } else {
-                        thumbURLs.append(fullURL)
-                    }
-                    fullURLs.append(fullURL)
-                }
-                
-                if index % 3 == 0 {
-                    await Task.yield()
-                    await MainActor.run { progress(Double(index) / Double(fullPaths.count)) }
-                }
-            }
-            
-            return PageSession(baseDir: baseDir, fullImages: fullURLs, thumbnails: thumbURLs)
-        }.value
-    }
-    
-    // ✅ Returns File URLs
+    // ✅ NEW: Just gets URLs. Uses 0 RAM.
     func extractImageFiles(from url: URL) async throws -> (workingDir: URL, files: [URL]) {
         return try await Task.detached {
             let fileManager = FileManager.default
             let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            
             try fileManager.unzipItem(at: url, to: tempDir)
+            
             var imageURLs: [URL] = []
             let validExts = ["jpg", "jpeg", "png", "webp"]
             let subPaths = try fileManager.subpathsOfDirectory(atPath: tempDir.path)
             let imagePaths = subPaths.filter { validExts.contains(($0 as NSString).pathExtension.lowercased()) }.sorted()
-            for subPath in imagePaths { imageURLs.append(tempDir.appendingPathComponent(subPath)) }
+            
+            for subPath in imagePaths {
+                imageURLs.append(tempDir.appendingPathComponent(subPath))
+            }
+            
             return (tempDir, imageURLs)
         }.value
     }
@@ -189,7 +144,7 @@ class ConversionManager: ObservableObject {
             guard index < imagePaths.count else { return nil }
             let fullPath = tempDir.appendingPathComponent(imagePaths[index])
             
-            // ✅ Explicit Autoreleasepool here too for single-page safety
+            // Explicit Autoreleasepool for safety
             return autoreleasepool {
                 return ConversionManager.loadDownsampledImageStatic(at: fullPath, maxDimension: 1920)
             }

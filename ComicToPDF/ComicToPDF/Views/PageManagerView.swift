@@ -1,13 +1,28 @@
 import SwiftUI
 
+// ✅ STRICT SERIAL LOADER (Traffic Cop)
+// Only allows 1 image to load at a time globally. Crash-proof.
+actor SerialImageLoader {
+    static let shared = SerialImageLoader()
+    
+    func load(url: URL) async -> UIImage? {
+        // Yield ensures the UI main thread always has priority
+        await Task.yield()
+        
+        return autoreleasepool {
+            return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 150)
+        }
+    }
+}
+
 struct PageManagerView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
     let pdf: ConvertedPDF
     
-    @State private var thumbURLs: [URL] = []
+    // Switch to URL-based storage for OOM safety
+    @State private var pageURLs: [URL] = []
     @State private var tempSessionDir: URL?
-    @State private var loadingProgress: Double = 0.0
     
     @State private var selectedPages: Set<Int> = []
     @State private var isLoading = true
@@ -19,22 +34,15 @@ struct PageManagerView: View {
         NavigationView {
             VStack {
                 if isLoading {
-                    VStack(spacing: 15) {
-                        ProgressView(value: loadingProgress, total: 1.0)
-                            .progressViewStyle(LinearProgressViewStyle())
-                            .frame(width: 200)
-                        Text("Optimizing Pages...")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                    ProgressView("Processing Pages...")
                 } else {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 12) {
-                            ForEach(0..<thumbURLs.count, id: \.self) { index in
+                            ForEach(0..<pageURLs.count, id: \.self) { index in
                                 VStack {
                                     ZStack(alignment: .topTrailing) {
-                                        // ✅ LOAD SAFE THUMBNAIL (Direct from Disk)
-                                        SafeThumbnailCell(url: thumbURLs[index])
+                                        // ✅ Serial Loading Cell
+                                        SerialThumbnailCell(url: pageURLs[index])
                                             .frame(height: 150)
                                             .cornerRadius(8)
                                         
@@ -84,8 +92,12 @@ struct PageManagerView: View {
                     }
                 }
             }
-            .task { await loadPages() }
-            .onDisappear { cleanupTempFiles() }
+            .task {
+                await loadPages()
+            }
+            .onDisappear {
+                cleanupTempFiles()
+            }
             .sheet(item: $pageToEdit) { index in
                 PanelEditorView(pdf: pdf, pageIndex: index)
             }
@@ -95,15 +107,11 @@ struct PageManagerView: View {
     func loadPages() async {
         cleanupTempFiles()
         isLoading = true
-        loadingProgress = 0.0
-        
         do {
-            // ✅ BATCH GENERATION: Prevents scrolling crash by doing heavy lifting upfront
-            let session = try await conversionManager.preparePageSession(for: pdf) { progress in
-                self.loadingProgress = progress
-            }
-            self.tempSessionDir = session.baseDir
-            self.thumbURLs = session.thumbnails
+            // Instant Unzip (No image processing)
+            let result = try await conversionManager.extractImageFiles(from: pdf.url)
+            self.tempSessionDir = result.workingDir
+            self.pageURLs = result.files
             self.isLoading = false
         } catch {
             print("Error loading pages: \(error)")
@@ -115,7 +123,7 @@ struct PageManagerView: View {
             try? FileManager.default.removeItem(at: dir)
             tempSessionDir = nil
         }
-        thumbURLs.removeAll()
+        pageURLs.removeAll()
     }
     
     func toggleSelection(_ index: Int) {
@@ -129,7 +137,7 @@ struct PageManagerView: View {
         do {
             try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
             selectedPages.removeAll()
-            await loadPages()
+            await loadPages() // Reload from new file
         } catch { print("Delete failed: \(error)") }
         isLoading = false
     }
@@ -166,23 +174,40 @@ struct SelectionOverlay: View {
     }
 }
 
-struct SafeThumbnailCell: View {
+// ✅ Safe Serial Cell
+struct SerialThumbnailCell: View, Equatable {
     let url: URL
+    @State private var image: UIImage?
+    
+    static func == (lhs: SerialThumbnailCell, rhs: SerialThumbnailCell) -> Bool {
+        return lhs.url == rhs.url
+    }
     
     var body: some View {
-        // Since we pre-generated these to be tiny (5KB), we can load them using AsyncImage safely
-        // No downsampling needed at runtime!
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().scaledToFit()
-            case .failure:
-                Color.red.opacity(0.3)
-            case .empty:
-                Color.gray.opacity(0.1)
-            @unknown default:
-                EmptyView()
+        GeometryReader { geo in
+            if let img = image {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: geo.size.width, height: geo.size.height)
+            } else {
+                ZStack {
+                    Color.gray.opacity(0.1)
+                    ProgressView() // Shows "Loading..." while waiting for traffic cop
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .task {
+                    // Ask traffic cop for image
+                    if let loaded = await SerialImageLoader.shared.load(url: url) {
+                        if !Task.isCancelled {
+                            self.image = loaded
+                        }
+                    }
+                }
             }
+        }
+        .onDisappear {
+            self.image = nil
         }
     }
 }
