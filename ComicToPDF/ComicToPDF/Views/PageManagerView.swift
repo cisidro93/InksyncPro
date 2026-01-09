@@ -5,65 +5,45 @@ struct PageManagerView: View {
     @Environment(\.dismiss) var dismiss
     let pdf: ConvertedPDF
     
-    // State
-    @State private var thumbURLs: [URL] = []
+    // Simple State
+    @State private var pageURLs: [URL] = []
     @State private var tempSessionDir: URL?
-    @State private var loadingProgress: Double = 0.0
-    @State private var isReady = false // ✅ Gatekeeper: Keeps Grid OFF until ready
+    @State private var isLoading = true
     
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
     
-    let columns = [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 8)]
+    // Standard Grid
+    let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
     var body: some View {
         NavigationView {
             VStack {
-                if !isReady {
-                    // Phase 1: Loading Screen (Safe Mode)
-                    VStack(spacing: 20) {
-                        ProgressView(value: loadingProgress, total: 1.0)
-                            .progressViewStyle(LinearProgressViewStyle())
-                            .frame(width: 200)
-                        
-                        Text("Preparing Pages...")
-                            .font(.headline)
-                        Text("Optimizing for crash-free editing")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
+                if isLoading {
+                    ProgressView("Loading Pages...")
                 } else {
-                    // Phase 2: The Grid (Only loads when safe)
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 12) {
-                            ForEach(0..<thumbURLs.count, id: \.self) { index in
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(0..<pageURLs.count, id: \.self) { index in
                                 VStack {
-                                    ZStack(alignment: .topTrailing) {
-                                        // Safe Local File Image
-                                        AsyncImage(url: thumbURLs[index]) { phase in
-                                            if let image = phase.image {
-                                                image.resizable().scaledToFit()
-                                            } else {
-                                                Color.gray.opacity(0.1)
-                                            }
+                                    // Simple Image Cell using Standard AsyncImage
+                                    AsyncImage(url: pageURLs[index]) { phase in
+                                        if let image = phase.image {
+                                            image
+                                                .resizable()
+                                                .scaledToFit()
+                                        } else {
+                                            Color.gray.opacity(0.1)
                                         }
-                                        .frame(height: 150)
-                                        .cornerRadius(8)
-                                        .contentShape(Rectangle())
-                                        
-                                        // Selection Overlay
+                                    }
+                                    .frame(height: 150)
+                                    .cornerRadius(8)
+                                    .overlay(
                                         ZStack(alignment: .topTrailing) {
                                             RoundedRectangle(cornerRadius: 8)
-                                                .stroke(selectedPages.contains(index) ? Color.blue : Color.gray.opacity(0.3), lineWidth: selectedPages.contains(index) ? 3 : 1)
+                                                .stroke(selectedPages.contains(index) ? Color.blue : Color.clear, lineWidth: 3)
                                             
-                                            if selectedPages.contains(index) {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .foregroundColor(.blue)
-                                                    .background(Circle().fill(.white))
-                                                    .padding(4)
-                                            }
-                                            
+                                            // Show indicator if manual panels exist
                                             if conversionManager.panelOverrides[pdf.id]?[index] != nil {
                                                 Image(systemName: "scissors")
                                                     .font(.caption)
@@ -74,20 +54,28 @@ struct PageManagerView: View {
                                                     .frame(maxWidth: .infinity, alignment: .topLeading)
                                             }
                                         }
-                                    }
+                                    )
                                     .onTapGesture {
                                         if selectedPages.isEmpty {
                                             pageToEdit = index
                                         } else {
-                                            toggleSelection(index)
+                                            if selectedPages.contains(index) {
+                                                selectedPages.remove(index)
+                                            } else {
+                                                selectedPages.insert(index)
+                                            }
                                         }
                                     }
                                     .onLongPressGesture {
-                                        toggleSelection(index)
+                                        if selectedPages.contains(index) {
+                                            selectedPages.remove(index)
+                                        } else {
+                                            selectedPages.insert(index)
+                                        }
                                     }
                                     
                                     Text("\(index + 1)")
-                                        .font(.caption2)
+                                        .font(.caption)
                                         .foregroundColor(.secondary)
                                 }
                             }
@@ -109,17 +97,14 @@ struct PageManagerView: View {
                             Text("Delete \(selectedPages.count) Pages")
                         }
                     } else {
-                        if isReady {
-                            Text("Tap to edit • Long press to select")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                         Text("Tap to edit • Long press to select")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
-            // ✅ Only start work when view actually appears
             .task {
-                await loadPagesSafe()
+                await loadPagesSimple()
             }
             .onDisappear {
                 cleanupTempFiles()
@@ -130,25 +115,18 @@ struct PageManagerView: View {
         }
     }
     
-    func loadPagesSafe() async {
-        cleanupTempFiles()
-        isReady = false
-        loadingProgress = 0.0
-        
+    // The "Old Reliable" Loading Logic
+    func loadPagesSimple() async {
+        isLoading = true
         do {
-            // Uses the Throttled Generator (Sleeps between pages)
-            let session = try await conversionManager.generateThumbnailsSafe(for: pdf) { progress in
-                self.loadingProgress = progress
-            }
-            self.tempSessionDir = session.baseDir
-            self.thumbURLs = session.thumbnails
-            
-            // Switch to Grid ONLY after success
-            withAnimation {
-                self.isReady = true
-            }
+            // Just get the file URLs. No processing. No resizing.
+            let result = try await conversionManager.extractImageFiles(from: pdf.url)
+            self.tempSessionDir = result.workingDir
+            self.pageURLs = result.files
+            self.isLoading = false
         } catch {
-            print("Error loading pages: \(error)")
+            print("Error: \(error)")
+            self.isLoading = false
         }
     }
     
@@ -157,22 +135,14 @@ struct PageManagerView: View {
             try? FileManager.default.removeItem(at: dir)
             tempSessionDir = nil
         }
-        thumbURLs.removeAll()
-    }
-    
-    func toggleSelection(_ index: Int) {
-        if selectedPages.contains(index) { selectedPages.remove(index) }
-        else { selectedPages.insert(index) }
     }
     
     func deleteSelected() async {
         guard !selectedPages.isEmpty else { return }
-        isReady = false
-        do {
-            try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
-            selectedPages.removeAll()
-            await loadPagesSafe()
-        } catch { print("Delete failed: \(error)") }
+        isLoading = true
+        try? await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
+        selectedPages.removeAll()
+        await loadPagesSimple()
     }
 }
 
