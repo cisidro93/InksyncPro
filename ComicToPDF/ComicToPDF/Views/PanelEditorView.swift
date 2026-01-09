@@ -102,7 +102,7 @@ struct PanelEditorView: View {
                         }
                         .frame(width: imgFrame.width, height: imgFrame.height)
                         .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
-                        // ✅ FIX: Define a static coordinate space for smooth dragging
+                        // Coordinate Space for Dragging
                         .coordinateSpace(name: "ImageCanvas")
                         .contentShape(Rectangle())
                         .onTapGesture(coordinateSpace: .local) { location in
@@ -121,7 +121,13 @@ struct PanelEditorView: View {
                             Text(error).font(.caption).foregroundColor(.secondary)
                         }
                     } else {
-                        ProgressView("Loading High-Res Page...")
+                        VStack(spacing: 15) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text("Opening Editor...")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                        }
                     }
                     
                     // Loading Overlay
@@ -174,7 +180,17 @@ struct PanelEditorView: View {
             .padding()
             .background(Color(UIColor.secondarySystemBackground))
         }
-        .task { await loadPageSafe() }
+        // ✅ CRITICAL FIX: Add delay to separate animation from image loading
+        .task {
+            // 1. Clean memory first
+            conversionManager.cleanupMemory()
+            
+            // 2. Wait 0.5s for sheet animation to finish
+            try? await Task.sleep(nanoseconds: 500_000_000) 
+            
+            // 3. NOW load the image
+            await loadPageSafe()
+        }
         .onDisappear { conversionManager.cleanupMemory() }
     }
     
@@ -199,6 +215,7 @@ struct PanelEditorView: View {
     
     func detectPanelAt(normalizedPoint: CGPoint) {
         guard let image = pageImage else { return }
+        
         guard normalizedPoint.x >= 0 && normalizedPoint.x <= 1 &&
               normalizedPoint.y >= 0 && normalizedPoint.y <= 1 else { return }
         
@@ -262,7 +279,6 @@ struct PanelEditorView: View {
     }
 
     func loadPageSafe() async {
-        conversionManager.cleanupMemory()
         do {
             if let image = try await conversionManager.extractFullPage(from: pdf, index: pageIndex) {
                 self.pageImage = image
@@ -305,7 +321,7 @@ struct PanelEditorView: View {
     }
 }
 
-// MARK: - Box Component (Smooth Dragging with Coordinate Space)
+// MARK: - Box Component
 struct DraggablePanelBox: View {
     @Binding var rect: CGRect
     let isSelected: Bool
@@ -328,20 +344,15 @@ struct DraggablePanelBox: View {
             Rectangle().stroke(isSelected ? Color.yellow : Color.blue.opacity(0.8), lineWidth: isSelected ? 3 : 2)
                 .background(Color.blue.opacity(0.05))
                 .frame(width: pixelSize.width, height: pixelSize.height)
-                // ✅ FIX: Use named coordinate space "ImageCanvas"
                 .gesture(DragGesture(coordinateSpace: .named("ImageCanvas"))
                     .onChanged { value in
                         if isSelected {
                             if initialRect == nil { initialRect = rect }
                             guard let startRect = initialRect else { return }
-                            
-                            // Calculate movement relative to static canvas, not the moving box
                             let dx = value.translation.width / containerSize.width
                             let dy = value.translation.height / containerSize.height
-                            
                             let newX = startRect.origin.x + dx
                             let newY = startRect.origin.y + dy
-                            
                             rect.origin.x = min(max(newX, 0.0), 1.0 - rect.width)
                             rect.origin.y = min(max(newY, 0.0), 1.0 - rect.height)
                         }
