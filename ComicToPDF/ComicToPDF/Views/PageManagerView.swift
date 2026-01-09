@@ -1,30 +1,30 @@
 import SwiftUI
 
-// ✅ ROBUST IMAGE LOADER
-// Uses a static serial queue to prevent memory spikes
+// ✅ GLOBAL SERIAL LOADER
+// Prevents memory spikes by forcing images to load one at a time.
 class ImageLoaderModel: ObservableObject {
     @Published var image: UIImage?
     private var currentOperation: Operation?
     
-    // Global Traffic Cop: Strict Serial Loading
+    // Static queue shared by all cells
     private static let queue: OperationQueue = {
         let q = OperationQueue()
-        q.maxConcurrentOperationCount = 1 // Only 1 image processes at a time
-        q.qualityOfService = .userInitiated
+        q.maxConcurrentOperationCount = 1 // Strict serial loading
+        q.qualityOfService = .userInteractive
         return q
     }()
     
     func load(url: URL) {
-        // Cancel any existing request for this cell
+        // Cancel previous request
         currentOperation?.cancel()
         
         let operation = BlockOperation { [weak self] in
             if self?.currentOperation?.isCancelled == true { return }
             
-            // 🛑 Heavy Lifting (Downsampling from disk)
-            // Done inside autoreleasepool to dump RAM immediately
+            // 🛑 Heavy Lifting: Downsample from disk
+            // Uses autoreleasepool to ensure RAM is dumped instantly
             let downsampled = autoreleasepool {
-                return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 150)
+                return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 200)
             }
             
             if self?.currentOperation?.isCancelled == true { return }
@@ -41,7 +41,6 @@ class ImageLoaderModel: ObservableObject {
     
     func cancel() {
         currentOperation?.cancel()
-        // Don't nil the image immediately to prevent flickering during scroll
     }
 }
 
@@ -61,13 +60,14 @@ struct PageManagerView: View {
     @State private var pageURLs: [URL] = []
     @State private var tempSessionDir: URL?
     
-    // 🚦 Traffic Light: Prevents images from loading during the slide-up animation
+    // Traffic Light System
     @State private var canLoadImages = false
     
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
     
-    let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
+    // ✅ Fixed column size (Removes need for GeometryReader)
+    let columns = [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 10)]
     
     var body: some View {
         NavigationView {
@@ -81,14 +81,13 @@ struct PageManagerView: View {
                             .font(.headline)
                             .foregroundColor(.secondary)
                     }
-                    .transition(.opacity)
                     
                 case .error(let msg):
                     VStack(spacing: 15) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.largeTitle)
                             .foregroundColor(.orange)
-                        Text("Could Not Load Pages")
+                        Text("Error")
                             .font(.headline)
                         Text(msg)
                             .font(.caption)
@@ -101,10 +100,9 @@ struct PageManagerView: View {
                         LazyVGrid(columns: columns, spacing: 10) {
                             ForEach(0..<pageURLs.count, id: \.self) { index in
                                 VStack {
-                                    // ✅ Smart Cell
-                                    // Listens to 'canLoadImages' to avoid animation lag
+                                    // ✅ FIXED CELL (No GeometryReader)
                                     QueueThumbnailCell(url: pageURLs[index], shouldLoad: canLoadImages)
-                                        .frame(height: 150)
+                                        .frame(height: 150) // Fixed height prevents layout loops
                                         .cornerRadius(8)
                                         .overlay(
                                             ZStack(alignment: .topTrailing) {
@@ -140,6 +138,8 @@ struct PageManagerView: View {
                             }
                         }
                         .padding()
+                        // ✅ GPU Offloading (Helps main thread performance)
+                        .drawingGroup()
                     }
                 }
             }
@@ -170,29 +170,27 @@ struct PageManagerView: View {
         }
     }
     
-    // ✅ The Safe Loading Sequence
+    // ✅ Safe Loading Sequence
     func loadContent() async {
-        // Step 1: Show Loading State
         viewState = .loading
         canLoadImages = false
         
-        // Step 2: Unzip file (Background)
-        // Wait a tiny bit to let the view transition start smoothly
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        // Wait for transition to finish
+        try? await Task.sleep(nanoseconds: 500_000_000)
         
         do {
+            // Background unzip
             let result = try await conversionManager.extractImageFiles(from: pdf.url)
             self.tempSessionDir = result.workingDir
             self.pageURLs = result.files
             
-            // Step 3: Show Grid (But keep images paused)
+            // Show grid
             withAnimation {
                 viewState = .displaying
             }
             
-            // Step 4: Turn on Images (Green Light)
-            // Wait 0.5s for the Grid to draw its layout frames first.
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            // Start loading images slightly after grid appears
+            try? await Task.sleep(nanoseconds: 200_000_000)
             self.canLoadImages = true
             
         } catch {
@@ -216,35 +214,30 @@ struct PageManagerView: View {
         guard !selectedPages.isEmpty else { return }
         viewState = .loading
         canLoadImages = false
-        
         try? await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
         selectedPages.removeAll()
         await loadContent()
     }
 }
 
-// ✅ THUMBNAIL CELL (Aware of Traffic Light)
+// ✅ SAFE CELL: No GeometryReader, strict loading
 struct QueueThumbnailCell: View {
     let url: URL
-    let shouldLoad: Bool // <--- Controlled by Parent
+    let shouldLoad: Bool
     @StateObject private var loader = ImageLoaderModel()
     
     var body: some View {
-        GeometryReader { geo in
+        ZStack {
             if let img = loader.image {
                 Image(uiImage: img)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: geo.size.width, height: geo.size.height)
             } else {
-                ZStack {
-                    Color.gray.opacity(0.1)
-                    if shouldLoad {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    }
+                Color.gray.opacity(0.1)
+                if shouldLoad {
+                    ProgressView()
+                        .scaleEffect(0.8)
                 }
-                .frame(width: geo.size.width, height: geo.size.height)
             }
         }
         .onChange(of: shouldLoad) { newValue in
