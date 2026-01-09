@@ -1,32 +1,10 @@
 import SwiftUI
 
-// ✅ LIGHTWEIGHT STATIC LOADER
-// No ObservableObject overhead. Just a dumb function that uses a queue.
-struct SerialLoader {
-    private static let queue: OperationQueue = {
-        let q = OperationQueue()
-        q.maxConcurrentOperationCount = 1 // Strict serial loading
-        q.qualityOfService = .userInteractive
-        return q
-    }()
-    
-    static func load(url: URL, completion: @escaping (UIImage?) -> Void) -> Operation {
-        let operation = BlockOperation {
-            // 1. Safe Downsample from disk
-            let image = autoreleasepool {
-                return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 200)
-            }
-            
-            // 2. Return to Main Thread
-            if !Task.isCancelled {
-                DispatchQueue.main.async {
-                    completion(image)
-                }
-            }
-        }
-        queue.addOperation(operation)
-        return operation
-    }
+// ✅ Safe Model for Grid Items
+struct PageItem: Identifiable {
+    let id = UUID()
+    let url: URL
+    let index: Int
 }
 
 struct PageManagerView: View {
@@ -34,65 +12,60 @@ struct PageManagerView: View {
     @Environment(\.dismiss) var dismiss
     let pdf: ConvertedPDF
     
-    // View States
-    enum ViewState {
-        case loading
-        case displaying
-        case error(String)
-    }
-    
-    @State private var viewState: ViewState = .loading
-    @State private var pageURLs: [URL] = []
+    // State
+    @State private var pageItems: [PageItem] = []
     @State private var tempSessionDir: URL?
+    @State private var isLoading = true
+    @State private var debugMessage: String?
     
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
     
-    // Fixed columns (Safe Layout)
-    let columns = [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 10)]
+    // Standard Grid
+    let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
     var body: some View {
         NavigationView {
             VStack {
-                switch viewState {
-                case .loading:
-                    VStack(spacing: 20) {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                        Text("Opening Book...")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                case .error(let msg):
-                    VStack(spacing: 15) {
-                        Image(systemName: "exclamationmark.triangle.fill")
+                if let debug = debugMessage {
+                    // Error State
+                    VStack {
+                        Image(systemName: "exclamationmark.triangle")
                             .font(.largeTitle)
                             .foregroundColor(.orange)
-                        Text("Error")
+                        Text("Stopped")
                             .font(.headline)
-                        Text(msg)
+                        Text(debug)
                             .font(.caption)
-                            .multilineTextAlignment(.center)
                             .padding()
                     }
-                    
-                case .displaying:
+                } else if isLoading {
+                    // Loading State
+                    VStack {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        Text("Reading Pages...")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                            .padding(.top, 10)
+                    }
+                } else {
+                    // Grid State
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 10) {
-                            ForEach(0..<pageURLs.count, id: \.self) { index in
+                            ForEach(pageItems) { item in
                                 VStack {
-                                    // ✅ LIGHTWEIGHT CELL
-                                    // No StateObject. No geometry calculations.
-                                    SimpleThumbnailCell(url: pageURLs[index])
-                                        .frame(height: 150)
+                                    // ✅ SAFE CELL (No GeometryReader)
+                                    SimpleAsyncCell(url: item.url)
+                                        .frame(height: 150) // Fixed height is critical for stability
                                         .cornerRadius(8)
                                         .overlay(
                                             ZStack(alignment: .topTrailing) {
                                                 RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(selectedPages.contains(index) ? Color.blue : Color.clear, lineWidth: 3)
+                                                    .stroke(selectedPages.contains(item.index) ? Color.blue : Color.clear, lineWidth: 3)
                                                 
-                                                if conversionManager.panelOverrides[pdf.id]?[index] != nil {
+                                                // Guided View Indicator
+                                                if conversionManager.panelOverrides[pdf.id]?[item.index] != nil {
                                                     Image(systemName: "scissors")
                                                         .font(.caption)
                                                         .padding(4)
@@ -105,16 +78,16 @@ struct PageManagerView: View {
                                         )
                                         .onTapGesture {
                                             if selectedPages.isEmpty {
-                                                pageToEdit = index
+                                                pageToEdit = item.index
                                             } else {
-                                                toggleSelection(index)
+                                                toggleSelection(item.index)
                                             }
                                         }
                                         .onLongPressGesture {
-                                            toggleSelection(index)
+                                            toggleSelection(item.index)
                                         }
                                     
-                                    Text("\(index + 1)")
+                                    Text("\(item.index + 1)")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 }
@@ -140,7 +113,7 @@ struct PageManagerView: View {
                 }
             }
             .task {
-                await loadContent()
+                await loadPagesSafe()
             }
             .onDisappear {
                 cleanupTempFiles()
@@ -151,26 +124,30 @@ struct PageManagerView: View {
         }
     }
     
-    // ✅ Main Actor Safe Loading
-    @MainActor
-    func loadContent() async {
-        viewState = .loading
+    func loadPagesSafe() async {
+        isLoading = true
+        debugMessage = nil
         
-        // Brief pause to let transition finish
+        // 1. Brief pause to let transition finish
         try? await Task.sleep(nanoseconds: 500_000_000)
         
         do {
-            // Unzip in background
             let result = try await conversionManager.extractImageFiles(from: pdf.url)
             self.tempSessionDir = result.workingDir
-            self.pageURLs = result.files
             
-            // Switch to grid
-            withAnimation {
-                viewState = .displaying
+            // 2. Map to Structs
+            let items = result.files.enumerated().map { index, url in
+                PageItem(url: url, index: index)
             }
+            
+            // 3. Update UI
+            self.pageItems = items
+            self.isLoading = false
+            
         } catch {
-            viewState = .error(error.localizedDescription)
+            print("--- ERROR: \(error) ---")
+            self.debugMessage = error.localizedDescription
+            self.isLoading = false
         }
     }
     
@@ -188,42 +165,40 @@ struct PageManagerView: View {
     
     func deleteSelected() async {
         guard !selectedPages.isEmpty else { return }
-        viewState = .loading
+        isLoading = true
         try? await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
         selectedPages.removeAll()
-        await loadContent()
+        await loadPagesSafe()
     }
 }
 
-// ✅ ULTRA-LIGHT CELL (No Objects, Just State)
-struct SimpleThumbnailCell: View {
+// ✅ ULTRA-SIMPLE CELL
+// Uses native AsyncImage. No GeometryReader. No custom queuing.
+// This is the safest way to render images in SwiftUI.
+struct SimpleAsyncCell: View {
     let url: URL
-    @State private var image: UIImage?
-    @State private var currentOperation: Operation?
     
     var body: some View {
-        ZStack {
-            if let img = image {
-                Image(uiImage: img)
+        AsyncImage(url: url) { phase in
+            switch phase {
+            case .empty:
+                ZStack {
+                    Color.gray.opacity(0.1)
+                    ProgressView()
+                }
+            case .success(let image):
+                image
                     .resizable()
                     .scaledToFit()
-            } else {
-                Color.gray.opacity(0.1)
-                ProgressView()
-                    .scaleEffect(0.8)
+            case .failure:
+                ZStack {
+                    Color.gray.opacity(0.1)
+                    Image(systemName: "photo")
+                        .foregroundColor(.gray)
+                }
+            @unknown default:
+                EmptyView()
             }
-        }
-        .onAppear {
-            // Start loading when visible
-            currentOperation = SerialLoader.load(url: url) { loadedImage in
-                self.image = loadedImage
-            }
-        }
-        .onDisappear {
-            // Cancel immediately if scrolled away
-            currentOperation?.cancel()
-            currentOperation = nil
-            image = nil // Dump memory
         }
     }
 }
