@@ -1,9 +1,87 @@
 import SwiftUI
+import ZIPFoundation
 
-struct GridPageItem: Identifiable {
+// ✅ 1. Safe Data Model
+struct GridPageItem: Identifiable, Equatable {
     let id = UUID()
     let url: URL
     let index: Int
+}
+
+// ✅ 2. Isolated View Model (The Sandbox)
+// This handles all the heavy lifting away from the View code.
+@MainActor
+class PageEditorViewModel: ObservableObject {
+    @Published var items: [GridPageItem] = []
+    @Published var isLoading = true
+    @Published var errorMessage: String?
+    
+    private var tempDir: URL?
+    
+    func loadPages(from sourcePDF: ConvertedPDF) async {
+        self.isLoading = true
+        self.errorMessage = nil
+        
+        // Safety Pause: Let the UI transition finish completely
+        try? await Task.sleep(nanoseconds: 600_000_000) // 0.6s
+        
+        // Run extraction on a background thread to keep UI responsive
+        let extractionResult = await Task.detached(priority: .userInitiated) { () -> Result<(URL, [URL]), Error> in
+            let fileManager = FileManager.default
+            let uniqueID = UUID().uuidString
+            let tempDir = fileManager.temporaryDirectory.appendingPathComponent("Editor_\(uniqueID)")
+            
+            do {
+                // 1. Create Clean Temp Directory
+                try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                
+                // 2. Unzip (Standard robust unzip)
+                try fileManager.unzipItem(at: sourcePDF.url, to: tempDir)
+                
+                // 3. Scan for Images
+                let validExts = ["jpg", "jpeg", "png", "webp"]
+                var foundURLs: [URL] = []
+                
+                if let subPaths = try? fileManager.subpathsOfDirectory(atPath: tempDir.path) {
+                    let sortedPaths = subPaths.sorted()
+                    for path in sortedPaths {
+                        let ext = (path as NSString).pathExtension.lowercased()
+                        // Strict filtering
+                        if validExts.contains(ext) && !path.contains("__MACOSX") && !(path as NSString).lastPathComponent.hasPrefix(".") {
+                            foundURLs.append(tempDir.appendingPathComponent(path))
+                        }
+                    }
+                }
+                
+                return .success((tempDir, foundURLs))
+            } catch {
+                return .failure(error)
+            }
+        }.value
+        
+        // Handle Result back on Main Actor
+        switch extractionResult {
+        case .success(let (dir, urls)):
+            self.tempDir = dir
+            // Map to safe structs
+            self.items = urls.enumerated().map { index, url in
+                GridPageItem(url: url, index: index)
+            }
+            self.isLoading = false
+            
+        case .failure(let error):
+            self.errorMessage = error.localizedDescription
+            self.isLoading = false
+        }
+    }
+    
+    func cleanup() {
+        if let dir = tempDir {
+            try? FileManager.default.removeItem(at: dir)
+            tempDir = nil
+        }
+        items.removeAll()
+    }
 }
 
 struct PageManagerView: View {
@@ -11,80 +89,85 @@ struct PageManagerView: View {
     @Environment(\.dismiss) var dismiss
     let pdf: ConvertedPDF
     
-    // State
-    @State private var pageItems: [GridPageItem] = []
-    @State private var tempSessionDir: URL?
-    @State private var isLoading = true
-    @State private var debugMessage: String?
+    // Use the Isolated View Model
+    @StateObject private var viewModel = PageEditorViewModel()
     
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
     
+    // Reverting to Grid (List was just for testing, Grid is what you want)
+    let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
+    
     var body: some View {
         NavigationView {
             VStack {
-                if let debug = debugMessage {
-                    // ERROR SCREEN
-                    VStack(spacing: 20) {
-                        Image(systemName: "exclamationmark.octagon.fill")
-                            .font(.system(size: 60))
-                            .foregroundColor(.red)
-                        Text("Cannot Open File")
-                            .font(.title2)
-                            .bold()
-                        Text(debug)
-                            .font(.body)
-                            .multilineTextAlignment(.center)
+                if let error = viewModel.errorMessage {
+                    // ERROR STATE
+                    VStack(spacing: 15) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.largeTitle)
+                            .foregroundColor(.orange)
+                        Text("Could Not Load Pages")
+                            .font(.headline)
+                        Text(error)
+                            .font(.caption)
                             .padding()
-                            .background(Color.red.opacity(0.1))
-                            .cornerRadius(10)
-                            .padding(.horizontal)
                     }
-                } else if isLoading {
-                    // LOADING SCREEN
+                } else if viewModel.isLoading {
+                    // LOADING STATE
                     VStack(spacing: 15) {
                         ProgressView()
                             .scaleEffect(1.5)
-                        Text("Extracting Pages...")
+                        Text("Opening Editor...")
                             .font(.headline)
                             .foregroundColor(.secondary)
-                        Text("Checking file integrity...")
-                            .font(.caption)
-                            .foregroundColor(.gray)
                     }
                 } else {
-                    // SAFE LIST VIEW
-                    List(pageItems) { item in
-                        HStack {
-                            SimpleAsyncCell(url: item.url)
-                                .frame(width: 60, height: 90)
-                                .cornerRadius(4)
-                            
-                            Text("Page \(item.index + 1)")
-                                .font(.headline)
-                            
-                            Spacer()
-                            
-                            if conversionManager.panelOverrides[pdf.id]?[item.index] != nil {
-                                Image(systemName: "scissors")
-                                    .foregroundColor(.orange)
-                            }
-                            
-                            if selectedPages.contains(item.index) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.blue)
+                    // CONTENT STATE
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(viewModel.items) { item in
+                                VStack {
+                                    // Safe Async Cell
+                                    SafeGridCell(url: item.url)
+                                        .frame(height: 150)
+                                        .cornerRadius(8)
+                                        .overlay(
+                                            ZStack(alignment: .topTrailing) {
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(selectedPages.contains(item.index) ? Color.blue : Color.clear, lineWidth: 3)
+                                                
+                                                // Guided View Indicator
+                                                if conversionManager.panelOverrides[pdf.id]?[item.index] != nil {
+                                                    Image(systemName: "scissors")
+                                                        .font(.caption)
+                                                        .padding(4)
+                                                        .background(Color.yellow)
+                                                        .clipShape(Circle())
+                                                        .padding(4)
+                                                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                                                }
+                                            }
+                                        )
+                                        .onTapGesture {
+                                            if selectedPages.isEmpty {
+                                                pageToEdit = item.index
+                                            } else {
+                                                toggleSelection(item.index)
+                                            }
+                                        }
+                                        .onLongPressGesture {
+                                            toggleSelection(item.index)
+                                        }
+                                    
+                                    Text("\(item.index + 1)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if selectedPages.isEmpty {
-                                pageToEdit = item.index
-                            } else {
-                                toggleSelection(item.index)
-                            }
-                        }
+                        .padding()
                     }
-                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Edit Pages")
@@ -92,43 +175,29 @@ struct PageManagerView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
                 }
+                ToolbarItem(placement: .bottomBar) {
+                    if !selectedPages.isEmpty {
+                        Button(role: .destructive) {
+                            Task { await deleteSelected() }
+                        } label: {
+                            Text("Delete \(selectedPages.count) Pages")
+                        }
+                    }
+                }
             }
             .task {
-                await loadPagesSafe()
+                // Trigger load ONLY once
+                if viewModel.items.isEmpty {
+                    await viewModel.loadPages(from: pdf)
+                }
             }
             .onDisappear {
-                cleanupTempFiles()
+                // Don't cleanup immediately on disappear (caused issues with sheet)
+                // Cleanup happens when ViewModel is deallocated
             }
             .sheet(item: $pageToEdit) { index in
                 PanelEditorView(pdf: pdf, pageIndex: index)
             }
-        }
-    }
-    
-    func loadPagesSafe() async {
-        isLoading = true
-        debugMessage = nil
-        
-        // 1. Pause for UI stability
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        
-        do {
-            // 2. Extract
-            let result = try await conversionManager.extractImageFiles(from: pdf.url)
-            self.tempSessionDir = result.workingDir
-            
-            // 3. Map
-            let items = result.files.enumerated().map { index, url in
-                GridPageItem(url: url, index: index)
-            }
-            
-            self.pageItems = items
-            self.isLoading = false
-            
-        } catch {
-            print("--- ERROR: \(error) ---")
-            self.debugMessage = error.localizedDescription
-            self.isLoading = false
         }
     }
     
@@ -137,25 +206,27 @@ struct PageManagerView: View {
         else { selectedPages.insert(index) }
     }
     
-    func cleanupTempFiles() {
-        if let dir = tempSessionDir {
-            try? FileManager.default.removeItem(at: dir)
-            tempSessionDir = nil
-        }
-    }
-    
     func deleteSelected() async {
         guard !selectedPages.isEmpty else { return }
-        // Simple delete logic
+        // Simple passthrough to manager
+        try? await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
+        selectedPages.removeAll()
+        
+        // Reload via VM
+        viewModel.cleanup()
+        await viewModel.loadPages(from: pdf)
     }
 }
 
-struct SimpleAsyncCell: View {
+// ✅ Safe Cell using native AsyncImage
+struct SafeGridCell: View {
     let url: URL
     var body: some View {
         AsyncImage(url: url) { phase in
             if let image = phase.image {
                 image.resizable().scaledToFit()
+            } else if phase.error != nil {
+                Color.red.opacity(0.2)
             } else {
                 Color.gray.opacity(0.1)
             }
