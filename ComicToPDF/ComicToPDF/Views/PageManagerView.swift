@@ -5,7 +5,10 @@ struct PageManagerView: View {
     @Environment(\.dismiss) var dismiss
     let pdf: ConvertedPDF
     
-    @State private var pages: [UIImage] = []
+    // Switch to URL-based storage for OOM safety
+    @State private var pageURLs: [URL] = []
+    @State private var tempSessionDir: URL?
+    
     @State private var selectedPages: Set<Int> = []
     @State private var isLoading = true
     @State private var pageToEdit: Int?
@@ -16,16 +19,15 @@ struct PageManagerView: View {
         NavigationView {
             VStack {
                 if isLoading {
-                    ProgressView("Loading Thumbnails...")
+                    ProgressView("Processing Pages...")
                 } else {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 15) {
-                            ForEach(0..<pages.count, id: \.self) { index in
+                            ForEach(0..<pageURLs.count, id: \.self) { index in
                                 VStack {
                                     ZStack(alignment: .topTrailing) {
-                                        Image(uiImage: pages[index])
-                                            .resizable()
-                                            .scaledToFit()
+                                        // ✅ Lazy Load Image from Disk
+                                        PageThumbnailCell(url: pageURLs[index])
                                             .frame(height: 150)
                                             .cornerRadius(8)
                                             .overlay(
@@ -92,7 +94,9 @@ struct PageManagerView: View {
             .task {
                 await loadPages()
             }
-            // ✅ FIX: Clean sheet init
+            .onDisappear {
+                cleanupTempFiles()
+            }
             .sheet(item: $pageToEdit) { index in
                 PanelEditorView(pdf: pdf, pageIndex: index)
             }
@@ -100,12 +104,24 @@ struct PageManagerView: View {
     }
     
     func loadPages() async {
+        cleanupTempFiles()
+        isLoading = true
         do {
-            self.pages = try await conversionManager.extractImages(from: pdf.url) { _ in }
+            let result = try await conversionManager.extractImageFiles(from: pdf.url)
+            self.tempSessionDir = result.workingDir
+            self.pageURLs = result.files
             self.isLoading = false
         } catch {
             print("Error loading pages: \(error)")
         }
+    }
+    
+    func cleanupTempFiles() {
+        if let dir = tempSessionDir {
+            try? FileManager.default.removeItem(at: dir)
+            tempSessionDir = nil
+        }
+        pageURLs.removeAll()
     }
     
     func toggleSelection(_ index: Int) {
@@ -119,9 +135,42 @@ struct PageManagerView: View {
         do {
             try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
             selectedPages.removeAll()
-            await loadPages()
+            await loadPages() // Reload from new file
         } catch { print("Delete failed: \(error)") }
         isLoading = false
+    }
+}
+
+// ✅ Efficient Lazy Loading Cell
+struct PageThumbnailCell: View {
+    let url: URL
+    @State private var image: UIImage?
+    
+    var body: some View {
+        GeometryReader { geo in
+            if let img = image {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: geo.size.width, height: geo.size.height)
+            } else {
+                ZStack {
+                    Color.gray.opacity(0.1)
+                    ProgressView()
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .task(priority: .medium) {
+                    // Downsample on background thread
+                    if let downsampled = ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 300) {
+                        await MainActor.run { self.image = downsampled }
+                    }
+                }
+            }
+        }
+        // ✅ CRITICAL: Dump memory immediately when scrolled off-screen
+        .onDisappear {
+            self.image = nil
+        }
     }
 }
 

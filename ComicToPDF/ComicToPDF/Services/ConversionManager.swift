@@ -108,29 +108,27 @@ class ConversionManager: ObservableObject {
          Task { await self.generateCoverThumbnail(for: pdf) }
      }
     
-    // MARK: - Safe Image Loading
-    func extractImages(from url: URL, progressHandler: @escaping (Double) -> Void) async throws -> [UIImage] {
+    // MARK: - Safe Image Loading (OOM Fix)
+    
+    // ✅ NEW: Returns File URLs instead of massive Image Arrays
+    func extractImageFiles(from url: URL) async throws -> (workingDir: URL, files: [URL]) {
         return try await Task.detached {
             let fileManager = FileManager.default
             let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            defer { try? fileManager.removeItem(at: tempDir) }
             
             try fileManager.unzipItem(at: url, to: tempDir)
             
-            var images: [UIImage] = []
+            var imageURLs: [URL] = []
             let validExts = ["jpg", "jpeg", "png", "webp"]
             let subPaths = try fileManager.subpathsOfDirectory(atPath: tempDir.path)
             let imagePaths = subPaths.filter { validExts.contains(($0 as NSString).pathExtension.lowercased()) }.sorted()
             
-            for (index, subPath) in imagePaths.enumerated() {
-                let fullPath = tempDir.appendingPathComponent(subPath)
-                if let image = ConversionManager.loadDownsampledImageStatic(at: fullPath, maxDimension: 300) {
-                    images.append(image)
-                }
-                await MainActor.run { progressHandler(Double(index) / Double(imagePaths.count)) }
+            for subPath in imagePaths {
+                imageURLs.append(tempDir.appendingPathComponent(subPath))
             }
-            return images
+            
+            return (tempDir, imageURLs)
         }.value
     }
     
@@ -247,9 +245,8 @@ class ConversionManager: ObservableObject {
     func deleteCollection(_ collection: PDFCollection) { collections.removeAll { $0.id == collection.id }; for i in 0..<convertedPDFs.count { if convertedPDFs[i].collectionId == collection.id { convertedPDFs[i].collectionId = nil } }; saveLibrary() }
     func movePDFToCollection(_ pdf: ConvertedPDF, collectionId: UUID?) { if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].collectionId = collectionId; saveLibrary() } }
     
-    // MARK: - PAGE EDITING (RESTORED)
+    // MARK: - PAGE EDITING
     
-    // ✅ RESTORED: Delete Pages Logic
     func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>) async throws {
         let sourceURL = pdf.url
         try await Task.detached {
@@ -272,7 +269,7 @@ class ConversionManager: ObservableObject {
             }
             imageURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
             
-            // Delete selected indices
+            // Delete selected
             for (index, url) in imageURLs.enumerated() {
                 if pageIndices.contains(index) {
                     try fileManager.removeItem(at: url)
@@ -289,7 +286,6 @@ class ConversionManager: ObservableObject {
         scanLibrary()
     }
     
-    // ✅ RESTORED: Reorder Pages Logic
     func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL {
         return try await Task.detached {
             let fileManager = FileManager.default
@@ -333,9 +329,6 @@ class ConversionManager: ObservableObject {
             let newCBZ = tempDir.appendingPathComponent("reordered.cbz")
             try fileManager.zipItem(at: tempDir, to: newCBZ)
             
-            // Replace original (must be done by caller or here if URL is stable)
-            // For safety, we return the NEW url, and caller handles replacement if needed
-            // But since 'url' is the source, let's overwrite it for consistency
             if fileManager.fileExists(atPath: url.path) { try fileManager.removeItem(at: url) }
             try fileManager.moveItem(at: newCBZ, to: url)
             
@@ -343,7 +336,6 @@ class ConversionManager: ObservableObject {
         }.value
     }
     
-    // ✅ RESTORED: Extract Pages Logic
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL {
         return try await Task.detached {
             let fileManager = FileManager.default
