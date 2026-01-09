@@ -112,7 +112,7 @@ class ConversionManager: ObservableObject {
         let thumbnails: [URL]
     }
     
-    // ✅ NEW: Pre-generates tiny thumbnails to prevent scrolling crashes
+    // ✅ CRITICAL FIX: Safe Batched Generation
     func preparePageSession(for pdf: ConvertedPDF, progress: @escaping (Double) -> Void) async throws -> PageSession {
         return try await Task.detached {
             let fileManager = FileManager.default
@@ -134,31 +134,55 @@ class ConversionManager: ObservableObject {
             var thumbURLs: [URL] = []
             var fullURLs: [URL] = []
             
-            // 3. Generate Thumbs Batch
+            // 3. Generate Thumbs with STRICT Memory Management
             for (index, subPath) in fullPaths.enumerated() {
-                let fullURL = fullDir.appendingPathComponent(subPath)
-                let thumbName = String(format: "thumb_%05d.jpg", index)
-                let thumbURL = thumbDir.appendingPathComponent(thumbName)
-                
-                // Downsample safely
-                if let image = ConversionManager.loadDownsampledImageStatic(at: fullURL, maxDimension: 200),
-                   let data = image.jpegData(compressionQuality: 0.7) {
-                    try data.write(to: thumbURL)
-                    thumbURLs.append(thumbURL)
-                } else {
-                    // Fallback if image fails (unlikely)
-                    thumbURLs.append(fullURL) 
+                // ✅ Autoreleasepool forces memory dump AFTER EACH IMAGE
+                try autoreleasepool {
+                    let fullURL = fullDir.appendingPathComponent(subPath)
+                    let thumbName = String(format: "thumb_%05d.jpg", index)
+                    let thumbURL = thumbDir.appendingPathComponent(thumbName)
+                    
+                    // Downsample safely (150px is enough for grid)
+                    if let image = ConversionManager.loadDownsampledImageStatic(at: fullURL, maxDimension: 150),
+                       let data = image.jpegData(compressionQuality: 0.6) {
+                        try data.write(to: thumbURL)
+                        thumbURLs.append(thumbURL)
+                    } else {
+                        thumbURLs.append(fullURL) // Fallback
+                    }
+                    fullURLs.append(fullURL)
                 }
                 
-                fullURLs.append(fullURL)
-                
-                // Report Progress
-                if index % 5 == 0 {
+                // ✅ Yield to system every 3 images to prevent CPU locking
+                if index % 3 == 0 {
+                    await Task.yield()
                     await MainActor.run { progress(Double(index) / Double(fullPaths.count)) }
                 }
             }
             
             return PageSession(baseDir: baseDir, fullImages: fullURLs, thumbnails: thumbURLs)
+        }.value
+    }
+    
+    // ✅ NEW: Returns File URLs instead of massive Image Arrays
+    func extractImageFiles(from url: URL) async throws -> (workingDir: URL, files: [URL]) {
+        return try await Task.detached {
+            let fileManager = FileManager.default
+            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            
+            try fileManager.unzipItem(at: url, to: tempDir)
+            
+            var imageURLs: [URL] = []
+            let validExts = ["jpg", "jpeg", "png", "webp"]
+            let subPaths = try fileManager.subpathsOfDirectory(atPath: tempDir.path)
+            let imagePaths = subPaths.filter { validExts.contains(($0 as NSString).pathExtension.lowercased()) }.sorted()
+            
+            for subPath in imagePaths {
+                imageURLs.append(tempDir.appendingPathComponent(subPath))
+            }
+            
+            return (tempDir, imageURLs)
         }.value
     }
     
