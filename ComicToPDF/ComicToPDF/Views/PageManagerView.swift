@@ -13,57 +13,53 @@ struct PageManagerView: View {
     @State private var isLoading = true
     @State private var pageToEdit: Int?
     
-    let columns = [GridItem(.adaptive(minimum: 100))]
+    // Optimized Grid: Fewer columns to reduce concurrent memory load
+    let columns = [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 8)]
     
     var body: some View {
         NavigationView {
             VStack {
                 if isLoading {
-                    ProgressView("Processing Pages...")
+                    VStack {
+                        ProgressView()
+                        Text("Unpacking Pages...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.top, 8)
+                    }
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 15) {
+                        // LazyGrid ensures we only load what's on screen
+                        LazyVGrid(columns: columns, spacing: 12) {
                             ForEach(0..<pageURLs.count, id: \.self) { index in
                                 VStack {
+                                    // ✅ OPTIMIZED CELL
                                     ZStack(alignment: .topTrailing) {
-                                        // ✅ Lazy Load Image from Disk
+                                        // 1. The Heavy Image (Isolated)
                                         PageThumbnailCell(url: pageURLs[index])
                                             .frame(height: 150)
                                             .cornerRadius(8)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(selectedPages.contains(index) ? Color.blue : Color.gray.opacity(0.3), lineWidth: selectedPages.contains(index) ? 3 : 1)
-                                            )
-                                            .onTapGesture {
-                                                if selectedPages.isEmpty {
-                                                    pageToEdit = index
-                                                } else {
-                                                    toggleSelection(index)
-                                                }
-                                            }
-                                            .onLongPressGesture {
-                                                toggleSelection(index)
-                                            }
                                         
-                                        if selectedPages.contains(index) {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundColor(.blue)
-                                                .background(Circle().fill(.white))
-                                                .padding(4)
-                                        }
-                                        
-                                        if conversionManager.panelOverrides[pdf.id]?[index] != nil {
-                                            Image(systemName: "scissors")
-                                                .font(.caption)
-                                                .padding(4)
-                                                .background(Color.yellow)
-                                                .clipShape(Circle())
-                                                .padding(4)
-                                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                        // 2. The Selection Overlay (Lightweight)
+                                        // This redraws instantly without forcing the image to reload
+                                        SelectionOverlay(
+                                            isSelected: selectedPages.contains(index),
+                                            hasManualEdits: conversionManager.panelOverrides[pdf.id]?[index] != nil
+                                        )
+                                    }
+                                    .onTapGesture {
+                                        if selectedPages.isEmpty {
+                                            pageToEdit = index
+                                        } else {
+                                            toggleSelection(index)
                                         }
                                     }
-                                    Text("Page \(index + 1)")
-                                        .font(.caption)
+                                    .onLongPressGesture {
+                                        toggleSelection(index)
+                                    }
+                                    
+                                    Text("\(index + 1)")
+                                        .font(.caption2)
                                         .foregroundColor(.secondary)
                                 }
                             }
@@ -85,7 +81,7 @@ struct PageManagerView: View {
                             Text("Delete \(selectedPages.count) Pages")
                         }
                     } else {
-                        Text("Tap a page to edit panels. Long press to select.")
+                        Text("Tap to edit • Long press to select")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -107,6 +103,7 @@ struct PageManagerView: View {
         cleanupTempFiles()
         isLoading = true
         do {
+            // Unzip to temp directory and get URLs
             let result = try await conversionManager.extractImageFiles(from: pdf.url)
             self.tempSessionDir = result.workingDir
             self.pageURLs = result.files
@@ -141,10 +138,47 @@ struct PageManagerView: View {
     }
 }
 
-// ✅ Efficient Lazy Loading Cell
-struct PageThumbnailCell: View {
+// MARK: - Optimized Components
+
+// 1. Lightweight Selection Overlay (Redraws Cheaply)
+struct SelectionOverlay: View {
+    let isSelected: Bool
+    let hasManualEdits: Bool
+    
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? Color.blue : Color.gray.opacity(0.3), lineWidth: isSelected ? 3 : 1)
+            
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.blue)
+                    .background(Circle().fill(.white))
+                    .padding(4)
+            }
+            
+            if hasManualEdits {
+                Image(systemName: "scissors")
+                    .font(.caption)
+                    .padding(4)
+                    .background(Color.yellow)
+                    .clipShape(Circle())
+                    .padding(4)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
+    }
+}
+
+// 2. Heavy Image Cell (Memory Managed)
+struct PageThumbnailCell: View, Equatable {
     let url: URL
     @State private var image: UIImage?
+    
+    // Conforming to Equatable ensures this view DOES NOT redraw when parent state (selection) changes
+    static func == (lhs: PageThumbnailCell, rhs: PageThumbnailCell) -> Bool {
+        return lhs.url == rhs.url
+    }
     
     var body: some View {
         GeometryReader { geo in
@@ -160,16 +194,27 @@ struct PageThumbnailCell: View {
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
                 .task(priority: .medium) {
-                    // Downsample on background thread
-                    if let downsampled = ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 300) {
-                        await MainActor.run { self.image = downsampled }
-                    }
+                    await loadImage()
                 }
             }
         }
-        // ✅ CRITICAL: Dump memory immediately when scrolled off-screen
         .onDisappear {
+            // Aggressive Memory Cleanup
             self.image = nil
+        }
+    }
+    
+    func loadImage() async {
+        // Run in detached task to keep UI smooth
+        let loadedImage = await Task.detached { () -> UIImage? in
+            // Use Autoreleasepool to ensure temporary allocations are dumped immediately
+            return autoreleasepool {
+                return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 200)
+            }
+        }.value
+        
+        await MainActor.run {
+            self.image = loadedImage
         }
     }
 }
