@@ -5,10 +5,11 @@ struct PageManagerView: View {
     @Environment(\.dismiss) var dismiss
     let pdf: ConvertedPDF
     
-    // Simple State
+    // State
     @State private var pageURLs: [URL] = []
     @State private var tempSessionDir: URL?
     @State private var isLoading = true
+    @State private var errorMessage: String?
     
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
@@ -19,14 +20,26 @@ struct PageManagerView: View {
     var body: some View {
         NavigationView {
             VStack {
-                if isLoading {
-                    ProgressView("Loading Pages...")
+                if let error = errorMessage {
+                    VStack {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.largeTitle)
+                            .foregroundColor(.orange)
+                        Text("Error Loading Pages")
+                            .font(.headline)
+                        Text(error)
+                            .font(.caption)
+                            .multilineTextAlignment(.center)
+                            .padding()
+                    }
+                } else if isLoading {
+                    ProgressView("Loading...")
                 } else {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 10) {
                             ForEach(0..<pageURLs.count, id: \.self) { index in
                                 VStack {
-                                    // Simple Image Cell using Standard AsyncImage
+                                    // Robust Image Loader
                                     AsyncImage(url: pageURLs[index]) { phase in
                                         if let image = phase.image {
                                             image
@@ -43,7 +56,7 @@ struct PageManagerView: View {
                                             RoundedRectangle(cornerRadius: 8)
                                                 .stroke(selectedPages.contains(index) ? Color.blue : Color.clear, lineWidth: 3)
                                             
-                                            // Show indicator if manual panels exist
+                                            // Indicator for Guided View
                                             if conversionManager.panelOverrides[pdf.id]?[index] != nil {
                                                 Image(systemName: "scissors")
                                                     .font(.caption)
@@ -59,19 +72,11 @@ struct PageManagerView: View {
                                         if selectedPages.isEmpty {
                                             pageToEdit = index
                                         } else {
-                                            if selectedPages.contains(index) {
-                                                selectedPages.remove(index)
-                                            } else {
-                                                selectedPages.insert(index)
-                                            }
+                                            toggleSelection(index)
                                         }
                                     }
                                     .onLongPressGesture {
-                                        if selectedPages.contains(index) {
-                                            selectedPages.remove(index)
-                                        } else {
-                                            selectedPages.insert(index)
-                                        }
+                                        toggleSelection(index)
                                     }
                                     
                                     Text("\(index + 1)")
@@ -96,15 +101,11 @@ struct PageManagerView: View {
                         } label: {
                             Text("Delete \(selectedPages.count) Pages")
                         }
-                    } else {
-                         Text("Tap to edit • Long press to select")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
                     }
                 }
             }
             .task {
-                await loadPagesSimple()
+                await loadPagesWithDelay()
             }
             .onDisappear {
                 cleanupTempFiles()
@@ -115,19 +116,29 @@ struct PageManagerView: View {
         }
     }
     
-    // The "Old Reliable" Loading Logic
-    func loadPagesSimple() async {
+    // ✅ SAFETY DELAY: Fixes the startup crash
+    func loadPagesWithDelay() async {
         isLoading = true
+        errorMessage = nil
+        
+        // 1. Wait for view to appear
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+        
+        // 2. Start Work
         do {
-            // Just get the file URLs. No processing. No resizing.
             let result = try await conversionManager.extractImageFiles(from: pdf.url)
             self.tempSessionDir = result.workingDir
             self.pageURLs = result.files
             self.isLoading = false
         } catch {
-            print("Error: \(error)")
+            self.errorMessage = error.localizedDescription
             self.isLoading = false
         }
+    }
+    
+    func toggleSelection(_ index: Int) {
+        if selectedPages.contains(index) { selectedPages.remove(index) }
+        else { selectedPages.insert(index) }
     }
     
     func cleanupTempFiles() {
@@ -142,7 +153,7 @@ struct PageManagerView: View {
         isLoading = true
         try? await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
         selectedPages.removeAll()
-        await loadPagesSimple()
+        await loadPagesWithDelay()
     }
 }
 
