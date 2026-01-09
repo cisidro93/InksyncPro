@@ -129,49 +129,62 @@ class ConversionManager: ObservableObject {
         scanLibrary()
     }
     
-    // MARK: - MANUAL SAFE EXTRACTION
-    // Replaces the "Black Box" unzipper with a safe manual loop
+    // MARK: - SAFE FILE EXTRACTION WITH HEADER CHECK
     func extractImageFiles(from url: URL) async throws -> (workingDir: URL, files: [URL]) {
         return try await Task.detached(priority: .userInitiated) {
+            // 1. HEADER CHECK (The DNA Test)
+            // Reads the first 4 bytes to confirm it is TRULY a ZIP file.
+            if let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count >= 4 {
+                let header = data.prefix(4)
+                
+                // Magic Numbers:
+                // ZIP = 50 4B 03 04 (PK..)
+                // RAR = 52 61 72 21 (Rar!)
+                // PDF = 25 50 44 46 (%PDF)
+                
+                if header.starts(with: [0x52, 0x61, 0x72, 0x21]) {
+                    throw NSError(domain: "Conversion", code: 999, userInfo: [NSLocalizedDescriptionKey: "CRASH PREVENTED: This is a RAR file renamed to .cbz. Please convert to ZIP."])
+                }
+                if header.starts(with: [0x25, 0x50, 0x44, 0x46]) {
+                    throw NSError(domain: "Conversion", code: 998, userInfo: [NSLocalizedDescriptionKey: "CRASH PREVENTED: This is a PDF file renamed to .cbz."])
+                }
+                // If it's not PK.. (ZIP), we proceed with caution or fail
+                if !header.starts(with: [0x50, 0x4B, 0x03, 0x04]) {
+                    print("⚠️ Warning: Unknown file header: \(header as NSData). Attempting unzip anyway...")
+                }
+            }
+
+            // 2. Start Extraction
             let fileManager = FileManager.default
             let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
             
-            // 1. Open Archive Manually
             guard let archive = try? Archive(url: url, accessMode: .read) else {
-                throw NSError(domain: "Unzip", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to open ZIP archive."])
+                throw NSError(domain: "Unzip", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to read ZIP structure. File may be corrupt."])
             }
             
             var imageURLs: [URL] = []
             let validExts = ["jpg", "jpeg", "png", "webp"]
             
-            // 2. Iterate Files One by One
             for entry in archive {
                 let path = entry.path
                 let ext = (path as NSString).pathExtension.lowercased()
                 let filename = (path as NSString).lastPathComponent
                 
-                // Filter junk before we even try to extract
                 if validExts.contains(ext) && !path.contains("__MACOSX") && !filename.hasPrefix(".") {
-                    
-                    let destURL = tempDir.appendingPathComponent(filename) // Flatten directory structure
-                    
-                    // 3. Extract Safely with Autoreleasepool
+                    let destURL = tempDir.appendingPathComponent(filename)
                     autoreleasepool {
                         do {
                             _ = try archive.extract(entry, to: destURL)
                             imageURLs.append(destURL)
                         } catch {
-                            print("Failed to extract \(filename): \(error)")
-                            // Continue to next file - DO NOT CRASH
+                            print("Skipped bad file: \(filename)")
                         }
                     }
                 }
             }
             
-            // 4. Sort Final List
             imageURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
-            
             return (tempDir, imageURLs)
         }.value
     }
@@ -180,6 +193,7 @@ class ConversionManager: ObservableObject {
         return try await extractImageFiles(from: url).files
     }
     
+    // Single Page (Safe Wrapper)
     func extractFullPage(from pdf: ConvertedPDF, index: Int) async throws -> UIImage? {
         return try await Task.detached {
             let fileManager = FileManager.default
@@ -187,9 +201,6 @@ class ConversionManager: ObservableObject {
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
             defer { try? fileManager.removeItem(at: tempDir) }
             
-            // Re-use safe manual extraction logic essentially, but optimized for single file
-            // For simplicity/robustness, we'll use the convenience method here but wrap it safely
-            // Note: In production, you'd share the Archive instance, but for now:
             try fileManager.unzipItem(at: pdf.url, to: tempDir)
             
             let validExts = ["jpg", "jpeg", "png", "webp"]
@@ -282,7 +293,10 @@ class ConversionManager: ObservableObject {
             return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
         }
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
+            // Header check can be added here too if needed, but archive init will fail first
             guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
+            
+            // Fix: Sort
             let sortedEntries = archive.makeIterator().sorted { $0.path < $1.path }
             for entry in sortedEntries {
                 let entryExt = (entry.path as NSString).pathExtension.lowercased()

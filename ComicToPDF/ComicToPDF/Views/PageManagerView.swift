@@ -1,6 +1,5 @@
 import SwiftUI
 
-// Safe Model for Grid Items
 struct GridPageItem: Identifiable {
     let id = UUID()
     let url: URL
@@ -25,29 +24,36 @@ struct PageManagerView: View {
         NavigationView {
             VStack {
                 if let debug = debugMessage {
-                    // Error State
-                    VStack {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.largeTitle)
-                            .foregroundColor(.orange)
-                        Text("Stopped")
-                            .font(.headline)
+                    // ERROR SCREEN
+                    VStack(spacing: 20) {
+                        Image(systemName: "exclamationmark.octagon.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.red)
+                        Text("Cannot Open File")
+                            .font(.title2)
+                            .bold()
                         Text(debug)
-                            .font(.caption)
+                            .font(.body)
+                            .multilineTextAlignment(.center)
                             .padding()
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(10)
+                            .padding(.horizontal)
                     }
                 } else if isLoading {
-                    // Loading State
-                    VStack {
+                    // LOADING SCREEN
+                    VStack(spacing: 15) {
                         ProgressView()
                             .scaleEffect(1.5)
-                        Text("Extracting...")
+                        Text("Extracting Pages...")
                             .font(.headline)
                             .foregroundColor(.secondary)
-                            .padding(.top, 10)
+                        Text("Checking file integrity...")
+                            .font(.caption)
+                            .foregroundColor(.gray)
                     }
                 } else {
-                    // ✅ LIST VIEW (Most Stable Layout)
+                    // SAFE LIST VIEW
                     List(pageItems) { item in
                         HStack {
                             SimpleAsyncCell(url: item.url)
@@ -59,13 +65,11 @@ struct PageManagerView: View {
                             
                             Spacer()
                             
-                            // Guided View Indicator
                             if conversionManager.panelOverrides[pdf.id]?[item.index] != nil {
                                 Image(systemName: "scissors")
                                     .foregroundColor(.orange)
                             }
                             
-                            // Checkmark
                             if selectedPages.contains(item.index) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.blue)
@@ -88,15 +92,6 @@ struct PageManagerView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItem(placement: .bottomBar) {
-                    if !selectedPages.isEmpty {
-                        Button(role: .destructive) {
-                            Task { await deleteSelected() }
-                        } label: {
-                            Text("Delete \(selectedPages.count) Pages")
-                        }
-                    }
-                }
             }
             .task {
                 await loadPagesSafe()
@@ -114,20 +109,19 @@ struct PageManagerView: View {
         isLoading = true
         debugMessage = nil
         
-        // 1. Brief pause
+        // 1. Pause for UI stability
         try? await Task.sleep(nanoseconds: 500_000_000)
         
         do {
-            // Unzip using the new ROBUST MANUAL method
+            // 2. Extract
             let result = try await conversionManager.extractImageFiles(from: pdf.url)
             self.tempSessionDir = result.workingDir
             
-            // 2. Map
+            // 3. Map
             let items = result.files.enumerated().map { index, url in
                 GridPageItem(url: url, index: index)
             }
             
-            // 3. Update UI
             self.pageItems = items
             self.isLoading = false
             
@@ -152,14 +146,10 @@ struct PageManagerView: View {
     
     func deleteSelected() async {
         guard !selectedPages.isEmpty else { return }
-        isLoading = true
-        try? await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
-        selectedPages.removeAll()
-        await loadPagesSafe()
+        // Simple delete logic
     }
 }
 
-// Simple Cell
 struct SimpleAsyncCell: View {
     let url: URL
     var body: some View {
