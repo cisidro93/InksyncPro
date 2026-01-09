@@ -1,64 +1,49 @@
 import SwiftUI
 
-// ✅ NEW: Traffic Cop for Image Loading
-// This prevents the "Concurrency Spike" crash by limiting active loads to 3.
-actor ImageLoadingQueue {
-    static let shared = ImageLoadingQueue()
-    private var activeDownloads = 0
-    private let maxConcurrent = 3
-    
-    func load(url: URL) async -> UIImage? {
-        // Simple throttling: If busy, wait a tiny bit (handled by actor serialization)
-        return autoreleasepool {
-            return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 150)
-        }
-    }
-}
-
 struct PageManagerView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
     let pdf: ConvertedPDF
     
-    @State private var pageURLs: [URL] = []
+    @State private var thumbURLs: [URL] = []
     @State private var tempSessionDir: URL?
+    @State private var loadingProgress: Double = 0.0
     
     @State private var selectedPages: Set<Int> = []
     @State private var isLoading = true
     @State private var pageToEdit: Int?
     
-    // Grid Layout
     let columns = [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 8)]
     
     var body: some View {
         NavigationView {
             VStack {
                 if isLoading {
-                    VStack {
-                        ProgressView()
-                        Text("Preparing Pages...")
+                    VStack(spacing: 15) {
+                        ProgressView(value: loadingProgress, total: 1.0)
+                            .progressViewStyle(LinearProgressViewStyle())
+                            .frame(width: 200)
+                        Text("Optimizing Pages...")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                            .padding(.top, 8)
                     }
                 } else {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 12) {
-                            ForEach(0..<pageURLs.count, id: \.self) { index in
+                            ForEach(0..<thumbURLs.count, id: \.self) { index in
                                 VStack {
                                     ZStack(alignment: .topTrailing) {
-                                        // 1. Memory-Safe Cell
-                                        PageThumbnailCell(url: pageURLs[index])
+                                        // ✅ LOAD SAFE THUMBNAIL (Direct from Disk)
+                                        SafeThumbnailCell(url: thumbURLs[index])
                                             .frame(height: 150)
                                             .cornerRadius(8)
                                         
-                                        // 2. Selection Overlay
                                         SelectionOverlay(
                                             isSelected: selectedPages.contains(index),
                                             hasManualEdits: conversionManager.panelOverrides[pdf.id]?[index] != nil
                                         )
                                     }
-                                    .contentShape(Rectangle()) // Ensures tap area is solid
+                                    .contentShape(Rectangle())
                                     .onTapGesture {
                                         if selectedPages.isEmpty {
                                             pageToEdit = index
@@ -110,10 +95,15 @@ struct PageManagerView: View {
     func loadPages() async {
         cleanupTempFiles()
         isLoading = true
+        loadingProgress = 0.0
+        
         do {
-            let result = try await conversionManager.extractImageFiles(from: pdf.url)
-            self.tempSessionDir = result.workingDir
-            self.pageURLs = result.files
+            // ✅ BATCH GENERATION: Prevents scrolling crash by doing heavy lifting upfront
+            let session = try await conversionManager.preparePageSession(for: pdf) { progress in
+                self.loadingProgress = progress
+            }
+            self.tempSessionDir = session.baseDir
+            self.thumbURLs = session.thumbnails
             self.isLoading = false
         } catch {
             print("Error loading pages: \(error)")
@@ -125,7 +115,7 @@ struct PageManagerView: View {
             try? FileManager.default.removeItem(at: dir)
             tempSessionDir = nil
         }
-        pageURLs.removeAll()
+        thumbURLs.removeAll()
     }
     
     func toggleSelection(_ index: Int) {
@@ -176,40 +166,23 @@ struct SelectionOverlay: View {
     }
 }
 
-struct PageThumbnailCell: View, Equatable {
+struct SafeThumbnailCell: View {
     let url: URL
-    @State private var image: UIImage?
-    
-    static func == (lhs: PageThumbnailCell, rhs: PageThumbnailCell) -> Bool {
-        return lhs.url == rhs.url
-    }
     
     var body: some View {
-        GeometryReader { geo in
-            if let img = image {
-                Image(uiImage: img)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: geo.size.width, height: geo.size.height)
-            } else {
-                ZStack {
-                    Color.gray.opacity(0.1)
-                    // Only show spinner if it takes a while, avoids flickering
-                }
-                .frame(width: geo.size.width, height: geo.size.height)
-                .task {
-                    // ✅ Queue-based loading
-                    if let loaded = await ImageLoadingQueue.shared.load(url: url) {
-                        // Double check we haven't been cancelled
-                        if !Task.isCancelled {
-                            self.image = loaded
-                        }
-                    }
-                }
+        // Since we pre-generated these to be tiny (5KB), we can load them using AsyncImage safely
+        // No downsampling needed at runtime!
+        AsyncImage(url: url) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFit()
+            case .failure:
+                Color.red.opacity(0.3)
+            case .empty:
+                Color.gray.opacity(0.1)
+            @unknown default:
+                EmptyView()
             }
-        }
-        .onDisappear {
-            self.image = nil
         }
     }
 }

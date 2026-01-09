@@ -21,10 +21,6 @@ class ConversionManager: ObservableObject {
     @Published var processingStatus = ""
     @Published var statusMessage: String?
     
-    @Published var showingPanelEditor = false
-    @Published var currentPanelSession: PanelEditSession?
-    @Published var panelEditorCompletion: ((PanelEditSession?) -> Void)?
-    
     let thumbnailCache = NSCache<NSString, UIImage>()
     private let libraryFileName = "library_index.json"
     
@@ -108,27 +104,61 @@ class ConversionManager: ObservableObject {
          Task { await self.generateCoverThumbnail(for: pdf) }
      }
     
-    // MARK: - Safe Image Loading (OOM Fix)
+    // MARK: - Crash-Proof Page Loading
     
-    // ✅ NEW: Returns File URLs instead of massive Image Arrays
-    func extractImageFiles(from url: URL) async throws -> (workingDir: URL, files: [URL]) {
+    struct PageSession {
+        let baseDir: URL
+        let fullImages: [URL]
+        let thumbnails: [URL]
+    }
+    
+    // ✅ NEW: Pre-generates tiny thumbnails to prevent scrolling crashes
+    func preparePageSession(for pdf: ConvertedPDF, progress: @escaping (Double) -> Void) async throws -> PageSession {
         return try await Task.detached {
             let fileManager = FileManager.default
-            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            let baseDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let fullDir = baseDir.appendingPathComponent("Full")
+            let thumbDir = baseDir.appendingPathComponent("Thumbs")
             
-            try fileManager.unzipItem(at: url, to: tempDir)
+            try fileManager.createDirectory(at: fullDir, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: thumbDir, withIntermediateDirectories: true)
             
-            var imageURLs: [URL] = []
+            // 1. Unzip
+            try fileManager.unzipItem(at: pdf.url, to: fullDir)
+            
+            // 2. Scan Files
             let validExts = ["jpg", "jpeg", "png", "webp"]
-            let subPaths = try fileManager.subpathsOfDirectory(atPath: tempDir.path)
-            let imagePaths = subPaths.filter { validExts.contains(($0 as NSString).pathExtension.lowercased()) }.sorted()
+            let subPaths = try fileManager.subpathsOfDirectory(atPath: fullDir.path)
+            let fullPaths = subPaths.filter { validExts.contains(($0 as NSString).pathExtension.lowercased()) }.sorted()
             
-            for subPath in imagePaths {
-                imageURLs.append(tempDir.appendingPathComponent(subPath))
+            var thumbURLs: [URL] = []
+            var fullURLs: [URL] = []
+            
+            // 3. Generate Thumbs Batch
+            for (index, subPath) in fullPaths.enumerated() {
+                let fullURL = fullDir.appendingPathComponent(subPath)
+                let thumbName = String(format: "thumb_%05d.jpg", index)
+                let thumbURL = thumbDir.appendingPathComponent(thumbName)
+                
+                // Downsample safely
+                if let image = ConversionManager.loadDownsampledImageStatic(at: fullURL, maxDimension: 200),
+                   let data = image.jpegData(compressionQuality: 0.7) {
+                    try data.write(to: thumbURL)
+                    thumbURLs.append(thumbURL)
+                } else {
+                    // Fallback if image fails (unlikely)
+                    thumbURLs.append(fullURL) 
+                }
+                
+                fullURLs.append(fullURL)
+                
+                // Report Progress
+                if index % 5 == 0 {
+                    await MainActor.run { progress(Double(index) / Double(fullPaths.count)) }
+                }
             }
             
-            return (tempDir, imageURLs)
+            return PageSession(baseDir: baseDir, fullImages: fullURLs, thumbnails: thumbURLs)
         }.value
     }
     
