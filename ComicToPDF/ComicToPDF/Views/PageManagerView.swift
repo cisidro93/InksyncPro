@@ -1,17 +1,45 @@
 import SwiftUI
 
-// ✅ STRICT SERIAL LOADER (Traffic Cop)
-// Only allows 1 image to load at a time globally. Crash-proof.
-actor SerialImageLoader {
-    static let shared = SerialImageLoader()
+class ImageLoaderModel: ObservableObject {
+    @Published var image: UIImage?
+    private var currentOperation: Operation?
     
-    func load(url: URL) async -> UIImage? {
-        // Yield ensures the UI main thread always has priority
-        await Task.yield()
+    // Global Static Queue: Only 1 image loads at a time across the ENTIRE app.
+    private static let queue: OperationQueue = {
+        let q = OperationQueue()
+        q.maxConcurrentOperationCount = 1 // STRICT SERIAL LOADING
+        q.qualityOfService = .userInteractive
+        return q
+    }()
+    
+    func load(url: URL) {
+        // Cancel any previous load for this cell
+        currentOperation?.cancel()
         
-        return autoreleasepool {
-            return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 150)
+        let operation = BlockOperation { [weak self] in
+            // 1. Check Cancellation
+            if self?.currentOperation?.isCancelled == true { return }
+            
+            // 2. Load Safely
+            let downsampled = autoreleasepool {
+                return ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 150)
+            }
+            
+            // 3. Update UI
+            if self?.currentOperation?.isCancelled == true { return }
+            
+            DispatchQueue.main.async {
+                self?.image = downsampled
+            }
         }
+        
+        currentOperation = operation
+        ImageLoaderModel.queue.addOperation(operation)
+    }
+    
+    func cancel() {
+        currentOperation?.cancel()
+        image = nil
     }
 }
 
@@ -20,7 +48,6 @@ struct PageManagerView: View {
     @Environment(\.dismiss) var dismiss
     let pdf: ConvertedPDF
     
-    // Switch to URL-based storage for OOM safety
     @State private var pageURLs: [URL] = []
     @State private var tempSessionDir: URL?
     
@@ -34,15 +61,15 @@ struct PageManagerView: View {
         NavigationView {
             VStack {
                 if isLoading {
-                    ProgressView("Processing Pages...")
+                    ProgressView("Opening Book...")
                 } else {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 12) {
                             ForEach(0..<pageURLs.count, id: \.self) { index in
                                 VStack {
                                     ZStack(alignment: .topTrailing) {
-                                        // ✅ Serial Loading Cell
-                                        SerialThumbnailCell(url: pageURLs[index])
+                                        // ✅ Robust OperationQueue Cell
+                                        QueueThumbnailCell(url: pageURLs[index])
                                             .frame(height: 150)
                                             .cornerRadius(8)
                                         
@@ -105,10 +132,10 @@ struct PageManagerView: View {
     }
     
     func loadPages() async {
+        // Just extract URLs. Fast and safe.
         cleanupTempFiles()
         isLoading = true
         do {
-            // Instant Unzip (No image processing)
             let result = try await conversionManager.extractImageFiles(from: pdf.url)
             self.tempSessionDir = result.workingDir
             self.pageURLs = result.files
@@ -137,7 +164,7 @@ struct PageManagerView: View {
         do {
             try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
             selectedPages.removeAll()
-            await loadPages() // Reload from new file
+            await loadPages()
         } catch { print("Delete failed: \(error)") }
         isLoading = false
     }
@@ -174,18 +201,14 @@ struct SelectionOverlay: View {
     }
 }
 
-// ✅ Safe Serial Cell
-struct SerialThumbnailCell: View, Equatable {
+// ✅ The Robust Cell
+struct QueueThumbnailCell: View {
     let url: URL
-    @State private var image: UIImage?
-    
-    static func == (lhs: SerialThumbnailCell, rhs: SerialThumbnailCell) -> Bool {
-        return lhs.url == rhs.url
-    }
+    @StateObject private var loader = ImageLoaderModel()
     
     var body: some View {
         GeometryReader { geo in
-            if let img = image {
+            if let img = loader.image {
                 Image(uiImage: img)
                     .resizable()
                     .scaledToFit()
@@ -193,21 +216,16 @@ struct SerialThumbnailCell: View, Equatable {
             } else {
                 ZStack {
                     Color.gray.opacity(0.1)
-                    ProgressView() // Shows "Loading..." while waiting for traffic cop
+                    ProgressView()
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
-                .task {
-                    // Ask traffic cop for image
-                    if let loaded = await SerialImageLoader.shared.load(url: url) {
-                        if !Task.isCancelled {
-                            self.image = loaded
-                        }
-                    }
-                }
             }
         }
+        .onAppear {
+            loader.load(url: url)
+        }
         .onDisappear {
-            self.image = nil
+            loader.cancel()
         }
     }
 }
