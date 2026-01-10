@@ -23,195 +23,37 @@ struct PanelEditorView: View {
     @State private var isMagicWandActive = false
     
     var body: some View {
-        VStack(spacing: 0) {
-            // MARK: - Top Toolbar
-            HStack(spacing: 8) {
-                Text("Page \(pageIndex + 1)")
-                    .font(.headline)
-                    .layoutPriority(1)
-                
-                Spacer()
-                
-                // Clear All
-                Button(action: clearAllPanels) {
-                    Image(systemName: "trash.slash")
-                        .foregroundColor(.red)
-                        .padding(8)
-                        .background(Color.red.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                .disabled(panels.isEmpty)
-                
-                // Magic Wand Toggle
-                Button(action: { isMagicWandActive.toggle(); selectedPanelIndex = nil }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: isMagicWandActive ? "wand.and.stars.inverse" : "wand.and.stars")
-                        Text("Magic Wand")
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .bold()
-                    .foregroundColor(isMagicWandActive ? .white : .blue)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(isMagicWandActive ? Color.blue : Color.clear)
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.blue, lineWidth: 1)
-                    )
-                }
-                .disabled(isLoading || isProcessing)
-                
-                // Add Manual Box
-                Button(action: addNewPanel) {
-                    Image(systemName: "plus.rectangle.on.rectangle")
-                        .padding(8)
-                        .background(Color.blue.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                .disabled(isLoading)
-            }
-            .padding()
-            .background(Color(UIColor.secondarySystemBackground))
+        VStack(spacing: 20) {
+            Image(systemName: "ladybug.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.green)
             
-            // MARK: - Main Canvas
-            GeometryReader { geo in
-                ZStack {
-                    Color.black.opacity(0.9).edgesIgnoringSafeArea(.all)
-                    
-                    if let image = pageImage {
-                        let imgFrame = calculateImageFrame(image: image, inside: geo.size)
-                        
-                        // Image Container
-                        ZStack(alignment: .topLeading) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: imgFrame.width, height: imgFrame.height)
-                            
-                            // Boxes
-                            ForEach(0..<panels.count, id: \.self) { index in
-                                DraggablePanelBox(
-                                    rect: $panels[index],
-                                    isSelected: selectedPanelIndex == index,
-                                    containerSize: imgFrame.size,
-                                    index: index + 1
-                                )
-                                .onTapGesture {
-                                    selectedPanelIndex = index
-                                }
-                            }
-                        }
-                        .frame(width: imgFrame.width, height: imgFrame.height)
-                        .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
-                        // Coordinate Space for Dragging
-                        .coordinateSpace(name: "ImageCanvas")
-                        .contentShape(Rectangle())
-                        .onTapGesture(coordinateSpace: .local) { location in
-                            if isMagicWandActive {
-                                let normalizedPoint = CGPoint(x: location.x / imgFrame.width, y: location.y / imgFrame.height)
-                                detectPanelAt(normalizedPoint: normalizedPoint)
-                            } else {
-                                selectedPanelIndex = nil
-                            }
-                        }
-                        
-                    } else if let error = loadError {
-                        VStack {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.largeTitle).foregroundColor(.orange)
-                            Text(error).font(.caption).foregroundColor(.secondary)
-                        }
-                    } else {
-                        VStack(spacing: 15) {
-                            ProgressView()
-                                .scaleEffect(1.5)
-                            Text("Opening Editor...")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                        }
-                    }
-                    
-                    // Loading Overlay
-                    if isProcessing {
-                        VStack {
-                            ProgressView()
-                            Text("Scanning...").font(.caption).bold().foregroundColor(.white)
-                        }
-                        .padding()
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(12)
-                    }
-                }
-            }
+            Text("Crash Investigation")
+                .font(.largeTitle)
             
-            // MARK: - Bottom Toolbar
-            HStack {
-                Button(role: .destructive, action: deleteSelectedPanel) {
-                    Image(systemName: "trash")
-                        .foregroundColor(selectedPanelIndex == nil ? .gray : .red)
-                        .padding(10)
-                }
-                .disabled(selectedPanelIndex == nil)
-                
-                Spacer()
-                
-                if isMagicWandActive {
-                    Text("Tap image to detect")
-                        .font(.caption)
-                        .bold()
-                        .foregroundColor(.blue)
-                        .padding(.horizontal)
-                        .transition(.opacity)
-                } else if let idx = selectedPanelIndex {
-                    Text("Panel #\(idx + 1) Selected")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                Button(action: saveAndClose) {
-                    Text("Save")
-                        .bold()
-                        .frame(width: 80)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isLoading)
-            }
-            .padding()
-            .background(Color(UIColor.secondarySystemBackground))
-        }
-        .task {
-            // ✅ THE FIX: Check for passed image first
-            if let passedImage = initialImage {
-                print("⚡️ Using passed image. Skipping unzip.")
-                self.pageImage = passedImage
-                self.isLoading = false
-                // Just load the panels, don't re-load the image
-                loadExistingPanels()
+            if let img = initialImage {
+                Text("Image Passed: YES")
+                    .foregroundColor(.green)
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 100)
             } else {
-                // Fallback for ConvertView (Old Way)
-                conversionManager.cleanupMemory()
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                await loadPageSafe()
+                Text("Image Passed: NO")
+                    .foregroundColor(.red)
+            }
+            
+            Text("Manager Status: \(conversionManager.statusMessage ?? "Ready")")
+                .padding()
+                .background(Color.gray.opacity(0.1))
+            
+            Button("Close") {
+                dismiss()
             }
         }
-        .onDisappear {
-            // Only end session if we didn't pass an image (implies we managed it internally)
-            // Or always end session? If we passed an image, we didn't start a session in ConversionManager
-            // so calling endSession() (which clears temp files) might be too aggressive if we are just closing the editor
-            // but keeping the PageManagerView session open.
-            // PageManagerView handles its own cleanup via viewModel.cleanup().
-            // conversionManager.endSession() typically clears the "surgical extraction" temp folder.
-            // If we are in "Passed Image" mode, we didn't use surgical extraction.
-            // But let's leave it safe: only if we loaded via safe load?
-            // Actually, conversionManager.endSession() clears 'activeExtractionTask'.
-            // It's probably safe to call it either way.
-            conversionManager.cleanupMemory()
-            conversionManager.endSession()
-        }
+        .padding()
+        .background(Color.black)
+        .foregroundColor(.white)
     }
     
     // MARK: - Logic Helpers
