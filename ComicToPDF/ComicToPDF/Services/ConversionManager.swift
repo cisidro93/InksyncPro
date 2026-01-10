@@ -160,12 +160,10 @@ class ConversionManager: ObservableObject {
         if activeExtractionTask == nil {
             print("🚀 Starting new Editor Session for: \(pdf.name)")
             
-            // ✅ CRITICAL FIX: Detach from MainActor to prevent UI Freeze
-            activeExtractionTask = Task.detached(priority: .userInitiated) {
-                print("📦 Unzipping on background thread...")
-                // Use the safe ZipUtilities extractor
+            // We still use Task.detached to keep the initial call off the Main Actor
+            activeExtractionTask = Task.detached(priority: .medium) {
+                // The new ZipUtilities handles its own threading, so we just await it
                 let result = try await ZipUtilities.extractComic(from: pdf.url)
-                print("✅ Unzipping complete. Files: \(result.imageURLs.count)")
                 return (workingDir: result.workingDir, files: result.imageURLs)
             }
         }
