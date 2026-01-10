@@ -149,37 +149,13 @@ class ConversionManager: ObservableObject {
     
     // Helper used by Editor for Single Page Load
     func extractFullPage(from pdf: ConvertedPDF, index: Int) async throws -> UIImage? {
+        print("⚠️ TEST MODE: Skipping Unzip completely.")
         
-        // 1. Check if we already have this comic open in our cache
-        if let cache = editorCache, cache.pdfID == pdf.id {
-            guard index < cache.files.count else { return nil }
-            return ConversionManager.loadDownsampledImageStatic(at: cache.files[index], maxDimension: 2000)
-        }
+        // Simulate a delay (like unzipping would take)
+        try await Task.sleep(nanoseconds: 1 * 1_000_000_000)
         
-        // 2. If not cached, and not currently extracting, start a new extraction task
-        if activeExtractionTask == nil {
-            print("🚀 Starting new Editor Session for: \(pdf.name)")
-            
-            // We still use Task.detached to keep the initial call off the Main Actor
-            activeExtractionTask = Task.detached(priority: .medium) {
-                // The new ZipUtilities handles its own threading, so we just await it
-                let result = try await ZipUtilities.extractComic(from: pdf.url)
-                return (workingDir: result.workingDir, files: result.imageURLs)
-            }
-        }
-        
-        // 3. Wait for the extraction to finish (or use the running one)
-        // This ensures that if 5 pages are requested at once, we only unzip ONE time.
-        guard let task = activeExtractionTask else { return nil }
-        let result = try await task.value
-        
-        // 4. Save to Cache
-        self.editorCache = (pdf.id, result.workingDir, result.files)
-        self.activeExtractionTask = nil // Clear the task so we are ready for next time
-        
-        // 5. Return the requested image
-        guard index < result.files.count else { return nil }
-        return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 2000)
+        // Return a dummy system image instead of the real comic page
+        return UIImage(systemName: "photo")
     }
     
     func endSession() {
