@@ -157,10 +157,13 @@ class ConversionManager: ObservableObject {
         }
         
         // 2. If not cached, and not currently extracting, start a new extraction task
+        // 2. If not cached, and not currently extracting, start a new extraction task
         if activeExtractionTask == nil {
             print("🚀 Starting new Editor Session for: \(pdf.name)")
-            activeExtractionTask = Task {
-                // Use the safe ZipUtilities extractor we added earlier
+            
+            // FIX: Use Task.detached to keep heavy unzipping OFF the Main Actor/UI Thread
+            activeExtractionTask = Task.detached(priority: .userInitiated) {
+                // Use the safe ZipUtilities extractor
                 let result = try await ZipUtilities.extractComic(from: pdf.url)
                 return (workingDir: result.workingDir, files: result.imageURLs)
             }
