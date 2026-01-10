@@ -330,20 +330,63 @@ class ConversionManager: ObservableObject {
     // Page Ops
     func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>) async throws {
         let sourceURL = pdf.url
+        
         try await Task.detached {
-            let fileManager = FileManager.default; let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true); defer { try? fileManager.removeItem(at: tempDir) }
-            try fileManager.unzipItem(at: sourceURL, to: tempDir)
-            if let subPaths = try? fileManager.subpathsOfDirectory(atPath: tempDir.path) {
-                let imagePaths = subPaths.filter { path in let ext = (path as NSString).pathExtension.lowercased(); return ["jpg","jpeg","png","webp"].contains(ext) && !path.contains("__MACOSX") }.sorted()
-                let imageURLs = imagePaths.map { tempDir.appendingPathComponent($0) }
-                for (index, url) in imageURLs.enumerated() { if pageIndices.contains(index) { try fileManager.removeItem(at: url) } }
-                let newURL = tempDir.appendingPathComponent("repacked.cbz")
-                // ✅ Use Deflate for repacking
-                try fileManager.zipItem(at: tempDir, to: newURL, compressionMethod: .deflate)
-                if fileManager.fileExists(atPath: sourceURL.path) { try fileManager.removeItem(at: sourceURL) }
-                try fileManager.moveItem(at: newURL, to: sourceURL)
+            let fileManager = FileManager.default
+            let tempID = UUID().uuidString
+            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(tempID)
+            let tempArchiveURL = fileManager.temporaryDirectory.appendingPathComponent("\(tempID).cbz")
+            
+            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            defer { try? fileManager.removeItem(at: tempDir); try? fileManager.removeItem(at: tempArchiveURL) }
+            
+            guard let sourceArchive = try? Archive(url: sourceURL, accessMode: .read),
+                  let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create) else {
+                throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
             }
+            
+            // 1. Map Entries to Indices (reproducing sorting logic)
+            // We sort by path to match how we displayed them
+            let sortedEntries = sourceArchive.makeIterator().sorted { $0.path < $1.path }
+            let imageEntries = sortedEntries.filter { entry in
+                let ext = (entry.path as NSString).pathExtension.lowercased()
+                return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
+            }
+            
+            // Identify paths to remove
+            var pathsToRemove: Set<String> = []
+            for (index, entry) in imageEntries.enumerated() {
+                if pageIndices.contains(index) {
+                    pathsToRemove.insert(entry.path)
+                }
+            }
+            
+            // 2. Stream Copy (Extract Temp -> Add -> Delete Temp)
+            // This avoids unzipping the entire 4GB file at once.
+            for entry in sourceArchive {
+                if !pathsToRemove.contains(entry.path) {
+                    let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
+                    
+                    // Extract Single Entry
+                    _ = try sourceArchive.extract(entry, to: tempFile)
+                    
+                    // Add to New Archive (Deflate)
+                    try destArchive.addEntry(with: entry.path, type: entry.type, uncompressedSize: entry.uncompressedSize, modificationDate: entry.fileAttributes[.modificationDate] as? Date ?? Date(), permissions: entry.fileAttributes[.posixPermissions] as? UInt16, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                        // Stream from file
+                        let fileHandle = try? FileHandle(forReadingFrom: tempFile)
+                        try? fileHandle?.seek(toOffset: UInt64(position))
+                        return fileHandle?.readData(ofLength: size) ?? Data()
+                    }
+                    
+                    // Cleanup Single Entry
+                    try? fileManager.removeItem(at: tempFile)
+                }
+            }
+            
+            // 3. Swap Files
+            if fileManager.fileExists(atPath: sourceURL.path) { try fileManager.removeItem(at: sourceURL) }
+            try fileManager.moveItem(at: tempArchiveURL, to: sourceURL)
+            
         }.value
         scanLibrary()
     }
