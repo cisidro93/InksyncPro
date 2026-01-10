@@ -157,14 +157,15 @@ class ConversionManager: ObservableObject {
         }
         
         // 2. If not cached, and not currently extracting, start a new extraction task
-        // 2. If not cached, and not currently extracting, start a new extraction task
         if activeExtractionTask == nil {
             print("🚀 Starting new Editor Session for: \(pdf.name)")
             
-            // FIX: Use Task.detached to keep heavy unzipping OFF the Main Actor/UI Thread
+            // ✅ CRITICAL FIX: Detach from MainActor to prevent UI Freeze
             activeExtractionTask = Task.detached(priority: .userInitiated) {
+                print("📦 Unzipping on background thread...")
                 // Use the safe ZipUtilities extractor
                 let result = try await ZipUtilities.extractComic(from: pdf.url)
+                print("✅ Unzipping complete. Files: \(result.imageURLs.count)")
                 return (workingDir: result.workingDir, files: result.imageURLs)
             }
         }
