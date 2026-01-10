@@ -66,7 +66,17 @@ class CBZToEPUBConverter {
             try fileManager.copyItem(at: srcURL, to: destURL)
             
             // Get Panels for this specific page (if any)
-            let pagePanels = manualManifest?[index] ?? []
+            var pagePanels = manualManifest?[index] ?? []
+            
+            // ✅ AUTO-DETECT FALLBACK
+            // If we have no manual panels, but panel splitting is ON, we must detect them now.
+            if pagePanels.isEmpty && settings.enablePanelSplit {
+                if let image = UIImage(contentsOfFile: destURL.path) {
+                    // Use mangaMode from settings if applicable, or default false
+                    // actually settings has mangaMode
+                    pagePanels = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: settings.mangaMode)
+                }
+            }
             
             // Create HTML for Page (With Guided View Metadata)
             let xhtmlContent = generateXHTML(imageName: newImageName, title: "Page \(index + 1)", panels: pagePanels)

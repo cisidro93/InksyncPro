@@ -191,6 +191,9 @@ struct PanelEditorView: View {
                 self.isLoading = false
                 // Just load the panels, don't re-load the image
                 loadExistingPanels()
+                if self.panels.isEmpty {
+                    autoDetectPanels()
+                }
             } else {
                 // Fallback for ConvertView (Old Way)
                 conversionManager.cleanupMemory()
@@ -303,12 +306,18 @@ struct PanelEditorView: View {
             if let image = try await conversionManager.extractFullPage(from: pdf, index: pageIndex) {
                 self.pageImage = image
                 loadExistingPanels()
+                if self.panels.isEmpty {
+                    autoDetectPanels()
+                }
                 self.isLoading = false
             } else {
                  if pageIndex != 0 {
                     if let image = try await conversionManager.extractFullPage(from: pdf, index: 0) {
                         self.pageImage = image
                         loadExistingPanels()
+                        if self.panels.isEmpty {
+                            autoDetectPanels()
+                        }
                         self.isLoading = false
                     } else { loadError = "Could not load image."; isLoading = false }
                 } else { loadError = "Page not found."; isLoading = false }
@@ -319,6 +328,19 @@ struct PanelEditorView: View {
     func loadExistingPanels() {
         if let overrides = conversionManager.panelOverrides[pdf.id]?[pageIndex] {
             self.panels = overrides.map { $0.boundingBox }
+        }
+    }
+    
+    // ✅ NEW: Auto Detect
+    func autoDetectPanels() {
+        guard let image = pageImage else { return }
+        self.isProcessing = true
+        Task {
+            let detected = await PanelExtractor.detectPanels(in: image)
+            await MainActor.run {
+                self.panels = detected.map { $0.boundingBox }
+                self.isProcessing = false
+            }
         }
     }
     
