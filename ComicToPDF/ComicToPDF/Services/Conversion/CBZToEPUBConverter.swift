@@ -105,6 +105,8 @@ class CBZToEPUBConverter {
                 <meta property="rendition:spread">auto</meta>
                 <meta name="fixed-layout" content="true"/>
                 <meta name="original-resolution" content="1920x2560"/> 
+                <meta name="book-type" content="comic"/>
+                <meta name="region-mag" content="true"/>
             </metadata>
             <manifest>
                 <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
