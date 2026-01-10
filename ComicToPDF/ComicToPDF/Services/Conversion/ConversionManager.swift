@@ -339,7 +339,8 @@ class ConversionManager: ObservableObject {
                 let imageURLs = imagePaths.map { tempDir.appendingPathComponent($0) }
                 for (index, url) in imageURLs.enumerated() { if pageIndices.contains(index) { try fileManager.removeItem(at: url) } }
                 let newURL = tempDir.appendingPathComponent("repacked.cbz")
-                try fileManager.zipItem(at: tempDir, to: newURL)
+                // ✅ Use Deflate for repacking
+                try fileManager.zipItem(at: tempDir, to: newURL, compressionMethod: .deflate)
                 if fileManager.fileExists(atPath: sourceURL.path) { try fileManager.removeItem(at: sourceURL) }
                 try fileManager.moveItem(at: newURL, to: sourceURL)
             }

@@ -244,10 +244,22 @@ struct PageManagerView: View {
     
     func deleteSelected() async {
         guard !selectedPages.isEmpty else { return }
-        try? await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
-        selectedPages.removeAll()
-        viewModel.cleanup()
-        await viewModel.loadPages(from: pdf)
+        
+        // ✅ UX: Show Loading
+        viewModel.isLoading = true
+        viewModel.statusText = "Deleting \(selectedPages.count) pages..."
+        
+        do {
+            try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
+            selectedPages.removeAll()
+            viewModel.cleanup()
+            
+            // Reload
+            await viewModel.loadPages(from: pdf)
+        } catch {
+             viewModel.errorMessage = "Delete failed: \(error.localizedDescription)"
+             viewModel.isLoading = false
+        }
     }
 }
 
