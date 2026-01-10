@@ -22,7 +22,10 @@ struct ContentView: View {
         }
         .environmentObject(conversionManager)
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
-        .sheet(item: $pdfToEdit) { pdf in PageManagerView(pdf: pdf) }
+        .sheet(item: $pdfToEdit) { pdf in 
+            PageManagerView(pdf: pdf)
+                .environmentObject(conversionManager)
+        }
     }
     
     var iPhoneLayout: some View {
