@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import CoreGraphics
+import UIKit
 
 // MARK: - Core Data Models
 
@@ -248,6 +249,14 @@ struct PageItem: Identifiable, Equatable {
 }
 
 // MARK: - Task & App Models
+
+struct DeletablePageItem: Identifiable {
+    let id = UUID()
+    let pageIndex: Int
+    let thumbnail: UIImage
+    var isSelected: Bool
+    var imageURL: URL? = nil
+}
 
 class AppBackgroundTask: Identifiable, ObservableObject {
     let id: UUID
