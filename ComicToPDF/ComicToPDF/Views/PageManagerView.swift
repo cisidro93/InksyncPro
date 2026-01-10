@@ -1,15 +1,13 @@
 import SwiftUI
-import ZIPFoundation
 
-// ✅ 1. Safe Data Model
+// Safe Model for Grid Items
 struct GridPageItem: Identifiable, Equatable {
     let id = UUID()
     let url: URL
     let index: Int
 }
 
-// ✅ 2. Isolated View Model (The Sandbox)
-// This handles all the heavy lifting away from the View code.
+// ViewModel using the new "Rename & Unzip" strategy
 @MainActor
 class PageEditorViewModel: ObservableObject {
     @Published var items: [GridPageItem] = []
@@ -18,58 +16,27 @@ class PageEditorViewModel: ObservableObject {
     
     private var tempDir: URL?
     
-    func loadPages(from sourcePDF: ConvertedPDF) async {
+    // We instantiate conversionManager just to call the static-like helper methods or use it passed in
+    // Better to just call the ConversionManager logic directly via the shared instance passed in
+    func loadPages(from sourcePDF: ConvertedPDF, manager: ConversionManager) async {
         self.isLoading = true
         self.errorMessage = nil
         
-        // Safety Pause: Let the UI transition finish completely
-        try? await Task.sleep(nanoseconds: 600_000_000) // 0.6s
+        // Safety Pause
+        try? await Task.sleep(nanoseconds: 600_000_000)
         
-        // Run extraction on a background thread to keep UI responsive
-        let extractionResult = await Task.detached(priority: .userInitiated) { () -> Result<(URL, [URL]), Error> in
-            let fileManager = FileManager.default
-            let uniqueID = UUID().uuidString
-            let tempDir = fileManager.temporaryDirectory.appendingPathComponent("Editor_\(uniqueID)")
+        do {
+            // Call the STABLE method in ConversionManager
+            let result = try await manager.extractImageFiles(from: sourcePDF.url)
+            self.tempDir = result.workingDir
             
-            do {
-                // 1. Create Clean Temp Directory
-                try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                
-                // 2. Unzip (Standard robust unzip)
-                try fileManager.unzipItem(at: sourcePDF.url, to: tempDir)
-                
-                // 3. Scan for Images
-                let validExts = ["jpg", "jpeg", "png", "webp"]
-                var foundURLs: [URL] = []
-                
-                if let subPaths = try? fileManager.subpathsOfDirectory(atPath: tempDir.path) {
-                    let sortedPaths = subPaths.sorted()
-                    for path in sortedPaths {
-                        let ext = (path as NSString).pathExtension.lowercased()
-                        // Strict filtering
-                        if validExts.contains(ext) && !path.contains("__MACOSX") && !(path as NSString).lastPathComponent.hasPrefix(".") {
-                            foundURLs.append(tempDir.appendingPathComponent(path))
-                        }
-                    }
-                }
-                
-                return .success((tempDir, foundURLs))
-            } catch {
-                return .failure(error)
-            }
-        }.value
-        
-        // Handle Result back on Main Actor
-        switch extractionResult {
-        case .success(let (dir, urls)):
-            self.tempDir = dir
-            // Map to safe structs
-            self.items = urls.enumerated().map { index, url in
+            // Map
+            self.items = result.files.enumerated().map { index, url in
                 GridPageItem(url: url, index: index)
             }
             self.isLoading = false
             
-        case .failure(let error):
+        } catch {
             self.errorMessage = error.localizedDescription
             self.isLoading = false
         }
@@ -89,46 +56,41 @@ struct PageManagerView: View {
     @Environment(\.dismiss) var dismiss
     let pdf: ConvertedPDF
     
-    // Use the Isolated View Model
     @StateObject private var viewModel = PageEditorViewModel()
-    
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
     
-    // Reverting to Grid (List was just for testing, Grid is what you want)
+    // Back to Grid (it works fine if the data loading is safe)
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
     var body: some View {
         NavigationView {
             VStack {
                 if let error = viewModel.errorMessage {
-                    // ERROR STATE
-                    VStack(spacing: 15) {
+                    VStack(spacing: 20) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.largeTitle)
                             .foregroundColor(.orange)
-                        Text("Could Not Load Pages")
+                        Text("Error Opening File")
                             .font(.headline)
                         Text(error)
                             .font(.caption)
+                            .multilineTextAlignment(.center)
                             .padding()
                     }
                 } else if viewModel.isLoading {
-                    // LOADING STATE
                     VStack(spacing: 15) {
                         ProgressView()
                             .scaleEffect(1.5)
-                        Text("Opening Editor...")
+                        Text("Unpacking Comic...")
                             .font(.headline)
                             .foregroundColor(.secondary)
                     }
                 } else {
-                    // CONTENT STATE
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 10) {
                             ForEach(viewModel.items) { item in
                                 VStack {
-                                    // Safe Async Cell
                                     SafeGridCell(url: item.url)
                                         .frame(height: 150)
                                         .cornerRadius(8)
@@ -137,7 +99,6 @@ struct PageManagerView: View {
                                                 RoundedRectangle(cornerRadius: 8)
                                                     .stroke(selectedPages.contains(item.index) ? Color.blue : Color.clear, lineWidth: 3)
                                                 
-                                                // Guided View Indicator
                                                 if conversionManager.panelOverrides[pdf.id]?[item.index] != nil {
                                                     Image(systemName: "scissors")
                                                         .font(.caption)
@@ -186,14 +147,12 @@ struct PageManagerView: View {
                 }
             }
             .task {
-                // Trigger load ONLY once
                 if viewModel.items.isEmpty {
-                    await viewModel.loadPages(from: pdf)
+                    await viewModel.loadPages(from: pdf, manager: conversionManager)
                 }
             }
             .onDisappear {
-                // Don't cleanup immediately on disappear (caused issues with sheet)
-                // Cleanup happens when ViewModel is deallocated
+                // Keep cache alive for scrolling speed
             }
             .sheet(item: $pageToEdit) { index in
                 PanelEditorView(pdf: pdf, pageIndex: index)
@@ -208,25 +167,20 @@ struct PageManagerView: View {
     
     func deleteSelected() async {
         guard !selectedPages.isEmpty else { return }
-        // Simple passthrough to manager
         try? await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
         selectedPages.removeAll()
-        
-        // Reload via VM
         viewModel.cleanup()
-        await viewModel.loadPages(from: pdf)
+        await viewModel.loadPages(from: pdf, manager: conversionManager)
     }
 }
 
-// ✅ Safe Cell using native AsyncImage
+// Safe Cell
 struct SafeGridCell: View {
     let url: URL
     var body: some View {
         AsyncImage(url: url) { phase in
             if let image = phase.image {
                 image.resizable().scaledToFit()
-            } else if phase.error != nil {
-                Color.red.opacity(0.2)
             } else {
                 Color.gray.opacity(0.1)
             }

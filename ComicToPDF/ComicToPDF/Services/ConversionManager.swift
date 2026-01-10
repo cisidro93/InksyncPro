@@ -129,62 +129,44 @@ class ConversionManager: ObservableObject {
         scanLibrary()
     }
     
-    // MARK: - SAFE FILE EXTRACTION WITH HEADER CHECK
+    // MARK: - STABLE FILE EXTRACTION (Rename -> Unzip -> Filter)
+    // This restores the logic that works for all ZIP-based files.
     func extractImageFiles(from url: URL) async throws -> (workingDir: URL, files: [URL]) {
         return try await Task.detached(priority: .userInitiated) {
-            // 1. HEADER CHECK (The DNA Test)
-            // Reads the first 4 bytes to confirm it is TRULY a ZIP file.
-            if let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count >= 4 {
-                let header = data.prefix(4)
-                
-                // Magic Numbers:
-                // ZIP = 50 4B 03 04 (PK..)
-                // RAR = 52 61 72 21 (Rar!)
-                // PDF = 25 50 44 46 (%PDF)
-                
-                if header.starts(with: [0x52, 0x61, 0x72, 0x21]) {
-                    throw NSError(domain: "Conversion", code: 999, userInfo: [NSLocalizedDescriptionKey: "CRASH PREVENTED: This is a RAR file renamed to .cbz. Please convert to ZIP."])
-                }
-                if header.starts(with: [0x25, 0x50, 0x44, 0x46]) {
-                    throw NSError(domain: "Conversion", code: 998, userInfo: [NSLocalizedDescriptionKey: "CRASH PREVENTED: This is a PDF file renamed to .cbz."])
-                }
-                // If it's not PK.. (ZIP), we proceed with caution or fail
-                if !header.starts(with: [0x50, 0x4B, 0x03, 0x04]) {
-                    print("⚠️ Warning: Unknown file header: \(header as NSData). Attempting unzip anyway...")
-                }
-            }
-
-            // 2. Start Extraction
             let fileManager = FileManager.default
-            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let uniqueID = UUID().uuidString
+            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(uniqueID)
+            
+            // 1. Create clean directory
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
             
-            guard let archive = try? Archive(url: url, accessMode: .read) else {
-                throw NSError(domain: "Unzip", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to read ZIP structure. File may be corrupt."])
-            }
+            // 2. COPY and RENAME to .zip (Fixes 'Invalid Archive' errors)
+            let tempZipURL = fileManager.temporaryDirectory.appendingPathComponent("temp_\(uniqueID).zip")
+            if fileManager.fileExists(atPath: tempZipURL.path) { try fileManager.removeItem(at: tempZipURL) }
+            try fileManager.copyItem(at: url, to: tempZipURL)
             
+            defer { try? fileManager.removeItem(at: tempZipURL) } // Clean up the temp zip
+            
+            // 3. Unzip Everything
+            try fileManager.unzipItem(at: tempZipURL, to: tempDir)
+            
+            // 4. Filter Results (Post-Process)
             var imageURLs: [URL] = []
             let validExts = ["jpg", "jpeg", "png", "webp"]
             
-            for entry in archive {
-                let path = entry.path
-                let ext = (path as NSString).pathExtension.lowercased()
-                let filename = (path as NSString).lastPathComponent
-                
-                if validExts.contains(ext) && !path.contains("__MACOSX") && !filename.hasPrefix(".") {
-                    let destURL = tempDir.appendingPathComponent(filename)
-                    autoreleasepool {
-                        do {
-                            _ = try archive.extract(entry, to: destURL)
-                            imageURLs.append(destURL)
-                        } catch {
-                            print("Skipped bad file: \(filename)")
-                        }
+            if let subPaths = try? fileManager.subpathsOfDirectory(atPath: tempDir.path) {
+                let sortedPaths = subPaths.sorted()
+                for path in sortedPaths {
+                    let ext = (path as NSString).pathExtension.lowercased()
+                    let filename = (path as NSString).lastPathComponent
+                    
+                    // Ignore junk
+                    if validExts.contains(ext) && !path.contains("__MACOSX") && !filename.hasPrefix(".") {
+                        imageURLs.append(tempDir.appendingPathComponent(path))
                     }
                 }
             }
             
-            imageURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
             return (tempDir, imageURLs)
         }.value
     }
@@ -193,31 +175,18 @@ class ConversionManager: ObservableObject {
         return try await extractImageFiles(from: url).files
     }
     
-    // Single Page (Safe Wrapper)
+    // Helper used by Editor for Single Page Load
     func extractFullPage(from pdf: ConvertedPDF, index: Int) async throws -> UIImage? {
-        return try await Task.detached {
-            let fileManager = FileManager.default
-            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            defer { try? fileManager.removeItem(at: tempDir) }
-            
-            try fileManager.unzipItem(at: pdf.url, to: tempDir)
-            
-            let validExts = ["jpg", "jpeg", "png", "webp"]
-            guard let subPaths = try? fileManager.subpathsOfDirectory(atPath: tempDir.path) else { return nil }
-            
-            let imagePaths = subPaths.filter { path in
-                let ext = (path as NSString).pathExtension.lowercased()
-                return validExts.contains(ext) && !path.contains("__MACOSX") && !(path as NSString).lastPathComponent.hasPrefix(".")
-            }.sorted()
-            
-            guard index < imagePaths.count else { return nil }
-            let fullPath = tempDir.appendingPathComponent(imagePaths[index])
-            
-            return autoreleasepool {
-                return ConversionManager.loadDownsampledImageStatic(at: fullPath, maxDimension: 1920)
-            }
-        }.value
+        // Reuse the stable logic, just optimized to return one image
+        let result = try await extractImageFiles(from: pdf.url)
+        let urls = result.files
+        defer { try? FileManager.default.removeItem(at: result.workingDir) }
+        
+        guard index < urls.count else { return nil }
+        
+        return autoreleasepool {
+            return ConversionManager.loadDownsampledImageStatic(at: urls[index], maxDimension: 1920)
+        }
     }
     
     nonisolated static func loadDownsampledImageStatic(at url: URL, maxDimension: CGFloat) -> UIImage? {
@@ -293,10 +262,7 @@ class ConversionManager: ObservableObject {
             return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
         }
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
-            // Header check can be added here too if needed, but archive init will fail first
             guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
-            
-            // Fix: Sort
             let sortedEntries = archive.makeIterator().sorted { $0.path < $1.path }
             for entry in sortedEntries {
                 let entryExt = (entry.path as NSString).pathExtension.lowercased()
