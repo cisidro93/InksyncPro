@@ -1,42 +1,44 @@
 import SwiftUI
 
-// Safe Model for Grid Items
+// Safe Model
 struct GridPageItem: Identifiable, Equatable {
     let id = UUID()
     let url: URL
     let index: Int
 }
 
-// ViewModel using the new "Rename & Unzip" strategy
+// ViewModel (Kept the isolated safe version)
 @MainActor
 class PageEditorViewModel: ObservableObject {
     @Published var items: [GridPageItem] = []
     @Published var isLoading = true
+    @Published var statusText = "Preparing..."
     @Published var errorMessage: String?
     
     private var tempDir: URL?
     
-    // We instantiate conversionManager just to call the static-like helper methods or use it passed in
-    // Better to just call the ConversionManager logic directly via the shared instance passed in
-    func loadPages(from sourcePDF: ConvertedPDF, manager: ConversionManager) async {
+    func loadPages(from pdf: ConvertedPDF) async {
         self.isLoading = true
         self.errorMessage = nil
+        self.statusText = "Initializing..."
         
         // Safety Pause
         try? await Task.sleep(nanoseconds: 600_000_000)
         
+        self.statusText = "Unpacking..."
+        
         do {
-            // Call the STABLE method in ConversionManager
-            let result = try await manager.extractImageFiles(from: sourcePDF.url)
-            self.tempDir = result.workingDir
+            // Use ZipUtilities (Ensure ZipUtilities.swift is in your project)
+            let (dir, urls) = try await ZipUtilities.extractComic(from: pdf.url)
             
-            // Map
-            self.items = result.files.enumerated().map { index, url in
+            self.tempDir = dir
+            self.items = urls.enumerated().map { index, url in
                 GridPageItem(url: url, index: index)
             }
             self.isLoading = false
             
         } catch {
+            print("Editor Error: \(error)")
             self.errorMessage = error.localizedDescription
             self.isLoading = false
         }
@@ -60,12 +62,31 @@ struct PageManagerView: View {
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
     
-    // Back to Grid (it works fine if the data loading is safe)
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
     var body: some View {
-        NavigationView {
-            VStack {
+        // ✅ CRITICAL FIX: Removed NavigationView wrapper.
+        // This prevents the "Nested Navigation Crash".
+        VStack(spacing: 0) {
+            
+            // Custom Header
+            HStack {
+                Text("Edit Pages")
+                    .font(.headline)
+                Spacer()
+                Button("Done") {
+                    viewModel.cleanup()
+                    dismiss()
+                }
+                .font(.body.bold())
+            }
+            .padding()
+            .background(Color(UIColor.systemBackground))
+            .shadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
+            .zIndex(1)
+            
+            // Main Content
+            ZStack {
                 if let error = viewModel.errorMessage {
                     VStack(spacing: 20) {
                         Image(systemName: "exclamationmark.triangle")
@@ -82,7 +103,7 @@ struct PageManagerView: View {
                     VStack(spacing: 15) {
                         ProgressView()
                             .scaleEffect(1.5)
-                        Text("Unpacking Comic...")
+                        Text(viewModel.statusText)
                             .font(.headline)
                             .foregroundColor(.secondary)
                     }
@@ -117,9 +138,6 @@ struct PageManagerView: View {
                                                 toggleSelection(item.index)
                                             }
                                         }
-                                        .onLongPressGesture {
-                                            toggleSelection(item.index)
-                                        }
                                     
                                     Text("\(item.index + 1)")
                                         .font(.caption)
@@ -128,35 +146,37 @@ struct PageManagerView: View {
                             }
                         }
                         .padding()
+                        .padding(.bottom, 80) // Space for bottom bar
                     }
                 }
             }
-            .navigationTitle("Edit Pages")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    if !selectedPages.isEmpty {
-                        Button(role: .destructive) {
-                            Task { await deleteSelected() }
-                        } label: {
-                            Text("Delete \(selectedPages.count) Pages")
-                        }
+            
+            // Bottom Action Bar
+            if !selectedPages.isEmpty {
+                VStack {
+                    Divider()
+                    Button(role: .destructive) {
+                        Task { await deleteSelected() }
+                    } label: {
+                        Text("Delete \(selectedPages.count) Pages")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red.opacity(0.1))
+                            .foregroundColor(.red)
+                            .cornerRadius(8)
                     }
+                    .padding()
                 }
+                .background(Color(UIColor.systemBackground))
             }
-            .task {
-                if viewModel.items.isEmpty {
-                    await viewModel.loadPages(from: pdf, manager: conversionManager)
-                }
+        }
+        .task {
+            if viewModel.items.isEmpty {
+                await viewModel.loadPages(from: pdf)
             }
-            .onDisappear {
-                // Keep cache alive for scrolling speed
-            }
-            .sheet(item: $pageToEdit) { index in
-                PanelEditorView(pdf: pdf, pageIndex: index)
-            }
+        }
+        .sheet(item: $pageToEdit) { index in
+            PanelEditorView(pdf: pdf, pageIndex: index)
         }
     }
     
@@ -170,7 +190,7 @@ struct PageManagerView: View {
         try? await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
         selectedPages.removeAll()
         viewModel.cleanup()
-        await viewModel.loadPages(from: pdf, manager: conversionManager)
+        await viewModel.loadPages(from: pdf)
     }
 }
 
