@@ -185,18 +185,18 @@ struct PageManagerView: View {
                             }
                             .padding()
                             .padding(.bottom, 80)
+                            // ✅ GLIDING SELECTION GESTURE (Attached to Content for correct Y coordinates)
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        guard isSelectionMode else { return }
+                                        updateDragSelection(at: value.location, in: geo.size)
+                                    }
+                                    .onEnded { _ in
+                                        dragStart = nil
+                                    }
+                            )
                         }
-                        // ✅ GLIDING SELECTION GESTURE
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    guard isSelectionMode else { return }
-                                    updateDragSelection(at: value.location, in: geo.size)
-                                }
-                                .onEnded { _ in
-                                    dragStart = nil
-                                }
-                        )
                     }
                 }
             }
