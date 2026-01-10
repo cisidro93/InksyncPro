@@ -153,7 +153,7 @@ class ConversionManager: ObservableObject {
         // 1. Check if we already have this comic open in our cache
         if let cache = editorCache, cache.pdfID == pdf.id {
             guard index < cache.files.count else { return nil }
-            return ConversionManager.loadDownsampledImageStatic(at: cache.files[index], maxDimension: 1920)
+            return ConversionManager.loadDownsampledImageStatic(at: cache.files[index], maxDimension: 2000)
         }
         
         // 2. If not cached, and not currently extracting, start a new extraction task
@@ -179,7 +179,7 @@ class ConversionManager: ObservableObject {
         
         // 5. Return the requested image
         guard index < result.files.count else { return nil }
-        return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 1920)
+        return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 2000)
     }
     
     func endSession() {
