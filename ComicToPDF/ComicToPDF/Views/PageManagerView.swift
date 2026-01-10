@@ -70,6 +70,7 @@ struct PageManagerView: View {
     @StateObject private var viewModel = PageEditorViewModel()
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
+    @State private var selectedImageForEditor: UIImage? // ✅ NEW: Store loaded image
     
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
@@ -141,7 +142,14 @@ struct PageManagerView: View {
                                         )
                                         .onTapGesture {
                                             if selectedPages.isEmpty {
-                                                pageToEdit = item.index
+                                                // ✅ FIX: Load image immediately
+                                                if let image = UIImage(contentsOfFile: item.url.path) {
+                                                    print("✅ Loaded image for editor: \(item.url.lastPathComponent)")
+                                                    self.selectedImageForEditor = image
+                                                    self.pageToEdit = item.index
+                                                } else {
+                                                    print("❌ Failed to load image at: \(item.url.path)")
+                                                }
                                             } else {
                                                 toggleSelection(item.index)
                                             }
@@ -183,8 +191,12 @@ struct PageManagerView: View {
             await viewModel.loadPages(from: pdf)
         }
         .sheet(item: $pageToEdit) { index in
-            PanelEditorView(pdf: pdf, pageIndex: index)
-                .environmentObject(conversionManager)
+            PanelEditorView(
+                pdf: pdf,
+                pageIndex: index,
+                initialImage: selectedImageForEditor // ✅ Pass the loaded image
+            )
+            .environmentObject(conversionManager)
         }
     }
     

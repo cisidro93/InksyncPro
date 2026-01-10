@@ -8,6 +8,9 @@ struct PanelEditorView: View {
     let pdf: ConvertedPDF
     let pageIndex: Int
     
+    // ✅ NEW: Optional input image
+    var initialImage: UIImage? = nil
+    
     // Local State
     @State private var pageImage: UIImage?
     @State private var isLoading = true
@@ -180,18 +183,32 @@ struct PanelEditorView: View {
             .padding()
             .background(Color(UIColor.secondarySystemBackground))
         }
-        // ✅ CRITICAL FIX: Add delay to separate animation from image loading
         .task {
-            // 1. Clean memory first
-            conversionManager.cleanupMemory()
-            
-            // 2. Wait 0.5s for sheet animation to finish
-            try? await Task.sleep(nanoseconds: 500_000_000) 
-            
-            // 3. NOW load the image
-            await loadPageSafe()
+            // ✅ THE FIX: Check for passed image first
+            if let passedImage = initialImage {
+                print("⚡️ Using passed image. Skipping unzip.")
+                self.pageImage = passedImage
+                self.isLoading = false
+                // Just load the panels, don't re-load the image
+                loadExistingPanels()
+            } else {
+                // Fallback for ConvertView (Old Way)
+                conversionManager.cleanupMemory()
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await loadPageSafe()
+            }
         }
         .onDisappear {
+            // Only end session if we didn't pass an image (implies we managed it internally)
+            // Or always end session? If we passed an image, we didn't start a session in ConversionManager
+            // so calling endSession() (which clears temp files) might be too aggressive if we are just closing the editor
+            // but keeping the PageManagerView session open.
+            // PageManagerView handles its own cleanup via viewModel.cleanup().
+            // conversionManager.endSession() typically clears the "surgical extraction" temp folder.
+            // If we are in "Passed Image" mode, we didn't use surgical extraction.
+            // But let's leave it safe: only if we loaded via safe load?
+            // Actually, conversionManager.endSession() clears 'activeExtractionTask'.
+            // It's probably safe to call it either way.
             conversionManager.cleanupMemory()
             conversionManager.endSession()
         }
