@@ -72,6 +72,10 @@ class CBZToEPUBConverter {
         // 3. Generate EPUB for each batch
         var generatedFiles: [URL] = []
         
+        // Track resolution from the first image of the first batch for consistency
+        var contentSize = CGSize(width: 1080, height: 1920) // Default fallback
+        var hasCapturedResolution = false
+        
         for (batchIndex, batch) in batches.enumerated() {
             let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
             let epubName = baseFilename + partSuffix
@@ -119,6 +123,14 @@ class CBZToEPUBConverter {
                 let destURL = imagesDir.appendingPathComponent(newImageName)
                 try item.data.write(to: destURL)
                 
+                // ✅ CAPTURE RESOLUTION (Once)
+                if !hasCapturedResolution {
+                    if let image = UIImage(data: item.data) {
+                        contentSize = image.size
+                        hasCapturedResolution = true
+                    }
+                }
+                
                 // Detect Panels (Global Index Lookup)
                 var pagePanels = manualManifest?[item.index] ?? []
                 if pagePanels.isEmpty && settings.enablePanelSplit {
@@ -139,6 +151,10 @@ class CBZToEPUBConverter {
             }
             
             // OPF
+            // ✅ USE DYNAMIC RESOLUTION
+            let widthID = Int(contentSize.width)
+            let heightID = Int(contentSize.height)
+            
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
@@ -150,7 +166,7 @@ class CBZToEPUBConverter {
                     <meta property="rendition:orientation">auto</meta>
                     <meta property="rendition:spread">auto</meta>
                     <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="1920x2560"/> 
+                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
                     <meta name="book-type" content="comic"/>
                     <meta name="region-mag" content="true"/>
                 </metadata>
@@ -230,8 +246,8 @@ class CBZToEPUBConverter {
             <title>\(title)</title>
             <meta name="viewport" content="width=100%, height=100%"/>
             <style type="text/css">
-                body { margin: 0; padding: 0; background-color: #000; width: 100vw; height: 100vh; overflow: hidden; }
-                .page-container { position: relative; width: 100%; height: 100%; }
+                body { margin: 0; padding: 0; background-color: #000; overflow: hidden; }
+                .page-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
                 img { width: 100%; height: 100%; object-fit: contain; }
                 /* Region Magnification Targets (Invisible to naked eye, seen by Kindle) */
                 .app-amzn-magnify { border: 1px solid rgba(0,0,0,0); z-index: 10; cursor: pointer; }
