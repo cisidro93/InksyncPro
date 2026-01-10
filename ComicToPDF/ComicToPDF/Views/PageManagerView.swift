@@ -32,7 +32,10 @@ class PageEditorViewModel: ObservableObject {
         
         do {
             // Call Surgical Extraction
-            let (dir, urls) = try await ZipUtilities.extractComic(from: pdf.url)
+            // FIX: Run heavy unzipping on a detached background task
+            let (dir, urls) = try await Task.detached(priority: .userInitiated) {
+                return try await ZipUtilities.extractComic(from: pdf.url)
+            }.value
             
             self.tempDir = dir
             self.items = urls.enumerated().map { index, url in
