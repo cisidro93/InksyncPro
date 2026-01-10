@@ -70,7 +70,8 @@ struct PageManagerView: View {
     @StateObject private var viewModel = PageEditorViewModel()
     @State private var selectedPages: Set<Int> = []
     @State private var pageToEdit: Int?
-    @State private var selectedImageForEditor: UIImage? // ✅ NEW: Store loaded image
+    @State private var selectedImageForEditor: UIImage?
+    @State private var isSelectionMode = false // ✅ NEW: Selection Mode State
     
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
@@ -83,6 +84,28 @@ struct PageManagerView: View {
                 Text("Edit Pages")
                     .font(.headline)
                 Spacer()
+                
+                // ✅ Selection Menu
+                Menu {
+                    Button(action: { selectFirst(20) }) { Label("Select First 20", systemImage: "number.square") }
+                    Button(action: { selectFirst(50) }) { Label("Select First 50", systemImage: "number.square") }
+                    Button(action: { selectFirst(100) }) { Label("Select First 100", systemImage: "number.square") }
+                    Button(action: { selectAll() }) { Label("Select All", systemImage: "checkmark.circle.fill") }
+                    Button(role: .destructive, action: { selectedPages.removeAll() }) { Label("Deselect All", systemImage: "xmark.circle") }
+                } label: {
+                    Image(systemName: "checklist")
+                        .font(.body)
+                        .padding(8)
+                }
+                
+                // ✅ Toggle Selection Mode
+                Button(action: { isSelectionMode.toggle() }) {
+                    Image(systemName: isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
+                        .font(.body)
+                        .padding(8)
+                        .foregroundColor(isSelectionMode ? .blue : .primary)
+                }
+                
                 Button("Done") {
                     viewModel.cleanup()
                     dismiss()
@@ -141,8 +164,11 @@ struct PageManagerView: View {
                                             }
                                         )
                                         .onTapGesture {
-                                            if selectedPages.isEmpty {
-                                                // ✅ FIX: Load image immediately
+                                            if isSelectionMode || !selectedPages.isEmpty {
+                                                // ✅ Selection Mode: Always Select/Deselect
+                                                toggleSelection(item.index)
+                                            } else {
+                                                // ✅ Normal Mode: Open Editor
                                                 if let image = UIImage(contentsOfFile: item.url.path) {
                                                     print("✅ Loaded image for editor: \(item.url.lastPathComponent)")
                                                     self.selectedImageForEditor = image
@@ -150,8 +176,6 @@ struct PageManagerView: View {
                                                 } else {
                                                     print("❌ Failed to load image at: \(item.url.path)")
                                                 }
-                                            } else {
-                                                toggleSelection(item.index)
                                             }
                                         }
                                     
@@ -203,6 +227,19 @@ struct PageManagerView: View {
     func toggleSelection(_ index: Int) {
         if selectedPages.contains(index) { selectedPages.remove(index) }
         else { selectedPages.insert(index) }
+    }
+    
+    // ✅ Batch Selection Helpers
+    func selectFirst(_ count: Int) {
+        selectedPages.removeAll()
+        let limit = min(count, viewModel.items.count)
+        for i in 0..<limit {
+            selectedPages.insert(viewModel.items[i].index)
+        }
+    }
+    
+    func selectAll() {
+        selectedPages = Set(viewModel.items.map { $0.index })
     }
     
     func deleteSelected() async {

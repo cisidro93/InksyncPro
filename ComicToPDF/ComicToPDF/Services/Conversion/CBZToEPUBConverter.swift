@@ -140,7 +140,8 @@ class CBZToEPUBConverter {
         let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(outputFilename)
         if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
         
-        try fileManager.zipItem(at: epubDir, to: outputURL)
+        // ✅ Explicitly use deflate compression for all files
+        try fileManager.zipItem(at: epubDir, to: outputURL, compressionMethod: .deflate)
         
         // Cleanup (The deferred cleanup at step 1 handles the tempDir)
         progress(1.0)
