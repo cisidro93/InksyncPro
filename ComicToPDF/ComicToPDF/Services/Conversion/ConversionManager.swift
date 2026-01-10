@@ -371,7 +371,8 @@ class ConversionManager: ObservableObject {
                     _ = try sourceArchive.extract(entry, to: tempFile)
                     
                     // Add to New Archive (Deflate)
-                    try destArchive.addEntry(with: entry.path, type: entry.type, uncompressedSize: entry.uncompressedSize, modificationDate: entry.fileAttributes[.modificationDate] as? Date ?? Date(), permissions: entry.fileAttributes[.posixPermissions] as? UInt16, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                    // Fix: Cast uncompressedSize to Int64
+                    try destArchive.addEntry(with: entry.path, type: entry.type, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: entry.fileAttributes[.modificationDate] as? Date ?? Date(), permissions: entry.fileAttributes[.posixPermissions] as? UInt16, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
                         // Stream from file
                         let fileHandle = try? FileHandle(forReadingFrom: tempFile)
                         try? fileHandle?.seek(toOffset: UInt64(position))
