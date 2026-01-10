@@ -38,6 +38,13 @@
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Allow access to transfer files via WiFi</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_http._tcp</string>
+    </array>
+    
     <!-- FILE SHARING & DOCS -->
     <key>UIFileSharingEnabled</key>
     <true/>

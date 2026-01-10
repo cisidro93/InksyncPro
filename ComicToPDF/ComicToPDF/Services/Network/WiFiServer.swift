@@ -10,7 +10,11 @@ class WiFiServer: ObservableObject {
         guard !isRunning else { return }
         
         do {
-            let params = NWParameters.tcp
+            // ✅ Explicitly allow insecure HTTP (no TLS) and reuse address
+            let params = NWParameters(tls: nil)
+            params.allowLocalEndpointReuse = true
+            params.includePeerToPeer = true
+            
             let listener = try NWListener(using: params, on: 8080)
             
             listener.stateUpdateHandler = { state in
