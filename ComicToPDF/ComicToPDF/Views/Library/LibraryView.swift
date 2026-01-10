@@ -91,6 +91,38 @@ struct LibraryView: View {
                         Image(systemName: "arrow.up.arrow.down")
                     }
                 }
+                
+                // ✅ Select Button
+                ToolbarItem(placement: .navigationBarTrailing) {
+                     Button(editMode == .active ? "Done" : "Select") {
+                         toggleEditMode()
+                     }
+                }
+                
+                // ✅ Bottom Toolbar (Delete / Export)
+                ToolbarItemGroup(placement: .bottomBar) {
+                    if editMode == .active {
+                         Button(role: .destructive) {
+                             deleteSelection()
+                         } label: {
+                             Label("Delete", systemImage: "trash")
+                         }
+                         
+                         Spacer()
+                         
+                         Text("\(selection.count) Selected")
+                             .font(.caption)
+                             .foregroundColor(.secondary)
+                         
+                         Spacer()
+                         
+                         Button {
+                             exportSelection()
+                         } label: {
+                             Label("Export", systemImage: "square.and.arrow.up")
+                         }
+                    }
+                }
             }
             .sheet(isPresented: $showingDocumentPicker) {
                 DocumentPicker(onDocumentsPicked: { urls in
@@ -109,6 +141,51 @@ struct LibraryView: View {
             .sheet(item: $pdfToEdit) { pdf in
                 PageManagerView(pdf: pdf)
             }
+
+            // ✅ Fix: Sheet for Multi-Export
+            .sheet(item: $sharePayload) { payload in
+                ShareSheet(activityItems: payload.items)
+            }
+        }
+    }
+    
+    // ✅ NEW: Bulk Action Helpers
+    
+    @State private var selection = Set<UUID>()
+    @State private var editMode: EditMode = .inactive
+    @State private var sharePayload: SharePayload?
+    
+    struct SharePayload: Identifiable {
+        let id = UUID()
+        let items: [Any]
+    }
+    
+    // Toggle Selection Mode
+    func toggleEditMode() {
+        withAnimation {
+            if editMode == .active {
+                editMode = .inactive
+                selection.removeAll()
+            } else {
+                editMode = .active
+            }
+        }
+    }
+    
+    func deleteSelection() {
+        let itemsToDelete = conversionManager.convertedPDFs.filter { selection.contains($0.id) }
+        for pdf in itemsToDelete {
+            conversionManager.deletePDF(pdf)
+        }
+        selection.removeAll()
+        editMode = .inactive
+    }
+    
+    func exportSelection() {
+        let itemsToExport = conversionManager.convertedPDFs.filter { selection.contains($0.id) }
+        let urls = itemsToExport.map { $0.url }
+        if !urls.isEmpty {
+            sharePayload = SharePayload(items: urls)
         }
     }
     
@@ -138,7 +215,7 @@ struct LibraryView: View {
     }
     
     var pdfListView: some View {
-        List {
+        List(selection: $selection) {
             ForEach(filteredPDFs) { pdf in
                 NavigationLink(destination: ConvertView(pdf: pdf)) {
                     LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
@@ -201,6 +278,7 @@ struct LibraryView: View {
             }
         }
         .listStyle(.plain)
+        .environment(\.editMode, $editMode) // ✅ Enable Selection Mode
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
     }
 }
