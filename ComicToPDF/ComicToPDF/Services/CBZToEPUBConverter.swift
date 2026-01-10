@@ -5,20 +5,24 @@ class CBZToEPUBConverter {
     
     func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, progress: @escaping (Double) -> Void) async throws -> [URL] {
         
-        let fileManager = FileManager.default
-        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
-        // 1. Unzip
+        // 1. Safe Extraction (Replaces unzipItem)
         progress(0.1)
-        try fileManager.unzipItem(at: sourceURL, to: tempDir)
         
-        // 2. Scan and Sort Images
-        let validExts = ["jpg", "jpeg", "png", "webp", "gif"]
-        let subPaths = try fileManager.subpathsOfDirectory(atPath: tempDir.path)
-        let imageFiles = subPaths.filter { validExts.contains(($0 as NSString).pathExtension.lowercased()) }.sorted()
+        // We use ZipUtilities to extract because it handles memory better than unzipItem
+        let extractionResult = try await ZipUtilities.extractComic(from: sourceURL)
+        let tempDir = extractionResult.workingDir
+        let imageFiles = extractionResult.imageURLs.map { $0.lastPathComponent } // Get just filenames
         
-        guard !imageFiles.isEmpty else { throw NSError(domain: "Converter", code: 1, userInfo: [NSLocalizedDescriptionKey: "No images found"]) }
+        // Note: ZipUtilities creates its own tempDir, so we use that instead of creating a new one.
+        // We will need to defer the cleanup of this specific directory.
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        
+        // 2. Scan and Sort Images (Updated to use our safe extraction list)
+        // Since ZipUtilities already filtered and sorted the images, we can verify count.
+        guard !imageFiles.isEmpty else { 
+            throw NSError(domain: "Converter", code: 1, userInfo: [NSLocalizedDescriptionKey: "No images found"]) 
+        }
         
         // 3. Setup EPUB Structure
         let epubDir = tempDir.appendingPathComponent("EPUB_Build")
