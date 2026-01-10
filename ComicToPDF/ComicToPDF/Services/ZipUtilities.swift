@@ -4,19 +4,23 @@ import ZIPFoundation
 
 struct ZipUtilities {
     
-    /// Extracts a comic safely using aggressive memory cleanup to prevent crashes.
-    /// Returns the directory URL and a list of sorted image URLs.
     static func extractComic(from sourceURL: URL) async throws -> (workingDir: URL, imageURLs: [URL]) {
-        
-        // 1. Setup paths
         let fileManager = FileManager.default
-        // let filename = sourceURL.deletingPathExtension().lastPathComponent
-        let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(UUID().uuidString)")
         
-        // 2. Create directory
+        // 1. Security Access (Crucial for files from iCloud/Files app)
+        let secure = sourceURL.startAccessingSecurityScopedResource()
+        defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
+        
+        // 2. Setup Paths
+        let filename = sourceURL.deletingPathExtension().lastPathComponent
+        // Use a unique ID to prevent conflicts with old sessions
+        let uniqueID = UUID().uuidString.prefix(8)
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(filename)_\(uniqueID)")
+        
+        // 3. Create Directory
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
-        // 3. Unzip Logic (Running on background thread via Task.detached in ConversionManager)
+        // 4. Open Archive (Assumes ZIPFoundation or similar)
         // We use try? to handle potential initialization errors gracefully
         guard let archive = try? Archive(url: sourceURL, accessMode: .read) else {
             throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
@@ -24,13 +28,23 @@ struct ZipUtilities {
         
         var extractedFiles: [URL] = []
         
-        // 4. Iterate and Extract with Autoreleasepool
-        for entry in archive {
-            // ✅ CRITICAL FIX: autoreleasepool forces memory cleanup after EACH file
-            // This prevents RAM from spiking to 2GB+ during extraction
+        // 5. Iterate with Safety Checks
+        for (index, entry) in archive.enumerated() {
+            
+            // ✅ CHECK 1: Cooperative Cancellation
+            // If the user closed the view, STOP immediately.
+            try Task.checkCancellation()
+            
+            // ✅ CHECK 2: Directory Existence
+            // If endSession() deleted the folder, STOP immediately.
+            if !fileManager.fileExists(atPath: tempDir.path) {
+                print("⚠️ Extraction folder vanished. Stopping.")
+                throw CancellationError()
+            }
+            
+            // Memory Cleanup
             try autoreleasepool {
                 let path = entry.path
-                // Filter out macOS metadata files that often cause issues
                 if path.contains("__MACOSX") || path.hasPrefix(".") { return }
                 
                 let destinationURL = tempDir.appendingPathComponent(path)
@@ -38,19 +52,22 @@ struct ZipUtilities {
                 // Extract
                 _ = try archive.extract(entry, to: destinationURL)
                 
-                // Verify it's an image
                 if isImageFile(url: destinationURL) {
                     extractedFiles.append(destinationURL)
                 }
             }
+            
+            // ✅ CHECK 3: Throttle (Optional but Recommended)
+            // Give the CPU a tiny breather every 10 files to prevent thermal throttling/watchdog kills
+            if index % 10 == 0 {
+                try await Task.sleep(nanoseconds: 10_000_000) // 10ms sleep
+            }
         }
         
-        // 5. Sort naturally (Page 1, Page 2, Page 10...)
         let sortedURLs = extractedFiles.sorted {
             $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
         }
         
-        print("✅ Unzipped \(sortedURLs.count) pages to \(tempDir.path)")
         return (tempDir, sortedURLs)
     }
     

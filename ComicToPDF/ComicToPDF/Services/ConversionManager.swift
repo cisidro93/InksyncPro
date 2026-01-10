@@ -185,20 +185,30 @@ class ConversionManager: ObservableObject {
     }
     
     func endSession() {
-        // 1. Cleanup Editor Cache
-        if let cache = editorCache {
-            print("🗑️ Cleaning up Editor Session")
-            try? FileManager.default.removeItem(at: cache.folder)
-        }
-        editorCache = nil
+        print("🛑 Ending Session...")
+        
+        // 1. Cancel the background unzipping IMMEDIATELY
+        activeExtractionTask?.cancel()
         activeExtractionTask = nil
         
-        // 2. Reset UI State
+        // 2. Clear UI
         // We use MainActor.run just in case, though this class is @MainActor already.
         Task { @MainActor in
+            self.editorCache = nil
             self.isConverting = false
             self.conversionProgress = 0.0
             self.statusMessage = "Ready"
+        }
+        
+        // 3. Clean up disk (Add a slight delay to ensure the Task actually stopped writing)
+        let cacheToDelete = self.editorCache
+        
+        // We delay the file deletion slightly to let the Task catch the cancellation error
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) {
+            if let cache = cacheToDelete {
+                 try? FileManager.default.removeItem(at: cache.folder)
+                 print("🗑️ Cleaned up session folder: \(cache.folder.lastPathComponent)")
+            }
         }
     }
     
