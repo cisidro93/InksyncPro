@@ -145,7 +145,10 @@ class CBZToEPUBConverter {
                 try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
                 
                 // Manifest
-                manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"/>")
+                // ✅ FIX: Kindle Cover Thumbnail
+                // We mark the first image of the batch as the cover
+                let properties = (localIndex == 0) ? "properties=\"cover-image\"" : ""
+                manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
                 manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\" properties=\"svg\"/>")
                 spineItems.append("<itemref idref=\"page_\(localIndex+1)\"/>")
             }
@@ -169,6 +172,7 @@ class CBZToEPUBConverter {
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
                     <meta name="book-type" content="comic"/>
                     <meta name="region-mag" content="true"/>
+                    <meta name="cover" content="img_1"/>
                 </metadata>
                 <manifest>
                     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
