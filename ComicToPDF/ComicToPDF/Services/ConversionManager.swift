@@ -131,10 +131,11 @@ class ConversionManager: ObservableObject {
     
     // MARK: - STABLE FILE EXTRACTION
     func extractImageFiles(from url: URL) async throws -> (workingDir: URL, files: [URL]) {
-        // ✅ FIX: Use the memory-safe extractor from ZipUtilities.
-        // This prevents the "unpacking" crash by extracting files one by one
-        // instead of trying to explode the entire archive into RAM/Disk at once.
-        return try await ZipUtilities.extractComic(from: url)
+        // We capture the result from ZipUtilities
+        let result = try await ZipUtilities.extractComic(from: url)
+        
+        // We remap 'imageURLs' to 'files' to satisfy the function signature
+        return (workingDir: result.workingDir, files: result.imageURLs)
     }
     
     func extractImageURLs(from url: URL) async throws -> [URL] {

@@ -5,21 +5,22 @@ class CBZToEPUBConverter {
     
     func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, progress: @escaping (Double) -> Void) async throws -> [URL] {
         
+        // ✅ RESTORED: Define fileManager at the top scope
+        let fileManager = FileManager.default
         
-        // 1. Safe Extraction (Replaces unzipItem)
+        // 1. Safe Extraction (Using ZipUtilities)
         progress(0.1)
         
-        // We use ZipUtilities to extract because it handles memory better than unzipItem
+        // Use the safe extractor
         let extractionResult = try await ZipUtilities.extractComic(from: sourceURL)
         let tempDir = extractionResult.workingDir
-        let imageFiles = extractionResult.imageURLs.map { $0.lastPathComponent } // Get just filenames
+        let imageFiles = extractionResult.imageURLs.map { $0.lastPathComponent }
         
-        // Note: ZipUtilities creates its own tempDir, so we use that instead of creating a new one.
-        // We will need to defer the cleanup of this specific directory.
-        defer { try? FileManager.default.removeItem(at: tempDir) }
+        // ZipUtilities creates the tempDir, so we must ensure it gets cleaned up later.
+        // We use a specific defer block for this extraction folder.
+        defer { try? fileManager.removeItem(at: tempDir) }
         
-        // 2. Scan and Sort Images (Updated to use our safe extraction list)
-        // Since ZipUtilities already filtered and sorted the images, we can verify count.
+        // 2. Verify Images Found
         guard !imageFiles.isEmpty else { 
             throw NSError(domain: "Converter", code: 1, userInfo: [NSLocalizedDescriptionKey: "No images found"]) 
         }
@@ -52,8 +53,11 @@ class CBZToEPUBConverter {
         var spineItems: [String] = []
         var manifestItems: [String] = []
         
-        for (index, imagePath) in imageFiles.enumerated() {
-            let srcURL = tempDir.appendingPathComponent(imagePath)
+        for (index, imageName) in imageFiles.enumerated() {
+            // Note: The file is already at extractionResult.imageURLs[index], 
+            // but we need to move/copy it into the EPUB structure.
+            let srcURL = extractionResult.imageURLs[index]
+            
             let ext = srcURL.pathExtension.lowercased()
             let safeExt = ext == "jpg" ? "jpeg" : ext
             let newImageName = String(format: "image_%04d.%@", index + 1, ext)
@@ -126,8 +130,7 @@ class CBZToEPUBConverter {
         
         try fileManager.zipItem(at: epubDir, to: outputURL)
         
-        // Cleanup
-        try? fileManager.removeItem(at: tempDir)
+        // Cleanup (The deferred cleanup at step 1 handles the tempDir)
         progress(1.0)
         
         return [outputURL]
