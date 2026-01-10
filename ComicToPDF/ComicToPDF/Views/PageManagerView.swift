@@ -7,7 +7,7 @@ struct GridPageItem: Identifiable, Equatable {
     let index: Int
 }
 
-// ViewModel (Kept the isolated safe version)
+// ViewModel
 @MainActor
 class PageEditorViewModel: ObservableObject {
     @Published var items: [GridPageItem] = []
@@ -16,25 +16,30 @@ class PageEditorViewModel: ObservableObject {
     @Published var errorMessage: String?
     
     private var tempDir: URL?
+    private var hasLoaded = false // ✅ Prevents double-triggering
     
     func loadPages(from pdf: ConvertedPDF) async {
+        guard !hasLoaded else { return } // Stop if already loaded
+        
         self.isLoading = true
         self.errorMessage = nil
         self.statusText = "Initializing..."
         
-        // Safety Pause
+        // Safety Pause (Prevents UI animation conflict)
         try? await Task.sleep(nanoseconds: 600_000_000)
         
         self.statusText = "Unpacking..."
         
         do {
-            // Use ZipUtilities (Ensure ZipUtilities.swift is in your project)
+            // Call Surgical Extraction
             let (dir, urls) = try await ZipUtilities.extractComic(from: pdf.url)
             
             self.tempDir = dir
             self.items = urls.enumerated().map { index, url in
                 GridPageItem(url: url, index: index)
             }
+            
+            self.hasLoaded = true
             self.isLoading = false
             
         } catch {
@@ -50,6 +55,7 @@ class PageEditorViewModel: ObservableObject {
             tempDir = nil
         }
         items.removeAll()
+        hasLoaded = false
     }
 }
 
@@ -65,8 +71,7 @@ struct PageManagerView: View {
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
     var body: some View {
-        // ✅ CRITICAL FIX: Removed NavigationView wrapper.
-        // This prevents the "Nested Navigation Crash".
+        // Simple VStack (No Nested Navigation)
         VStack(spacing: 0) {
             
             // Custom Header
@@ -146,7 +151,7 @@ struct PageManagerView: View {
                             }
                         }
                         .padding()
-                        .padding(.bottom, 80) // Space for bottom bar
+                        .padding(.bottom, 80)
                     }
                 }
             }
@@ -171,9 +176,8 @@ struct PageManagerView: View {
             }
         }
         .task {
-            if viewModel.items.isEmpty {
-                await viewModel.loadPages(from: pdf)
-            }
+            // Trigger load once
+            await viewModel.loadPages(from: pdf)
         }
         .sheet(item: $pageToEdit) { index in
             PanelEditorView(pdf: pdf, pageIndex: index)

@@ -1,49 +1,63 @@
 import Foundation
 import ZIPFoundation
 
-enum ZipUtilities {
-    /// Extracts a comic file (cbz, cbr, zip, etc.) safely by renaming to .zip and using system unzip.
-    /// Returns the temporary directory (which the caller must clean up) and the list of sorted image URLs.
-    static func extractComic(from url: URL) async throws -> (workingDir: URL, files: [URL]) {
-        return try await Task.detached(priority: .userInitiated) {
+struct ZipUtilities {
+    
+    // ✅ SURGICAL EXTRACTION
+    // Safe, Memory-Efficient, Error-Tolerant
+    static func extractComic(from sourceURL: URL) async throws -> (workingDir: URL, imageURLs: [URL]) {
+        return try await Task.detached(priority: .utility) { // Lower priority to prevent UI freeze
             let fileManager = FileManager.default
-            let uniqueID = UUID().uuidString
-            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(uniqueID)
             
-            // 1. Create clean directory
+            // 1. Sanity Check: Does the file actually exist?
+            guard fileManager.fileExists(atPath: sourceURL.path) else {
+                throw NSError(domain: "ZipUtilities", code: 404, userInfo: [NSLocalizedDescriptionKey: "Source file not found at path: \(sourceURL.path)"])
+            }
+            
+            // 2. Setup Temp Directory
+            let uniqueID = UUID().uuidString
+            let tempDir = fileManager.temporaryDirectory.appendingPathComponent("Editor_\(uniqueID)")
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
             
-            // 2. COPY and RENAME to .zip (Fixes 'Invalid Archive' errors)
-            let tempZipURL = fileManager.temporaryDirectory.appendingPathComponent("temp_\(uniqueID).zip")
-            if fileManager.fileExists(atPath: tempZipURL.path) { try fileManager.removeItem(at: tempZipURL) }
-            try fileManager.copyItem(at: url, to: tempZipURL)
+            // 3. Open Archive (Read-Only)
+            // We use 'guard' here so if the header is corrupt, we catch it gracefully.
+            guard let archive = try? Archive(url: sourceURL, accessMode: .read) else {
+                throw NSError(domain: "ZipUtilities", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unable to read archive header. File may be corrupted or encrypted."])
+            }
             
-            defer { try? fileManager.removeItem(at: tempZipURL) } // Clean up the temp zip
-            
-            // 3. Unzip Everything
-            try fileManager.unzipItem(at: tempZipURL, to: tempDir)
-            
-            // 4. Filter Results (Post-Process)
-            var imageURLs: [URL] = []
+            var extractedURLs: [URL] = []
             let validExts = ["jpg", "jpeg", "png", "webp"]
             
-            if let subPaths = try? fileManager.subpathsOfDirectory(atPath: tempDir.path) {
-                let sortedPaths = subPaths.sorted()
-                for path in sortedPaths {
-                    let ext = (path as NSString).pathExtension.lowercased()
-                    let filename = (path as NSString).lastPathComponent
+            // 4. Iterate and Extract One-by-One
+            for entry in archive {
+                let path = entry.path
+                let ext = (path as NSString).pathExtension.lowercased()
+                let filename = (path as NSString).lastPathComponent
+                
+                // Strict Filter: Ignore __MACOSX, hidden files, and non-images
+                if validExts.contains(ext) && !path.contains("__MACOSX") && !filename.hasPrefix(".") {
+                    let destURL = tempDir.appendingPathComponent(filename)
                     
-                    // Ignore junk
-                    if validExts.contains(ext) && !path.contains("__MACOSX") && !filename.hasPrefix(".") {
-                        imageURLs.append(tempDir.appendingPathComponent(path))
+                    do {
+                        // Extract single file
+                        _ = try archive.extract(entry, to: destURL)
+                        extractedURLs.append(destURL)
+                    } catch {
+                        print("⚠️ Warning: Failed to extract \(filename). Skipping.")
+                        // We CONTINUE instead of crashing
                     }
                 }
             }
             
-            // Ensure strictly sorted
-            imageURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
+            // 5. Final Check
+            if extractedURLs.isEmpty {
+                throw NSError(domain: "ZipUtilities", code: 2, userInfo: [NSLocalizedDescriptionKey: "Extraction complete, but no valid images were found."])
+            }
             
-            return (tempDir, imageURLs)
+            // 6. Sort Alphabetically
+            extractedURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
+            
+            return (tempDir, extractedURLs)
         }.value
     }
 }
