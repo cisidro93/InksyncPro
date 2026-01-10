@@ -1,72 +1,61 @@
 import Foundation
+import SwiftUI
 import ZIPFoundation
 
 struct ZipUtilities {
     
-    // ✅ SURGICAL EXTRACTION
-    // Safe, Memory-Efficient, Error-Tolerant, with Debug Logging
+    /// Extracts a comic safely using aggressive memory cleanup to prevent crashes.
+    /// Returns the directory URL and a list of sorted image URLs.
     static func extractComic(from sourceURL: URL) async throws -> (workingDir: URL, imageURLs: [URL]) {
-        print("📂 ZipUtilities: Starting extraction for \(sourceURL.lastPathComponent)")
         
-        return try await Task.detached(priority: .utility) {
-            let fileManager = FileManager.default
-            
-            // 1. Sanity Check
-            guard fileManager.fileExists(atPath: sourceURL.path) else {
-                print("❌ ZipUtilities: Source file not found!")
-                throw NSError(domain: "ZipUtilities", code: 404, userInfo: [NSLocalizedDescriptionKey: "Source file not found"])
-            }
-            
-            // 2. Setup Temp Directory
-            let uniqueID = UUID().uuidString
-            let tempDir = fileManager.temporaryDirectory.appendingPathComponent("Editor_\(uniqueID)")
-            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            print("📂 ZipUtilities: Temp dir created at \(tempDir.path)")
-            
-            // 3. Open Archive
-            guard let archive = try? Archive(url: sourceURL, accessMode: .read) else {
-                print("❌ ZipUtilities: Failed to open archive header.")
-                throw NSError(domain: "ZipUtilities", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unable to read archive header."])
-            }
-            
-            var extractedURLs: [URL] = []
-            let validExts = ["jpg", "jpeg", "png", "webp"]
-            
-            // 4. Iterate and Extract One-by-One (With Memory Cleanup)
-            for entry in archive {
-                // ✅ AUTORELEASEPOOL: Crucial for loops performing file I/O
-                // This forces iOS to dump memory AFTER EACH FILE, preventing RAM spikes.
-                try autoreleasepool {
-                    let path = entry.path
-                    let ext = (path as NSString).pathExtension.lowercased()
-                    let filename = (path as NSString).lastPathComponent
-                    
-                    if validExts.contains(ext) && !path.contains("__MACOSX") && !filename.hasPrefix(".") {
-                        let destURL = tempDir.appendingPathComponent(filename)
-                        
-                        do {
-                            _ = try archive.extract(entry, to: destURL)
-                            extractedURLs.append(destURL)
-                        } catch {
-                            print("⚠️ ZipUtilities: Failed to extract \(filename). Skipping.")
-                        }
-                    }
+        // 1. Setup paths
+        let fileManager = FileManager.default
+        // let filename = sourceURL.deletingPathExtension().lastPathComponent
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(UUID().uuidString)")
+        
+        // 2. Create directory
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        // 3. Unzip Logic (Running on background thread via Task.detached in ConversionManager)
+        // We use try? to handle potential initialization errors gracefully
+        guard let archive = try? Archive(url: sourceURL, accessMode: .read) else {
+            throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
+        }
+        
+        var extractedFiles: [URL] = []
+        
+        // 4. Iterate and Extract with Autoreleasepool
+        for entry in archive {
+            // ✅ CRITICAL FIX: autoreleasepool forces memory cleanup after EACH file
+            // This prevents RAM from spiking to 2GB+ during extraction
+            try autoreleasepool {
+                let path = entry.path
+                // Filter out macOS metadata files that often cause issues
+                if path.contains("__MACOSX") || path.hasPrefix(".") { return }
+                
+                let destinationURL = tempDir.appendingPathComponent(path)
+                
+                // Extract
+                _ = try archive.extract(entry, to: destinationURL)
+                
+                // Verify it's an image
+                if isImageFile(url: destinationURL) {
+                    extractedFiles.append(destinationURL)
                 }
             }
-            
-            print("✅ ZipUtilities: Extraction complete. Found \(extractedURLs.count) images.")
-            
-            // 5. Final Check
-            if extractedURLs.isEmpty {
-                // Clean up empty folder before throwing
-                try? fileManager.removeItem(at: tempDir)
-                throw NSError(domain: "ZipUtilities", code: 2, userInfo: [NSLocalizedDescriptionKey: "No valid images found in archive."])
-            }
-            
-            // 6. Sort Alphabetically
-            extractedURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
-            
-            return (tempDir, extractedURLs)
-        }.value
+        }
+        
+        // 5. Sort naturally (Page 1, Page 2, Page 10...)
+        let sortedURLs = extractedFiles.sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
+        
+        print("✅ Unzipped \(sortedURLs.count) pages to \(tempDir.path)")
+        return (tempDir, sortedURLs)
+    }
+    
+    private static func isImageFile(url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        return ["jpg", "jpeg", "png", "webp", "gif"].contains(ext)
     }
 }
