@@ -12,6 +12,11 @@ class ConversionManager: ObservableObject {
     @Published var activeTasks: [AppBackgroundTask] = []
     @Published var conversionSettings = ConversionSettings()
     
+    // MARK: - Editor Session Cache
+    // Prevents "Death Spiral" by keeping the comic unzipped while editing
+    private var editorCache: (pdfID: UUID, folder: URL, files: [URL])?
+    private var activeExtractionTask: Task<(workingDir: URL, files: [URL]), Error>?
+    
     // Guided View Data
     @Published var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]] = [:]
     
@@ -144,15 +149,52 @@ class ConversionManager: ObservableObject {
     
     // Helper used by Editor for Single Page Load
     func extractFullPage(from pdf: ConvertedPDF, index: Int) async throws -> UIImage? {
-        // Reuse the stable logic, just optimized to return one image
-        let result = try await extractImageFiles(from: pdf.url)
-        let urls = result.files
-        defer { try? FileManager.default.removeItem(at: result.workingDir) }
         
-        guard index < urls.count else { return nil }
+        // 1. Check if we already have this comic open in our cache
+        if let cache = editorCache, cache.pdfID == pdf.id {
+            guard index < cache.files.count else { return nil }
+            return ConversionManager.loadDownsampledImageStatic(at: cache.files[index], maxDimension: 1920)
+        }
         
-        return autoreleasepool {
-            return ConversionManager.loadDownsampledImageStatic(at: urls[index], maxDimension: 1920)
+        // 2. If not cached, and not currently extracting, start a new extraction task
+        if activeExtractionTask == nil {
+            print("🚀 Starting new Editor Session for: \(pdf.name)")
+            activeExtractionTask = Task {
+                // Use the safe ZipUtilities extractor we added earlier
+                let result = try await ZipUtilities.extractComic(from: pdf.url)
+                return (workingDir: result.workingDir, files: result.imageURLs)
+            }
+        }
+        
+        // 3. Wait for the extraction to finish (or use the running one)
+        // This ensures that if 5 pages are requested at once, we only unzip ONE time.
+        guard let task = activeExtractionTask else { return nil }
+        let result = try await task.value
+        
+        // 4. Save to Cache
+        self.editorCache = (pdf.id, result.workingDir, result.files)
+        self.activeExtractionTask = nil // Clear the task so we are ready for next time
+        
+        // 5. Return the requested image
+        guard index < result.files.count else { return nil }
+        return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 1920)
+    }
+    
+    func endSession() {
+        // 1. Cleanup Editor Cache
+        if let cache = editorCache {
+            print("🗑️ Cleaning up Editor Session")
+            try? FileManager.default.removeItem(at: cache.folder)
+        }
+        editorCache = nil
+        activeExtractionTask = nil
+        
+        // 2. Reset UI State
+        // We use MainActor.run just in case, though this class is @MainActor already.
+        Task { @MainActor in
+            self.isConverting = false
+            self.conversionProgress = 0.0
+            self.statusMessage = "Ready"
         }
     }
     
