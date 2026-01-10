@@ -9,6 +9,9 @@ class WiFiServer: ObservableObject {
     func start() {
         guard !isRunning else { return }
         
+        // ✅ TRICK: Force Local Network Permission Prompt
+        triggerLocalNetworkPrivacyAlert()
+        
         do {
             // ✅ Explicitly allow insecure HTTP (no TLS) and reuse address
             let params = NWParameters(tls: nil)
@@ -16,6 +19,9 @@ class WiFiServer: ObservableObject {
             params.includePeerToPeer = true
             
             let listener = try NWListener(using: params, on: 8080)
+            
+            // ✅ Advertise Service (Bonjour)
+            listener.service = NWListener.Service(name: "ComicToPDF", type: "_http._tcp")
             
             listener.stateUpdateHandler = { state in
                 switch state {
@@ -31,6 +37,8 @@ class WiFiServer: ObservableObject {
                 default: break
                 }
             }
+            
+
             
             listener.newConnectionHandler = { connection in
                 self.handleConnection(connection)
@@ -186,5 +194,19 @@ class WiFiServer: ObservableObject {
             freeifaddrs(ifaddr)
         }
         return address
+    }
+    
+    // ✅ Helper to force permission prompt
+    private func triggerLocalNetworkPrivacyAlert() {
+        let params = NWParameters.tcp
+        params.includePeerToPeer = true
+        let browser = NWBrowser(for: .bonjour(type: "_http._tcp", domain: nil), using: params)
+        browser.stateUpdateHandler = { _ in }
+        browser.start(queue: .global())
+        
+        // Stop after 5 seconds
+        DispatchQueue.global().asyncAfter(deadline: .now() + 5) {
+            browser.cancel()
+        }
     }
 }

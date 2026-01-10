@@ -6,7 +6,15 @@ struct PanelEditorView: View {
     @Environment(\.dismiss) var dismiss
     
     let pdf: ConvertedPDF
-    let pageIndex: Int
+    @State var pageIndex: Int
+    
+    // Initializer to support State initialization
+    init(pdf: ConvertedPDF, pageIndex: Int, initialImage: UIImage? = nil) {
+        self.pdf = pdf
+        // Initialize State with the passed value
+        _pageIndex = State(initialValue: pageIndex)
+        self.initialImage = initialImage
+    }
     
     // ✅ NEW: Optional input image
     var initialImage: UIImage? = nil
@@ -62,6 +70,28 @@ struct PanelEditorView: View {
                     )
                 }
                 .disabled(isLoading || isProcessing)
+                
+                // MARK: - Navigation Buttons
+                HStack(spacing: 0) {
+                    Button(action: { saveAndNavigate(offset: -1) }) {
+                        Image(systemName: "chevron.left")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .disabled(pageIndex <= 0 || isLoading)
+                    
+                    Divider().frame(height: 20)
+                    
+                    Button(action: { saveAndNavigate(offset: 1) }) {
+                        Image(systemName: "chevron.right")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .disabled(isLoading) // Let it try to load next; if empty/end it will handle it or we can check count
+                }
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.blue.opacity(0.3), lineWidth: 1))
                 
                 // Add Manual Box
                 Button(action: addNewPanel) {
@@ -361,6 +391,43 @@ struct PanelEditorView: View {
         let finalPanels = panels.map { PanelExtractor.Panel(boundingBox: $0) }
         Task { await conversionManager.savePanelOverrides(for: pdf.id, pageIndex: pageIndex, panels: finalPanels); dismiss() }
     }
+    
+    // MARK: - Navigation
+    func saveAndNavigate(offset: Int) {
+        // 1. Save current page
+        let finalPanels = panels.map { PanelExtractor.Panel(boundingBox: $0) }
+        let currentPage = pageIndex
+        
+        // Save without closing
+        Task {
+            await conversionManager.savePanelOverrides(for: pdf.id, pageIndex: currentPage, panels: finalPanels)
+        }
+        
+        // 2. Navigate
+        let nextIndex = pageIndex + offset
+        guard nextIndex >= 0 else { return }
+        
+        // Check if we exceed bounds (if we know pageCount)
+         if pdf.pageCount > 0 && nextIndex >= pdf.pageCount { return }
+        
+        // 3. Reset State for new page
+        self.pageIndex = nextIndex
+        self.panels = []
+        self.selectedPanelIndex = nil
+        self.pageImage = nil
+        self.isLoading = true
+        self.loadError = nil
+        
+        // 4. Load
+        Task {
+            // Give UI a moment to update
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            await loadPageSafe()
+        }
+    }
+    
+    // MARK: - Navigation
+
 }
 
 // MARK: - Box Component
