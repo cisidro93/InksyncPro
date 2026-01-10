@@ -1,0 +1,144 @@
+import SwiftUI
+
+// MARK: - AdvancedOptionsView
+struct AdvancedOptionsView: View {
+    @EnvironmentObject var conversionManager: ConversionManager
+    
+    var body: some View {
+        Form {
+            Section {
+                // Fixed header syntax:
+                Toggle(isOn: $conversionManager.conversionSettings.enablePanelSplit) {
+                    Text("Enable Panel Split")
+                }
+            } header: {
+                Text("Panel Processing")
+            }
+        }
+        .navigationTitle("Advanced Options")
+    }
+}
+
+// MARK: - ConversionPresetsView
+struct ConversionPresetsView: View {
+    @EnvironmentObject var conversionManager: ConversionManager
+    @State private var showingAddPreset = false
+    
+    var body: some View {
+        List {
+            // ✅ Fix: Use indices to create bindings safely
+            ForEach($conversionManager.conversionPresets) { $preset in
+                NavigationLink(destination: Text("Edit Preset: \(preset.name)")) {
+                    Text(preset.name)
+                }
+            }
+            .onDelete { indexSet in
+                for index in indexSet {
+                    let preset = conversionManager.conversionPresets[index]
+                    conversionManager.deletePreset(preset)
+                }
+            }
+        }
+        .navigationTitle("Presets")
+        .toolbar {
+            Button { showingAddPreset = true } label: { Image(systemName: "plus") }
+        }
+    }
+}
+
+// MARK: - StorageManagerView
+struct StorageManagerView: View {
+    @EnvironmentObject var conversionManager: ConversionManager
+    @State private var storageInfo: StorageInfo?
+    
+    var body: some View {
+        Form {
+            if let info = storageInfo {
+                Section {
+                    Text(ByteCountFormatter.string(fromByteCount: info.totalSize, countStyle: .file))
+                } header: {
+                    Text("Overview")
+                }
+            } else {
+                Text("Loading...")
+            }
+        }
+        .onAppear {
+            storageInfo = conversionManager.calculateStorageInfo()
+        }
+    }
+}
+
+// MARK: - AutoOrganizeView
+struct AutoOrganizeView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "tray.full.fill")
+                .font(.system(size: 80))
+                .foregroundColor(.blue)
+            
+            Text("Auto Organize")
+                .font(.title)
+                .bold()
+            
+            Text("This will automatically sort uncategorized PDFs into collections based on their Series metadata or filename matches.")
+                .multilineTextAlignment(.center)
+                .padding()
+            
+            Button(action: {
+                conversionManager.autoOrganize()
+                dismiss()
+            }) {
+                Text("Start Organization")
+                    .bold()
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Color.blue)
+                    .cornerRadius(10)
+            }
+        }
+        .padding()
+    }
+}
+
+// MARK: - SendHistoryView
+struct SendHistoryView: View {
+    @EnvironmentObject var conversionManager: ConversionManager
+    
+    var body: some View {
+        List {
+            if conversionManager.sendHistory.isEmpty {
+                Text("No history yet.")
+                    .foregroundColor(.secondary)
+            } else {
+                // ✅ Fix: Direct iteration, no binding needed for display
+                ForEach(conversionManager.sendHistory) { pdf in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(pdf.name)
+                                .font(.headline)
+                            Text(pdf.formattedSize)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "clock")
+                            .foregroundColor(.gray)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Send History")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Clear") {
+                    conversionManager.clearSendHistory()
+                }
+                .disabled(conversionManager.sendHistory.isEmpty)
+            }
+        }
+    }
+}
