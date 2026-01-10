@@ -191,7 +191,10 @@ struct PanelEditorView: View {
             // 3. NOW load the image
             await loadPageSafe()
         }
-        .onDisappear { conversionManager.cleanupMemory() }
+        .onDisappear {
+            conversionManager.cleanupMemory()
+            conversionManager.endSession()
+        }
     }
     
     // MARK: - Logic Helpers
