@@ -184,6 +184,7 @@ struct PageManagerView: View {
         }
         .sheet(item: $pageToEdit) { index in
             PanelEditorView(pdf: pdf, pageIndex: index)
+                .environmentObject(conversionManager)
         }
     }
     
