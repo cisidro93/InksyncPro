@@ -117,17 +117,55 @@ struct FileRowViewWithRename: View {
 struct FileMergeView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
-    @State private var selectedIDs: Set<UUID> = []
+    @State private var selectedIDs: Set<UUID>
     @State private var mergedName: String = ""
+    @State private var sortOption: SortOption = .name
+    @State private var isMangaMode: Bool = true
+    
+    init(initialSelection: Set<UUID> = []) {
+        _selectedIDs = State(initialValue: initialSelection)
+    }
+    
+    enum SortOption {
+        case date, name
+    }
+    
+    var sortedPDFs: [ConvertedPDF] {
+        let pdfs = conversionManager.convertedPDFs
+        switch sortOption {
+        case .date: return pdfs
+        case .name: return pdfs.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
+    }
     
     var body: some View {
         NavigationView {
             VStack {
                 TextField("Collection Name (e.g. Omnibus Vol 1)", text: $mergedName)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .padding()
+                    .padding(.horizontal)
+                    .padding(.top)
                 
-                List(conversionManager.convertedPDFs, id: \.id) { pdf in
+                // Sort & Mode Controls
+                HStack {
+                    Picker("Sort By", selection: $sortOption) {
+                        Text("Name").tag(SortOption.name)
+                        Text("Date").tag(SortOption.date)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 120)
+                    
+                    Spacer()
+                    
+                    Toggle("Manga Mode", isOn: $isMangaMode)
+                        .labelsHidden()
+                    Text("Manga Mode (RTL)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal)
+                
+                List(sortedPDFs, id: \.id) { pdf in
                     HStack {
                         Image(systemName: selectedIDs.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
                             .foregroundColor(selectedIDs.contains(pdf.id) ? .blue : .gray)
@@ -146,9 +184,12 @@ struct FileMergeView: View {
                 }
                 
                 Button(action: {
-                    let selectedFiles = conversionManager.convertedPDFs.filter { selectedIDs.contains($0.id) }
+                    // Sort selected files based on current sort option to ensure merge order matches display order
+                    let allFiles = sortedPDFs // This is already sorted
+                    let selectedFiles = allFiles.filter { selectedIDs.contains($0.id) }
+                    
                     Task {
-                        await conversionManager.mergePDFs(selectedFiles, outputName: mergedName)
+                        await conversionManager.mergePDFs(selectedFiles, outputName: mergedName, mangaMode: isMangaMode)
                         dismiss()
                     }
                 }) {

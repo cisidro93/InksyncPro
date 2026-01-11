@@ -225,7 +225,7 @@ class ConversionManager: ObservableObject {
     }
 
     // MARK: - Merge & Convert
-    func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String) async {
+    func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String, mangaMode: Bool) async {
         isConverting = true; processingStatus = "Merging..."; statusMessage = "Starting merge..."
         let fileManager = FileManager.default; let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let safeName = outputName.isEmpty ? "Merged_Collection" : outputName; let outputURL = docDir.appendingPathComponent("\(safeName).epub")
@@ -233,7 +233,9 @@ class ConversionManager: ObservableObject {
         var inheritedCover: UIImage?
         if let firstPDF = pdfs.first { inheritedCover = getThumbnail(for: firstPDF) }
         do {
-            try await Task.detached { try await merger.mergeEPUBs(sourceURLs: sourceURLs, outputURL: outputURL, settings: ConversionSettings()) }.value
+            var mergeSettings = ConversionSettings()
+            mergeSettings.mangaMode = mangaMode
+            try await Task.detached { try await merger.mergeEPUBs(sourceURLs: sourceURLs, outputURL: outputURL, settings: mergeSettings) }.value
             let fileSize = (try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
             let newPDF = ConvertedPDF(name: outputURL.lastPathComponent, url: outputURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: safeName))
             convertedPDFs.append(newPDF)

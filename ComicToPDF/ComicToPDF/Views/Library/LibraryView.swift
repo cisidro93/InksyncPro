@@ -11,6 +11,7 @@ struct LibraryView: View {
     @State private var searchText = ""
     @State private var sortOption: SortOption = .dateAdded
     @State private var isImporting = false
+    @State private var showingMergeSheet = false
     
     // ✅ Fix: Data-Driven Sheet State (Prevents Blank Pages)
     @State private var pdfToShare: ConvertedPDF?
@@ -121,6 +122,14 @@ struct LibraryView: View {
                          } label: {
                              Label("Export", systemImage: "square.and.arrow.up")
                          }
+                         
+                         Spacer()
+                         
+                         Button {
+                             showingMergeSheet = true
+                         } label: {
+                             Label("Merge", systemImage: "arrow.triangle.merge")
+                         }
                     }
                 }
             }
@@ -145,6 +154,10 @@ struct LibraryView: View {
             // ✅ Fix: Sheet for Multi-Export
             .sheet(item: $sharePayload) { payload in
                 ShareSheet(activityItems: payload.items)
+            }
+            // ✅ Fix: Merge Sheet
+            .sheet(isPresented: $showingMergeSheet) {
+                FileMergeView(initialSelection: selection)
             }
         }
     }

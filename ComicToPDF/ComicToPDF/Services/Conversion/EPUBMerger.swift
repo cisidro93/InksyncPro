@@ -98,7 +98,7 @@ class EPUBMerger {
                 \(manifestItems.joined(separator: "\n"))
                 <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
             </manifest>
-            <spine>
+            <spine \(settings.mangaMode ? "page-progression-direction=\"rtl\"" : "")>
                 \(spineItems.joined(separator: "\n"))
             </spine>
         </package>
