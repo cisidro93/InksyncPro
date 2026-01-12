@@ -521,7 +521,7 @@ class ConversionManager: ObservableObject {
     // MARK: - Comic Vault Export
     // MARK: - Comic Vault Export
     func generateSidecar(for pdf: ConvertedPDF) async -> URL? {
-        let sidecarName = pdf.url.deletingPathExtension().appendingPathExtension("json").lastPathComponent
+        let sidecarName = pdf.url.deletingPathExtension().appendingPathExtension("xml").lastPathComponent
         let tempDir = FileManager.default.temporaryDirectory
         let sidecarURL = tempDir.appendingPathComponent(sidecarName)
         
@@ -557,23 +557,35 @@ class ConversionManager: ObservableObject {
                 Task { @MainActor in self.conversionProgress = progress }
             }
             
-            let sidecar = ComicVaultSidecar(
-                version: 1,
-                id: pdf.id.uuidString,
-                metadata: ComicVaultMetadata(
-                    title: pdf.metadata.title,
-                    series: pdf.metadata.series,
-                    number: nil,
-                    pageCount: pdf.pageCount
-                ),
-                smartPanels: smartPanelsDict
-            )
+            // 2. Generate XML String
+            var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            xml += "<ComicData version=\"1\">\n"
+            xml += "  <Metadata>\n"
+            xml += "    <Title>\(pdf.metadata.title)</Title>\n"
+            xml += "    <Series>\(pdf.metadata.series ?? "")</Series>\n"
+            xml += "    <PageCount>\(pdf.pageCount)</PageCount>\n"
+            xml += "    <UUID>\(pdf.id.uuidString)</UUID>\n"
+            xml += "  </Metadata>\n"
+            xml += "  <SmartPanels>\n"
             
-            // 2. Write File
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            let data = try encoder.encode(sidecar)
-            try data.write(to: sidecarURL)
+            // Sort keys to keep XML orderly
+            let sortedKeys = smartPanelsDict.keys.compactMap { Int($0) }.sorted().map { String($0) }
+            
+            for key in sortedKeys {
+                if let panels = smartPanelsDict[key] {
+                    xml += "    <Page index=\"\(key)\">\n"
+                    for panel in panels {
+                        xml += "      <Panel x=\"\(panel.x)\" y=\"\(panel.y)\" width=\"\(panel.width)\" height=\"\(panel.height)\" />\n"
+                    }
+                    xml += "    </Page>\n"
+                }
+            }
+            
+            xml += "  </SmartPanels>\n"
+            xml += "</ComicData>"
+            
+            // 3. Write File
+            try xml.write(to: sidecarURL, atomically: true, encoding: .utf8)
             return sidecarURL
             
         } catch {
@@ -583,24 +595,12 @@ class ConversionManager: ObservableObject {
     }
 }
 
-// MARK: - Sidecar Models
-struct ComicVaultSidecar: Codable {
-    let version: Int
-    let id: String
-    let metadata: ComicVaultMetadata
-    let smartPanels: [String: [SmartPanel]] // Key is Page Index string
-}
-
-struct ComicVaultMetadata: Codable {
-    let title: String
-    let series: String?
-    let number: Int?
-    let pageCount: Int
-}
-
+// MARK: - Sidecar Models (Internal Use)
 struct SmartPanel: Codable {
-    let x: CGFloat
-    let y: CGFloat
-    let width: CGFloat
-    let height: CGFloat
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
 }
+
+
