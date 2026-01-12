@@ -255,30 +255,7 @@ class WiFiServer: ObservableObject {
         """
     }
         
-        return """
-        <html>
-        <head>
-            <title>Comic Transfer</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>
-                body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
-                h1 { color: #ff9500; }
-                ul { list-style: none; padding: 0; }
-                li { padding: 15px; border-bottom: 1px solid #eee; font-size: 18px; }
-                a { text-decoration: none; color: #333; font-weight: 500; }
-                a:hover { color: #ff9500; }
-            </style>
-        </head>
-        <body>
-            <h1>📚 Comic Transfer</h1>
-            <p>Tap a file to download.</p>
-            <ul>
-                \(fileLinks.isEmpty ? "<li>No files found.</li>" : fileLinks)
-            </ul>
-        </body>
-        </html>
-        """
-    }
+
     
     private func formatBytes(_ url: URL) -> String {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
