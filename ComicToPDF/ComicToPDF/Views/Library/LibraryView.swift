@@ -308,8 +308,13 @@ struct LibraryView: View {
                     
                     // ✅ NEW: Comic Vault Export
                     Button {
-                        if let sidecarURL = conversionManager.generateSidecar(for: pdf) {
-                            sharePayload = LibraryView.SharePayload(items: [pdf.url, sidecarURL])
+                        Task {
+                            if let sidecarURL = await conversionManager.generateSidecar(for: pdf) {
+                                // Must run on Main Actor to trigger sheet
+                                await MainActor.run {
+                                    sharePayload = LibraryView.SharePayload(items: [pdf.url, sidecarURL])
+                                }
+                            }
                         }
                     } label: {
                         Label("Export to Comic Vault", systemImage: "arrow.up.doc.fill")

@@ -519,39 +519,63 @@ class ConversionManager: ObservableObject {
     }
     
     // MARK: - Comic Vault Export
-    func generateSidecar(for pdf: ConvertedPDF) -> URL? {
+    // MARK: - Comic Vault Export
+    func generateSidecar(for pdf: ConvertedPDF) async -> URL? {
         let sidecarName = pdf.url.deletingPathExtension().appendingPathExtension("json").lastPathComponent
         let tempDir = FileManager.default.temporaryDirectory
         let sidecarURL = tempDir.appendingPathComponent(sidecarName)
         
-        // 1. Prepare Data
-        var smartPanelsDict: [String: [SmartPanel]] = [:]
-        if let overrides = panelOverrides[pdf.id] {
-            for (pageIndex, panels) in overrides {
-                let smartPanels = panels.map { SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
-                smartPanelsDict["\(pageIndex)"] = smartPanels
-            }
-        }
+        isConverting = true; processingStatus = "Analyzing Panels..."; statusMessage = "Generating Smart Data..."
+        defer { isConverting = false; statusMessage = nil }
         
-        let sidecar = ComicVaultSidecar(
-            version: 1,
-            id: pdf.id.uuidString,
-            metadata: ComicVaultMetadata(
-                title: pdf.metadata.title,
-                series: pdf.metadata.series,
-                number: nil, // logic to parse number from title could go here
-                pageCount: pdf.pageCount
-            ),
-            smartPanels: smartPanelsDict
-        )
-        
-        // 2. Write File
         do {
+            // 1. Prepare Data
+            var smartPanelsDict: [String: [SmartPanel]] = [:]
+            
+            // Get Image URLs for analysis
+            let files = try await extractImageURLs(from: pdf.url)
+            
+            // Analyze each page
+            for (index, fileURL) in files.enumerated() {
+                // If we have overrides, use them
+                if let overrides = panelOverrides[pdf.id]?[index] {
+                    let smartPanels = overrides.map { SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
+                    smartPanelsDict["\(index)"] = smartPanels
+                } else if conversionSettings.enablePanelSplit {
+                    // ✅ Enterprise: Auto-Detect on the fly!
+                    if let image = UIImage(contentsOfFile: fileURL.path) {
+                        let panels = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: conversionSettings.mangaMode)
+                        if !panels.isEmpty {
+                            let smartPanels = panels.map { SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
+                            smartPanelsDict["\(index)"] = smartPanels
+                        }
+                    }
+                }
+                
+                // Progress
+                let progress = Double(index) / Double(files.count)
+                Task { @MainActor in self.conversionProgress = progress }
+            }
+            
+            let sidecar = ComicVaultSidecar(
+                version: 1,
+                id: pdf.id.uuidString,
+                metadata: ComicVaultMetadata(
+                    title: pdf.metadata.title,
+                    series: pdf.metadata.series,
+                    number: nil,
+                    pageCount: pdf.pageCount
+                ),
+                smartPanels: smartPanelsDict
+            )
+            
+            // 2. Write File
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
             let data = try encoder.encode(sidecar)
             try data.write(to: sidecarURL)
             return sidecarURL
+            
         } catch {
             print("Sidecar Generation Failed: \(error)")
             return nil
