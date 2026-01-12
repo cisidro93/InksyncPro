@@ -148,16 +148,20 @@ struct LibraryView: View {
             .sheet(item: $pdfToShare) { pdf in
                 ShareSheet(activityItems: [pdf.url])
             }
-            // ✅ Fix: Sheet only presents when 'pdfToEdit' is not nil
+            // ✅ Fix: Collection Sheet using existing state or new proper state
+            .sheet(isPresented: $showingAddCollection) {
+                if let pdf = pdfToEdit { // reusing pdfToEdit as a temp holder
+                     AddToCollectionView(pdf: pdf, isPresented: $showingAddCollection)
+                } else {
+                     Text("Select a PDF first")
+                }
+            }
             .sheet(item: $pdfToEdit) { pdf in
                 PageManagerView(pdf: pdf)
             }
-
-            // ✅ Fix: Sheet for Multi-Export
             .sheet(item: $sharePayload) { payload in
                 ShareSheet(activityItems: payload.items)
             }
-            // ✅ Fix: Merge Sheet
             .sheet(isPresented: $showingMergeSheet) {
                 FileMergeView(initialSelection: selection)
             }
@@ -174,7 +178,16 @@ struct LibraryView: View {
         }
     }
     
-    // ✅ NEW: Bulk Action Helpers
+    // MARK: - Helpers
+    
+    private func sharePDF(_ pdf: ConvertedPDF) {
+        pdfToShare = pdf
+    }
+    
+    private func addToCollection(_ pdf: ConvertedPDF) {
+        pdfToEdit = pdf
+        showingAddCollection = true
+    }
     
     @State private var selection = Set<UUID>()
     @State private var editMode: EditMode = .inactive
@@ -185,7 +198,6 @@ struct LibraryView: View {
         let items: [Any]
     }
     
-    // Toggle Selection Mode
     func toggleEditMode() {
         withAnimation {
             if editMode == .active {
@@ -217,24 +229,24 @@ struct LibraryView: View {
     var emptyStateView: some View {
         VStack(spacing: 20) {
             Image(systemName: "books.vertical")
-                .font(.system(size: 60))
-                .foregroundColor(.gray)
+            .font(.system(size: 60))
+            .foregroundColor(.gray)
             Text("Your Library is Empty")
-                .font(.title2)
-                .bold()
+            .font(.title2)
+            .bold()
             Text("Import a CBZ, CBR, or PDF file to get started.")
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
+            .foregroundColor(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal)
             
             Button(action: { showingDocumentPicker = true }) {
                 Label("Import Comic", systemImage: "plus")
-                    .font(.headline)
-                    .padding()
-                    .frame(width: 200)
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+                .font(.headline)
+                .padding()
+                .frame(width: 200)
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(10)
             }
         }
     }
@@ -254,30 +266,50 @@ struct LibraryView: View {
                     .tint(.yellow)
                 }
                 .contextMenu {
+                    // 1. Favorite
                     Button {
                         conversionManager.toggleFavorite(pdf)
                     } label: {
                         Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
                     }
                     
+                    // 2. Add to Collection
                     Button {
-                        selectedPDFForCollection = pdf
-                        showingAddToCollection = true
+                        addToCollection(pdf)
                     } label: {
                         Label("Add to Collection", systemImage: "folder.badge.plus")
                     }
                     
+                    // 3. Export
                     Button {
-                        // Export Logic (Share Sheet)
-                        // Triggered via state? or direct?
-                        // We need a share function. 'selectedPDFForCollection' is state.
-                        // We likely need 'selectedPDFForExport' state or similar.
-                        // Assuming sharePDF usage:
-                         sharePDF(pdf)
+                        sharePDF(pdf)
                     } label: {
-                        Label("Export File", systemImage: "square.and.arrow.up")
+                        Label("Export / Send to Kindle", systemImage: "square.and.arrow.up")
                     }
                     
+                    // 4. Edit
+                    Button {
+                        pdfToEdit = pdf
+                    } label: {
+                        Label("Edit Book & Pages", systemImage: "doc.on.doc")
+                    }
+                    
+                    // 5. Comic Vault Export
+                    Button {
+                        Task {
+                            if let sidecarURL = await conversionManager.generateSidecar(for: pdf) {
+                                await MainActor.run {
+                                    sharePayload = LibraryView.SharePayload(items: [pdf.url, sidecarURL])
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Export to Comic Vault", systemImage: "arrow.up.doc.fill")
+                    }
+                    
+                    Divider()
+                    
+                    // 6. Delete
                     Button(role: .destructive) {
                         conversionManager.deletePDF(pdf)
                     } label: {
@@ -291,99 +323,17 @@ struct LibraryView: View {
                         Label("Delete", systemImage: "trash")
                     }
                 }
-                .contextMenu {
-                    // 1. Export (Sets pdfToShare, triggers sheet)
-                    Button {
-                        pdfToShare = pdf
-                    } label: {
-                        Label("Export / Send to Kindle", systemImage: "square.and.arrow.up")
-                    }
-                    
-                    // 2. Edit (Sets pdfToEdit, triggers sheet)
-                    Button {
-                        pdfToEdit = pdf
-                    } label: {
-                        Label("Edit Book & Pages", systemImage: "doc.on.doc")
-                    }
-                    
-                    // ✅ NEW: Comic Vault Export
-                    Button {
-                        Task {
-                            if let sidecarURL = await conversionManager.generateSidecar(for: pdf) {
-                                // Must run on Main Actor to trigger sheet
-                                await MainActor.run {
-                                    sharePayload = LibraryView.SharePayload(items: [pdf.url, sidecarURL])
-                                }
-                            }
-                        }
-                    } label: {
-                        Label("Export to Comic Vault", systemImage: "arrow.up.doc.fill")
-                    }
-                    
-                    Divider()
-                    
-                    Button {
-                        Task {
-                            await conversionManager.convertComic(
-                                pdf,
-                                mangaMode: conversionManager.conversionSettings.mangaMode
-                            )
-                        }
-                    } label: {
-                        Label("Quick Convert", systemImage: "bolt.fill")
-                    }
-                    
-                    Button {
-                        conversionManager.toggleFavorite(pdf)
-                    } label: {
-                        Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
-                    }
-                    
-                    // ✅ NEW: Collections Menu
-                    Menu {
-                        Button {
-                            showingAddCollection = true
-                        } label: {
-                            Label("New Collection...", systemImage: "plus")
-                        }
-                        
-                        if !conversionManager.collections.isEmpty {
-                            Divider()
-                            ForEach(conversionManager.collections) { collection in
-                                Button {
-                                    conversionManager.movePDFToCollection(pdf, collectionId: collection.id)
-                                } label: {
-                                    if pdf.collectionId == collection.id {
-                                        Label(collection.name, systemImage: "checkmark")
-                                    } else {
-                                        Text(collection.name)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        if pdf.collectionId != nil {
-                            Divider()
-                            Button(role: .destructive) {
-                                conversionManager.movePDFToCollection(pdf, collectionId: nil)
-                            } label: {
-                                Label("Remove from Collection", systemImage: "folder.badge.minus")
-                            }
-                        }
-                    } label: {
-                        Label("Add to Collection", systemImage: "folder")
-                    }
-                    
-                    Button(role: .destructive) {
-                        conversionManager.deletePDF(pdf)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
+            }
+            .onDelete { indexSet in
+                for index in indexSet {
+                    let pdf = filteredPDFs[index]
+                    conversionManager.deletePDF(pdf)
                 }
             }
         }
-        .listStyle(.plain)
-        .environment(\.editMode, $editMode) // ✅ Enable Selection Mode
+        .environment(\.editMode, $editMode)
+        .listStyle(PlainListStyle())
+        .animation(.default, value: sortOption)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
     }
 }

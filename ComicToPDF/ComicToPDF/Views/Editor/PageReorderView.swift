@@ -19,7 +19,7 @@ struct PageReorderView: View {
         NavigationView {
             ZStack {
                 if isLoading { VStack(spacing: 16) { ProgressView(); Text("Loading pages...").foregroundColor(.secondary) } }
-                else { ScrollView { LazyVGrid(columns: columns, spacing: 16) { ForEach(pages) { page in PageThumbnailView(page: page).onDrag { NSItemProvider(object: page.id.uuidString as NSString) }.onDrop(of: [.text], delegate: PageDropDelegate(item: page, items: $pages, hasChanges: $hasChanges)) } }.padding() } }
+                else { ScrollView { LazyVGrid(columns: columns, spacing: 16) { ForEach(pages) { page in PageThumbnailView(page: page).onDrag { NSItemProvider(object: page.id.uuidString as NSString) }.onDrop(of: [.text], delegate: ReorderPageDropDelegate(item: page, items: $pages, hasChanges: $hasChanges)) } }.padding() } }
                 if isSaving { Color.black.opacity(0.5).ignoresSafeArea(); VStack(spacing: 16) { ProgressView().scaleEffect(1.5); Text("Saving changes...").foregroundColor(.white).fontWeight(.medium) } }
             }
             .navigationTitle("Reorder Pages").navigationBarTitleDisplayMode(.inline)
@@ -85,7 +85,7 @@ struct PageThumbnailView: View {
     }
 }
 
-struct PageDropDelegate: DropDelegate {
+struct ReorderPageDropDelegate: DropDelegate {
     let item: PageItem
     @Binding var items: [PageItem]
     @Binding var hasChanges: Bool
