@@ -520,32 +520,39 @@ class ConversionManager: ObservableObject {
     
     // MARK: - Comic Vault Export
     // MARK: - Comic Vault Export
-    func generateSidecar(for pdf: ConvertedPDF) async -> URL? {
-        // User reports they want to keep existing ComicInfo.xml + Panels
-        // So we will try to extract it from the source file first.
+    // Renamed to clarify intent: We are creating a NEW export file with embedded metadata
+    func exportWithEmbeddedMetadata(for pdf: ConvertedPDF) async -> URL? {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory
         
-        let sidecarName = "ComicInfo.xml" // Standard name for this file
-        let tempDir = FileManager.default.temporaryDirectory
-        let sidecarURL = tempDir.appendingPathComponent(sidecarName)
+        // 1. Create a Temporary Copy of the Source File
+        // We do this to avoid modifying the original library file in place, 
+        // ensuring "Export" is a non-destructive action.
+        let exportName = pdf.url.lastPathComponent
+        let exportURL = tempDir.appendingPathComponent(exportName)
         
-        isConverting = true; processingStatus = "Reading Metadata..."; statusMessage = "Generating Smart Data..."
+        // Remove invalid old temp files
+        try? fileManager.removeItem(at: exportURL)
+        
+        isConverting = true; processingStatus = "Preparing Export..."; statusMessage = "Embedding Metadata..."
         defer { isConverting = false; statusMessage = nil }
         
         do {
-            // 1. Prepare Smart Panels Data
+            // Copy Source -> Temp
+            try fileManager.copyItem(at: pdf.url, to: exportURL)
+            
+            // 2. Prepare Smart Panels Data
             var smartPanelsDict: [String: [SmartPanel]] = [:]
             
-            // Get Image URLs for analysis
+            // Get Image URLs for analysis (from the ORIGINAL)
             let files = try await extractImageURLs(from: pdf.url)
             
             // Analyze each page
             for (index, fileURL) in files.enumerated() {
-                // If we have overrides, use them
                 if let overrides = panelOverrides[pdf.id]?[index] {
                     let smartPanels = overrides.map { SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
                     smartPanelsDict["\(index)"] = smartPanels
                 } else if conversionSettings.enablePanelSplit {
-                    // ✅ Enterprise: Auto-Detect on the fly!
                     if let image = UIImage(contentsOfFile: fileURL.path) {
                         let panels = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: conversionSettings.mangaMode)
                         if !panels.isEmpty {
@@ -554,49 +561,41 @@ class ConversionManager: ObservableObject {
                         }
                     }
                 }
-                
-                // Progress
                 let progress = Double(index) / Double(files.count)
                 Task { @MainActor in self.conversionProgress = progress }
             }
             
-            // 2. Try to Read Existing ComicInfo.xml
+            // 3. Generate XML Content
             var xmlContent = ""
             var hasExistingMetadata = false
             
-            // Try reading from archive
-            if let archive = try? Archive(url: pdf.url, accessMode: .read, preferredEncoding: nil) {
-                if let entry = archive["ComicInfo.xml"] {
-                    var data = Data()
-                    _ = try? archive.extract(entry) { data.append($0) }
-                    if let string = String(data: data, encoding: .utf8) {
-                        xmlContent = string
-                        hasExistingMetadata = true
-                    }
+            // Read potentially existing metadata from our NEW temp export file
+            // We use the temp file so we can update it in place later
+            guard let archive = try? Archive(url: exportURL, accessMode: .update, preferredEncoding: nil) else {
+                throw NSError(domain: "ExportError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive for update"])
+            }
+            
+            if let entry = archive["ComicInfo.xml"] {
+                var data = Data()
+                _ = try? archive.extract(entry) { data.append($0) }
+                if let string = String(data: data, encoding: .utf8) {
+                    xmlContent = string
+                    hasExistingMetadata = true
                 }
             }
             
-            // 3. Construct or Inject Logic
+            // Construct/Inject Logic
             if hasExistingMetadata {
-                // We have existing XML. We need to INJECT <Pages> ... </Pages> before </ComicInfo>
-                // First, remove any existing <Pages> block to avoid duplicates
                 if let range = xmlContent.range(of: "<Pages>.*</Pages>", options: .regularExpression) {
                     xmlContent.removeSubrange(range)
                 }
-                
-                // Generate Pages Block
                 let pagesBlock = generatePagesXML(from: smartPanelsDict)
-                
-                // Inject before closing tag
                 if let range = xmlContent.range(of: "</ComicInfo>") {
                     xmlContent.insert(contentsOf: "\n" + pagesBlock + "\n", at: range.lowerBound)
                 } else {
-                    // Fallback append if malformed
                     xmlContent += "\n" + pagesBlock
                 }
-                
             } else {
-                // Generate Fresh ComicInfo.xml
                 xmlContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                 xmlContent += "<ComicInfo>\n"
                 xmlContent += "  <Title>\(pdf.metadata.title)</Title>\n"
@@ -606,12 +605,25 @@ class ConversionManager: ObservableObject {
                 xmlContent += "\n</ComicInfo>"
             }
             
-            // 4. Write File
-            try xmlContent.write(to: sidecarURL, atomically: true, encoding: .utf8)
-            return sidecarURL
+            // 4. Inject Metadata into Archive
+            // Remove old entry if it exists to avoid duplication errors (though ZIPFoundation might handle overwrite, explicit remove is safer)
+            if let oldEntry = archive["ComicInfo.xml"] {
+                try archive.remove(oldEntry)
+            }
+            
+            guard let xmlData = xmlContent.data(using: .utf8) else { return nil }
+            
+            // Add new entry
+            try archive.addEntry(with: "ComicInfo.xml", type: .file, uncompressedSize: Int64(xmlData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                let start = Int(position)
+                let end = min(start + size, xmlData.count)
+                return xmlData.subdata(in: start..<end)
+            }
+            
+            return exportURL
             
         } catch {
-            print("Sidecar Generation Failed: \(error)")
+            print("Export Failed: \(error)")
             return nil
         }
     }

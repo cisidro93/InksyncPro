@@ -315,9 +315,9 @@ struct LibraryView: View {
                     // 5. Comic Vault Export
                     Button {
                         Task {
-                            if let sidecarURL = await conversionManager.generateSidecar(for: pdf) {
+                            if let exportedURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
                                 await MainActor.run {
-                                    sharePayload = LibraryView.SharePayload(items: [pdf.url, sidecarURL])
+                                    sharePayload = LibraryView.SharePayload(items: [exportedURL])
                                 }
                             }
                         }
