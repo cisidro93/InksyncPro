@@ -1,3 +1,4 @@
+import SwiftUI
 
 // Extracted Subview to fix Compiler Timeout
 struct PageManagerGridItem: View {
