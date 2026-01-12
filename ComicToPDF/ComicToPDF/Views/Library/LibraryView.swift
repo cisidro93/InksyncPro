@@ -275,6 +275,15 @@ struct LibraryView: View {
                         Label("Edit Book & Pages", systemImage: "doc.on.doc")
                     }
                     
+                    // ✅ NEW: Comic Vault Export
+                    Button {
+                        if let sidecarURL = conversionManager.generateSidecar(for: pdf) {
+                            sharePayload = LibraryView.SharePayload(items: [pdf.url, sidecarURL])
+                        }
+                    } label: {
+                        Label("Export to Comic Vault", systemImage: "arrow.up.doc.fill")
+                    }
+                    
                     Divider()
                     
                     Button {

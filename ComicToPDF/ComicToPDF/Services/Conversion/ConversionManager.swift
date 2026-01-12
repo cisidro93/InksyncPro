@@ -396,4 +396,66 @@ class ConversionManager: ObservableObject {
     func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL { return url /* Placeholder */ }
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL { return pdf.url /* Placeholder */ }
     func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL { return pdf.url }
+    
+    // MARK: - Comic Vault Export
+    func generateSidecar(for pdf: ConvertedPDF) -> URL? {
+        let sidecarName = pdf.url.deletingPathExtension().appendingPathExtension("json").lastPathComponent
+        let tempDir = FileManager.default.temporaryDirectory
+        let sidecarURL = tempDir.appendingPathComponent(sidecarName)
+        
+        // 1. Prepare Data
+        var smartPanelsDict: [String: [SmartPanel]] = [:]
+        if let overrides = panelOverrides[pdf.id] {
+            for (pageIndex, panels) in overrides {
+                let smartPanels = panels.map { SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
+                smartPanelsDict["\(pageIndex)"] = smartPanels
+            }
+        }
+        
+        let sidecar = ComicVaultSidecar(
+            version: 1,
+            id: pdf.id.uuidString,
+            metadata: ComicVaultMetadata(
+                title: pdf.metadata.title,
+                series: pdf.metadata.series,
+                number: nil, // logic to parse number from title could go here
+                pageCount: pdf.pageCount
+            ),
+            smartPanels: smartPanelsDict
+        )
+        
+        // 2. Write File
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(sidecar)
+            try data.write(to: sidecarURL)
+            return sidecarURL
+        } catch {
+            print("Sidecar Generation Failed: \(error)")
+            return nil
+        }
+    }
+}
+
+// MARK: - Sidecar Models
+struct ComicVaultSidecar: Codable {
+    let version: Int
+    let id: String
+    let metadata: ComicVaultMetadata
+    let smartPanels: [String: [SmartPanel]] // Key is Page Index string
+}
+
+struct ComicVaultMetadata: Codable {
+    let title: String
+    let series: String?
+    let number: Int?
+    let pageCount: Int
+}
+
+struct SmartPanel: Codable {
+    let x: CGFloat
+    let y: CGFloat
+    let width: CGFloat
+    let height: CGFloat
 }
