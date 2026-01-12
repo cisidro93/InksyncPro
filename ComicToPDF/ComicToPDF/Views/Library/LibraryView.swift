@@ -12,6 +12,8 @@ struct LibraryView: View {
     @State private var sortOption: SortOption = .dateAdded
     @State private var isImporting = false
     @State private var showingMergeSheet = false
+    @State private var showingAddCollection = false
+    @State private var newCollectionName = ""
     
     // ✅ Fix: Data-Driven Sheet State (Prevents Blank Pages)
     @State private var pdfToShare: ConvertedPDF?
@@ -159,6 +161,16 @@ struct LibraryView: View {
             .sheet(isPresented: $showingMergeSheet) {
                 FileMergeView(initialSelection: selection)
             }
+            .alert("New Collection", isPresented: $showingAddCollection) {
+                TextField("Collection Name", text: $newCollectionName)
+                Button("Cancel", role: .cancel) { newCollectionName = "" }
+                Button("Create") {
+                    if !newCollectionName.isEmpty {
+                        conversionManager.createCollection(name: newCollectionName, icon: "folder", color: "Blue")
+                        newCollectionName = ""
+                    }
+                }
+            }
         }
     }
     
@@ -280,6 +292,41 @@ struct LibraryView: View {
                         conversionManager.toggleFavorite(pdf)
                     } label: {
                         Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
+                    }
+                    
+                    // ✅ NEW: Collections Menu
+                    Menu {
+                        Button {
+                            showingAddCollection = true
+                        } label: {
+                            Label("New Collection...", systemImage: "plus")
+                        }
+                        
+                        if !conversionManager.collections.isEmpty {
+                            Divider()
+                            ForEach(conversionManager.collections) { collection in
+                                Button {
+                                    conversionManager.movePDFToCollection(pdf, collectionId: collection.id)
+                                } label: {
+                                    if pdf.collectionId == collection.id {
+                                        Label(collection.name, systemImage: "checkmark")
+                                    } else {
+                                        Text(collection.name)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if pdf.collectionId != nil {
+                            Divider()
+                            Button(role: .destructive) {
+                                conversionManager.movePDFToCollection(pdf, collectionId: nil)
+                            } label: {
+                                Label("Remove from Collection", systemImage: "folder.badge.minus")
+                            }
+                        }
+                    } label: {
+                        Label("Add to Collection", systemImage: "folder")
                     }
                     
                     Button(role: .destructive) {
