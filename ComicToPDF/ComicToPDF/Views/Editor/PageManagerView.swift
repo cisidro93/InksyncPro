@@ -90,27 +90,7 @@ class PageEditorViewModel: ObservableObject {
 }
 
 // ✅ Drop Delegate for Reordering
-struct PageDropDelegate: DropDelegate {
-    let item: GridPageItem
-    @Binding var items: [GridPageItem]
-    @Binding var draggedItem: GridPageItem?
-    
-    func performDrop(info: DropInfo) -> Bool {
-        return true
-    }
-    
-    func dropEntered(info: DropInfo) {
-        guard let draggedItem = draggedItem else { return }
-        guard let fromIndex = items.firstIndex(where: { $0.id == draggedItem.id }),
-              let toIndex = items.firstIndex(where: { $0.id == item.id }) else { return }
-        
-        if fromIndex != toIndex {
-            withAnimation {
-                items.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
-            }
-        }
-    }
-}
+
 
 struct PageManagerView: View {
     @EnvironmentObject var conversionManager: ConversionManager
@@ -206,48 +186,19 @@ struct PageManagerView: View {
                         ScrollView {
                             LazyVGrid(columns: columns, spacing: 10) {
                                 ForEach(viewModel.items) { item in
-                                    VStack {
-                                        SafeGridCell(url: item.url)
-                                            .frame(height: 150)
-                                            .cornerRadius(8)
-                                            .overlay(
-                                                ZStack(alignment: .topTrailing) {
-                                                    RoundedRectangle(cornerRadius: 8)
-                                                        .stroke(selectedPages.contains(item.index) ? Color.blue : Color.clear, lineWidth: 3)
-                                                    
-                                                    if conversionManager.panelOverrides[pdf.id]?[item.index] != nil {
-                                                        Image(systemName: "scissors")
-                                                            .font(.caption)
-                                                            .padding(4)
-                                                            .background(Color.yellow)
-                                                            .clipShape(Circle())
-                                                            .padding(4)
-                                                            .frame(maxWidth: .infinity, alignment: .topLeading)
-                                                    }
-                                                }
-                                            )
-                                            .id(item.index)
-                                            .onTapGesture {
-                                                if isSelectionMode || !selectedPages.isEmpty {
-                                                    toggleSelection(item.index)
-                                                } else {
-                                                    if let image = UIImage(contentsOfFile: item.url.path) {
-                                                        self.selectedImageForEditor = image
-                                                        self.pageToEdit = item.index
-                                                    }
-                                                }
-                                            }
-                                            // ✅ ENABLE DRAG REORDERING
-                                            .onDrag {
-                                                self.draggedItem = item
-                                                return NSItemProvider(object: "\(item.index)" as NSString)
-                                            }
-                                            .onDrop(of: [.text], delegate: PageDropDelegate(item: item, items: $viewModel.items, draggedItem: $draggedItem))
-                                        
-                                        Text("\(item.index + 1)")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
+                                    PageManagerGridItem(
+                                        item: item,
+                                        pdf: pdf,
+                                        isSelectionMode: isSelectionMode,
+                                        isSelected: selectedPages.contains(item.index),
+                                        items: $viewModel.items,
+                                        draggedItem: $draggedItem,
+                                        onToggleSelection: { toggleSelection(item.index) },
+                                        onEdit: { image in
+                                            self.selectedImageForEditor = image
+                                            self.pageToEdit = item.index
+                                        }
+                                    )
                                 }
                             }
                             .padding()

@@ -148,14 +148,7 @@ struct LibraryView: View {
             .sheet(item: $pdfToShare) { pdf in
                 ShareSheet(activityItems: [pdf.url])
             }
-            // ✅ Fix: Collection Sheet using existing state or new proper state
-            .sheet(isPresented: $showingAddCollection) {
-                if let pdf = pdfToEdit { // reusing pdfToEdit as a temp holder
-                     AddToCollectionView(pdf: pdf, isPresented: $showingAddCollection)
-                } else {
-                     Text("Select a PDF first")
-                }
-            }
+
             .sheet(item: $pdfToEdit) { pdf in
                 PageManagerView(pdf: pdf)
             }
@@ -184,10 +177,7 @@ struct LibraryView: View {
         pdfToShare = pdf
     }
     
-    private func addToCollection(_ pdf: ConvertedPDF) {
-        pdfToEdit = pdf
-        showingAddCollection = true
-    }
+
     
     @State private var selection = Set<UUID>()
     @State private var editMode: EditMode = .inactive
@@ -274,10 +264,38 @@ struct LibraryView: View {
                     }
                     
                     // 2. Add to Collection
-                    Button {
-                        addToCollection(pdf)
+                    Menu {
+                        Button {
+                            showingAddCollection = true
+                        } label: {
+                            Label("New Collection...", systemImage: "plus")
+                        }
+                        
+                        if !conversionManager.collections.isEmpty {
+                            Divider()
+                            ForEach(conversionManager.collections) { collection in
+                                Button {
+                                    conversionManager.movePDFToCollection(pdf, collectionId: collection.id)
+                                } label: {
+                                    if pdf.collectionId == collection.id {
+                                        Label(collection.name, systemImage: "checkmark")
+                                    } else {
+                                        Text(collection.name)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if pdf.collectionId != nil {
+                            Divider()
+                            Button(role: .destructive) {
+                                conversionManager.movePDFToCollection(pdf, collectionId: nil)
+                            } label: {
+                                Label("Remove from Collection", systemImage: "folder.badge.minus")
+                            }
+                        }
                     } label: {
-                        Label("Add to Collection", systemImage: "folder.badge.plus")
+                        Label("Add to Collection", systemImage: "folder")
                     }
                     
                     // 3. Export
