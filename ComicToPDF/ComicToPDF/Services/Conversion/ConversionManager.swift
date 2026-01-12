@@ -521,15 +521,18 @@ class ConversionManager: ObservableObject {
     // MARK: - Comic Vault Export
     // MARK: - Comic Vault Export
     func generateSidecar(for pdf: ConvertedPDF) async -> URL? {
-        let sidecarName = pdf.url.deletingPathExtension().appendingPathExtension("xml").lastPathComponent
+        // User reports they want to keep existing ComicInfo.xml + Panels
+        // So we will try to extract it from the source file first.
+        
+        let sidecarName = "ComicInfo.xml" // Standard name for this file
         let tempDir = FileManager.default.temporaryDirectory
         let sidecarURL = tempDir.appendingPathComponent(sidecarName)
         
-        isConverting = true; processingStatus = "Analyzing Panels..."; statusMessage = "Generating Smart Data..."
+        isConverting = true; processingStatus = "Reading Metadata..."; statusMessage = "Generating Smart Data..."
         defer { isConverting = false; statusMessage = nil }
         
         do {
-            // 1. Prepare Data
+            // 1. Prepare Smart Panels Data
             var smartPanelsDict: [String: [SmartPanel]] = [:]
             
             // Get Image URLs for analysis
@@ -557,41 +560,88 @@ class ConversionManager: ObservableObject {
                 Task { @MainActor in self.conversionProgress = progress }
             }
             
-            // 2. Generate XML String
-            var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-            xml += "<ComicData version=\"1\">\n"
-            xml += "  <Metadata>\n"
-            xml += "    <Title>\(pdf.metadata.title)</Title>\n"
-            xml += "    <Series>\(pdf.metadata.series ?? "")</Series>\n"
-            xml += "    <PageCount>\(pdf.pageCount)</PageCount>\n"
-            xml += "    <UUID>\(pdf.id.uuidString)</UUID>\n"
-            xml += "  </Metadata>\n"
-            xml += "  <SmartPanels>\n"
+            // 2. Try to Read Existing ComicInfo.xml
+            var xmlContent = ""
+            var hasExistingMetadata = false
             
-            // Sort keys to keep XML orderly
-            let sortedKeys = smartPanelsDict.keys.compactMap { Int($0) }.sorted().map { String($0) }
-            
-            for key in sortedKeys {
-                if let panels = smartPanelsDict[key] {
-                    xml += "    <Page index=\"\(key)\">\n"
-                    for panel in panels {
-                        xml += "      <Panel x=\"\(panel.x)\" y=\"\(panel.y)\" width=\"\(panel.width)\" height=\"\(panel.height)\" />\n"
+            // Try reading from archive
+            if let archive = try? Archive(url: pdf.url, accessMode: .read, preferredEncoding: nil) {
+                if let entry = archive["ComicInfo.xml"] {
+                    var data = Data()
+                    _ = try? archive.extract(entry) { data.append($0) }
+                    if let string = String(data: data, encoding: .utf8) {
+                        xmlContent = string
+                        hasExistingMetadata = true
                     }
-                    xml += "    </Page>\n"
                 }
             }
             
-            xml += "  </SmartPanels>\n"
-            xml += "</ComicData>"
+            // 3. Construct or Inject Logic
+            if hasExistingMetadata {
+                // We have existing XML. We need to INJECT <Pages> ... </Pages> before </ComicInfo>
+                // First, remove any existing <Pages> block to avoid duplicates
+                if let range = xmlContent.range(of: "<Pages>.*</Pages>", options: .regularExpression) {
+                    xmlContent.removeSubrange(range)
+                }
+                
+                // Generate Pages Block
+                let pagesBlock = generatePagesXML(from: smartPanelsDict)
+                
+                // Inject before closing tag
+                if let range = xmlContent.range(of: "</ComicInfo>") {
+                    xmlContent.insert(contentsOf: "\n" + pagesBlock + "\n", at: range.lowerBound)
+                } else {
+                    // Fallback append if malformed
+                    xmlContent += "\n" + pagesBlock
+                }
+                
+            } else {
+                // Generate Fresh ComicInfo.xml
+                xmlContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                xmlContent += "<ComicInfo>\n"
+                xmlContent += "  <Title>\(pdf.metadata.title)</Title>\n"
+                if let series = pdf.metadata.series { xmlContent += "  <Series>\(series)</Series>\n" }
+                xmlContent += "  <PageCount>\(pdf.pageCount)</PageCount>\n"
+                xmlContent += generatePagesXML(from: smartPanelsDict)
+                xmlContent += "\n</ComicInfo>"
+            }
             
-            // 3. Write File
-            try xml.write(to: sidecarURL, atomically: true, encoding: .utf8)
+            // 4. Write File
+            try xmlContent.write(to: sidecarURL, atomically: true, encoding: .utf8)
             return sidecarURL
             
         } catch {
             print("Sidecar Generation Failed: \(error)")
             return nil
         }
+    }
+    
+    // Helper to generate the <Pages> block
+    private func generatePagesXML(from panelsDict: [String: [SmartPanel]]) -> String {
+        var xml = "  <Pages>\n"
+        
+        // Sort keys
+        let sortedKeys = panelsDict.keys.compactMap { Int($0) }.sorted().map { String($0) }
+        
+        for key in sortedKeys {
+            if let panels = panelsDict[key] {
+                // ComicInfo uses Image="0" for the first page
+                xml += "    <Page Image=\"\(key)\">\n"
+                
+                // There is no standard <Panels> tag in ComicInfo, so we use a custom <SmartPanels>
+                // Or we can try to use standard schema attributes if possible, but detection has multiple panels per page.
+                // We'll use a custom block inside Page.
+                xml += "      <SmartPanels>\n"
+                for panel in panels {
+                    xml += "        <Panel x=\"\(panel.x)\" y=\"\(panel.y)\" width=\"\(panel.width)\" height=\"\(panel.height)\" />\n"
+                }
+                xml += "      </SmartPanels>\n"
+                xml += "    </Page>\n"
+            }
+        }
+        
+        xml += "  </Pages>"
+        return xml
     }
 }
 
