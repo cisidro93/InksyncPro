@@ -34,6 +34,13 @@ struct PanelEditorView: View {
         VStack(spacing: 0) {
             // MARK: - Top Toolbar
             HStack(spacing: 8) {
+                // ✅ Close Button
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.gray)
+                }
+                
                 Text("Page \(pageIndex + 1)")
                     .font(.headline)
                     .layoutPriority(1)
@@ -111,7 +118,9 @@ struct PanelEditorView: View {
                     Color.black.opacity(0.9).edgesIgnoringSafeArea(.all)
                     
                     if let image = pageImage {
-                        let imgFrame = calculateImageFrame(image: image, inside: geo.size)
+                        // ✅ FIX: Add padding to prevent top cutoff
+                        let safeSize = CGSize(width: geo.size.width - 20, height: geo.size.height - 20)
+                        let imgFrame = calculateImageFrame(image: image, inside: safeSize)
                         
                         // Image Container
                         ZStack(alignment: .topLeading) {
