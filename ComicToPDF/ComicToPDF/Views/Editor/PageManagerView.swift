@@ -103,7 +103,7 @@ struct PageManagerView: View {
     @State private var selectedImageForEditor: UIImage?
     @State private var isSelectionMode = false // ✅ Selection Mode State
     @State private var dragStart: Int?
-    @State private var draggedItem: PageItem? // ✅ Drag for Reordering
+    @State private var draggedItem: GridPageItem? // ✅ Drag for Reordering
 
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
