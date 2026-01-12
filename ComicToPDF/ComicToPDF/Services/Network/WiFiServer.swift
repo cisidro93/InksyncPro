@@ -65,22 +65,73 @@ class WiFiServer: ObservableObject {
     
     private func receive(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, error in
-            if let data = data, let request = String(data: data, encoding: .utf8) {
-                // Simple HTTP Parsing
-                let lines = request.components(separatedBy: "\r\n")
-                if let firstLine = lines.first {
-                    let parts = firstLine.components(separatedBy: " ")
-                    if parts.count >= 2 {
-                        let method = parts[0]
-                        let path = parts[1].removingPercentEncoding ?? "/"
-                        
-                        if method == "GET" {
-                            self.handleRequest(path: path, connection: connection)
+            if let data = data {
+                // Attempt to parse text header (Latin1 preserves byte count better than UTF8 for mixed content, but headers are ASCII)
+                // We peek for the header end.
+                if let headerRange = data.range(of: Data("\r\n\r\n".utf8)) {
+                    let headerData = data[..<headerRange.lowerBound]
+                    if let headerString = String(data: headerData, encoding: .utf8) {
+                        let lines = headerString.components(separatedBy: "\r\n")
+                        if let firstLine = lines.first {
+                            let parts = firstLine.components(separatedBy: " ")
+                            if parts.count >= 2 {
+                                let method = parts[0]
+                                let path = parts[1].removingPercentEncoding ?? "/"
+                                
+                                if method == "GET" {
+                                    self.handleRequest(path: path, connection: connection)
+                                } else if method == "POST" {
+                                    // Pass the full data (including body)
+                                    self.handlePostRequest(connection: connection, header: firstLine, data: data)
+                                }
+                            }
                         }
                     }
                 }
             }
             if error != nil { connection.cancel() }
+        }
+    }
+    
+    // ✅ NEW: POST Handler for Uploads
+    private func handlePostRequest(connection: NWConnection, header: String, data: Data) {
+        // Simple Raw Binary Upload Handler (Compatible with JS Fetch body=file)
+        
+        // 1. Parse Headers
+        let lines = header.components(separatedBy: " ")
+        guard lines.count >= 2 else { sendError(connection, 400); return }
+        
+        // Naive Filename Extraction
+        let rawName = lines[1].replacingOccurrences(of: "/upload/", with: "").replacingOccurrences(of: "/", with: "")
+        let fileName = rawName.removingPercentEncoding ?? "upload_\(Date().timeIntervalSince1970).cbz"
+        
+        guard !fileName.isEmpty && fileName != "upload" else { sendError(connection, 400); return }
+
+        // 2. Find Body Start in Data
+        guard let separatorRange = data.range(of: Data("\r\n\r\n".utf8)) else {
+             sendError(connection, 400)
+             return
+        }
+        
+        let bodyStartIndex = separatorRange.upperBound
+        guard bodyStartIndex < data.endIndex else { sendError(connection, 400); return }
+        
+        let bodyData = data[bodyStartIndex...]
+        
+        // 3. Write Data
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let destURL = docDir.appendingPathComponent(fileName)
+        
+        do {
+            try bodyData.write(to: destURL)
+            sendError(connection, 200) // Ack
+            
+            // Trigger Library Update
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                NotificationCenter.default.post(name: Notification.Name("LibraryUpdated"), object: nil)
+            }
+        } catch {
+             sendError(connection, 500)
         }
     }
     
@@ -132,11 +183,77 @@ class WiFiServer: ObservableObject {
     private func generateHTML() -> String {
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let files = (try? FileManager.default.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil)) ?? []
+        // Removing getIPAddress call here as it's not strictly necessary for the HTML body and reduces complexity
         
         let fileLinks = files
-            .filter { ["pdf", "epub"].contains($0.pathExtension.lowercased()) }
+            .filter { ["pdf", "epub", "cbz", "cbr"].contains($0.pathExtension.lowercased()) }
             .map { "<li><a href=\"/\($0.lastPathComponent)\">\($0.lastPathComponent)</a> <span style='color:#888'>(\(formatBytes($0)))</span></li>" }
             .joined(separator: "\n")
+        
+        return """
+        <html>
+        <head>
+            <title>Comic Transfer</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
+                h1 { color: #ff9500; }
+                ul { list-style: none; padding: 0; }
+                li { padding: 15px; border-bottom: 1px solid #eee; font-size: 18px; }
+                a { text-decoration: none; color: #333; font-weight: 500; }
+                a:hover { color: #ff9500; }
+                .upload-box { background: #f9f9f9; padding: 20px; border-radius: 12px; border: 2px dashed #ccc; text-align: center; margin-bottom: 20px; }
+                button { background: #ff9500; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 16px; cursor: pointer; }
+                button:disabled { background: #ccc; }
+            </style>
+        </head>
+        <body>
+            <h1>📚 Comic Transfer</h1>
+            
+            <div class="upload-box">
+                <h3>Upload Comic (CBZ/PDF)</h3>
+                <input type="file" id="fileInput">
+                <button onclick="uploadFile()">Upload</button>
+                <div id="status" style="margin-top: 10px;"></div>
+            </div>
+
+            <script>
+                async function uploadFile() {
+                    let file = document.getElementById('fileInput').files[0];
+                    if (!file) return;
+                    
+                    document.getElementById('status').innerText = "Uploading " + file.name + "...";
+                    let btn = document.querySelector('button');
+                    btn.disabled = true;
+                    
+                    try {
+                        let response = await fetch('/upload/' + encodeURIComponent(file.name), {
+                            method: 'POST',
+                            body: file
+                        });
+                        
+                        if (response.ok) {
+                            document.getElementById('status').innerText = "✅ Upload Complete! Refreshing...";
+                            setTimeout(() => location.reload(), 2000);
+                        } else {
+                            document.getElementById('status').innerText = "❌ Error: " + response.statusText;
+                        }
+                    } catch (e) {
+                         document.getElementById('status').innerText = "❌ Network Error";
+                    }
+                    btn.disabled = false;
+                }
+            </script>
+            
+            <h3>Available Files</h3>
+            <p style="color:#666; font-size: 14px;">Tap a file to download.</p>
+            <ul>
+                \(fileLinks.isEmpty ? "<li>No files found.</li>" : fileLinks)
+            </ul>
+        </body>
+        </html>
+        """
+    }
         
         return """
         <html>

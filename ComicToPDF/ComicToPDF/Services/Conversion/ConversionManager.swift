@@ -82,24 +82,44 @@ class ConversionManager: ObservableObject {
     func scanLibrary() {
         let fileManager = FileManager.default
         let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        
         do {
-            let fileURLs = try fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles])
-            let allowed = ["cbz", "cbr", "pdf", "epub", "zip"]
-            let diskFiles = fileURLs.filter { allowed.contains($0.pathExtension.lowercased()) }
+            // Recursive Scan
+            // We use enumerator to find files deep in folders
+            var newPDFs: [ConvertedPDF] = []
+            let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
             
-            convertedPDFs.removeAll { pdf in !diskFiles.contains(where: { $0.lastPathComponent == pdf.url.lastPathComponent }) }
+            if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+                 for case let fileURL as URL in enumerator {
+                     let ext = fileURL.pathExtension.lowercased()
+                     if ["pdf", "cbz", "cbr", "zip", "epub"].contains(ext) {
+                         // Check if already exists
+                         if !convertedPDFs.contains(where: { $0.url.path == fileURL.path }) {
+                             let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                             let newPDF = ConvertedPDF(name: fileURL.lastPathComponent, url: fileURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: fileURL.lastPathComponent))
+                             newPDFs.append(newPDF)
+                         }
+                     }
+                 }
+            }
             
-            for url in diskFiles {
-                if !convertedPDFs.contains(where: { $0.url.lastPathComponent == url.lastPathComponent }) {
-                    let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-                    let newPDF = ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: 0, fileSize: Int64(size), metadata: PDFMetadata(title: url.lastPathComponent), collectionId: nil)
-                    convertedPDFs.append(newPDF)
-                    Task { await self.generateCoverThumbnail(for: newPDF) }
+            // Add new ones
+            if !newPDFs.isEmpty {
+                convertedPDFs.append(contentsOf: newPDFs)
+                saveLibrary()
+                
+                // Generate thumbnails in background
+                for pdf in newPDFs {
+                    Task { await self.generateCoverThumbnail(for: pdf) }
                 }
             }
-            for pdf in convertedPDFs { if thumbnailCache.object(forKey: pdf.url.path as NSString) == nil { Task { await self.generateCoverThumbnail(for: pdf) } } }
-            saveLibrary()
-        } catch { print("Scan Error: \(error)") }
+            
+            // Cleanup: Remove missing files
+            convertedPDFs.removeAll { !fileManager.fileExists(atPath: $0.url.path) }
+            
+        } catch {
+            print("Scan Error: \(error)")
+        }
     }
     
     func deletePDF(_ pdf: ConvertedPDF) {
@@ -393,9 +413,110 @@ class ConversionManager: ObservableObject {
         }.value
         scanLibrary()
     }
-    func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL { return url /* Placeholder */ }
-    func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL { return pdf.url /* Placeholder */ }
-    func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL { return pdf.url }
+    func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL {
+        // Physical Reorder: We create a new CBZ with files renamed to match the new order.
+        let fileManager = FileManager.default
+        let tempID = UUID().uuidString
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(tempID)
+        let tempArchiveURL = fileManager.temporaryDirectory.appendingPathComponent("\(tempID).cbz")
+        
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDir); try? fileManager.removeItem(at: tempArchiveURL) }
+        
+        guard let sourceArchive = try? Archive(url: url, accessMode: .read),
+              let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create) else {
+            throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
+        }
+        
+        // 1. Get Sorted Entries (Canonical Order)
+        let sortedEntries = sourceArchive.makeIterator().sorted { $0.path < $1.path }
+        let imageEntries = sortedEntries.filter { entry in
+            let ext = (entry.path as NSString).pathExtension.lowercased()
+            return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
+        }
+        
+        // 2. Process based on newOrder
+        // newOrder[i] = originalIndex. So if newOrder[0] = 5, the first page of new file is the 6th page of old file.
+        for (newIndex, originalIndex) in newOrder.enumerated() {
+            guard originalIndex < imageEntries.count else { continue }
+            let entry = imageEntries[originalIndex]
+            
+            // Extract
+            let ext = (entry.path as NSString).pathExtension.lowercased()
+            let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
+            _ = try sourceArchive.extract(entry, to: tempFile)
+            
+            // Rename for New Archive (page_00001.jpg)
+            let newName = "page_\(String(format: "%05d", newIndex)).\(ext)"
+            
+            // Add
+            try destArchive.addEntry(with: newName, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                let fileHandle = try? FileHandle(forReadingFrom: tempFile)
+                try? fileHandle?.seek(toOffset: UInt64(position))
+                return fileHandle?.readData(ofLength: size) ?? Data()
+            }
+            
+            try? fileManager.removeItem(at: tempFile)
+        }
+        
+        // 3. Swap
+        if fileManager.fileExists(atPath: url.path) { try fileManager.removeItem(at: url) }
+        try fileManager.moveItem(at: tempArchiveURL, to: url)
+        
+        scanLibrary()
+        return url
+    }
+    
+    // Split / Extract Logic
+    func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL {
+        let fileManager = FileManager.default
+        let newName = "\(pdf.name)_Split"
+        let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("\(newName).cbz")
+        
+        // Reuse reordering logic but only for specific indices and writing to new file
+        let tempID = UUID().uuidString
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(tempID)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDir) }
+        
+        guard let sourceArchive = try? Archive(url: pdf.url, accessMode: .read),
+              let destArchive = try? Archive(url: outputURL, accessMode: .create) else {
+            throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
+        }
+        
+        let sortedEntries = sourceArchive.makeIterator().sorted { $0.path < $1.path }
+        let imageEntries = sortedEntries.filter { entry in
+            let ext = (entry.path as NSString).pathExtension.lowercased()
+            return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
+        }
+        
+        // Sort indices to maintain relative order, or keep selection order?
+        // Usually split means "take these pages". We keep them in the order they appear in the array (allows reorder + split).
+        for (newIndex, originalIndex) in pageIndices.enumerated() {
+            guard originalIndex < imageEntries.count else { continue }
+            let entry = imageEntries[originalIndex]
+            
+            let ext = (entry.path as NSString).pathExtension.lowercased()
+            let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
+            _ = try sourceArchive.extract(entry, to: tempFile)
+            
+            let newName = "page_\(String(format: "%05d", newIndex)).\(ext)"
+            
+            try destArchive.addEntry(with: newName, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                let fileHandle = try? FileHandle(forReadingFrom: tempFile)
+                try? fileHandle?.seek(toOffset: UInt64(position))
+                return fileHandle?.readData(ofLength: size) ?? Data()
+            }
+            try? fileManager.removeItem(at: tempFile)
+        }
+        
+        scanLibrary()
+        return outputURL
+    }
+    
+    func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL {
+        return try await extractPages(from: pdf, pageIndices: Array(pageIndices), asImages: asImages)
+    }
     
     // MARK: - Comic Vault Export
     func generateSidecar(for pdf: ConvertedPDF) -> URL? {

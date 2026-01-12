@@ -13,7 +13,15 @@ struct DocumentPicker: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+        let pdf = UTType.pdf
+        let zip = UTType.zip
+        let epub = UTType(filenameExtension: "epub")
+        let cbz = UTType(filenameExtension: "cbz")
+        let cbr = UTType(filenameExtension: "cbr")
+        
+        let types = [pdf, zip, epub, cbz, cbr].compactMap { $0 }
+        
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
         picker.allowsMultipleSelection = true
         picker.delegate = context.coordinator
         return picker

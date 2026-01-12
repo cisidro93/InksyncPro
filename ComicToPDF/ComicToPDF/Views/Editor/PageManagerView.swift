@@ -205,15 +205,40 @@ struct PageManagerView: View {
             if !selectedPages.isEmpty {
                 VStack {
                     Divider()
-                    Button(role: .destructive) {
-                        Task { await deleteSelected() }
-                    } label: {
-                        Text("Delete \(selectedPages.count) Pages")
+                    HStack(spacing: 16) {
+                        // Split/Extract Button
+                        Button {
+                            Task { await splitSelected() }
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.up.on.square")
+                                    .font(.title2)
+                                Text("New Comic")
+                                    .font(.caption)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue.opacity(0.1))
+                            .foregroundColor(.blue)
+                            .cornerRadius(8)
+                        }
+                        
+                        // Delete Button
+                        Button(role: .destructive) {
+                            Task { await deleteSelected() }
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                    .font(.title2)
+                                Text("Delete")
+                                    .font(.caption)
+                            }
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.red.opacity(0.1))
                             .foregroundColor(.red)
                             .cornerRadius(8)
+                        }
                     }
                     .padding()
                 }
@@ -250,6 +275,27 @@ struct PageManagerView: View {
     
     func selectAll() {
         selectedPages = Set(viewModel.items.map { $0.index })
+    }
+    
+    func splitSelected() async {
+        guard !selectedPages.isEmpty else { return }
+        viewModel.isLoading = true
+        viewModel.statusText = "Extracting \(selectedPages.count) pages..."
+        
+        do {
+            // Convert Set to Sorted Array to keep page order
+            let sortedIndices = selectedPages.sorted()
+            let _ = try await conversionManager.extractPages(from: pdf, pageIndices: sortedIndices, asImages: true)
+            
+            viewModel.statusText = "Created New Comic!"
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            
+            selectedPages.removeAll()
+            viewModel.isLoading = false
+        } catch {
+            viewModel.errorMessage = "Split failed: \(error.localizedDescription)"
+            viewModel.isLoading = false
+        }
     }
     
     func deleteSelected() async {
