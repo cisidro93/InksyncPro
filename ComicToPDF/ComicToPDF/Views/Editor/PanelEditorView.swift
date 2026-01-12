@@ -277,10 +277,11 @@ struct PanelEditorView: View {
         Task(priority: .userInitiated) {
             let smallImage = resizeImageForAI(image: image, targetSize: 1000)
             let request = VNDetectRectanglesRequest()
-            request.minimumConfidence = 0.6
+            // ✅ Fix: Aggressive detection for Magic Wand (User is pointing, so trust them)
+            request.minimumConfidence = 0.1
             request.minimumAspectRatio = 0.1
             request.maximumAspectRatio = 3.0
-            request.quadratureTolerance = 20
+            request.quadratureTolerance = 45 // Allow wobbly lines
             request.minimumSize = 0.05
             
             let handler = VNImageRequestHandler(cgImage: smallImage.cgImage!, options: [:])
