@@ -176,12 +176,20 @@ struct EPUBSettings: Codable, Equatable {
         case rtl = "rtl"
     }
     
+    // ✅ Export Format (EPUB vs CBZ for Guided View)
+    enum GuidedViewExportFormat: String, Codable, CaseIterable, Identifiable {
+        case epub = "EPUB"
+        case cbz = "CBZ"
+        var id: String { rawValue }
+    }
+    
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
     var includeTableOfContents: Bool = true
     var splitPanels: Bool = false
     var includeFullPage: Bool = true
     var panelDetectionConfidence: Double = 0.6
     var readingDirection: ReadingDirection = .ltr
+    var guidedViewExportFormat: GuidedViewExportFormat = .epub
 }
 
 struct ImageEnhancementSettings: Codable, Equatable {

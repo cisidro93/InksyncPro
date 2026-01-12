@@ -253,6 +253,37 @@ struct LibraryView: View {
                     }
                     .tint(.yellow)
                 }
+                .contextMenu {
+                    Button {
+                        conversionManager.toggleFavorite(pdf)
+                    } label: {
+                        Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
+                    }
+                    
+                    Button {
+                        selectedPDFForCollection = pdf
+                        showingAddToCollection = true
+                    } label: {
+                        Label("Add to Collection", systemImage: "folder.badge.plus")
+                    }
+                    
+                    Button {
+                        // Export Logic (Share Sheet)
+                        // Triggered via state? or direct?
+                        // We need a share function. 'selectedPDFForCollection' is state.
+                        // We likely need 'selectedPDFForExport' state or similar.
+                        // Assuming sharePDF usage:
+                         sharePDF(pdf)
+                    } label: {
+                        Label("Export File", systemImage: "square.and.arrow.up")
+                    }
+                    
+                    Button(role: .destructive) {
+                        conversionManager.deletePDF(pdf)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
                 .swipeActions(edge: .trailing) {
                     Button(role: .destructive) {
                         conversionManager.deletePDF(pdf)

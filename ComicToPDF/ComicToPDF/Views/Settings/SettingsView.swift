@@ -98,6 +98,15 @@ struct SettingsView: View {
                 if conversionManager.conversionSettings.enablePanelSplit {
                     Toggle("Guided View (Show Full Page First)", isOn: $conversionManager.conversionSettings.epubSettings.includeFullPage)
                         .foregroundColor(.blue)
+
+                    // ✅ NEW: Export Format Toggle
+                    Picker("Guided View Format", selection: $conversionManager.conversionSettings.epubSettings.guidedViewExportFormat) {
+                        ForEach(EPUBSettings.GuidedViewExportFormat.allCases) { format in
+                            Text(format.rawValue).tag(format)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.vertical, 4)
                     
                     Picker("Detection Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
                         Text("Automatic (Standard)").tag(PanelExtractor.ExtractionMode.automatic)

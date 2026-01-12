@@ -23,7 +23,8 @@ class WiFiServer: ObservableObject {
             // ✅ Advertise Service (Bonjour)
             listener.service = NWListener.Service(name: "ComicToPDF", type: "_http._tcp")
             
-            listener.stateUpdateHandler = { state in
+            listener.stateUpdateHandler = { [weak self] state in
+                guard let self = self else { return }
                 switch state {
                 case .ready:
                     print("🚀 Server Ready on port 8080")
@@ -40,8 +41,8 @@ class WiFiServer: ObservableObject {
             
 
             
-            listener.newConnectionHandler = { connection in
-                self.handleConnection(connection)
+            listener.newConnectionHandler = { [weak self] connection in
+                self?.handleConnection(connection)
             }
             
             listener.start(queue: .global(qos: .userInitiated))

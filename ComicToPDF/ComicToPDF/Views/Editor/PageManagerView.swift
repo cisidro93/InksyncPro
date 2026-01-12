@@ -60,6 +60,56 @@ class PageEditorViewModel: ObservableObject {
         items.removeAll()
         hasLoaded = false
     }
+    
+    // ✅ Reorder Logic
+    func moveItem(from source: IndexSet, to destination: Int) {
+        items.move(fromOffsets: source, toOffset: destination)
+    }
+    
+    // ✅ Save Reorder
+    func saveReorder() async {
+        guard !hasLoaded else { return } // Safety
+        
+        // Map current array order to original indices
+        let newOrder = items.map { $0.index }
+        
+        // Verify if order changed
+        let isChanged = newOrder.enumerated().contains { $0 != $1 }
+        guard isChanged else { return }
+        
+        isLoading = true
+        statusText = "Saving Order..."
+        
+        // We need to access ConversionManager from here... but it's not in ViewModel.
+        // The View handles the call. We just need to expose the order?
+        // Actually, ViewModel doesn't have access to ConversionManager.
+        // We should add a 'saveAction' closure to ViewModel or handle in View.
+        // Since logic is in View's Done button, we'll implement 'reorderPages' call there.
+        // But we need to update ViewModel state to 'loading'.
+    }
+}
+
+// ✅ Drop Delegate for Reordering
+struct PageDropDelegate: DropDelegate {
+    let item: GridPageItem
+    @Binding var items: [GridPageItem]
+    @Binding var draggedItem: GridPageItem?
+    
+    func performDrop(info: DropInfo) -> Bool {
+        return true
+    }
+    
+    func dropEntered(info: DropInfo) {
+        guard let draggedItem = draggedItem else { return }
+        guard let fromIndex = items.firstIndex(where: { $0.id == draggedItem.id }),
+              let toIndex = items.firstIndex(where: { $0.id == item.id }) else { return }
+        
+        if fromIndex != toIndex {
+            withAnimation {
+                items.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+            }
+        }
+    }
 }
 
 struct PageManagerView: View {
@@ -72,8 +122,9 @@ struct PageManagerView: View {
     @State private var pageToEdit: Int?
     @State private var selectedImageForEditor: UIImage?
     @State private var isSelectionMode = false // ✅ Selection Mode State
-    @State private var dragStart: Int? // ✅ For gliding selection
-    
+    @State private var dragStart: Int?
+    @State private var draggedItem: PageItem? // ✅ Drag for Reordering
+
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
     var body: some View {
@@ -108,8 +159,18 @@ struct PageManagerView: View {
                 }
                 
                 Button("Done") {
-                    viewModel.cleanup()
-                    dismiss()
+                    Task {
+                        if !selectedPages.isEmpty && !isSelectionMode {
+                            // If user just deselected, we don't save.
+                            // But if they reordered, we save.
+                            // We need to check if order successfully changed.
+                            // Since we don't track 'isDirty', we just attempt save if needed.
+                            await saveReorder()
+                        }
+                        // Always clean up and dismiss
+                        viewModel.cleanup()
+                        dismiss()
+                    }
                 }
                 .font(.body.bold())
             }
@@ -165,7 +226,7 @@ struct PageManagerView: View {
                                                     }
                                                 }
                                             )
-                                            .id(item.index) // ✅ ID for ScrollProxy if needed, but important for gesture
+                                            .id(item.index)
                                             .onTapGesture {
                                                 if isSelectionMode || !selectedPages.isEmpty {
                                                     toggleSelection(item.index)
@@ -176,6 +237,12 @@ struct PageManagerView: View {
                                                     }
                                                 }
                                             }
+                                            // ✅ ENABLE DRAG REORDERING
+                                            .onDrag {
+                                                self.draggedItem = item
+                                                return NSItemProvider(object: "\(item.index)" as NSString)
+                                            }
+                                            .onDrop(of: [.text], delegate: PageDropDelegate(item: item, items: $viewModel.items, draggedItem: $draggedItem))
                                         
                                         Text("\(item.index + 1)")
                                             .font(.caption)
@@ -185,16 +252,18 @@ struct PageManagerView: View {
                             }
                             .padding()
                             .padding(.bottom, 80)
-                            // ✅ GLIDING SELECTION GESTURE (Attached to Content for correct Y coordinates)
+                            // ✅ GLIDING SELECTION GESTURE (Conditional)
+                            // Only attach drag gesture when isSelectionMode is TRUE
                             .gesture(
+                                isSelectionMode ?
                                 DragGesture()
                                     .onChanged { value in
-                                        guard isSelectionMode else { return }
                                         updateDragSelection(at: value.location, in: geo.size)
                                     }
                                     .onEnded { _ in
                                         dragStart = nil
                                     }
+                                : nil
                             )
                         }
                     }
@@ -315,6 +384,31 @@ struct PageManagerView: View {
         } catch {
              viewModel.errorMessage = "Delete failed: \(error.localizedDescription)"
              viewModel.isLoading = false
+        }
+    }
+    
+    // ✅ Actual Save Logic using ConversionManager
+    func saveReorder() async {
+        // 1. Get New Order (Indices)
+        // We map the CURRENT array order to the ORIGINAL indices.
+        // e.g. [Item(index: 5), Item(index: 0)] -> [5, 0]
+        let newOrder = viewModel.items.map { $0.index }
+        
+        // Check if actually changed (compare to sorted 0..n)
+        let originalOrder = Array(0..<viewModel.items.count)
+        guard newOrder != originalOrder else { return }
+        
+        do {
+            viewModel.isLoading = true
+            viewModel.statusText = "Saving New Order..."
+            
+            // This replaces the file on disk.
+            let newURL = try await conversionManager.reorderPages(in: pdf.url, newOrder: newOrder)
+            print("Reorder Saved to: \(newURL.lastPathComponent)")
+            
+        } catch {
+            print("Reorder Failed: \(error)")
+            viewModel.errorMessage = "Failed to save order: \(error.localizedDescription)"
         }
     }
     

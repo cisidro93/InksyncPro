@@ -137,20 +137,26 @@ struct PanelExtractor {
         guard let cgImage = image.cgImage else { return [image] }
         
         return panels.compactMap { panel in
-            let width = CGFloat(cgImage.width)
-            let height = CGFloat(cgImage.height)
-            let r = panel.boundingBox
-            
-            let cropRect = CGRect(
-                x: r.minX * width,
-                y: (1.0 - r.maxY) * height,
-                width: r.width * width,
-                height: r.height * height
-            )
-            
-            guard let cropped = cgImage.cropping(to: cropRect) else { return nil }
-            return UIImage(cgImage: cropped)
+            cropImage(image, to: panel.boundingBox)
         }
+    }
+    
+    // ✅ Helper for Single Crop (Used by CBZ Export)
+    static func cropImage(_ image: UIImage, to normalizedRect: CGRect) -> UIImage? {
+        guard let cgImage = image.cgImage else { return nil }
+        
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        
+        let cropRect = CGRect(
+            x: normalizedRect.minX * width,
+            y: (1.0 - normalizedRect.maxY) * height,
+            width: normalizedRect.width * width,
+            height: normalizedRect.height * height
+        )
+        
+        guard let cropped = cgImage.cropping(to: cropRect) else { return nil }
+        return UIImage(cgImage: cropped)
     }
     
     static func extractPanels(from image: UIImage, mode: ExtractionMode, mangaMode: Bool = false) async throws -> [UIImage] {
