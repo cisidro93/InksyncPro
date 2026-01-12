@@ -156,10 +156,10 @@ struct LibrarySidebarList: View {
         }
         .sheet(item: $activeSheet) { item in
             switch item {
-            case .importer:
+            case .importer, .cloud:
+                // Both trigger the same system Document Picker, which handles Local + Cloud (iCloud, Drive, etc)
                 DocumentPicker(onDocumentsPicked: { urls in Task { await conversionManager.processImportedFiles(urls: urls); activeSheet = nil } })
             case .wifi: WiFiView()
-            case .cloud: CloudBrowserView()
             case .merge: FileMergeView()
             }
         }
@@ -176,17 +176,6 @@ struct LibrarySidebarList: View {
                     }
                 }
             }
-        }
-    }
-}
-
-// Placeholder for Cloud Browser (Keep this to avoid build errors if CloudViews.swift is missing)
-struct CloudBrowserView: View {
-    var body: some View {
-        VStack {
-            Image(systemName: "icloud.slash").font(.largeTitle).padding()
-            Text("Cloud Feature Pending").font(.headline)
-            Text("Please ensure CloudViews.swift is added to your target.").font(.caption).foregroundColor(.secondary)
         }
     }
 }
