@@ -1,5 +1,5 @@
 import UIKit
-import CoreImage
+import Accelerate
 
 struct ImageProcessor {
     
@@ -13,16 +13,23 @@ struct ImageProcessor {
         if settings.optimizeForDevice {
             // Get target resolution (Default to Scribe if not found)
             let targetSize = settings.targetDevice.resolution
-            finalImage = resize(image: finalImage, toFit: targetSize)
+            // Use vImage for high-performance resizing
+            if let resized = resize(image: finalImage, toFit: targetSize) {
+                finalImage = resized
+            }
         }
         
         // 2. Apply Image Enhancements
         if settings.imageEnhancement.grayscale {
-            finalImage = convertToGrayscale(image: finalImage)
+             if let gray = convertToGrayscale(image: finalImage) {
+                 finalImage = gray
+             }
         }
         
         if settings.imageEnhancement.autoContrast {
-            finalImage = applyAutoContrast(image: finalImage)
+            // For now, fall back to CoreImage for complex tone mapping as vImage histogram equalization 
+            // is complex to implement robustly without visual artifacts for comics.
+             finalImage = applyAutoContrast(image: finalImage)
         }
         
         return finalImage
@@ -46,36 +53,112 @@ struct ImageProcessor {
         return UIImage(cgImage: cropped)
     }
 
-    private static func resize(image: UIImage, toFit targetSize: CGSize) -> UIImage {
-        let widthRatio = targetSize.width / image.size.width
-        let heightRatio = targetSize.height / image.size.height
+    /// High-performance resizing using vImage
+    private static func resize(image: UIImage, toFit targetSize: CGSize) -> UIImage? {
+        guard let cgImage = image.cgImage else { return image }
+        
+        let widthRatio = targetSize.width / CGFloat(cgImage.width)
+        let heightRatio = targetSize.height / CGFloat(cgImage.height)
         let scaleFactor = min(widthRatio, heightRatio)
         
         // Don't upscale small images
         if scaleFactor >= 1.0 { return image }
         
-        let newSize = CGSize(width: image.size.width * scaleFactor, height: image.size.height * scaleFactor)
+        let newWidth = Int(CGFloat(cgImage.width) * scaleFactor)
+        let newHeight = Int(CGFloat(cgImage.height) * scaleFactor)
         
-        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
-        image.draw(in: CGRect(origin: .zero, size: newSize))
-        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
+        // 1. Create Source Buffer
+        var format = vImage_CGImageFormat(
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            colorSpace: nil, // Default sRGB
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.first.rawValue), // ARGB
+            version: 0,
+            decode: nil,
+            renderingIntent: .defaultIntent
+        )
         
-        return resizedImage ?? image
+        var sourceBuffer = vImage_Buffer()
+        var error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, cgImage, vImage_Flags(kvImageNoFlags))
+        guard error == kvImageNoError else { return image }
+        defer { free(sourceBuffer.data) }
+        
+        // 2. Create Destination Buffer
+        var destinationBuffer = vImage_Buffer()
+        error = vImageBuffer_Init(&destinationBuffer, vImagePixelCount(newHeight), vImagePixelCount(newWidth), 32, vImage_Flags(kvImageNoFlags))
+        guard error == kvImageNoError else { return image }
+        defer { free(destinationBuffer.data) }
+        
+        // 3. Perform Scale
+        error = vImageScale_ARGB8888(&sourceBuffer, &destinationBuffer, nil, vImage_Flags(kvImageHighQualityResampling))
+        guard error == kvImageNoError else { return image }
+        
+        // 4. Create Image from Buffer
+        let resizedCGImage = vImageCreateCGImageFromBuffer(&destinationBuffer, &format, nil, nil, vImage_Flags(kvImageNoFlags), &error)
+        
+        guard error == kvImageNoError, let result = resizedCGImage else { return image }
+        return UIImage(cgImage: result.takeRetainedValue())
     }
     
-    private static func convertToGrayscale(image: UIImage) -> UIImage {
-        guard let ciImage = CIImage(image: image) else { return image }
-        let filter = CIFilter(name: "CIPhotoEffectMono")
-        filter?.setValue(ciImage, forKey: kCIInputImageKey)
+    /// High-performance grayscale conversion using vImage Matrix Multiply
+    private static func convertToGrayscale(image: UIImage) -> UIImage? {
+        guard let cgImage = image.cgImage else { return image }
         
-        if let output = filter?.outputImage,
-           let cgImage = CIContext().createCGImage(output, from: output.extent) {
-            return UIImage(cgImage: cgImage)
-        }
-        return image
+        // 1. Create Source Buffer
+        var format = vImage_CGImageFormat(
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            colorSpace: nil,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.first.rawValue), // ARGB
+            version: 0,
+            decode: nil,
+            renderingIntent: .defaultIntent
+        )
+        
+        var sourceBuffer = vImage_Buffer()
+        var error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, cgImage, vImage_Flags(kvImageNoFlags))
+        guard error == kvImageNoError else { return image }
+        defer { free(sourceBuffer.data) }
+        
+        // 2. Create Destination Buffer
+        var destinationBuffer = vImage_Buffer()
+        error = vImageBuffer_Init(&destinationBuffer, sourceBuffer.height, sourceBuffer.width, 32, vImage_Flags(kvImageNoFlags))
+        guard error == kvImageNoError else { return image }
+        defer { free(destinationBuffer.data) }
+        
+        // 3. Matrix Multiplication (Rec. 709 Luma: R*0.2126 + G*0.7152 + B*0.0722)
+        // Matrix is 4x4:
+        // OutputA = A*1 + R*0 + G*0 + B*0
+        // OutputR = A*0 + R*c + G*c + B*c
+        // OutputG = A*0 + R*c + G*c + B*c
+        // OutputB = A*0 + R*c + G*c + B*c
+        // Note: ARGB format implies channel order A, R, G, B
+        
+        let r: Float = 0.2126
+        let g: Float = 0.7152
+        let b: Float = 0.0722
+        
+        let matrix: [Float] = [
+            1.0, 0.0, 0.0, 0.0, // Alpha out
+            0.0, r,   g,   b,   // Red out
+            0.0, r,   g,   b,   // Green out
+            0.0, r,   g,   b    // Blue out
+        ]
+        
+        let divisor: Int32 = 256
+        let matrix16 = matrix.map { Int16($0 * Float(divisor)) }
+        
+        error = vImageMatrixMultiply_ARGB8888(&sourceBuffer, &destinationBuffer, matrix16, divisor, nil, nil, vImage_Flags(kvImageNoFlags))
+         guard error == kvImageNoError else { return image }
+
+        // 4. Create Image from Buffer
+        let resultCGImage = vImageCreateCGImageFromBuffer(&destinationBuffer, &format, nil, nil, vImage_Flags(kvImageNoFlags), &error)
+        
+        guard error == kvImageNoError, let result = resultCGImage else { return image }
+        return UIImage(cgImage: result.takeRetainedValue())
     }
     
+    // Keep CoreImage for AutoContrast as vImage Histogram Equalization is complex for non-planar buffers
     private static func applyAutoContrast(image: UIImage) -> UIImage {
         guard let ciImage = CIImage(image: image) else { return image }
         let filter = CIFilter(name: "CIColorControls")

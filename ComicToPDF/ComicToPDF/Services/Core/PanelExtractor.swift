@@ -1,5 +1,6 @@
 import Vision
 import UIKit
+import simd
 
 struct PanelExtractor {
     
@@ -22,6 +23,16 @@ struct PanelExtractor {
     struct Panel: Codable, Equatable, Identifiable {
         let id = UUID()
         let boundingBox: CGRect // Normalized 0..1 (Vision Origin: Bottom-Left)
+        
+        // Helper to convert to SIMD vector (minX, minY, maxX, maxY)
+        var vector: SIMD4<Float> {
+            return SIMD4<Float>(
+                Float(boundingBox.minX),
+                Float(boundingBox.minY),
+                Float(boundingBox.maxX),
+                Float(boundingBox.maxY)
+            )
+        }
         
         enum CodingKeys: String, CodingKey {
             case boundingBox
@@ -84,8 +95,12 @@ struct PanelExtractor {
             // Logic: Do they share at least 50% vertical overlap?
             var remainingPool: [Panel] = []
             
+            // Pre-calculate anchor vector once
+            let anchorVec = anchor.vector
+            
             for candidate in pool {
-                if isSameRow(anchor, candidate) {
+                // Use SIMD accelerated overlap check
+                if isSameRow(anchorVec, candidate.vector) {
                     currentRow.append(candidate)
                 } else {
                     remainingPool.append(candidate)
@@ -109,20 +124,30 @@ struct PanelExtractor {
         return sortedRows.flatMap { $0 }
     }
     
-    private static func isSameRow(_ p1: Panel, _ p2: Panel) -> Bool {
+    // Accelerated Row Check using SIMD
+    // Vector Format: (minX, minY, maxX, maxY)
+    // Indices: x=0, y=1, z=2, w=3
+    private static func isSameRow(_ v1: SIMD4<Float>, _ v2: SIMD4<Float>) -> Bool {
         // Vision Coords: Y=0 is Bottom.
-        let yMin1 = p1.boundingBox.minY
-        let yMax1 = p1.boundingBox.maxY
-        let yMin2 = p2.boundingBox.minY
-        let yMax2 = p2.boundingBox.maxY
+        // Y range is [y, w] (since y=minY, w=maxY)
+        
+        let yMin1 = v1.y
+        let yMax1 = v1.w
+        let yMin2 = v2.y
+        let yMax2 = v2.w
         
         // Calculate Intersection of Y ranges
         let intersectionMin = max(yMin1, yMin2)
         let intersectionMax = min(yMax1, yMax2)
         let intersectionHeight = max(0, intersectionMax - intersectionMin)
         
+        // Heights of original panels
+        // Height = maxY - minY = w - y
+        let h1 = yMax1 - yMin1
+        let h2 = yMax2 - yMin2
+        
         // If the intersection covers > 50% of the shorter panel's height, they are on the same row.
-        let minHeight = min(p1.boundingBox.height, p2.boundingBox.height)
+        let minHeight = min(h1, h2)
         return intersectionHeight > (minHeight * 0.5)
     }
     
