@@ -49,10 +49,14 @@ class CBZToEPUBConverter {
             
             // B. Check Split Limit
             // If adding this image exceeds limit AND we have at least one image in batch, split.
-            // We use a small buffer (500KB) for EPUB overhead (XMLs, Container, etc) to ensure we stay failing "within" limits.
             let overheadBuffer: Int64 = 500 * 1024 
             
-            if settings.splitMode != .none && (currentBatchSize + itemSize + overheadBuffer) > limit && !currentBatch.isEmpty {
+            // ✅ DEBUG: Trace Splitting Logic
+            let isNoLimit = limit == Int64.max
+            let exceedsLimit = (currentBatchSize + itemSize + overheadBuffer) > limit
+            
+            if !isNoLimit && exceedsLimit && !currentBatch.isEmpty {
+                print("⚠️ Auto-Splitting at \(currentBatchSize) bytes (Image: \(index))")
                 batches.append(currentBatch)
                 currentBatch = []
                 currentBatchSize = 0
