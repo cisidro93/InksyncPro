@@ -83,17 +83,7 @@ struct LibraryView: View {
             }
             .navigationTitle("Library")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Menu {
-                        Picker("Sort By", selection: $sortOption) {
-                            Label("Date Added", systemImage: "calendar").tag(SortOption.dateAdded)
-                            Label("Name", systemImage: "textformat").tag(SortOption.name)
-                            Label("Size", systemImage: "externaldrive").tag(SortOption.size)
-                        }
-                    } label: {
-                        Image(systemName: "arrow.up.arrow.down")
-                    }
-                }
+                // Sort Menu Removed (Moved to main view)
                 
                 // ✅ Select Button
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -242,116 +232,128 @@ struct LibraryView: View {
     }
     
     var pdfListView: some View {
-        List(selection: $selection) {
-            ForEach(filteredPDFs) { pdf in
-                NavigationLink(destination: ConvertView(pdf: pdf)) {
-                    LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
-                }
-                .swipeActions(edge: .leading) {
-                    Button {
-                        conversionManager.toggleFavorite(pdf)
-                    } label: {
-                        Label("Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
+        VStack(spacing: 0) {
+            // ✅ Sort Selector
+            Picker("Sort By", selection: $sortOption) {
+                Text("Date").tag(SortOption.dateAdded)
+                Text("Name").tag(SortOption.name)
+                Text("Size").tag(SortOption.size)
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding()
+            .background(Color(UIColor.systemBackground))
+            
+            List(selection: $selection) {
+                ForEach(filteredPDFs) { pdf in
+                    NavigationLink(destination: ConvertView(pdf: pdf)) {
+                        LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
                     }
-                    .tint(.yellow)
-                }
-                .contextMenu {
-                    // 1. Favorite
-                    Button {
-                        conversionManager.toggleFavorite(pdf)
-                    } label: {
-                        Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
-                    }
-                    
-                    // 2. Add to Collection
-                    Menu {
+                    .swipeActions(edge: .leading) {
                         Button {
-                            showingAddCollection = true
+                            conversionManager.toggleFavorite(pdf)
                         } label: {
-                            Label("New Collection...", systemImage: "plus")
+                            Label("Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
+                        }
+                        .tint(.yellow)
+                    }
+                    .contextMenu {
+                        // 1. Favorite
+                        Button {
+                            conversionManager.toggleFavorite(pdf)
+                        } label: {
+                            Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star")
                         }
                         
-                        if !conversionManager.collections.isEmpty {
-                            Divider()
-                            ForEach(conversionManager.collections) { collection in
-                                Button {
-                                    conversionManager.movePDFToCollection(pdf, collectionId: collection.id)
-                                } label: {
-                                    if pdf.collectionId == collection.id {
-                                        Label(collection.name, systemImage: "checkmark")
-                                    } else {
-                                        Text(collection.name)
+                        // 2. Add to Collection
+                        Menu {
+                            Button {
+                                showingAddCollection = true
+                            } label: {
+                                Label("New Collection...", systemImage: "plus")
+                            }
+                            
+                            if !conversionManager.collections.isEmpty {
+                                Divider()
+                                ForEach(conversionManager.collections) { collection in
+                                    Button {
+                                        conversionManager.movePDFToCollection(pdf, collectionId: collection.id)
+                                    } label: {
+                                        if pdf.collectionId == collection.id {
+                                            Label(collection.name, systemImage: "checkmark")
+                                        } else {
+                                            Text(collection.name)
+                                        }
                                     }
                                 }
                             }
-                        }
-                        
-                        if pdf.collectionId != nil {
-                            Divider()
-                            Button(role: .destructive) {
-                                conversionManager.movePDFToCollection(pdf, collectionId: nil)
-                            } label: {
-                                Label("Remove from Collection", systemImage: "folder.badge.minus")
-                            }
-                        }
-                    } label: {
-                        Label("Add to Collection", systemImage: "folder")
-                    }
-                    
-                    // 3. Export
-                    Button {
-                        sharePDF(pdf)
-                    } label: {
-                        Label("Export / Send to Kindle", systemImage: "square.and.arrow.up")
-                    }
-                    
-                    // 4. Edit
-                    Button {
-                        pdfToEdit = pdf
-                    } label: {
-                        Label("Edit Book & Pages", systemImage: "doc.on.doc")
-                    }
-                    
-                    // 5. Comic Vault Export
-                    Button {
-                        Task {
-                            if let exportedURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
-                                await MainActor.run {
-                                    sharePayload = LibraryView.SharePayload(items: [exportedURL])
+                            
+                            if pdf.collectionId != nil {
+                                Divider()
+                                Button(role: .destructive) {
+                                    conversionManager.movePDFToCollection(pdf, collectionId: nil)
+                                } label: {
+                                    Label("Remove from Collection", systemImage: "folder.badge.minus")
                                 }
                             }
+                        } label: {
+                            Label("Add to Collection", systemImage: "folder")
                         }
-                    } label: {
-                        Label("Export to Comic Vault", systemImage: "arrow.up.doc.fill")
+                        
+                        // 3. Export
+                        Button {
+                            sharePDF(pdf)
+                        } label: {
+                            Label("Export / Send to Kindle", systemImage: "square.and.arrow.up")
+                        }
+                        
+                        // 4. Edit
+                        Button {
+                            pdfToEdit = pdf
+                        } label: {
+                            Label("Edit Book & Pages", systemImage: "doc.on.doc")
+                        }
+                        
+                        // 5. Comic Vault Export
+                        Button {
+                            Task {
+                                if let exportedURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                                    await MainActor.run {
+                                        sharePayload = LibraryView.SharePayload(items: [exportedURL])
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Export to Comic Vault", systemImage: "arrow.up.doc.fill")
+                        }
+                        
+                        Divider()
+                        
+                        // 6. Delete
+                        Button(role: .destructive) {
+                            conversionManager.deletePDF(pdf)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                     }
-                    
-                    Divider()
-                    
-                    // 6. Delete
-                    Button(role: .destructive) {
-                        conversionManager.deletePDF(pdf)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            conversionManager.deletePDF(pdf)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                     }
                 }
-                .swipeActions(edge: .trailing) {
-                    Button(role: .destructive) {
+                .onDelete { indexSet in
+                    for index in indexSet {
+                        let pdf = filteredPDFs[index]
                         conversionManager.deletePDF(pdf)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
                     }
                 }
             }
-            .onDelete { indexSet in
-                for index in indexSet {
-                    let pdf = filteredPDFs[index]
-                    conversionManager.deletePDF(pdf)
-                }
-            }
+            .environment(\.editMode, $editMode)
+            .listStyle(PlainListStyle())
+            .animation(.default, value: sortOption)
         }
-        .environment(\.editMode, $editMode)
-        .listStyle(PlainListStyle())
-        .animation(.default, value: sortOption)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
     }
 }
