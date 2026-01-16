@@ -258,7 +258,7 @@ class ConversionManager: ObservableObject {
             try await Task.detached { try await merger.mergeEPUBs(sourceURLs: sourceURLs, outputURL: outputURL, settings: mergeSettings) }.value
             let fileSize = (try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
             let newPDF = ConvertedPDF(name: outputURL.lastPathComponent, url: outputURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: safeName))
-            convertedPDFs.append(newPDF)
+            // convertedPDFs.append(newPDF) // Rely on scanLibrary to avoid duplicates
             if let cover = inheritedCover { thumbnailCache.setObject(cover, forKey: outputURL.path as NSString); objectWillChange.send() }
             else { Task { await self.generateCoverThumbnail(for: newPDF) } }
             isConverting = false; statusMessage = "✅ Merge Complete!"; scanLibrary()
@@ -271,10 +271,8 @@ class ConversionManager: ObservableObject {
         let converter = CBZToEPUBConverter(); var jobSettings = conversionSettings; jobSettings.mangaMode = mangaMode; let fileOverrides = panelOverrides[pdf.id]
         do {
             let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: fileOverrides) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
-            for newURL in newURLs {
-                let newFile = ConvertedPDF(name: newURL.lastPathComponent, url: newURL, pageCount: 0, fileSize: (try? newURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0, metadata: PDFMetadata(title: newURL.lastPathComponent))
-                convertedPDFs.append(newFile)
-            }
+                // let newFile = ConvertedPDF(name: newURL.lastPathComponent, url: newURL, pageCount: 0, fileSize: (try? newURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0, metadata: PDFMetadata(title: newURL.lastPathComponent))
+                // convertedPDFs.append(newFile) // Rely on scanLibrary to avoid duplicates
             isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
         } catch { isConverting = false; statusMessage = "Error: \(error.localizedDescription)" }
