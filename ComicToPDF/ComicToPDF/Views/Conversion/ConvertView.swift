@@ -37,9 +37,12 @@ struct ConvertView: View {
             Section {
                 HStack { Text("File Name"); Spacer(); Text(pdf.name).foregroundColor(.secondary) }
                 HStack { Text("File Size"); Spacer(); Text(pdf.formattedSize).foregroundColor(.secondary) }
-                if conversionManager.conversionSettings.splitMode != .none {
-                    HStack { Text("Auto-Split"); Spacer(); Text(conversionManager.conversionSettings.splitMode.rawValue).foregroundColor(.orange) }
+                Picker("Auto-Split", selection: $conversionManager.conversionSettings.splitMode) {
+                    ForEach(FileSizeSplitMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
                 }
+                .pickerStyle(.menu)
             } header: { Text("Source Details") }
             
             Section {
