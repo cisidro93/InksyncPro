@@ -113,30 +113,60 @@ struct LibrarySidebarList: View {
     
     @State private var activeSheet: SidebarSheet?
     
+    @State private var sortOption: LibraryView.SortOption = .dateAdded
+    
     var filteredPDFs: [ConvertedPDF] {
-        if searchText.isEmpty { return conversionManager.convertedPDFs.reversed() }
-        return conversionManager.convertedPDFs.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        let pdfs = conversionManager.convertedPDFs
+        let result: [ConvertedPDF]
+        
+        if searchText.isEmpty {
+            result = pdfs
+        } else {
+            result = pdfs.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        }
+        
+        return sortPDFs(result)
+    }
+    
+    func sortPDFs(_ pdfs: [ConvertedPDF]) -> [ConvertedPDF] {
+        switch sortOption {
+        case .dateAdded: return pdfs.reversed()
+        case .name: return pdfs.sorted { $0.name < $1.name }
+        case .size: return pdfs.sorted { $0.fileSize > $1.fileSize }
+        }
     }
     
     var body: some View {
-        List(selection: $selectedPDF) {
-            ForEach(filteredPDFs) { pdf in
-                NavigationLink(value: pdf) {
-                    LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
-                }
-                .swipeActions(edge: .trailing) {
-                    Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
-                }
-                .contextMenu {
-                    Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
-                }
+        VStack(spacing: 0) {
+            // ✅ Sort Selector
+            Picker("Sort By", selection: $sortOption) {
+                Text("Date").tag(LibraryView.SortOption.dateAdded)
+                Text("Name").tag(LibraryView.SortOption.name)
+                Text("Size").tag(LibraryView.SortOption.size)
             }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding([.horizontal, .bottom])
+            .background(Color(UIColor.systemBackground))
             
-            Section(header: Text("Quick Actions")) {
-                Button(action: { activeSheet = .importer }) { Label("Import Comic", systemImage: "plus").foregroundColor(.blue) }
-                Button(action: { activeSheet = .wifi }) { Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right").foregroundColor(.blue) }
-                Button(action: { activeSheet = .cloud }) { Label("Cloud Import", systemImage: "icloud.and.arrow.down").foregroundColor(.blue) }
-                Button(action: { activeSheet = .merge }) { Label("Merge Files", systemImage: "arrow.triangle.merge").foregroundColor(.blue) }
+            List(selection: $selectedPDF) {
+                ForEach(filteredPDFs) { pdf in
+                    NavigationLink(value: pdf) {
+                        LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+                    }
+                    .contextMenu {
+                        Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+                    }
+                }
+                
+                Section(header: Text("Quick Actions")) {
+                    Button(action: { activeSheet = .importer }) { Label("Import Comic", systemImage: "plus").foregroundColor(.blue) }
+                    Button(action: { activeSheet = .wifi }) { Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right").foregroundColor(.blue) }
+                    Button(action: { activeSheet = .cloud }) { Label("Cloud Import", systemImage: "icloud.and.arrow.down").foregroundColor(.blue) }
+                    Button(action: { activeSheet = .merge }) { Label("Merge Files", systemImage: "arrow.triangle.merge").foregroundColor(.blue) }
+                }
             }
         }
         .listStyle(.sidebar)
