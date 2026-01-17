@@ -42,8 +42,8 @@ struct ContentView: View {
         // ✅ "Save for Web" File Exporter (Global)
         .fileExporter(
             isPresented: $showingWebExport,
-            document: PDFExportDocument(pdf: webExportPDF?.toPDFDocument() ?? PDFDocument()),
-            contentType: .pdf,
+            document: GenericFileDocument(url: webExportPDF?.url ?? URL(fileURLWithPath: "")),
+            contentType: (webExportPDF?.url.pathExtension.lowercased() == "epub") ? .epub : .pdf,
             defaultFilename: webExportPDF?.name ?? "Comic"
         ) { result in
             switch result {

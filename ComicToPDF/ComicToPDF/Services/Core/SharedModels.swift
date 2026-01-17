@@ -40,30 +40,26 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
     }
 }
 
-// ✅ Wrapper for .fileExporter
-struct PDFExportDocument: FileDocument {
-    var pdf: PDFDocument
+// ✅ Generic Wrapper for .fileExporter (Handles PDF & EPUB)
+struct GenericFileDocument: FileDocument {
+    var fileURL: URL
+    var tempFileToDelete: URL?
     
-    init(pdf: PDFDocument) {
-        self.pdf = pdf
+    init(url: URL) {
+        self.fileURL = url
     }
     
-    static var readableContentTypes: [UTType] { [.pdf] }
+    static var readableContentTypes: [UTType] {
+        return [.pdf, .epub, .zip, UTType(filenameExtension: "cbz")!, UTType(filenameExtension: "cbr")!].compactMap { $0 }
+    }
     
     init(configuration: ReadConfiguration) throws {
-        if let data = configuration.file.regularFileContents,
-           let document = PDFDocument(data: data) {
-            self.pdf = document
-        } else {
-            throw CocoaError(.fileReadCorruptFile)
-        }
+        // We don't really need to read back in this context, but required by protocol
+        throw CocoaError(.featureUnsupported)
     }
     
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        guard let data = pdf.dataRepresentation() else {
-            throw CocoaError(.fileWriteUnknown)
-        }
-        return FileWrapper(regularFileWithContents: data)
+        return try FileWrapper(url: fileURL, options: .immediate)
     }
 }
 
