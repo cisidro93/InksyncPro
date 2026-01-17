@@ -59,8 +59,7 @@
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
-    <key>LSSupportsOpeningDocumentsInPlace</key>
-    <true/>
+
     
     <!-- DOCUMENT TYPES (CBZ) -->
     <key>CFBundleDocumentTypes</key>
