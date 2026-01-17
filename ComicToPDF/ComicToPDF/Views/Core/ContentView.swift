@@ -185,47 +185,7 @@ struct LibrarySidebarList: View {
             .padding([.horizontal, .bottom])
             .background(Color(UIColor.systemBackground))
             
-            // ✅ Batch Action Bar
-            if isBatchMode {
-                HStack {
-                    Button("Cancel") {
-                        isBatchMode = false
-                        multiSelection.removeAll()
-                    }
-                    Spacer()
-                    Text("\(multiSelection.count) Selected")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Button("Convert") {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        Task { await conversionManager.convertQueue(items) }
-                        isBatchMode = false
-                        multiSelection.removeAll()
-                    }
-                    .disabled(multiSelection.isEmpty)
-                    .bold()
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
-                .background(Color(UIColor.systemBackground))
-            }
-            // ✅ Second Action Bar for Merge
-            if isBatchMode {
-                 HStack {
-                     Spacer()
-                     Button {
-                        batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        showingBatchMergeReorder = true
-                     } label: {
-                         Label("Convert & Merge", systemImage: "doc.on.doc.fill")
-                     }
-                     .buttonStyle(.bordered)
-                     .disabled(multiSelection.count < 2)
-                     Spacer()
-                 }
-                 .padding(.bottom)
-            }
+
             
             List(selection: $selectedPDF) {
                 ForEach(filteredPDFs) { pdf in

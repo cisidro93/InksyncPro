@@ -77,9 +77,8 @@ struct BatchMergeReorderView: View {
                 }
             }
             .onAppear {
-                if selectedFiles.isEmpty {
-                    selectedFiles = sourceFiles
-                }
+                // Always sync with source when view appears
+                selectedFiles = sourceFiles
             }
         }
     }
