@@ -150,7 +150,7 @@ struct ContentView: View {
         .sheet(isPresented: $showingBatchMergeReorder) {
             BatchMergeReorderView(selectedFiles: $batchMergeItems)
         }
-        }
+
         .confirmationDialog("Large File Detected", isPresented: $showingLargeFileAlert, titleVisibility: .visible) {
             Button("Open Send to Kindle Website") {
                 if let url = URL(string: "https://www.amazon.com/gp/sendtokindle") {
