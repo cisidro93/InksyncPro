@@ -37,9 +37,20 @@ class CBZToEPUBConverter {
             // But user specifically said "Compact" didn't work. So for Compact/Balanced we MUST re-compress.
             let needsCompression = settings.compressionQuality != .high
             
+            var targetSize: CGSize? = nil
+            if settings.optimizeForDevice {
+                targetSize = settings.targetDevice.type.resolution
+            } else if settings.compressionQuality == .compact {
+                // If Compact is chosen but no specific device, default to a reasonable max (e.g. HD 1080p equivalent)
+                targetSize = CGSize(width: 1440, height: 1920) 
+            }
+            
             if needsCompression, let image = UIImage(contentsOfFile: srcURL.path) {
-                // Re-encode
-                finalData = image.jpegData(compressionQuality: settings.compressionQuality.value) ?? (try? Data(contentsOf: srcURL)) ?? Data()
+                // 1. Resize (Downscale Only)
+                let resizedImage = resizeImage(image, targetSize: targetSize)
+                
+                // 2. Re-encode
+                finalData = resizedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? (try? Data(contentsOf: srcURL)) ?? Data()
             } else {
                 // Copy Original
                 finalData = (try? Data(contentsOf: srcURL)) ?? Data()
@@ -314,5 +325,33 @@ class CBZToEPUBConverter {
         </body>
         </html>
         """
+    }
+    
+    // MARK: - Helpers
+    private func resizeImage(_ image: UIImage, targetSize: CGSize?) -> UIImage {
+        guard let target = targetSize else { return image }
+        
+        // Use CGImage dimensions
+        let width = image.cgImage?.width ?? Int(image.size.width)
+        let height = image.cgImage?.height ?? Int(image.size.height)
+        let currentSize = CGSize(width: width, height: height)
+        
+        // Only Downscale
+        if currentSize.width <= target.width && currentSize.height <= target.height { return image }
+        
+        let widthRatio = target.width / currentSize.width
+        let heightRatio = target.height / currentSize.height
+        let scale = min(widthRatio, heightRatio)
+        
+        let newSize = CGSize(width: currentSize.width * scale, height: currentSize.height * scale)
+        
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
+        
+        let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
     }
 }

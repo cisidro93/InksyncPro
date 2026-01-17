@@ -109,6 +109,15 @@ struct LibraryView: View {
                          
                          Spacer()
                          
+                         // ✅ Batch Convert Button
+                         Button {
+                             performBatchConversion()
+                         } label: {
+                             Label("Convert", systemImage: "arrow.triangle.2.circlepath")
+                         }
+                         
+                         Spacer()
+                         
                          Button {
                              exportSelection()
                          } label: {
@@ -203,6 +212,15 @@ struct LibraryView: View {
         let urls = itemsToExport.map { $0.url }
         if !urls.isEmpty {
             sharePayload = SharePayload(items: urls)
+        }
+    }
+    
+    func performBatchConversion() {
+        let itemsToConvert = conversionManager.convertedPDFs.filter { selection.contains($0.id) }
+        editMode = .inactive
+        selection.removeAll()
+        Task {
+            await conversionManager.convertQueue(itemsToConvert)
         }
     }
     

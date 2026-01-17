@@ -271,11 +271,53 @@ class ConversionManager: ObservableObject {
         let converter = CBZToEPUBConverter(); var jobSettings = conversionSettings; jobSettings.mangaMode = mangaMode; let fileOverrides = panelOverrides[pdf.id]
         do {
             let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: fileOverrides) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
-                // let newFile = ConvertedPDF(name: newURL.lastPathComponent, url: newURL, pageCount: 0, fileSize: (try? newURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0, metadata: PDFMetadata(title: newURL.lastPathComponent))
-                // convertedPDFs.append(newFile) // Rely on scanLibrary to avoid duplicates
             isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
         } catch { isConverting = false; statusMessage = "Error: \(error.localizedDescription)" }
+    }
+    
+    func convertQueue(_ pdfs: [ConvertedPDF]) async {
+        guard !pdfs.isEmpty else { return }
+        isConverting = true
+        
+        for (index, pdf) in pdfs.enumerated() {
+            if Task.isCancelled { break }
+            
+            let currentNum = index + 1
+            let total = pdfs.count
+            
+            await MainActor.run {
+                self.processingStatus = "Converting \(currentNum) of \(total)"
+                self.statusMessage = "Processing \(pdf.name)..."
+                self.conversionProgress = 0.0
+            }
+            
+            let converter = CBZToEPUBConverter()
+            var jobSettings = conversionSettings
+            // We use global settings for the batch. If specific manga settings are needed, we default to global for now.
+            
+            let fileOverrides = panelOverrides[pdf.id]
+            
+            do {
+                _ = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: fileOverrides) { progress in
+                    Task { @MainActor in
+                        self.conversionProgress = progress
+                        self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(progress * 100))%)"
+                    }
+                }
+                // Scan after each successful conversion so user sees progress
+                await MainActor.run { self.scanLibrary() }
+            } catch {
+                print("❌ Batch Error for \(pdf.name): \(error)")
+                await MainActor.run { self.statusMessage = "Error on \(pdf.name)" }
+                try? await Task.sleep(nanoseconds: 1 * 1_000_000_000)
+            }
+        }
+        
+        isConverting = false
+        statusMessage = "✅ Batch Complete!"
+        try? await Task.sleep(nanoseconds: 3 * 1_000_000_000)
+        statusMessage = nil
     }
 
     // MARK: - Thumbnails & Helpers

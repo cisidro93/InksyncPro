@@ -101,10 +101,13 @@ struct ContentView: View {
     }
 }
 
-struct LibrarySidebarList: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Binding var selectedPDF: ConvertedPDF?
     @State private var searchText = ""
+    
+    // Batch Mode State
+    @State private var isBatchMode = false
+    @State private var multiSelection = Set<UUID>()
     
     enum SidebarSheet: Identifiable {
         case importer, wifi, cloud, merge
@@ -112,7 +115,6 @@ struct LibrarySidebarList: View {
     }
     
     @State private var activeSheet: SidebarSheet?
-    
     @State private var sortOption: LibraryView.SortOption = .dateAdded
     
     var filteredPDFs: [ConvertedPDF] {
@@ -148,24 +150,73 @@ struct LibrarySidebarList: View {
             .padding([.horizontal, .bottom])
             .background(Color(UIColor.systemBackground))
             
+            // ✅ Batch Action Bar
+            if isBatchMode {
+                HStack {
+                    Button("Cancel") {
+                        isBatchMode = false
+                        multiSelection.removeAll()
+                    }
+                    Spacer()
+                    Text("\(multiSelection.count) Selected")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button("Convert") {
+                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        Task { await conversionManager.convertQueue(items) }
+                        isBatchMode = false
+                        multiSelection.removeAll()
+                    }
+                    .disabled(multiSelection.isEmpty)
+                    .bold()
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+                .background(Color(UIColor.systemBackground))
+            }
+            
             List(selection: $selectedPDF) {
                 ForEach(filteredPDFs) { pdf in
-                    NavigationLink(value: pdf) {
-                        LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
-                    }
-                    .contextMenu {
-                        Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+                    // In Batch Mode, we use a Button to toggle selection.
+                    // In Normal Mode, we use NavigationLink for SplitView selection.
+                    if isBatchMode {
+                        Button {
+                            if multiSelection.contains(pdf.id) {
+                                multiSelection.remove(pdf.id)
+                            } else {
+                                multiSelection.insert(pdf.id)
+                            }
+                        } label: {
+                            HStack {
+                                LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
+                                Spacer()
+                                Image(systemName: multiSelection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(multiSelection.contains(pdf.id) ? .blue : .gray)
+                                    .font(.title2)
+                            }
+                        }
+                        .tint(.primary) // Keep text black
+                    } else {
+                        NavigationLink(value: pdf) {
+                            LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+                        }
                     }
                 }
                 
-                Section(header: Text("Quick Actions")) {
-                    Button(action: { activeSheet = .importer }) { Label("Import Comic", systemImage: "plus").foregroundColor(.blue) }
-                    Button(action: { activeSheet = .wifi }) { Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right").foregroundColor(.blue) }
-                    Button(action: { activeSheet = .cloud }) { Label("Cloud Import", systemImage: "icloud.and.arrow.down").foregroundColor(.blue) }
-                    Button(action: { activeSheet = .merge }) { Label("Merge Files", systemImage: "arrow.triangle.merge").foregroundColor(.blue) }
+                if !isBatchMode {
+                    Section(header: Text("Quick Actions")) {
+                        Button(action: { activeSheet = .importer }) { Label("Import Comic", systemImage: "plus").foregroundColor(.blue) }
+                        Button(action: { activeSheet = .wifi }) { Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right").foregroundColor(.blue) }
+                        Button(action: { activeSheet = .cloud }) { Label("Cloud Import", systemImage: "icloud.and.arrow.down").foregroundColor(.blue) }
+                        Button(action: { activeSheet = .merge }) { Label("Merge Files", systemImage: "arrow.triangle.merge").foregroundColor(.blue) }
+                    }
                 }
             }
         }
@@ -177,11 +228,22 @@ struct LibrarySidebarList: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button(action: { activeSheet = .importer }) { Label("Import File", systemImage: "plus") }
-                    Button(action: { activeSheet = .wifi }) { Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right") }
-                    Button(action: { activeSheet = .merge }) { Label("Merge Files", systemImage: "arrow.triangle.merge") }
-                } label: { Image(systemName: "plus.circle").font(.title3) }
+                HStack {
+                    Button(isBatchMode ? "Done" : "Select") {
+                        withAnimation {
+                            isBatchMode.toggle()
+                            if !isBatchMode { multiSelection.removeAll() }
+                        }
+                    }
+                    
+                    if !isBatchMode {
+                        Menu {
+                            Button(action: { activeSheet = .importer }) { Label("Import File", systemImage: "plus") }
+                            Button(action: { activeSheet = .wifi }) { Label("WiFi Transfer", systemImage: "antenna.radiowaves.left.and.right") }
+                            Button(action: { activeSheet = .merge }) { Label("Merge Files", systemImage: "arrow.triangle.merge") }
+                        } label: { Image(systemName: "plus.circle").font(.title3) }
+                    }
+                }
             }
         }
         .sheet(item: $activeSheet) { item in
