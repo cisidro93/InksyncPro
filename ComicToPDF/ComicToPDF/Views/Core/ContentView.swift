@@ -11,6 +11,8 @@ struct ContentView: View {
     // Global Sheets
     @State private var pdfToShare: ConvertedPDF?
     @State private var pdfToEdit: ConvertedPDF?
+    @State private var showingLargeFileAlert = false
+    @State private var largeFilePDF: ConvertedPDF?
     
     // Batch Mode State (Hoisted)
     @State private var isBatchMode = false
@@ -115,7 +117,14 @@ struct ContentView: View {
                             }
                             ToolbarItem(placement: .topBarTrailing) {
                                 Menu {
-                                    Button { pdfToShare = pdf } label: { Label("Export / Share", systemImage: "square.and.arrow.up") }
+                                    Button {
+                                        if pdf.fileSize > 100 * 1024 * 1024 {
+                                            largeFilePDF = pdf
+                                            showingLargeFileAlert = true
+                                        } else {
+                                            pdfToShare = pdf
+                                        }
+                                    } label: { Label("Export / Share", systemImage: "square.and.arrow.up") }
                                     Button { pdfToEdit = pdf } label: { Label("Edit Pages", systemImage: "doc.on.doc") }
                                     Divider()
                                     Button(role: .destructive) {
@@ -140,6 +149,22 @@ struct ContentView: View {
         .navigationSplitViewStyle(.balanced)
         .sheet(isPresented: $showingBatchMergeReorder) {
             BatchMergeReorderView(selectedFiles: $batchMergeItems)
+        }
+        }
+        .confirmationDialog("Large File Detected", isPresented: $showingLargeFileAlert, titleVisibility: .visible) {
+            Button("Open Send to Kindle Website") {
+                if let url = URL(string: "https://www.amazon.com/gp/sendtokindle") {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("Share via System Sheet") {
+                if let pdf = largeFilePDF {
+                    pdfToShare = pdf
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This file is over 100MB. Email and Send-to-Kindle apps often fail with files this size. Using the website is recommended.")
         }
     }
 }

@@ -18,6 +18,8 @@ struct LibraryView: View {
     // ✅ Fix: Data-Driven Sheet State (Prevents Blank Pages)
     @State private var pdfToShare: ConvertedPDF?
     @State private var pdfToEdit: ConvertedPDF?
+    @State private var showingLargeFileAlert = false
+    @State private var largeFilePDF: ConvertedPDF?
     
     enum SortOption {
         case dateAdded, name, size
@@ -182,7 +184,12 @@ struct LibraryView: View {
     // MARK: - Helpers
     
     private func sharePDF(_ pdf: ConvertedPDF) {
-        pdfToShare = pdf
+        if pdf.fileSize > 100 * 1024 * 1024 {
+            largeFilePDF = pdf
+            showingLargeFileAlert = true
+        } else {
+            pdfToShare = pdf
+        }
     }
     
 

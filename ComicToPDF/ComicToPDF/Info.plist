@@ -59,7 +59,7 @@
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
-    <key>UISupportsDocumentBrowser</key>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
     
     <!-- DOCUMENT TYPES (CBZ) -->
