@@ -123,7 +123,7 @@ struct SettingsView: View {
                     conversionManager.savePreset(newPreset)
                 }
             }
-            }
+
             
             Section(header: Text("Debug Info")) {
                 let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "Unknown"
