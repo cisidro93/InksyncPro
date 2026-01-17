@@ -4,11 +4,10 @@ struct BatchMergeReorderView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     
-    // Input
-    var sourceFiles: [ConvertedPDF]
+
+    // Binding to parent state
+    @Binding var selectedFiles: [ConvertedPDF]
     
-    // State
-    @State private var selectedFiles: [ConvertedPDF] = []
     @State private var mergedName: String = "Merged Collection"
     @State private var isProcessing = false
     
@@ -75,10 +74,6 @@ struct BatchMergeReorderView: View {
                         EditButton() // Enables dragging in the list
                     }
                 }
-            }
-            .onAppear {
-                // Always sync with source when view appears
-                selectedFiles = sourceFiles
             }
         }
     }

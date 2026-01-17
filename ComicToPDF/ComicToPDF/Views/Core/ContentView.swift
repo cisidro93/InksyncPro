@@ -129,7 +129,7 @@ struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .sheet(isPresented: $showingBatchMergeReorder) {
-            BatchMergeReorderView(sourceFiles: batchMergeItems)
+            BatchMergeReorderView(selectedFiles: $batchMergeItems)
         }
     }
 }
