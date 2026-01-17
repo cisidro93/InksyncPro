@@ -358,7 +358,6 @@ class ConversionManager: ObservableObject {
                         self.conversionProgress = progress
                     }
                 }
-                // We expect usually 1 EPUB per source, but converter returns array
                 generatedEPUBs.append(contentsOf: resultingURLs)
                 
             } catch {
