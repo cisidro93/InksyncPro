@@ -79,8 +79,10 @@
         </dict>
     </array>
     
+    <key>CFBundleDisplayName</key>
+    <string>ComicToPDF</string>
     <key>UISupportsDocumentBrowser</key>
-    <true/>
+    <false/>
     
     <!-- UTIs -->
     <key>UTExportedTypeDeclarations</key>
