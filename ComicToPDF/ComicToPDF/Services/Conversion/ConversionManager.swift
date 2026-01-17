@@ -346,13 +346,23 @@ class ConversionManager: ObservableObject {
             }
             
             let converter = CBZToEPUBConverter()
+            var jobSettings = conversionSettings
+            // ✅ Override Manga Mode for this batch
+            jobSettings.mangaMode = mangaMode
+            
+            let fileOverrides = panelOverrides[file.id]
+            
+            do {
+                let resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: fileOverrides) { progress in
+                    Task { @MainActor in
+                        self.conversionProgress = progress
+                    }
                 }
-                generatedEPUBs.append(contentsOf: newURLs)
+                // We expect usually 1 EPUB per source, but converter returns array
+                generatedEPUBs.append(contentsOf: resultingURLs)
                 
             } catch {
-                print("❌ Convert/Merge Error on file \(file.name): \(error)")
-                // Continue? Or abort? For merge, we probably should abort or skip.
-                // Let's abort to avoid partial merges.
+                print("❌ Batch Merge Error on \(file.name): \(error)")
                 await MainActor.run { self.statusMessage = "Failed: \(file.name)" }
                 try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
                 isConverting = false
