@@ -123,6 +123,35 @@ struct SettingsView: View {
                     conversionManager.savePreset(newPreset)
                 }
             }
+            }
+            
+            Section(header: Text("Debug Info")) {
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "Unknown"
+                let welcomePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Welcome.txt").path ?? ""
+                let welcomeExists = FileManager.default.fileExists(atPath: welcomePath)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Documents Path:").font(.caption).bold()
+                    Text(docDir).font(.caption2).foregroundColor(.secondary)
+                    Divider()
+                    HStack {
+                        Text("Welcome.txt:")
+                        Spacer()
+                        Text(welcomeExists ? "Found ✅" : "Missing ❌")
+                            .foregroundColor(welcomeExists ? .green : .red)
+                    }
+                    if !welcomeExists {
+                        Button("Force Create Welcome.txt") {
+                            // Quick recreation logic
+                            let fileManager = FileManager.default
+                            if let url = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Welcome.txt") {
+                                try? "Force Created".write(to: url, atomically: true, encoding: .utf8)
+                            }
+                        }
+                        .font(.caption)
+                    }
+                }
+            }
         }
         .navigationTitle("Settings")
         .onChange(of: conversionManager.conversionSettings) { _ in
