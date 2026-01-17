@@ -39,7 +39,7 @@ class CBZToEPUBConverter {
             
             var targetSize: CGSize? = nil
             if settings.optimizeForDevice {
-                targetSize = settings.targetDevice.type.resolution
+                targetSize = settings.targetDevice.resolution
             } else if settings.compressionQuality == .compact {
                 // If Compact is chosen but no specific device, default to a reasonable max (e.g. HD 1080p equivalent)
                 targetSize = CGSize(width: 1440, height: 1920) 

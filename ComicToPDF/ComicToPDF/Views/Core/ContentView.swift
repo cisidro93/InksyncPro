@@ -101,6 +101,7 @@ struct ContentView: View {
     }
 }
 
+struct LibrarySidebarList: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Binding var selectedPDF: ConvertedPDF?
     @State private var searchText = ""
