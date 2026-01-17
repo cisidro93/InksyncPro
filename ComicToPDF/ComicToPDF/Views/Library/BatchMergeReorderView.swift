@@ -4,7 +4,11 @@ struct BatchMergeReorderView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     
-    @State var selectedFiles: [ConvertedPDF]
+    // Input
+    var sourceFiles: [ConvertedPDF]
+    
+    // State
+    @State private var selectedFiles: [ConvertedPDF] = []
     @State private var mergedName: String = "Merged Collection"
     @State private var isProcessing = false
     
@@ -17,7 +21,7 @@ struct BatchMergeReorderView: View {
                             .scaleEffect(1.5)
                         Text(conversionManager.statusMessage ?? "Processing...")
                             .font(.headline)
-                        Text(conversionManager.processingStatus ?? "")
+                        Text(conversionManager.processingStatus)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -70,6 +74,11 @@ struct BatchMergeReorderView: View {
                     if !isProcessing {
                         EditButton() // Enables dragging in the list
                     }
+                }
+            }
+            .onAppear {
+                if selectedFiles.isEmpty {
+                    selectedFiles = sourceFiles
                 }
             }
         }

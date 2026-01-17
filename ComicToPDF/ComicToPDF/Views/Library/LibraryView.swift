@@ -394,7 +394,7 @@ struct LibraryView: View {
             FileMergeView()
         }
         .sheet(isPresented: $showingBatchMergeReorder) {
-            BatchMergeReorderView(selectedFiles: batchMergeItems)
+            BatchMergeReorderView(sourceFiles: batchMergeItems)
         }
     }
 }

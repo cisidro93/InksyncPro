@@ -12,6 +12,12 @@ struct ContentView: View {
     @State private var pdfToShare: ConvertedPDF?
     @State private var pdfToEdit: ConvertedPDF?
     
+    // Batch Mode State (Hoisted)
+    @State private var isBatchMode = false
+    @State private var multiSelection = Set<UUID>()
+    @State private var showingBatchMergeReorder = false
+    @State private var batchMergeItems: [ConvertedPDF] = []
+    
     var body: some View {
         Group {
             if sizeClass == .compact {
@@ -51,7 +57,13 @@ struct ContentView: View {
                 .padding()
                 
                 if selectedTab == 0 {
-                    LibrarySidebarList(selectedPDF: $selectedPDF)
+                    LibrarySidebarList(
+                        selectedPDF: $selectedPDF,
+                        isBatchMode: $isBatchMode,
+                        multiSelection: $multiSelection,
+                        showingBatchMergeReorder: $showingBatchMergeReorder,
+                        batchMergeItems: $batchMergeItems
+                    )
                 } else if selectedTab == 1 {
                     CollectionsView()
                 } else {
@@ -63,7 +75,25 @@ struct ContentView: View {
             
         } detail: {
             NavigationStack {
-                if let pdf = selectedPDF {
+                if isBatchMode {
+                    BatchSelectionDetailView(
+                        selectionCount: multiSelection.count,
+                        onConvert: {
+                            let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                            Task { await conversionManager.convertQueue(items) }
+                            isBatchMode = false
+                            multiSelection.removeAll()
+                        },
+                        onMerge: {
+                            batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                            showingBatchMergeReorder = true
+                        },
+                        onCancel: {
+                            isBatchMode = false
+                            multiSelection.removeAll()
+                        }
+                    )
+                } else if let pdf = selectedPDF {
                     ConvertView(pdf: pdf)
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) {
@@ -98,17 +128,21 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .sheet(isPresented: $showingBatchMergeReorder) {
+            BatchMergeReorderView(sourceFiles: batchMergeItems)
+        }
     }
 }
 
 struct LibrarySidebarList: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Binding var selectedPDF: ConvertedPDF?
-    @State private var searchText = ""
+    @Binding var isBatchMode: Bool
+    @Binding var multiSelection: Set<UUID>
+    @Binding var showingBatchMergeReorder: Bool
+    @Binding var batchMergeItems: [ConvertedPDF]
     
-    // Batch Mode State
-    @State private var isBatchMode = false
-    @State private var multiSelection = Set<UUID>()
+    @State private var searchText = ""
     
     enum SidebarSheet: Identifiable {
         case importer, wifi, cloud, merge
@@ -117,10 +151,6 @@ struct LibrarySidebarList: View {
     
     @State private var activeSheet: SidebarSheet?
     @State private var sortOption: LibraryView.SortOption = .dateAdded
-    
-    // New Sheet State for Merge Reorder
-    @State private var showingBatchMergeReorder = false
-    @State private var batchMergeItems: [ConvertedPDF] = []
     
     var filteredPDFs: [ConvertedPDF] {
         let pdfs = conversionManager.convertedPDFs
@@ -268,16 +298,8 @@ struct LibrarySidebarList: View {
             }
         }
         .sheet(item: $activeSheet) { item in
-            switch item {
-            case .importer, .cloud:
-                // Both trigger the same system Document Picker, which handles Local + Cloud (iCloud, Drive, etc)
-                DocumentPicker(onDocumentsPicked: { urls in Task { await conversionManager.processImportedFiles(urls: urls); activeSheet = nil } })
-            case .wifi: WiFiView()
             case .merge: FileMergeView()
             }
-        }
-        .sheet(isPresented: $showingBatchMergeReorder) {
-            BatchMergeReorderView(selectedFiles: batchMergeItems)
         }
     }
     
