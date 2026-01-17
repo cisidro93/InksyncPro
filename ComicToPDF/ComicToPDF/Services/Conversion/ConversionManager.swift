@@ -372,16 +372,18 @@ class ConversionManager: ObservableObject {
             self.conversionProgress = 0.5 // Indeterminateish
         }
         
-        // Create a temporary set of ConvertedPDF objects just for the merger logic to read
-        // The merger reads URL from ConvertedPDF.
-        let tempPDFsForMerge = generatedEPUBs.map { url in
-            ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: 0, fileSize: 0, metadata: PDFMetadata(title: url.deletingPathExtension().lastPathComponent))
-        }
+        // Create output URL
+        let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + ".epub"
+        let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
+        
+        // Use global settings for the merge container
+        let mergeSettings = conversionSettings
         
         let merger = EPUBMerger()
         do {
-            let finalURL = try await merger.mergeEPUBs(tempPDFsForMerge, outputName: outputName)
-            print("✅ Merge Success: \(finalURL)")
+            try await merger.mergeEPUBs(sourceURLs: generatedEPUBs, outputURL: finalOutputURL, settings: mergeSettings)
+            print("✅ Merge Success: \(finalOutputURL)")
             
             // 3. Cleanup Intermediates
             await MainActor.run { self.statusMessage = "Cleaning up..." }
