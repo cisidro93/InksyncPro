@@ -80,7 +80,7 @@
     </array>
     
     <key>UISupportsDocumentBrowser</key>
-    <false/>
+    <true/>
     
     <!-- UTIs -->
     <key>UTExportedTypeDeclarations</key>
