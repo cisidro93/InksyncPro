@@ -395,7 +395,7 @@ class ConversionManager: ObservableObject {
             await MainActor.run {
                 self.scanLibrary()
                 self.statusMessage = "✅ Merge Complete!"
-                self.processingStatus = nil
+                self.processingStatus = ""
                 self.conversionProgress = 1.0
                 self.isConverting = false
             }
