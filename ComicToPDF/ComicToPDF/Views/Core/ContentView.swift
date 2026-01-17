@@ -88,6 +88,16 @@ struct ContentView: View {
                             batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                             showingBatchMergeReorder = true
                         },
+                        onDelete: {
+                            let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                            Task {
+                                for item in items {
+                                    conversionManager.deletePDF(item)
+                                }
+                            }
+                            isBatchMode = false
+                            multiSelection.removeAll()
+                        },
                         onCancel: {
                             isBatchMode = false
                             multiSelection.removeAll()

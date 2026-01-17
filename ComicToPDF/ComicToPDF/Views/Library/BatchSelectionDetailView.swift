@@ -5,6 +5,7 @@ struct BatchSelectionDetailView: View {
     var selectionCount: Int
     var onConvert: () -> Void
     var onMerge: () -> Void
+    var onDelete: () -> Void
     var onCancel: () -> Void
     
     var body: some View {
@@ -46,6 +47,19 @@ struct BatchSelectionDetailView: View {
                         .cornerRadius(12)
                 }
                 .disabled(selectionCount < 2)
+                
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label("Delete Selected", systemImage: "trash")
+                        .font(.headline)
+                        .frame(maxWidth: 300)
+                        .padding()
+                        .background(Color.red.opacity(0.15))
+                        .foregroundColor(.red)
+                        .cornerRadius(12)
+                }
+                .disabled(selectionCount == 0)
                 
                 Button(role: .cancel) {
                     onCancel()
