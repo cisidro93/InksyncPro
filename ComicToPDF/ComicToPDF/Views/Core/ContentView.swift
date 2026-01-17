@@ -298,6 +298,10 @@ struct LibrarySidebarList: View {
             }
         }
         .sheet(item: $activeSheet) { item in
+            switch item {
+            case .importer, .cloud:
+                DocumentPicker(onDocumentsPicked: { urls in Task { await conversionManager.processImportedFiles(urls: urls); activeSheet = nil } })
+            case .wifi: WiFiView()
             case .merge: FileMergeView()
             }
         }
