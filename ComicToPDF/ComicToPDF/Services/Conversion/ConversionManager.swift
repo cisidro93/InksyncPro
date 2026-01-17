@@ -319,6 +319,95 @@ class ConversionManager: ObservableObject {
         try? await Task.sleep(nanoseconds: 3 * 1_000_000_000)
         statusMessage = nil
     }
+    
+    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String) async {
+        guard !sourceFiles.isEmpty else { return }
+        isConverting = true
+        
+        var generatedEPUBs: [URL] = []
+        let fileManager = FileManager.default
+        
+        // 1. Convert Loop
+        for (index, file) in sourceFiles.enumerated() {
+            if Task.isCancelled { break }
+            
+            let currentNum = index + 1
+            await MainActor.run {
+                self.processingStatus = "Step 1/2: Converting \(currentNum) of \(sourceFiles.count)"
+                self.statusMessage = "Converting \(file.name)..."
+                self.conversionProgress = 0.0
+            }
+            
+            let converter = CBZToEPUBConverter()
+            do {
+                // Determine settings - force EPUB for merging compatibility
+                var stepSettings = conversionSettings
+                stepSettings.outputFormat = .epub
+                let fileOverrides = panelOverrides[file.id]
+                
+                let newURLs = try await converter.convert(sourceURL: file.url, settings: stepSettings, manualManifest: fileOverrides) { progress in
+                    Task { @MainActor in self.conversionProgress = progress }
+                }
+                generatedEPUBs.append(contentsOf: newURLs)
+                
+            } catch {
+                print("❌ Convert/Merge Error on file \(file.name): \(error)")
+                // Continue? Or abort? For merge, we probably should abort or skip.
+                // Let's abort to avoid partial merges.
+                await MainActor.run { self.statusMessage = "Failed: \(file.name)" }
+                try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
+                isConverting = false
+                return
+            }
+        }
+        
+        // 2. Merge Phase
+        guard !generatedEPUBs.isEmpty else {
+            isConverting = false; return
+        }
+        
+        await MainActor.run {
+            self.processingStatus = "Step 2/2: Merging..."
+            self.statusMessage = "Merging \(generatedEPUBs.count) files..."
+            self.conversionProgress = 0.5 // Indeterminateish
+        }
+        
+        // Create a temporary set of ConvertedPDF objects just for the merger logic to read
+        // The merger reads URL from ConvertedPDF.
+        let tempPDFsForMerge = generatedEPUBs.map { url in
+            ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: 0, fileSize: 0, metadata: PDFMetadata(title: url.deletingPathExtension().lastPathComponent))
+        }
+        
+        let merger = EPUBMerger()
+        do {
+            let finalURL = try await merger.mergeEPUBs(tempPDFsForMerge, outputName: outputName)
+            print("✅ Merge Success: \(finalURL)")
+            
+            // 3. Cleanup Intermediates
+            await MainActor.run { self.statusMessage = "Cleaning up..." }
+            for url in generatedEPUBs {
+                try? fileManager.removeItem(at: url)
+            }
+            
+            // 4. Finish
+            await MainActor.run {
+                self.scanLibrary()
+                self.statusMessage = "✅ Merge Complete!"
+                self.processingStatus = nil
+                self.conversionProgress = 1.0
+                self.isConverting = false
+            }
+            try? await Task.sleep(nanoseconds: 3 * 1_000_000_000)
+            await MainActor.run { self.statusMessage = nil }
+            
+        } catch {
+            print("❌ Merge Failed: \(error)")
+            await MainActor.run {
+                self.statusMessage = "Merge Failed: \(error.localizedDescription)"
+                self.isConverting = false
+            }
+        }
+    }
 
     // MARK: - Thumbnails & Helpers
     func generateCoverThumbnail(for pdf: ConvertedPDF) async {

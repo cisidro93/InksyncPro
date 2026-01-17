@@ -118,6 +118,10 @@ struct LibrarySidebarList: View {
     @State private var activeSheet: SidebarSheet?
     @State private var sortOption: LibraryView.SortOption = .dateAdded
     
+    // New Sheet State for Merge Reorder
+    @State private var showingBatchMergeReorder = false
+    @State private var batchMergeItems: [ConvertedPDF] = []
+    
     var filteredPDFs: [ConvertedPDF] {
         let pdfs = conversionManager.convertedPDFs
         let result: [ConvertedPDF]
@@ -175,6 +179,22 @@ struct LibrarySidebarList: View {
                 .padding(.horizontal)
                 .padding(.bottom, 8)
                 .background(Color(UIColor.systemBackground))
+            }
+            // ✅ Second Action Bar for Merge
+            if isBatchMode {
+                 HStack {
+                     Spacer()
+                     Button {
+                        batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        showingBatchMergeReorder = true
+                     } label: {
+                         Label("Convert & Merge", systemImage: "doc.on.doc.fill")
+                     }
+                     .buttonStyle(.bordered)
+                     .disabled(multiSelection.count < 2)
+                     Spacer()
+                 }
+                 .padding(.bottom)
             }
             
             List(selection: $selectedPDF) {
@@ -255,6 +275,9 @@ struct LibrarySidebarList: View {
             case .wifi: WiFiView()
             case .merge: FileMergeView()
             }
+        }
+        .sheet(isPresented: $showingBatchMergeReorder) {
+            BatchMergeReorderView(selectedFiles: batchMergeItems)
         }
     }
     

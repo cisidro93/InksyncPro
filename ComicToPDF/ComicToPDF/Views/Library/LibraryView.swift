@@ -118,6 +118,15 @@ struct LibraryView: View {
                          
                          Spacer()
                          
+                         // ✅ Convert & Merge Button
+                         Button {
+                             prepareBatchMerge()
+                         } label: {
+                             Label("Merge & Convert", systemImage: "doc.on.doc.fill")
+                         }
+                         
+                         Spacer()
+                         
                          Button {
                              exportSelection()
                          } label: {
@@ -222,6 +231,14 @@ struct LibraryView: View {
         Task {
             await conversionManager.convertQueue(itemsToConvert)
         }
+    }
+    
+    @State private var showingBatchMergeReorder = false
+    @State private var batchMergeItems: [ConvertedPDF] = []
+    
+    func prepareBatchMerge() {
+        batchMergeItems = conversionManager.convertedPDFs.filter { selection.contains($0.id) }
+        showingBatchMergeReorder = true
     }
     
     var emptyStateView: some View {
@@ -373,6 +390,12 @@ struct LibraryView: View {
             .animation(.default, value: sortOption)
         }
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
+        .sheet(isPresented: $showingMergeSheet) {
+            FileMergeView()
+        }
+        .sheet(isPresented: $showingBatchMergeReorder) {
+            BatchMergeReorderView(selectedFiles: batchMergeItems)
+        }
     }
 }
 
