@@ -2,10 +2,12 @@ import Foundation
 import SwiftUI
 import CoreGraphics
 import UIKit
+import PDFKit
+import UniformTypeIdentifiers
 
 // MARK: - Core Data Models
 
-struct ConvertedPDF: Identifiable, Codable, Equatable, Hashable {
+struct ConvertedPDF: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
     let url: URL
@@ -31,6 +33,37 @@ struct ConvertedPDF: Identifiable, Codable, Equatable, Hashable {
         self.collectionId = collectionId
         self.isFavorite = isFavorite
         self.coverImageData = coverImageData
+    }
+    
+    func toPDFDocument() -> PDFDocument {
+        return PDFDocument(url: url) ?? PDFDocument()
+    }
+}
+
+// ✅ Wrapper for .fileExporter
+struct PDFExportDocument: FileDocument {
+    var pdf: PDFDocument
+    
+    init(pdf: PDFDocument) {
+        self.pdf = pdf
+    }
+    
+    static var readableContentTypes: [UTType] { [.pdf] }
+    
+    init(configuration: ReadConfiguration) throws {
+        if let data = configuration.file.regularFileContents,
+           let document = PDFDocument(data: data) {
+            self.pdf = document
+        } else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+    }
+    
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        guard let data = pdf.dataRepresentation() else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return FileWrapper(regularFileWithContents: data)
     }
 }
 

@@ -176,7 +176,7 @@ struct LibraryView: View {
             // ✅ "Save for Web" File Exporter
             .fileExporter(
                 isPresented: $showingWebExport,
-                document: webExportPDF?.toPDFDocument() ?? PDFDocument(url: URL(fileURLWithPath: "")),
+                document: PDFExportDocument(pdf: webExportPDF?.toPDFDocument() ?? PDFDocument()),
                 contentType: .pdf,
                 defaultFilename: webExportPDF?.name ?? "Comic"
             ) { result in
