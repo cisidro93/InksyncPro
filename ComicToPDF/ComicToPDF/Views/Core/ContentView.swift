@@ -20,6 +20,10 @@ struct ContentView: View {
     @State private var showingBatchMergeReorder = false
     @State private var batchMergeItems: [ConvertedPDF] = []
     
+    // ✅ New State for "Save & Open Workflow"
+    @State private var showingWebExport = false
+    @State private var webExportPDF: ConvertedPDF?
+
     var body: some View {
         Group {
             if sizeClass == .compact {
@@ -33,6 +37,23 @@ struct ContentView: View {
         .sheet(item: $pdfToEdit) { pdf in 
             PageManagerView(pdf: pdf)
                 .environmentObject(conversionManager)
+        }
+        // ✅ "Save for Web" File Exporter (Global)
+        .fileExporter(
+            isPresented: $showingWebExport,
+            document: webExportPDF?.toPDFDocument() ?? PDFDocument(url: URL(fileURLWithPath: "")),
+            contentType: .pdf,
+            defaultFilename: webExportPDF?.name ?? "Comic"
+        ) { result in
+            switch result {
+            case .success:
+                // Automatically open Safari after saving
+                if let url = URL(string: "https://www.amazon.com/gp/sendtokindle") {
+                    UIApplication.shared.open(url)
+                }
+            case .failure(let error):
+                print("Export failed: \(error.localizedDescription)")
+            }
         }
     }
     
@@ -151,10 +172,13 @@ struct ContentView: View {
             BatchMergeReorderView(selectedFiles: $batchMergeItems)
         }
 
+        // ✅ Updated confirmationDialog with Workflow
         .confirmationDialog("Large File Detected", isPresented: $showingLargeFileAlert, titleVisibility: .visible) {
-            Button("Open Send to Kindle Website") {
-                if let url = URL(string: "https://www.amazon.com/gp/sendtokindle") {
-                    UIApplication.shared.open(url)
+            Button("Save to 'Downloads' & Open Website") {
+                // Start Save & Open Flow
+                if let pdf = largeFilePDF {
+                    webExportPDF = pdf
+                    showingWebExport = true 
                 }
             }
             Button("Share via System Sheet") {
@@ -164,7 +188,7 @@ struct ContentView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This file is over 100MB. Email and Send-to-Kindle apps often fail with files this size. Using the website is recommended.")
+            Text("This file is over 100MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
         }
     }
 }

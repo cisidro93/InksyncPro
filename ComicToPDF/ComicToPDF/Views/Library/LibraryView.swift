@@ -46,6 +46,10 @@ struct LibraryView: View {
         }
     }
     
+    // ✅ New State for "Save & Open" workflow
+    @State private var showingWebExport = false
+    @State private var webExportPDF: ConvertedPDF?
+
     var body: some View {
         NavigationView {
             ZStack {
@@ -168,6 +172,23 @@ struct LibraryView: View {
             .sheet(isPresented: $showingMergeSheet) {
                 FileMergeView(initialSelection: selection)
             }
+            // ✅ "Save for Web" File Exporter
+            .fileExporter(
+                isPresented: $showingWebExport,
+                document: webExportPDF?.toPDFDocument() ?? PDFDocument(url: URL(fileURLWithPath: "")),
+                contentType: .pdf,
+                defaultFilename: webExportPDF?.name ?? "Comic"
+            ) { result in
+                switch result {
+                case .success:
+                    // Automatically open Safari after saving
+                    if let url = URL(string: "https://www.amazon.com/gp/sendtokindle") {
+                        UIApplication.shared.open(url)
+                    }
+                case .failure(let error):
+                    print("Export failed: \(error.localizedDescription)")
+                }
+            }
             .alert("New Collection", isPresented: $showingAddCollection) {
                 TextField("Collection Name", text: $newCollectionName)
                 Button("Cancel", role: .cancel) { newCollectionName = "" }
@@ -177,6 +198,25 @@ struct LibraryView: View {
                         newCollectionName = ""
                     }
                 }
+            }
+            // ✅ Large File Alert attached to Main View
+            .confirmationDialog("Large File Detected", isPresented: $showingLargeFileAlert, titleVisibility: .visible) {
+                Button("Save to 'Downloads' & Open Website") {
+                    // Start the Save & Open Flow
+                    if let pdf = largeFilePDF {
+                        webExportPDF = pdf
+                        showingWebExport = true
+                    }
+                }
+                Button("Share via System Sheet") {
+                    // Fallback to standard share
+                    if let pdf = largeFilePDF {
+                        pdfToShare = pdf
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("File is >100MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
             }
         }
     }
