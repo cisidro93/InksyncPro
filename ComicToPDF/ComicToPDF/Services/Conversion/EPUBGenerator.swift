@@ -107,8 +107,9 @@ class EPUBGenerator {
             try imageData.write(to: imageURL)
             
             // Add to image manifest items
+            let properties = (pageNumber == 1) ? " properties=\"cover-image\"" : ""
             imageManifestLines.append("""
-                <item id="image\(pageNumber)" href="images/\(imageName)" media-type="image/jpeg"/>
+                <item id="image\(pageNumber)" href="images/\(imageName)" media-type="image/jpeg"\(properties)/>
             """)
             
             // Create XHTML page for each image
@@ -234,8 +235,9 @@ class EPUBGenerator {
                 }
                 
                 // Add to image manifest items
+                let properties = (pageNumber == 1) ? " properties=\"cover-image\"" : ""
                 imageManifestLines.append("""
-                    <item id="image\(pageNumber)" href="images/\(imageName)" media-type="\(mediaType)"/>
+                    <item id="image\(pageNumber)" href="images/\(imageName)" media-type="\(mediaType)"\(properties)/>
                 """)
                 
                 // Create XHTML page for each image
@@ -330,8 +332,6 @@ class EPUBGenerator {
     }
     
     private func generateContentOPF() throws {
-        let pageCount = try FileManager.default.contentsOfDirectory(at: tempDirectory.appendingPathComponent("OEBPS/images"), includingPropertiesForKeys: nil).count
-        
         let contentOPF = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
@@ -346,40 +346,21 @@ class EPUBGenerator {
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">landscape</meta>
-                <meta name="cover" content="cover-image"/>
+                <meta name="cover" content="image1"/>
             </metadata>
             <manifest>
-                <item id="cover-image" href="images/page1.jpg" media-type="image/jpeg" properties="cover-image"/>
                 <item id="toc" href="text/toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-        \(generateManifestItems(pageCount: pageCount))
+        \(accumulatedImageManifestItems)
+        \(accumulatedXhtmlManifestItems)
             </manifest>
             <spine page-progression-direction="\(settings.readingDirection.rawValue)">
-        \(generateSpineItems(pageCount: pageCount))
+        \(accumulatedSpineItems)
             </spine>
         </package>
         """
         
         let contentURL = tempDirectory.appendingPathComponent("OEBPS/content.opf")
         try contentOPF.write(to: contentURL, atomically: true, encoding: String.Encoding.utf8)
-    }
-    
-    private func generateManifestItems(pageCount: Int) -> String {
-        var items: [String] = []
-        
-        // Add image items
-        for pageNumber in 1...pageCount {
-            items.append("                <item id=\"image\(pageNumber)\" href=\"images/page\(pageNumber).jpg\" media-type=\"image/jpeg\"/>")
-            items.append("                <item id=\"page\(pageNumber)\" href=\"text/page\(pageNumber).xhtml\" media-type=\"application/xhtml+xml\"/>")
-        }
-        
-        return items.joined(separator: "\n")
-    }
-    
-    private func generateSpineItems(pageCount: Int) -> String {
-        let items = (1...pageCount).map { pageNumber in
-            "                <itemref idref=\"page\(pageNumber)\"/>"
-        }
-        return items.joined(separator: "\n")
     }
     
     private func generateTocNCX() throws {
