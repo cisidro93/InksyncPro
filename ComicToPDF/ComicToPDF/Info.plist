@@ -79,8 +79,11 @@
         </dict>
     </array>
     
+    <key>UISupportsDocumentBrowser</key>
+    <false/>
+    
     <!-- UTIs -->
-    <key>UTImportedTypeDeclarations</key>
+    <key>UTExportedTypeDeclarations</key>
     <array>
         <dict>
             <key>UTTypeConformsTo</key>
