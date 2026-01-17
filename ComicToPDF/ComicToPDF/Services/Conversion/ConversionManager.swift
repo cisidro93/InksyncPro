@@ -327,12 +327,7 @@ class ConversionManager: ObservableObject {
         }
         
         isConverting = false
-        statusMessage = "✅ Batch Complete!"
-        try? await Task.sleep(nanoseconds: 3 * 1_000_000_000)
-        statusMessage = nil
-    }
-    
-    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String) async {
+    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool) async {
         guard !sourceFiles.isEmpty else { return }
         isConverting = true
         
@@ -351,14 +346,6 @@ class ConversionManager: ObservableObject {
             }
             
             let converter = CBZToEPUBConverter()
-            do {
-                // Determine settings - force EPUB for merging compatibility
-                var stepSettings = conversionSettings
-                stepSettings.outputFormat = .epub
-                let fileOverrides = panelOverrides[file.id]
-                
-                let newURLs = try await converter.convert(sourceURL: file.url, settings: stepSettings, manualManifest: fileOverrides) { progress in
-                    Task { @MainActor in self.conversionProgress = progress }
                 }
                 generatedEPUBs.append(contentsOf: newURLs)
                 
@@ -390,7 +377,8 @@ class ConversionManager: ObservableObject {
         let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
         
         // Use global settings for the merge container
-        let mergeSettings = conversionSettings
+        var mergeSettings = conversionSettings
+        mergeSettings.mangaMode = mangaMode
         
         let merger = EPUBMerger()
         do {

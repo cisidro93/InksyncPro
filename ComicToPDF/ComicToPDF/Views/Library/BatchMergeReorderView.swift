@@ -9,6 +9,7 @@ struct BatchMergeReorderView: View {
     @Binding var selectedFiles: [ConvertedPDF]
     
     @State private var mergedName: String = "Merged Collection"
+    @State private var mangaMode: Bool = false
     @State private var isProcessing = false
     
     var body: some View {
@@ -42,6 +43,10 @@ struct BatchMergeReorderView: View {
                                     selectedFiles.move(fromOffsets: indices, toOffset: newOffset)
                                 }
                             }
+                        }
+                        
+                        Section(header: Text("Settings")) {
+                            Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
                         }
                         
                         Section(footer: Text("This will convert all selected files to EPUB and merge them into a single file. The individual files will be deleted after merging to save space.")) {
@@ -84,7 +89,7 @@ struct BatchMergeReorderView: View {
         
         Task {
             // Call the manager to do the work
-            await conversionManager.convertAndMerge(sourceFiles: selectedFiles, outputName: mergedName)
+            await conversionManager.convertAndMerge(sourceFiles: selectedFiles, outputName: mergedName, mangaMode: mangaMode)
             
             await MainActor.run {
                 isProcessing = false
