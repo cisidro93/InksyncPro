@@ -327,6 +327,7 @@ class ConversionManager: ObservableObject {
         }
         
         isConverting = false
+    }
     func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool) async {
         guard !sourceFiles.isEmpty else { return }
         isConverting = true
