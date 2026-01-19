@@ -2,48 +2,35 @@ name: Build Native iOS App
 
 on:
   push:
-    branches: [ "ios-port" ]
-  workflow_dispatch:
+      branches: [ "ios-port" ]
+        workflow_dispatch:
 
-jobs:
-  build:
-    runs-on: macos-latest
-    
-    steps:
-    - uses: actions/checkout@v3
+        jobs:
+          build:
+              runs-on: macos-latest
 
-    - name: Install XcodeGen
-      run: brew install xcodegen
+                      steps:
+                          - uses: actions/checkout@v3
 
-    - name: Generate Project
-      run: |
-        cd ComicToPDF
-        xcodegen generate
-        ls -R ComicToPDF.xcodeproj
+                              - name: Install XcodeGen
+                                    run: brew install xcodegen
 
-    - name: Build Archive
-      run: |
-        cd ComicToPDF
-        xcodebuild -project ComicToPDF.xcodeproj \
-                   -scheme ComicToPDF \
-                   -sdk iphoneos \
-                   -configuration Release \
-                   -archivePath $PWD/build/ComicToPDF.xcarchive \
-                   clean archive \
-                   CODE_SIGN_IDENTITY="" \
-                   CODE_SIGNING_REQUIRED=NO \
-                   CODE_SIGNING_ALLOWED=NO
+                                        - name: Generate Project
+                                              run: |
+                                                      cd ComicToPDF
+                                                              xcodegen generate
+                                                                      ls -R InksyncPro.xcodeproj
 
-    - name: Export IPA
-      run: |
-        cd ComicToPDF
-        mkdir -p build/Payload
-        cp -r build/ComicToPDF.xcarchive/Products/Applications/ComicToPDF.app build/Payload/
-        cd build
-        zip -r ComicToPDF.ipa Payload
-
-    - name: Upload IPA
-      uses: actions/upload-artifact@v4
-      with:
-        name: ComicToPDF_Native_Build
-        path: ComicToPDF/build/ComicToPDF.ipa
+                                                                          - name: Build Archive
+                                                                                run: |
+                                                                                        cd ComicToPDF
+                                                                                                xcodebuild -project InksyncPro.xcodeproj \
+                                                                                                                   -scheme InksyncPro \
+                                                                                                                                      -sdk iphoneos \
+                                                                                                                                                         -configuration Release \
+                                                                                                                                                                            -archivePath $PWD/build/InksyncPro.xcarchive \
+                                                                                                                                                                                               clean archive \
+                                                                                                                                                                                                                  CODE_SIGN_IDENTITY="" \
+                                                                                                                                                                                                                                     CODE_SIGNING_REQUIRED=NO \
+                                                                                                                                                                                                                                                        CODE_SIGNING_ALLOWED=NO
+                                                                                                                                                                                                                                                        
