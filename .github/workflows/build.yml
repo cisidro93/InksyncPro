@@ -25,9 +25,7 @@ jobs:
     - name: Generate Project
       run: |
         cd ComicToPDF
-        if [ -f "project.yml" ]; then
-          xcodegen generate
-        fi
+        xcodegen generate
 
     - name: Build Archive
       run: |
