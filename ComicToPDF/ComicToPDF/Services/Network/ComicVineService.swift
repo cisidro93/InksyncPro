@@ -45,7 +45,7 @@ class ComicVineService: ObservableObject {
         
         // ComicVine requires a unique User-Agent
         var request = URLRequest(url: URL(string: "\(baseURL)/search/?api_key=\(apiKey)&format=json&resources=issue&query=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")!)
-        request.setValue("ComicToPDF-App/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("InksyncPro-App/1.0", forHTTPHeaderField: "User-Agent")
         
         let (data, _) = try await URLSession.shared.data(for: request)
         let response = try JSONDecoder().decode(CVResponse.self, from: data)

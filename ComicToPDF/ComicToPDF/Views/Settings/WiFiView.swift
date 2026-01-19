@@ -49,7 +49,7 @@ struct WiFiView: View {
                     Text("💡 USB Transfer").font(.headline)
                     Text("1. Connect to Computer via USB.")
                     Text("2. Open Finder (Mac) or iTunes (PC).")
-                    Text("3. Drag files from the 'ComicToPDF' folder.")
+                    Text("3. Drag files from the 'Inksync Pro' folder.")
                 }
                 .padding()
                 .foregroundColor(.secondary)

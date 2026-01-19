@@ -8,7 +8,7 @@ struct OnboardingView: View {
         OnboardingPageModel(
             image: "book.fill",
             color: .orange,
-            title: "Welcome to ComicToPDF",
+            title: "Welcome to Inksync Pro",
             description: "The ultimate tool to convert, organize, and transfer your digital comic library."
         ),
         OnboardingPageModel(
