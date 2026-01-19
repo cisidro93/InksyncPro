@@ -79,7 +79,17 @@ struct ModernLibraryView: View {
                             Text("Target:")
                                 .font(.system(size: 15))
                                 .foregroundColor(Theme.textSecondary)
-                            Text(conversionManager.conversionSettings.outputFormat.rawValue) // Dynamic Text
+                            
+                            // Shortened display name for the badge
+                            let badgeText: String = {
+                                switch conversionManager.conversionSettings.outputFormat {
+                                case .epub: return "EPUB"
+                                case .pdf: return "PDF"
+                                case .cbz: return "CBZ"
+                                }
+                            }()
+                            
+                            Text(badgeText)
                                 .font(.system(size: 12, weight: .bold))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
