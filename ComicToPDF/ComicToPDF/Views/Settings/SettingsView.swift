@@ -111,6 +111,13 @@ struct SettingsView: View {
                 }
             }
             
+            Section(header: Text("Integrations")) {
+                SecureField("ComicVine API Key", text: $conversionManager.conversionSettings.comicVineAPIKey)
+                Link("Get API Key", destination: URL(string: "http://comicvine.gamespot.com/api/")!)
+                    .font(.caption)
+                    .foregroundColor(.blue)
+            }
+            
             Section {
                 Button("Save as Default Preset") {
                     let newPreset = ConversionPreset(name: "Custom Settings", settings: conversionManager.conversionSettings)

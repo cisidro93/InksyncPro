@@ -33,6 +33,9 @@ struct ModernLibraryView: View {
     @State private var sortOption: LibraryView.SortOption = .dateAdded
     @State private var showingSortMenu = false
     
+    // ✅ NEW: Metadata Search State
+    @State private var pdfToSearchMetadata: ConvertedPDF?
+    
     var filteredPDFs: [ConvertedPDF] {
         let pdfs = conversionManager.convertedPDFs
         let result: [ConvertedPDF]
@@ -229,11 +232,21 @@ struct ModernLibraryView: View {
                             }
                             .listRowBackground(Color.black)
                             .listRowSeparatorTint(Color(white: 0.2))
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    pdfToSearchMetadata = pdf
+                                } label: { Label("Metadata", systemImage: "info.circle") }
+                                .tint(.blue)
+                            }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
                             }
                             .contextMenu {
                                 Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+                                Divider()
+                                Button {
+                                    pdfToSearchMetadata = pdf
+                                } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
                             }
                         }
                     }
@@ -250,6 +263,10 @@ struct ModernLibraryView: View {
             case .wifi: WiFiView()
             case .merge: FileMergeView()
             }
+        }
+        // ✅ NEW: Metadata Search Sheet
+        .sheet(item: $pdfToSearchMetadata) { pdf in
+            MetadataSearchSheet(pdf: pdf)
         }
         // Handle Drag & Drop
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
