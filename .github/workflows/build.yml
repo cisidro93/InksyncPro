@@ -30,6 +30,7 @@ jobs:
     - name: Build Archive
       run: |
         cd ComicToPDF
+        xcodebuild -list -project InksyncPro.xcodeproj
         xcodebuild -project InksyncPro.xcodeproj \
                    -scheme InksyncPro \
                    -sdk iphoneos \
