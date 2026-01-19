@@ -94,7 +94,7 @@ struct ContentView: View {
                     SettingsView()
                 }
             }
-            .navigationTitle("ComicToPDF")
+            .navigationTitle("Inksync Pro")
             .navigationBarTitleDisplayMode(.inline)
             
         } detail: {
