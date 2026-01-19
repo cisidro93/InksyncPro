@@ -27,7 +27,7 @@ jobs:
         cd ComicToPDF
         xcodegen generate
 
-    - name: Build Archive
+    - name: Build App
       run: |
         cd ComicToPDF
         xcodebuild -list -project InksyncPro.xcodeproj
@@ -35,8 +35,8 @@ jobs:
                    -scheme InksyncPro \
                    -sdk iphoneos \
                    -configuration Release \
-                   -archivePath $PWD/build/InksyncPro.xcarchive \
-                   clean archive \
+                   -derivedDataPath build \
+                   clean build \
                    CODE_SIGN_IDENTITY="" \
                    CODE_SIGNING_REQUIRED=NO \
                    CODE_SIGNING_ALLOWED=NO
@@ -45,7 +45,7 @@ jobs:
       run: |
         cd ComicToPDF
         mkdir Payload
-        cp -r build/InksyncPro.xcarchive/Products/Applications/InksyncPro.app Payload/
+        cp -r build/Build/Products/Release-iphoneos/InksyncPro.app Payload/
         zip -r InksyncPro_Unsigned.ipa Payload
 
     - name: Upload Artifact
