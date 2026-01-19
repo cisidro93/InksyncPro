@@ -1,36 +1,31 @@
 name: Build Native iOS App
-
 on:
   push:
-      branches: [ "ios-port" ]
-        workflow_dispatch:
-
-        jobs:
-          build:
-              runs-on: macos-latest
-
-                      steps:
-                          - uses: actions/checkout@v3
-
-                              - name: Install XcodeGen
-                                    run: brew install xcodegen
-
-                                        - name: Generate Project
-                                              run: |
-                                                      cd ComicToPDF
-                                                              xcodegen generate
-                                                                      ls -R InksyncPro.xcodeproj
-
-                                                                          - name: Build Archive
-                                                                                run: |
-                                                                                        cd ComicToPDF
-                                                                                                xcodebuild -project InksyncPro.xcodeproj \
-                                                                                                                   -scheme InksyncPro \
-                                                                                                                                      -sdk iphoneos \
-                                                                                                                                                         -configuration Release \
-                                                                                                                                                                            -archivePath $PWD/build/InksyncPro.xcarchive \
-                                                                                                                                                                                               clean archive \
-                                                                                                                                                                                                                  CODE_SIGN_IDENTITY="" \
-                                                                                                                                                                                                                                     CODE_SIGNING_REQUIRED=NO \
-                                                                                                                                                                                                                                                        CODE_SIGNING_ALLOWED=NO
-                                                                                                                                                                                                                                                        
+      branches:
+            - ios-port
+              workflow_dispatch:
+              jobs:
+                build:
+                    runs-on: macos-latest
+                        steps:
+                              - uses: actions/checkout@v3
+                                    - name: Install XcodeGen
+                                            run: brew install xcodegen
+                                                  - name: Generate Project
+                                                          run: |
+                                                                    cd ComicToPDF
+                                                                              xcodegen generate
+                                                                                        ls -R InksyncPro.xcodeproj
+                                                                                              - name: Build Archive
+                                                                                                      run: |
+                                                                                                                cd ComicToPDF
+                                                                                                                          xcodebuild -project InksyncPro.xcodeproj \
+                                                                                                                                               -scheme InksyncPro \
+                                                                                                                                                                    -sdk iphoneos \
+                                                                                                                                                                                         -configuration Release \
+                                                                                                                                                                                                              -archivePath $PWD/build/InksyncPro.xcarchive \
+                                                                                                                                                                                                                                   clean archive \
+                                                                                                                                                                                                                                                        CODE_SIGN_IDENTITY="" \
+                                                                                                                                                                                                                                                                             CODE_SIGNING_REQUIRED=NO \
+                                                                                                                                                                                                                                                                                                  CODE_SIGNING_ALLOWED=NO
+                                                                                                                                                                                                                                                                                                  
