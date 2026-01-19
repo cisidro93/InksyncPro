@@ -16,11 +16,11 @@ struct AdaptiveParameters: Codable, Equatable {
     )
 }
 
-class AdaptiveLearningManager {
+class AdaptiveLearningManager: ObservableObject {
     static let shared = AdaptiveLearningManager()
     
     private let key = "AdaptivePanelSettings"
-    private var currentSettings: AdaptiveParameters
+    @Published var currentSettings: AdaptiveParameters
     
     init() {
         if let data = UserDefaults.standard.data(forKey: key),

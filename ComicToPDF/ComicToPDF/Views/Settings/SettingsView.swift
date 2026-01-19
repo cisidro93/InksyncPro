@@ -2,6 +2,9 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    // ✅ NEW: Observe the Brain
+    @StateObject private var aiManager = AdaptiveLearningManager.shared
+    
     @State private var showingAddDevice = false
     @State private var showingDeleteAlert = false
     @State private var deviceToDelete: KindleDevice?
@@ -116,6 +119,28 @@ struct SettingsView: View {
                 Link("Get API Key", destination: URL(string: "http://comicvine.gamespot.com/api/")!)
                     .font(.caption)
                     .foregroundColor(.blue)
+            }
+            
+            // ✅ NEW: AI Learning Visualization
+            Section(header: Text("AI Learning Status")) {
+                let params = AdaptiveLearningManager.shared.currentSettings
+                HStack {
+                    Text("Minimum Confidence")
+                    Spacer()
+                    Text(String(format: "%.0f%%", params.minConfidence * 100))
+                        .foregroundColor(.blue)
+                }
+                HStack {
+                    Text("Scan Sensitivity (Min Size)")
+                    Spacer()
+                    Text(String(format: "%.1f%%", params.minSize * 100))
+                        .foregroundColor(.blue)
+                }
+                
+                Button("Reset Learning Memory") {
+                    AdaptiveLearningManager.shared.resetToDefaults()
+                }
+                .foregroundColor(.red)
             }
             
             Section {
