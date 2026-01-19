@@ -2,25 +2,32 @@ name: Build Native iOS App
 
 on:
   push:
-    branches:
-      - ios-port
-  workflow_dispatch:
+    branches: [ "main", "ios-port" ]
+  pull_request:
+    branches: [ "main", "ios-port" ]
 
 jobs:
   build:
     runs-on: macos-latest
-    
-    steps:
-    - uses: actions/checkout@v3
 
-    - name: Install XcodeGen
-      run: brew install xcodegen
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Tools
+      run: |
+        brew install swiftlint
+        brew install xcodegen || true
+
+    - name: Run SwiftLint
+      run: swiftlint lint
+      continue-on-error: true
 
     - name: Generate Project
       run: |
         cd ComicToPDF
-        xcodegen generate
-        ls -R InksyncPro.xcodeproj
+        if [ -f "project.yml" ]; then
+          xcodegen generate
+        fi
 
     - name: Build Archive
       run: |
@@ -34,3 +41,16 @@ jobs:
                    CODE_SIGN_IDENTITY="" \
                    CODE_SIGNING_REQUIRED=NO \
                    CODE_SIGNING_ALLOWED=NO
+
+    - name: Package IPA
+      run: |
+        cd ComicToPDF
+        mkdir Payload
+        cp -r build/InksyncPro.xcarchive/Products/Applications/InksyncPro.app Payload/
+        zip -r InksyncPro_Unsigned.ipa Payload
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: InksyncPro_Unsigned_IPA
+        path: ComicToPDF/InksyncPro_Unsigned.ipa
