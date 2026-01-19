@@ -67,18 +67,26 @@ struct ModernLibraryView: View {
                             .foregroundColor(Theme.orange)
                     }
                     
-                    // Target Badge
-                    HStack(spacing: 6) {
-                        Text("Target:")
-                            .font(.system(size: 15))
-                            .foregroundColor(Theme.textSecondary)
-                        Text("PDF") // Could be dynamic
-                            .font(.system(size: 12, weight: .bold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Theme.orange)
-                            .foregroundColor(.black)
-                            .cornerRadius(6)
+                    // Target Selector Menu
+                    Menu {
+                        Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                            ForEach(OutputFormat.allCases) { format in
+                                Label(format.rawValue, systemImage: format.icon).tag(format)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("Target:")
+                                .font(.system(size: 15))
+                                .foregroundColor(Theme.textSecondary)
+                            Text(conversionManager.conversionSettings.outputFormat.rawValue) // Dynamic Text
+                                .font(.system(size: 12, weight: .bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Theme.orange)
+                                .foregroundColor(.black)
+                                .cornerRadius(6)
+                        }
                     }
                     
                     // More Button

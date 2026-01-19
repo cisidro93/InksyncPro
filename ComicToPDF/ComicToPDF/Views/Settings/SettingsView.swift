@@ -8,13 +8,7 @@ struct SettingsView: View {
     
     var body: some View {
         Form {
-            Section(header: Text("General")) {
-                Picker("Output Format", selection: $conversionManager.conversionSettings.outputFormat) {
-                    ForEach(OutputFormat.allCases) { format in
-                        Label(format.rawValue, systemImage: format.icon).tag(format)
-                    }
-                }
-            }
+
             
             Section(header: Text("Optimization")) {
                 Picker("Compression", selection: $conversionManager.conversionSettings.compressionQuality) {
