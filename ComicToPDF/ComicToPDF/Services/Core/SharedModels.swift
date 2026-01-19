@@ -213,7 +213,7 @@ struct EPUBSettings: Codable, Equatable {
     }
     
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
-    var includeTableOfContents: Bool = true
+    var includeTableOfContents: Bool = false
     var splitPanels: Bool = false
     var includeFullPage: Bool = true
     var panelDetectionConfidence: Double = 0.6
