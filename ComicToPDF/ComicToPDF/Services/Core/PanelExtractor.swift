@@ -55,8 +55,27 @@ struct PanelExtractor {
                     return
                 }
                 
-                let confidenceThreshold: Float = (mode == .aggressive) ? 0.3 : 0.85
-                let minSize: CGFloat = (mode == .aggressive) ? 0.1 : 0.15
+                // ✅ Use Adaptive Settings if mode is Automatic
+                let settings = AdaptiveLearningManager.shared.getParameters()
+                
+                var confidenceThreshold: Float
+                var minSize: CGFloat
+                
+                switch mode {
+                case .aggressive:
+                    confidenceThreshold = 0.3
+                    minSize = 0.1
+                case .conservative:
+                    confidenceThreshold = 0.85
+                    minSize = 0.15
+                case .automatic:
+                    // Use Learned Values
+                    confidenceThreshold = settings.minConfidence
+                    minSize = settings.minSize
+                default:
+                    confidenceThreshold = 0.85
+                    minSize = 0.15
+                }
                 
                 let rawPanels = results
                     .filter { $0.confidence > confidenceThreshold }

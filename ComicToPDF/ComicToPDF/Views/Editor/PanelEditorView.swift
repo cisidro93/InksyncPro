@@ -23,6 +23,7 @@ struct PanelEditorView: View {
     @State private var pageImage: UIImage?
     @State private var isLoading = true
     @State private var panels: [CGRect] = []
+    @State private var initialDetectedPanels: [CGRect] = [] // ✅ Store initial AI state for learning
     @State private var selectedPanelIndex: Int?
     @State private var isProcessing = false
     @State private var loadError: String?
@@ -379,6 +380,7 @@ struct PanelEditorView: View {
             let detected = await PanelExtractor.detectPanels(in: image)
             await MainActor.run {
                 self.panels = detected.map { $0.boundingBox }
+                self.initialDetectedPanels = self.panels // ✅ Checkpoint for learning
                 self.isProcessing = false
             }
         }
@@ -398,6 +400,12 @@ struct PanelEditorView: View {
     func clearAllPanels() { panels.removeAll(); selectedPanelIndex = nil }
     
     func saveAndClose() {
+        // ✅ Trigger Learning
+        let finalRects = panels
+        Task(priority: .background) {
+            AdaptiveLearningManager.shared.learn(from: initialDetectedPanels, userFinalPanels: finalRects)
+        }
+        
         let finalPanels = panels.map { PanelExtractor.Panel(boundingBox: $0) }
         Task { await conversionManager.savePanelOverrides(for: pdf.id, pageIndex: pageIndex, panels: finalPanels); dismiss() }
     }
@@ -410,6 +418,10 @@ struct PanelEditorView: View {
         
         // Save without closing
         Task {
+            // ✅ Trigger Learning on Next/Prev
+             let finalRects = finalPanels.map { $0.boundingBox }
+             AdaptiveLearningManager.shared.learn(from: initialDetectedPanels, userFinalPanels: finalRects)
+             
             await conversionManager.savePanelOverrides(for: pdf.id, pageIndex: currentPage, panels: finalPanels)
         }
         
