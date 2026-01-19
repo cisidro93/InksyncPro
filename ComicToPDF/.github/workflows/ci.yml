@@ -30,4 +30,4 @@ jobs:
 
     - name: Build
       run: |
-        xcodebuild -project ComicToPDF.xcodeproj -scheme ComicToPDF -sdk iphoneos -configuration Release clean build CODE_SIGNING_ALLOWED=NO
+        xcodebuild -project InksyncPro.xcodeproj -scheme InksyncPro -sdk iphoneos -configuration Release clean build CODE_SIGNING_ALLOWED=NO
