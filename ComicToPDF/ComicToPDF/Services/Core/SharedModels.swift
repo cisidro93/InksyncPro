@@ -114,16 +114,22 @@ struct KindleDevice: Identifiable, Codable, Equatable, Hashable {
 }
 
 enum KindleDeviceType: String, CaseIterable, Codable, Hashable {
-    case scribe = "Kindle Scribe"
-    case paperwhite = "Kindle Paperwhite"
+    case scribeColorsoft = "Kindle Scribe Colorsoft (11\")"
+    case colorsoft = "Kindle Colorsoft (7\")"
+    case paperwhite2024 = "Kindle Paperwhite (2024)"
+    case scribe = "Kindle Scribe (1st Gen)"
+    case paperwhite = "Kindle Paperwhite (Older)"
     case oasis = "Kindle Oasis"
     case basic = "Kindle Basic"
     case tablet = "Fire Tablet"
     
     var resolution: CGSize {
         switch self {
+        case .scribeColorsoft: return CGSize(width: 1980, height: 2640) // 11" 300ppi
+        case .colorsoft: return CGSize(width: 1264, height: 1680) // 7" 300ppi (same as Oasis/PW)
+        case .paperwhite2024: return CGSize(width: 1264, height: 1680)
         case .scribe: return CGSize(width: 1860, height: 2480)
-        case .paperwhite: return CGSize(width: 1236, height: 1648)
+        case .paperwhite: return CGSize(width: 1236, height: 1648) // Old PW
         case .oasis: return CGSize(width: 1264, height: 1680)
         case .basic: return CGSize(width: 1080, height: 1440)
         case .tablet: return CGSize(width: 1200, height: 1920)
@@ -132,7 +138,7 @@ enum KindleDeviceType: String, CaseIterable, Codable, Hashable {
     
     var icon: String {
         switch self {
-        case .scribe: return "ipad.gen2"
+        case .scribeColorsoft, .scribe: return "ipad.gen2"
         case .tablet: return "ipad.landscape"
         default: return "book.closed"
         }
