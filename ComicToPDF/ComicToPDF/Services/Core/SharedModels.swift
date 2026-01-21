@@ -72,7 +72,11 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
+    var summary: String?
     var tags: [String] = []
+    // ✅ Calibre-style Reading Options
+    var isManga: Bool? // Overrides global setting if present
+    var isWebtoon: Bool? // For vertical scroll support
 }
 
 struct PDFCollection: Identifiable, Codable, Equatable {

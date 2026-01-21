@@ -103,7 +103,9 @@ struct PageManagerView: View {
     @State private var selectedImageForEditor: UIImage?
     @State private var isSelectionMode = false // ✅ Selection Mode State
     @State private var dragStart: Int?
+    @State private var dragStart: Int?
     @State private var draggedItem: GridPageItem? // ✅ Drag for Reordering
+    @State private var showingMetadataEditor = false
 
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
@@ -136,6 +138,12 @@ struct PageManagerView: View {
                         .font(.body)
                         .padding(8)
                         .foregroundColor(isSelectionMode ? .blue : .primary)
+                }
+                
+                Button(action: { showingMetadataEditor = true }) {
+                    Image(systemName: "info.circle")
+                        .font(.body)
+                        .padding(8)
                 }
                 
                 Button("Done") {
