@@ -454,60 +454,73 @@ class EPUBGenerator {
     // MARK: - Helper Methods
     
     private func resizeImageIfNeeded(_ image: UIImage) -> UIImage {
-        // Use consistent pixel dimensions (CGImage) instead of logical points (UIImage.size) to avoid Retina scaling issues
+        // Use consistent pixel dimensions (CGImage)
         let width = image.cgImage?.width ?? Int(image.size.width * image.scale)
         let height = image.cgImage?.height ?? Int(image.size.height * image.scale)
         let originalSize = CGSize(width: width, height: height)
         
-        // Safety check for invalid dimensions or memory issues
-        guard originalSize.width > 0, originalSize.height > 0,
-              !originalSize.width.isNaN, !originalSize.height.isNaN else {
-            return image
-        }
+        // Safety check
+        guard originalSize.width > 0, originalSize.height > 0 else { return image }
         
-        var newSize = originalSize
-        
-        // 1. Apply Custom Scale (e.g. 0.5x)
-        if customScale < 0.99 && customScale > 0 {
-            newSize = CGSize(width: originalSize.width * customScale, height: originalSize.height * customScale)
-        }
-        
-        // 2. Apply Target Constraints (e.g. Kindle 1236x1648)
-        // We only scale DOWN, never up (aspect fit)
-        if let target = targetSize, target.width > 0, target.height > 0 {
-            let widthRatio = target.width / newSize.width
-            let heightRatio = target.height / newSize.height
-            
-            // If image is larger than target in any dimension, scale down
-            if widthRatio < 1.0 || heightRatio < 1.0 {
-                let scale = min(widthRatio, heightRatio)
-                newSize = CGSize(width: newSize.width * scale, height: newSize.height * scale)
-            }
-        }
-        
-        // Validate new size
-        guard newSize.width > 1, newSize.height > 1,
-              !newSize.width.isNaN, !newSize.height.isNaN else {
+        // check if we have a target
+        guard let target = targetSize, target.width > 0, target.height > 0 else {
+            // No target, just bespoke scaling if any
+             if customScale < 0.99 && customScale > 0 {
+                let newSize = CGSize(width: originalSize.width * customScale, height: originalSize.height * customScale)
+                return performResize(image, to: newSize)
+             }
              return image
         }
         
-        // If unchanged, return original
-        if newSize == originalSize { return image }
+        // ✅ SMART RESIZING (KCC Logic)
+        // 1. Calculate Target Aspect Ratio
+        let targetRatio = target.width / target.height
+        let imageRatio = originalSize.width / originalSize.height
         
-        // Perform resizing using UIGraphicsImageRenderer to ensure sRGB and avoid tiling artifacts
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1.0
-        format.opaque = true
+        var newSize = originalSize
         
-        // Final safety catch for context creation failure
-        if newSize.width > 10000 || newSize.height > 10000 {
-            // Avoid attempting to render excessively large contexts if something went wrong
-            return image
+        // 2. Scale to Fit Target (Upscale OR Downscale)
+        // We want to fill the target as much as possible while maintaining aspect ratio.
+        if imageRatio > targetRatio {
+            // Image is wider than target (Letterbox Top/Bottom)
+            // Width dictates scale
+            let scale = target.width / originalSize.width
+            newSize = CGSize(width: target.width, height: originalSize.height * scale)
+        } else {
+            // Image is taller than target (Pillarbox Left/Right)
+            // Height dictates scale
+            let scale = target.height / originalSize.height
+            newSize = CGSize(width: originalSize.width * scale, height: target.height)
         }
         
-        let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
-        return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: newSize))
+        // 3. Render into Target Canvas (Matte)
+        // This ensures the output is ALWAYS exact device resolution
+        return performResize(image, to: newSize, canvasSize: target)
+    }
+    
+    // Helper to perform the actual drawing
+    private func performResize(_ image: UIImage, to size: CGSize, canvasSize: CGSize? = nil) -> UIImage {
+        let finalCanvas = canvasSize ?? size
+        
+        // Check for sanity
+        if finalCanvas.width > 5000 || finalCanvas.height > 5000 { return image }
+        
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true // No alpha channel = smaller file
+        
+        let renderer = UIGraphicsImageRenderer(size: finalCanvas, format: format)
+        return renderer.image { context in
+            // Fill with White (Standard for E-Ink / Paper)
+            // Or Black if requested (future feature)
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: finalCanvas))
+            
+            // Center the image
+            let originX = (finalCanvas.width - size.width) / 2
+            let originY = (finalCanvas.height - size.height) / 2
+            
+            image.draw(in: CGRect(x: originX, y: originY, width: size.width, height: size.height))
         }
     }
     
