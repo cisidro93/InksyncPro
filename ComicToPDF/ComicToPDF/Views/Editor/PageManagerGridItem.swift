@@ -25,13 +25,19 @@ struct PageManagerGridItem: View {
                             .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
                         
                         if conversionManager.panelOverrides[pdf.id]?[item.index] != nil {
-                            Image(systemName: "scissors")
-                                .font(.caption)
-                                .padding(4)
-                                .background(Color.yellow)
-                                .clipShape(Circle())
-                                .padding(4)
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                            HStack(spacing: 2) {
+                                Image(systemName: "wand.and.stars")
+                                    .font(.caption2)
+                                Text("Guided")
+                                    .font(.caption2)
+                                    .bold()
+                            }
+                            .padding(4)
+                            .background(Color.purple)
+                            .foregroundColor(.white)
+                            .cornerRadius(4)
+                            .padding(4)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
                     }
                 )
