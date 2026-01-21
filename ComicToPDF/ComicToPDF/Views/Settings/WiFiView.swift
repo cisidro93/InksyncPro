@@ -30,6 +30,26 @@ struct WiFiView: View {
                     }
                 }
                 
+                // ✅ NEW: Progress UI
+                if server.isUploading {
+                    VStack(spacing: 8) {
+                        Text("Uploading: \(server.currentUploadFilename)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        ProgressView(value: server.uploadProgress)
+                            .progressViewStyle(LinearProgressViewStyle(tint: .orange))
+                            .padding(.horizontal)
+                        
+                        Text("\(Int(server.uploadProgress * 100))%")
+                            .font(.caption.bold())
+                    }
+                    .padding()
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                
                 Button(action: {
                     if server.isRunning { server.stop() } else { server.start() }
                 }) {
