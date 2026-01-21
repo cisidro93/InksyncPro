@@ -116,7 +116,7 @@ struct SettingsView: View {
             
             Section(header: Text("Integrations")) {
                 SecureField("ComicVine API Key", text: $conversionManager.conversionSettings.comicVineAPIKey)
-                Link("Get API Key", destination: URL(string: "http://comicvine.gamespot.com/api/")!)
+                Link("Get API Key", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
                     .font(.caption)
                     .foregroundColor(.blue)
             }
