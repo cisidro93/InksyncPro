@@ -103,7 +103,7 @@ struct PageManagerView: View {
     @State private var selectedImageForEditor: UIImage?
     @State private var isSelectionMode = false // ✅ Selection Mode State
     @State private var dragStart: Int?
-    @State private var dragStart: Int?
+
     @State private var draggedItem: GridPageItem? // ✅ Drag for Reordering
     @State private var showingMetadataEditor = false
     @State private var showingTrimSheet = false
@@ -253,7 +253,7 @@ struct PageManagerView: View {
                             .cornerRadius(8)
                         }
                         
-                        }
+
                         
                         // Trim Button
                         Button {
