@@ -190,13 +190,76 @@ struct ConversionSettings: Codable, Equatable {
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
     var splitMode: FileSizeSplitMode = .none
-    
-    // ✅ ADD THIS NEW FIELD
     var panelStrategy: PanelStrategy = .physical 
     
-    var comicVineAPIKey: String = ""
+    // ✅ Keychain Integration
+    // We remove the stored property and use a computed one.
+    // For migration, we define a private coding key to read old JSON.
+    var comicVineAPIKey: String {
+        get {
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "comicVineAPIKey"),
+               let key = String(data: data, encoding: .utf8) {
+                return key
+            }
+            return ""
+        }
+        set {
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
+            }
+        }
+    }
+    
     var epubSettings: EPUBSettings = EPUBSettings()
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
+    
+    // Custom Codable implementation to handle migration
+    enum CodingKeys: String, CodingKey {
+        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitMode, panelStrategy, epubSettings, imageEnhancement
+        case comicVineAPIKey // Used for legacy read only
+    }
+    
+    init() {}
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        outputFormat = try container.decode(OutputFormat.self, forKey: .outputFormat)
+        compressionQuality = try container.decode(CompressionPreset.self, forKey: .compressionQuality)
+        optimizeForDevice = try container.decode(Bool.self, forKey: .optimizeForDevice)
+        targetDevice = try container.decode(KindleDeviceType.self, forKey: .targetDevice)
+        mangaMode = try container.decode(Bool.self, forKey: .mangaMode)
+        enablePanelSplit = try container.decode(Bool.self, forKey: .enablePanelSplit)
+        splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
+        panelStrategy = try container.decodeIfPresent(PanelStrategy.self, forKey: .panelStrategy) ?? .physical
+        epubSettings = try container.decode(EPUBSettings.self, forKey: .epubSettings)
+        imageEnhancement = try container.decode(ImageEnhancementSettings.self, forKey: .imageEnhancement)
+        
+        // ⚠️ MIGRATION: Check if JSON contains the legacy key
+        if let legacyKey = try? container.decodeIfPresent(String.self, forKey: .comicVineAPIKey), !legacyKey.isEmpty {
+            // Save to Keychain
+            print("🔐 Migrating Legacy API Key to Keychain...")
+            let data = Data(legacyKey.utf8)
+            KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(outputFormat, forKey: .outputFormat)
+        try container.encode(compressionQuality, forKey: .compressionQuality)
+        try container.encode(optimizeForDevice, forKey: .optimizeForDevice)
+        try container.encode(targetDevice, forKey: .targetDevice)
+        try container.encode(mangaMode, forKey: .mangaMode)
+        try container.encode(enablePanelSplit, forKey: .enablePanelSplit)
+        try container.encode(splitMode, forKey: .splitMode)
+        try container.encode(panelStrategy, forKey: .panelStrategy)
+        try container.encode(epubSettings, forKey: .epubSettings)
+        try container.encode(imageEnhancement, forKey: .imageEnhancement)
+        // We purposefully DO NOT encode comicVineAPIKey so it disappears from JSON next save
+    }
 }
 
 struct EPUBSettings: Codable, Equatable {
