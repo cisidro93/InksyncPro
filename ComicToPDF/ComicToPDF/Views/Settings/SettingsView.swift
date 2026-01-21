@@ -85,6 +85,12 @@ struct SettingsView: View {
                         Text("Sharpness")
                         Slider(value: $conversionManager.conversionSettings.imageEnhancement.sharpness, in: 0.0...1.0)
                     }
+                    HStack {
+                        Text("Gamma (E-Ink)")
+                        Slider(value: $conversionManager.conversionSettings.imageEnhancement.gamma, in: 0.5...2.5)
+                        Text(String(format: "%.1f", conversionManager.conversionSettings.imageEnhancement.gamma))
+                            .font(.caption).monospacedDigit()
+                    }
                 }
             }
             

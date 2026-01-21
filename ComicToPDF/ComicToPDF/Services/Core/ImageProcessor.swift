@@ -32,6 +32,12 @@ struct ImageProcessor {
              finalImage = applyAutoContrast(image: finalImage)
         }
         
+        // 3. Gamma Correction (KCC Feature for E-Ink)
+        // Default is 1.0 (No change). E-Ink usually benefits from ~0.7 to lighten shadows or ~1.2 to darken text.
+        if settings.imageEnhancement.gamma != 1.0 {
+            finalImage = applyGamma(image: finalImage, gamma: settings.imageEnhancement.gamma)
+        }
+        
         return finalImage
     }
     
@@ -165,6 +171,19 @@ struct ImageProcessor {
         filter?.setValue(ciImage, forKey: kCIInputImageKey)
         filter?.setValue(1.1, forKey: kCIInputContrastKey) // Boost contrast slightly
         filter?.setValue(0.1, forKey: kCIInputBrightnessKey)
+        
+        if let output = filter?.outputImage,
+           let cgImage = CIContext().createCGImage(output, from: output.extent) {
+            return UIImage(cgImage: cgImage)
+        }
+        return image
+    }
+    
+    private static func applyGamma(image: UIImage, gamma: Double) -> UIImage {
+        guard let ciImage = CIImage(image: image) else { return image }
+        let filter = CIFilter(name: "CIGammaAdjust")
+        filter?.setValue(ciImage, forKey: kCIInputImageKey)
+        filter?.setValue(gamma, forKey: "inputPower")
         
         if let output = filter?.outputImage,
            let cgImage = CIContext().createCGImage(output, from: output.extent) {

@@ -106,6 +106,8 @@ struct PageManagerView: View {
     @State private var dragStart: Int?
     @State private var draggedItem: GridPageItem? // ✅ Drag for Reordering
     @State private var showingMetadataEditor = false
+    @State private var showingTrimSheet = false
+
 
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
@@ -248,6 +250,25 @@ struct PageManagerView: View {
                             .padding()
                             .background(Color.blue.opacity(0.1))
                             .foregroundColor(.blue)
+                            .cornerRadius(8)
+                        }
+                        
+                        }
+                        
+                        // Trim Button
+                        Button {
+                            showingTrimSheet = true
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "scissors")
+                                    .font(.title2)
+                                Text("Trim")
+                                    .font(.caption)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.orange.opacity(0.1))
+                            .foregroundColor(.orange)
                             .cornerRadius(8)
                         }
                         
