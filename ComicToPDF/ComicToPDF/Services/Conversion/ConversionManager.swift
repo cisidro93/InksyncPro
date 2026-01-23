@@ -608,6 +608,115 @@ class ConversionManager: ObservableObject {
         return url
     }
     
+    // MARK: - Trimming Logic
+    func trimPages(from pdf: ConvertedPDF, pageIndices: Set<Int>, trim: (top: Double, bottom: Double, left: Double, right: Double)) async throws {
+        // Validate type: Must be an archive
+        let ext = pdf.url.pathExtension.lowercased()
+        guard ["cbz", "cbr", "zip", "epub"].contains(ext) else {
+            throw NSError(domain: "TrimError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Trimming is only supported for CBZ, ZIP, or EPUB files."])
+        }
+        
+        let sourceURL = pdf.url
+        
+        try await Task.detached(priority: .userInitiated) {
+            let fileManager = FileManager.default
+            let tempID = UUID().uuidString
+            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(tempID)
+            let tempArchiveURL = fileManager.temporaryDirectory.appendingPathComponent("\(tempID).cbz")
+            
+            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            defer { try? fileManager.removeItem(at: tempDir); try? fileManager.removeItem(at: tempArchiveURL) }
+            
+            guard let sourceArchive = try? Archive(url: sourceURL, accessMode: .read, preferredEncoding: nil),
+                  let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create, preferredEncoding: nil) else {
+                throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
+            }
+            
+            let sortedEntries = sourceArchive.makeIterator().sorted { $0.path < $1.path }
+            let imageEntries = sortedEntries.filter { entry in
+                let ext = (entry.path as NSString).pathExtension.lowercased()
+                return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
+            }
+            
+            // Map entries to indices to identify which ones to trim
+            // Since sortedEntries contains non-images too (maybe), 'imageEntries' index i corresponds to page i.
+            // But we need to process ALL entries to rebuild the archive.
+            
+            var imageIndexCounter = 0
+            
+            for entry in sortedEntries {
+                let isImage = ["jpg", "jpeg", "png", "webp"].contains((entry.path as NSString).pathExtension.lowercased()) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
+                
+                let currentImageIndex = isImage ? imageIndexCounter : -1
+                if isImage { imageIndexCounter += 1 }
+                
+                let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
+                
+                // Extract
+                _ = try sourceArchive.extract(entry, to: tempFile)
+                
+                // Processing
+                var fileToRead = tempFile
+                var shouldCleanupCrops = false
+                
+                if isImage && pageIndices.contains(currentImageIndex) {
+                    // TRIM THIS IMAGE
+                    if let image = UIImage(contentsOfFile: tempFile.path), let cgImage = image.cgImage {
+                        let width = Double(cgImage.width)
+                        let height = Double(cgImage.height)
+                        
+                        let x = width * trim.left
+                        let y = height * trim.top // Vision is bottom-left, typically CoreGraphics via UIImage follows standard checks.
+                        // Actually in CoreGraphics (0,0) is top-left for standard image buffers usually.
+                        // Let's assume standardized orientation.
+                        
+                        let newWidth = width * (1.0 - trim.left - trim.right)
+                        let newHeight = height * (1.0 - trim.top - trim.bottom)
+                        
+                        // Crop
+                        if let croppedCG = cgImage.cropping(to: CGRect(x: x, y: y, width: newWidth, height: newHeight)) {
+                            let croppedImage = UIImage(cgImage: croppedCG)
+                            
+                            // Save back to disk (overwrite or new temp)
+                            let croppedFile = tempDir.appendingPathComponent("cropped_" + tempFile.lastPathComponent)
+                            if let data = croppedImage.jpegData(compressionQuality: 0.8) { // Default to JPEG 0.8
+                                try data.write(to: croppedFile)
+                                fileToRead = croppedFile
+                                shouldCleanupCrops = true
+                            }
+                        }
+                    }
+                }
+                
+                // Add to Destination
+                let attr = try fileManager.attributesOfItem(atPath: fileToRead.path)
+                let fileSize = attr[.size] as? Int64 ?? 0
+                
+                try destArchive.addEntry(with: entry.path, type: entry.type, uncompressedSize: fileSize, modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                    let fileHandle = try? FileHandle(forReadingFrom: fileToRead)
+                    try? fileHandle?.seek(toOffset: UInt64(position))
+                    return fileHandle?.readData(ofLength: size) ?? Data()
+                }
+                
+                try? fileManager.removeItem(at: tempFile)
+                if shouldCleanupCrops { try? fileManager.removeItem(at: fileToRead) }
+            }
+            
+            // Swap
+            if fileManager.fileExists(atPath: sourceURL.path) { try fileManager.removeItem(at: sourceURL) }
+            try fileManager.moveItem(at: tempArchiveURL, to: sourceURL)
+            
+        }.value
+        
+        scanLibrary()
+        
+        // Clear cache if we edited the file currently open
+        if self.editorCache?.pdfID == pdf.id {
+             self.editorCache = nil
+             // We don't force endSession because that might close the UI, but we clear the cache so next page load re-unzips.
+        }
+    }
+    
     // Split / Extract Logic
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL {
         let fileManager = FileManager.default

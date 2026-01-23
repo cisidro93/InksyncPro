@@ -75,19 +75,27 @@ struct TrimPagesView: View {
     
     func startTrimming() {
         isProcessing = true
-        // Implementation note: This would require a new ConversionManager method to unzip, crop images, and re-zip.
-        // For this task, we will simulate the UI connection and call a placeholder or verify if we can add the method quickly.
-        // Since we are "Integrating KCC features", adding the UI is the first step.
-        // We will mock the delay for now as the backend logic is complex (requires re-zipping).
         
         Task {
-            // Mock Progress
-            for i in 0...10 {
-                try? await Task.sleep(nanoseconds: 200_000_000)
-                progress = Double(i) / 10.0
+            do {
+                try await conversionManager.trimPages(
+                    from: pdf,
+                    pageIndices: selectedPages,
+                    trim: (top: topTrim, bottom: bottomTrim, left: leftTrim, right: rightTrim)
+                )
+                
+                await MainActor.run {
+                    isProcessing = false
+                    dismiss()
+                }
+            } catch {
+                print("Error trimming: \(error)")
+                await MainActor.run {
+                    isProcessing = false
+                    // Ideally show an alert here, but for now we just log and maybe dismiss or stay
+                    // dismiss() 
+                }
             }
-            isProcessing = false
-            dismiss()
         }
     }
 }
