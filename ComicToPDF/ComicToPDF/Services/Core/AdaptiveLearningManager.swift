@@ -56,6 +56,10 @@ class AdaptiveLearningManager: ObservableObject {
         var newSettings = currentSettings
         var didChange = false
         
+        print("🧠 [Brain] Learning Triggered.")
+        print("🧠 [Brain] AI Found: \(initialPanels.count), User Final: \(userFinalPanels.count)")
+        print("🧠 [Brain] Current Conf: \(newSettings.minConfidence), MinSize: \(newSettings.minSize)")
+        
         // 1. Check for Missed Small Panels
         // If user added a panel that is smaller than our minSize, we need to lower the threshold.
         let smallestUserPanel = userFinalPanels.map { min($0.width * $0.height, 0.0) }.min() ?? 1.0 // Area
@@ -92,19 +96,27 @@ class AdaptiveLearningManager: ObservableObject {
         
         // 4. False Negatives (AI missed panels)
         // If User has MORE panels than AI.
+        // ✅ BUG FIX: Check if we are already at the minimum confidence (0.4 in old code vs possibly lower here?)
+        // Also, maybe 0.05 step is too small if we missed A LOT.
+        // Or maybe initialPanels is empty because we didn't save the initial state properly?
+        
         if userFinalPanels.count > initialPanels.count {
             // We missed some.
             // Decrease confidence slightly to catch edge cases
-             if newSettings.minConfidence > 0.4 {
+             if newSettings.minConfidence > 0.15 { // Lowered floor to 0.15
                 newSettings.minConfidence -= 0.05
                 print("🧠 [Brain] Learned: Decreased confidence to \(newSettings.minConfidence) (User added panels)")
                 didChange = true
+            } else {
+                 print("🧠 [Brain] Cannot lower confidence further. Reached floor.")
             }
         }
         
         if didChange {
             currentSettings = newSettings
             save()
+        } else {
+            print("🧠 [Brain] No changes learned.")
         }
     }
 }
