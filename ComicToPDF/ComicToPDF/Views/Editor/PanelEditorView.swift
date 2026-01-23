@@ -279,19 +279,23 @@ struct PanelEditorView: View {
     func detectPanelAt(normalizedPoint: CGPoint) {
         guard let image = pageImage else { return }
         
-        guard normalizedPoint.x >= 0 && normalizedPoint.x <= 1 &&
-              normalizedPoint.y >= 0 && normalizedPoint.y <= 1 else { return }
+        // Sanity Check: Ensure point is normalized
+        let constrainedPoint = CGPoint(
+            x: min(max(normalizedPoint.x, 0), 1),
+            y: min(max(normalizedPoint.y, 0), 1)
+        )
         
         isProcessing = true
         
         Task(priority: .userInitiated) {
             let smallImage = resizeImageForAI(image: image, targetSize: 1000)
             let request = VNDetectRectanglesRequest()
-            // ✅ Fix: Aggressive detection for Magic Wand (User is pointing, so trust them)
+            
+            // Aggressive settings for user helper
             request.minimumConfidence = 0.1
             request.minimumAspectRatio = 0.1
             request.maximumAspectRatio = 3.0
-            request.quadratureTolerance = 45 // Allow wobbly lines
+            request.quadratureTolerance = 45
             request.minimumSize = 0.05
             
             let handler = VNImageRequestHandler(cgImage: smallImage.cgImage!, options: [:])
@@ -302,39 +306,78 @@ struct PanelEditorView: View {
                 return
             }
             
-            let visionPoint = CGPoint(x: normalizedPoint.x, y: 1.0 - normalizedPoint.y)
-            let candidates = results.filter { $0.boundingBox.contains(visionPoint) }
+            // Vision Coords: (0,0) is Bottom-Left. Y points Up.
+            // SwiftUI Coords: (0,0) is Top-Left. Y points Down.
+            // Convert SwiftUI point to Vision point
+            let visionPoint = CGPoint(x: constrainedPoint.x, y: 1.0 - constrainedPoint.y)
             
-            let bestMatch = candidates.sorted {
-                ($0.boundingBox.width * $0.boundingBox.height) < ($1.boundingBox.width * $1.boundingBox.height)
-            }.first
+            // Filter 1: Strictly containing
+            let strictlyContaining = results.filter { $0.boundingBox.contains(visionPoint) }
+            
+            // Filter 2: Close Proximity (Relaxed hit test)
+            // Useful if user taps just on the edge
+            let nearby = results.filter {
+                $0.boundingBox.insetBy(dx: -0.02, dy: -0.02).contains(visionPoint)
+            }
+            
+            // Select Best Candidate
+            var bestMatch: VNRectangleObservation?
+            
+            if !strictlyContaining.isEmpty {
+                // If inside multiple, pick the one centered closest to tap
+                // (Smallest area is also good, but center alignment implies user intent)
+                bestMatch = strictlyContaining.min { a, b in
+                    // Distance squared to center
+                    let distA = (a.boundingBox.midX - visionPoint.x) * (a.boundingBox.midX - visionPoint.x) +
+                                (a.boundingBox.midY - visionPoint.y) * (a.boundingBox.midY - visionPoint.y)
+                    let distB = (b.boundingBox.midX - visionPoint.x) * (b.boundingBox.midX - visionPoint.x) +
+                                (b.boundingBox.midY - visionPoint.y) * (b.boundingBox.midY - visionPoint.y)
+                    return distA < distB
+                }
+            } else if !nearby.isEmpty {
+                // Pick closest
+                bestMatch = nearby.min { a, b in
+                    let distA = (a.boundingBox.midX - visionPoint.x) * (a.boundingBox.midX - visionPoint.x) +
+                                (a.boundingBox.midY - visionPoint.y) * (a.boundingBox.midY - visionPoint.y)
+                    let distB = (b.boundingBox.midX - visionPoint.x) * (b.boundingBox.midX - visionPoint.x) +
+                                (b.boundingBox.midY - visionPoint.y) * (b.boundingBox.midY - visionPoint.y)
+                    return distA < distB
+                }
+            }
             
             await MainActor.run {
                 if let match = bestMatch {
+                    // Convert Vision Box to SwiftUI Box
                     let finalRect = CGRect(
                         x: match.boundingBox.origin.x,
                         y: 1.0 - match.boundingBox.origin.y - match.boundingBox.height,
                         width: match.boundingBox.width,
                         height: match.boundingBox.height
                     )
+                    
                     self.panels.append(finalRect)
                     self.selectedPanelIndex = self.panels.count - 1
                     
                     let generator = UIImpactFeedbackGenerator(style: .medium)
                     generator.impactOccurred()
                 } else {
+                    // Fallback: Create standardized box at specific tap location
                     let boxSize = 0.3
                     let fallbackRect = CGRect(
-                        x: normalizedPoint.x - (boxSize/2),
-                        y: normalizedPoint.y - (boxSize/2),
+                        x: constrainedPoint.x - (boxSize/2),
+                        y: constrainedPoint.y - (boxSize/2),
                         width: boxSize,
                         height: boxSize
                     )
-                    var constrained = fallbackRect
-                    constrained.origin.x = max(0.0, min(fallbackRect.origin.x, 1.0 - boxSize))
-                    constrained.origin.y = max(0.0, min(fallbackRect.origin.y, 1.0 - boxSize))
                     
-                    self.panels.append(constrained)
+                    // Clamp to image bounds
+                    var clamped = fallbackRect
+                    if clamped.minX < 0 { clamped.origin.x = 0 }
+                    if clamped.minY < 0 { clamped.origin.y = 0 }
+                    if clamped.maxX > 1 { clamped.origin.x = 1.0 - clamped.width }
+                    if clamped.maxY > 1 { clamped.origin.y = 1.0 - clamped.height }
+                    
+                    self.panels.append(clamped)
                     self.selectedPanelIndex = self.panels.count - 1
                 }
                 self.isProcessing = false
