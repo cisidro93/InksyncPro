@@ -33,6 +33,35 @@ class ConversionManager: ObservableObject {
         loadLibrary()
         scanLibrary()
         createWelcomeFile()
+        performStartupOptimization()
+    }
+    
+    private func performStartupOptimization() {
+        let key = "hasRunStartupOptimization"
+        if UserDefaults.standard.bool(forKey: key) { return }
+        
+        let memory = ProcessInfo.processInfo.physicalMemory
+        let ramGB = Double(memory) / 1024.0 / 1024.0 / 1024.0
+        
+        print("📱 [Optimization] Detecting Device Capabilities: \(String(format: "%.1f", ramGB)) GB RAM")
+        
+        if ramGB > 5.5 {
+            // High End Device (iPad Pro M1/M2/M4, iPhone 14 Pro+, etc) -> >6GB
+            // We can default to higher quality and enable advanced features
+            conversionSettings.compressionQuality = .high
+            // We don't force 'enablePanelSplit' because that changes UX, but we prepare quality.
+        } else if ramGB < 3.5 {
+            // Low End Device (~3GB or less) -> Older iPads, standard iPhones
+            // Prioritize stability
+            conversionSettings.compressionQuality = .compact
+        } else {
+            // Mid Range (4GB-5GB)
+            conversionSettings.compressionQuality = .balanced
+        }
+        
+        // Save that we have optimized
+        UserDefaults.standard.set(true, forKey: key)
+        saveSettings()
     }
     
     private func createWelcomeFile() {
