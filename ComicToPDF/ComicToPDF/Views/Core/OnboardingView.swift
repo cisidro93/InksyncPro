@@ -6,28 +6,28 @@ struct OnboardingView: View {
     
     let pages: [OnboardingPageModel] = [
         OnboardingPageModel(
-            image: "book.fill",
-            color: .orange,
-            title: "Welcome to Inksync Pro",
-            description: "The ultimate tool to convert, organize, and transfer your digital comic library."
+            image: "sparkles.rectangle.stack.fill",
+            color: .purple,
+            title: "AI & Magic Wand",
+            description: "Smart panel detection learns from your edits. Use the Magic Wand to instantly select panels, or let the AI do it for you."
         ),
         OnboardingPageModel(
-            image: "rectangle.split.3x3.fill",
+            image: "iphone.gen3",
             color: .blue,
-            title: "Smart Panel Detection",
-            description: "Automatically splits wide landscape spreads into single pages for perfect reading on Kindle."
+            title: "Device Optimization",
+            description: "The app automatically tunes itself to your device's capabilities on startup for the best balance of quality and performance."
         ),
         OnboardingPageModel(
-            image: "bolt.fill",
-            color: .yellow,
-            title: "Instant Conversion",
-            description: "Simply drag files into your library, and we'll automatically convert them to your preferred format in the background."
+            image: "slider.horizontal.3",
+            color: .orange,
+            title: "Powerful Editor",
+            description: "Trim edges, reorder pages, and adjust panels manually. Your library, exactly how you want it."
         ),
         OnboardingPageModel(
-            image: "wifi",
+            image: "doc.on.doc.fill",
             color: .green,
-            title: "Wi-Fi Transfer",
-            description: "Tap the Wi-Fi icon to drag-and-drop comics directly from your computer."
+            title: "Format Support",
+            description: "Full support for CBZ, ZIP, EPUB, and PDF files. Drag and drop to import or transfer via Wi-Fi."
         )
     ]
     
