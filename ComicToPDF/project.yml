@@ -30,3 +30,5 @@ targets:
       properties:
         CFBundleVersion: "1"
         CFBundleShortVersionString: "1.0.0"
+        UILaunchStoryboardName: LaunchScreen
+        UIRequiresFullScreen: true
