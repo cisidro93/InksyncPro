@@ -6,13 +6,15 @@ struct AdaptiveParameters: Codable, Equatable {
     var minSize: CGFloat
     var tolerance: Int
     var expandRatio: CGFloat
+    var saliencyThreshold: Float // NEW: For Neural Saliency
     
     // Default "Factory" Settings
     static let defaults = AdaptiveParameters(
         minConfidence: 0.85,
         minSize: 0.15,
         tolerance: 30, // Vision Quadrature Tolerance
-        expandRatio: 0.0 // No expansion by default
+        expandRatio: 0.0, // No expansion by default
+        saliencyThreshold: 0.5 // Default moderate saliency
     )
 }
 

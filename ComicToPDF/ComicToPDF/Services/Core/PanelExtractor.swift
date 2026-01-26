@@ -8,6 +8,7 @@ struct PanelExtractor {
         case automatic
         case conservative
         case aggressive
+        case neural
         case grid
         
         var title: String {
@@ -15,6 +16,7 @@ struct PanelExtractor {
             case .automatic: return "Automatic"
             case .conservative: return "Conservative"
             case .aggressive: return "Aggressive"
+            case .neural: return "Neural Enhanced"
             case .grid: return "Grid (2x2)"
             }
         }
@@ -48,53 +50,105 @@ struct PanelExtractor {
             return generateGridPanels(rows: 2, cols: 2)
         }
         
+        // 1. Run Detection Requests (Rectangles + optional Saliency)
         return await withCheckedContinuation { continuation in
-            let request = VNDetectRectanglesRequest { request, error in
-                guard let results = request.results as? [VNRectangleObservation] else {
-                    continuation.resume(returning: [])
-                    return
-                }
-                
-                // ✅ Use Adaptive Settings if mode is Automatic
-                let settings = AdaptiveLearningManager.shared.getParameters()
-                
-                var confidenceThreshold: Float
-                var minSize: CGFloat
-                
-                switch mode {
-                case .aggressive:
-                    confidenceThreshold = 0.3
-                    minSize = 0.1
-                case .conservative:
-                    confidenceThreshold = 0.85
-                    minSize = 0.15
-                case .automatic:
-                    // Use Learned Values
-                    confidenceThreshold = settings.minConfidence
-                    minSize = settings.minSize
-                default:
-                    confidenceThreshold = 0.85
-                    minSize = 0.15
-                }
-                
-                let rawPanels = results
-                    .filter { $0.confidence > confidenceThreshold }
-                    .filter { $0.boundingBox.width > minSize && $0.boundingBox.height > minSize }
-                    .map { Panel(boundingBox: $0.boundingBox) }
-                
-                // ✅ Fix: Use Recursive Row Clustering
-                let sorted = clusterAndSortPanels(rawPanels, mangaMode: mangaMode)
-                continuation.resume(returning: sorted)
+            var requests: [VNRequest] = []
+            
+            // A. Rectangle Request
+            let rectRequest = VNDetectRectanglesRequest()
+            // Configure Rect Request based on mode
+            let settings = AdaptiveLearningManager.shared.getParameters()
+            
+            switch mode {
+            case .aggressive:
+                rectRequest.minimumConfidence = 0.1
+                rectRequest.minimumSize = 0.1
+            case .conservative:
+                rectRequest.minimumConfidence = 0.85
+                rectRequest.minimumSize = 0.15
+            case .automatic, .neural:
+                rectRequest.minimumConfidence = settings.minConfidence
+                rectRequest.minimumSize = Float(settings.minSize)
+            default:
+                rectRequest.minimumConfidence = 0.6
+                rectRequest.minimumSize = 0.1
+            }
+            rectRequest.minimumAspectRatio = 0.1
+            rectRequest.maximumAspectRatio = 5.0
+            rectRequest.quadratureTolerance = VNDetectRectanglesRequestRevision1
+            
+            requests.append(rectRequest)
+            
+            // B. Saliency Request (Neural) if automatic or neural
+            var saliencyRequest: VNGenerateObjectnessBasedSaliencyImageRequest?
+            if mode == .automatic || mode == .neural {
+                let sRequest = VNGenerateObjectnessBasedSaliencyImageRequest()
+                sRequest.revision = VNGenerateObjectnessBasedSaliencyImageRequestRevision1
+                requests.append(sRequest)
+                saliencyRequest = sRequest
             }
             
-            request.minimumConfidence = (mode == .aggressive) ? 0.1 : 0.6
-            request.minimumAspectRatio = 0.1
-            request.maximumAspectRatio = 5.0
-            request.minimumSize = 0.1
-            request.quadratureTolerance = 30
-            
+            // Run Handler
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            try? handler.perform([request])
+            do {
+                try handler.perform(requests)
+                
+                // 2. Process Results
+                
+                // Get Rectangles
+                let rawRects = (rectRequest.results ?? [])
+                    .filter { $0.confidence > rectRequest.minimumConfidence }
+                    .map { $0.boundingBox }
+                
+                var finalPanels: [CGRect] = rawRects
+                
+                // Get Saliency & Fuse
+                if let sResults = saliencyRequest?.results?.first as? VNSaliencyImageObservation,
+                   (mode == .automatic || mode == .neural) {
+                    
+                    // Extract interesting objects from Saliency Heatmap
+                    let salientObjects = sResults.salientObjects?.map { $0.boundingBox } ?? []
+                    
+                    // FUSION LOGIC:
+                    // 1. Validate Rects: If a rect has NO overlap with any salient object, it might be noise (unless conservative).
+                    // 2. Discovery: If a salient object is large enough and implies a panel missed by Rects, add it.
+                    
+                    var fused: [CGRect] = []
+                    
+                    // A. Validate Existing Rects
+                    for rect in rawRects {
+                        // Check overlap with any salient object
+                        let hasSupport = salientObjects.contains { $0.intersects(rect) }
+                        if hasSupport || mode != .neural { // In pure Neural mode, be stricter? No, safe fallback.
+                            fused.append(rect)
+                        }
+                    }
+                    
+                    // B. Add Missing Saliency Regions
+                    for salient in salientObjects {
+                        // Ignore if it's already covered by a known rect
+                        let isCovered = fused.contains { $0.intersection(salient).width * $0.intersection(salient).height > (salient.width * salient.height * 0.5) }
+                        
+                        if !isCovered {
+                            // Ensure it's big enough to be a panel
+                            if salient.width > 0.15 && salient.height > 0.15 {
+                                fused.append(salient)
+                            }
+                        }
+                    }
+                    
+                    finalPanels = fused
+                }
+                
+                // 3. Create Panels & Sort
+                let panels = finalPanels.map { Panel(boundingBox: $0) }
+                let sorted = clusterAndSortPanels(panels, mangaMode: mangaMode)
+                continuation.resume(returning: sorted)
+                
+            } catch {
+                print("Vision Request Failed: \(error)")
+                continuation.resume(returning: [])
+            }
         }
     }
     
