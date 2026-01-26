@@ -81,11 +81,20 @@ struct PanelExtractor {
             
             // B. Saliency Request (Neural) if automatic or neural
             var saliencyRequest: VNGenerateObjectnessBasedSaliencyImageRequest?
+            var textRequest: VNRecognizeTextRequest? // ✅ NEW
+            
             if mode == .automatic || mode == .neural {
                 let sRequest = VNGenerateObjectnessBasedSaliencyImageRequest()
                 sRequest.revision = VNGenerateObjectnessBasedSaliencyImageRequestRevision1
                 requests.append(sRequest)
                 saliencyRequest = sRequest
+                
+                // ✅ NEW: Text Request
+                let tRequest = VNRecognizeTextRequest()
+                tRequest.recognitionLevel = .fast // Fast is sufficient for bounding boxes
+                tRequest.usesLanguageCorrection = false
+                requests.append(tRequest)
+                textRequest = tRequest
             }
             
             // Run Handler
@@ -138,6 +147,29 @@ struct PanelExtractor {
                     }
                     
                     finalPanels = fused
+                }
+                
+                // ✅ NEW: Text Guard (Speech Bubble Awareness)
+                // If text is detected near the edge of a panel, expand the panel to include it.
+                if let textResults = textRequest?.results as? [VNRecognizedTextObservation], !textResults.isEmpty {
+                    var guardedPanels: [CGRect] = []
+                    
+                    for var panel in finalPanels {
+                        for textObs in textResults {
+                            let textRect = textObs.boundingBox
+                            
+                            // Check if text is INSIDE or INTERSECTS or is VERY CLOSE to the panel
+                            // Expansion logic: If text overlaps, union it.
+                            // If text is within 2% margin, snap it in.
+                            
+                            let expandedPanel = panel.insetBy(dx: -0.02, dy: -0.02) // Look slightly outside
+                            if expandedPanel.intersects(textRect) {
+                                panel = panel.union(textRect)
+                            }
+                        }
+                        guardedPanels.append(panel)
+                    }
+                    finalPanels = guardedPanels
                 }
                 
                 // 3. Create Panels & Sort
