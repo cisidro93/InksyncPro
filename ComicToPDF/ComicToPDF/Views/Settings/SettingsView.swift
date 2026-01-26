@@ -12,7 +12,6 @@ struct SettingsView: View {
     var body: some View {
         Form {
 
-        Form {
 
             // ✅ NEW: Appearance Section
             Section(header: Text("Appearance")) {
