@@ -75,7 +75,7 @@ struct PanelExtractor {
             }
             rectRequest.minimumAspectRatio = 0.1
             rectRequest.maximumAspectRatio = 5.0
-            rectRequest.quadratureTolerance = VNDetectRectanglesRequestRevision1
+            rectRequest.quadratureTolerance = 30 // Fixed: Was incorrectly assigning Revision1
             
             requests.append(rectRequest)
             
