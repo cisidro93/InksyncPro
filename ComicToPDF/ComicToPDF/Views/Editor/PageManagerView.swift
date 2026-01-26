@@ -298,7 +298,6 @@ struct PageManagerView: View {
             // Trigger load once
             await viewModel.loadPages(from: pdf)
         }
-        }
         .sheet(item: Binding<Int?>(
             get: { conversionManager.conversionSettings.panelEditorMode == .sheet ? pageToEdit : nil },
             set: { if $0 == nil { pageToEdit = nil } }
