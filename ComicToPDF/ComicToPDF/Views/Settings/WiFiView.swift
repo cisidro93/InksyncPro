@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit // Required for UIColor
 
 struct WiFiView: View {
     @StateObject private var server = WiFiServer()

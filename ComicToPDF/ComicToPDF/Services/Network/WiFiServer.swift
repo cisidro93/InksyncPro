@@ -10,6 +10,8 @@ class WiFiServer: ObservableObject {
     
     // Session State
     private var validSessions: Set<String> = []
+    private let sessionLock = NSLock() // ✅ Fix: Thread Safety
+    
     
     // ✅ NEW: Progress Tracking
     @Published var uploadProgress: Double = 0.0
@@ -28,7 +30,10 @@ class WiFiServer: ObservableObject {
             self.errorMessage = nil 
             self.securityCode = String(format: "%04d", Int.random(in: 0...9999)) // Generate PIN
             self.activeConnections = 0
+            
+            self.sessionLock.lock()
             self.validSessions.removeAll()
+            self.sessionLock.unlock()
         }
         
         do {
@@ -81,7 +86,10 @@ class WiFiServer: ObservableObject {
             self.isRunning = false
             self.isUploading = false
             self.activeConnections = 0
+            
+            self.sessionLock.lock()
             self.validSessions.removeAll()
+            self.sessionLock.unlock()
         }
     }
     
@@ -187,8 +195,12 @@ class WiFiServer: ObservableObject {
         }
         
         // Validate Session
-        if let token = sessionToken, validSessions.contains(token) {
-            context.isAuthenticated = true
+        if let token = sessionToken {
+            sessionLock.lock()
+            if validSessions.contains(token) {
+                context.isAuthenticated = true
+            }
+            sessionLock.unlock()
         }
         
         let method = parts[0]
@@ -253,7 +265,10 @@ class WiFiServer: ObservableObject {
             if submittedPin == self.securityCode {
                 // Success
                 let newToken = UUID().uuidString
-                DispatchQueue.main.async { self.validSessions.insert(newToken) }
+                
+                sessionLock.lock()
+                validSessions.insert(newToken)
+                sessionLock.unlock()
                 
                 // Set Cookie and Redirect to /
                 let response = """
