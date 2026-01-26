@@ -4,8 +4,12 @@ import UIKit
 
 class WiFiServer: ObservableObject {
     private var listener: NWListener?
-    @Published var isRunning = false
-    @Published var serverURL: String = ""
+    @Published var errorMessage: String?
+    @Published var securityCode: String = "" // ✅ NEW: Security PIN
+    @Published var activeConnections: Int = 0 // ✅ NEW: Monitoring
+    
+    // Session State
+    private var validSessions: Set<String> = []
     
     // ✅ NEW: Progress Tracking
     @Published var uploadProgress: Double = 0.0
@@ -19,6 +23,14 @@ class WiFiServer: ObservableObject {
         guard !isRunning else { return }
         triggerLocalNetworkPrivacyAlert()
         
+        // Reset State
+        DispatchQueue.main.async { 
+            self.errorMessage = nil 
+            self.securityCode = String(format: "%04d", Int.random(in: 0...9999)) // Generate PIN
+            self.activeConnections = 0
+            self.validSessions.removeAll()
+        }
+        
         do {
             let params = NWParameters(tls: nil)
             params.allowLocalEndpointReuse = true
@@ -31,13 +43,17 @@ class WiFiServer: ObservableObject {
                 guard let self = self else { return }
                 switch state {
                 case .ready:
-                    print("🚀 Server Ready on port 8080")
+                    print("🚀 Server Ready on port 8080. PIN: \(self.securityCode)")
                     DispatchQueue.main.async {
                         self.isRunning = true
-                        self.serverURL = "http://\(self.getIPAddress() ?? "localhost"):8080"
+                        let ip = self.getIPAddress() ?? "localhost"
+                        self.serverURL = "http://\(ip):8080"
                     }
                 case .failed(let error):
                     print("Server failed: \(error)")
+                    DispatchQueue.main.async {
+                        self.errorMessage = "Failed to start server: \(error.localizedDescription)"
+                    }
                     self.stop()
                 default: break
                 }
@@ -52,6 +68,9 @@ class WiFiServer: ObservableObject {
             
         } catch {
             print("Failed to start server: \(error)")
+            DispatchQueue.main.async {
+                self.errorMessage = "Could not bind to port: \(error.localizedDescription)"
+            }
         }
     }
     
@@ -61,6 +80,8 @@ class WiFiServer: ObservableObject {
         DispatchQueue.main.async {
             self.isRunning = false
             self.isUploading = false
+            self.activeConnections = 0
+            self.validSessions.removeAll()
         }
     }
     
@@ -75,9 +96,22 @@ class WiFiServer: ObservableObject {
         var fileHandle: FileHandle?
         var destinationURL: URL?
         var filename: String = ""
+        var isAuthenticated = false // Track auth per request context
     }
     
     private func handleConnection(_ connection: NWConnection) {
+        // Track Connection Start
+        DispatchQueue.main.async { self.activeConnections += 1 }
+        
+        // Track Connection End
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .cancelled, .failed:
+                DispatchQueue.main.async { self?.activeConnections = max(0, (self?.activeConnections ?? 1) - 1) }
+            default: break
+            }
+        }
+        
         let context = ConnectionContext()
         connection.start(queue: .global(qos: .default))
         receive(on: connection, context: context)
@@ -92,12 +126,9 @@ class WiFiServer: ObservableObject {
             }
             
             if isComplete {
-                print("Connection closed by client.")
-                self.cleanup(context: context)
                 connection.cancel()
             } else if let error = error {
                 print("Connection error: \(error)")
-                self.cleanup(context: context)
                 connection.cancel()
             } else {
                 // Continue reading
@@ -113,41 +144,71 @@ class WiFiServer: ObservableObject {
             // Look for Double CRLF (End of Headers)
             if let range = context.buffer.range(of: Data("\r\n\r\n".utf8)) {
                 let headerData = context.buffer[..<range.lowerBound]
-                let bodyData = context.buffer[range.upperBound...] // Remaining data is part of body
+                let bodyData = context.buffer[range.upperBound...] // Remaining data is part of body or POST payload
                 
                 if let headerString = String(data: headerData, encoding: .utf8) {
-                    parseHeaders(headerString, connection: connection, context: context)
+                    parseHeaders(headerString, bodyData: bodyData, connection: connection, context: context)
                 }
                 
-                // If we successfully parsed headers and are in streaming mode, write the remainder
-                if context.isHeaderParsed && !bodyData.isEmpty {
-                    writeBodyData(bodyData, context: context)
-                    checkUploadCompletion(connection: connection, context: context)
-                }
-                
-                // Clear buffer as we are now streaming
-                context.buffer = Data() 
+                // Note: We don't clear buffer here immediately because POST requests might need the body data we just split
             }
         } else {
-            // Streaming Mode
-            writeBodyData(data, context: context)
-            checkUploadCompletion(connection: connection, context: context)
+            // Streaming Mode (Uploads)
+            // Only write if we are authenticated and expecting a file
+            if context.isAuthenticated && context.fileHandle != nil {
+                writeBodyData(data, context: context)
+                checkUploadCompletion(connection: connection, context: context)
+            }
         }
     }
     
-    private func parseHeaders(_ headerString: String, connection: NWConnection, context: ConnectionContext) {
+    private func parseHeaders(_ headerString: String, bodyData: Data, connection: NWConnection, context: ConnectionContext) {
         let lines = headerString.components(separatedBy: "\r\n")
         guard let firstLine = lines.first else { return }
-        
-        // Debug
-        // print("Headers: \(headerString)")
         
         let parts = firstLine.components(separatedBy: " ")
         guard parts.count >= 2 else { return }
         
+        // 1. Check Authentication (Cookie)
+        var sessionToken: String?
+        for line in lines {
+            if line.lowercased().hasPrefix("cookie:") {
+                let components = line.components(separatedBy: ":")
+                if components.count > 1 {
+                    let cookies = components[1].components(separatedBy: ";")
+                    for cookie in cookies {
+                        let trimmed = cookie.trimmingCharacters(in: .whitespaces)
+                        if trimmed.hasPrefix("session=") {
+                            sessionToken = String(trimmed.dropFirst("session=".count))
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Validate Session
+        if let token = sessionToken, validSessions.contains(token) {
+            context.isAuthenticated = true
+        }
+        
         let method = parts[0]
         let path = parts[1].removingPercentEncoding ?? "/"
         
+        // 2. Handle Login POST separately (Does not require auth)
+        if method == "POST" && path == "/login" {
+            handleLogin(lines: lines, bodyData: bodyData, connection: connection)
+            return
+        }
+        
+        // 3. Enforce Auth for everything else
+        guard context.isAuthenticated else {
+            // Serve Login Page
+            let html = generateLoginPage()
+            sendResponse(connection, 200, html, contentType: "text/html")
+            return
+        }
+        
+        // 4. Handle Authorized Requests
         if method == "GET" {
             handleGetRequest(path: path, connection: connection)
         } else if method == "POST" {
@@ -165,7 +226,84 @@ class WiFiServer: ObservableObject {
             
             context.filename = fileName
             setupUpload(context: context)
+            
+            // Streaming Logic
+            context.isHeaderParsed = true 
+            
+            if !bodyData.isEmpty {
+                writeBodyData(bodyData, context: context)
+                checkUploadCompletion(connection: connection, context: context)
+            }
+            
+            context.buffer = Data()
         }
+    }
+    
+    private func handleLogin(lines: [String], bodyData: Data, connection: NWConnection) {
+        // Parse "pin=1234" from body
+        guard let bodyString = String(data: bodyData, encoding: .utf8) else {
+            sendResponse(connection, 400, "Bad Request")
+            return
+        }
+        
+        let components = bodyString.components(separatedBy: "=")
+        if components.count == 2 && components[0] == "pin" {
+            let submittedPin = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            if submittedPin == self.securityCode {
+                // Success
+                let newToken = UUID().uuidString
+                DispatchQueue.main.async { self.validSessions.insert(newToken) }
+                
+                // Set Cookie and Redirect to /
+                let response = """
+                HTTP/1.1 302 Found\r
+                Location: /\r
+                Set-Cookie: session=\(newToken); Path=/; Max-Age=3600\r
+                Content-Length: 0\r
+                Connection: close\r
+                \r
+                """
+                connection.send(content: response.data(using: .utf8), completion: .contentProcessed({ _ in connection.cancel() }))
+                
+            } else {
+                let html = generateLoginPage(error: "Invalid PIN")
+                sendResponse(connection, 401, html, contentType: "text/html")
+            }
+        } else {
+             let html = generateLoginPage(error: "Invalid Format")
+             sendResponse(connection, 400, html, contentType: "text/html")
+        }
+    }
+
+    private func generateLoginPage(error: String? = nil) -> String {
+        return """
+        <html>
+        <head>
+            <title>Login - Inksync Pro</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body { font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f2f2f7; margin: 0; }
+                .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; width: 90%; max-width: 320px; }
+                h1 { margin-bottom: 20px; color: #1c1c1e; }
+                input { font-size: 24px; padding: 10px; text-align: center; letter-spacing: 5px; width: 100%; box-sizing: border-box; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; }
+                button { background: #007aff; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+                .error { color: red; margin-bottom: 15px; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>Authentication</h1>
+                \(error != nil ? "<div class='error'>\(error!)</div>" : "")
+                <p>Enter the 4-digit PIN displayed in the app.</p>
+                <form method="POST" action="/login">
+                    <input type="tel" name="pin" maxlength="4" placeholder="0000" autofocus required>
+                    <button type="submit">Connect</button>
+                </form>
+            </div>
+        </body>
+        </html>
+        """
     }
     
     private func setupUpload(context: ConnectionContext) {
@@ -428,22 +566,54 @@ class WiFiServer: ObservableObject {
         return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
     }
     
+    @Published var errorMessage: String? // ✅ NEW: Error Handling
+    
+    // ... (Existing properties)
+
+    // Robust IP Address Detection
     private func getIPAddress() -> String? {
         var address: String?
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        
         if getifaddrs(&ifaddr) == 0 {
             var ptr = ifaddr
             while ptr != nil {
                 defer { ptr = ptr?.pointee.ifa_next }
-                let interface = ptr?.pointee
-                let addrFamily = interface?.ifa_addr.pointee.sa_family
+                
+                guard let interface = ptr?.pointee else { continue }
+                let addrFamily = interface.ifa_addr.pointee.sa_family
+                
+                // Check for IPv4 or IPv6
                 if addrFamily == UInt8(AF_INET) || addrFamily == UInt8(AF_INET6) {
-                    if let cString = interface?.ifa_name,
-                       let name = String(cString: cString, encoding: .utf8),
-                       name == "en0" {
+                    
+                    if let cString = interface.ifa_name,
+                       let name = String(cString: cString, encoding: .utf8) {
+                        
+                        // Ignore Loopback
+                        if name == "lo0" { continue }
+                        
+                        // Get the String representation
                         var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                        getnameinfo(interface?.ifa_addr, socklen_t(interface?.ifa_addr.pointee.sa_len ?? 0), &hostname, socklen_t(hostname.count), nil, socklen_t(0), NI_NUMERICHOST)
-                        address = String(cString: hostname)
+                        getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len), &hostname, socklen_t(hostname.count), nil, socklen_t(0), NI_NUMERICHOST)
+                        
+                        let ipString = String(cString: hostname)
+                        
+                        // Prioritize "en0" (WiFi) but accept others (like en1 on Sim)
+                        if name == "en0" {
+                            address = ipString
+                            // If we found en0, stop searching, it's the best one.
+                            // However, we prefer IPv4 over IPv6 for the URL usually, but let's just stick to the first valid en0 for now.
+                            // Actually, many users struggle with IPv6 URLs, so let's prefer IPv4.
+                            if addrFamily == UInt8(AF_INET) {
+                                freeifaddrs(ifaddr)
+                                return ipString
+                            }
+                        } else if address == nil {
+                            // Fallback to first non-loopback found (e.g. en1)
+                            if addrFamily == UInt8(AF_INET) {
+                                address = ipString
+                            }
+                        }
                     }
                 }
             }

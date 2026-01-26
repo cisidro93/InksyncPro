@@ -16,18 +16,46 @@ struct WiFiView: View {
                     .font(.title2).bold()
                 
                 if server.isRunning {
-                    VStack(spacing: 15) {
-                        Text("Type this URL into your computer's browser:")
-                            .foregroundColor(.secondary)
+                    VStack(spacing: 20) {
+                        VStack(spacing: 5) {
+                            Text("Type this URL into your browser:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            Text(server.serverURL)
+                                .font(.system(.title3, design: .monospaced))
+                                .fontWeight(.bold)
+                                .padding(10)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(8)
+                                .textSelection(.enabled)
+                        }
                         
-                        Text(server.serverURL)
-                            .font(.system(.title, design: .monospaced))
-                            .fontWeight(.bold)
-                            .padding()
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(10)
-                            .textSelection(.enabled)
+                        Divider()
+                        
+                        VStack(spacing: 5) {
+                            Text("Security Code (PIN)")
+                                .font(.caption)
+                                .textCase(.uppercase)
+                                .foregroundColor(.secondary)
+                            
+                            Text(server.securityCode)
+                                .font(.system(size: 44, weight: .heavy, design: .monospaced))
+                                .foregroundColor(.blue)
+                                .padding(.horizontal)
+                        }
+                        
+                        HStack {
+                            Image(systemName: "network")
+                            Text("\(server.activeConnections) Active Connection\(server.activeConnections == 1 ? "" : "s")")
+                        }
+                        .font(.footnote)
+                        .foregroundColor(server.activeConnections > 0 ? .green : .secondary)
+                        .padding(.top, 5)
                     }
+                    .padding()
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(16)
                 }
                 
                 // ✅ NEW: Progress UI
@@ -85,6 +113,19 @@ struct WiFiView: View {
                 }
             }
             .onDisappear { server.stop() }
+            // ✅ NEW: Error Alert
+            .alert(item: Binding<ErrorWrapper?>(
+                get: { server.errorMessage.map { ErrorWrapper(id: UUID(), message: $0) } },
+                set: { _ in server.errorMessage = nil }
+            )) { wrapper in
+                Alert(title: Text("Server Error"), message: Text(wrapper.message), dismissButton: .default(Text("OK")))
+            }
         }
     }
+}
+
+// Helper for Alert Binding
+struct ErrorWrapper: Identifiable {
+    let id: UUID
+    let message: String
 }
