@@ -12,6 +12,24 @@ struct SettingsView: View {
     var body: some View {
         Form {
 
+        Form {
+
+            // ✅ NEW: Appearance Section
+            Section(header: Text("Appearance")) {
+                Picker("Text Size", selection: $conversionManager.conversionSettings.textSize) {
+                    ForEach(AppTextSize.allCases) { size in
+                        Text(size.rawValue).tag(size)
+                    }
+                }
+                .pickerStyle(.segmented)
+                
+                HStack {
+                    Image(systemName: "textformat.size")
+                    Text("Adjusts the app's font scaling.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
             
             Section(header: Text("Optimization")) {
                 Picker("Compression", selection: $conversionManager.conversionSettings.compressionQuality) {

@@ -37,6 +37,8 @@ struct ContentView: View {
             }
         }
         .environmentObject(conversionManager)
+        // ✅ NEW: Apply Dynamic Text Size Globally
+        .environment(\.dynamicTypeSize, conversionManager.conversionSettings.textSize.swiftUIValue)
         // ✅ Show Onboarding on First Launch
         .fullScreenCover(isPresented: Binding(
             get: { !hasShownOnboarding },
