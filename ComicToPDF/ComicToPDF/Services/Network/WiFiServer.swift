@@ -7,6 +7,8 @@ class WiFiServer: ObservableObject {
     @Published var errorMessage: String?
     @Published var securityCode: String = "" // ✅ NEW: Security PIN
     @Published var activeConnections: Int = 0 // ✅ NEW: Monitoring
+    @Published var isRunning = false
+    @Published var serverURL: String?
     
     // Session State
     private var validSessions: Set<String> = []
@@ -581,7 +583,7 @@ class WiFiServer: ObservableObject {
         return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
     }
     
-    @Published var errorMessage: String? // ✅ NEW: Error Handling
+    // Removed duplicate errorMessage declaration
     
     // ... (Existing properties)
 

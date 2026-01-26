@@ -23,7 +23,7 @@ struct ZipUtilities {
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
                     
                     // 3. Initialize Archive
-                    guard let archive = try? Archive(url: sourceURL, accessMode: .read, preferredEncoding: nil) else {
+                    guard let archive = try? Archive(url: sourceURL, accessMode: .read) else {
                         throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
                     }
                     
