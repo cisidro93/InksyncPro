@@ -124,7 +124,7 @@ class ConversionManager: ObservableObject {
         let fileManager = FileManager.default
         let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         
-        do {
+
             // Recursive Scan
             // We use enumerator to find files deep in folders
             var newPDFs: [ConvertedPDF] = []
@@ -158,9 +158,7 @@ class ConversionManager: ObservableObject {
             // Cleanup: Remove missing files
             convertedPDFs.removeAll { !fileManager.fileExists(atPath: $0.url.path) }
             
-        } catch {
-            print("Scan Error: \(error)")
-        }
+
     }
     
     func deletePDF(_ pdf: ConvertedPDF) {
@@ -475,7 +473,7 @@ class ConversionManager: ObservableObject {
             return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
         }
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
-            guard let archive = try? Archive(url: url, accessMode: .read, preferredEncoding: nil) else { return nil }
+            guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
             let sortedEntries = archive.makeIterator().sorted { $0.path < $1.path }
             for entry in sortedEntries {
                 let entryExt = (entry.path as NSString).pathExtension.lowercased()
@@ -532,8 +530,8 @@ class ConversionManager: ObservableObject {
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
             defer { try? fileManager.removeItem(at: tempDir); try? fileManager.removeItem(at: tempArchiveURL) }
             
-            guard let sourceArchive = try? Archive(url: sourceURL, accessMode: .read, preferredEncoding: nil),
-                  let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create, preferredEncoding: nil) else {
+            guard let sourceArchive = try? Archive(url: sourceURL, accessMode: .read),
+                  let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create) else {
                 throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
             }
             
@@ -593,8 +591,8 @@ class ConversionManager: ObservableObject {
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: tempDir); try? fileManager.removeItem(at: tempArchiveURL) }
         
-        guard let sourceArchive = try? Archive(url: url, accessMode: .read, preferredEncoding: nil),
-              let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create, preferredEncoding: nil) else {
+        guard let sourceArchive = try? Archive(url: url, accessMode: .read),
+              let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create) else {
             throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
         }
         
@@ -656,8 +654,8 @@ class ConversionManager: ObservableObject {
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
             defer { try? fileManager.removeItem(at: tempDir); try? fileManager.removeItem(at: tempArchiveURL) }
             
-            guard let sourceArchive = try? Archive(url: sourceURL, accessMode: .read, preferredEncoding: nil),
-                  let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create, preferredEncoding: nil) else {
+            guard let sourceArchive = try? Archive(url: sourceURL, accessMode: .read),
+                  let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create) else {
                 throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
             }
             
@@ -758,8 +756,8 @@ class ConversionManager: ObservableObject {
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: tempDir) }
         
-        guard let sourceArchive = try? Archive(url: pdf.url, accessMode: .read, preferredEncoding: nil),
-              let destArchive = try? Archive(url: outputURL, accessMode: .create, preferredEncoding: nil) else {
+        guard let sourceArchive = try? Archive(url: pdf.url, accessMode: .read),
+              let destArchive = try? Archive(url: outputURL, accessMode: .create) else {
             throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
         }
         

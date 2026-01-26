@@ -23,7 +23,7 @@ struct WiFiView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             
-                            Text(server.serverURL)
+                            Text(server.serverURL ?? "http://unknown-ip")
                                 .font(.system(.title3, design: .monospaced))
                                 .fontWeight(.bold)
                                 .padding(10)
