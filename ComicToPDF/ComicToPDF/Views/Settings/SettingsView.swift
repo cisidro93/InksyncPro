@@ -128,6 +128,14 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                     .padding(.vertical, 4)
                     
+                    // ✅ NEW: Editor Presentation Mode
+                    Picker("Editor Presentation", selection: $conversionManager.conversionSettings.panelEditorMode) {
+                        ForEach(PanelEditorPresentationMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
                     Picker("Detection Mode", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
                         Text("Automatic (Standard)").tag(PanelExtractor.ExtractionMode.automatic)
                         Text("Aggressive (Find More)").tag(PanelExtractor.ExtractionMode.aggressive)

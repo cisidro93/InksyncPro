@@ -298,14 +298,30 @@ struct PageManagerView: View {
             // Trigger load once
             await viewModel.loadPages(from: pdf)
         }
-        .sheet(item: $pageToEdit) { index in
-            PanelEditorView(
-                pdf: pdf,
-                pageIndex: index,
-                initialImage: selectedImageForEditor // ✅ Pass the loaded image
-            )
-            .environmentObject(conversionManager)
         }
+        .sheet(item: Binding<Int?>(
+            get: { conversionManager.conversionSettings.panelEditorMode == .sheet ? pageToEdit : nil },
+            set: { if $0 == nil { pageToEdit = nil } }
+        )) { index in
+            editorView(for: index)
+        }
+        .fullScreenCover(item: Binding<Int?>(
+            get: { conversionManager.conversionSettings.panelEditorMode == .fullScreen ? pageToEdit : nil },
+            set: { if $0 == nil { pageToEdit = nil } }
+        )) { index in
+            editorView(for: index)
+        }
+    }
+    
+    // ✅ Helper to avoid duplicating the view code
+    @ViewBuilder
+    func editorView(for index: Int) -> some View {
+        PanelEditorView(
+            pdf: pdf,
+            pageIndex: index,
+            initialImage: selectedImageForEditor
+        )
+        .environmentObject(conversionManager)
     }
     
     func toggleSelection(_ index: Int) {

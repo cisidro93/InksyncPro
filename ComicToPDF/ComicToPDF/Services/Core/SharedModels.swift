@@ -208,6 +208,14 @@ enum AppTextSize: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+// ✅ NEW: Panel Editor Presentation Mode
+enum PanelEditorPresentationMode: String, CaseIterable, Codable, Identifiable {
+    case sheet = "Windowed (Sheet)"
+    case fullScreen = "Full Screen"
+    
+    var id: String { rawValue }
+}
+
 struct ConversionSettings: Codable, Equatable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
@@ -218,6 +226,7 @@ struct ConversionSettings: Codable, Equatable {
     var splitMode: FileSizeSplitMode = .none
     var panelStrategy: PanelStrategy = .physical 
     var textSize: AppTextSize = .medium // ✅ New Preference 
+    var panelEditorMode: PanelEditorPresentationMode = .sheet // ✅ New Preference
     
     // ✅ Keychain Integration
     // We remove the stored property and use a computed one.
@@ -245,7 +254,7 @@ struct ConversionSettings: Codable, Equatable {
     
     // Custom Codable implementation to handle migration
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitMode, panelStrategy, epubSettings, imageEnhancement, textSize
+        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitMode, panelStrategy, epubSettings, imageEnhancement, textSize, panelEditorMode
         case comicVineAPIKey // Used for legacy read only
     }
     
@@ -264,6 +273,7 @@ struct ConversionSettings: Codable, Equatable {
         epubSettings = try container.decode(EPUBSettings.self, forKey: .epubSettings)
         imageEnhancement = try container.decode(ImageEnhancementSettings.self, forKey: .imageEnhancement)
         textSize = try container.decodeIfPresent(AppTextSize.self, forKey: .textSize) ?? .medium
+        panelEditorMode = try container.decodeIfPresent(PanelEditorPresentationMode.self, forKey: .panelEditorMode) ?? .sheet
         
         // ⚠️ MIGRATION: Check if JSON contains the legacy key
         if let legacyKey = try? container.decodeIfPresent(String.self, forKey: .comicVineAPIKey), !legacyKey.isEmpty {
@@ -287,6 +297,7 @@ struct ConversionSettings: Codable, Equatable {
         try container.encode(epubSettings, forKey: .epubSettings)
         try container.encode(imageEnhancement, forKey: .imageEnhancement)
         try container.encode(textSize, forKey: .textSize)
+        try container.encode(panelEditorMode, forKey: .panelEditorMode)
         // We purposefully DO NOT encode comicVineAPIKey so it disappears from JSON next save
     }
 }
