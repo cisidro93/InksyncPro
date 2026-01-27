@@ -472,7 +472,7 @@ class ConversionManager: ObservableObject {
             guard let document = PDFDocument(url: url), let page = document.page(at: 0) else { return nil }
             return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
         }
-        }
+
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
             do {
                 let archive = try Archive(url: url, accessMode: .read)
