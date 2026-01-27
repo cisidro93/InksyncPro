@@ -472,17 +472,22 @@ class ConversionManager: ObservableObject {
             guard let document = PDFDocument(url: url), let page = document.page(at: 0) else { return nil }
             return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
         }
+        }
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
-            guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
-            let sortedEntries = archive.makeIterator().sorted { $0.path < $1.path }
-            for entry in sortedEntries {
-                let entryExt = (entry.path as NSString).pathExtension.lowercased()
-                if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
-                    if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
-                    var data = Data()
-                    _ = try? archive.extract(entry) { data.append($0) }
-                    return UIImage(data: data)
+            do {
+                let archive = try Archive(url: url, accessMode: .read)
+                let sortedEntries = archive.makeIterator().sorted { $0.path < $1.path }
+                for entry in sortedEntries {
+                    let entryExt = (entry.path as NSString).pathExtension.lowercased()
+                    if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
+                        if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
+                        var data = Data()
+                        _ = try archive.extract(entry) { data.append($0) }
+                        return UIImage(data: data)
+                    }
                 }
+            } catch {
+                print("Thumbnail Extraction Error for \(url.lastPathComponent): \(error)")
             }
         }
         return nil
@@ -503,6 +508,45 @@ class ConversionManager: ObservableObject {
     func savePreset(_ preset: ConversionPreset) { conversionPresets.append(preset); saveLibrary() }
     func deletePreset(_ preset: ConversionPreset) { conversionPresets.removeAll { $0.id == preset.id }; saveLibrary() }
     func updatePDFMetadata(_ pdf: ConvertedPDF, metadata: PDFMetadata) { if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].metadata = metadata; saveLibrary() } }
+    
+    func renamePDF(_ pdf: ConvertedPDF, to newName: String) {
+        let cleanName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty, cleanName != pdf.name else { return }
+        
+        let fileManager = FileManager.default
+        let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let newURL = docDir.appendingPathComponent(cleanName).appendingPathExtension(pdf.url.pathExtension)
+        
+        // Prevent overwrite
+        if fileManager.fileExists(atPath: newURL.path) {
+            // Simple handling: fail or alert. For now, we will append a counter if we were fancy, but let's just return to avoid data loss.
+            print("Rename failed: File exists")
+            return
+        }
+        
+        do {
+            try fileManager.moveItem(at: pdf.url, to: newURL)
+            
+            // Update Model
+            if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                var updatedPDF = convertedPDFs[idx]
+                updatedPDF.name = cleanName
+                updatedPDF.url = newURL
+                convertedPDFs[idx] = updatedPDF
+                
+                // Move Thumbnail Cache
+                if let image = thumbnailCache.object(forKey: pdf.url.path as NSString) {
+                    thumbnailCache.setObject(image, forKey: newURL.path as NSString)
+                    thumbnailCache.removeObject(forKey: pdf.url.path as NSString)
+                }
+                
+                saveLibrary()
+                objectWillChange.send()
+            }
+        } catch {
+            print("Rename Error: \(error)")
+        }
+    }
     
     func createCollection(name: String, icon: String, color: String) {
         collections.append(PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date()))

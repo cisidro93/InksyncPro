@@ -19,6 +19,8 @@ struct LibraryView: View {
     // ✅ Fix: Data-Driven Sheet State (Prevents Blank Pages)
     @State private var pdfToShare: ConvertedPDF?
     @State private var pdfToEdit: ConvertedPDF?
+    @State private var pdfToRename: ConvertedPDF?
+    @State private var renameText = ""
     @State private var showingLargeFileAlert = false
     @State private var largeFilePDF: ConvertedPDF?
     
@@ -219,6 +221,21 @@ struct LibraryView: View {
             } message: {
                 Text("File is >100MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
             }
+            .alert("Rename File", isPresented: Binding(
+                get: { pdfToRename != nil },
+                set: { if !$0 { pdfToRename = nil } }
+            )) {
+                TextField("New Name", text: $renameText)
+                Button("Cancel", role: .cancel) { pdfToRename = nil }
+                Button("Rename") {
+                    if let pdf = pdfToRename {
+                        conversionManager.renamePDF(pdf, to: renameText)
+                    }
+                    pdfToRename = nil
+                }
+            } message: {
+                Text("Enter a new name for this file.")
+            }
         }
     }
     
@@ -407,6 +424,14 @@ struct LibraryView: View {
                             }
                         } label: {
                             Label("Export to Comic Vault", systemImage: "arrow.up.doc.fill")
+                        }
+                        
+                        // 6. Rename Matches
+                        Button {
+                            renameText = pdf.name
+                            pdfToRename = pdf
+                        } label: {
+                            Label("Rename", systemImage: "pencil")
                         }
                         
                         Divider()
