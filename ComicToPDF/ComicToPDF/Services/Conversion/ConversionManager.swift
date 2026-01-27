@@ -529,9 +529,17 @@ class ConversionManager: ObservableObject {
             
             // Update Model
             if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                var updatedPDF = convertedPDFs[idx]
-                updatedPDF.name = cleanName
-                updatedPDF.url = newURL
+                let updatedPDF = ConvertedPDF(
+                    id: pdf.id,
+                    name: cleanName,
+                    url: newURL,
+                    pageCount: pdf.pageCount,
+                    fileSize: pdf.fileSize,
+                    metadata: pdf.metadata,
+                    collectionId: pdf.collectionId,
+                    isFavorite: pdf.isFavorite,
+                    coverImageData: pdf.coverImageData
+                )
                 convertedPDFs[idx] = updatedPDF
                 
                 // Move Thumbnail Cache
