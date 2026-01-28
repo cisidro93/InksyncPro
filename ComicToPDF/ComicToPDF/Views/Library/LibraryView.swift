@@ -15,6 +15,7 @@ struct LibraryView: View {
     @State private var showingMergeSheet = false
     @State private var showingAddCollection = false
     @State private var newCollectionName = ""
+    @State private var showingWiFiSheet = false
     
     // ✅ Fix: Data-Driven Sheet State (Prevents Blank Pages)
     @State private var pdfToShare: ConvertedPDF?
@@ -92,6 +93,13 @@ struct LibraryView: View {
             }
             .navigationTitle("Library")
             .toolbar {
+                // ✅ Wi-Fi Transfer Button
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showingWiFiSheet = true }) {
+                         Image(systemName: "wifi")
+                    }
+                }
+                
                 // Sort Menu Removed (Moved to main view)
                 
                 // ✅ Select Button
@@ -160,6 +168,9 @@ struct LibraryView: View {
                         isImporting = false
                     }
                 })
+            }
+            .sheet(isPresented: $showingWiFiSheet) {
+                WiFiView()
             }
             // ✅ Fix: Sheet only presents when 'pdfToShare' is not nil
             .sheet(item: $pdfToShare) { pdf in
