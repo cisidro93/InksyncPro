@@ -886,16 +886,15 @@ class ConversionManager: ObservableObject {
         
         scanLibrary()
         
-        // ✅ NEW: Apply Panel Overrides to the newly created file
-        // We find it by path since we just created it
-        // Note: scanLibrary is synchronous in updating the array
+        // ✅ NEW: Apply Panel Overrides to the newly created file (In Memory)
         if let newPDF = convertedPDFs.first(where: { $0.url.standardizedFileURL.path == outputURL.standardizedFileURL.path }) {
             self.panelOverrides[newPDF.id] = newFileOverrides
             saveLibrary()
-            print("✅ Transferred \(newFileOverrides.count) panel configurations to new Split file.")
-        } else {
-            print("⚠️ Could not find new Split file in library to apply panels.")
         }
+        
+        // ✅ NEW: Inject Metadata into the File (On Disk)
+        // This ensures exports/shares have the panels inside
+        await injectMetadata(into: outputURL, panels: newFileOverrides, metadata: pdf.metadata)
         
         return outputURL
     }
@@ -1040,6 +1039,46 @@ class ConversionManager: ObservableObject {
         
         xml += "  </Pages>"
         return xml
+    }
+    
+    // ✅ NEW: Reusable Metadata Injection
+    private func injectMetadata(into archiveURL: URL, panels: [Int: [PanelExtractor.Panel]], metadata: PDFMetadata) async {
+        // 1. Convert Panels to SmartPanels format
+        var smartPanelsDict: [String: [SmartPanel]] = [:]
+        for (index, pagePanels) in panels {
+            let smartPanels = pagePanels.map { SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
+            smartPanelsDict["\(index)"] = smartPanels
+        }
+        
+        // 2. Generate XML
+        var xmlContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        xmlContent += "<ComicInfo>\n"
+        xmlContent += "  <Title>\(metadata.title)</Title>\n"
+        if let series = metadata.series { xmlContent += "  <Series>\(series)</Series>\n" }
+        // PageCount is implicit or we could calculate it, but optional for import reader usually
+        xmlContent += generatePagesXML(from: smartPanelsDict)
+        xmlContent += "\n</ComicInfo>"
+        
+        // 3. Write to Archive
+        guard let xmlData = xmlContent.data(using: .utf8) else { return }
+        
+        // Use ZIPFoundation to update
+        do {
+            guard let archive = try? Archive(url: archiveURL, accessMode: .update) else { return }
+            
+            // Remove old if exists
+            if let oldEntry = archive["ComicInfo.xml"] {
+                try archive.remove(oldEntry)
+            }
+            
+            try archive.addEntry(with: "ComicInfo.xml", type: .file, uncompressedSize: Int64(xmlData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                let start = Int(position)
+                let end = min(start + size, xmlData.count)
+                return xmlData.subdata(in: start..<end)
+            }
+        } catch {
+            print("⚠️ Failed to inject metadata: \(error)")
+        }
     }
 }
 
