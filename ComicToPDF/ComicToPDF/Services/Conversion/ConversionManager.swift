@@ -802,8 +802,13 @@ class ConversionManager: ObservableObject {
     // Split / Extract Logic
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL {
         let fileManager = FileManager.default
-        let newName = "\(pdf.name)_Split"
+        let newName = "\(pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: ""))_Split"
         let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("\(newName).cbz")
+        
+        // ✅ NEW: Prepare Panel Transfer
+        // We map SourceIndex -> NewIndex
+        let sourceOverrides = panelOverrides[pdf.id]
+        var newFileOverrides: [Int: [PanelExtractor.Panel]] = [:]
         
         // Reuse reordering logic but only for specific indices and writing to new file
         let tempID = UUID().uuidString
@@ -828,13 +833,18 @@ class ConversionManager: ObservableObject {
             guard originalIndex < imageEntries.count else { continue }
             let entry = imageEntries[originalIndex]
             
+            // 1. Transfer Panels
+            if let panels = sourceOverrides?[originalIndex] {
+                newFileOverrides[newIndex] = panels
+            }
+            
             let ext = (entry.path as NSString).pathExtension.lowercased()
             let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
             _ = try sourceArchive.extract(entry, to: tempFile)
             
-            let newName = "page_\(String(format: "%05d", newIndex)).\(ext)"
+            let newPageName = "page_\(String(format: "%05d", newIndex)).\(ext)"
             
-            try destArchive.addEntry(with: newName, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+            try destArchive.addEntry(with: newPageName, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
                 let fileHandle = try? FileHandle(forReadingFrom: tempFile)
                 try? fileHandle?.seek(toOffset: UInt64(position))
                 return fileHandle?.readData(ofLength: size) ?? Data()
@@ -843,6 +853,18 @@ class ConversionManager: ObservableObject {
         }
         
         scanLibrary()
+        
+        // ✅ NEW: Apply Panel Overrides to the newly created file
+        // We find it by path since we just created it
+        // Note: scanLibrary is synchronous in updating the array
+        if let newPDF = convertedPDFs.first(where: { $0.url.standardizedFileURL.path == outputURL.standardizedFileURL.path }) {
+            self.panelOverrides[newPDF.id] = newFileOverrides
+            saveLibrary()
+            print("✅ Transferred \(newFileOverrides.count) panel configurations to new Split file.")
+        } else {
+            print("⚠️ Could not find new Split file in library to apply panels.")
+        }
+        
         return outputURL
     }
     
