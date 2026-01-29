@@ -848,41 +848,42 @@ class ConversionManager: ObservableObject {
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: tempDir) }
         
-        guard let sourceArchive = try? Archive(url: pdf.url, accessMode: .read),
-              let destArchive = try? Archive(url: outputURL, accessMode: .create) else {
-            throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
-        }
-        
-        let sortedEntries = sourceArchive.makeIterator().sorted { $0.path < $1.path }
-        let imageEntries = sortedEntries.filter { entry in
-            let ext = (entry.path as NSString).pathExtension.lowercased()
-            return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
-        }
-        
-        // Sort indices to maintain relative order, or keep selection order?
-        // Usually split means "take these pages". We keep them in the order they appear in the array (allows reorder + split).
-        for (newIndex, originalIndex) in pageIndices.enumerated() {
-            guard originalIndex < imageEntries.count else { continue }
-            let entry = imageEntries[originalIndex]
-            
-            // 1. Transfer Panels
-            if let panels = sourceOverrides?[originalIndex] {
-                newFileOverrides[newIndex] = panels
+        // Scope the Archive creation so it releases the file lock immediately
+        try {
+            guard let sourceArchive = try? Archive(url: pdf.url, accessMode: .read),
+                  let destArchive = try? Archive(url: outputURL, accessMode: .create) else {
+                throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
             }
             
-            let ext = (entry.path as NSString).pathExtension.lowercased()
-            let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
-            _ = try sourceArchive.extract(entry, to: tempFile)
-            
-            let newPageName = "page_\(String(format: "%05d", newIndex)).\(ext)"
-            
-            try destArchive.addEntry(with: newPageName, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
-                let fileHandle = try? FileHandle(forReadingFrom: tempFile)
-                try? fileHandle?.seek(toOffset: UInt64(position))
-                return fileHandle?.readData(ofLength: size) ?? Data()
+            let sortedEntries = sourceArchive.makeIterator().sorted { $0.path < $1.path }
+            let imageEntries = sortedEntries.filter { entry in
+                let ext = (entry.path as NSString).pathExtension.lowercased()
+                return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
             }
-            try? fileManager.removeItem(at: tempFile)
-        }
+            
+            for (newIndex, originalIndex) in pageIndices.enumerated() {
+                guard originalIndex < imageEntries.count else { continue }
+                let entry = imageEntries[originalIndex]
+                
+                // 1. Transfer Panels (In Memory)
+                if let panels = sourceOverrides?[originalIndex] {
+                    newFileOverrides[newIndex] = panels
+                }
+                
+                let ext = (entry.path as NSString).pathExtension.lowercased()
+                let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
+                _ = try sourceArchive.extract(entry, to: tempFile)
+                
+                let newPageName = "page_\(String(format: "%05d", newIndex)).\(ext)"
+                
+                try destArchive.addEntry(with: newPageName, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                    let fileHandle = try? FileHandle(forReadingFrom: tempFile)
+                    try? fileHandle?.seek(toOffset: UInt64(position))
+                    return fileHandle?.readData(ofLength: size) ?? Data()
+                }
+                try? fileManager.removeItem(at: tempFile)
+            }
+        }()
         
         scanLibrary()
         
