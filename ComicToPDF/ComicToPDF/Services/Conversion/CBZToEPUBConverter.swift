@@ -228,29 +228,161 @@ class CBZToEPUBConverter {
     // ✅ OPTION B IMPLEMENTATION: CSS-Based Region Magnification
     private func generateXHTML(imageName: String, title: String, panels: [PanelExtractor.Panel]) -> String {
         
-        // 1. Generate Target Divs for each Panel
+        // 1. Generate Source (Hit Area) and Target (Zoom View) Divs for each Panel
         var panelDivs = ""
+        var targetDivs = ""
         
         if !panels.isEmpty {
             for (i, panel) in panels.enumerated() {
-                // Convert 0.0-1.0 coords to percentages
+                // Convert 0.0-1.0 coords to percentages for the Source Div (Hit Area)
                 let top = String(format: "%.2f", panel.boundingBox.minY * 100)
                 let left = String(format: "%.2f", panel.boundingBox.minX * 100)
                 let width = String(format: "%.2f", panel.boundingBox.width * 100)
                 let height = String(format: "%.2f", panel.boundingBox.height * 100)
                 
-                // Standard AMZN Region Magnification Class Structure
+                let ord = i + 1
+                
+                // A. Source Div (The Invisible Button)
                 panelDivs += """
-                <div id="panel-\(i+1)" class="app-amzn-magnify" data-app-amzn-magnify="{
-                    \\"targetId\\": \\"panel-target-\(i+1)\\",
-                    \\"ordinal\\": \(i+1)
+                <div id="panel-\(ord)" class="app-amzn-magnify" data-app-amzn-magnify="{
+                    \\"targetId\\": \\"panel-target-\(ord)\\",
+                    \\"ordinal\\": \(ord)
                 }" style="position: absolute; top: \(top)%; left: \(left)%; width: \(width)%; height: \(height)%;">
+                </div>
+                """
+                
+                // B. Target Div (The Zoomed View)
+                // We recreate the image but "position" it so only the panel is visible.
+                // This is a CSS Trick: The container is the size of the panel, but scaled up to fill the screen?
+                // Actually, for Kindle Region Magnification, the Target is usually just a replacement view.
+                // To keep it simple and efficient: We just provide a div that contains the image focused on that area.
+                // However, Kindle's default behavior with just a targetId is to Zoom that TargetId to fit the screen.
+                
+                // We use a container with overflow:hidden to "crop" the image visually for the target
+                // Logic:
+                // 1. Target Container: 100% width/height of the viewport (or close to it)
+                // 2. Image inside: Scaled and Positioned so the panel fills the Target Container.
+                
+                // MATH:
+                // If Panel Width is 50% (0.5), we need to scale the image by 2x (1/0.5).
+                // If Panel Left is 10% (0.1), we need to move the image Left by -10% * Scale.
+                
+                let pW = panel.boundingBox.width
+                let pH = panel.boundingBox.height
+                let pX = panel.boundingBox.minX
+                let pY = panel.boundingBox.minY
+                
+                // Scale factor to make the panel fill the screen logic (fit to aspect ratio)
+                // Simplification for v1: We just crop. Kindle engine handles the "Zoom to fit screen" of the target div.
+                // So we just describe the panel as a standalone div.
+                
+                // To display *just* the panel using the full page image:
+                // Container: Width = PanelWidth%, Height = PanelHeight%
+                // Image: Width = 100% / PanelWidth, Height = 100% / PanelHeight ?? 
+                // No, that's complex relative math.
+                
+                // Easier Approach: Absolute pixel coords if we knew them? No, we use %.
+                
+                // Let's use the 'mag-target' class to hide it by default.
+                // We put the image inside, and we want to show ONLY the rect.
+                // We can use clip-path if Kindle supports it (newer ones do).
+                // converting CGRect (0..1) to inset %: top, right, bottom, left
+                
+                let insetTop = pY * 100
+                let insetRight = (1.0 - (pX + pW)) * 100
+                let insetBottom = (1.0 - (pY + pH)) * 100
+                let insetLeft = pX * 100
+                
+                // Using standard CSS absolute positioning + overflow hidden to crop
+                targetDivs += """
+                <div id="panel-target-\(ord)" style="display:none;">
+                    <div style="position: absolute; width: 100%; height: 100%; overflow: hidden;">
+                         <img src="../images/\(imageName)" style="position: absolute; top: -\(insetTop)%; left: -\(insetLeft)%; width: 100%; height: 100%; transform: scale(\(1.0/pW), \(1.0/pH)); transform-origin: top left;" />
+                    </div>
+                </div>
+                """
+                
+                // REVISION: The transform math above is tricky because 'top' is relative to... parent?
+                // A safer, more robust way for Kindle (High Compat):
+                // Just use the Source Div itself as the Target? No.
+                
+                // Let's rely on Kindle's automatic behavior if possible, but standard requires a target.
+                // Correction: For standard "Region Magnification", specific CSS is often avoided to prevent breaking.
+                // We will create a Target Div that contains the image, but we will NOT try to fancy crop it too hard.
+                // Ideally, we'd use a separate cropped image (Physical Splitting), but we deleted that.
+                
+                // Compromise: We will generate the target div as a wrapper.
+                // If we leave it empty or just the image, Kindle might just zoom the whole page again?
+                // Actually, for "Virtual Panels", the best approach is:
+                // Don't use a separate target. Point targetId to the SOURCE div, and let Kindle zoom to that bounding box.
+                // Many implementations do: targetId == sourceId.
+            }
+            
+            // RE-EVALUATION:
+            // If I set targetId == panel-1 (the source div), Kindle will zoom into the element with id "panel-1".
+            // Since "panel-1" has defined dimensions (top, left, width, height) and is positioned over the image...
+            // It might just zoom into a transparent square.
+            
+            // However, if "panel-1" CONTAINS a clone of the image...
+            // <div id="panel-1" ...> <img src="..." style="margin-top: -..."/> </div>
+            // That works.
+            
+            // LET'S TRY THE SIMPLEST FIX:
+            // Change the JSON to NOT use targetId if possible? No, strictly required.
+            
+            // GOING WITH: "Mag Target is a hidden div that has the image cropped/positioned".
+            // But doing the CSS math properly in a string literal is risky.
+            
+            // NEW STRATEGY:
+            // We'll stick to just the source divs for now but FIX the JSON to point to ITSELF?
+            // "data-app-amzn-magnify": "{\"targetId\":\"panel-\(ord)\", \"ordinal\":\(ord)}"
+            // If the target is itself, Kindle zooms to that element.
+            // But that element is transparent.
+            // So we need to put the image INSIDE the panel div, with coordinates shifted so the correct part shows.
+            
+            // Refactored Loop for "Self-Contained Panels"
+            // This is the "Virtual Layout" method.
+        }
+        
+        // RE-GENERATING PANELS TO BE SELF-CONTAINED
+        panelDivs = "" // Reset
+        
+        if !panels.isEmpty {
+            for (i, panel) in panels.enumerated() {
+                let ord = i + 1
+                
+                // 1. Dimensions of the Panel (Window)
+                let top = panel.boundingBox.minY * 100
+                let left = panel.boundingBox.minX * 100
+                let width = panel.boundingBox.width * 100
+                let height = panel.boundingBox.height * 100
+                
+                // 2. Dimensions of the Image relative to the Panel
+                // Image needs to be scaled up. 
+                // ScaleX = 100 / Width
+                // ScaleY = 100 / Height
+                // PositionX = -Left * ScaleX
+                // PositionY = -Top * ScaleY
+                
+                let scaleX = 100.0 / (panel.boundingBox.width)
+                let scaleY = 100.0 / (panel.boundingBox.height)
+                
+                // We use 'left' percentage for position relative to the CONTAINER (Panel Div)
+                let imgLeft = -(panel.boundingBox.minX) * scaleX
+                let imgTop = -(panel.boundingBox.minY) * scaleY
+                
+                panelDivs += """
+                <div id="panel-\(ord)" class="app-amzn-magnify" data-app-amzn-magnify="{
+                    \\"targetId\\": \\"panel-\(ord)\\",
+                    \\"ordinal\\": \(ord)
+                }" style="position: absolute; top: \(String(format: "%.2f", top))%; left: \(String(format: "%.2f", left))%; width: \(String(format: "%.2f", width))%; height: \(String(format: "%.2f", height))%; overflow: hidden; display: block;">
+                    <img src="../images/\(imageName)" style="position: absolute; top: \(String(format: "%.2f", imgTop))%; left: \(String(format: "%.2f", imgLeft))%; width: \(String(format: "%.2f", scaleX))%; height: \(String(format: "%.2f", scaleY))%; max-width: none; max-height: none;" />
                 </div>
                 """
             }
         }
         
-        // 2. Wrap it all in the XHTML
+        // Wrapper remains the same
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
@@ -261,14 +393,24 @@ class CBZToEPUBConverter {
             <style type="text/css">
                 body { margin: 0; padding: 0; background-color: #000; overflow: hidden; }
                 .page-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-                img { width: 100%; height: 100%; object-fit: contain; }
-                /* Region Magnification Targets (Invisible to naked eye, seen by Kindle) */
-                .app-amzn-magnify { border: 1px solid rgba(0,0,0,0); z-index: 10; cursor: pointer; }
+                img.bg { width: 100%; height: 100%; object-fit: contain; z-index: 1; }
+                /* Panels sit on top (z-index 10), transparent by default? No, we need them to match the BG. */
+                /* Actually, if we use the "Self Contained" method, the panels ARE visible chunks of the image floating on top. */
+                /* Visually this looks identical to the base image if lined up perfectly. */
+                /* Kindle will Hide/Show or Zoom to them as needed. */
+                
+                .app-amzn-magnify { 
+                    z-index: 20; 
+                    cursor: pointer;
+                    opacity: 0; /* Hide by default so we see the base image */
+                }
+                
+                /* When active/magnified, Kindle usually handles the visibility */
             </style>
         </head>
         <body>
             <div class="page-container">
-                <img src="../images/\(imageName)" alt="comic page"/>
+                <img class="bg" src="../images/\(imageName)" alt="comic page"/>
                 \(panelDivs)
             </div>
         </body>
