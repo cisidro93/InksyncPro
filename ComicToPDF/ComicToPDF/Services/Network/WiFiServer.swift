@@ -59,7 +59,11 @@ class WiFiServer: ObservableObject {
                 case .failed(let error):
                     print("Server failed: \(error)")
                     DispatchQueue.main.async {
-                        self.errorMessage = "Failed to start server: \(error.localizedDescription)"
+                        if error.debugDescription.contains("-65555") || error.localizedDescription.contains("NoAuth") {
+                            self.errorMessage = "Local Network Permission Denied.\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and enable access for 'Inksync Pro'."
+                        } else {
+                            self.errorMessage = "Failed to start server: \(error.localizedDescription)"
+                        }
                     }
                     self.stop()
                 default: break
@@ -76,7 +80,11 @@ class WiFiServer: ObservableObject {
         } catch {
             print("Failed to start server: \(error)")
             DispatchQueue.main.async {
-                self.errorMessage = "Could not bind to port: \(error.localizedDescription)"
+                if error.localizedDescription.contains("NoAuth") || "\(error)".contains("-65555") {
+                     self.errorMessage = "Local Network Permission Denied.\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and enable access for 'Inksync Pro'."
+                } else {
+                    self.errorMessage = "Could not bind to port: \(error.localizedDescription)"
+                }
             }
         }
     }
