@@ -51,11 +51,17 @@ struct ContentView: View {
             PageManagerView(pdf: pdf)
                 .environmentObject(conversionManager)
         }
-        // ✅ "Save for Web" File Exporter (Global)
         .fileExporter(
             isPresented: $showingWebExport,
             document: GenericFileDocument(url: webExportPDF?.url ?? URL(fileURLWithPath: "")),
-            contentType: (webExportPDF?.url.pathExtension.lowercased() == "epub") ? .epub : .pdf,
+            contentType: {
+                guard let ext = webExportPDF?.url.pathExtension.lowercased() else { return .pdf }
+                if ext == "epub" { return .epub }
+                if ext == "cbz" { return UTType("com.macitbetter.cbz-archive") ?? .zip }
+                if ext == "cbr" { return UTType("com.macitbetter.cbr-archive") ?? .zip }
+                if ext == "zip" { return .zip }
+                return .pdf
+            }(),
             defaultFilename: webExportPDF?.name ?? "Comic"
         ) { result in
             switch result {
