@@ -122,6 +122,13 @@ class ConversionManager: ObservableObject {
         panelOverrides[pdfID]?[pageIndex] = panels
     }
     
+    // ✅ NEW: Bulk Save
+    func savePanelOverrides(for pdfID: UUID, panels: [Int: [PanelExtractor.Panel]]) {
+        self.panelOverrides[pdfID] = panels
+        self.saveLibrary()
+        print("✅ Restored panels for imported file (ID: \(pdfID))")
+    }
+    
     // MARK: - File Management
     func scanLibrary() {
         let fileManager = FileManager.default
@@ -150,12 +157,23 @@ class ConversionManager: ObservableObject {
             // Add new ones
             if !newPDFs.isEmpty {
                 convertedPDFs.append(contentsOf: newPDFs)
-                saveLibrary()
                 
-                // Generate thumbnails in background
+                // Process Metadata & Thumbnails in Background
                 for pdf in newPDFs {
-                    Task { await self.generateCoverThumbnail(for: pdf) }
+                    Task {
+                        // 1. Thumbnails
+                        await self.generateCoverThumbnail(for: pdf)
+                        
+                        // 2. Extract Embedded Panels (if any)
+                        if let validPanels = await ConversionManager.extractSmartPanels(from: pdf.url) {
+                            await MainActor.run {
+                                self.savePanelOverrides(for: pdf.id, panels: validPanels)
+                            }
+                        }
+                    }
                 }
+                
+                saveLibrary()
             }
             
             // Cleanup: Remove missing files
@@ -494,6 +512,20 @@ class ConversionManager: ObservableObject {
             }
         }
         return nil
+    }
+    
+    // ✅ NEW: Extract Smart Panels from ComicInfo.xml
+    static func extractSmartPanels(from url: URL) async -> [Int: [PanelExtractor.Panel]]? {
+        guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
+        guard let entry = archive["ComicInfo.xml"] else { return nil }
+        
+        var xmlData = Data()
+        do {
+            _ = try archive.extract(entry) { xmlData.append($0) }
+        } catch { return nil }
+        
+        let parser = ComicInfoPanelParser(data: xmlData)
+        return parser.parse()
     }
     
     // Helpers
@@ -1017,6 +1049,60 @@ struct SmartPanel: Codable {
     let y: Double
     let width: Double
     let height: Double
+}
+
+// MARK: - XML Parser Helper
+class ComicInfoPanelParser: NSObject, XMLParserDelegate {
+    private let data: Data
+    private var result: [Int: [PanelExtractor.Panel]] = [:]
+    
+    // State
+    private var currentPageIndex: Int?
+    private var currentPanels: [PanelExtractor.Panel] = []
+    
+    init(data: Data) {
+        self.data = data
+        super.init()
+    }
+    
+    func parse() -> [Int: [PanelExtractor.Panel]] {
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+        parser.parse()
+        return result
+    }
+    
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
+        if elementName == "Page" {
+            // Schema: <Page Image="0">
+            if let imageStr = attributeDict["Image"], let index = Int(imageStr) {
+                currentPageIndex = index
+                currentPanels = []
+            }
+        } else if elementName == "Panel" {
+            // Schema: <Panel x="0.1" y="0.1" width="0.5" height="0.5" />
+            // Note: Our generated XML uses x, y, width, height (lowercase)
+            if let xVal = attributeDict["x"], let x = Double(xVal),
+               let yVal = attributeDict["y"], let y = Double(yVal),
+               let wVal = attributeDict["width"], let w = Double(wVal),
+               let hVal = attributeDict["height"], let h = Double(hVal) {
+                
+                let rect = CGRect(x: x, y: y, width: w, height: h)
+                let panel = PanelExtractor.Panel(boundingBox: rect)
+                currentPanels.append(panel)
+            }
+        }
+    }
+    
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        if elementName == "Page" {
+            if let index = currentPageIndex, !currentPanels.isEmpty {
+                result[index] = currentPanels
+            }
+            currentPageIndex = nil
+            currentPanels = []
+        }
+    }
 }
 
 
