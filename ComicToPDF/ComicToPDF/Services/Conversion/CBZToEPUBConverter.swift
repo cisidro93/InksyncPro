@@ -372,10 +372,10 @@ class CBZToEPUBConverter {
                 let imgTop = -(panel.boundingBox.minY) * scaleY
                 
                 panelDivs += """
-                <div id="panel-\(ord)" class="app-amzn-magnify" data-app-amzn-magnify="{
-                    \\"targetId\\": \\"panel-\(ord)\\",
-                    \\"ordinal\\": \(ord)
-                }" style="position: absolute; top: \(String(format: "%.2f", top))%; left: \(String(format: "%.2f", left))%; width: \(String(format: "%.2f", width))%; height: \(String(format: "%.2f", height))%; overflow: hidden; display: block;">
+                <div id="panel-\(ord)" class="app-amzn-magnify" data-app-amzn-magnify='{
+                    "targetId": "panel-\(ord)",
+                    "ordinal": \(ord)
+                }' style="position: absolute; top: \(String(format: "%.2f", top))%; left: \(String(format: "%.2f", left))%; width: \(String(format: "%.2f", width))%; height: \(String(format: "%.2f", height))%; overflow: hidden; display: block;">
                     <img src="../images/\(imageName)" style="position: absolute; top: \(String(format: "%.2f", imgTop))%; left: \(String(format: "%.2f", imgLeft))%; width: \(String(format: "%.2f", scaleX))%; height: \(String(format: "%.2f", scaleY))%; max-width: none; max-height: none;" />
                 </div>
                 """
