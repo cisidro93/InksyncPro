@@ -409,6 +409,13 @@ class ConversionManager: ObservableObject {
                 }
                 generatedEPUBs.append(contentsOf: resultingURLs)
                 
+                // ✅ NEW: Inject Metadata into Generated EPUBs
+                // This ensures that if the user re-imports this EPUB, the panels are preserved.
+                // We inject the full set of overrides; irrelevant indices will simply be ignored by the importer.
+                for epubURL in resultingURLs {
+                    await injectMetadata(into: epubURL, panels: fileOverrides ?? [:], metadata: file.metadata)
+                }
+                
             } catch {
                 print("❌ Batch Merge Error on \(file.name): \(error)")
                 await MainActor.run { self.statusMessage = "Failed: \(file.name)" }
