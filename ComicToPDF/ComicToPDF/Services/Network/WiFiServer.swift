@@ -648,11 +648,20 @@ class WiFiServer: ObservableObject {
     }
     
     private func triggerLocalNetworkPrivacyAlert() {
+        // Legacy Trigger (NSNetService - often effective for prompting)
+        let service = NetService(domain: "local.", type: "_http._tcp.", name: "InksyncTrigger", port: 8080)
+        service.publish()
+        
+        // Modern Trigger (NWBrowser)
         let params = NWParameters.tcp
         params.includePeerToPeer = true
         let browser = NWBrowser(for: .bonjour(type: "_http._tcp", domain: nil), using: params)
-        browser.stateUpdateHandler = { _ in }
         browser.start(queue: .global())
-        DispatchQueue.global().asyncAfter(deadline: .now() + 5) { browser.cancel() }
+        
+        // Cleanup
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+            browser.cancel()
+            service.stop()
+        }
     }
 }
