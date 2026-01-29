@@ -649,7 +649,7 @@ class WiFiServer: ObservableObject {
     
     private func triggerLocalNetworkPrivacyAlert() {
         // Legacy Trigger (NSNetService - often effective for prompting)
-        let service = NetService(domain: "local.", type: "_http._tcp.", name: "InksyncTrigger", port: 8080)
+        let service = NetService(domain: "local.", type: "_http._tcp", name: "InksyncTrigger", port: 8080)
         service.publish()
         
         // Modern Trigger (NWBrowser)
