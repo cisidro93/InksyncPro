@@ -344,38 +344,40 @@ class CBZToEPUBConverter {
             // This is the "Virtual Layout" method.
         }
         
-        // RE-GENERATING PANELS TO BE SELF-CONTAINED
-        panelDivs = "" // Reset
+        // RE-GENERATING PANELS TO BE SEPARATE SOURCE/TARGET PAIRS
+        // Fix for Kindle E013: Avoid self-targeting. Use distinct Source (Touch) and Target (View) elements.
+        panelDivs = "" 
+        targetDivs = ""
         
         if !panels.isEmpty {
             for (i, panel) in panels.enumerated() {
                 let ord = i + 1
                 
-                // 1. Dimensions of the Panel (Window)
+                // 1. Dimensions of the Source Panel (Touch Area)
                 let top = panel.boundingBox.minY * 100
                 let left = panel.boundingBox.minX * 100
                 let width = panel.boundingBox.width * 100
                 let height = panel.boundingBox.height * 100
                 
-                // 2. Dimensions of the Image relative to the Panel
-                // Image needs to be scaled up. 
-                // ScaleX = 100 / Width
-                // ScaleY = 100 / Height
-                // PositionX = -Left * ScaleX
-                // PositionY = -Top * ScaleY
-                
+                // 2. Dimensions of the Image relative to the Target Container (Full Page)
                 let scaleX = 100.0 / (panel.boundingBox.width)
                 let scaleY = 100.0 / (panel.boundingBox.height)
                 
-                // We use 'left' percentage for position relative to the CONTAINER (Panel Div)
                 let imgLeft = -(panel.boundingBox.minX) * scaleX
                 let imgTop = -(panel.boundingBox.minY) * scaleY
                 
+                // A. Source Element (Transparent Button)
                 panelDivs += """
-                <div id="panel-\(ord)" class="app-amzn-magnify" data-app-amzn-magnify='{
-                    "targetId": "panel-\(ord)",
+                <div id="panel-src-\(ord)" class="app-amzn-magnify" data-app-amzn-magnify='{
+                    "targetId": "panel-target-\(ord)",
                     "ordinal": \(ord)
-                }' style="position: absolute; top: \(String(format: "%.2f", top))%; left: \(String(format: "%.2f", left))%; width: \(String(format: "%.2f", width))%; height: \(String(format: "%.2f", height))%; overflow: hidden; display: block;">
+                }' style="position: absolute; top: \(String(format: "%.2f", top))%; left: \(String(format: "%.2f", left))%; width: \(String(format: "%.2f", width))%; height: \(String(format: "%.2f", height))%; z-index: 20; cursor: pointer;">
+                </div>
+                """
+                
+                // B. Target Element (Magnified View, Hidden by default)
+                targetDivs += """
+                <div id="panel-target-\(ord)" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; z-index: 15;">
                     <img src="../images/\(imageName)" style="position: absolute; top: \(String(format: "%.2f", imgTop))%; left: \(String(format: "%.2f", imgLeft))%; width: \(String(format: "%.2f", scaleX))%; height: \(String(format: "%.2f", scaleY))%; max-width: none; max-height: none;" />
                 </div>
                 """
@@ -412,6 +414,7 @@ class CBZToEPUBConverter {
             <div class="page-container">
                 <img class="bg" src="../images/\(imageName)" alt="comic page"/>
                 \(panelDivs)
+                \(targetDivs)
             </div>
         </body>
         </html>
