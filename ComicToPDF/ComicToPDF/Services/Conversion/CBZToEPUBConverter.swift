@@ -367,11 +367,19 @@ class CBZToEPUBConverter {
                 let imgTop = -(panel.boundingBox.minY) * scaleY
                 
                 // A. Source Element (Transparent Button)
+                // STRICT KINDLE COMPLIANCE:
+                // 1. Attribute uses DOUBLE QUOTES.
+                // 2. JSON uses &quot; for quotes.
+                // 3. Must include sourceId.
+                
+                let sourceId = "panel-src-\(ord)"
+                let targetId = "panel-target-\(ord)"
+                
+                // Construct JSON with escaped quotes: {"targetId":"...","sourceId":"...","ordinal":...}
+                let jsonString = "{&quot;targetId&quot;:&quot;\(targetId)&quot;, &quot;sourceId&quot;:&quot;\(sourceId)&quot;, &quot;ordinal&quot;:\(ord)}"
+                
                 panelDivs += """
-                <div id="panel-src-\(ord)" class="app-amzn-magnify" data-app-amzn-magnify='{
-                    "targetId": "panel-target-\(ord)",
-                    "ordinal": \(ord)
-                }' style="position: absolute; top: \(String(format: "%.2f", top))%; left: \(String(format: "%.2f", left))%; width: \(String(format: "%.2f", width))%; height: \(String(format: "%.2f", height))%; z-index: 20; cursor: pointer;">
+                <div id="\(sourceId)" class="app-amzn-magnify" data-app-amzn-magnify="\(jsonString)" style="position: absolute; top: \(String(format: "%.2f", top))%; left: \(String(format: "%.2f", left))%; width: \(String(format: "%.2f", width))%; height: \(String(format: "%.2f", height))%; z-index: 20; cursor: pointer;">
                 </div>
                 """
                 
