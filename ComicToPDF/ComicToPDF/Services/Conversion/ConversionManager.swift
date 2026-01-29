@@ -85,8 +85,9 @@ class ConversionManager: ObservableObject {
             let settings: ConversionSettings
             let history: [ConvertedPDF]
             let devices: [KindleDevice]
+            var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil // ✅ NEW: Persistence
         }
-        let index = LibraryIndex(files: convertedPDFs, collections: collections, settings: conversionSettings, history: sendHistory, devices: kindleDevices)
+        let index = LibraryIndex(files: convertedPDFs, collections: collections, settings: conversionSettings, history: sendHistory, devices: kindleDevices, panelOverrides: panelOverrides)
         if let url = fileURL(for: libraryFileName), let encoded = try? JSONEncoder().encode(index) {
             try? encoded.write(to: url)
         }
@@ -101,6 +102,7 @@ class ConversionManager: ObservableObject {
             let settings: ConversionSettings
             let history: [ConvertedPDF]
             let devices: [KindleDevice]
+            var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil // ✅ NEW
         }
         guard let url = fileURL(for: libraryFileName), let data = try? Data(contentsOf: url), let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) else { return }
         self.convertedPDFs = index.files
@@ -108,6 +110,7 @@ class ConversionManager: ObservableObject {
         self.conversionSettings = index.settings
         self.sendHistory = index.history
         self.kindleDevices = index.devices
+        self.panelOverrides = index.panelOverrides ?? [:] // ✅ Restore overrides
     }
     
     private func fileURL(for name: String) -> URL? {
