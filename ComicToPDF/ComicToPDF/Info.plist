@@ -45,7 +45,7 @@
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     <key>UIRequiresFullScreen</key>
-    <true/>
+    <false/>
     
     <key>NSLocalNetworkUsageDescription</key>
     <string>Allow access to transfer files via WiFi</string>

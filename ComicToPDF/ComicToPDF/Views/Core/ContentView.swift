@@ -68,6 +68,14 @@ struct ContentView: View {
                 print("Export failed: \(error.localizedDescription)")
             }
         }
+        .onOpenURL { url in
+            // Handle file opening from other apps (AirDrop, Files app)
+             Task {
+                 await conversionManager.processingStatus = "Importing \(url.lastPathComponent)..."
+                 await conversionManager.processImportedFiles(urls: [url])
+                 await conversionManager.processingStatus = ""
+             }
+        }
     }
     
     var iPhoneLayout: some View {
