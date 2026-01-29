@@ -166,11 +166,19 @@ struct ContentView: View {
                             ToolbarItem(placement: .topBarTrailing) {
                                 Menu {
                                     Button {
-                                        if pdf.fileSize > 50 * 1024 * 1024 {
-                                            largeFilePDF = pdf
-                                            showingLargeFileAlert = true
-                                        } else {
-                                            pdfToShare = pdf
+                                        Task {
+                                            if pdf.fileSize > 50 * 1024 * 1024 {
+                                                largeFilePDF = pdf
+                                                showingLargeFileAlert = true
+                                            } else {
+                                                // Generate Metadata-Embedded File before sharing
+                                                if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                                                    await MainActor.run {
+                                                        let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
+                                                        pdfToShare = wrapper
+                                                    }
+                                                }
+                                            }
                                         }
                                     } label: { Label("Export / Share", systemImage: "square.and.arrow.up") }
                                     Button { pdfToEdit = pdf } label: { Label("Edit Pages", systemImage: "doc.on.doc") }
@@ -204,13 +212,43 @@ struct ContentView: View {
             Button("Save to 'Downloads' & Open Website") {
                 // Start Save & Open Flow
                 if let pdf = largeFilePDF {
-                    webExportPDF = pdf
-                    showingWebExport = true 
+                    Task {
+                        // 1. Generate Metadata-Embedded File
+                        if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                             await MainActor.run {
+                                 // We need to pass the URL to the exporter. 
+                                 // But GenericFileDocument takes a URL.
+                                 // We update the state to point to this new temp file.
+                                 // NOTE: We need a way to pass this URL to .fileExporter
+                                 // We can just update webExportPDF to be a dummy struct with this URL?
+                                 // Or better, add a separate state for 'exportURL' and update GenericFileDocument call.
+                                 // For now, let's Mutate the PDF struct in memory to point to the temp URL? 
+                                 // No, that's dangerous.
+                                 // Let's rely on 'webExportPDF' but we need to change how GenericFileDocument uses it.
+                                 // Actually, we can just introduce a specific 'tempExportURL' state.
+                                 // But for minimal changes:
+                                 var tempPDF = pdf
+                                 tempPDF = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata) 
+                                 webExportPDF = tempPDF
+                                 showingWebExport = true
+                             }
+                        }
+                    }
                 }
             }
             Button("Share via System Sheet") {
                 if let pdf = largeFilePDF {
-                    pdfToShare = pdf
+                    Task {
+                        if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                            await MainActor.run {
+                                // Create a dummy PDF wrapper pointing to temp file for the sheet
+                                var tempPDF = pdf
+                                // reusing existing init logic to swap URL
+                                let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
+                                pdfToShare = wrapper
+                            }
+                        }
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { }

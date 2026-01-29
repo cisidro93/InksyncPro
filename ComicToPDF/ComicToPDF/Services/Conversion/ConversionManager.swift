@@ -905,7 +905,6 @@ class ConversionManager: ObservableObject {
     }
     
     // MARK: - Comic Vault Export
-    // MARK: - Comic Vault Export
     // Renamed to clarify intent: We are creating a NEW export file with embedded metadata
     func exportWithEmbeddedMetadata(for pdf: ConvertedPDF) async -> URL? {
         let fileManager = FileManager.default
@@ -927,23 +926,23 @@ class ConversionManager: ObservableObject {
             // Copy Source -> Temp
             try fileManager.copyItem(at: pdf.url, to: exportURL)
             
-            // 2. Prepare Smart Panels Data
-            var smartPanelsDict: [String: [SmartPanel]] = [:]
+            // 2. Prepare Panels Data (Retrieving from overrides or auto-detection if needed)
+            var panelsToInject: [Int: [PanelExtractor.Panel]] = [:]
             
-            // Get Image URLs for analysis (from the ORIGINAL)
+            // We need to resolve the full panel set. 
+            // Existing logic checked overrides first, then auto-detection.
+            // We'll mimic that to build the dictionary for our helper.
+            
             let files = try await extractImageURLs(from: pdf.url)
             
-            // Analyze each page
             for (index, fileURL) in files.enumerated() {
                 if let overrides = panelOverrides[pdf.id]?[index] {
-                    let smartPanels = overrides.map { SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
-                    smartPanelsDict["\(index)"] = smartPanels
+                    panelsToInject[index] = overrides
                 } else if conversionSettings.enablePanelSplit {
-                    if let image = UIImage(contentsOfFile: fileURL.path) {
-                        let panels = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: conversionSettings.mangaMode)
-                        if !panels.isEmpty {
-                            let smartPanels = panels.map { SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
-                            smartPanelsDict["\(index)"] = smartPanels
+                     if let image = UIImage(contentsOfFile: fileURL.path) {
+                        let detected = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: conversionSettings.mangaMode)
+                        if !detected.isEmpty {
+                            panelsToInject[index] = detected
                         }
                     }
                 }
@@ -951,60 +950,8 @@ class ConversionManager: ObservableObject {
                 Task { @MainActor in self.conversionProgress = progress }
             }
             
-            // 3. Generate XML Content
-            var xmlContent = ""
-            var hasExistingMetadata = false
-            
-            // Read potentially existing metadata from our NEW temp export file
-            // We use the temp file so we can update it in place later
-            guard let archive = try? Archive(url: exportURL, accessMode: .update, preferredEncoding: nil) else {
-                throw NSError(domain: "ExportError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive for update"])
-            }
-            
-            if let entry = archive["ComicInfo.xml"] {
-                var data = Data()
-                _ = try? archive.extract(entry) { data.append($0) }
-                if let string = String(data: data, encoding: .utf8) {
-                    xmlContent = string
-                    hasExistingMetadata = true
-                }
-            }
-            
-            // Construct/Inject Logic
-            if hasExistingMetadata {
-                if let range = xmlContent.range(of: "<Pages>.*</Pages>", options: .regularExpression) {
-                    xmlContent.removeSubrange(range)
-                }
-                let pagesBlock = generatePagesXML(from: smartPanelsDict)
-                if let range = xmlContent.range(of: "</ComicInfo>") {
-                    xmlContent.insert(contentsOf: "\n" + pagesBlock + "\n", at: range.lowerBound)
-                } else {
-                    xmlContent += "\n" + pagesBlock
-                }
-            } else {
-                xmlContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-                xmlContent += "<ComicInfo>\n"
-                xmlContent += "  <Title>\(pdf.metadata.title)</Title>\n"
-                if let series = pdf.metadata.series { xmlContent += "  <Series>\(series)</Series>\n" }
-                xmlContent += "  <PageCount>\(pdf.pageCount)</PageCount>\n"
-                xmlContent += generatePagesXML(from: smartPanelsDict)
-                xmlContent += "\n</ComicInfo>"
-            }
-            
-            // 4. Inject Metadata into Archive
-            // Remove old entry if it exists to avoid duplication errors (though ZIPFoundation might handle overwrite, explicit remove is safer)
-            if let oldEntry = archive["ComicInfo.xml"] {
-                try archive.remove(oldEntry)
-            }
-            
-            guard let xmlData = xmlContent.data(using: .utf8) else { return nil }
-            
-            // Add new entry
-            try archive.addEntry(with: "ComicInfo.xml", type: .file, uncompressedSize: Int64(xmlData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
-                let start = Int(position)
-                let end = min(start + size, xmlData.count)
-                return xmlData.subdata(in: start..<end)
-            }
+            // 3. Inject using Helper
+            await injectMetadata(into: exportURL, panels: panelsToInject, metadata: pdf.metadata)
             
             return exportURL
             

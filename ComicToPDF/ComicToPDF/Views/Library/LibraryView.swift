@@ -225,14 +225,28 @@ struct LibraryView: View {
                 Button("Save to 'Downloads' & Open Website") {
                     // Start the Save & Open Flow
                     if let pdf = largeFilePDF {
-                        webExportPDF = pdf
-                        showingWebExport = true
+                        Task {
+                             if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                                 await MainActor.run {
+                                     let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
+                                     webExportPDF = wrapper
+                                     showingWebExport = true
+                                 }
+                             }
+                        }
                     }
                 }
                 Button("Share via System Sheet") {
                     // Fallback to standard share
                     if let pdf = largeFilePDF {
-                        pdfToShare = pdf
+                        Task {
+                             if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                                 await MainActor.run {
+                                     let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
+                                     pdfToShare = wrapper
+                                 }
+                             }
+                        }
                     }
                 }
                 Button("Cancel", role: .cancel) { }
@@ -264,7 +278,16 @@ struct LibraryView: View {
             largeFilePDF = pdf
             showingLargeFileAlert = true
         } else {
-            pdfToShare = pdf
+            Task {
+                if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                     await MainActor.run {
+                         // Wrap URL in a temp PDF object so ShareSheet can use it
+                         // ShareSheet takes [pdf.url] anyway.
+                         let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
+                         pdfToShare = wrapper
+                     }
+                }
+            }
         }
     }
     
