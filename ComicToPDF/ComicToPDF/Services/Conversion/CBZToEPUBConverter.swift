@@ -95,179 +95,128 @@ class CBZToEPUBConverter {
             let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
             let baseName = baseFilename + partSuffix
             
-            // Branch: CBZ Export (Guided View -> Physical Slices)
-            if settings.epubSettings.guidedViewExportFormat == .cbz {
-                let batchDir = tempDir.appendingPathComponent("CBZ_Part_\(batchIndex)")
-                try? fileManager.removeItem(at: batchDir)
-                try fileManager.createDirectory(at: batchDir, withIntermediateDirectories: true)
+            // Enforce EPUB (Virtual/Region Magnification)
+            // ... Existing EPUB Logic ...
+            let epubName = baseName
+            let batchDir = tempDir.appendingPathComponent("EPUB_Part_\(batchIndex)")
+            let oebpsDir = batchDir.appendingPathComponent("OEBPS")
+            let imagesDir = oebpsDir.appendingPathComponent("images")
+            let textDir = oebpsDir.appendingPathComponent("text")
+            let metaInfDir = batchDir.appendingPathComponent("META-INF")
+            
+            try? fileManager.removeItem(at: batchDir)
+            try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: textDir, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+            
+            // Standard EPUB Files
+            try "application/epub+zip".write(to: batchDir.appendingPathComponent("mimetype"), atomically: true, encoding: .ascii)
+            let containerXML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                <rootfiles>
+                    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+                </rootfiles>
+            </container>
+            """
+            try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+            
+            var spineItems: [String] = []
+            var manifestItems: [String] = []
+            
+            // Process Items in this Batch
+            for (localIndex, item) in batch.enumerated() {
+                let ext = "jpg"
+                let trueExt = (item.url.pathExtension.lowercased() == "png") ? "png" : "jpg"
+                let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
                 
-                var imageCounter = 1
+                // Save Image
+                let newImageName = String(format: "image_%04d.%@", localIndex + 1, trueExt)
+                let destURL = imagesDir.appendingPathComponent(newImageName)
+                try item.data.write(to: destURL)
                 
-                for (_, item) in batch.enumerated() {
-                    let image = UIImage(data: item.data)
-                    var pagePanels = manualManifest?[item.index] ?? []
-                    
-                    // Auto-Detect if needed
-                    if pagePanels.isEmpty && settings.enablePanelSplit, let img = image {
-                        pagePanels = await PanelExtractor.detectPanels(in: img, mode: .automatic, mangaMode: settings.mangaMode)
-                    }
-                    
-                    // If we have panels, save them as individual images
-                    if !pagePanels.isEmpty, let img = image {
-                        // 1. Full Page First?
-                        if settings.epubSettings.includeFullPage {
-                            let fname = String(format: "page_%05d.jpg", imageCounter)
-                            try item.data.write(to: batchDir.appendingPathComponent(fname))
-                            imageCounter += 1
-                        }
-                        
-                        // 2. Save Panels
-                        for panel in pagePanels {
-                            if let cropped = PanelExtractor.cropImage(img, to: panel.boundingBox) {
-                                let fname = String(format: "page_%05d.jpg", imageCounter)
-                                if let data = cropped.jpegData(compressionQuality: settings.compressionQuality.value) {
-                                    try data.write(to: batchDir.appendingPathComponent(fname))
-                                    imageCounter += 1
-                                }
-                            }
-                        }
-                    } else {
-                        // Just the full page
-                        let fname = String(format: "page_%05d.jpg", imageCounter)
-                        try item.data.write(to: batchDir.appendingPathComponent(fname))
-                        imageCounter += 1
+                // ✅ CAPTURE RESOLUTION (Once)
+                if !hasCapturedResolution {
+                    if let image = UIImage(data: item.data) {
+                        contentSize = image.size
+                        hasCapturedResolution = true
                     }
                 }
                 
-                // Zip
-                let outputFilename = baseName + ".cbz"
-                let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(outputFilename)
-                if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
-                try fileManager.zipItem(at: batchDir, to: outputURL, compressionMethod: .deflate)
-                generatedFiles.append(outputURL)
-                
-            } else {
-                // ... Existing EPUB Logic ...
-                let epubName = baseName
-                let batchDir = tempDir.appendingPathComponent("EPUB_Part_\(batchIndex)")
-                let oebpsDir = batchDir.appendingPathComponent("OEBPS")
-                let imagesDir = oebpsDir.appendingPathComponent("images")
-                let textDir = oebpsDir.appendingPathComponent("text")
-                let metaInfDir = batchDir.appendingPathComponent("META-INF")
-                
-                try? fileManager.removeItem(at: batchDir)
-                try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
-                try fileManager.createDirectory(at: textDir, withIntermediateDirectories: true)
-                try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
-                
-                // Standard EPUB Files
-                try "application/epub+zip".write(to: batchDir.appendingPathComponent("mimetype"), atomically: true, encoding: .ascii)
-                let containerXML = """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-                    <rootfiles>
-                        <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-                    </rootfiles>
-                </container>
-                """
-                try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
-                
-                var spineItems: [String] = []
-                var manifestItems: [String] = []
-                
-                // Process Items in this Batch
-                for (localIndex, item) in batch.enumerated() {
-                    let ext = "jpg"
-                    let trueExt = (item.url.pathExtension.lowercased() == "png") ? "png" : "jpg"
-                    let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
-                    
-                    // Save Image
-                    let newImageName = String(format: "image_%04d.%@", localIndex + 1, trueExt)
-                    let destURL = imagesDir.appendingPathComponent(newImageName)
-                    try item.data.write(to: destURL)
-                    
-                    // ✅ CAPTURE RESOLUTION (Once)
-                    if !hasCapturedResolution {
-                        if let image = UIImage(data: item.data) {
-                            contentSize = image.size
-                            hasCapturedResolution = true
-                        }
+                // Detect Panels (Global Index Lookup)
+                var pagePanels = manualManifest?[item.index] ?? []
+                if pagePanels.isEmpty && settings.enablePanelSplit {
+                    if let image = UIImage(data: item.data) {
+                        pagePanels = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: settings.mangaMode)
                     }
-                    
-                    // Detect Panels (Global Index Lookup)
-                    var pagePanels = manualManifest?[item.index] ?? []
-                    if pagePanels.isEmpty && settings.enablePanelSplit {
-                        if let image = UIImage(data: item.data) {
-                            pagePanels = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: settings.mangaMode)
-                        }
-                    }
-                    
-                    // Create XHTML
-                    let xhtmlContent = generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", panels: pagePanels)
-                    let xhtmlName = String(format: "page_%04d.xhtml", localIndex + 1)
-                    try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
-                    
-                    // Manifest
-                    let properties = (localIndex == 0) ? "properties=\"cover-image\"" : ""
-                    manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
-                    manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\" properties=\"svg\"/>")
-                    spineItems.append("<itemref idref=\"page_\(localIndex+1)\"/>")
                 }
                 
-                // OPF & TOC
-                let widthID = Int(contentSize.width)
-                let heightID = Int(contentSize.height)
+                // Create XHTML
+                let xhtmlContent = generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", panels: pagePanels)
+                let xhtmlName = String(format: "page_%04d.xhtml", localIndex + 1)
+                try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
                 
-                let opfContent = """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
-                    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                        <dc:title>\(epubName)</dc:title>
-                        <dc:language>en</dc:language>
-                        <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-                        <meta property="rendition:layout">pre-paginated</meta>
-                        <meta property="rendition:orientation">auto</meta>
-                        <meta property="rendition:spread">auto</meta>
-                        <meta name="fixed-layout" content="true"/>
-                        <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
-                        <meta name="book-type" content="comic"/>
-                        <meta name="region-mag" content="true"/>
-                        <meta name="cover" content="img_1"/>
-                    </metadata>
-                    <manifest>
-                        <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                        \(manifestItems.joined(separator: "\n        "))
-                    </manifest>
-                    <spine toc="ncx">
-                        \(spineItems.joined(separator: "\n        "))
-                    </spine>
-                </package>
-                """
-                try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
-                
-                let ncxContent = """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-                    <head><meta name="dtb:uid" content="urn:uuid:12345"/></head>
-                    <docTitle><text>\(epubName)</text></docTitle>
-                    <navMap>
-                        <navPoint id="navPoint-1" playOrder="1">
-                            <navLabel><text>Start</text></navLabel>
-                            <content src="text/page_0001.xhtml"/>
-                        </navPoint>
-                    </navMap>
-                </ncx>
-                """
-                try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
-                
-                // Zip
-                let outputFilename = epubName + ".epub"
-                let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(outputFilename)
-                if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
-                
-                try fileManager.zipItem(at: batchDir, to: outputURL, compressionMethod: .deflate)
-                generatedFiles.append(outputURL)
+                // Manifest
+                let properties = (localIndex == 0) ? "properties=\"cover-image\"" : ""
+                manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
+                manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\" properties=\"svg\"/>")
+                spineItems.append("<itemref idref=\"page_\(localIndex+1)\"/>")
             }
+            
+            // OPF & TOC
+            let widthID = Int(contentSize.width)
+            let heightID = Int(contentSize.height)
+            
+            let opfContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
+                <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:title>\(epubName)</dc:title>
+                    <dc:language>en</dc:language>
+                    <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
+                    <meta property="rendition:layout">pre-paginated</meta>
+                    <meta property="rendition:orientation">auto</meta>
+                    <meta property="rendition:spread">auto</meta>
+                    <meta name="fixed-layout" content="true"/>
+                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
+                    <meta name="book-type" content="comic"/>
+                    <meta name="region-mag" content="true"/>
+                    <meta name="cover" content="img_1"/>
+                </metadata>
+                <manifest>
+                    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+                    \(manifestItems.joined(separator: "\n        "))
+                </manifest>
+                <spine toc="ncx">
+                    \(spineItems.joined(separator: "\n        "))
+                </spine>
+            </package>
+            """
+            try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+            
+            let ncxContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+                <head><meta name="dtb:uid" content="urn:uuid:12345"/></head>
+                <docTitle><text>\(epubName)</text></docTitle>
+                <navMap>
+                    <navPoint id="navPoint-1" playOrder="1">
+                        <navLabel><text>Start</text></navLabel>
+                        <content src="text/page_0001.xhtml"/>
+                    </navPoint>
+                </navMap>
+            </ncx>
+            """
+            try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
+            
+            // Zip
+            let outputFilename = epubName + ".epub"
+            let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(outputFilename)
+            if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
+            
+            try fileManager.zipItem(at: batchDir, to: outputURL, compressionMethod: .deflate)
+            generatedFiles.append(outputURL)
+        
             
             progress(0.5 + (0.5 * Double(batchIndex + 1) / Double(batches.count)))
         }

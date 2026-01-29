@@ -11,7 +11,6 @@ struct ConvertView: View {
     enum ConversionMode: String, CaseIterable, Identifiable {
         case standard = "Standard"
         case hybrid = "Guided View"
-        case panels = "Panels Only"
         
         var id: String { rawValue }
         
@@ -19,7 +18,6 @@ struct ConvertView: View {
             switch self {
             case .standard: return "doc.richtext"
             case .hybrid: return "rectangle.split.3x1"
-            case .panels: return "rectangle.grid.2x2"
             }
         }
         
@@ -27,7 +25,6 @@ struct ConvertView: View {
             switch self {
             case .standard: return "Original layout. Best for tablets."
             case .hybrid: return "Full page + zoomed panels. Best for Kindle."
-            case .panels: return "Zoomed panels only. Best for phones."
             }
         }
     }
@@ -129,8 +126,7 @@ struct ConvertView: View {
         .onAppear {
             isMangaMode = conversionManager.conversionSettings.mangaMode
             if !conversionManager.conversionSettings.enablePanelSplit { selectedMode = .standard }
-            else if conversionManager.conversionSettings.epubSettings.includeFullPage { selectedMode = .hybrid }
-            else { selectedMode = .panels }
+            else { selectedMode = .hybrid }
         }
         .sheet(isPresented: $showingPreview) {
             // ✅ FIX: Default to Page 3 (4th page) for better panel check, fallback to 0 if short doc
@@ -146,9 +142,6 @@ struct ConvertView: View {
         case .hybrid:
             conversionManager.conversionSettings.enablePanelSplit = true
             conversionManager.conversionSettings.epubSettings.includeFullPage = true
-        case .panels:
-            conversionManager.conversionSettings.enablePanelSplit = true
-            conversionManager.conversionSettings.epubSettings.includeFullPage = false
         }
     }
 }

@@ -47,26 +47,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
-                // ✅ NEW: Panel Strategy Picker
-                if conversionManager.conversionSettings.enablePanelSplit {
-                    Divider()
-                    
-                    Picker("Panel Strategy", selection: $conversionManager.conversionSettings.panelStrategy) {
-                        ForEach(PanelStrategy.allCases) { strategy in
-                            Text(strategy.rawValue).tag(strategy)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    
-                    // Helper text to educate the user
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "info.circle").font(.caption)
-                        Text(conversionManager.conversionSettings.panelStrategy.description)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                }
+                // ✅ NEW: Panel Strategy Picker REMOVED (User Request)
             }
             
             Section(header: Text("Kindle & E-Reader")) {
@@ -119,14 +100,7 @@ struct SettingsView: View {
                     Toggle("Guided View (Show Full Page First)", isOn: $conversionManager.conversionSettings.epubSettings.includeFullPage)
                         .foregroundColor(.blue)
 
-                    // ✅ NEW: Export Format Toggle
-                    Picker("Guided View Format", selection: $conversionManager.conversionSettings.epubSettings.guidedViewExportFormat) {
-                        ForEach(EPUBSettings.GuidedViewExportFormat.allCases) { format in
-                            Text(format.rawValue).tag(format)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.vertical, 4)
+                    // ✅ NEW: Export Format Toggle REMOVED - Enforcing EPUB
                     
                     // ✅ NEW: Editor Presentation Mode
                     Picker("Editor Presentation", selection: $conversionManager.conversionSettings.panelEditorMode) {

@@ -176,20 +176,7 @@ enum FileSizeSplitMode: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-// ✅ NEW: Panel Generation Strategy
-enum PanelStrategy: String, CaseIterable, Codable, Identifiable {
-    case physical = "Physical Splitting (Compatible)"
-    case virtual = "Virtual Layout (Experimental)"
-    
-    var id: String { rawValue }
-    
-    var description: String {
-        switch self {
-        case .physical: return "Creates separate images for each panel. Best for Send-to-Kindle Email."
-        case .virtual: return "Uses metadata to zoom. Smaller file size, but requires USB transfer."
-        }
-    }
-}
+// ✅ NEW: Panel Generation Strategy REMOVED
 
 // ✅ NEW: App Text Size Preference
 enum AppTextSize: String, CaseIterable, Codable, Identifiable {
@@ -223,8 +210,7 @@ struct ConversionSettings: Codable, Equatable {
     var targetDevice: KindleDeviceType = .scribe
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
-    var splitMode: FileSizeSplitMode = .none
-    var panelStrategy: PanelStrategy = .physical 
+    var splitMode: FileSizeSplitMode = .none 
     var textSize: AppTextSize = .medium // ✅ New Preference 
     var panelEditorMode: PanelEditorPresentationMode = .sheet // ✅ New Preference
     
@@ -254,7 +240,7 @@ struct ConversionSettings: Codable, Equatable {
     
     // Custom Codable implementation to handle migration
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitMode, panelStrategy, epubSettings, imageEnhancement, textSize, panelEditorMode
+        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitMode, epubSettings, imageEnhancement, textSize, panelEditorMode
         case comicVineAPIKey // Used for legacy read only
     }
     
@@ -269,7 +255,6 @@ struct ConversionSettings: Codable, Equatable {
         mangaMode = try container.decode(Bool.self, forKey: .mangaMode)
         enablePanelSplit = try container.decode(Bool.self, forKey: .enablePanelSplit)
         splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
-        panelStrategy = try container.decodeIfPresent(PanelStrategy.self, forKey: .panelStrategy) ?? .physical
         epubSettings = try container.decode(EPUBSettings.self, forKey: .epubSettings)
         imageEnhancement = try container.decode(ImageEnhancementSettings.self, forKey: .imageEnhancement)
         textSize = try container.decodeIfPresent(AppTextSize.self, forKey: .textSize) ?? .medium
@@ -293,7 +278,6 @@ struct ConversionSettings: Codable, Equatable {
         try container.encode(mangaMode, forKey: .mangaMode)
         try container.encode(enablePanelSplit, forKey: .enablePanelSplit)
         try container.encode(splitMode, forKey: .splitMode)
-        try container.encode(panelStrategy, forKey: .panelStrategy)
         try container.encode(epubSettings, forKey: .epubSettings)
         try container.encode(imageEnhancement, forKey: .imageEnhancement)
         try container.encode(textSize, forKey: .textSize)
@@ -308,12 +292,7 @@ struct EPUBSettings: Codable, Equatable {
         case rtl = "rtl"
     }
     
-    // ✅ Export Format (EPUB vs CBZ for Guided View)
-    enum GuidedViewExportFormat: String, Codable, CaseIterable, Identifiable {
-        case epub = "EPUB"
-        case cbz = "CBZ"
-        var id: String { rawValue }
-    }
+    // ✅ Export Format (EPUB vs CBZ for Guided View) REMOVED - Enforcing EPUB/Virtual
     
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
     var includeTableOfContents: Bool = false
@@ -321,7 +300,6 @@ struct EPUBSettings: Codable, Equatable {
     var includeFullPage: Bool = true
     var panelDetectionConfidence: Double = 0.6
     var readingDirection: ReadingDirection = .ltr
-    var guidedViewExportFormat: GuidedViewExportFormat = .epub
 }
 
 struct ImageEnhancementSettings: Codable, Equatable {
