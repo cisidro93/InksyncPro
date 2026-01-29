@@ -152,7 +152,7 @@ struct ContentView: View {
                             ToolbarItem(placement: .topBarTrailing) {
                                 Menu {
                                     Button {
-                                        if pdf.fileSize > 100 * 1024 * 1024 {
+                                        if pdf.fileSize > 50 * 1024 * 1024 {
                                             largeFilePDF = pdf
                                             showingLargeFileAlert = true
                                         } else {
@@ -201,7 +201,7 @@ struct ContentView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This file is over 100MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
+            Text("This file is over 50MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
         }
     }
 }

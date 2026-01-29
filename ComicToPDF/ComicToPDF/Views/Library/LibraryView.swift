@@ -230,7 +230,7 @@ struct LibraryView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("File is >100MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
+                Text("File is >50MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
             }
             .alert("Rename File", isPresented: Binding(
                 get: { pdfToRename != nil },
@@ -253,7 +253,7 @@ struct LibraryView: View {
     // MARK: - Helpers
     
     private func sharePDF(_ pdf: ConvertedPDF) {
-        if pdf.fileSize > 100 * 1024 * 1024 {
+        if pdf.fileSize > 50 * 1024 * 1024 {
             largeFilePDF = pdf
             showingLargeFileAlert = true
         } else {
