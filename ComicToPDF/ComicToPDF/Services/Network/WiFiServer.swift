@@ -65,19 +65,13 @@ class WiFiServer: ObservableObject {
                     DispatchQueue.main.async {
                         // Check for specific permission denied codes
                         if error.debugDescription.contains("-65555") || error.localizedDescription.contains("NoAuth") {
-                            self.errorMessage = "Local Network Permission Denied (Error: \(error)).\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and ensure 'Inksync Pro' is enabled."
+                            self.errorMessage = "Local Network Permission Denied (Code: \(error)).\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and ensure 'Inksync Pro' is enabled."
                         } else {
-                            self.errorMessage = "Failed to start server: \(error.localizedDescription) (Code: \(error))"
+                            // ✅ Fix: Show full error details for debugging
+                            self.errorMessage = "Failed to start server:\n\(error.localizedDescription)\n(Debug: \(error))"
                         }
                     }
-                    DispatchQueue.main.async {
-                        if error.debugDescription.contains("-65555") || error.localizedDescription.contains("NoAuth") {
-                            self.errorMessage = "Local Network Permission Denied.\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and enable access for 'Inksync Pro'."
-                        } else {
-                            self.errorMessage = "Failed to start server: \(error.localizedDescription)"
-                        }
-                    }
-                    self.stop()
+                    if self.isRunning { self.stop() }
                 default: break
                 }
             }
@@ -93,9 +87,10 @@ class WiFiServer: ObservableObject {
             print("Failed to start server: \(error)")
             DispatchQueue.main.async {
                 if error.localizedDescription.contains("NoAuth") || "\(error)".contains("-65555") {
-                     self.errorMessage = "Local Network Permission Denied.\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and enable access for 'Inksync Pro'."
+                     self.errorMessage = "Local Network Permission Denied (Code: \(error)).\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and ensure 'Inksync Pro' is enabled."
                 } else {
-                    self.errorMessage = "Could not bind to port: \(error.localizedDescription)"
+                    // ✅ Fix: Show full error details for debugging
+                    self.errorMessage = "Could not bind to port:\n\(error.localizedDescription)\n(Debug: \(error))"
                 }
             }
         }
