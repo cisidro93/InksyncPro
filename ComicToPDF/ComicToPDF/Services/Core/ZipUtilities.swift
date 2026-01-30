@@ -55,8 +55,10 @@ struct ZipUtilities {
                     }
                     
                     // 5. Sort and Finish
+                    // ✅ Fix: Sort by FULL PATH to preserve directory structure (Chapter1/01.jpg should come before Chapter1/02.jpg)
+                    // relativePath property of URL is useful here as it respects the subfolders relative to tempDir
                     let sortedURLs = extractedFiles.sorted {
-                        $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+                        $0.path.localizedStandardCompare($1.path) == .orderedAscending
                     }
                     
                     print("✅ Successfully unzipped \(sortedURLs.count) files.")

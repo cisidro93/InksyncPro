@@ -510,8 +510,14 @@ class ConversionManager: ObservableObject {
                     if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
                         if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
                         var data = Data()
-                        _ = try archive.extract(entry) { data.append($0) }
-                        return UIImage(data: data)
+                        do {
+                            _ = try archive.extract(entry) { data.append($0) }
+                            if let image = UIImage(data: data) {
+                                return image
+                            }
+                        } catch {
+                            print("Failed to extract entry: \(entry.path)")
+                        }
                     }
                 }
             } catch {
