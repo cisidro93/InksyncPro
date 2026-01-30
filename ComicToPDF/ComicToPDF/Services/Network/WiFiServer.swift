@@ -39,7 +39,8 @@ class WiFiServer: ObservableObject {
         }
         
         do {
-            let params = NWParameters(tls: nil)
+            // Use standard insecure TCP parameters to avoid implied TLS issues
+            let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
             params.includePeerToPeer = true
             
@@ -58,6 +59,14 @@ class WiFiServer: ObservableObject {
                     }
                 case .failed(let error):
                     print("Server failed: \(error)")
+                    DispatchQueue.main.async {
+                        // Check for specific permission denied codes
+                        if error.debugDescription.contains("-65555") || error.localizedDescription.contains("NoAuth") {
+                            self.errorMessage = "Local Network Permission Denied (Error: \(error)).\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and ensure 'Inksync Pro' is enabled."
+                        } else {
+                            self.errorMessage = "Failed to start server: \(error.localizedDescription) (Code: \(error))"
+                        }
+                    }
                     DispatchQueue.main.async {
                         if error.debugDescription.contains("-65555") || error.localizedDescription.contains("NoAuth") {
                             self.errorMessage = "Local Network Permission Denied.\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and enable access for 'Inksync Pro'."
