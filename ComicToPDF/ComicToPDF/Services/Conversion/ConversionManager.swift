@@ -502,13 +502,24 @@ class ConversionManager: ObservableObject {
         }
 
         if ["cbz", "cbr", "zip", "epub"].contains(ext) {
+            // ✅ Security Scope Safety (Paranoid Check)
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
             do {
-                let archive = try Archive(url: url, accessMode: .read)
-                let sortedEntries = archive.makeIterator().sorted { $0.path < $1.path }
+                guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
+                
+                // ✅ Fix: Use localized sort to match Finder/ZipUtilities (1, 2, 10 vs 1, 10, 2)
+                let sortedEntries = archive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                
                 for entry in sortedEntries {
+                    // Skip directories explicit check
+                    if entry.type == .directory { continue }
+                    
                     let entryExt = (entry.path as NSString).pathExtension.lowercased()
                     if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
                         if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
+                        
                         var data = Data()
                         do {
                             _ = try archive.extract(entry) { data.append($0) }
@@ -516,7 +527,7 @@ class ConversionManager: ObservableObject {
                                 return image
                             }
                         } catch {
-                            print("Failed to extract entry: \(entry.path)")
+                            print("Failed to extract entry for thumbnail: \(entry.path)")
                         }
                     }
                 }
