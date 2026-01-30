@@ -1,9 +1,13 @@
 import Vision
 import UIKit
 import simd
+import CoreImage // ✅ Needed for Grayscale Filter
 
 struct PanelExtractor {
     
+    // Global Context for performance (creation is expensive)
+    private static let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+
     enum ExtractionMode: String, Codable, Equatable, Hashable {
         case automatic
         case conservative
@@ -43,12 +47,40 @@ struct PanelExtractor {
     
     // MARK: - Core Logic
     
-    static func detectPanels(in image: UIImage, mode: ExtractionMode = .automatic, mangaMode: Bool = false) async -> [Panel] {
-        guard let cgImage = image.cgImage else { return [] }
+    // ✅ Helper: Create High-Contrast Grayscale Image for better Edge Detection
+    private static func preprocessForDetection(_ image: UIImage) -> CGImage? {
+        guard let inputCGImage = image.cgImage else { return nil }
+        let ciImage = CIImage(cgImage: inputCGImage)
         
+        // 1. Grayscale (Better for sensing intensity gradients)
+        guard let grayscale = CIFilter(name: "CIPhotoEffectMono", parameters: [kCIInputImageKey: ciImage])?.outputImage else {
+            return inputCGImage
+        }
+        
+        // 2. High Contrast (Make panel borders "pop")
+        // Increasing contrast helps defined edges stand out against gradients
+        guard let contrast = CIFilter(name: "CIColorControls", parameters: [
+            kCIInputImageKey: grayscale,
+            kCIInputContrastKey: 1.3 // 30% Boost
+        ])?.outputImage else {
+            return inputCGImage
+        }
+        
+        // Render
+        return ciContext.createCGImage(contrast, from: contrast.extent)
+    }
+    
+    static func detectPanels(in image: UIImage, mode: ExtractionMode = .automatic, mangaMode: Bool = false) async -> [Panel] {
         if mode == .grid {
             return generateGridPanels(rows: 2, cols: 2)
         }
+        
+        // ✅ STEP 1: Preprocess Image (High Contrast Grayscale)
+        // This helps pinpoint panels by looking at gradient shifts, as requested.
+        // We fallback to original if conversion fails.
+        let processingStart = Date()
+        let cgImage = preprocessForDetection(image) ?? image.cgImage
+        guard let finalCGImage = cgImage else { return [] }
         
         // 1. Run Detection Requests (Rectangles + optional Saliency)
         return await withCheckedContinuation { continuation in
@@ -97,8 +129,8 @@ struct PanelExtractor {
                 textRequest = tRequest
             }
             
-            // Run Handler
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            // Run Handler (Using the Grayscale Image 🧠)
+            let handler = VNImageRequestHandler(cgImage: finalCGImage, options: [:])
             do {
                 try handler.perform(requests)
                 
