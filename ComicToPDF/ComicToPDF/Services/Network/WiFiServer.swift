@@ -44,8 +44,8 @@ class WiFiServer: ObservableObject {
             params.allowLocalEndpointReuse = true
             params.includePeerToPeer = true
             
-            // ✅ Fix: internal permission error often caused by trying to bind to Cellular
-            params.requiredInterfaceType = .wifi
+            // ✅ Fix: Remove strict interface requirement which can crash on simulators or if WiFi is off
+            // params.requiredInterfaceType = .wifi
             
             let listener = try NWListener(using: params, on: 8080)
             listener.service = NWListener.Service(name: "ComicToPDF", type: "_http._tcp")
@@ -615,9 +615,7 @@ class WiFiServer: ObservableObject {
         if getifaddrs(&ifaddr) == 0 {
             var ptr = ifaddr
             while ptr != nil {
-                defer { ptr = ptr?.pointee.ifa_next }
-                
-                guard let interface = ptr?.pointee else { continue }
+                guard let interface = ptr?.pointee else { break }
                 let addrFamily = interface.ifa_addr.pointee.sa_family
                 
                 // Check for IPv4 or IPv6
@@ -627,32 +625,32 @@ class WiFiServer: ObservableObject {
                        let name = String(cString: cString, encoding: .utf8) {
                         
                         // Ignore Loopback
-                        if name == "lo0" { continue }
+                        if name == "lo0" {
+                             ptr = interface.ifa_next
+                             continue
+                        }
                         
-                        // Get the String representation
                         var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                         getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len), &hostname, socklen_t(hostname.count), nil, socklen_t(0), NI_NUMERICHOST)
                         
                         let ipString = String(cString: hostname)
                         
-                        // Prioritize "en0" (WiFi) but accept others (like en1 on Sim)
+                        // Prioritize "en0" (WiFi)
                         if name == "en0" {
                             address = ipString
-                            // If we found en0, stop searching, it's the best one.
-                            // However, we prefer IPv4 over IPv6 for the URL usually, but let's just stick to the first valid en0 for now.
-                            // Actually, many users struggle with IPv6 URLs, so let's prefer IPv4.
                             if addrFamily == UInt8(AF_INET) {
                                 freeifaddrs(ifaddr)
                                 return ipString
                             }
-                        } else if address == nil {
-                            // Fallback to first non-loopback found (e.g. en1)
-                            if addrFamily == UInt8(AF_INET) {
-                                address = ipString
-                            }
+                        } else if address == nil && addrFamily == UInt8(AF_INET) {
+                            // Fallback
+                            address = ipString
                         }
                     }
                 }
+                
+                // Move to next - explicit pointer arithmetic without defer
+                ptr = interface.ifa_next
             }
             freeifaddrs(ifaddr)
         }
