@@ -113,6 +113,9 @@ struct WiFiView: View {
                     }
                 }
             }
+            .onAppear {
+                server.triggerLocalNetworkPrivacyAlert()
+            }
             .onDisappear { server.stop() }
             // ✅ NEW: Error Alert
             .alert(item: Binding<ErrorWrapper?>(

@@ -647,16 +647,27 @@ class WiFiServer: ObservableObject {
         return address
     }
     
-    private func triggerLocalNetworkPrivacyAlert() {
-        // Legacy Trigger (NSNetService - often effective for prompting)
+    func triggerLocalNetworkPrivacyAlert() {
+        // 1. Legacy Trigger (NSNetService)
         let service = NetService(domain: "local.", type: "_http._tcp", name: "InksyncTrigger", port: 8080)
         service.publish()
         
-        // Modern Trigger (NWBrowser)
+        // 2. Modern Trigger (NWBrowser)
         let params = NWParameters.tcp
         params.includePeerToPeer = true
         let browser = NWBrowser(for: .bonjour(type: "_http._tcp", domain: nil), using: params)
         browser.start(queue: .global())
+        
+        // 3. UDP Multicast Trigger (Most Reliable)
+        // Sending a packet to a multicast address (224.0.0.1) forces the OS to check Local Network permissions immediately.
+        guard let multicastAddress = try? NWEndpoint.Host("224.0.0.1"),
+              let multicastPort = try? NWEndpoint.Port(rawValue: 9999) else { return }
+        
+        let udpConnection = NWConnection(host: multicastAddress, port: multicastPort, using: .udp)
+        udpConnection.start(queue: .global())
+        udpConnection.send(content: "Trigger".data(using: .utf8), completion: .contentProcessed { _ in
+            udpConnection.cancel()
+        })
         
         // Cleanup
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
