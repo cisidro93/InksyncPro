@@ -44,8 +44,8 @@ class WiFiServer: ObservableObject {
             params.allowLocalEndpointReuse = true
             params.includePeerToPeer = true
             
-            // ✅ Fix: Remove strict interface requirement which can crash on simulators or if WiFi is off
-            // params.requiredInterfaceType = .wifi
+            // ✅ Fix: internal permission error often caused by trying to bind to Cellular/VPN
+            params.requiredInterfaceType = .wifi
             
             let listener = try NWListener(using: params, on: 8080)
             listener.service = NWListener.Service(name: "ComicToPDF", type: "_http._tcp")
