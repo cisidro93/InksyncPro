@@ -251,12 +251,13 @@ class CBZToEPUBConverter {
                 let sourceId = "panel-src-\(ord)"
                 let targetId = "panel-target-\(ord)"
                 
-                // 3. JSON Data (Strict Escaping for XML Attribute)
-                let jsonString = "{&quot;targetId&quot;:&quot;\(targetId)&quot;, &quot;sourceId&quot;:&quot;\(sourceId)&quot;, &quot;ordinal&quot;:\(ord)}"
+                // 3. JSON Data (Clean Syntax)
+                let jsonString = "{\"targetId\":\"\(targetId)\", \"sourceId\":\"\(sourceId)\", \"ordinal\":\(ord)}"
                 
                 // A. Source Div (Transparent Overlay)
+                // Use single quotes for the attribute so we can use double quotes for JSON
                 panelDivs += """
-                <div id="\(sourceId)" class="app-amzn-magnify" data-app-amzn-magnify="\(jsonString)" style="position: absolute; top: \(String(format: "%.2f", top))%; left: \(String(format: "%.2f", left))%; width: \(String(format: "%.2f", width))%; height: \(String(format: "%.2f", height))%;"></div>
+                <div id="\(sourceId)" class="app-amzn-magnify" data-app-amzn-magnify='\(jsonString)' style="position: absolute; top: \(String(format: "%.2f", top))%; left: \(String(format: "%.2f", left))%; width: \(String(format: "%.2f", width))%; height: \(String(format: "%.2f", height))%; z-index: 20; cursor: pointer;"></div>
                 """
                 
                 // B. Target Div (Magnified View)
