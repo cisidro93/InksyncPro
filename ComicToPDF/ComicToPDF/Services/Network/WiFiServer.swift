@@ -418,7 +418,11 @@ class WiFiServer: ObservableObject {
             let html = generateHTML()
             sendResponse(connection, 200, html, contentType: "text/html")
         } else {
-            let fileName = String(path.dropFirst())
+            // URL Decode the path (critical for filenames with spaces!)
+            // e.g. /my%20comic.epub -> my comic.epub
+            let rawFileName = String(path.dropFirst())
+            let fileName = rawFileName.removingPercentEncoding ?? rawFileName
+            
             let fileURL = docDir.appendingPathComponent(fileName)
             
             if FileManager.default.fileExists(atPath: fileURL.path) {
@@ -427,12 +431,17 @@ class WiFiServer: ObservableObject {
                 let type = (ext == "html") ? "text/html" : "application/octet-stream"
                 
                 do {
+                    // Mapped memory for large files
                     let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
-                     sendResponse(connection, 200, data: data, contentType: type, filename: fileName)
+                     // Pass the DECODED filename to the header logic (or re-encode if needed for Content-Disposition?)
+                     // Actually Content-Disposition usually likes quoted plain text or encoded. 
+                     // Let's pass the simple filename.
+                     sendResponse(connection, 200, data: data, contentType: type, filename: fileURL.lastPathComponent)
                 } catch {
                     sendResponse(connection, 500, "Internal Server Error")
                 }
             } else {
+                print("⚠️ File not found: \(fileURL.path)")
                 sendResponse(connection, 404, "Not Found")
             }
         }
