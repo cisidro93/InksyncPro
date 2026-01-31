@@ -203,19 +203,16 @@ class EPUBGenerator {
                 let width = String(format: "%.2f", rect.width * 100)
                 let height = String(format: "%.2f", rect.height * 100)
                 
-                // JSON Data for Kindle
-                // {"ord": 1, "parent": "img-container", "ul": [0, 0], "ur": [100, 0], "lr": [100, 100], "ll": [0, 100]}
-                // Actually, simplest 'Mag' format is just specifying the target ID.
-                // But typically for 'comic' mode, we use:
-                // class="app-amzn-magnify" data-app-amzn-magnify='{"targetId":"...","sourceId":"...","ordinal":...}'
-                
-                // Let's use the standard "overlay" approach
-                // We overlay a div that Matches the panel rect.
+                // JSON Data (Correct Kindle Format)
+                // We must use "targetId" and "sourceId". 
+                // Since the tap area (source) and the zoom area (target) are the same (the panel),
+                // we point them to the same ID.
+                let jsonString = "{\"targetId\":\"panel-\(pIndex)\", \"sourceId\":\"panel-\(pIndex)\", \"ordinal\":\(pIndex)}"
                 
                 panelsHTML += """
                 <div id="panel-\(pIndex)" class="app-amzn-magnify" 
-                     style="top: \(top)%; left: \(left)%; width: \(width)%; height: \(height)%;"
-                     data-app-amzn-magnify='{"ordinal":\(pIndex), "type":"panel-target"}'>
+                     style="top: \(top)%; left: \(left)%; width: \(width)%; height: \(height)%; cursor: pointer;"
+                     data-app-amzn-magnify='\(jsonString)'>
                 </div>
                 """
             }
