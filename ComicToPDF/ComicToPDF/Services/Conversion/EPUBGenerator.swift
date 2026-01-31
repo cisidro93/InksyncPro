@@ -108,6 +108,69 @@ class EPUBGenerator {
         return finalURL
     }
     
+    // ✅ NEW: URL-Based overload (for PageDeleteView / Memory Efficiency)
+    func generateEPUB(from imageURLs: [URL], outputName: String) async throws -> (URL, Int) {
+        // Setup similar to main method but reads from disk
+        // Simplified flow: Load images one by one to avoid OOM
+        
+        try? FileManager.default.removeItem(at: tempDirectory)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        
+        let oebpsDir = tempDirectory.appendingPathComponent("OEBPS")
+        try FileManager.default.createDirectory(at: oebpsDir.appendingPathComponent("images"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: oebpsDir.appendingPathComponent("text"), withIntermediateDirectories: true)
+        let metaInfDir = tempDirectory.appendingPathComponent("META-INF")
+        try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+        
+        // Write Container
+        let containerXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+            <rootfiles>
+                <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+            </rootfiles>
+        </container>
+        """
+        try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+        
+        let totalImages = imageURLs.count
+        
+        // Streaming Process
+        for (index, url) in imageURLs.enumerated() {
+            let pageNumber = index + 1
+            let imageName = "image\(pageNumber).jpg"
+            let imageDestURL = oebpsDir.appendingPathComponent("images/\(imageName)")
+            
+            // Just copy the file if possible to save re-encoding time?
+            // PageDeleteView implies we are editing, so we might want to preserve exact data.
+            // But we typically enforce constraints.
+            // Let's load and processed like normal to ensure consistency
+            
+            if let image = UIImage(contentsOfFile: url.path) {
+                let processed = resizeImageIfNeeded(image)
+                if let data = processed.jpegData(compressionQuality: compressionQuality) {
+                     try data.write(to: imageDestURL)
+                }
+            }
+            
+            accumulatedImageManifestItems += "        <item id=\"image\(pageNumber)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
+            
+            let xhtmlName = "page\(pageNumber).xhtml"
+            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlName)
+            
+            accumulatedXhtmlManifestItems += "        <item id=\"page\(pageNumber)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
+            accumulatedSpineItems += "        <itemref idref=\"page\(pageNumber)\"/>\n"
+        }
+        
+        try generateMetadataFiles()
+        try generateTableOfContents(pageCount: totalImages)
+        
+        let finalURL = try packageEPUB(outputName: outputName)
+        cleanup()
+        
+        return (finalURL, totalImages)
+    }
+    
     // ... (Generate Content methods remain mostly same, just pass through)
 
     private func createPageXHTML(pageNumber: Int, imageName: String, xhtmlFileName: String) throws {
