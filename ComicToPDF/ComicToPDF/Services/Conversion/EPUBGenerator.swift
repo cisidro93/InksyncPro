@@ -44,7 +44,7 @@ import UniformTypeIdentifiers
             // We'll use percentage-based positioning for universal scaling
             for (index, panel) in panels.enumerated() {
                 let pIndex = index + 1
-                let rect = panel.rect
+                let rect = panel.boundingBox
                 
                 // Convert normalized rect (0-1) to percentages
                 let top = String(format: "%.2f", (1.0 - rect.maxY) * 100) // CoreGraphics origin is bottom-left, CSS is top-left
