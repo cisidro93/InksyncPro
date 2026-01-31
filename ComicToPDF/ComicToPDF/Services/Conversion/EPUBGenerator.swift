@@ -26,6 +26,87 @@ class EPUBGenerator {
         self.tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("EPUBGeneration_\(UUID().uuidString)", isDirectory: true)
     }
+
+    // Accumulators for Metadata
+    private var accumulatedImageManifestItems = ""
+    private var accumulatedXhtmlManifestItems = ""
+    private var accumulatedSpineItems = ""
+    
+    // Stats
+    private var originalSize: Int64 = 0
+    private var finalSize: Int64 = 0
+
+    // MARK: - Public API
+    
+    func generateEPUB(images: [UIImage], outputName: String, progress: @escaping (Double) -> Void) async throws -> URL {
+        // 1. Setup Directory
+        try? FileManager.default.removeItem(at: tempDirectory)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        
+        let oebpsDir = tempDirectory.appendingPathComponent("OEBPS")
+        try FileManager.default.createDirectory(at: oebpsDir.appendingPathComponent("images"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: oebpsDir.appendingPathComponent("text"), withIntermediateDirectories: true)
+        let metaInfDir = tempDirectory.appendingPathComponent("META-INF")
+        try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+        
+        // 2. Write Container XML
+        let containerXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+            <rootfiles>
+                <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+            </rootfiles>
+        </container>
+        """
+        try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+        
+        // 3. Process Images
+        let totalImages = images.count
+        
+        for (index, image) in images.enumerated() {
+            let pageNumber = index + 1
+            
+            // Resize logic
+            let processedImage = resizeImageIfNeeded(image)
+            
+            // Compression
+            let imageName = "image\(pageNumber).jpg"
+            let imageURL = oebpsDir.appendingPathComponent("images/\(imageName)")
+            
+            if let data = processedImage.jpegData(compressionQuality: compressionQuality) {
+                try data.write(to: imageURL)
+                finalSize += Int64(data.count)
+                
+                // Track Original Size (Approx)
+                if let rawData = image.jpegData(compressionQuality: 1.0) {
+                     originalSize += Int64(rawData.count)
+                }
+            }
+            
+            // Manifest Entry
+            accumulatedImageManifestItems += "        <item id=\"image\(pageNumber)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
+            
+            // XHTML Page
+            let xhtmlName = "page\(pageNumber).xhtml"
+            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlName)
+            
+            accumulatedXhtmlManifestItems += "        <item id=\"page\(pageNumber)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
+            accumulatedSpineItems += "        <itemref idref=\"page\(pageNumber)\"/>\n"
+            
+            progress(Double(index + 1) / Double(totalImages) * 0.9)
+        }
+        
+        // 4. Generate Metadata (OPF/NCX)
+        try generateMetadataFiles()
+        try generateTableOfContents(pageCount: totalImages)
+        
+        // 5. Package
+        let finalURL = try packageEPUB(outputName: outputName)
+        
+        cleanup()
+        progress(1.0)
+        return finalURL
+    }
     
     // ... (Generate Content methods remain mostly same, just pass through)
 
