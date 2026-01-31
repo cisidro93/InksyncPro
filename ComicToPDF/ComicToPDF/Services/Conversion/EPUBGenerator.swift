@@ -203,11 +203,22 @@ class EPUBGenerator {
                 let width = String(format: "%.2f", rect.width * 100)
                 let height = String(format: "%.2f", rect.height * 100)
                 
-                // JSON Data (Correct Kindle Format)
-                // We must use "targetId" and "sourceId". 
-                // Since the tap area (source) and the zoom area (target) are the same (the panel),
-                // we point them to the same ID.
-                let jsonString = "{\"targetId\":\"panel-\(pIndex)\", \"sourceId\":\"panel-\(pIndex)\", \"ordinal\":\(pIndex)}"
+                // Coordinate-Based Region Magnification
+                // This tells Kindle to zoom into specific coordinates of the 'parent' container.
+                // Coordinates are Integers (Percentages 0-100).
+                
+                let minX = Int(rect.minX * 100)
+                let minY = Int((1.0 - rect.maxY) * 100) // Top-left origin for CSS/Kindle
+                let maxX = Int(rect.maxX * 100)
+                let maxY = Int((1.0 - rect.minY) * 100)
+                
+                // Construct the coordinate arrays [x, y]
+                let ul = "[\(minX), \(minY)]"
+                let ur = "[\(maxX), \(minY)]"
+                let lr = "[\(maxX), \(maxY)]"
+                let ll = "[\(minX), \(maxY)]"
+                
+                let jsonString = "{\"ord\":\(pIndex), \"parent\":\"img-container\", \"ul\":\(ul), \"ur\":\(ur), \"lr\":\(lr), \"ll\":\(ll)}"
                 
                 panelsHTML += """
                 <div id="panel-\(pIndex)" class="app-amzn-magnify" 
