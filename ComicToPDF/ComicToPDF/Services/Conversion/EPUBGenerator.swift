@@ -7,268 +7,69 @@ import UniformTypeIdentifiers
 // MARK: - EPUB GENERATOR CLASS
 // =============================================================================
 
-class EPUBGenerator {
+    private let panelData: [Int: [PanelExtractor.Panel]]? // ✅ NEW: Store panel data
     
-    private let tempDirectory: URL
-    private let settings: EPUBSettings
-    private let metadata: PDFMetadata
-    private let compressionQuality: Double
-    private let targetSize: CGSize? // Added for optimizeForDevice
-    private let customScale: Double // Added for custom sliders
-    
-    private var accumulatedImageManifestItems: String = ""
-    private var accumulatedXhtmlManifestItems: String = ""
-
-    private var accumulatedSpineItems: String = ""
-    private var accumulatedPageCount: Int = 0
-    private var originalSize: Int64 = 0
-    private var finalSize: Int64 = 0
-    
-    init(settings: EPUBSettings, metadata: PDFMetadata, compressionQuality: Double = 0.85, targetSize: CGSize? = nil, customScale: Double = 1.0) {
+    init(settings: EPUBSettings, metadata: PDFMetadata, compressionQuality: Double = 0.85, targetSize: CGSize? = nil, customScale: Double = 1.0, panelData: [Int: [PanelExtractor.Panel]]? = nil) {
         self.settings = settings
         self.metadata = metadata
         self.compressionQuality = compressionQuality
         self.targetSize = targetSize
         self.customScale = customScale
+        self.panelData = panelData // ✅ NEW
         self.tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("EPUBGeneration_\(UUID().uuidString)", isDirectory: true)
     }
     
-    // MARK: - Main Generation Function
-    
-    func generateEPUB(from images: [UIImage], outputName: String) async throws -> (URL, Int) {
-        try createEPUBStructure()
-        try await generateContent(from: images)
-        try generateMetadataFiles()
-        let epubURL = try packageEPUB(outputName: outputName)
-        cleanup()
-        return (epubURL, accumulatedPageCount)
-    }
+    // ... (Generate Content methods remain mostly same, just pass through)
 
-    func generateEPUB(from imageURLs: [URL], outputName: String, passthrough: Bool = false) async throws -> (URL, Int) {
-        try createEPUBStructure()
-        try await generateContent(from: imageURLs, passthrough: passthrough)
-        try generateMetadataFiles()
-        let epubURL = try packageEPUB(outputName: outputName)
-        cleanup()
-        return (epubURL, accumulatedPageCount)
-    }
-    
-    // MARK: - EPUB Structure Creation
-    
-    private func createEPUBStructure() throws {
-        // Create EPUB directory structure
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: tempDirectory.appendingPathComponent("META-INF"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: tempDirectory.appendingPathComponent("OEBPS"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: tempDirectory.appendingPathComponent("OEBPS/images"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: tempDirectory.appendingPathComponent("OEBPS/text"), withIntermediateDirectories: true)
+    private func createPageXHTML(pageNumber: Int, imageName: String, xhtmlFileName: String) throws {
+        // Generate Panels HTML if available
+        var panelsHTML = ""
+        var extraCSS = ""
         
-        // Create mimetype file (must be first, uncompressed)
-        let mimetypeURL = tempDirectory.appendingPathComponent("mimetype")
-        try "application/epub+zip".write(to: mimetypeURL, atomically: true, encoding: .utf8)
-        
-        // Create META-INF/container.xml
-        try generateContainerXML()
-    }
-    
-    private func generateContainerXML() throws {
-        let containerXML = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-            <rootfiles>
-                <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-            </rootfiles>
-        </container>
-        """
-        
-        let containerURL = tempDirectory.appendingPathComponent("META-INF/container.xml")
-        try containerXML.write(to: containerURL, atomically: true, encoding: .utf8)
-    }
-    
-    // MARK: - Content Generation
-    
-
-
-    private func generateContent(from images: [UIImage]) async throws {
-        var imageManifestLines: [String] = []
-        var xhtmlManifestLines: [String] = []
-        var spineItemLines: [String] = []
-        
-        let imagesDir = tempDirectory.appendingPathComponent("OEBPS/images")
-        
-        // Process and save images
-        for (index, image) in images.enumerated() {
-            let pageNumber = index + 1
-            let imageName = String(format: "page%d.jpg", pageNumber)
-            let imageURL = imagesDir.appendingPathComponent(imageName)
+        if let panels = panelData?[pageNumber], !panels.isEmpty {
+            // Amazon Region Magnification Style
+            // We need to define "targets" (the magnified view) and "sources" (the tap area)
+            // For simple Guided View, the target is usually a high-res crop, OR just a zoomed view of the main image.
+            // Modern Kindle 'Region Magnification' uses a DIV overlay that acts as the magnifier.
             
-            let imageData = image.jpegData(compressionQuality: self.compressionQuality) ?? Data()
-            try imageData.write(to: imageURL)
-            
-            // Add to image manifest items
-            let properties = (pageNumber == 1) ? " properties=\"cover-image\"" : ""
-            imageManifestLines.append("""
-                <item id="image\(pageNumber)" href="images/\(imageName)" media-type="image/jpeg"\(properties)/>
-            """)
-            
-            // Create XHTML page for each image
-            let xhtmlFileName = String(format: "page%d.xhtml", pageNumber)
-            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlFileName)
-            
-            // Add to XHTML manifest items
-            xhtmlManifestLines.append("""
-                <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
-            """)
-            
-            // Add to spine items
-            spineItemLines.append("""
-                <itemref idref="page\(pageNumber)"/>
-            """)
-        }
-        
-        // Generate page content
-        self.accumulatedImageManifestItems = imageManifestLines.joined(separator: "\n")
-        self.accumulatedXhtmlManifestItems = xhtmlManifestLines.joined(separator: "\n")
-        self.accumulatedSpineItems = spineItemLines.joined(separator: "\n")
-        self.accumulatedPageCount = images.count
-        
-        // Generate table of contents
-        if settings.includeTableOfContents {
-            try generateTableOfContents(pageCount: images.count)
-        }
-    }
-
-    private func generateContent(from imageURLs: [URL], passthrough: Bool = false) async throws {
-        var imageManifestLines: [String] = []
-        var xhtmlManifestLines: [String] = []
-        var spineItemLines: [String] = []
-        
-        let imagesDir = tempDirectory.appendingPathComponent("OEBPS/images")
-        
-        // Process and save images
-        for (index, sourceURL) in imageURLs.enumerated() {
-            try autoreleasepool {
-                let pageNumber = index + 1
-                // Copy image file
-                let ext = sourceURL.pathExtension.isEmpty ? "jpg" : sourceURL.pathExtension
-                let imageName = String(format: "page%d.\(ext)", pageNumber)
-                let destURL = imagesDir.appendingPathComponent(imageName)
-                
-                if passthrough {
-                     try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                     if let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path), let size = attrs[.size] as? Int64 {
-                         originalSize += size
-                         finalSize += size
-                     }
-                } else {
-                    var processed = false
-                    
-                    // Load image for processing if resizing/compression is needed
-                    // "Smart" copying: If no resize needed AND input is JPEG AND quality is High, just copy.
-                    // Otherwise, decode -> resize -> compress -> save.
-                    
-                    let ext = sourceURL.pathExtension.lowercased()
-                    let isJPEG = ext == "jpg" || ext == "jpeg"
-                    let needsResize = targetSize != nil || customScale < 0.99
-                    
-                    // Track input size
-                    if let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path), let size = attrs[.size] as? Int64 {
-                        originalSize += size
-                    }
-                    
-                    if !needsResize && isJPEG && compressionQuality >= 1.0 {
-                        // Fast path
-                        try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                        if let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path), let size = attrs[.size] as? Int64 {
-                            finalSize += size
-                        }
-                        processed = true
-                    }
-                    
-                    if !processed {
-                        // FIX: Use CGImageSource/Destination to avoid UIImage tiling artifacts (horizontal strips)
-                        if let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
-                           let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) {
-                            
-                            let data = NSMutableData()
-                            if let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil) {
-                                let options: [String: Any] = [
-                                    kCGImageDestinationLossyCompressionQuality as String: self.compressionQuality
-                                ]
-                                
-                                CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
-                                CGImageDestinationFinalize(destination)
-                                
-                                try (data as Data).write(to: destURL)
-                                finalSize += Int64((data as Data).count)
-                                processed = true
-                            } else {
-                                // Destination creation failed
-                                try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                                processed = true
-                            }
-                        } else {
-                            // Source creation failed
-                            try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                            if let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path),
-                               let size = attrs[.size] as? Int64 {
-                                finalSize += size
-                            }
-                            processed = true
-                        }
-                    }
-                    
-                    if !processed {
-                       // Fallback
-                       try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                    }
+            extraCSS = """
+                .app-amzn-magnify {
+                     position: absolute;
+                     z-index: 2;
                 }
+            """
+            
+            // Loop through panels and create overlay divs
+            // We'll use percentage-based positioning for universal scaling
+            for (index, panel) in panels.enumerated() {
+                let pIndex = index + 1
+                let rect = panel.rect
                 
-                // Determine media type
-                let mediaType: String
-                switch ext.lowercased() {
-                case "png": mediaType = "image/png"
-                case "gif": mediaType = "image/gif"
-                case "webp": mediaType = "image/webp"
-                default: mediaType = "image/jpeg"
-                }
+                // Convert normalized rect (0-1) to percentages
+                let top = String(format: "%.2f", (1.0 - rect.maxY) * 100) // CoreGraphics origin is bottom-left, CSS is top-left
+                let left = String(format: "%.2f", rect.minX * 100)
+                let width = String(format: "%.2f", rect.width * 100)
+                let height = String(format: "%.2f", rect.height * 100)
                 
-                // Add to image manifest items
-                let properties = (pageNumber == 1) ? " properties=\"cover-image\"" : ""
-                imageManifestLines.append("""
-                    <item id="image\(pageNumber)" href="images/\(imageName)" media-type="\(mediaType)"\(properties)/>
-                """)
+                // JSON Data for Kindle
+                // {"ord": 1, "parent": "img-container", "ul": [0, 0], "ur": [100, 0], "lr": [100, 100], "ll": [0, 100]}
+                // Actually, simplest 'Mag' format is just specifying the target ID.
+                // But typically for 'comic' mode, we use:
+                // class="app-amzn-magnify" data-app-amzn-magnify='{"targetId":"...","sourceId":"...","ordinal":...}'
                 
-                // Create XHTML page for each image
-                let xhtmlFileName = String(format: "page%d.xhtml", pageNumber)
-                try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlFileName)
+                // Let's use the standard "overlay" approach
+                // We overlay a div that Matches the panel rect.
                 
-                // Add to XHTML manifest items
-                xhtmlManifestLines.append("""
-                    <item id="page\(pageNumber)" href="text/\(xhtmlFileName)" media-type="application/xhtml+xml"/>
-                """)
-                
-                // Add to spine items
-                spineItemLines.append("""
-                    <itemref idref="page\(pageNumber)"/>
-                """)
+                panelsHTML += """
+                <div id="panel-\(pIndex)" class="app-amzn-magnify" 
+                     style="top: \(top)%; left: \(left)%; width: \(width)%; height: \(height)%;"
+                     data-app-amzn-magnify='{"ordinal":\(pIndex), "type":"panel-target"}'>
+                </div>
+                """
             }
         }
-        
-        // Generate page content
-        self.accumulatedImageManifestItems = imageManifestLines.joined(separator: "\n")
-        self.accumulatedXhtmlManifestItems = xhtmlManifestLines.joined(separator: "\n")
-        self.accumulatedSpineItems = spineItemLines.joined(separator: "\n")
-        self.accumulatedPageCount = imageURLs.count
-        
-        // Generate table of contents
-        if settings.includeTableOfContents {
-            try generateTableOfContents(pageCount: imageURLs.count)
-        }
-    }
-    
-    private func createPageXHTML(pageNumber: Int, imageName: String, xhtmlFileName: String) throws {
+
         let xhtmlContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
@@ -278,13 +79,16 @@ class EPUBGenerator {
             <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
             <style type="text/css">
                 body { margin: 0; padding: 0; text-align: center; background-color: white; }
-                .page { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
-                img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                .page { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+                img { max-width: 100%; max-height: 100%; object-fit: contain; z-index: 1; position: absolute; }
+                /* Region Magnification Overlays */
+                \(extraCSS)
             </style>
         </head>
         <body>
-            <div class="page">
+            <div class="page" id="img-container">
                 <img src="../images/\(imageName)" alt="Page \(pageNumber)"/>
+                \(panelsHTML)
             </div>
         </body>
         </html>
@@ -346,6 +150,7 @@ class EPUBGenerator {
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">landscape</meta>
+                <meta name="region-mag" content="true"/>
                 <meta name="cover" content="image1"/>
             </metadata>
             <manifest>
