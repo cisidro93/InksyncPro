@@ -561,6 +561,9 @@ class WiFiServer: ObservableObject {
             
             <div class="card">
                 <h3>Library Files (Download)</h3>
+                <p style="font-size: 13px; color: #888; margin-bottom: 15px;">
+                    💡 <strong>Tip for Kindle Users:</strong> Download <strong>EPUB</strong> files and convert them using <em>Kindle Previewer 3</em> on your PC to enable native Guided View (Panel Zooming).
+                </p>
                 <ul>
                     \(fileListHTML)
                 </ul>
