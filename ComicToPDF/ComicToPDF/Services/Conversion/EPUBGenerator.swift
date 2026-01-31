@@ -7,6 +7,13 @@ import UniformTypeIdentifiers
 // MARK: - EPUB GENERATOR CLASS
 // =============================================================================
 
+class EPUBGenerator {
+    private let settings: EPUBSettings
+    private let metadata: PDFMetadata
+    private let compressionQuality: Double
+    private let targetSize: CGSize?
+    private let customScale: Double
+    private let tempDirectory: URL
     private let panelData: [Int: [PanelExtractor.Panel]]? // ✅ NEW: Store panel data
     
     init(settings: EPUBSettings, metadata: PDFMetadata, compressionQuality: Double = 0.85, targetSize: CGSize? = nil, customScale: Double = 1.0, panelData: [Int: [PanelExtractor.Panel]]? = nil) {
