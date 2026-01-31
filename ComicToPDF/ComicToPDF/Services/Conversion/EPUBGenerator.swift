@@ -308,9 +308,14 @@ class EPUBGenerator {
                 <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
-                <meta property="rendition:spread">landscape</meta>
+                <meta property="rendition:spread">auto</meta>
+                <meta name="book-type" content="comic"/>
                 <meta name="region-mag" content="true"/>
                 <meta name="cover" content="image1"/>
+                <meta name="original-resolution" content="1024x1536"/>
+                <meta name="primary-writing-mode" content="horizontal-rl"/>
+                <meta name="zero-gutter" content="true"/>
+                <meta name="zero-margin" content="true"/>
             </metadata>
             <manifest>
                 <item id="toc" href="text/toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>
