@@ -488,7 +488,7 @@ class WiFiServer: ObservableObject {
     // MARK: - HTML Generator
     
     private func generateHTML() -> String {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].resolvingSymlinksInPath()
         
         // Relies on FileManager enumerator for recursive scan
         var fileLinks: [String] = []
@@ -496,12 +496,22 @@ class WiFiServer: ObservableObject {
         
         // Recursive Scan to find files in subfolders (Library structure)
         if let enumerator = FileManager.default.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
-            for case let fileURL as URL in enumerator {
+            for case let rawFileURL as URL in enumerator {
+                let fileURL = rawFileURL.resolvingSymlinksInPath()
                 let ext = fileURL.pathExtension.lowercased()
+                
                 if ["pdf", "epub", "cbz", "cbr"].contains(ext) {
                     // Calculate Relative Path for Link
-                    let relativePath = fileURL.path.replacingOccurrences(of: docDir.path + "/", with: "")
+                    var relativePath = fileURL.path.replacingOccurrences(of: docDir.path, with: "")
+                    
+                    // Remove leading slash to prevent "//hostname" interpretation
+                    if relativePath.hasPrefix("/") {
+                        relativePath.removeFirst()
+                    }
+                    
+                    // Safe encoding
                     let linkPath = relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath
+                    
                     let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                     let sizeStr = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
                     
@@ -511,6 +521,7 @@ class WiFiServer: ObservableObject {
                                 <span class="name">\(fileURL.lastPathComponent)</span>
                                 <span class="meta">\(sizeStr)</span>
                             </div>
+                            <!-- Ensure single slash -->
                             <a href="/\(linkPath)" class="download-btn" download>Download</a>
                         </li>
                     """)
