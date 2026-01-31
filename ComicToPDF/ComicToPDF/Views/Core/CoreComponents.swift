@@ -324,7 +324,7 @@ struct SplashScreenView: View {
                         .scaleEffect(logoScale)
                         .opacity(logoOpacity)
                     
-                    Text("ComicToPDF")
+                    Text("Inksync Pro")
                         .font(.title)
                         .fontWeight(.bold)
                         .foregroundColor(.white)

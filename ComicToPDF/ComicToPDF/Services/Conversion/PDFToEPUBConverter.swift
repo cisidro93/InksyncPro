@@ -98,7 +98,7 @@ class PDFToEPUBConverter {
         
         // Extract title from filename or options
         let title = options.title ?? pdfURL.deletingPathExtension().lastPathComponent
-        let author = options.author ?? "ComicToPDF"
+        let author = options.author ?? "Inksync Pro"
         let bookID = UUID().uuidString
         
         // Create EPUB directory structure

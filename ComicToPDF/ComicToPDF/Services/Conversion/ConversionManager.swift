@@ -69,7 +69,7 @@ class ConversionManager: ObservableObject {
         if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
             let welcomeURL = docDir.appendingPathComponent("Welcome.txt")
             if !fileManager.fileExists(atPath: welcomeURL.path) {
-                let content = "Welcome to ComicToPDF!\n\nThis folder is where you can access your converted files.\nTo import comics, you can drag and drop them here or use the 'Import' button in the app."
+                let content = "Welcome to Inksync Pro!\n\nThis folder is where you can access your converted files.\nTo import comics, you can drag and drop them here or use the 'Import' button in the app."
                 try? content.write(to: welcomeURL, atomically: true, encoding: .utf8)
             }
         }

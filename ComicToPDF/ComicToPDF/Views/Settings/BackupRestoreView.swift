@@ -34,7 +34,7 @@ struct BackupRestoreView: View {
             Section(footer: Text("Backups include your library index, collections, and settings. PDF files are not included in the backup file.")) {}
         }
         .navigationTitle("Backup & Restore")
-        .fileExporter(isPresented: $showingExporter, document: backupDocument, contentType: .json, defaultFilename: "ComicToPDF_Backup.json") { result in
+        .fileExporter(isPresented: $showingExporter, document: backupDocument, contentType: .json, defaultFilename: "InksyncPro_Backup.json") { result in
              switch result {
              case .success:
                  HapticManager.shared.notification(.success)

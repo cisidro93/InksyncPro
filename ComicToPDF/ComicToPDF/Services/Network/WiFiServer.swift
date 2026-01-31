@@ -51,7 +51,7 @@ class WiFiServer: ObservableObject {
             
             // ✅ Fix: Disable Bonjour (Service Advertising) temporarily to avoid -65555 NoAuth errors.
             // Users connect via direct IP anyway.
-            // listener.service = NWListener.Service(name: "ComicToPDF", type: "_http._tcp")
+            // listener.service = NWListener.Service(name: "Inksync Pro", type: "_http._tcp")
             
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self = self else { return }

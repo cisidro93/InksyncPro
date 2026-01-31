@@ -341,7 +341,7 @@ class EPUBGenerator {
                 <dc:creator>\((metadata.author?.isEmpty ?? true) ? "Unknown" : metadata.author!)</dc:creator>
                 <dc:language>en</dc:language>
                 <dc:description>\((metadata.summary?.isEmpty ?? true) ? "Comic book converted from CBZ/CBR" : metadata.summary!)</dc:description>
-                <dc:publisher>\((metadata.publisher?.isEmpty ?? true) ? "ComicToPDF" : metadata.publisher!)</dc:publisher>
+                <dc:publisher>\((metadata.publisher?.isEmpty ?? true) ? "Inksync Pro" : metadata.publisher!)</dc:publisher>
                 <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
