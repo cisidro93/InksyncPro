@@ -480,15 +480,38 @@ class WiFiServer: ObservableObject {
     
     private func generateHTML() -> String {
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let files = (try? FileManager.default.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil)) ?? []
         
-        let fileLinks = files
-            .filter { ["pdf", "epub", "cbz", "cbr"].contains($0.pathExtension.lowercased()) }
-            .map { "<li><a href=\"/\($0.lastPathComponent)\">\($0.lastPathComponent)</a> <span style='color:#888'>(\(formatBytes($0)))</span></li>" }
-            .joined(separator: "\n")
+        // Relies on FileManager enumerator for recursive scan
+        var fileLinks: [String] = []
+        let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
         
-        // Embedded JavaScript handles the upload progress on the client side
-        // But our server now handles the POST properly too
+        // Recursive Scan to find files in subfolders (Library structure)
+        if let enumerator = FileManager.default.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                let ext = fileURL.pathExtension.lowercased()
+                if ["pdf", "epub", "cbz", "cbr"].contains(ext) {
+                    // Calculate Relative Path for Link
+                    let relativePath = fileURL.path.replacingOccurrences(of: docDir.path + "/", with: "")
+                    let linkPath = relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath
+                    let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    let sizeStr = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+                    
+                    fileLinks.append("""
+                        <li>
+                            <div class="file-info">
+                                <span class="name">\(fileURL.lastPathComponent)</span>
+                                <span class="meta">\(sizeStr)</span>
+                            </div>
+                            <a href="/\(linkPath)" class="download-btn" download>Download</a>
+                        </li>
+                    """)
+                }
+            }
+        }
+        
+        let fileListHTML = fileLinks.isEmpty ? "<li style='justify-content:center; color:#999;'>No files found in Library</li>" : fileLinks.joined(separator: "\n")
+        
+        // HTML Response
         return """
         <html>
         <head>
@@ -498,11 +521,17 @@ class WiFiServer: ObservableObject {
                 body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; background: #f2f2f7; color: #1c1c1e; }
                 .card { background: white; padding: 25px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; }
                 h1 { color: #ff9f0a; font-size: 28px; margin-bottom: 10px; }
+                p { color: #666; margin-top: 5px; }
                 h3 { margin-top: 0; }
                 ul { list-style: none; padding: 0; }
-                li { padding: 15px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+                li { padding: 15px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
                 li:last-child { border-bottom: none; }
-                a { text-decoration: none; color: #1c1c1e; font-weight: 500; }
+                .file-info { display: flex; flex-direction: column; }
+                .name { font-weight: 500; font-size: 16px; margin-bottom: 4px; }
+                .meta { font-size: 13px; color: #888; }
+                .download-btn { background: #007aff; color: white; text-decoration: none; padding: 6px 14px; border-radius: 16px; font-size: 14px; font-weight: 600; transition: 0.2s; }
+                .download-btn:hover { background: #005bb5; }
+                
                 .upload-area { border: 2px dashed #ddd; padding: 40px; text-align: center; border-radius: 12px; cursor: pointer; transition: 0.2s; }
                 .upload-area:hover { border-color: #ff9f0a; background: #fff8eb; }
                 button { background: #ff9f0a; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 15px; }
@@ -514,7 +543,7 @@ class WiFiServer: ObservableObject {
         <body>
             <div class="card">
                 <h1>Inksync Pro</h1>
-                <p>Transfer comics directly to your device.</p>
+                <p>Transfer comics directly to and from your device.</p>
                 
                 <div class="upload-area" onclick="document.getElementById('fileInput').click()">
                     <h3>Tap to Upload</h3>
@@ -531,9 +560,9 @@ class WiFiServer: ObservableObject {
             </div>
             
             <div class="card">
-                <h3>Device Files</h3>
+                <h3>Library Files (Download)</h3>
                 <ul>
-                    \(fileLinks.isEmpty ? "<li style='justify-content:center; color:#999;'>No files found</li>" : fileLinks)
+                    \(fileListHTML)
                 </ul>
             </div>
 
