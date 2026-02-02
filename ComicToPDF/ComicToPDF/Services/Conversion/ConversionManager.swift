@@ -549,7 +549,9 @@ class ConversionManager: ObservableObject {
         } catch { return nil }
         
         let parser = ComicInfoPanelParser(data: xmlData)
-        return parser.parse()
+        let result = parser.parse()
+        // Prevent overwriting with empty data if ComicInfo exists but has no panels
+        return result.isEmpty ? nil : result
     }
     
     // Helpers
@@ -647,8 +649,8 @@ class ConversionManager: ObservableObject {
             }
             
             // 1. Map Entries to Indices (reproducing sorting logic)
-            // We sort by path to match how we displayed them
-            let sortedEntries = sourceArchive.makeIterator().sorted { $0.path < $1.path }
+            // We sort by path to match how we displayed them (Natural Sort)
+            let sortedEntries = sourceArchive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
             let imageEntries = sortedEntries.filter { entry in
                 let ext = (entry.path as NSString).pathExtension.lowercased()
                 return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
@@ -707,8 +709,8 @@ class ConversionManager: ObservableObject {
             throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
         }
         
-        // 1. Get Sorted Entries (Canonical Order)
-        let sortedEntries = sourceArchive.makeIterator().sorted { $0.path < $1.path }
+        // 1. Get Sorted Entries (Canonical Order - Natural Sort)
+        let sortedEntries = sourceArchive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         let imageEntries = sortedEntries.filter { entry in
             let ext = (entry.path as NSString).pathExtension.lowercased()
             return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
@@ -770,7 +772,7 @@ class ConversionManager: ObservableObject {
                 throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
             }
             
-            let sortedEntries = sourceArchive.makeIterator().sorted { $0.path < $1.path }
+            let sortedEntries = sourceArchive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
             let imageEntries = sortedEntries.filter { entry in
                 let ext = (entry.path as NSString).pathExtension.lowercased()
                 return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
@@ -879,7 +881,7 @@ class ConversionManager: ObservableObject {
                 throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
             }
             
-            let sortedEntries = sourceArchive.makeIterator().sorted { $0.path < $1.path }
+            let sortedEntries = sourceArchive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
             let imageEntries = sortedEntries.filter { entry in
                 let ext = (entry.path as NSString).pathExtension.lowercased()
                 return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
