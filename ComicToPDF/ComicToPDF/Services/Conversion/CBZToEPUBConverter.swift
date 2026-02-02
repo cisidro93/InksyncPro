@@ -274,7 +274,7 @@ class CBZToEPUBConverter {
                 let lr = "[\(maxX), \(maxY)]"
                 let ll = "[\(minX), \(maxY)]"
                 
-                let jsonString = "{\"ord\":\(ord), \"parent\":\"img-container\", \"ul\":\(ul), \"ur\":\(ur), \"lr\":\(lr), \"ll\":\(ll)}"
+                let jsonString = "{\"ord\":\(ord), \"sourceId\":\"panel-\(ord)\", \"parent\":\"img-container\", \"ul\":\(ul), \"ur\":\(ur), \"lr\":\(lr), \"ll\":\(ll)}"
                 
                 // Overlay Div
                 let top = String(format: "%.2f", panel.boundingBox.minY * 100)
