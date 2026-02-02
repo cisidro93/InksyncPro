@@ -233,39 +233,33 @@ class CBZToEPUBConverter {
             for (i, panel) in panels.enumerated() {
                 let ord = i + 1
                 
-                // 1. Source (Touch Area) Geometry
-                let top = panel.boundingBox.minY * 100
-                let left = panel.boundingBox.minX * 100
-                let width = panel.boundingBox.width * 100
-                let height = panel.boundingBox.height * 100
+                // Coordinate-Based Region Magnification (Matches EPUBGenerator)
+                // Coordinates are Integers (Percentages 0-100).
+                // 'panel.boundingBox' is Normalized Top-Left Origin.
                 
-                // 2. Target (Zoom) Geometry
-                // Calculate scale to make the panel fill the container
-                let scaleX = 100.0 / panel.boundingBox.width
-                let scaleY = 100.0 / panel.boundingBox.height
+                let minX = Int(panel.boundingBox.minX * 100)
+                let minY = Int(panel.boundingBox.minY * 100)
+                let maxX = Int(panel.boundingBox.maxX * 100)
+                let maxY = Int(panel.boundingBox.maxY * 100)
                 
-                // Offset the image to center the panel
-                let imgLeft = -(panel.boundingBox.minX) * scaleX
-                let imgTop = -(panel.boundingBox.minY) * scaleY
+                // Construct coordinate arrays [x, y]
+                let ul = "[\(minX), \(minY)]"
+                let ur = "[\(maxX), \(minY)]"
+                let lr = "[\(maxX), \(maxY)]"
+                let ll = "[\(minX), \(maxY)]"
                 
-                let sourceId = "panel-src-\(ord)"
-                let targetId = "panel-target-\(ord)"
+                let jsonString = "{\"ord\":\(ord), \"parent\":\"img-container\", \"ul\":\(ul), \"ur\":\(ur), \"lr\":\(lr), \"ll\":\(ll)}"
                 
-                // 3. JSON Data (Clean Syntax)
-                let jsonString = "{\"targetId\":\"\(targetId)\", \"sourceId\":\"\(sourceId)\", \"ordinal\":\(ord)}"
+                // Overlay Div
+                let top = String(format: "%.2f", panel.boundingBox.minY * 100)
+                let left = String(format: "%.2f", panel.boundingBox.minX * 100)
+                let width = String(format: "%.2f", panel.boundingBox.width * 100)
+                let height = String(format: "%.2f", panel.boundingBox.height * 100)
                 
-                // A. Source Div (Transparent Overlay)
-                // Use single quotes for the attribute so we can use double quotes for JSON
                 panelDivs += """
-                <div id="\(sourceId)" class="app-amzn-magnify" data-app-amzn-magnify='\(jsonString)' style="position: absolute; top: \(String(format: "%.2f", top))%; left: \(String(format: "%.2f", left))%; width: \(String(format: "%.2f", width))%; height: \(String(format: "%.2f", height))%; z-index: 20; cursor: pointer;"></div>
-                """
-                
-                // B. Target Div (Magnified View)
-                // This div is hidden by default. Kindle shows it when the Source is activated.
-                // It acts as a "window" (overflow:hidden) containing the huge scaled image.
-                targetDivs += """
-                <div id="\(targetId)" class="target-mag" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; background-color: black;">
-                    <img src="../images/\(imageName)" style="position: absolute; top: \(String(format: "%.2f", imgTop))%; left: \(String(format: "%.2f", imgLeft))%; width: \(String(format: "%.2f", scaleX))%; height: \(String(format: "%.2f", scaleY))%; max-width: none; max-height: none;" />
+                <div id="panel-\(ord)" class="app-amzn-magnify" 
+                     style="position: absolute; top: \(top)%; left: \(left)%; width: \(width)%; height: \(height)%; z-index: 20; cursor: pointer;"
+                     data-app-amzn-magnify='\(jsonString)'>
                 </div>
                 """
             }
@@ -289,16 +283,12 @@ class CBZToEPUBConverter {
                     cursor: pointer;
                     background-color: rgba(0,0,0,0); /* Transparent */
                 }
-                .target-mag {
-                    z-index: 20; /* Above everything when active */
-                }
             </style>
         </head>
         <body>
             <div class="page-container" id="img-container">
                 <img class="bg" src="../images/\(imageName)" alt="comic page"/>
                 \(panelDivs)
-                \(targetDivs)
             </div>
         </body>
         </html>
