@@ -206,11 +206,14 @@ class EPUBGenerator {
                 // Coordinate-Based Region Magnification
                 // This tells Kindle to zoom into specific coordinates of the 'parent' container.
                 // Coordinates are Integers (Percentages 0-100).
+                // NOTE: 'rect' is Normalized Top-Left Origin (SwiftUI/Vision Standard for this app).
                 
                 let minX = Int(rect.minX * 100)
-                let minY = Int((1.0 - rect.maxY) * 100) // Top-left origin for CSS/Kindle
+                let minY = Int(rect.minY * 100)
                 let maxX = Int(rect.maxX * 100)
-                let maxY = Int((1.0 - rect.minY) * 100)
+                let maxY = Int(rect.maxY * 100)
+                
+                // Kindle Format: [x, y] from Top-Left
                 
                 // Construct the coordinate arrays [x, y]
                 let ul = "[\(minX), \(minY)]"

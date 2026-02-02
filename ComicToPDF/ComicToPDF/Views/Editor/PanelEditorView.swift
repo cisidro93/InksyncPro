@@ -30,6 +30,7 @@ struct PanelEditorView: View {
     
     // UI State
     @State private var isMagicWandActive = false
+    @State private var shouldShowPreview = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -54,6 +55,16 @@ struct PanelEditorView: View {
                         .foregroundColor(.red)
                         .padding(8)
                         .background(Color.red.opacity(0.1))
+                        .clipShape(Circle())
+                }
+                .disabled(panels.isEmpty)
+                
+                // ✅ Preview Button
+                Button(action: { shouldShowPreview = true }) {
+                    Image(systemName: "play.rectangle.fill")
+                        .foregroundColor(.green)
+                        .padding(8)
+                        .background(Color.green.opacity(0.1))
                         .clipShape(Circle())
                 }
                 .disabled(panels.isEmpty)
@@ -254,6 +265,11 @@ struct PanelEditorView: View {
             // It's probably safe to call it either way.
             conversionManager.cleanupMemory()
             conversionManager.endSession()
+        }
+        .fullScreenCover(isPresented: $shouldShowPreview) {
+            if let img = pageImage {
+                GuidedViewPreview(image: img, panels: panels)
+            }
         }
     }
     
