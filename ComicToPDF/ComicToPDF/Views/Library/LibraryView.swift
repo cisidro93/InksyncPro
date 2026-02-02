@@ -268,6 +268,9 @@ struct LibraryView: View {
             } message: {
                 Text("Enter a new name for this file.")
             }
+            .alert(item: $conversionManager.appAlert) { alert in
+                Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+            }
         }
     }
     

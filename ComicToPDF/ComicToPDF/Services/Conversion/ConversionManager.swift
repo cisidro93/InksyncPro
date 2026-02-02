@@ -26,6 +26,14 @@ class ConversionManager: ObservableObject {
     @Published var processingStatus = ""
     @Published var statusMessage: String?
     
+    // ✅ NEW: Global Alert State
+    struct AppAlert: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+    @Published var appAlert: AppAlert?
+    
     let thumbnailCache = NSCache<NSString, UIImage>()
     private let libraryFileName = "library_index.json"
     
@@ -1036,15 +1044,26 @@ class ConversionManager: ObservableObject {
     }
     
     // ✅ NEW: Embed currently saved panels into the source file (EPUB/CBZ)
-    func embedPanels(for pdf: ConvertedPDF) async throws {
-        guard let panels = panelOverrides[pdf.id] else {
-            throw NSError(domain: "ConversionManager", code: 404, userInfo: [NSLocalizedDescriptionKey: "No panel edits found to embed."])
+    // ✅ NEW: Embed currently saved panels into the source file (EPUB/CBZ)
+    func embedPanels(for pdf: ConvertedPDF) async {
+        do {
+            guard let panels = panelOverrides[pdf.id] else {
+                await MainActor.run {
+                    self.appAlert = AppAlert(title: "No Edits Found", message: "There are no saved panel edits for this file to embed.")
+                }
+                return
+            }
+            
+            await injectMetadata(into: pdf.url, panels: panels, metadata: pdf.metadata)
+            
+            await MainActor.run {
+                self.appAlert = AppAlert(title: "Success", message: "Panels extracted from the database have been successfully embedded into '\(pdf.name)'.")
+            }
+        } catch {
+            await MainActor.run {
+                self.appAlert = AppAlert(title: "Embed Failed", message: error.localizedDescription)
+            }
         }
-        
-        await injectMetadata(into: pdf.url, panels: panels, metadata: pdf.metadata)
-        
-        // Force Metadata refresh if possible (optional)
-        print("✅ [Embed] Panels embedded into \(pdf.name)")
     }
     
     // ✅ NEW: Reusable Metadata Injection
