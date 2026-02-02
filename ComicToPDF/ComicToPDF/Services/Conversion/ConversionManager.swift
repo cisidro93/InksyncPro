@@ -518,7 +518,8 @@ class ConversionManager: ObservableObject {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             do {
-                guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
+                // Remove 'try?' to let errors propagate to the catch block
+                let archive = try Archive(url: url, accessMode: .read)
                 
                 // ✅ Fix: Use localized sort to match Finder/ZipUtilities (1, 2, 10 vs 1, 10, 2)
                 let sortedEntries = archive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
@@ -1054,7 +1055,7 @@ class ConversionManager: ObservableObject {
                 return
             }
             
-            await injectMetadata(into: pdf.url, panels: panels, metadata: pdf.metadata)
+            try await injectMetadata(into: pdf.url, panels: panels, metadata: pdf.metadata)
             
             await MainActor.run {
                 self.appAlert = AppAlert(title: "Success", message: "Panels extracted from the database have been successfully embedded into '\(pdf.name)'.")
@@ -1067,7 +1068,7 @@ class ConversionManager: ObservableObject {
     }
     
     // ✅ NEW: Reusable Metadata Injection
-    func injectMetadata(into archiveURL: URL, panels: [Int: [PanelExtractor.Panel]], metadata: PDFMetadata) async {
+    func injectMetadata(into archiveURL: URL, panels: [Int: [PanelExtractor.Panel]], metadata: PDFMetadata) async throws {
         print("💾 [Injection] Starting metadata injection for: \(archiveURL.lastPathComponent). Panel Pages: \(panels.count)")
         
         // 1. Convert Panels to SmartPanels format
@@ -1090,23 +1091,20 @@ class ConversionManager: ObservableObject {
         guard let xmlData = xmlContent.data(using: .utf8) else { return }
         
         // Use ZIPFoundation to update
-        do {
-            guard let archive = try? Archive(url: archiveURL, accessMode: .update) else { return }
-            
-            // Remove old if exists
-            if let oldEntry = archive["ComicInfo.xml"] {
-                try archive.remove(oldEntry)
-            }
-            
-            try archive.addEntry(with: "ComicInfo.xml", type: .file, uncompressedSize: Int64(xmlData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
-                let start = Int(position)
-                let end = min(start + size, xmlData.count)
-                return xmlData.subdata(in: start..<end)
-            }
-            print("✅ [Injection] Successfully wrote ComicInfo.xml to \(archiveURL.lastPathComponent)")
-        } catch {
-            print("⚠️ Failed to inject metadata: \(error)")
+        // Note: Archive(url:accessMode:) throws.
+        let archive = try Archive(url: archiveURL, accessMode: .update)
+        
+        // Remove old if exists
+        if let oldEntry = archive["ComicInfo.xml"] {
+            try archive.remove(oldEntry)
         }
+        
+        try archive.addEntry(with: "ComicInfo.xml", type: .file, uncompressedSize: Int64(xmlData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+            let start = Int(position)
+            let end = min(start + size, xmlData.count)
+            return xmlData.subdata(in: start..<end)
+        }
+        print("✅ [Injection] Successfully wrote ComicInfo.xml to \(archiveURL.lastPathComponent)")
     }
 }
 
