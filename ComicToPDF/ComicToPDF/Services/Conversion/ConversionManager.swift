@@ -540,16 +540,33 @@ class ConversionManager: ObservableObject {
     
     // ✅ NEW: Extract Smart Panels from ComicInfo.xml
     static func extractSmartPanels(from url: URL) async -> [Int: [PanelExtractor.Panel]]? {
-        guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
-        guard let entry = archive["ComicInfo.xml"] else { return nil }
+        print("🔍 [SmartPanels] Inspecting: \(url.lastPathComponent)")
+        guard let archive = try? Archive(url: url, accessMode: .read) else {
+            print("❌ [SmartPanels] Could not open archive: \(url.lastPathComponent)")
+            return nil
+        }
+        
+        guard let entry = archive["ComicInfo.xml"] else {
+            print("⚠️ [SmartPanels] No ComicInfo.xml found in: \(url.lastPathComponent)")
+            return nil
+        }
         
         var xmlData = Data()
         do {
             _ = try archive.extract(entry) { xmlData.append($0) }
-        } catch { return nil }
+        } catch {
+            print("❌ [SmartPanels] Failed to extract XML data")
+            return nil
+        }
+        
+        // Debug: Print XML prefix
+        // let snippet = String(data: xmlData.prefix(200), encoding: .utf8) ?? "Invalid Data"
+        // print("📄 XML Snippet: \(snippet)...")
         
         let parser = ComicInfoPanelParser(data: xmlData)
         let result = parser.parse()
+        print("✅ [SmartPanels] Parsed \(result.count) pages with panels from \(url.lastPathComponent)")
+        
         // Prevent overwriting with empty data if ComicInfo exists but has no panels
         return result.isEmpty ? nil : result
     }
@@ -1017,6 +1034,8 @@ class ConversionManager: ObservableObject {
     
     // ✅ NEW: Reusable Metadata Injection
     private func injectMetadata(into archiveURL: URL, panels: [Int: [PanelExtractor.Panel]], metadata: PDFMetadata) async {
+        print("💾 [Injection] Starting metadata injection for: \(archiveURL.lastPathComponent). Panel Pages: \(panels.count)")
+        
         // 1. Convert Panels to SmartPanels format
         var smartPanelsDict: [String: [SmartPanel]] = [:]
         for (index, pagePanels) in panels {
@@ -1050,6 +1069,7 @@ class ConversionManager: ObservableObject {
                 let end = min(start + size, xmlData.count)
                 return xmlData.subdata(in: start..<end)
             }
+            print("✅ [Injection] Successfully wrote ComicInfo.xml to \(archiveURL.lastPathComponent)")
         } catch {
             print("⚠️ Failed to inject metadata: \(error)")
         }
