@@ -1109,19 +1109,26 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
     }
     
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
-        if elementName == "Page" {
+        // Strip namespace if present (e.g. "cb:Page" -> "Page")
+        let cleanName = elementName.components(separatedBy: ":").last ?? elementName
+        
+        // Helper for case-insensitive lookup
+        func getAttr(_ key: String) -> String? {
+            return attributeDict.first { $0.key.caseInsensitiveCompare(key) == .orderedSame }?.value
+        }
+        
+        if cleanName.caseInsensitiveCompare("Page") == .orderedSame {
             // Schema: <Page Image="0">
-            if let imageStr = attributeDict["Image"], let index = Int(imageStr) {
+            if let imageStr = getAttr("Image"), let index = Int(imageStr) {
                 currentPageIndex = index
                 currentPanels = []
             }
-        } else if elementName == "Panel" {
+        } else if cleanName.caseInsensitiveCompare("Panel") == .orderedSame {
             // Schema: <Panel x="0.1" y="0.1" width="0.5" height="0.5" />
-            // Note: Our generated XML uses x, y, width, height (lowercase)
-            if let xVal = attributeDict["x"], let x = Double(xVal),
-               let yVal = attributeDict["y"], let y = Double(yVal),
-               let wVal = attributeDict["width"], let w = Double(wVal),
-               let hVal = attributeDict["height"], let h = Double(hVal) {
+            if let xVal = getAttr("x"), let x = Double(xVal),
+               let yVal = getAttr("y"), let y = Double(yVal),
+               let wVal = getAttr("width"), let w = Double(wVal),
+               let hVal = getAttr("height"), let h = Double(hVal) {
                 
                 let rect = CGRect(x: x, y: y, width: w, height: h)
                 let panel = PanelExtractor.Panel(boundingBox: rect)
@@ -1131,7 +1138,9 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
     }
     
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
-        if elementName == "Page" {
+        let cleanName = elementName.components(separatedBy: ":").last ?? elementName
+        
+        if cleanName.caseInsensitiveCompare("Page") == .orderedSame {
             if let index = currentPageIndex, !currentPanels.isEmpty {
                 result[index] = currentPanels
             }
