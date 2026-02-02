@@ -147,8 +147,8 @@ class ConversionManager: ObservableObject {
                  for case let fileURL as URL in enumerator {
                      let ext = fileURL.pathExtension.lowercased()
                      if ["pdf", "cbz", "cbr", "zip", "epub"].contains(ext) {
-                         // Check if already exists
-                         if !convertedPDFs.contains(where: { $0.url.path == fileURL.path }) {
+                         // Check if already exists (Standardized Path Check)
+                         if !convertedPDFs.contains(where: { $0.url.standardizedFileURL.path == fileURL.standardizedFileURL.path }) {
                              let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                              let newPDF = ConvertedPDF(name: fileURL.lastPathComponent, url: fileURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: fileURL.lastPathComponent))
                              newPDFs.append(newPDF)
