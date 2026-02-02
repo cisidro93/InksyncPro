@@ -120,6 +120,9 @@ class ConversionManager: ObservableObject {
     func savePanelOverrides(for pdfID: UUID, pageIndex: Int, panels: [PanelExtractor.Panel]) async {
         if panelOverrides[pdfID] == nil { panelOverrides[pdfID] = [:] }
         panelOverrides[pdfID]?[pageIndex] = panels
+        
+        // FIX: Persist immediately to prevent data loss on app suspend or scanLibrary reload
+        saveLibrary() 
     }
     
     // ✅ NEW: Bulk Save
