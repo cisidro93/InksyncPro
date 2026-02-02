@@ -207,6 +207,32 @@ class CBZToEPUBConverter {
                 </navMap>
             </ncx>
             """
+            // ✅ Inject ComicInfo.xml for App Round-Trip Persistence
+            // This ensures that if the user opens this EPUB in Inksync, the panels are restored.
+            var batchPanels: [Int: [PanelExtractor.Panel]] = [:]
+            for (localIndex, item) in batch.enumerated() {
+                let pagePanels = manualManifest?[item.index] ?? [] // Ensure we use the resolved panels
+                if !pagePanels.isEmpty {
+                    batchPanels[localIndex] = pagePanels
+                }
+            }
+            
+            if !batchPanels.isEmpty {
+                var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ComicInfo>\n  <Pages>\n"
+                let sortedKeys = batchPanels.keys.sorted()
+                for key in sortedKeys {
+                    if let panels = batchPanels[key] {
+                        xml += "    <Page Image=\"\(key)\">\n"
+                        for panel in panels {
+                            xml += "      <Panel x=\"\(panel.boundingBox.minX)\" y=\"\(panel.boundingBox.minY)\" width=\"\(panel.boundingBox.width)\" height=\"\(panel.boundingBox.height)\" />\n"
+                        }
+                        xml += "    </Page>\n"
+                    }
+                }
+                xml += "  </Pages>\n</ComicInfo>"
+                try? xml.write(to: batchDir.appendingPathComponent("ComicInfo.xml"), atomically: true, encoding: .utf8)
+            }
+            
             try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
             
             // Zip
