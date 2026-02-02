@@ -239,7 +239,7 @@ struct ModernLibraryView: View {
                                 .tint(.orange)
                                 
                                 Button {
-                                    Task { try? await conversionManager.embedPanels(for: pdf) }
+                                    Task { await conversionManager.embedPanels(for: pdf) }
                                 } label: { Label("Embed", systemImage: "flame") }
                                 .tint(.purple)
                             }
@@ -253,7 +253,7 @@ struct ModernLibraryView: View {
                                 } label: { Label("Rename", systemImage: "pencil") }
                                 
                                 Button {
-                                    Task { try? await conversionManager.embedPanels(for: pdf) }
+                                    Task { await conversionManager.embedPanels(for: pdf) }
                                 } label: { Label("Embed Panels", systemImage: "flame") }
                                 
                                 Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }

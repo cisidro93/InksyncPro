@@ -479,7 +479,7 @@ struct LibraryView: View {
                         }
                         
                         Button {
-                            Task { try? await conversionManager.embedPanels(for: pdf) }
+                            Task { await conversionManager.embedPanels(for: pdf) }
                         } label: {
                             Label("Embed Panels", systemImage: "flame")
                         }
@@ -501,7 +501,7 @@ struct LibraryView: View {
                         }
                         
                         Button {
-                            Task { try? await conversionManager.embedPanels(for: pdf) }
+                            Task { await conversionManager.embedPanels(for: pdf) }
                         } label: {
                             Label("Embed", systemImage: "flame")
                         }

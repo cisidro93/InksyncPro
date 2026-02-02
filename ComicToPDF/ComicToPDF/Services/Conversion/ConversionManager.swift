@@ -424,7 +424,7 @@ class ConversionManager: ObservableObject {
                 // This ensures that if the user re-imports this EPUB, the panels are preserved.
                 // We inject the full set of overrides; irrelevant indices will simply be ignored by the importer.
                 for epubURL in resultingURLs {
-                    await injectMetadata(into: epubURL, panels: fileOverrides ?? [:], metadata: file.metadata)
+                    try? await injectMetadata(into: epubURL, panels: fileOverrides ?? [:], metadata: file.metadata)
                 }
                 
             } catch {
@@ -950,7 +950,7 @@ class ConversionManager: ObservableObject {
         
         // ✅ NEW: Inject Metadata into the File (On Disk)
         // This ensures exports/shares have the panels inside
-        await injectMetadata(into: outputURL, panels: newFileOverrides, metadata: pdf.metadata)
+        try? await injectMetadata(into: outputURL, panels: newFileOverrides, metadata: pdf.metadata)
         
         return outputURL
     }
@@ -1006,7 +1006,7 @@ class ConversionManager: ObservableObject {
             }
             
             // 3. Inject using Helper
-            await injectMetadata(into: exportURL, panels: panelsToInject, metadata: pdf.metadata)
+            try? await injectMetadata(into: exportURL, panels: panelsToInject, metadata: pdf.metadata)
             
             return exportURL
             
