@@ -475,6 +475,12 @@ struct LibraryView: View {
                             Label("Rename", systemImage: "pencil")
                         }
                         
+                        Button {
+                            Task { try? await conversionManager.embedPanels(for: pdf) }
+                        } label: {
+                            Label("Embed Panels", systemImage: "flame")
+                        }
+                        
                         Divider()
                         
                         // 6. Delete
@@ -490,6 +496,13 @@ struct LibraryView: View {
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                        
+                        Button {
+                            Task { try? await conversionManager.embedPanels(for: pdf) }
+                        } label: {
+                            Label("Embed", systemImage: "flame")
+                        }
+                        .tint(.purple)
                     }
                 }
                 .onDelete { indexSet in

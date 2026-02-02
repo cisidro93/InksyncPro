@@ -237,6 +237,11 @@ struct ModernLibraryView: View {
                                     pdfToRename = pdf
                                 } label: { Label("Rename", systemImage: "pencil") }
                                 .tint(.orange)
+                                
+                                Button {
+                                    Task { try? await conversionManager.embedPanels(for: pdf) }
+                                } label: { Label("Embed", systemImage: "flame") }
+                                .tint(.purple)
                             }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
@@ -246,6 +251,10 @@ struct ModernLibraryView: View {
                                     renameText = pdf.name
                                     pdfToRename = pdf
                                 } label: { Label("Rename", systemImage: "pencil") }
+                                
+                                Button {
+                                    Task { try? await conversionManager.embedPanels(for: pdf) }
+                                } label: { Label("Embed Panels", systemImage: "flame") }
                                 
                                 Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
                                 Divider()

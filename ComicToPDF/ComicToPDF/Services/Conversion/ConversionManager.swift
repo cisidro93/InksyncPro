@@ -1035,8 +1035,20 @@ class ConversionManager: ObservableObject {
         return xml
     }
     
+    // ✅ NEW: Embed currently saved panels into the source file (EPUB/CBZ)
+    func embedPanels(for pdf: ConvertedPDF) async throws {
+        guard let panels = panelOverrides[pdf.id] else {
+            throw NSError(domain: "ConversionManager", code: 404, userInfo: [NSLocalizedDescriptionKey: "No panel edits found to embed."])
+        }
+        
+        await injectMetadata(into: pdf.url, panels: panels, metadata: pdf.metadata)
+        
+        // Force Metadata refresh if possible (optional)
+        print("✅ [Embed] Panels embedded into \(pdf.name)")
+    }
+    
     // ✅ NEW: Reusable Metadata Injection
-    private func injectMetadata(into archiveURL: URL, panels: [Int: [PanelExtractor.Panel]], metadata: PDFMetadata) async {
+    func injectMetadata(into archiveURL: URL, panels: [Int: [PanelExtractor.Panel]], metadata: PDFMetadata) async {
         print("💾 [Injection] Starting metadata injection for: \(archiveURL.lastPathComponent). Panel Pages: \(panels.count)")
         
         // 1. Convert Panels to SmartPanels format
