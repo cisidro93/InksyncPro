@@ -59,6 +59,14 @@ struct KindleSyncView: View {
                                     .textSelection(.enabled)
                                     .padding(.vertical, 4)
                                 
+                                // ✅ Fix: Show PIN for Authentication
+                                Text("PIN: \(wifiServer.securityCode)")
+                                    .font(.system(.title3, design: .monospaced))
+                                    .fontWeight(.heavy)
+                                    .foregroundStyle(.green)
+                                    .padding(.top, 4)
+                                    .textSelection(.enabled)
+                                
                                 Text("Or scan QR code (Kindle Scribe)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
