@@ -1131,12 +1131,56 @@ class ConversionManager: ObservableObject {
             try archive.remove(oldEntry)
         }
         
+        
         try archive.addEntry(with: "ComicInfo.xml", type: .file, uncompressedSize: Int64(xmlData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
             let start = Int(position)
             let end = min(start + size, xmlData.count)
             return xmlData.subdata(in: start..<end)
-    }
-    
+        }
+        
+        // 4. (EPUB Only) Update Content XHTML for Guided View
+        // ComicInfo handles "Round Trip" persistence (Importing back to App)
+        // This handles "Export" persistence (Reading on Kindle)
+        if archiveURL.pathExtension.lowercased() == "epub" {
+            print("📘 [Injection] Detected EPUB. Updating XHTML content for \(panels.count) pages...")
+            
+            for (index, pagePanels) in panels {
+                let pageNum = index + 1
+                let xhtmlPath = String(format: "OEBPS/text/page_%04d.xhtml", pageNum)
+                
+                // 1. Find Image Name (Check standard formats)
+                // We need the precise image filename to reference in the HTML
+                var imageName: String? = nil
+                let imageBase = String(format: "image_%04d", pageNum)
+                let candidates = ["jpg", "jpeg", "png", "webp"]
+                
+                for ext in candidates {
+                    let path = "OEBPS/images/\(imageBase).\(ext)"
+                    if archive[path] != nil {
+                        imageName = "\(imageBase).\(ext)"
+                        break
+                    }
+                }
+                
+                // If we found the image, we can regenerate the XHTML
+                if let validImageName = imageName {
+                     let newXHTML = CBZToEPUBConverter.generateXHTML(imageName: validImageName, title: "Page \(pageNum)", panels: pagePanels)
+                     
+                     if let htmlData = newXHTML.data(using: .utf8) {
+                         // Remove old XHTML
+                         if let oldEntry = archive[xhtmlPath] {
+                             try archive.remove(oldEntry)
+                         }
+                         
+                         // Add new XHTML
+                         try archive.addEntry(with: xhtmlPath, type: .file, uncompressedSize: Int64(htmlData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                             let start = Int(position)
+                             let end = min(start + size, htmlData.count)
+                             return htmlData.subdata(in: start..<end)
+                         }
+                     }
+                }
+            }
         }
     }
     

@@ -253,7 +253,7 @@ class CBZToEPUBConverter {
         return generatedFiles
     }
     
-    private func generateXHTML(imageName: String, title: String, panels: [PanelExtractor.Panel]) -> String {
+    static func generateXHTML(imageName: String, title: String, panels: [PanelExtractor.Panel]) -> String {
         var panelDivs = ""
         var targetDivs = ""
         
