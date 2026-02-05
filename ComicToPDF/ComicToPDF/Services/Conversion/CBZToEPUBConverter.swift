@@ -166,11 +166,13 @@ class CBZToEPUBConverter {
             // OPF & TOC
             let widthID = Int(contentSize.width)
             let heightID = Int(contentSize.height)
+            let bookUUID = UUID().uuidString
             
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName)</dc:title>
                     <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
@@ -197,7 +199,7 @@ class CBZToEPUBConverter {
             let ncxContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-                <head><meta name="dtb:uid" content="urn:uuid:12345"/></head>
+                <head><meta name="dtb:uid" content="urn:uuid:\(bookUUID)"/></head>
                 <docTitle><text>\(epubName)</text></docTitle>
                 <navMap>
                     <navPoint id="navPoint-1" playOrder="1">

@@ -37,8 +37,8 @@ struct ModernLibraryView: View {
     @State private var pdfToRename: ConvertedPDF?
     @State private var renameText = ""
     
-    // ✅ NEW: Metadata Search State
-    @State private var pdfToSearchMetadata: ConvertedPDF?
+    // ✅ NEW: Export State
+    @State private var pdfToExport: ConvertedPDF?
     
     var filteredPDFs: [ConvertedPDF] {
         let pdfs = conversionManager.convertedPDFs
@@ -228,6 +228,11 @@ struct ModernLibraryView: View {
                             .listRowSeparatorTint(Color(white: 0.2))
                             .swipeActions(edge: .leading) {
                                 Button {
+                                    pdfToExport = pdf
+                                } label: { Label("Export", systemImage: "square.and.arrow.up") }
+                                .tint(.green)
+                            
+                                Button {
                                     pdfToSearchMetadata = pdf
                                 } label: { Label("Metadata", systemImage: "info.circle") }
                                 .tint(.blue)
@@ -247,6 +252,10 @@ struct ModernLibraryView: View {
                                 Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
                             }
                             .contextMenu {
+                                Button {
+                                    pdfToExport = pdf
+                                } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
+                                
                                 Button {
                                     renameText = pdf.name
                                     pdfToRename = pdf
@@ -277,6 +286,9 @@ struct ModernLibraryView: View {
             case .wifi: WiFiView()
             case .merge: FileMergeView()
             }
+        }
+        .sheet(item: $pdfToExport) { pdf in
+            DualExportView(pdf: pdf)
         }
         .sheet(item: $pdfToSearchMetadata) { pdf in
             MetadataSearchSheet(pdf: pdf)

@@ -416,7 +416,7 @@ class WiFiServer: ObservableObject {
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         
         // Kindle Routing
-        if path == "/kindle" || path == "/kindle/" {
+        if path == "/kindle" || path == "/kindle/" || path == "/k" || path == "/k/" {
             let html = generateKindleHTML()
             sendResponse(connection, 200, html, contentType: "text/html")
             return

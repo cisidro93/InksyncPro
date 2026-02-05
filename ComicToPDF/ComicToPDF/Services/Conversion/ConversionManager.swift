@@ -1016,6 +1016,38 @@ class ConversionManager: ObservableObject {
         }
     }
     
+    func exportForLocalSideload(_ pdf: ConvertedPDF) async -> URL? {
+        // Track 2: Local High-Quality
+        let fileManager = FileManager.default
+        let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let exportDir = docDir.appendingPathComponent("KindleExports")
+        
+        try? fileManager.createDirectory(at: exportDir, withIntermediateDirectories: true, attributes: nil)
+        
+        let tempName = "Kindle_HQ_\(pdf.name)" // distinguishable name
+        let targetURL = exportDir.appendingPathComponent(tempName)
+        
+        // Remove existing
+        try? fileManager.removeItem(at: targetURL)
+        
+        do {
+            try fileManager.copyItem(at: pdf.url, to: targetURL)
+            
+            // 2. Ensure OPF Metadata (ASIN/Layout)
+            try await ensureKindleOPF(at: targetURL)
+            
+            // 3. Ensure ComicInfo/SmartPanels (Best Effort)
+            if let panels = panelOverrides[pdf.id] {
+                try await injectMetadata(into: targetURL, panels: panels, metadata: pdf.metadata)
+            }
+            
+            return targetURL
+        } catch {
+            print("Local Export Failed: \(error)")
+            return nil
+        }
+    }
+    
     // Helper to generate the <Pages> block
     private func generatePagesXML(from panelsDict: [String: [SmartPanel]]) -> String {
         var xml = "  <Pages>\n"
@@ -1103,8 +1135,61 @@ class ConversionManager: ObservableObject {
             let start = Int(position)
             let end = min(start + size, xmlData.count)
             return xmlData.subdata(in: start..<end)
+    private func ensureKindleOPF(at url: URL) async throws {
+        // Re-implements the Hot-Fix logic to ensure ASIN and Fixed-Layout tags exist in the OPF.
+        // This is critical for activating Guided View on Kindle devices.
+        
+        let fileManager = FileManager.default
+        let tempExtractDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        
+        // Optimize: We don't need to unzip everything, just the OPF. 
+        // But ZIPFoundation update requires re-archiving or careful manipulation.
+        // Simplest consistent way: Read Entry -> Modify -> Remove -> Add.
+        
+        guard let archive = try? Archive(url: url, accessMode: .update) else { return }
+        
+        // Find OPF
+        guard let opfEntry = archive.makeIterator().first(where: { $0.path.hasSuffix(".opf") }) else { return }
+        let opfPath = opfEntry.path
+        
+        var opfData = Data()
+        _ = try archive.extract(opfEntry) { data in opfData.append(data) }
+        
+        guard var opfString = String(data: opfData, encoding: .utf8) else { return }
+        var modified = false
+        
+        // 1. Check ASIN / UUID
+        // Kindle treats 'urn:uuid:...' in dc:identifier as valid for layout activation
+        if !opfString.contains("urn:amazon:asin") && !opfString.contains("urn:uuid:") {
+            if let range = opfString.range(of: "<metadata") {
+                if let endOfOpen = opfString[range.upperBound...].range(of: ">") {
+                     let insertIndex = endOfOpen.upperBound
+                     let asinUUID = UUID().uuidString
+                     let tag = "\n    <dc:identifier id=\"uid\">urn:uuid:\(asinUUID)</dc:identifier>"
+                     opfString.insert(contentsOf: tag, at: insertIndex)
+                     modified = true
+                }
+            }
         }
-        print("✅ [Injection] Successfully wrote ComicInfo.xml to \(archiveURL.lastPathComponent)")
+        
+        // 2. Check Fixed Layout
+        if !opfString.contains("rendition:layout") {
+             if let range = opfString.range(of: "</metadata>") {
+                 let tag = "\n    <meta property=\"rendition:layout\">pre-paginated</meta>\n    <meta property=\"rendition:orientation\">auto</meta>\n    <meta property=\"rendition:spread\">auto</meta>\n    <meta name=\"fixed-layout\" content=\"true\"/>"
+                 opfString.insert(contentsOf: tag, at: range.lowerBound)
+                 modified = true
+             }
+        }
+        
+        if modified {
+            if let newData = opfString.data(using: .utf8) {
+                try archive.remove(opfEntry)
+                try archive.addEntry(with: opfPath, type: .file, uncompressedSize: Int64(newData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                     return newData.subdata(in: Int(position)..<min(Int(position)+size, newData.count))
+                }
+                print("✅ [KindleOPF] Injected Metadata into \(url.lastPathComponent)")
+            }
+        }
     }
 }
 

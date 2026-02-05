@@ -88,3 +88,4 @@ class EnsemblePanelDetector {
         return finalPanels
     }
 }
+```
