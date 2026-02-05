@@ -419,7 +419,7 @@ class ConversionManager: ObservableObject {
             
             // Attempt to load source panels if we have gaps or no overrides
             // We do this by checking if the source has a ComicInfo.xml
-            if let sourcePanels = extractSmartPanels(from: file.url) {
+            if let sourcePanels = ConversionManager.extractSmartPanels(from: file.url) {
                 for (pageIndex, panels) in sourcePanels {
                     // Only use source panels if the user hasn't overridden this specific page
                     if combinedManifest[pageIndex] == nil {
