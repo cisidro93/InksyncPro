@@ -1198,7 +1198,7 @@ class ConversionManager: ObservableObject {
             }
         }
     }
-}
+
 
 // MARK: - Sidecar Models (Internal Use)
 struct SmartPanel: Codable {
