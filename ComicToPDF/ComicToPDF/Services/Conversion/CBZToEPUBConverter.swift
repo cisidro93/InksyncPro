@@ -152,7 +152,7 @@ class CBZToEPUBConverter {
                 }
                 
                 // Create XHTML
-                let xhtmlContent = generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", panels: pagePanels)
+                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", panels: pagePanels)
                 let xhtmlName = String(format: "page_%04d.xhtml", localIndex + 1)
                 try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
                 

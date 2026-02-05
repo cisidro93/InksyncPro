@@ -1314,5 +1314,5 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
         }
     }
 }
-
+}
 
