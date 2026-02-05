@@ -39,6 +39,7 @@ struct ModernLibraryView: View {
     
     // ✅ NEW: Export State
     @State private var pdfToExport: ConvertedPDF?
+    @State private var pdfToSearchMetadata: ConvertedPDF?
     
     var filteredPDFs: [ConvertedPDF] {
         let pdfs = conversionManager.convertedPDFs

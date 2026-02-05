@@ -961,7 +961,7 @@ class ConversionManager: ObservableObject {
     
     // MARK: - Comic Vault Export
     // Renamed to clarify intent: We are creating a NEW export file with embedded metadata
-    func exportWithEmbeddedMetadata(for pdf: ConvertedPDF) async -> URL? {
+    func exportForCloudSync(_ pdf: ConvertedPDF) async -> URL? {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
         
@@ -1135,6 +1135,8 @@ class ConversionManager: ObservableObject {
             let start = Int(position)
             let end = min(start + size, xmlData.count)
             return xmlData.subdata(in: start..<end)
+    }
+    
     private func ensureKindleOPF(at url: URL) async throws {
         // Re-implements the Hot-Fix logic to ensure ASIN and Fixed-Layout tags exist in the OPF.
         // This is critical for activating Guided View on Kindle devices.

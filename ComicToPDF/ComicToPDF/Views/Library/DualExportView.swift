@@ -105,12 +105,13 @@ struct DualExportView: View {
     
     private func handleCloudExport() {
         isProcessing = true
-        // Small delay to let UI update
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            let url = conversionManager.exportForCloudSync(pdf)
-            self.exportURL = url
-            self.isProcessing = false
-            self.showingShareSheet = true
+        Task {
+            let url = await conversionManager.exportForCloudSync(pdf)
+            await MainActor.run {
+                self.exportURL = url
+                self.isProcessing = false
+                self.showingShareSheet = true
+            }
         }
     }
     
