@@ -226,7 +226,7 @@ struct LibraryView: View {
                     // Start the Save & Open Flow
                     if let pdf = largeFilePDF {
                         Task {
-                             if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                             if let exportURL = await conversionManager.exportForCloudSync(pdf) {
                                  await MainActor.run {
                                      let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
                                      webExportPDF = wrapper
@@ -240,7 +240,7 @@ struct LibraryView: View {
                     // Fallback to standard share
                     if let pdf = largeFilePDF {
                         Task {
-                             if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                             if let exportURL = await conversionManager.exportForCloudSync(pdf) {
                                  await MainActor.run {
                                      let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
                                      pdfToShare = wrapper
@@ -282,7 +282,7 @@ struct LibraryView: View {
             showingLargeFileAlert = true
         } else {
             Task {
-                if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                if let exportURL = await conversionManager.exportForCloudSync(pdf) {
                      await MainActor.run {
                          // Wrap URL in a temp PDF object so ShareSheet can use it
                          // ShareSheet takes [pdf.url] anyway.
@@ -460,7 +460,7 @@ struct LibraryView: View {
                         // 5. Comic Vault Export
                         Button {
                             Task {
-                                if let exportedURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                                if let exportedURL = await conversionManager.exportForCloudSync(pdf) {
                                     await MainActor.run {
                                         sharePayload = LibraryView.SharePayload(items: [exportedURL])
                                     }

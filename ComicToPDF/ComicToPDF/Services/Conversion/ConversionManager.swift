@@ -1137,6 +1137,11 @@ class ConversionManager: ObservableObject {
             return xmlData.subdata(in: start..<end)
     }
     
+        }
+    }
+    
+    // MARK: - Kindle OPF Injection
+    // Ensures ASIN and Fixed-Layout Metadata exist for Guided View support.
     private func ensureKindleOPF(at url: URL) async throws {
         // Re-implements the Hot-Fix logic to ensure ASIN and Fixed-Layout tags exist in the OPF.
         // This is critical for activating Guided View on Kindle devices.

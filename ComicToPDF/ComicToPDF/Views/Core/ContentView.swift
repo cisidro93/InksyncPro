@@ -173,7 +173,7 @@ struct ContentView: View {
                                                 largeFilePDF = pdf
                                                 showingLargeFileAlert = true
                                             } else {
-                                                if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                                                if let exportURL = await conversionManager.exportForCloudSync(pdf) {
                                                     await MainActor.run {
                                                         let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
                                                         pdfToShare = wrapper
@@ -281,7 +281,7 @@ struct ContentView: View {
                                                 showingLargeFileAlert = true
                                             } else {
                                                 // Generate Metadata-Embedded File before sharing
-                                                if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                                                if let exportURL = await conversionManager.exportForCloudSync(pdf) {
                                                     await MainActor.run {
                                                         let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
                                                         pdfToShare = wrapper
@@ -323,7 +323,7 @@ struct ContentView: View {
                 if let pdf = largeFilePDF {
                     Task {
                         // 1. Generate Metadata-Embedded File
-                        if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                        if let exportURL = await conversionManager.exportForCloudSync(pdf) {
                              await MainActor.run {
                                  // We need to pass the URL to the exporter. 
                                  // But GenericFileDocument takes a URL.
@@ -348,7 +348,7 @@ struct ContentView: View {
             Button("Share via System Sheet") {
                 if let pdf = largeFilePDF {
                     Task {
-                        if let exportURL = await conversionManager.exportWithEmbeddedMetadata(for: pdf) {
+                        if let exportURL = await conversionManager.exportForCloudSync(pdf) {
                             await MainActor.run {
                                 // Create a dummy PDF wrapper pointing to temp file for the sheet
                                 var tempPDF = pdf
