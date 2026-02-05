@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import UIKit
+import ZIPFoundation
 
 class WiFiServer: ObservableObject {
     private var listener: NWListener?
@@ -414,6 +415,21 @@ class WiFiServer: ObservableObject {
     private func handleGetRequest(path: String, connection: NWConnection) {
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         
+        // Kindle Routing
+        if path == "/kindle" || path == "/kindle/" {
+            let html = generateKindleHTML()
+            sendResponse(connection, 200, html, contentType: "text/html")
+            return
+        }
+        
+        if path.hasPrefix("/kindle/download/") {
+            // Extract filename from path
+            let rawFileName = path.replacingOccurrences(of: "/kindle/download/", with: "")
+            let fileName = rawFileName.removingPercentEncoding ?? rawFileName
+            serveKindleFile(fileName, connection: connection)
+            return
+        }
+        
         if path == "/" {
             let html = generateHTML()
             sendResponse(connection, 200, html, contentType: "text/html")
@@ -644,6 +660,165 @@ class WiFiServer: ObservableObject {
         </body>
         </html>
         """
+    }
+    
+    // MARK: - Kindle Specifics
+    
+    private func generateKindleHTML() -> String {
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].resolvingSymlinksInPath()
+        var fileLinks: [String] = []
+        let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
+        
+        if let enumerator = FileManager.default.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+            for case let rawFileURL as URL in enumerator {
+                let fileURL = rawFileURL.resolvingSymlinksInPath()
+                let ext = fileURL.pathExtension.lowercased()
+                
+                // Only EPUBs for Kindle (usually)
+                if ext == "epub" {
+                    let relativePath = fileURL.lastPathComponent // Simple flat list for Kindle UI
+                    let encodedPath = relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath
+                    let downloadLink = "/kindle/download/\(encodedPath)"
+                    
+                    let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    let sizeStr = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+                    
+                    fileLinks.append("""
+                    <div class="item">
+                        <div class="title">\(fileURL.lastPathComponent)</div>
+                        <div class="meta">\(sizeStr)</div>
+                        <a href="\(downloadLink)" class="btn">Get</a>
+                    </div>
+                    """)
+                }
+            }
+        }
+        
+        let list = fileLinks.isEmpty ? "<p>No EPUBs found.</p>" : fileLinks.joined(separator: "\n")
+        
+        return """
+        <html>
+        <head>
+            <title>Kindle Sync</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body { font-family: sans-serif; margin: 0; padding: 10px; background: #fff; color: #000; }
+                h1 { font-size: 1.5em; border-bottom: 2px solid #000; padding-bottom: 5px; }
+                .item { border: 1px solid #000; margin-bottom: 10px; padding: 10px; display: flex; align-items: center; justify-content: space-between; }
+                .title { font-weight: bold; flex: 1; margin-right: 10px; overflow-wrap: break-word; }
+                .meta { font-size: 0.8em; margin-right: 10px; }
+                .btn { background: #000; color: #fff; text-decoration: none; padding: 8px 16px; font-weight: bold; border-radius: 4px; }
+            </style>
+        </head>
+        <body>
+            <h1>Inksync Pro</h1>
+            \(list)
+        </body>
+        </html>
+        """
+    }
+    
+    private func serveKindleFile(_ fileName: String, connection: NWConnection) {
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let fileURL = docDir.appendingPathComponent(fileName)
+        
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            sendResponse(connection, 404, "File Not Found")
+            return
+        }
+        
+        // HOT FIX: Ensure Metadata
+        let safeURL = hotfixKindleMetadata(at: fileURL)
+        
+        do {
+            let data = try Data(contentsOf: safeURL, options: .mappedIfSafe)
+            sendResponse(connection, 200, data: data, contentType: "application/epub+zip", filename: safeURL.lastPathComponent)
+        } catch {
+            print("Serve Error: \(error)")
+            sendResponse(connection, 500, "Server Error")
+        }
+    }
+    
+    private func hotfixKindleMetadata(at url: URL) -> URL {
+        // We modify in place because 'Export' creates a copy anyway, 
+        // OR we are modifying the library copy.
+        // If we modify the library copy, it's actually fine as we are just improving metadata.
+        // However, if we want to be safe, we can copy to temp.
+        // User said "hot-fix the EPUB in the cache folder".
+        // Let's assume verifying the library copy is acceptable if it's just 'ASIN' tags.
+        // Or we copy to temp for safety.
+        
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory
+        let tempURL = tempDir.appendingPathComponent("kindle_temp_\(url.lastPathComponent)")
+        
+        do {
+            if fileManager.fileExists(atPath: tempURL.path) {
+                try fileManager.removeItem(at: tempURL)
+            }
+            try fileManager.copyItem(at: url, to: tempURL)
+            
+            // Open Archive
+            let archive = try Archive(url: tempURL, accessMode: .update)
+            
+            // Find OPF
+            guard let opfEntry = archive.makeIterator().first(where: { $0.path.hasSuffix(".opf") }) else {
+                return url // No OPF, can't fix
+            }
+            
+            // Read OPF
+            var opfData = Data()
+            _ = try archive.extract(opfEntry) { data in opfData.append(data) }
+            
+            guard var opfString = String(data: opfData, encoding: .utf8) else { return url }
+            
+            var modified = false
+            
+            // Check ASIN
+            if !opfString.contains("urn:amazon:asin") && !opfString.contains("urn:uuid:") {
+                // Determine insertion point (inside <metadata>)
+                if let range = opfString.range(of: "<metadata") {
+                    // Find end of generic metadata tag opening or strictly inside
+                    if let endOfOpen = opfString[range.upperBound...].range(of: ">") {
+                         let insertIndex = endOfOpen.upperBound
+                         let asinUUID = UUID().uuidString
+                         // Insert generic UUID as ID which Kindle treats as unique book
+                         let tag = "\n    <dc:identifier id=\"uid\">urn:uuid:\(asinUUID)</dc:identifier>"
+                         opfString.insert(contentsOf: tag, at: insertIndex)
+                         modified = true
+                    }
+                }
+            }
+            
+            // Check Fixed Layout
+            if !opfString.contains("rendition:layout") {
+                 if let range = opfString.range(of: "</metadata>") {
+                     let tag = "\n    <meta property=\"rendition:layout\">pre-paginated</meta>\n    <meta property=\"rendition:orientation\">auto</meta>\n    <meta property=\"rendition:spread\">auto</meta>"
+                     opfString.insert(contentsOf: tag, at: range.lowerBound)
+                     modified = true
+                 }
+            }
+            
+            // Write back if modified
+            if modified {
+                if let newData = opfString.data(using: .utf8) {
+                    try archive.remove(opfEntry)
+                    try archive.addEntry(with: opfEntry.path, type: .file, uncompressedSize: Int64(newData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                        let start = Int(position)
+                        let end = min(start + size, newData.count)
+                        return newData.subdata(in: start..<end)
+                    }
+                    print("✅ [Kindle Fix] Injected metadata into \(tempURL.lastPathComponent)")
+                    return tempURL
+                }
+            }
+            
+            return url // No changes needed
+            
+        } catch {
+            print("❌ [Kindle Fix] Failed: \(error)")
+            return url // Fallback to original
+        }
     }
     
     // MARK: - Utilities

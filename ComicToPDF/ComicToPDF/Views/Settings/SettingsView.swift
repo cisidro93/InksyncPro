@@ -66,6 +66,11 @@ struct SettingsView: View {
                             .tag(device)
                         }
                     }
+                    
+                    // ✅ NEW: Kindle Direct Sync
+                    NavigationLink(destination: KindleSyncView()) {
+                        Label("Kindle Direct Sync", systemImage: "arrow.triangle.2.circlepath")
+                    }
                 }
             }
             
