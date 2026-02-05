@@ -412,8 +412,24 @@ class ConversionManager: ObservableObject {
             
             let fileOverrides = panelOverrides[file.id]
             
+            // ✅ Fix: Missing Source Panels
+            // If the user hasn't edited the file (or only edited some pages), we must ensure 
+            // the original panels from the CBZ are preserved.
+            var combinedManifest = fileOverrides ?? [:]
+            
+            // Attempt to load source panels if we have gaps or no overrides
+            // We do this by checking if the source has a ComicInfo.xml
+            if let sourcePanels = extractSmartPanels(from: file.url) {
+                for (pageIndex, panels) in sourcePanels {
+                    // Only use source panels if the user hasn't overridden this specific page
+                    if combinedManifest[pageIndex] == nil {
+                        combinedManifest[pageIndex] = panels
+                    }
+                }
+            }
+            
             do {
-                let resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: fileOverrides) { progress in
+                let resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
                     Task { @MainActor in
                         self.conversionProgress = progress
                     }
@@ -424,7 +440,7 @@ class ConversionManager: ObservableObject {
                 // This ensures that if the user re-imports this EPUB, the panels are preserved.
                 // We inject the full set of overrides; irrelevant indices will simply be ignored by the importer.
                 for epubURL in resultingURLs {
-                    try? await injectMetadata(into: epubURL, panels: fileOverrides ?? [:], metadata: file.metadata)
+                    try? await injectMetadata(into: epubURL, panels: combinedManifest, metadata: file.metadata)
                 }
                 
             } catch {
