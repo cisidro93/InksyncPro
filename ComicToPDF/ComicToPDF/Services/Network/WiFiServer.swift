@@ -598,7 +598,7 @@ class WiFiServer: ObservableObject {
             <div class="card">
                 <h3>Library Files (Download)</h3>
                 <p style="font-size: 13px; color: #888; margin-bottom: 15px;">
-                    💡 <strong>Tip for Kindle Users:</strong> Download <strong>EPUB</strong> files and convert them using <em>Kindle Previewer 3</em> on your PC to enable native Guided View (Panel Zooming).
+                    ✅ <strong>Kindle Support Active:</strong> Files are automatically masked as AZW3 for direct download on Kindle devices.
                 </p>
                 <ul>
                     \(fileListHTML)
@@ -732,7 +732,21 @@ class WiFiServer: ObservableObject {
         
         do {
             let data = try Data(contentsOf: safeURL, options: .mappedIfSafe)
-            sendResponse(connection, 200, data: data, contentType: "application/epub+zip", filename: safeURL.lastPathComponent)
+            
+            // ✅ THE MASKING HACK
+            // We serve the EPUB bytes, but tell the Kindle it's a native AZW3 file.
+            // This bypasses the "Invalid File Type" error in the browser.
+            let spoofedName = safeURL.deletingPathExtension().appendingPathExtension("azw").lastPathComponent
+            
+            var header = "HTTP/1.1 200 OK\r\n"
+            header += "Content-Type: application/vnd.amazon.ebook\r\n" // Kindle Native MIME
+            header += "Content-Length: \(data.count)\r\n"
+            header += "Content-Disposition: attachment; filename=\"\(spoofedName)\"\r\n"
+            header += "Connection: close\r\n\r\n"
+            
+            connection.send(content: header.data(using: .utf8), completion: .idempotent)
+            connection.send(content: data, completion: .contentProcessed({ _ in connection.cancel() }))
+            
         } catch {
             print("Serve Error: \(error)")
             sendResponse(connection, 500, "Server Error")

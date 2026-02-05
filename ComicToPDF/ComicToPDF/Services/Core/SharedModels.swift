@@ -125,8 +125,8 @@ enum KindleDeviceType: String, CaseIterable, Codable, Hashable {
     
     var resolution: CGSize {
         switch self {
-        case .scribeColorsoft: return CGSize(width: 1980, height: 2640) // 11" 300ppi
-        case .colorsoft: return CGSize(width: 1264, height: 1680) // 7" 300ppi (same as Oasis/PW)
+        case .scribeColorsoft: return CGSize(width: 1980, height: 2640) // 11" 300ppi (Approximately)
+        case .colorsoft: return CGSize(width: 1264, height: 1680) // 7" 300ppi
         case .paperwhite2024: return CGSize(width: 1264, height: 1680)
         case .scribe: return CGSize(width: 1860, height: 2480)
         case .paperwhite: return CGSize(width: 1236, height: 1648) // Old PW
@@ -206,8 +206,8 @@ enum PanelEditorPresentationMode: String, CaseIterable, Codable, Identifiable {
 struct ConversionSettings: Codable, Equatable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
-    var optimizeForDevice: Bool = false
-    var targetDevice: KindleDeviceType = .scribe
+    var optimizeForDevice: Bool = true // ✅ Default to Optimization On
+    var targetDevice: KindleDeviceType = .scribeColorsoft // ✅ Target Newest Device
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
     var splitMode: FileSizeSplitMode = .none 
