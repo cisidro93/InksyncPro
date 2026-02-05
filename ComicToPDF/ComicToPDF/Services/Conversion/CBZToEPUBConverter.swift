@@ -282,10 +282,17 @@ class CBZToEPUBConverter {
                 let width = String(format: "%.2f", panel.boundingBox.width * 100)
                 let height = String(format: "%.2f", panel.boundingBox.height * 100)
                 
+                // Task 3: Spread Detection
+                // If width > 1.5x height, mark as spread
+                let aspect = panel.boundingBox.width / panel.boundingBox.height
+                let isSpread = aspect > 1.5
+                let spreadAttr = isSpread ? "data-is-spread=\"true\"" : ""
+                
                 panelDivs += """
                 <div id="panel-\(ord)" class="app-amzn-magnify" 
                      style="position: absolute; top: \(top)%; left: \(left)%; width: \(width)%; height: \(height)%; z-index: 20; cursor: pointer;"
-                     data-app-amzn-magnify='\(jsonString)'>
+                     data-app-amzn-magnify='\(jsonString)'
+                     \(spreadAttr)>
                 </div>
                 """
             }

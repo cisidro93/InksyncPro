@@ -75,145 +75,28 @@ struct PanelExtractor {
             return generateGridPanels(rows: 2, cols: 2)
         }
         
-        // ✅ STEP 1: Preprocess Image (High Contrast Grayscale)
-        // This helps pinpoint panels by looking at gradient shifts, as requested.
-        // We fallback to original if conversion fails.
-        let processingStart = Date()
-        let cgImage = preprocessForDetection(image) ?? image.cgImage
-        guard let finalCGImage = cgImage else { return [] }
+        let detector = EnsemblePanelDetector()
+        let candidates: [PanelCandidate]
         
-        // 1. Run Detection Requests (Rectangles + optional Saliency)
-        return await withCheckedContinuation { continuation in
-            var requests: [VNRequest] = []
-            
-            // A. Rectangle Request
-            let rectRequest = VNDetectRectanglesRequest()
-            // Configure Rect Request based on mode
-            let settings = AdaptiveLearningManager.shared.getParameters()
-            
-            switch mode {
-            case .aggressive:
-                rectRequest.minimumConfidence = 0.1
-                rectRequest.minimumSize = 0.1
-            case .conservative:
-                rectRequest.minimumConfidence = 0.85
-                rectRequest.minimumSize = 0.15
-            case .automatic, .neural:
-                rectRequest.minimumConfidence = settings.minConfidence
-                rectRequest.minimumSize = Float(settings.minSize)
-            default:
-                rectRequest.minimumConfidence = 0.6
-                rectRequest.minimumSize = 0.1
-            }
-            rectRequest.minimumAspectRatio = 0.1
-            rectRequest.maximumAspectRatio = 5.0
-            rectRequest.quadratureTolerance = 30 // Fixed: Was incorrectly assigning Revision1
-            
-            requests.append(rectRequest)
-            
-            // B. Saliency Request (Neural) if automatic or neural
-            var saliencyRequest: VNGenerateObjectnessBasedSaliencyImageRequest?
-            var textRequest: VNRecognizeTextRequest? // ✅ NEW
-            
-            if mode == .automatic || mode == .neural {
-                let sRequest = VNGenerateObjectnessBasedSaliencyImageRequest()
-                sRequest.revision = VNGenerateObjectnessBasedSaliencyImageRequestRevision1
-                requests.append(sRequest)
-                saliencyRequest = sRequest
-                
-                // ✅ NEW: Text Request
-                let tRequest = VNRecognizeTextRequest()
-                tRequest.recognitionLevel = .fast // Fast is sufficient for bounding boxes
-                tRequest.usesLanguageCorrection = false
-                requests.append(tRequest)
-                textRequest = tRequest
-            }
-            
-            // Run Handler (Using the Grayscale Image 🧠)
-            let handler = VNImageRequestHandler(cgImage: finalCGImage, options: [:])
-            do {
-                try handler.perform(requests)
-                
-                // 2. Process Results
-                
-                // Get Rectangles
-                let rawRects = (rectRequest.results ?? [])
-                    .filter { $0.confidence > rectRequest.minimumConfidence }
-                    .map { $0.boundingBox }
-                
-                var finalPanels: [CGRect] = rawRects
-                
-                // Get Saliency & Fuse
-                if let sResults = saliencyRequest?.results?.first as? VNSaliencyImageObservation,
-                   (mode == .automatic || mode == .neural) {
-                    
-                    // Extract interesting objects from Saliency Heatmap
-                    let salientObjects = sResults.salientObjects?.map { $0.boundingBox } ?? []
-                    
-                    // FUSION LOGIC:
-                    // 1. Validate Rects: If a rect has NO overlap with any salient object, it might be noise (unless conservative).
-                    // 2. Discovery: If a salient object is large enough and implies a panel missed by Rects, add it.
-                    
-                    var fused: [CGRect] = []
-                    
-                    // A. Validate Existing Rects
-                    for rect in rawRects {
-                        // Check overlap with any salient object
-                        let hasSupport = salientObjects.contains { $0.intersects(rect) }
-                        if hasSupport || mode != .neural { // In pure Neural mode, be stricter? No, safe fallback.
-                            fused.append(rect)
-                        }
-                    }
-                    
-                    // B. Add Missing Saliency Regions
-                    for salient in salientObjects {
-                        // Ignore if it's already covered by a known rect
-                        let isCovered = fused.contains { $0.intersection(salient).width * $0.intersection(salient).height > (salient.width * salient.height * 0.5) }
-                        
-                        if !isCovered {
-                            // Ensure it's big enough to be a panel
-                            if salient.width > 0.15 && salient.height > 0.15 {
-                                fused.append(salient)
-                            }
-                        }
-                    }
-                    
-                    finalPanels = fused
-                }
-                
-                // ✅ NEW: Text Guard (Speech Bubble Awareness)
-                // If text is detected near the edge of a panel, expand the panel to include it.
-                if let textResults = textRequest?.results as? [VNRecognizedTextObservation], !textResults.isEmpty {
-                    var guardedPanels: [CGRect] = []
-                    
-                    for var panel in finalPanels {
-                        for textObs in textResults {
-                            let textRect = textObs.boundingBox
-                            
-                            // Check if text is INSIDE or INTERSECTS or is VERY CLOSE to the panel
-                            // Expansion logic: If text overlaps, union it.
-                            // If text is within 2% margin, snap it in.
-                            
-                            let expandedPanel = panel.insetBy(dx: -0.02, dy: -0.02) // Look slightly outside
-                            if expandedPanel.intersects(textRect) {
-                                panel = panel.union(textRect)
-                            }
-                        }
-                        guardedPanels.append(panel)
-                    }
-                    finalPanels = guardedPanels
-                }
-                
-                // 3. Create Panels & Sort
-                let panels = finalPanels.map { Panel(boundingBox: $0) }
-                let sorted = clusterAndSortPanels(panels, mangaMode: mangaMode)
-                continuation.resume(returning: sorted)
-                
-            } catch {
-                print("Vision Request Failed: \(error)")
-                continuation.resume(returning: [])
-            }
+        // Determine Strategy
+        // For now, Automatic/Neural/Aggressive trigger the full Ensemble.
+        // Conservative triggers just the Vision base (Task 1) via the Ensemble but we could tune it.
+        // For simplicity, we use Ensemble for all dynamic modes, as it's adaptive.
+        
+        if mode == .conservative {
+            // Bypass Deep Scan for conservative
+            let context = CIContext()
+            candidates = await VisionPanelProvider().detectPanels(in: image, context: context)
+        } else {
+            // Full Ensemble
+            candidates = await detector.detect(in: image)
         }
+        
+        // Convert to shared Panel model
+        let panels = candidates.map { Panel(boundingBox: $0.boundingBox) }
+        
+        // Sort
+        return clusterAndSortPanels(panels, mangaMode: mangaMode)
     }
     
     // ✅ NEW: Recursive Row Clustering Algorithm
