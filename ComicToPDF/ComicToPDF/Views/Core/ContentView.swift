@@ -5,6 +5,9 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Environment(\.horizontalSizeClass) var sizeClass
     @StateObject private var conversionManager = ConversionManager()
+    // ✅ NEW: Wi-Fi Server for Kindle Sync
+    @StateObject private var wifiServer = WiFiServer()
+    
     @State private var selectedTab = 0
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var selectedPDF: ConvertedPDF?
@@ -37,6 +40,7 @@ struct ContentView: View {
             }
         }
         .environmentObject(conversionManager)
+        .environmentObject(wifiServer)
         // ✅ NEW: Apply Dynamic Text Size Globally
         .environment(\.dynamicTypeSize, conversionManager.conversionSettings.textSize.swiftUIValue)
         // ✅ Show Onboarding on First Launch
