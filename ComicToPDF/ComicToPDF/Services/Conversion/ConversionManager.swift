@@ -576,41 +576,52 @@ class ConversionManager: ObservableObject {
     
     // ✅ NEW: Extract Smart Panels from ComicInfo.xml
     static func extractSmartPanels(from url: URL) async -> [Int: [PanelExtractor.Panel]]? {
+        await MainActor.run { processingStatus = "Reading Source Panels..." } // Re-assert status
+        
         print("🔍 [SmartPanels] Inspecting: \(url.lastPathComponent)")
         guard let archive = try? Archive(url: url, accessMode: .read) else {
             print("❌ [SmartPanels] Could not open archive: \(url.lastPathComponent)")
+            await MainActor.run { processingStatus = "Error: Invalid Archive" }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             return nil
         }
         
-        guard let entry = archive["ComicInfo.xml"] else {
+        // Find ComicInfo.xml (Case Insensitive)
+        let entry = archive.makeIterator().first { $0.path.caseInsensitiveCompare("ComicInfo.xml") == .orderedSame }
+        
+        guard let validEntry = entry else {
             print("⚠️ [SmartPanels] No ComicInfo.xml found in: \(url.lastPathComponent)")
+            await MainActor.run { processingStatus = "Skipping: No Metadata Found" }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             return nil
         }
         
         var xmlData = Data()
         do {
-            _ = try archive.extract(entry) { xmlData.append($0) }
+            _ = try archive.extract(validEntry) { xmlData.append($0) }
         } catch {
             print("❌ [SmartPanels] Failed to extract XML data")
             return nil
         }
         
-        // Debug: Print XML prefix
-        // let snippet = String(data: xmlData.prefix(200), encoding: .utf8) ?? "Invalid Data"
-        // print("📄 XML Snippet: \(snippet)...")
-        
         let parser = ComicInfoPanelParser(data: xmlData)
         var result = parser.parse()
         
-        // ✅ REPAIR: Check for Denormalized (Pixel) Coordinates
-        // If XML lacked ImageWidth/Height, the parser returns raw pixels (e.g., x=500.0).
-        // We detect this by checking if any coordinate > 2.0.
-        // If found, we MUST open the images to get their size and normalize.
+        if result.isEmpty {
+             await MainActor.run { processingStatus = "Skipping: Metadata Empty" }
+             try? await Task.sleep(nanoseconds: 1_000_000_000)
+             return nil
+        }
         
+        await MainActor.run { processingStatus = "Metadata Found (\(result.count) pages)" }
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        // ✅ REPAIR: Check for Denormalized (Pixel) Coordinates
         let needsRepair = result.values.flatMap { $0 }.contains { $0.boundingBox.minX > 2.0 || $0.boundingBox.minY > 2.0 || $0.boundingBox.width > 2.0 }
         
         if needsRepair {
-            print("⚠️ [SmartPanels] Detected Pixel Coordinates without XML Dimensions. Repairing...")
+             await MainActor.run { processingStatus = "Repairing Pixel Coordinates..." }
+             print("⚠️ [SmartPanels] Detected Pixel Coordinates without XML Dimensions. Repairing...")
             
             // 1. Get Sorted Images (Canonical Order) to match XML "Page N"
             let sortedEntries = archive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
