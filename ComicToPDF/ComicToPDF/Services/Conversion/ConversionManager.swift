@@ -645,7 +645,9 @@ class ConversionManager: ObservableObject {
         try? await Task.sleep(nanoseconds: 500_000_000)
         
         // ✅ REPAIR: Check for Denormalized (Pixel) Coordinates
-        let needsRepair = result.values.flatMap { $0 }.contains { $0.boundingBox.minX > 2.0 || $0.boundingBox.minY > 2.0 || $0.boundingBox.width > 2.0 }
+        let needsRepair = result.values.flatMap { $0 }.contains { panel in
+            return panel.boundingBox.minX > 2.0 || panel.boundingBox.minY > 2.0 || panel.boundingBox.width > 2.0
+        }
         
         if needsRepair {
              await MainActor.run { processingStatus = "Repairing Pixel Coordinates..." }
@@ -1348,6 +1350,7 @@ class ConversionManager: ObservableObject {
                         }
                     } 
                 }
+            }
             }
             
             // 6. Write Updated OPF (If Needed)
