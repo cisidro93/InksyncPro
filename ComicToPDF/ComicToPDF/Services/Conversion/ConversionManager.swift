@@ -1329,6 +1329,7 @@ class ConversionManager: ObservableObject {
                          }
                      }
                 }
+            }
             
             // 5. Update OPF Manifest (InMemory Modification)
             var finalOpfData: Data? = nil
