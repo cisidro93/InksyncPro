@@ -69,7 +69,6 @@ struct SettingsView: View {
                     
 
                     }
-                } // Close if
             } // Close Section
             
             Section(header: Text("Image Enhancements")) {
