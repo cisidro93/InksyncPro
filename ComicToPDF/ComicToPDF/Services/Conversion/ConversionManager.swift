@@ -339,9 +339,22 @@ class ConversionManager: ObservableObject {
     
     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool) async {
         isConverting = true; conversionProgress = 0.0; processingStatus = "Converting..."; statusMessage = "Starting..."
-        let converter = CBZToEPUBConverter(); var jobSettings = conversionSettings; jobSettings.mangaMode = mangaMode; let fileOverrides = panelOverrides[pdf.id]
+        let converter = CBZToEPUBConverter(); var jobSettings = conversionSettings; jobSettings.mangaMode = mangaMode; 
+        
+        let fileOverrides = panelOverrides[pdf.id]
+        var combinedManifest = fileOverrides ?? [:]
+        
+        // ✅ Fix: Missing Source Panels (Single)
+        if let sourcePanels = await ConversionManager.extractSmartPanels(from: pdf.url) {
+            for (pageIndex, panels) in sourcePanels {
+                if combinedManifest[pageIndex] == nil {
+                    combinedManifest[pageIndex] = panels
+                }
+            }
+        }
+        
         do {
-            let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: fileOverrides) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
+            let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
             isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
         } catch { isConverting = false; statusMessage = "Error: \(error.localizedDescription)" }
@@ -367,10 +380,20 @@ class ConversionManager: ObservableObject {
             var jobSettings = conversionSettings
             // We use global settings for the batch. If specific manga settings are needed, we default to global for now.
             
-            let fileOverrides = panelOverrides[pdf.id]
+                let fileOverrides = panelOverrides[pdf.id]
+                var combinedManifest = fileOverrides ?? [:]
+                
+                // ✅ Fix: Missing Source Panels (Single/Queue)
+                if let sourcePanels = await ConversionManager.extractSmartPanels(from: pdf.url) {
+                    for (pageIndex, panels) in sourcePanels {
+                        if combinedManifest[pageIndex] == nil {
+                            combinedManifest[pageIndex] = panels
+                        }
+                    }
+                }
             
             do {
-                _ = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: fileOverrides) { progress in
+                _ = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
                     Task { @MainActor in
                         self.conversionProgress = progress
                         self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(progress * 100))%)"
