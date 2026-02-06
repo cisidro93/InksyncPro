@@ -437,6 +437,7 @@ class WiFiServer: ObservableObject {
             
             if FileManager.default.fileExists(atPath: fileURL.path) {
                 // Standard Content Type Strategy
+                let ext = fileURL.pathExtension.lowercased()
                 let contentType: String
                 if ext == "html" {
                      contentType = "text/html"
