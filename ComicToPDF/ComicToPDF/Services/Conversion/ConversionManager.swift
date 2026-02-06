@@ -1180,7 +1180,7 @@ class ConversionManager: ObservableObject {
             try fileManager.copyItem(at: pdf.url, to: targetURL)
             
             // 2. Ensure OPF Metadata (ASIN/Layout)
-            try await ensureKindleOPF(at: targetURL)
+            // try await ensureKindleOPF(at: targetURL) // ❌ Disabled: Merged into injectMetadata for Safe Re-Zip
             
             // 3. Ensure ComicInfo/SmartPanels (Best Effort)
             let panels = await getCombinedManifest(for: pdf)
@@ -1288,17 +1288,43 @@ class ConversionManager: ObservableObject {
                 _ = try sourceArchive.extract(entry) { rawOpf.append($0) }
                 
                 if var opfString = String(data: rawOpf, encoding: .utf8) {
-                    // Inject Manifest Item
+                    var modified = false
+                    
+                    // 1. Kindle ASIN/UUID (Required for Guided View)
+                    if !opfString.contains("urn:amazon:asin") && !opfString.contains("urn:uuid:") {
+                        if let range = opfString.range(of: "<metadata"),
+                           let endOfOpen = opfString[range.upperBound...].range(of: ">") {
+                             let insertIndex = endOfOpen.upperBound
+                             // Use a consistent ID or new one? New one is fine for export.
+                             let asinUUID = UUID().uuidString
+                             let tag = "\n    <dc:identifier id=\"uid\">urn:uuid:\(asinUUID)</dc:identifier>"
+                             opfString.insert(contentsOf: tag, at: insertIndex)
+                             modified = true
+                        }
+                    }
+                    
+                    // 2. Fixed Layout Metadata
+                    if !opfString.contains("rendition:layout") {
+                         if let range = opfString.range(of: "</metadata>") {
+                             let tag = "\n    <meta property=\"rendition:layout\">pre-paginated</meta>\n    <meta property=\"rendition:orientation\">auto</meta>\n    <meta property=\"rendition:spread\">auto</meta>\n    <meta name=\"fixed-layout\" content=\"true\"/>"
+                             opfString.insert(contentsOf: tag, at: range.lowerBound)
+                             modified = true
+                         }
+                    }
+                    
+                    // 3. ComicInfo Manifest Item
                     if !opfString.contains("ComicInfo.xml") {
                         if let range = opfString.range(of: "</manifest>") {
                              let itemTag = "\n    <item id=\"comicinfo\" href=\"ComicInfo.xml\" media-type=\"application/xml\"/>"
                              opfString.insert(contentsOf: itemTag, at: range.lowerBound)
-                             opfData = opfString.data(using: .utf8)
-                        } else {
-                            opfData = rawOpf // Fallback
+                             modified = true
                         }
+                    } 
+                    
+                    if modified {
+                        opfData = opfString.data(using: .utf8)
                     } else {
-                        opfData = rawOpf // Already good
+                        opfData = rawOpf // No changes needed
                     }
                 }
             }
@@ -1348,11 +1374,14 @@ class ConversionManager: ObservableObject {
                 return 
             }
             
-            // 1. MIMETYPE (Must be First & Stored)
-            let mimeData = "application/epub+zip".data(using: .ascii)!
-            try newArchive.addEntry(with: "mimetype", type: .file, uncompressedSize: Int64(mimeData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .none, bufferSize: 8192, progress: nil) { pos, size in
-                return mimeData.subdata(in: Int(pos)..<min(Int(pos)+size, mimeData.count))
-            }
+            // 1. MIMETYPE (Must be First & Stored & NO EXTRA FIELDS)
+            // Writing to disk and adding as file avoids explicit metadata passed in the closure-based API
+            // which likely triggers ZIPFoundation to write extended timestamps.
+            let mimePath = tempDir.appendingPathComponent("mimetype")
+            try "application/epub+zip".write(to: mimePath, atomically: true, encoding: .ascii)
+            
+            try newArchive.addEntry(with: "mimetype", fileURL: mimePath, compressionMethod: .none)
+            try? fileManager.removeItem(at: mimePath)
             
             // 2. MIGRATE OLD ASSETS (Copy from Old -> New)
             if let oldArchive = try? Archive(url: archiveURL, accessMode: .read) {
