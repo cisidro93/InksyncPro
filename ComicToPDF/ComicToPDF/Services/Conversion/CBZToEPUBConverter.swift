@@ -266,39 +266,6 @@ class CBZToEPUBConverter {
                 // Coordinates are Integers (Percentages 0-100).
                 // 'panel.boundingBox' is Normalized Top-Left Origin.
                 
-                let minX = Int(panel.boundingBox.minX * 100)
-                let minY = Int(panel.boundingBox.minY * 100)
-                let maxX = Int(panel.boundingBox.maxX * 100)
-                let maxY = Int(panel.boundingBox.maxY * 100)
-                
-                // Construct coordinate arrays [x, y]
-                let ul = "[\(minX), \(minY)]"
-                let ur = "[\(maxX), \(minY)]"
-                let lr = "[\(maxX), \(maxY)]"
-                let ll = "[\(minX), \(maxY)]"
-                
-                let jsonString = "{\"ord\":\(ord), \"sourceId\":\"panel-\(ord)\", \"parent\":\"img-container\", \"ul\":\(ul), \"ur\":\(ur), \"lr\":\(lr), \"ll\":\(ll)}"
-                
-                // Overlay Div
-                let top = String(format: "%.2f", panel.boundingBox.minY * 100)
-                let left = String(format: "%.2f", panel.boundingBox.minX * 100)
-                let width = String(format: "%.2f", panel.boundingBox.width * 100)
-                let height = String(format: "%.2f", panel.boundingBox.height * 100)
-                
-                // Task 3: Spread Detection
-                // If width > 1.5x height, mark as spread
-                let aspect = panel.boundingBox.width / panel.boundingBox.height
-                let isSpread = aspect > 1.5
-                let spreadAttr = isSpread ? "data-is-spread=\"true\"" : ""
-                
-                panelDivs += """
-                <div id="panel-\(ord)" class="app-amzn-magnify" 
-                     style="position: absolute; top: \(top)%; left: \(left)%; width: \(width)%; height: \(height)%; z-index: 20; cursor: pointer;"
-                     data-app-amzn-magnify='\(jsonString)'
-                     \(spreadAttr)>
-                </div>
-                """
-            }
         }
         
         return """
@@ -326,6 +293,8 @@ class CBZToEPUBConverter {
                 <img class="bg" src="../images/\(imageName)" alt="comic page"/>
                 \(panelDivs)
             </div>
+            <!-- Magnification Targets -->
+            \(targetDivs)
         </body>
         </html>
         """

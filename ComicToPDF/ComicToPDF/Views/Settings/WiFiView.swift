@@ -1,9 +1,12 @@
 import SwiftUI
 import UIKit // Required for UIColor
 
+import CoreImage.CIFilterBuiltins
+
 struct WiFiView: View {
     @StateObject private var server = WiFiServer()
     @Environment(\.dismiss) var dismiss
+    @State private var qrCodeImage: UIImage?
     
     var body: some View {
         NavigationView {
@@ -57,6 +60,24 @@ struct WiFiView: View {
                     .padding()
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(16)
+                    
+                    // ✅ QR Code for Quick Connect
+                    if let qr = qrCodeImage {
+                        VStack(spacing: 8) {
+                            Text("Scan to Connect")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Image(uiImage: qr)
+                                .resizable()
+                                .interpolation(.none)
+                                .scaledToFit()
+                                .frame(width: 160, height: 160)
+                                .padding(12)
+                                .background(Color.white)
+                                .cornerRadius(12)
+                                .shadow(radius: 2)
+                        }
+                    }
                 }
                 
                 // ✅ NEW: Progress UI
@@ -115,6 +136,10 @@ struct WiFiView: View {
             }
             .onAppear {
                 server.triggerLocalNetworkPrivacyAlert()
+                if server.isRunning { generateQRCode() }
+            }
+            .onChange(of: server.isRunning) { isRunning in
+                if isRunning { generateQRCode() } else { qrCodeImage = nil }
             }
             .onDisappear { server.stop() }
             // ✅ NEW: Error Alert
@@ -123,6 +148,26 @@ struct WiFiView: View {
                 set: { _ in server.errorMessage = nil }
             )) { wrapper in
                 Alert(title: Text("Server Error"), message: Text(wrapper.message), dismissButton: .default(Text("OK")))
+            }
+        }
+    }
+    
+    private func generateQRCode() {
+        guard let serverURL = server.serverURL else { return }
+        // Base URL for general connection
+        let targetURL = serverURL
+        
+        let context = CIContext()
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(targetURL.utf8)
+        filter.correctionLevel = "M" // Medium error correction
+        
+        if let outputImage = filter.outputImage {
+            let transform = CGAffineTransform(scaleX: 10, y: 10)
+            let scaledImage = outputImage.transformed(by: transform)
+            
+            if let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) {
+                self.qrCodeImage = UIImage(cgImage: cgImage)
             }
         }
     }
