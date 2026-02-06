@@ -140,6 +140,21 @@ class ConversionManager: ObservableObject {
         print("✅ Restored panels for imported file (ID: \(pdfID))")
     }
     
+    // ✅ NEW: Centralized manifest logic to fix panel loss
+    func getCombinedManifest(for pdf: ConvertedPDF) async -> [Int: [PanelExtractor.Panel]] {
+        var combined = panelOverrides[pdf.id] ?? [:]
+        
+        // Merge with source panels if available
+        if let sourcePanels = await ConversionManager.extractSmartPanels(from: pdf.url) {
+            for (pageIndex, panels) in sourcePanels {
+                if combined[pageIndex] == nil {
+                    combined[pageIndex] = panels
+                }
+            }
+        }
+        return combined
+    }
+    
     // MARK: - File Management
     func scanLibrary() {
         let fileManager = FileManager.default
@@ -341,17 +356,9 @@ class ConversionManager: ObservableObject {
         isConverting = true; conversionProgress = 0.0; processingStatus = "Converting..."; statusMessage = "Starting..."
         let converter = CBZToEPUBConverter(); var jobSettings = conversionSettings; jobSettings.mangaMode = mangaMode; 
         
-        let fileOverrides = panelOverrides[pdf.id]
-        var combinedManifest = fileOverrides ?? [:]
+        let converter = CBZToEPUBConverter(); var jobSettings = conversionSettings; jobSettings.mangaMode = mangaMode; 
         
-        // ✅ Fix: Missing Source Panels (Single)
-        if let sourcePanels = await ConversionManager.extractSmartPanels(from: pdf.url) {
-            for (pageIndex, panels) in sourcePanels {
-                if combinedManifest[pageIndex] == nil {
-                    combinedManifest[pageIndex] = panels
-                }
-            }
-        }
+        let combinedManifest = await getCombinedManifest(for: pdf)
         
         do {
             let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
@@ -380,17 +387,11 @@ class ConversionManager: ObservableObject {
             var jobSettings = conversionSettings
             // We use global settings for the batch. If specific manga settings are needed, we default to global for now.
             
-                let fileOverrides = panelOverrides[pdf.id]
-                var combinedManifest = fileOverrides ?? [:]
-                
-                // ✅ Fix: Missing Source Panels (Single/Queue)
-                if let sourcePanels = await ConversionManager.extractSmartPanels(from: pdf.url) {
-                    for (pageIndex, panels) in sourcePanels {
-                        if combinedManifest[pageIndex] == nil {
-                            combinedManifest[pageIndex] = panels
-                        }
-                    }
-                }
+            let converter = CBZToEPUBConverter()
+            var jobSettings = conversionSettings
+            // We use global settings for the batch. If specific manga settings are needed, we default to global for now.
+            
+            let combinedManifest = await getCombinedManifest(for: pdf)
             
             do {
                 _ = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
@@ -433,23 +434,10 @@ class ConversionManager: ObservableObject {
             // ✅ Override Manga Mode for this batch
             jobSettings.mangaMode = mangaMode
             
-            let fileOverrides = panelOverrides[file.id]
+            // ✅ Override Manga Mode for this batch
+            jobSettings.mangaMode = mangaMode
             
-            // ✅ Fix: Missing Source Panels
-            // If the user hasn't edited the file (or only edited some pages), we must ensure 
-            // the original panels from the CBZ are preserved.
-            var combinedManifest = fileOverrides ?? [:]
-            
-            // Attempt to load source panels if we have gaps or no overrides
-            // We do this by checking if the source has a ComicInfo.xml
-            if let sourcePanels = await ConversionManager.extractSmartPanels(from: file.url) {
-                for (pageIndex, panels) in sourcePanels {
-                    // Only use source panels if the user hasn't overridden this specific page
-                    if combinedManifest[pageIndex] == nil {
-                        combinedManifest[pageIndex] = panels
-                    }
-                }
-            }
+            let combinedManifest = await getCombinedManifest(for: file)
             
             do {
                 let resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
@@ -762,12 +750,18 @@ class ConversionManager: ObservableObject {
         }.value
         scanLibrary()
     }
-    func reorderPages(in url: URL, newOrder: [Int]) async throws -> URL {
+    func reorderPages(_ pdf: ConvertedPDF, newOrder: [Int]) async throws -> URL {
         // Physical Reorder: We create a new CBZ with files renamed to match the new order.
         let fileManager = FileManager.default
+        let url = pdf.url
         let tempID = UUID().uuidString
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(tempID)
         let tempArchiveURL = fileManager.temporaryDirectory.appendingPathComponent("\(tempID).cbz")
+        
+        // ✅ NEW: Prepare Panel Transfer
+        // Get current full state (Source + Edits)
+        let combinedManifest = await getCombinedManifest(for: pdf)
+        var newPanels: [Int: [PanelExtractor.Panel]] = [:]
         
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: tempDir); try? fileManager.removeItem(at: tempArchiveURL) }
@@ -789,6 +783,11 @@ class ConversionManager: ObservableObject {
         for (newIndex, originalIndex) in newOrder.enumerated() {
             guard originalIndex < imageEntries.count else { continue }
             let entry = imageEntries[originalIndex]
+            
+            // Transfer Panels to new index
+            if let panels = combinedManifest[originalIndex] {
+                newPanels[newIndex] = panels
+            }
             
             // Extract
             let ext = (entry.path as NSString).pathExtension.lowercased()
@@ -813,6 +812,14 @@ class ConversionManager: ObservableObject {
         try fileManager.moveItem(at: tempArchiveURL, to: url)
         
         scanLibrary()
+        
+        // ✅ NEW: Update overrides and inject metdata
+        await MainActor.run {
+            self.panelOverrides[pdf.id] = newPanels
+            self.saveLibrary()
+        }
+        try? await injectMetadata(into: url, panels: newPanels, metadata: pdf.metadata)
+        
         return url
     }
     
@@ -933,7 +940,7 @@ class ConversionManager: ObservableObject {
         
         // ✅ NEW: Prepare Panel Transfer
         // We map SourceIndex -> NewIndex
-        let sourceOverrides = panelOverrides[pdf.id]
+        let combinedManifest = await getCombinedManifest(for: pdf)
         var newFileOverrides: [Int: [PanelExtractor.Panel]] = [:]
         
         // Reuse reordering logic but only for specific indices and writing to new file
@@ -960,7 +967,7 @@ class ConversionManager: ObservableObject {
                 let entry = imageEntries[originalIndex]
                 
                 // 1. Transfer Panels (In Memory)
-                if let panels = sourceOverrides?[originalIndex] {
+                if let panels = combinedManifest[originalIndex] {
                     newFileOverrides[newIndex] = panels
                 }
                 
@@ -1021,7 +1028,8 @@ class ConversionManager: ObservableObject {
             try fileManager.copyItem(at: pdf.url, to: exportURL)
             
             // 2. Prepare Panels Data (Retrieving from overrides or auto-detection if needed)
-            var panelsToInject: [Int: [PanelExtractor.Panel]] = [:]
+            // 2. Prepare Panels Data (Retrieving from overrides or auto-detection if needed)
+            var panelsToInject = await getCombinedManifest(for: pdf)
             
             // We need to resolve the full panel set. 
             // Existing logic checked overrides first, then auto-detection.
@@ -1030,9 +1038,8 @@ class ConversionManager: ObservableObject {
             let files = try await extractImageURLs(from: pdf.url)
             
             for (index, fileURL) in files.enumerated() {
-                if let overrides = panelOverrides[pdf.id]?[index] {
-                    panelsToInject[index] = overrides
-                } else if conversionSettings.enablePanelSplit {
+                if panelsToInject[index] == nil && conversionSettings.enablePanelSplit {
+                     // Only run detection if we DON'T have a panel set yet
                      if let image = UIImage(contentsOfFile: fileURL.path) {
                         let detected = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: conversionSettings.mangaMode)
                         if !detected.isEmpty {
@@ -1076,7 +1083,8 @@ class ConversionManager: ObservableObject {
             try await ensureKindleOPF(at: targetURL)
             
             // 3. Ensure ComicInfo/SmartPanels (Best Effort)
-            if let panels = panelOverrides[pdf.id] {
+            let panels = await getCombinedManifest(for: pdf)
+            if !panels.isEmpty {
                 try await injectMetadata(into: targetURL, panels: panels, metadata: pdf.metadata)
             }
             

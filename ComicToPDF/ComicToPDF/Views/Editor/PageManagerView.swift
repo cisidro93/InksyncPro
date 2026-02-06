@@ -398,7 +398,7 @@ struct PageManagerView: View {
             viewModel.statusText = "Saving New Order..."
             
             // This replaces the file on disk.
-            let newURL = try await conversionManager.reorderPages(in: pdf.url, newOrder: newOrder)
+            let newURL = try await conversionManager.reorderPages(pdf, newOrder: newOrder)
             print("Reorder Saved to: \(newURL.lastPathComponent)")
             
         } catch {

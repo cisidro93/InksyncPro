@@ -74,7 +74,7 @@ struct PageReorderView: View {
     private func saveChanges() {
         isSaving = true
         let newOrder = pages.map { $0.originalIndex }
-        Task { do { _ = try await conversionManager.reorderPages(in: pdf.url, newOrder: newOrder); await MainActor.run { isSaving = false; dismiss() } } catch { await MainActor.run { isSaving = false } } }
+        Task { do { _ = try await conversionManager.reorderPages(pdf, newOrder: newOrder); await MainActor.run { isSaving = false; dismiss() } } catch { await MainActor.run { isSaving = false } } }
     }
 }
 
