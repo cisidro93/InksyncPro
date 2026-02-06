@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct LogsView: View {
+    @Environment(\.dismiss) var dismiss
     @State private var logs: String = "Loading..."
     @State private var showingCopiedAlert = false
     
@@ -15,6 +16,9 @@ struct LogsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { refreshLogs() }
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Done") { dismiss() }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button(action: refreshLogs) {

@@ -143,9 +143,11 @@ class ConversionManager: ObservableObject {
     // ✅ NEW: Centralized manifest logic to fix panel loss
     func getCombinedManifest(for pdf: ConvertedPDF) async -> [Int: [PanelExtractor.Panel]] {
         var combined = panelOverrides[pdf.id] ?? [:]
+        Logger.shared.log("Building Manifest for \(pdf.name) (ID: \(pdf.id))", category: "Manifest")
         
         // Merge with source panels if available
         if let sourcePanels = await extractSmartPanels(from: pdf.url) {
+            Logger.shared.log("Merging \(sourcePanels.count) source pages into manifest", category: "Manifest")
             for (pageIndex, panels) in sourcePanels {
                 if combined[pageIndex] == nil {
                     combined[pageIndex] = panels
@@ -1218,7 +1220,7 @@ class ConversionManager: ObservableObject {
     
     // ✅ NEW: Reusable Metadata Injection
     func injectMetadata(into archiveURL: URL, panels: [Int: [PanelExtractor.Panel]], metadata: PDFMetadata) async throws {
-        print("💾 [Injection] Starting metadata injection for: \(archiveURL.lastPathComponent). Panel Pages: \(panels.count)")
+        Logger.shared.log("Starting Injection: \(archiveURL.lastPathComponent) with \(panels.count) pages", category: "Injection")
         
         // 1. Convert Panels to SmartPanels format
         var smartPanelsDict: [String: [SmartPanel]] = [:]
@@ -1254,6 +1256,8 @@ class ConversionManager: ObservableObject {
             let end = min(start + size, xmlData.count)
             return xmlData.subdata(in: start..<end)
         }
+        
+        Logger.shared.log("ComicInfo.xml written successfully", category: "Injection")
         
         // 4. (EPUB Only) Update Content XHTML for Guided View
         // ComicInfo handles "Round Trip" persistence (Importing back to App)

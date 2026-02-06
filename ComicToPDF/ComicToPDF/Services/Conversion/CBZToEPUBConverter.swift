@@ -4,6 +4,7 @@ import ZIPFoundation
 class CBZToEPUBConverter {
     
     func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, progress: @escaping (Double) -> Void) async throws -> [URL] {
+        Logger.shared.log("Starting Conversion. Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
         
         let fileManager = FileManager.default
         let baseFilename = sourceURL.deletingPathExtension().lastPathComponent
@@ -230,13 +231,14 @@ class CBZToEPUBConverter {
             // This ensures that if the user opens this EPUB in Inksync, the panels are restored.
             var batchPanels: [Int: [PanelExtractor.Panel]] = [:]
             for (localIndex, item) in batch.enumerated() {
-                let pagePanels = manualManifest?[item.index] ?? [] // Ensure we use the resolved panels
+                let pagePanels = manualManifest?[item.index] ?? [] 
                 if !pagePanels.isEmpty {
                     batchPanels[localIndex] = pagePanels
                 }
             }
             
             if !batchPanels.isEmpty {
+                Logger.shared.log("Batch \(batchIndex): Writing ComicInfo.xml with \(batchPanels.count) pages", category: "Converter")
                 var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ComicInfo>\n  <Pages>\n"
                 let sortedKeys = batchPanels.keys.sorted()
                 for key in sortedKeys {
@@ -249,7 +251,13 @@ class CBZToEPUBConverter {
                     }
                 }
                 xml += "  </Pages>\n</ComicInfo>"
-                try? xml.write(to: batchDir.appendingPathComponent("ComicInfo.xml"), atomically: true, encoding: .utf8)
+                do {
+                    try xml.write(to: batchDir.appendingPathComponent("ComicInfo.xml"), atomically: true, encoding: .utf8)
+                } catch {
+                    Logger.shared.log("Failed to write ComicInfo.xml: \(error)", category: "Converter")
+                }
+            } else {
+                Logger.shared.log("Batch \(batchIndex): No panels to write", category: "Converter")
             }
             
             try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
