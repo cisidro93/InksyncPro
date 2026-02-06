@@ -1303,6 +1303,19 @@ class ConversionManager: ObservableObject {
                         }
                     }
                     
+                    // 1b. Ensure 'rendition' prefix is declared in <package>
+                    // If we use rendition:layout, the prefix must be defined in the root element.
+                    if !opfString.contains("http://www.idpf.org/vocab/rendition/#") {
+                        if let range = opfString.range(of: "<package") {
+                            if let endOfOpen = opfString[range.upperBound...].range(of: ">") {
+                                // Insert the prefix attribute before the closing '>' of the package tag
+                                let prefixDef = " prefix=\"rendition: http://www.idpf.org/vocab/rendition/#\""
+                                opfString.insert(contentsOf: prefixDef, at: endOfOpen.lowerBound)
+                                modified = true
+                            }
+                        }
+                    }
+                    
                     // 2. Fixed Layout Metadata
                     if !opfString.contains("rendition:layout") {
                          if let range = opfString.range(of: "</metadata>") {
