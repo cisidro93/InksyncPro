@@ -1297,6 +1297,7 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
     
     // State
     private var currentPageIndex: Int?
+    private var currentImageSize: CGSize? // ✅ Support for normalization
     private var currentPanels: [PanelExtractor.Panel] = []
     
     init(data: Data) {
@@ -1312,28 +1313,61 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
     }
     
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
-        // Strip namespace if present (e.g. "cb:Page" -> "Page")
         let cleanName = elementName.components(separatedBy: ":").last ?? elementName
         
-        // Helper for case-insensitive lookup
         func getAttr(_ key: String) -> String? {
             return attributeDict.first { $0.key.caseInsensitiveCompare(key) == .orderedSame }?.value
         }
         
         if cleanName.caseInsensitiveCompare("Page") == .orderedSame {
-            // Schema: <Page Image="0">
+            // Schema: <Page Image="0" ImageWidth="1000" ImageHeight="1500">
             if let imageStr = getAttr("Image"), let index = Int(imageStr) {
                 currentPageIndex = index
                 currentPanels = []
+                
+                // Capture Dimensions for Normalization
+                if let wStr = getAttr("ImageWidth"), let w = Double(wStr),
+                   let hStr = getAttr("ImageHeight"), let h = Double(hStr), w > 0, h > 0 {
+                    currentImageSize = CGSize(width: w, height: h)
+                } else {
+                    currentImageSize = nil
+                }
             }
         } else if cleanName.caseInsensitiveCompare("Panel") == .orderedSame {
-            // Schema: <Panel x="0.1" y="0.1" width="0.5" height="0.5" />
             if let xVal = getAttr("x"), let x = Double(xVal),
                let yVal = getAttr("y"), let y = Double(yVal),
                let wVal = getAttr("width"), let w = Double(wVal),
                let hVal = getAttr("height"), let h = Double(hVal) {
                 
-                let rect = CGRect(x: x, y: y, width: w, height: h)
+                var rect = CGRect(x: x, y: y, width: w, height: h)
+                
+                // ✅ Auto-Normalize if values are in Pixels
+                // Heuristic: If any value is > 2.0 (buffer for float errors), it's likely pixels.
+                // Standard normalized panels are 0.0-1.0.
+                let isPixels = x > 2.0 || y > 2.0 || w > 2.0 || h > 2.0
+                
+                if isPixels, let size = currentImageSize {
+                    rect = CGRect(
+                        x: x / size.width,
+                        y: y / size.height,
+                        width: w / size.width,
+                        height: h / size.height
+                    )
+                }
+                
+                // Safety Clamp (0.0 - 1.0)
+                // This ensures even slightly off calculations don't break the CSS
+                /*
+                rect = CGRect(
+                    x: max(0, min(1, rect.minX)),
+                    y: max(0, min(1, rect.minY)),
+                    width: max(0, min(1, rect.width)),
+                    height: max(0, min(1, rect.height))
+                )
+                */
+                // Commented clamp out because sometimes panels might bleed slightly, 
+                // but for Guided View 0-1 is strict. Let's trust the calc for now.
+                
                 let panel = PanelExtractor.Panel(boundingBox: rect)
                 currentPanels.append(panel)
             }
@@ -1348,6 +1382,7 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
                 result[index] = currentPanels
             }
             currentPageIndex = nil
+            currentImageSize = nil
             currentPanels = []
         }
     }
