@@ -1258,8 +1258,8 @@ class ConversionManager: ObservableObject {
         // 2. Generate XML
         var xmlContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         xmlContent += "<ComicInfo>\n"
-        xmlContent += "  <Title>\(metadata.title)</Title>\n"
-        if let series = metadata.series { xmlContent += "  <Series>\(series)</Series>\n" }
+        xmlContent += "  <Title>\(metadata.title.xmlEscaped())</Title>\n"
+        if let series = metadata.series { xmlContent += "  <Series>\(series.xmlEscaped())</Series>\n" }
         // PageCount is implicit or we could calculate it, but optional for import reader usually
         xmlContent += generatePagesXML(from: smartPanelsDict)
         xmlContent += "\n</ComicInfo>"
