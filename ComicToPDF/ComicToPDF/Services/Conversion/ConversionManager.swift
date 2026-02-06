@@ -1413,7 +1413,20 @@ class ConversionManager: ObservableObject {
                     if processedPaths.contains(entry.path) { continue }
                     
                     // Skip Special Files (We inject/update these manually)
-                    if entry.path == "ComicInfo.xml" { continue }
+                    // We need to calculate comicInfoPath here too or just skip strictly by suffix if we want to be safe?
+                    // Safe approach: Skip if it ends in ComicInfo.xml AND is in the same dir as OPF.
+                    // But simpler: We calculated `opfPath` earlier.
+                    
+                    let targetComicInfoPath: String
+                    if let opf = opfPath, let lastSlash = opf.lastIndex(of: "/") {
+                         let dir = opf[..<lastSlash]
+                         targetComicInfoPath = "\(dir)/ComicInfo.xml"
+                    } else {
+                         targetComicInfoPath = "ComicInfo.xml"
+                    }
+                    
+                    if entry.path == targetComicInfoPath { continue }
+                    if entry.path == "ComicInfo.xml" { continue } // Also skip root if it exists, just in case.
                     if entry.path == opfPath { continue }
                     if xhtmlUpdates.keys.contains(entry.path) { continue }
                     
@@ -1431,8 +1444,16 @@ class ConversionManager: ObservableObject {
             
             // 4. INJECT NEW/UPDATED FILES
             
-            // ComicInfo
-            try newArchive.addEntry(with: "ComicInfo.xml", type: .file, uncompressedSize: Int64(comicInfoData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
+            // ComicInfo check: Ensure it lives next to OPF
+            let comicInfoPath: String
+            if let opf = opfPath, let lastSlash = opf.lastIndex(of: "/") {
+                 let dir = opf[..<lastSlash]
+                 comicInfoPath = "\(dir)/ComicInfo.xml"
+            } else {
+                 comicInfoPath = "ComicInfo.xml" // Fallback to root
+            }
+            
+            try newArchive.addEntry(with: comicInfoPath, type: .file, uncompressedSize: Int64(comicInfoData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
                 return comicInfoData.subdata(in: Int(pos)..<min(Int(pos)+size, comicInfoData.count))
             }
             
