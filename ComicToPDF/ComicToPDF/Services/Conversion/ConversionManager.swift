@@ -1383,10 +1383,23 @@ class ConversionManager: ObservableObject {
             try newArchive.addEntry(with: "mimetype", fileURL: mimePath, compressionMethod: .none)
             try? fileManager.removeItem(at: mimePath)
             
-            // 2. MIGRATE OLD ASSETS (Copy from Old -> New)
+            // 2. META-INF/container.xml (Must be Second for strict compliance)
+            var processedPaths: Set<String> = ["mimetype"]
+            
             if let oldArchive = try? Archive(url: archiveURL, accessMode: .read) {
+                if let containerEntry = oldArchive["META-INF/container.xml"] {
+                    let tempContainer = tempDir.appendingPathComponent("container.xml")
+                    _ = try oldArchive.extract(containerEntry, to: tempContainer)
+                    try newArchive.addEntry(with: "META-INF/container.xml", fileURL: tempContainer, compressionMethod: .deflate)
+                    try? fileManager.removeItem(at: tempContainer)
+                    processedPaths.insert("META-INF/container.xml")
+                }
+            
+                // 3. MIGRATE REMAINDER (Copy from Old -> New)
                 for entry in oldArchive {
-                    if entry.path == "mimetype" { continue }
+                    if processedPaths.contains(entry.path) { continue }
+                    
+                    // Skip Special Files (We inject/update these manually)
                     if entry.path == "ComicInfo.xml" { continue }
                     if entry.path == opfPath { continue }
                     if xhtmlUpdates.keys.contains(entry.path) { continue }
@@ -1403,7 +1416,7 @@ class ConversionManager: ObservableObject {
                 }
             }
             
-            // 3. INJECT NEW/UPDATED FILES
+            // 4. INJECT NEW/UPDATED FILES
             
             // ComicInfo
             try newArchive.addEntry(with: "ComicInfo.xml", type: .file, uncompressedSize: Int64(comicInfoData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
@@ -1412,6 +1425,11 @@ class ConversionManager: ObservableObject {
             
             // OPF
             if let data = opfData, let path = opfPath {
+                // Log OPF for debugging
+                if let opfStr = String(data: data, encoding: .utf8) {
+                    print("📝 [OPF Injection] Final OPF Content:\n\(opfStr)")
+                }
+                
                 try newArchive.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
                     return data.subdata(in: Int(pos)..<min(Int(pos)+size, data.count))
                 }
@@ -1426,7 +1444,7 @@ class ConversionManager: ObservableObject {
             
         } // DEINIT: newArchive closed here
         
-        // 4. ATOMIC SWAP
+        // 5. ATOMIC SWAP
         try finalizeSwap(source: newArchiveURL, dest: archiveURL)
         Logger.shared.log("Successfully rebuilt EPUB structure", category: "Injection")
     }
