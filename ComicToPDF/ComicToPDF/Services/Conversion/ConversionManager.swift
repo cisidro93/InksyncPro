@@ -1351,7 +1351,6 @@ class ConversionManager: ObservableObject {
                     } 
                 }
             }
-            }
             
             // 6. Write Updated OPF (If Needed)
             if let newOpfData = finalOpfData, let path = opfPath {
