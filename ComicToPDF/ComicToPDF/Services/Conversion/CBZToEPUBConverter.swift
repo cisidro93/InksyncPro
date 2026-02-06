@@ -252,9 +252,9 @@ class CBZToEPUBConverter {
                 }
                 xml += "  </Pages>\n</ComicInfo>"
                 do {
-                    try xml.write(to: batchDir.appendingPathComponent("ComicInfo.xml"), atomically: true, encoding: .utf8)
+                    try xml.write(to: oebpsDir.appendingPathComponent("ComicInfo.xml"), atomically: true, encoding: .utf8)
                 } catch {
-                    Logger.shared.log("Failed to write ComicInfo.xml: \(error)", category: "Converter")
+                    Logger.shared.log("Failed to write OEBPS/ComicInfo.xml: \(error)", category: "Converter")
                 }
             } else {
                 Logger.shared.log("Batch \(batchIndex): No panels to write", category: "Converter")

@@ -588,11 +588,16 @@ class ConversionManager: ObservableObject {
             return nil
         }
         
-        // Find ComicInfo.xml (Case Insensitive)
-        let entry = archive.makeIterator().first { $0.path.caseInsensitiveCompare("ComicInfo.xml") == .orderedSame }
+        // Find ComicInfo.xml (Search for suffix to handle root or OEBPS/)
+        let entry = archive.makeIterator().first { $0.path.lowercased().hasSuffix("comicinfo.xml") }
         
         guard let validEntry = entry else {
             Logger.shared.log("No ComicInfo.xml found", category: "SmartPanels")
+            
+            // Log what WAS found
+            let files = archive.makeIterator().prefix(10).map { $0.path }
+            Logger.shared.log("Files seen: \(files.joined(separator: ", "))...", category: "SmartPanels")
+            
             await MainActor.run { processingStatus = "Skipping: No Metadata Found" }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             return nil
