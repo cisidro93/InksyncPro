@@ -145,7 +145,7 @@ class ConversionManager: ObservableObject {
         var combined = panelOverrides[pdf.id] ?? [:]
         
         // Merge with source panels if available
-        if let sourcePanels = await ConversionManager.extractSmartPanels(from: pdf.url) {
+        if let sourcePanels = await extractSmartPanels(from: pdf.url) {
             for (pageIndex, panels) in sourcePanels {
                 if combined[pageIndex] == nil {
                     combined[pageIndex] = panels
@@ -575,7 +575,7 @@ class ConversionManager: ObservableObject {
     }
     
     // ✅ NEW: Extract Smart Panels from ComicInfo.xml
-    static func extractSmartPanels(from url: URL) async -> [Int: [PanelExtractor.Panel]]? {
+    func extractSmartPanels(from url: URL) async -> [Int: [PanelExtractor.Panel]]? {
         await MainActor.run { processingStatus = "Reading Source Panels..." } // Re-assert status
         
         print("🔍 [SmartPanels] Inspecting: \(url.lastPathComponent)")
