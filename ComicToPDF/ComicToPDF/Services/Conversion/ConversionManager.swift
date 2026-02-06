@@ -356,6 +356,7 @@ class ConversionManager: ObservableObject {
         isConverting = true; conversionProgress = 0.0; processingStatus = "Converting..."; statusMessage = "Starting..."
         let converter = CBZToEPUBConverter(); var jobSettings = conversionSettings; jobSettings.mangaMode = mangaMode; 
         
+        await MainActor.run { processingStatus = "Reading Source Panels..." }
         let combinedManifest = await getCombinedManifest(for: pdf)
         
         do {
@@ -385,6 +386,7 @@ class ConversionManager: ObservableObject {
             var jobSettings = conversionSettings
             // We use global settings for the batch. If specific manga settings are needed, we default to global for now.
             
+            await MainActor.run { processingStatus = "Reading Source Panels..." }
             let combinedManifest = await getCombinedManifest(for: pdf)
             
             do {
