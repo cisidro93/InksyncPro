@@ -649,13 +649,7 @@ class WiFiServer: ObservableObject {
         """
     }
     
-            return url // No changes needed
-            
-        } catch {
-            print("❌ [Kindle Fix] Failed: \(error)")
-            return url // Fallback to original
-        }
-    }
+
     
     // MARK: - Utilities
     

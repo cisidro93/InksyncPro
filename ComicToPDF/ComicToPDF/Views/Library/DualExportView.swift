@@ -85,7 +85,7 @@ struct DualExportView: View {
                 Spacer()
                 
                 // Hidden Navigation
-                NavigationLink(destination: KindleSyncView(), isActive: $navigateToSync) { EmptyView() }
+                NavigationLink(destination: WiFiView(), isActive: $navigateToSync) { EmptyView() }
             }
             .padding()
             .navigationTitle("Export Options")

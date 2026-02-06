@@ -68,7 +68,9 @@ struct SettingsView: View {
                     }
                     
 
-            }
+                    }
+                } // Close if
+            } // Close Section
             
             Section(header: Text("Image Enhancements")) {
                 Toggle("Grayscale (E-Ink Mode)", isOn: $conversionManager.conversionSettings.imageEnhancement.grayscale)

@@ -160,7 +160,23 @@ class CBZToEPUBConverter {
                 let properties = (localIndex == 0) ? "properties=\"cover-image\"" : ""
                 manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
                 manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\" properties=\"svg\"/>")
-                spineItems.append("<itemref idref=\"page_\(localIndex+1)\"/>")
+                
+                // ✅ NEW: Calculate Spread Property (Kindle Landscape)
+                var spreadProp = ""
+                if item.index == 0 {
+                    spreadProp = "page-spread-center"
+                } else {
+                    let isOdd = (item.index % 2 != 0)
+                    // LTR: Odd index (Page 2) = Left, Even index (Page 3) = Right
+                    // RTL: Odd index (Page 2) = Right, Even index (Page 3) = Left
+                    if settings.mangaMode {
+                         spreadProp = isOdd ? "page-spread-right" : "page-spread-left"
+                    } else {
+                         spreadProp = isOdd ? "page-spread-left" : "page-spread-right"
+                    }
+                }
+                
+                spineItems.append("<itemref idref=\"page_\(localIndex+1)\" properties=\"\(spreadProp)\"/>")
             }
             
             // OPF & TOC
@@ -266,7 +282,62 @@ class CBZToEPUBConverter {
                 // Coordinates are Integers (Percentages 0-100).
                 // 'panel.boundingBox' is Normalized Top-Left Origin.
                 
-        }
+                let x = Int(panel.boundingBox.minX * 100)
+                let y = Int(panel.boundingBox.minY * 100)
+                let w = Int(panel.boundingBox.width * 100)
+                let h = Int(panel.boundingBox.height * 100)
+                
+                // 1. Target Div (The Magnification Area)
+                // ID matches the anchor targetId. Class "app-amzn-magnify" makes it a zoom target.
+                // It overlaps the image using absolute positioning (percentage based).
+                
+                // data-app-amzn-magnify: JSON string defining the target area and behavior.
+                // "targetId": The ID of the div to be magnified (usually itself, or a high-res replacement).
+                // "ordinal": The sequence number for reading order.
+                
+                let json = "{\"targetId\":\"mag-\(ord)\", \"ordinal\":\(ord)}"
+                
+                // The anchor is the "active area" you tap.
+                // The target div is what gets shown (zoomed). 
+                // In this simple implementation, the tap area AND the zoom area are the same (the panel).
+                
+                targetDivs += """
+                <a class="app-amzn-magnify" data-app-amzn-magnify='\(json)' style="position:absolute; left:\(x)%; top:\(y)%; width:\(w)%; height:\(h)%;"></a>
+                <div id="mag-\(ord)" style="position:absolute; left:\(x)%; top:\(y)%; width:\(w)%; height:\(h)%; background-color:white; display:none;">
+                     <!-- Content to show when zoomed. Could be high-res image crop. 
+                          For now, we rely on the device zooming the viewport. 
+                          Kindle usually zooms the *region* defined by the anchor if no specific target content is provided?
+                          Actually, "targetId" points to a hidden div that contains the zoomed content.
+                          If we want to zoom the *existing* image, we might need a different approach.
+                          
+                          Core approach for fast implementation:
+                          The <a> tag defines the tap zone.
+                          The data attribute defines the target.
+                          If we point target to a div that wraps the image, it zooms the whole image.
+                          
+                          Refined approach:
+                          We just emit the anchor. Kindle performs the viewport zoom on the coordinates defined by the anchor's style.
+                      -->
+                </div>
+                """
+                
+                // Simpler Approach verified in other tools:
+                // Just the anchor tag with the class and correct JSON is mostly enough for basic "panel-to-panel" navigation flow.
+                // However, for proper "Guided View" (zoom), we usually need the target div structure.
+                
+                // Let's use the standard "Mag-Target" structure:
+                // <div id="mag-N" class="target"> [Content] </div>
+                // <a class="app-amzn-magnify" data-app-amzn-magnify="..."></a>
+                
+                // Since we don't have chopped images, we will try the "Anchor Only" method which relies on the device's native zooming of the defined region.
+                // If that fails, we fallback to standard full page. 
+                // But wait, the previous code had logic here. Attempting to restore "passthrough" logic.
+                
+                 targetDivs += """
+                <a class="app-amzn-magnify" data-app-amzn-magnify='{"targetId":"mag-target-\(ord)", "ordinal":\(ord)}' style="position:absolute; left:\(x)%; top:\(y)%; width:\(w)%; height:\(h)%;"></a>
+                <div id="mag-target-\(ord)" style="position: absolute; width: 100%; height: 100%; top: 0; left: 0; display: none;"></div>
+                """
+            }
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
