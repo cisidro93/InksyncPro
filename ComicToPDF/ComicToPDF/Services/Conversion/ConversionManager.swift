@@ -201,17 +201,28 @@ class ConversionManager: ObservableObject {
                     }
                 }
                 
+                Logger.shared.log("Library Scanned: Found \(newPDFs.count) new files", category: "Library")
                 saveLibrary()
             }
             
             // Cleanup: Remove missing files
-            convertedPDFs.removeAll { !fileManager.fileExists(atPath: $0.url.path) }
+            let missingCount = convertedPDFs.filter { !fileManager.fileExists(atPath: $0.url.path) }.count
+            if missingCount > 0 {
+                convertedPDFs.removeAll { !fileManager.fileExists(atPath: $0.url.path) }
+                Logger.shared.log("Removed \(missingCount) missing files from library", category: "Library")
+            }
             
 
     }
     
     func deletePDF(_ pdf: ConvertedPDF) {
-        try? FileManager.default.removeItem(at: pdf.url)
+        do {
+            try FileManager.default.removeItem(at: pdf.url)
+            Logger.shared.log("Deleted File: \(pdf.name)", category: "Library")
+        } catch {
+            Logger.shared.log("Failed to delete file: \(error)", category: "Library")
+        }
+        
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
             convertedPDFs.remove(at: idx)
             saveLibrary()
@@ -350,8 +361,12 @@ class ConversionManager: ObservableObject {
             if let cover = inheritedCover { thumbnailCache.setObject(cover, forKey: outputURL.path as NSString); objectWillChange.send() }
             else { Task { await self.generateCoverThumbnail(for: newPDF) } }
             isConverting = false; statusMessage = "✅ Merge Complete!"; scanLibrary()
+            Logger.shared.log("Merge Successful: \(outputName)", category: "Converter")
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
-        } catch { isConverting = false; statusMessage = "Merge Error: \(error.localizedDescription)" }
+        } catch { 
+            Logger.shared.log("Merge Failed: \(error)", category: "Converter")
+            isConverting = false; statusMessage = "Merge Error: \(error.localizedDescription)" 
+        }
     }
     
     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool) async {
@@ -365,8 +380,12 @@ class ConversionManager: ObservableObject {
         do {
             let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
             isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
+            Logger.shared.log("Conversion Successful: \(pdf.name) -> \(newURLs.count) files", category: "Converter")
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
-        } catch { isConverting = false; statusMessage = "Error: \(error.localizedDescription)" }
+        } catch { 
+            Logger.shared.log("Conversion Failed: \(error)", category: "Converter")
+            isConverting = false; statusMessage = "Error: \(error.localizedDescription)" 
+        }
     }
     
     func convertQueue(_ pdfs: [ConvertedPDF]) async {
@@ -402,8 +421,10 @@ class ConversionManager: ObservableObject {
                 }
                 // Scan after each successful conversion so user sees progress
                 await MainActor.run { self.scanLibrary() }
+                Logger.shared.log("Batch Conversion successful: \(pdf.name)", category: "Converter")
             } catch {
                 print("❌ Batch Error for \(pdf.name): \(error)")
+                Logger.shared.log("Batch Error for \(pdf.name): \(error)", category: "Converter")
                 await MainActor.run { self.statusMessage = "Error on \(pdf.name)" }
                 try? await Task.sleep(nanoseconds: 1 * 1_000_000_000)
             }

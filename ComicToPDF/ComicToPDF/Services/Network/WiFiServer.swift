@@ -58,7 +58,9 @@ class WiFiServer: ObservableObject {
                 guard let self = self else { return }
                 switch state {
                 case .ready:
-                    print("🚀 Server Ready on port 8080. PIN: \(self.securityCode)")
+                    let pin = self.securityCode
+                    Logger.shared.log("WiFi Server Ready on port 8080. PIN: \(pin)", category: "Network")
+                    print("🚀 Server Ready on port 8080. PIN: \(pin)")
                     DispatchQueue.main.async {
                         self.isRunning = true
                         let ip = self.getIPAddress() ?? "localhost"
@@ -73,6 +75,7 @@ class WiFiServer: ObservableObject {
                         } else {
                             // ✅ Fix: Show full error details for debugging
                             self.errorMessage = "Failed to start server:\n\(error.localizedDescription)\n(Debug: \(error))"
+                            Logger.shared.log("Server Start Failed: \(error)", category: "Network")
                         }
                     }
                     if self.isRunning { self.stop() }
@@ -131,6 +134,7 @@ class WiFiServer: ObservableObject {
     private func handleConnection(_ connection: NWConnection) {
         // Track Connection Start
         DispatchQueue.main.async { self.activeConnections += 1 }
+        Logger.shared.log("New Connection from \(connection.endpoint)", category: "Network")
         
         // Track Connection End
         connection.stateUpdateHandler = { [weak self] state in
@@ -157,7 +161,7 @@ class WiFiServer: ObservableObject {
             if isComplete {
                 connection.cancel()
             } else if let error = error {
-                print("Connection error: \(error)")
+                Logger.shared.log("Connection Error: \(error)", category: "Network")
                 connection.cancel()
             } else {
                 // Continue reading
@@ -292,6 +296,7 @@ class WiFiServer: ObservableObject {
                 sessionLock.unlock()
                 
                 // Set Cookie and Redirect to /
+                Logger.shared.log("Authentication Successful", category: "Network")
                 let response = """
                 HTTP/1.1 302 Found\r
                 Location: /\r
@@ -303,6 +308,7 @@ class WiFiServer: ObservableObject {
                 connection.send(content: response.data(using: .utf8), completion: .contentProcessed({ _ in connection.cancel() }))
                 
             } else {
+                Logger.shared.log("Auth Failed: Incorrect PIN", category: "Network")
                 let html = generateLoginPage(error: "Invalid PIN")
                 sendResponse(connection, 401, html, contentType: "text/html")
             }
@@ -351,6 +357,7 @@ class WiFiServer: ObservableObject {
         
         // Create file
         FileManager.default.createFile(atPath: destURL.path, contents: nil, attributes: nil)
+        Logger.shared.log("Starting Upload: \(context.filename)", category: "Network")
         
         do {
             context.fileHandle = try FileHandle(forWritingTo: destURL)
@@ -387,7 +394,7 @@ class WiFiServer: ObservableObject {
     private func checkUploadCompletion(connection: NWConnection, context: ConnectionContext) {
         // Simple check: if we got all expected bytes
         if context.expectedLength > 0 && context.receivedLength >= context.expectedLength {
-            print("Upload Complete: \(context.filename)")
+            Logger.shared.log("Upload Complete: \(context.filename) (\(context.receivedLength) bytes)", category: "Network")
             
             cleanup(context: context)
             sendResponse(connection, 200, "Upload Complete")
