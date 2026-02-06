@@ -14,39 +14,37 @@ struct EditorDashboardView: View {
     }
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all)
-                
-                if filteredPDFs.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "pencil.and.outline")
-                            .font(.system(size: 60))
-                            .foregroundColor(.gray)
-                        Text("No Comics to Edit")
-                            .font(.title2)
-                            .bold()
-                        Text("Import comics in the Library tab to start editing.")
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            ForEach(filteredPDFs) { pdf in
-                                EditorRowView(pdf: pdf) {
-                                    selectedPDF = pdf
-                                }
+        ZStack {
+            Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all)
+            
+            if filteredPDFs.isEmpty {
+                VStack(spacing: 20) {
+                    Image(systemName: "pencil.and.outline")
+                        .font(.system(size: 60))
+                        .foregroundColor(.gray)
+                    Text("No Comics to Edit")
+                        .font(.title2)
+                        .bold()
+                    Text("Import comics in the Library tab to start editing.")
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 16) {
+                        ForEach(filteredPDFs) { pdf in
+                            EditorRowView(pdf: pdf) {
+                                selectedPDF = pdf
                             }
                         }
-                        .padding()
                     }
+                    .padding()
                 }
             }
-            .navigationTitle("Work Area")
-            .searchable(text: $searchText, prompt: "Search comics...")
-            .fullScreenCover(item: $selectedPDF) { pdf in
-                PageManagerView(pdf: pdf)
-            }
+        }
+        .navigationTitle("Work Area")
+        .searchable(text: $searchText, prompt: "Search comics...")
+        .fullScreenCover(item: $selectedPDF) { pdf in
+            PageManagerView(pdf: pdf)
         }
     }
 }

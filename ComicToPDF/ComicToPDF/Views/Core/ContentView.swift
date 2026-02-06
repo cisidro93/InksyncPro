@@ -201,10 +201,15 @@ struct ContentView: View {
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }.tag(0)
 
-            EditorDashboardView()
-                .tabItem { Label("Work Area", systemImage: "pencil.and.outline") }.tag(1)
-            SettingsView()
-                .tabItem { Label("Settings", systemImage: "gear") }.tag(2)
+            NavigationStack {
+                EditorDashboardView()
+            }
+            .tabItem { Label("Work Area", systemImage: "pencil.and.outline") }.tag(1)
+            
+            NavigationStack {
+                SettingsView()
+            }
+            .tabItem { Label("Settings", systemImage: "gear") }.tag(2)
         }
     }
     
@@ -227,14 +232,16 @@ struct ContentView: View {
                         showingBatchMergeReorder: $showingBatchMergeReorder,
                         batchMergeItems: $batchMergeItems
                     )
+                    .toolbar(.hidden, for: .navigationBar)
                 } else if selectedTab == 1 {
                     EditorDashboardView()
                 } else {
                     SettingsView()
                 }
             }
-            .navigationTitle("Inksync Pro")
-            .navigationBarTitleDisplayMode(.inline)
+            // Title removed to allow children to define their own or hide it
+            // .navigationTitle("Inksync Pro") 
+            // .navigationBarTitleDisplayMode(.inline)
             
         } detail: {
             NavigationStack {

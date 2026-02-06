@@ -429,24 +429,43 @@ class WiFiServer: ObservableObject {
             sendResponse(connection, 200, html, contentType: "text/html")
         } else {
             // URL Decode the path (critical for filenames with spaces!)
-            // e.g. /my%20comic.epub -> my comic.epub
-            let rawFileName = String(path.dropFirst())
+            // Handle both standard and /azw3/ paths
+            var rawFileName = String(path.dropFirst())
+            if rawFileName.hasPrefix("azw3/") {
+                rawFileName = String(rawFileName.dropFirst(5)) // Remove "azw3/"
+            }
+            
             let fileName = rawFileName.removingPercentEncoding ?? rawFileName
             
             let fileURL = docDir.appendingPathComponent(fileName)
             
             if FileManager.default.fileExists(atPath: fileURL.path) {
-                // Determine Content Type
-                let ext = fileURL.pathExtension.lowercased()
-                let type = (ext == "html") ? "text/html" : "application/octet-stream"
+                // AZW3 Masking Logic for Kindle Compatibility
+                let isAZWRequest = path.hasPrefix("/azw3/")
+                
+                // Content Type Strategy
+                let contentType: String
+                if isAZWRequest {
+                     contentType = "application/vnd.amazon.ebook" // Trick Kindle into accepting it
+                } else if ext == "html" {
+                     contentType = "text/html"
+                } else {
+                     contentType = "application/octet-stream"
+                }
+                
+                // Filename Strategy
+                let downloadFilename: String
+                if isAZWRequest {
+                    // Replace .epub with .azw3 in the DOWNLOADED filename
+                    downloadFilename = fileURL.deletingPathExtension().appendingPathExtension("azw3").lastPathComponent
+                } else {
+                    downloadFilename = fileURL.lastPathComponent
+                }
                 
                 do {
                     // Mapped memory for large files
                     let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
-                     // Pass the DECODED filename to the header logic (or re-encode if needed for Content-Disposition?)
-                     // Actually Content-Disposition usually likes quoted plain text or encoded. 
-                     // Let's pass the simple filename.
-                     sendResponse(connection, 200, data: data, contentType: type, filename: fileURL.lastPathComponent)
+                     sendResponse(connection, 200, data: data, contentType: contentType, filename: downloadFilename)
                 } catch {
                     sendResponse(connection, 500, "Internal Server Error")
                 }
@@ -525,16 +544,31 @@ class WiFiServer: ObservableObject {
                     let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                     let sizeStr = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
                     
-                    fileLinks.append("""
-                        <li>
-                            <div class="file-info">
-                                <span class="name">\(fileURL.lastPathComponent)</span>
-                                <span class="meta">\(sizeStr)</span>
-                            </div>
-                            <!-- Ensure single slash -->
-                            <a href="/\(linkPath)" class="download-btn" download>Download</a>
-                        </li>
-                    """)
+                    if ext == "epub" {
+                        // Add Special Kindle Link
+                         fileLinks.append("""
+                            <li>
+                                <div class="file-info">
+                                    <span class="name">\(fileURL.lastPathComponent)</span>
+                                    <span class="meta">\(sizeStr)</span>
+                                </div>
+                                <div style="display:flex; gap:10px;">
+                                    <a href="/azw3/\(linkPath)" class="download-btn" style="background:#ff9f0a;" download>Kindle</a>
+                                    <a href="/\(linkPath)" class="download-btn" download>Download</a>
+                                </div>
+                            </li>
+                        """)
+                    } else {
+                        fileLinks.append("""
+                            <li>
+                                <div class="file-info">
+                                    <span class="name">\(fileURL.lastPathComponent)</span>
+                                    <span class="meta">\(sizeStr)</span>
+                                </div>
+                                <a href="/\(linkPath)" class="download-btn" download>Download</a>
+                            </li>
+                        """)
+                    }
                 }
             }
         }
