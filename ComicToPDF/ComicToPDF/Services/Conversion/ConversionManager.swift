@@ -191,7 +191,7 @@ class ConversionManager: ObservableObject {
                         await self.generateCoverThumbnail(for: pdf)
                         
                         // 2. Extract Embedded Panels (if any)
-                        if let validPanels = await ConversionManager.extractSmartPanels(from: pdf.url) {
+                        if let validPanels = await self.extractSmartPanels(from: pdf.url) {
                             await MainActor.run {
                                 self.savePanelOverrides(for: pdf.id, panels: validPanels)
                             }
