@@ -1246,130 +1246,169 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    // ✅ NEW: Reusable Metadata Injection
+    // ✅ NEW: Reusable Metadata Injection with Strict Re-Zip
     func injectMetadata(into archiveURL: URL, panels: [Int: [PanelExtractor.Panel]], metadata: PDFMetadata) async throws {
         Logger.shared.log("Starting Injection: \(archiveURL.lastPathComponent) with \(panels.count) pages", category: "Injection")
         
-        // 1. Convert Panels to SmartPanels format
+        // ---------------------------------------------------------
+        // PHASE 1: PREPARE DATA (In Memory)
+        // ---------------------------------------------------------
+        
+        // 1. Generate ComicInfo.xml
         var smartPanelsDict: [String: [SmartPanel]] = [:]
         for (index, pagePanels) in panels {
             let smartPanels = pagePanels.map { SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
             smartPanelsDict["\(index)"] = smartPanels
         }
         
-        // 2. Generate XML
         var xmlContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         xmlContent += "<ComicInfo>\n"
         xmlContent += "  <Title>\(metadata.title.xmlEscaped())</Title>\n"
         if let series = metadata.series { xmlContent += "  <Series>\(series.xmlEscaped())</Series>\n" }
-        // PageCount is implicit or we could calculate it, but optional for import reader usually
         xmlContent += generatePagesXML(from: smartPanelsDict)
         xmlContent += "\n</ComicInfo>"
         
-        // 3. Write to Archive
-        guard let xmlData = xmlContent.data(using: .utf8) else { return }
+        guard let comicInfoData = xmlContent.data(using: .utf8) else { return }
         
-        // Use ZIPFoundation to update
-        // Note: Archive(url:accessMode:) throws.
-        let archive = try Archive(url: archiveURL, accessMode: .update)
+        // 2. Prepare Updates (OPF & XHTML)
+        let fileManager = FileManager.default
+        var opfData: Data? = nil
+        var opfPath: String? = nil
+        var xhtmlUpdates: [String: Data] = [:]
         
-        // Remove old if exists
-        if let oldEntry = archive["ComicInfo.xml"] {
-            try archive.remove(oldEntry)
-        }
-        
-        
-        try archive.addEntry(with: "ComicInfo.xml", type: .file, uncompressedSize: Int64(xmlData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
-            let start = Int(position)
-            let end = min(start + size, xmlData.count)
-            return xmlData.subdata(in: start..<end)
-        }
-        
-        Logger.shared.log("ComicInfo.xml written successfully", category: "Injection")
-        
-        // 4. (EPUB Only) Update Content XHTML for Guided View
-        // ComicInfo handles "Round Trip" persistence (Importing back to App)
-        // This handles "Export" persistence (Reading on Kindle)
-        if archiveURL.pathExtension.lowercased() == "epub" {
-            print("📘 [Injection] Detected EPUB. Updating XHTML content for \(panels.count) pages...")
+        // We need to read the OLD archive first to prepare these updates
+        // We scope this so we close the file handle before writing the new one (Windows safe)
+        try {
+            guard let sourceArchive = try? Archive(url: archiveURL, accessMode: .read) else { return }
             
-            for (index, pagePanels) in panels {
-                let pageNum = index + 1
-                let xhtmlPath = String(format: "OEBPS/text/page_%04d.xhtml", pageNum)
+            // A. Prepare OPF Update
+            if let entry = sourceArchive.makeIterator().first(where: { $0.path.hasSuffix(".opf") }) {
+                opfPath = entry.path
+                var rawOpf = Data()
+                _ = try sourceArchive.extract(entry) { rawOpf.append($0) }
                 
-                // 1. Find Image Name (Check standard formats)
-                // We need the precise image filename to reference in the HTML
-                var imageName: String? = nil
-                let imageBase = String(format: "image_%04d", pageNum)
-                let candidates = ["jpg", "jpeg", "png", "webp"]
-                
-                for ext in candidates {
-                    let path = "OEBPS/images/\(imageBase).\(ext)"
-                    if archive[path] != nil {
-                        imageName = "\(imageBase).\(ext)"
-                        break
-                    }
-                }
-                
-                // If we found the image, we can regenerate the XHTML
-                if let validImageName = imageName {
-                     let newXHTML = CBZToEPUBConverter.generateXHTML(imageName: validImageName, title: "Page \(pageNum)", panels: pagePanels)
-                     
-                     if let htmlData = newXHTML.data(using: .utf8) {
-                         // Remove old XHTML
-                         if let oldEntry = archive[xhtmlPath] {
-                             try archive.remove(oldEntry)
-                         }
-                         
-                         // Add new XHTML
-                         try archive.addEntry(with: xhtmlPath, type: .file, uncompressedSize: Int64(htmlData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
-                             let start = Int(position)
-                             let end = min(start + size, htmlData.count)
-                             return htmlData.subdata(in: start..<end)
-                         }
-                     }
-                }
-            }
-            
-            // 5. Update OPF Manifest (InMemory Modification)
-            var finalOpfData: Data? = nil
-            var opfPath: String? = nil
-            
-            // Find OPF
-            if let opfEntry = archive.makeIterator().first(where: { $0.path.hasSuffix(".opf") }) {
-                opfPath = opfEntry.path
-                var opfData = Data()
-                _ = try archive.extract(opfEntry) { opfData.append($0) }
-                
-                if var opfString = String(data: opfData, encoding: .utf8) {
-                    // Check if already declared
+                if var opfString = String(data: rawOpf, encoding: .utf8) {
+                    // Inject Manifest Item
                     if !opfString.contains("ComicInfo.xml") {
                         if let range = opfString.range(of: "</manifest>") {
                              let itemTag = "\n    <item id=\"comicinfo\" href=\"ComicInfo.xml\" media-type=\"application/xml\"/>"
                              opfString.insert(contentsOf: itemTag, at: range.lowerBound)
-                             finalOpfData = opfString.data(using: .utf8)
+                             opfData = opfString.data(using: .utf8)
+                        } else {
+                            opfData = rawOpf // Fallback
                         }
-                    } 
+                    } else {
+                        opfData = rawOpf // Already good
+                    }
                 }
             }
             
-            // 6. Write Updated OPF (If Needed)
-            if let newOpfData = finalOpfData, let path = opfPath {
-                // Remove old
-                if let oldEntry = archive[path] {
-                    try archive.remove(oldEntry)
+            // B. Prepare XHTML Updates (EPUB Only)
+            if archiveURL.pathExtension.lowercased() == "epub" {
+                for (index, pagePanels) in panels {
+                     let pageNum = index + 1
+                     
+                     // Try to find image
+                     let imageBase = String(format: "image_%04d", pageNum)
+                     var imageName: String? = nil
+                     for ext in ["jpg", "jpeg", "png", "webp"] {
+                         let p = "OEBPS/images/\(imageBase).\(ext)"
+                         if sourceArchive[p] != nil {
+                             imageName = "\(imageBase).\(ext)"
+                             break
+                         }
+                     }
+                     
+                     if let img = imageName {
+                         let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: img, title: "Page \(pageNum)", panels: pagePanels)
+                         if let data = xhtmlContent.data(using: .utf8) {
+                             let path = String(format: "OEBPS/text/page_%04d.xhtml", pageNum)
+                             xhtmlUpdates[path] = data
+                         }
+                     }
                 }
-                
-                // Add new (Deflated)
-                try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(newOpfData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
-                    let start = Int(position)
-                    let end = min(start + size, newOpfData.count)
-                    return newOpfData.subdata(in: start..<end)
-                }
-                Logger.shared.log("Updated OPF manifest with ComicInfo.xml", category: "Injection")
+            }
+        }()
+        
+        // ---------------------------------------------------------
+        // PHASE 2: STRICT RE-ZIP (Write New File)
+        // ---------------------------------------------------------
+        
+        let tempID = UUID().uuidString
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(tempID)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDir) }
+        
+        let newArchiveURL = tempDir.appendingPathComponent("temp.epub")
+        
+        // Scope to ensure archive closes (deinit) before move
+        do {
+            guard let newArchive = Archive(url: newArchiveURL, accessMode: .create) else {
+                Logger.shared.log("Failed to create temporary archive", category: "Injection")
+                return 
             }
             
+            // 1. MIMETYPE (Must be First & Stored)
+            let mimeData = "application/epub+zip".data(using: .ascii)!
+            try newArchive.addEntry(with: "mimetype", type: .file, uncompressedSize: Int64(mimeData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .none, bufferSize: 8192, progress: nil) { pos, size in
+                return mimeData.subdata(in: Int(pos)..<min(Int(pos)+size, mimeData.count))
+            }
+            
+            // 2. MIGRATE OLD ASSETS (Copy from Old -> New)
+            if let oldArchive = try? Archive(url: archiveURL, accessMode: .read) {
+                for entry in oldArchive {
+                    if entry.path == "mimetype" { continue }
+                    if entry.path == "ComicInfo.xml" { continue }
+                    if entry.path == opfPath { continue }
+                    if xhtmlUpdates.keys.contains(entry.path) { continue }
+                    
+                    let tempExtract = tempDir.appendingPathComponent("transfer.tmp")
+                    _ = try oldArchive.extract(entry, to: tempExtract)
+                    
+                    try newArchive.addEntry(with: entry.path, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: entry.fileAttributes[.modificationDate] as? Date ?? Date(), permissions: entry.fileAttributes[.posixPermissions] as? UInt16 ?? 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
+                        let handle = try? FileHandle(forReadingFrom: tempExtract)
+                        try? handle?.seek(toOffset: UInt64(pos))
+                        return handle?.readData(ofLength: size) ?? Data()
+                    }
+                    try? fileManager.removeItem(at: tempExtract)
+                }
+            }
+            
+            // 3. INJECT NEW/UPDATED FILES
+            
+            // ComicInfo
+            try newArchive.addEntry(with: "ComicInfo.xml", type: .file, uncompressedSize: Int64(comicInfoData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
+                return comicInfoData.subdata(in: Int(pos)..<min(Int(pos)+size, comicInfoData.count))
+            }
+            
+            // OPF
+            if let data = opfData, let path = opfPath {
+                try newArchive.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
+                    return data.subdata(in: Int(pos)..<min(Int(pos)+size, data.count))
+                }
+            }
+            
+            // XHTML Updates
+            for (path, data) in xhtmlUpdates {
+                try newArchive.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
+                    return data.subdata(in: Int(pos)..<min(Int(pos)+size, data.count))
+                }
+            }
+            
+        } // DEINIT: newArchive closed here
+        
+        // 4. ATOMIC SWAP
+        try finalizeSwap(source: newArchiveURL, dest: archiveURL)
+        Logger.shared.log("Successfully rebuilt EPUB structure", category: "Injection")
+    }
+    
+    // Helper to finish the swap (Split out to ensure deinit)
+    private func finalizeSwap(source: URL, dest: URL) throws {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: dest.path) {
+            try fm.removeItem(at: dest)
         }
+        try fm.moveItem(at: source, to: dest)
     }
     
     // MARK: - Kindle OPF Injection
