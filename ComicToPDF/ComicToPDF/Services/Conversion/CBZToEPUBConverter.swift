@@ -329,7 +329,7 @@ class CBZToEPUBConverter {
             
             // 3. Add OEBPS Content recursively
             let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil)!
-            for case let fileURL as URL in enumerator {
+            while let fileURL = enumerator.nextObject() as? URL {
                 let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
                 if resourceValues.isDirectory == true { continue }
                 
