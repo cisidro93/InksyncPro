@@ -578,9 +578,9 @@ class ConversionManager: ObservableObject {
     func extractSmartPanels(from url: URL) async -> [Int: [PanelExtractor.Panel]]? {
         await MainActor.run { processingStatus = "Reading Source Panels..." } // Re-assert status
         
-        print("🔍 [SmartPanels] Inspecting: \(url.lastPathComponent)")
+        Logger.shared.log("Inspection Started: \(url.lastPathComponent)", category: "SmartPanels")
         guard let archive = try? Archive(url: url, accessMode: .read) else {
-            print("❌ [SmartPanels] Could not open archive: \(url.lastPathComponent)")
+            Logger.shared.log("Could not open archive: \(url.lastPathComponent)", category: "SmartPanels")
             await MainActor.run { processingStatus = "Error: Invalid Archive" }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             return nil
@@ -590,7 +590,7 @@ class ConversionManager: ObservableObject {
         let entry = archive.makeIterator().first { $0.path.caseInsensitiveCompare("ComicInfo.xml") == .orderedSame }
         
         guard let validEntry = entry else {
-            print("⚠️ [SmartPanels] No ComicInfo.xml found in: \(url.lastPathComponent)")
+            Logger.shared.log("No ComicInfo.xml found", category: "SmartPanels")
             await MainActor.run { processingStatus = "Skipping: No Metadata Found" }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             return nil
@@ -600,7 +600,7 @@ class ConversionManager: ObservableObject {
         do {
             _ = try archive.extract(validEntry) { xmlData.append($0) }
         } catch {
-            print("❌ [SmartPanels] Failed to extract XML data")
+            Logger.shared.log("Failed to extract XML data", category: "SmartPanels")
             return nil
         }
         
@@ -621,7 +621,7 @@ class ConversionManager: ObservableObject {
         
         if needsRepair {
              await MainActor.run { processingStatus = "Repairing Pixel Coordinates..." }
-             print("⚠️ [SmartPanels] Detected Pixel Coordinates without XML Dimensions. Repairing...")
+             Logger.shared.log("Detected Pixel Coordinates. Repairing...", category: "SmartPanels")
             
             // 1. Get Sorted Images (Canonical Order) to match XML "Page N"
             let sortedEntries = archive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
@@ -664,17 +664,17 @@ class ConversionManager: ObservableObject {
                                     return PanelExtractor.Panel(boundingBox: CGRect(x: nx, y: ny, width: nw, height: nh))
                                 }
                                 result[pageIndex] = normalizedPanels
-                                print("✅ [SmartPanels] Repaired Page \(pageIndex) using size \(size)")
+                                Logger.shared.log("Repaired Page \(pageIndex) using size \(size)", category: "SmartPanels")
                             }
                         }
                     } catch {
-                        print("❌ [SmartPanels] Repair failed for Page \(pageIndex): \(error)")
+                        Logger.shared.log("Repair failed for Page \(pageIndex): \(error)", category: "SmartPanels")
                     }
                 }
             }
         }
         
-        print("✅ [SmartPanels] Parsed and validated \(result.count) pages from \(url.lastPathComponent)")
+        Logger.shared.log("Parsed \(result.count) pages", category: "SmartPanels")
         
         // Prevent overwriting with empty data if ComicInfo exists but has no panels
         return result.isEmpty ? nil : result

@@ -156,8 +156,12 @@ struct SettingsView: View {
                     conversionManager.savePreset(newPreset)
                 }
             }
-
             
+            Section(header: Text("Debugging")) {
+                NavigationLink(destination: LogsView()) {
+                    Label("View Debug Logs", systemImage: "ladybug")
+                }
+            }
 
         }
         .navigationTitle("Settings")
