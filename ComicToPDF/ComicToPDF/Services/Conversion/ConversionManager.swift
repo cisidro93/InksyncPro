@@ -357,6 +357,7 @@ class ConversionManager: ObservableObject {
         let converter = CBZToEPUBConverter(); var jobSettings = conversionSettings; jobSettings.mangaMode = mangaMode; 
         
         await MainActor.run { processingStatus = "Reading Source Panels..." }
+        try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s Delay for Visibility
         let combinedManifest = await getCombinedManifest(for: pdf)
         
         do {
@@ -387,6 +388,7 @@ class ConversionManager: ObservableObject {
             // We use global settings for the batch. If specific manga settings are needed, we default to global for now.
             
             await MainActor.run { processingStatus = "Reading Source Panels..." }
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s Delay for Visibility
             let combinedManifest = await getCombinedManifest(for: pdf)
             
             do {
@@ -430,6 +432,8 @@ class ConversionManager: ObservableObject {
             // ✅ Override Manga Mode for this batch
             jobSettings.mangaMode = mangaMode
             
+            await MainActor.run { processingStatus = "Reading Source Panels..." }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             let combinedManifest = await getCombinedManifest(for: file)
             
             do {
