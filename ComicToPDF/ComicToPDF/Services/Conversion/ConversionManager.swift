@@ -1327,7 +1327,45 @@ class ConversionManager: ObservableObject {
                          }
                      }
                 }
+            
+            // 5. Update OPF Manifest (InMemory Modification)
+            var finalOpfData: Data? = nil
+            var opfPath: String? = nil
+            
+            // Find OPF
+            if let opfEntry = archive.makeIterator().first(where: { $0.path.hasSuffix(".opf") }) {
+                opfPath = opfEntry.path
+                var opfData = Data()
+                _ = try archive.extract(opfEntry) { opfData.append($0) }
+                
+                if var opfString = String(data: opfData, encoding: .utf8) {
+                    // Check if already declared
+                    if !opfString.contains("ComicInfo.xml") {
+                        if let range = opfString.range(of: "</manifest>") {
+                             let itemTag = "\n    <item id=\"comicinfo\" href=\"ComicInfo.xml\" media-type=\"application/xml\"/>"
+                             opfString.insert(contentsOf: itemTag, at: range.lowerBound)
+                             finalOpfData = opfString.data(using: .utf8)
+                        }
+                    } 
+                }
             }
+            
+            // 6. Write Updated OPF (If Needed)
+            if let newOpfData = finalOpfData, let path = opfPath {
+                // Remove old
+                if let oldEntry = archive[path] {
+                    try archive.remove(oldEntry)
+                }
+                
+                // Add new (Deflated)
+                try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(newOpfData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                    let start = Int(position)
+                    let end = min(start + size, newOpfData.count)
+                    return newOpfData.subdata(in: start..<end)
+                }
+                Logger.shared.log("Updated OPF manifest with ComicInfo.xml", category: "Injection")
+            }
+            
         }
     }
     

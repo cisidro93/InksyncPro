@@ -53,8 +53,22 @@ class CBZToEPUBConverter {
                 // 2. Re-encode
                 finalData = resizedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? (try? Data(contentsOf: srcURL)) ?? Data()
             } else {
-                // Copy Original
-                finalData = (try? Data(contentsOf: srcURL)) ?? Data()
+                // Check if format is safe for Kindle (JPEG/PNG only)
+                // If it's WEBP, HEIC, etc., we MUST re-encode even if "Original Quality" is selected.
+                let ext = srcURL.pathExtension.lowercased()
+                if ["jpg", "jpeg", "png"].contains(ext) {
+                     // Safe to copy original
+                     finalData = (try? Data(contentsOf: srcURL)) ?? Data()
+                } else {
+                     // Unsafe format (e.g. WebP), force convert to JPEG
+                     if let image = UIImage(contentsOfFile: srcURL.path),
+                        let jpegData = image.jpegData(compressionQuality: 0.9) {
+                         finalData = jpegData
+                     } else {
+                         // Fallback (risk of failure, but better than crash)
+                         finalData = (try? Data(contentsOf: srcURL)) ?? Data()
+                     }
+                }
             }
             
             let itemSize = Int64(finalData.count)
@@ -464,5 +478,16 @@ class CBZToEPUBConverter {
         return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: newSize))
         }
+    }
+}
+
+extension String {
+    func xmlEscaped() -> String {
+        return self
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
     }
 }
