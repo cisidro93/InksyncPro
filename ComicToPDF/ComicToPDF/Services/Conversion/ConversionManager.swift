@@ -596,8 +596,70 @@ class ConversionManager: ObservableObject {
         // print("📄 XML Snippet: \(snippet)...")
         
         let parser = ComicInfoPanelParser(data: xmlData)
-        let result = parser.parse()
-        print("✅ [SmartPanels] Parsed \(result.count) pages with panels from \(url.lastPathComponent)")
+        var result = parser.parse()
+        
+        // ✅ REPAIR: Check for Denormalized (Pixel) Coordinates
+        // If XML lacked ImageWidth/Height, the parser returns raw pixels (e.g., x=500.0).
+        // We detect this by checking if any coordinate > 2.0.
+        // If found, we MUST open the images to get their size and normalize.
+        
+        let needsRepair = result.values.flatMap { $0 }.contains { $0.boundingBox.minX > 2.0 || $0.boundingBox.minY > 2.0 || $0.boundingBox.width > 2.0 }
+        
+        if needsRepair {
+            print("⚠️ [SmartPanels] Detected Pixel Coordinates without XML Dimensions. Repairing...")
+            
+            // 1. Get Sorted Images (Canonical Order) to match XML "Page N"
+            let sortedEntries = archive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+            let imageEntries = sortedEntries.filter { entry in
+                let ext = (entry.path as NSString).pathExtension.lowercased()
+                return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
+            }
+            
+            // 2. Iterate pages that need repair
+            for (pageIndex, panels) in result {
+                guard pageIndex < imageEntries.count else { continue }
+                
+                // Check if this specific page has pixels
+                let pageHasPixels = panels.contains { $0.boundingBox.minX > 2.0 || $0.boundingBox.width > 2.0 }
+                if pageHasPixels {
+                    let entry = imageEntries[pageIndex]
+                    
+                    // Extract Header Only to get Size
+                    // We extract just enough bytes or full file to memory (easier)
+                    // Given these are images, we have to extract to read headers reliably unless we use custom ZIP parsing.
+                    // For safety, we extract to memory.
+                    var imageData = Data()
+                    do {
+                        _ = try archive.extract(entry) { imageData.append($0) }
+                        
+                        // Get Size
+                        // We use a helper that doesn't fully decode if possible, or just UIImage
+                        if let image = UIImage(data: imageData) {
+                            let size = image.size
+                            if size.width > 0 && size.height > 0 {
+                                // NORMALIZE
+                                let normalizedPanels = panels.map { panel -> PanelExtractor.Panel in
+                                    let r = panel.boundingBox
+                                    // If value is > 2, treat as pixel. Else assume normalized.
+                                    let nx = (r.minX > 2.0) ? r.minX / size.width : r.minX
+                                    let ny = (r.minY > 2.0) ? r.minY / size.height : r.minY
+                                    let nw = (r.width > 2.0) ? r.width / size.width : r.width
+                                    let nh = (r.height > 2.0) ? r.height / size.height : r.height
+                                    
+                                    return PanelExtractor.Panel(boundingBox: CGRect(x: nx, y: ny, width: nw, height: nh))
+                                }
+                                result[pageIndex] = normalizedPanels
+                                print("✅ [SmartPanels] Repaired Page \(pageIndex) using size \(size)")
+                            }
+                        }
+                    } catch {
+                        print("❌ [SmartPanels] Repair failed for Page \(pageIndex): \(error)")
+                    }
+                }
+            }
+        }
+        
+        print("✅ [SmartPanels] Parsed and validated \(result.count) pages from \(url.lastPathComponent)")
         
         // Prevent overwriting with empty data if ComicInfo exists but has no panels
         return result.isEmpty ? nil : result
