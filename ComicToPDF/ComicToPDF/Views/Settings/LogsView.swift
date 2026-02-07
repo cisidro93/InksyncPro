@@ -12,7 +12,7 @@ struct LogsView: View {
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .navigationTitle("Debug Logs")
+        .navigationTitle("Debug Logs (v2)")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { refreshLogs() }
         .toolbar {
