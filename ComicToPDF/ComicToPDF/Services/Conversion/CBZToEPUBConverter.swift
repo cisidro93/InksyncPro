@@ -380,74 +380,11 @@ class CBZToEPUBConverter {
     }
     
     static func generateXHTML(imageName: String, title: String, panels: [PanelExtractor.Panel]) -> String {
-        var panelDivs = ""
-        var targetDivs = ""
-        
-        if !panels.isEmpty {
-            for (i, panel) in panels.enumerated() {
-                let ord = i + 1
-                
-                // Coordinate-Based Region Magnification (Matches EPUBGenerator)
-                // Coordinates are Integers (Percentages 0-100).
-                // 'panel.boundingBox' is Normalized Top-Left Origin.
-                
-                let x = Int(panel.boundingBox.minX * 100)
-                let y = Int(panel.boundingBox.minY * 100)
-                let w = Int(panel.boundingBox.width * 100)
-                let h = Int(panel.boundingBox.height * 100)
-                
-                // 1. Target Div (The Magnification Area)
-                // ID matches the anchor targetId. Class "app-amzn-magnify" makes it a zoom target.
-                // It overlaps the image using absolute positioning (percentage based).
-                
-                // data-app-amzn-magnify: JSON string defining the target area and behavior.
-                // "targetId": The ID of the div to be magnified (usually itself, or a high-res replacement).
-                // "ordinal": The sequence number for reading order.
-                
-                let json = "{\"targetId\":\"mag-\(ord)\", \"ordinal\":\(ord)}"
-                
-                // The anchor is the "active area" you tap.
-                // The target div is what gets shown (zoomed). 
-                // In this simple implementation, the tap area AND the zoom area are the same (the panel).
-                
-                targetDivs += """
-                <a class="app-amzn-magnify" data-app-amzn-magnify='\(json)' style="position:absolute; left:\(x)%; top:\(y)%; width:\(w)%; height:\(h)%;"></a>
-                <div id="mag-\(ord)" style="position:absolute; left:\(x)%; top:\(y)%; width:\(w)%; height:\(h)%; background-color:white; display:none;">
-                     <!-- Content to show when zoomed. Could be high-res image crop. 
-                          For now, we rely on the device zooming the viewport. 
-                          Kindle usually zooms the *region* defined by the anchor if no specific target content is provided?
-                          Actually, "targetId" points to a hidden div that contains the zoomed content.
-                          If we want to zoom the *existing* image, we might need a different approach.
-                          
-                          Core approach for fast implementation:
-                          The <a> tag defines the tap zone.
-                          The data attribute defines the target.
-                          If we point target to a div that wraps the image, it zooms the whole image.
-                          
-                          Refined approach:
-                          We just emit the anchor. Kindle performs the viewport zoom on the coordinates defined by the anchor's style.
-                      -->
-                </div>
-                """
-                
-                // Simpler Approach verified in other tools:
-                // Just the anchor tag with the class and correct JSON is mostly enough for basic "panel-to-panel" navigation flow.
-                // However, for proper "Guided View" (zoom), we usually need the target div structure.
-                
-                // Let's use the standard "Mag-Target" structure:
-                // <div id="mag-N" class="target"> [Content] </div>
-                // <a class="app-amzn-magnify" data-app-amzn-magnify="..."></a>
-                
-                // Since we don't have chopped images, we will try the "Anchor Only" method which relies on the device's native zooming of the defined region.
-                // If that fails, we fallback to standard full page. 
-                // But wait, the previous code had logic here. Attempting to restore "passthrough" logic.
-                
-                 targetDivs += """
-                <a class="app-amzn-magnify" data-app-amzn-magnify='{"targetId":"mag-target-\(ord)", "ordinal":\(ord)}' style="position:absolute; left:\(x)%; top:\(y)%; width:\(w)%; height:\(h)%;"></a>
-                <div id="mag-target-\(ord)" style="position: absolute; width: 100%; height: 100%; top: 0; left: 0; display: none;"></div>
-                """
-            }
-        }
+        // NOTE: We are removing manual 'app-amzn-magnify' tags.
+        // Modern Send-to-Kindle for EPUBs often rejects strictly-formatted fixed-layout books with custom proprietary tags.
+        // We will rely on "book-type=comic" and "fixed-layout=true" to trigger the device's native comic treatment.
+        // If users want precise Panel View, they should use the "Kindle Comic Creator" workflow with the source images,
+        // or we can implement a separate "Kindle Native" export later.
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -460,24 +397,16 @@ class CBZToEPUBConverter {
                 body { margin: 0; padding: 0; background-color: #000; height: 100vh; width: 100vw; overflow: hidden; }
                 .page-container { position: relative; width: 100%; height: 100%; }
                 img.bg { width: 100%; height: 100%; object-fit: contain; }
-                
-                /* Region Magnification */
-                .app-amzn-magnify {
-                    z-index: 10;
-                    cursor: pointer;
-                    background-color: rgba(0,0,0,0); /* Transparent */
-                }
             </style>
         </head>
         <body>
             <div class="page-container" id="img-container">
                 <img class="bg" src="../images/\(imageName)" alt="comic page"/>
-                \(panelDivs)
             </div>
-            <!-- Magnification Targets -->
-            \(targetDivs)
         </body>
         </html>
+        """
+    }
         """
     }
     
