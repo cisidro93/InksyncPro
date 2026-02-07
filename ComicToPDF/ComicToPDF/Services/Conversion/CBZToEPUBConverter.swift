@@ -174,7 +174,7 @@ class CBZToEPUBConverter {
                 // Manifest
                 let properties = (localIndex == 0) ? "properties=\"cover-image\"" : ""
                 manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
-                manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\" properties=\"svg\"/>")
+                manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>")
                 
                 // ✅ NEW: Calculate Spread Property (Kindle Landscape)
                 var spreadProp = ""
