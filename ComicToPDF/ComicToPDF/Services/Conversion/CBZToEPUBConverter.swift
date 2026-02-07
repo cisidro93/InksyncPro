@@ -288,8 +288,11 @@ class CBZToEPUBConverter {
                 xml += "  </Pages>\n</ComicInfo>"
                 do {
                     try xml.write(to: oebpsDir.appendingPathComponent("ComicInfo.xml"), atomically: true, encoding: .utf8)
-                    // ✅ FIX: Declare in Manifest
-                    manifestItems.append("<item id=\"comicinfo\" href=\"ComicInfo.xml\" media-type=\"application/xml\"/>")
+                    // ✅ FIX: DO NOT Declare in Manifest for Kindle
+                    // Kindle E013 (Incompatible Document) is likely triggered by "unknown" items in the manifest.
+                    // We will write the file (so it exists for InkSync import) but HIDE it from the OPF.
+                    // Standard EPUB readers typically ignore un-manifested files (only validators complain).
+                    // manifestItems.append("<item id=\"comicinfo\" href=\"ComicInfo.xml\" media-type=\"application/xml\"/>")
                 } catch {
                     Logger.shared.log("Failed to write OEBPS/ComicInfo.xml: \(error)", category: "Converter")
                 }

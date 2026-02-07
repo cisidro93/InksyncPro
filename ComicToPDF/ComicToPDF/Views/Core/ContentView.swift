@@ -98,7 +98,8 @@ struct ContentView: View {
                         isBatchMode: $isBatchMode,
                         multiSelection: $multiSelection,
                         showingBatchMergeReorder: $showingBatchMergeReorder,
-                        batchMergeItems: $batchMergeItems
+                        batchMergeItems: $batchMergeItems,
+                        useNavigationStack: true
                     )
                     // Hide Native Bar to use ModernLibraryView's custom header
                     .toolbar(.hidden, for: .navigationBar) 
@@ -230,7 +231,8 @@ struct ContentView: View {
                         isBatchMode: $isBatchMode,
                         multiSelection: $multiSelection,
                         showingBatchMergeReorder: $showingBatchMergeReorder,
-                        batchMergeItems: $batchMergeItems
+                        batchMergeItems: $batchMergeItems,
+                        useNavigationStack: false
                     )
                     .toolbar(.hidden, for: .navigationBar)
                 } else if selectedTab == 1 {

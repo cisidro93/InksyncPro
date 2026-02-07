@@ -21,6 +21,9 @@ struct ModernLibraryView: View {
     @Binding var showingBatchMergeReorder: Bool
     @Binding var batchMergeItems: [ConvertedPDF]
     
+    // ✅ Navigation Mode
+    var useNavigationStack: Bool = false
+    
     // Local State
     @State private var searchText = ""
     
@@ -215,62 +218,51 @@ struct ModernLibraryView: View {
             if conversionManager.convertedPDFs.isEmpty {
                 ModernEmptyState(onImport: { activeSheet = .importer })
             } else {
-                List(selection: $selectedPDF) {
+                List(selection: useNavigationStack ? nil : $selectedPDF) {
                     ForEach(filteredPDFs) { pdf in
                          // ... (Batch Mode Logic) ...
                         if isBatchMode {
                              // ...
+                             Button {
+                                 if multiSelection.contains(pdf.id) {
+                                     multiSelection.remove(pdf.id)
+                                 } else {
+                                     multiSelection.insert(pdf.id)
+                                 }
+                             } label: {
+                                 ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
+                             }
+                             .listRowBackground(Color.black)
+                             .listRowSeparatorTint(Color(white: 0.2))
                         } else {
-                            // Link for Split View / Nav Stack
-                            NavigationLink(value: pdf) {
+                            if useNavigationStack {
+                                NavigationLink(value: pdf) {
+                                    ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
+                                }
+                                .listRowBackground(Color.black)
+                                .listRowSeparatorTint(Color(white: 0.2))
+                                .swipeActions(edge: .leading) {
+                                    swipeActionsLeading(pdf)
+                                }
+                                .swipeActions(edge: .trailing) {
+                                    swipeActionsTrailing(pdf)
+                                }
+                                .contextMenu {
+                                    contextMenuContent(pdf)
+                                }
+                            } else {
                                 ModernFileRow(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
-                            }
-                            .listRowBackground(Color.black)
-                            .listRowSeparatorTint(Color(white: 0.2))
-                            .swipeActions(edge: .leading) {
-                                Button {
-                                    pdfToExport = pdf
-                                } label: { Label("Export", systemImage: "square.and.arrow.up") }
-                                .tint(.green)
-                            
-                                Button {
-                                    pdfToSearchMetadata = pdf
-                                } label: { Label("Metadata", systemImage: "info.circle") }
-                                .tint(.blue)
-                                
-                                Button {
-                                    renameText = pdf.name
-                                    pdfToRename = pdf
-                                } label: { Label("Rename", systemImage: "pencil") }
-                                .tint(.orange)
-                                
-                                Button {
-                                    Task { await conversionManager.embedPanels(for: pdf) }
-                                } label: { Label("Embed", systemImage: "flame") }
-                                .tint(.purple)
-                            }
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
-                            }
-                            .contextMenu {
-                                Button {
-                                    pdfToExport = pdf
-                                } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
-                                
-                                Button {
-                                    renameText = pdf.name
-                                    pdfToRename = pdf
-                                } label: { Label("Rename", systemImage: "pencil") }
-                                
-                                Button {
-                                    Task { await conversionManager.embedPanels(for: pdf) }
-                                } label: { Label("Embed Panels", systemImage: "flame") }
-                                
-                                Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
-                                Divider()
-                                Button {
-                                    pdfToSearchMetadata = pdf
-                                } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+                                    .listRowBackground(Color.black)
+                                    .listRowSeparatorTint(Color(white: 0.2))
+                                    .swipeActions(edge: .leading) {
+                                        swipeActionsLeading(pdf)
+                                    }
+                                    .swipeActions(edge: .trailing) {
+                                        swipeActionsTrailing(pdf)
+                                    }
+                                    .contextMenu {
+                                        contextMenuContent(pdf)
+                                    }
                             }
                         }
                     }
@@ -329,6 +321,59 @@ struct ModernLibraryView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Row Actions
+    
+    @ViewBuilder
+    private func swipeActionsLeading(_ pdf: ConvertedPDF) -> some View {
+        Button {
+            pdfToExport = pdf
+        } label: { Label("Export", systemImage: "square.and.arrow.up") }
+        .tint(.green)
+    
+        Button {
+            pdfToSearchMetadata = pdf
+        } label: { Label("Metadata", systemImage: "info.circle") }
+        .tint(.blue)
+        
+        Button {
+            renameText = pdf.name
+            pdfToRename = pdf
+        } label: { Label("Rename", systemImage: "pencil") }
+        .tint(.orange)
+        
+        Button {
+            Task { await conversionManager.embedPanels(for: pdf) }
+        } label: { Label("Embed", systemImage: "flame") }
+        .tint(.purple)
+    }
+    
+    @ViewBuilder
+    private func swipeActionsTrailing(_ pdf: ConvertedPDF) -> some View {
+        Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+    }
+    
+    @ViewBuilder
+    private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
+        Button {
+            pdfToExport = pdf
+        } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
+        
+        Button {
+            renameText = pdf.name
+            pdfToRename = pdf
+        } label: { Label("Rename", systemImage: "pencil") }
+        
+        Button {
+            Task { await conversionManager.embedPanels(for: pdf) }
+        } label: { Label("Embed Panels", systemImage: "flame") }
+        
+        Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+        Divider()
+        Button {
+            pdfToSearchMetadata = pdf
+        } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
     }
 }
 
