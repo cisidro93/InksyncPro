@@ -1,4 +1,5 @@
 import Foundation
+import ZIPFoundation
 
 class Logger: ObservableObject {
     static let shared = Logger()
