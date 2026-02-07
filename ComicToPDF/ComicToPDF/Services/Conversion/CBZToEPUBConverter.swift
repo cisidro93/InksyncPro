@@ -345,7 +345,7 @@ class CBZToEPUBConverter {
             generatedFiles.append(outputURL)
             
             // ✅ DEBUG: Log Structure immediately for verification
-            ConversionManager.logEPUBStructure(at: outputURL)
+            Logger.shared.logEPUBStructure(at: outputURL)
             
             progress(0.5 + (0.5 * Double(batchIndex + 1) / Double(batches.count)))
         }

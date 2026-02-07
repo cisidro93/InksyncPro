@@ -1487,63 +1487,10 @@ class ConversionManager: ObservableObject {
         Logger.shared.log("Successfully rebuilt EPUB structure", category: "Injection")
         
         // 6. LOG STRUCTURE (Flight Recorder)
-        logEPUBStructure(at: archiveURL)
+        Logger.shared.logEPUBStructure(at: archiveURL)
     }
     
-    // ✅ DEBUG: Dump EPUB Integrity Report
-    static func logEPUBStructure(at url: URL) {
-        Logger.shared.log("🔍 [Flight Recorder] Analyzing EPUB Structure: \(url.lastPathComponent)", category: "Debug")
-        
-        guard let archive = try? Archive(url: url, accessMode: .read) else {
-            Logger.shared.log("❌ Could not open archive for analysis", category: "Debug")
-            return
-        }
-        
-        var i = 0
-        for entry in archive {
-            Logger.shared.log("[\(i)] \(entry.path) Size: \(entry.uncompressedSize)", category: "Debug")
-            
-            // Check Mimetype
-            if i == 0 {
-                if entry.path != "mimetype" {
-                    Logger.shared.log("❌ CRITICAL: First file is NOT mimetype! Found: \(entry.path)", category: "Debug")
-                } else {
-                     Logger.shared.log("✅ Mimetype is first file", category: "Debug")
-                }
-                
-                // Dump Content
-                var data = Data()
-                _ = try? archive.extract(entry) { data.append($0) }
-                if let str = String(data: data, encoding: .ascii) {
-                     Logger.shared.log("📄 Mimetype Content: '\(str)'", category: "Debug")
-                }
-            }
-            
-            // Check Container
-            if entry.path == "META-INF/container.xml" {
-                if i != 1 {
-                     Logger.shared.log("⚠️ WARNING: container.xml is at index \(i) (Should be 1)", category: "Debug")
-                }
-                var data = Data()
-                _ = try? archive.extract(entry) { data.append($0) }
-                if let str = String(data: data, encoding: .utf8) {
-                     Logger.shared.log("📄 Container.xml Content:\n\(str)", category: "Debug")
-                }
-            }
-            
-            // OPF
-            if entry.path.hasSuffix(".opf") {
-                 var data = Data()
-                _ = try? archive.extract(entry) { data.append($0) }
-                if let str = String(data: data, encoding: .utf8) {
-                     Logger.shared.log("📄 OPF Content:\n\(str)", category: "Debug")
-                }
-            }
-            
-            i += 1
-        }
-        Logger.shared.log("🔍 [Flight Recorder] Analysis Complete. Total Files: \(i)", category: "Debug")
-    }
+
     
     // Helper to finish the swap (Split out to ensure deinit)
     private func finalizeSwap(source: URL, dest: URL) throws {
