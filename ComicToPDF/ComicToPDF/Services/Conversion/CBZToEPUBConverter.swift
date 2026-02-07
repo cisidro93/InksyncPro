@@ -333,7 +333,19 @@ class CBZToEPUBConverter {
 
             
             // Zip
-            let outputFilename = epubName + ".epub"
+            // ✅ Sanitize Filename (Enterprise Grade)
+            // Restore spaces to underscores, remove special chars. Kindle hates spaces.
+            let safeName = epubName.map { char -> String in
+                if char.isLetter || char.isNumber || char == "-" || char == "_" {
+                    return String(char)
+                } else if char.isWhitespace {
+                    return "_"
+                } else {
+                    return ""
+                }
+            }.joined()
+            
+            let outputFilename = (safeName.isEmpty ? "comic" : safeName) + ".epub"
             let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(outputFilename)
             if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
             
@@ -395,9 +407,13 @@ class CBZToEPUBConverter {
         <head>
             <title>\(title)</title>
             <meta name="viewport" content="width=100%, height=100%"/>
-            <style type="text/css">
-                body { margin: 0; padding: 0; background-color: #000; height: 100vh; width: 100vw; overflow: hidden; }
-                .page-container { position: relative; width: 100%; height: 100%; }
+        <style type="text/css">
+            body { margin: 0; padding: 0; background-color: #FFFFFF; height: 100vh; width: 100vw; overflow: hidden; }
+            .page-container { position: relative; width: 100%; height: 100%; }
+            @media (prefers-color-scheme: dark) {
+                body { background-color: #000000; }
+            }
+        </style>
                 img.bg { width: 100%; height: 100%; object-fit: contain; }
             </style>
         </head>
