@@ -7,6 +7,8 @@ class Logger: ObservableObject {
     private let logFileName = "debug.log"
     @Published var recentLogs: String = ""
     
+    private let queue = DispatchQueue(label: "com.comicvault.logger", qos: .utility)
+    
     private init() {}
     
     private var logFileURL: URL {
@@ -20,17 +22,23 @@ class Logger: ObservableObject {
         
         print("\(logEntry.trimmingCharacters(in: .whitespacesAndNewlines))") // Keep console output
         
-        // Append to file
-        if let data = logEntry.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logFileURL.path) {
-                if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
-                    fileHandle.seekToEndOfFile()
-                    fileHandle.write(data)
-                    fileHandle.closeFile()
+        queue.async {
+            // Append to file
+            if let data = logEntry.data(using: .utf8) {
+                let fileURL = self.logFileURL
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    if let fileHandle = try? FileHandle(forWritingTo: fileURL) {
+                        try? fileHandle.seekToEnd()
+                        try? fileHandle.write(contentsOf: data)
+                        try? fileHandle.close()
+                    }
+                } else {
+                    try? data.write(to: fileURL)
                 }
-            } else {
-                try? data.write(to: logFileURL)
             }
+            
+            // Update UI on main thread occasionally or on demand? 
+            // For now, LogsView pulls from file.
         }
     }
     

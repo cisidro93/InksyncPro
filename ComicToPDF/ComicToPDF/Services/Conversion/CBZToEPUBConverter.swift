@@ -315,36 +315,40 @@ class CBZToEPUBConverter {
             if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
             
             // ✅ FIX: Manual Zipping to ensure mimetype is UNCOMPRESSED and FIRST
-            guard let archive = Archive(url: outputURL, accessMode: .create) else {
-                throw NSError(domain: "Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create EPUB archive"])
-            }
-            
-            // 1. Add mimetype (STORED, No Compression, No Extra Fields)
-            let mimetypePath = batchDir.appendingPathComponent("mimetype")
-            try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
-            // Using fileURL-based addEntry avoids explicit metadata passed in closure, helping avoid extra fields
-            try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
-            
-            // 2. Add META-INF/container.xml (Strictly Second)
-            let containerPath = metaInfDir.appendingPathComponent("container.xml")
-            try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
-            
-            // 3. Add OEBPS Content recursively
-            let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil)!
-            while let fileURL = enumerator.nextObject() as? URL {
-                let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
-                if resourceValues.isDirectory == true { continue }
-                
-                // Relative path in archive (e.g., "OEBPS/content.opf", "OEBPS/images/img_1.jpg")
-                // We need to construct the path relative to 'batchDir'
-                if let relativePath = fileURL.path.components(separatedBy: "\(batchDir.path)/").last {
-                     try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+            // Wrapped in DO block to ensure Archive deinit (and close) before we try to read it
+            try {
+                guard let archive = Archive(url: outputURL, accessMode: .create) else {
+                    throw NSError(domain: "Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create EPUB archive"])
                 }
-            }
+                
+                // 1. Add mimetype (STORED, No Compression, No Extra Fields)
+                let mimetypePath = batchDir.appendingPathComponent("mimetype")
+                try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
+                // Using fileURL-based addEntry avoids explicit metadata passed in closure, helping avoid extra fields
+                try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
+                
+                // 2. Add META-INF/container.xml (Strictly Second)
+                let containerPath = metaInfDir.appendingPathComponent("container.xml")
+                try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
+                
+                // 3. Add OEBPS Content recursively
+                let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil)!
+                while let fileURL = enumerator.nextObject() as? URL {
+                    let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
+                    if resourceValues.isDirectory == true { continue }
+                    
+                    // Relative path in archive (e.g., "OEBPS/content.opf", "OEBPS/images/img_1.jpg")
+                    // We need to construct the path relative to 'batchDir'
+                    if let relativePath = fileURL.path.components(separatedBy: "\(batchDir.path)/").last {
+                        try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+                    }
+                }
+            }() // End scope to close file
             
             generatedFiles.append(outputURL)
             
             // ✅ DEBUG: Log Structure immediately for verification
+            Logger.shared.log("About to analyze EPUB structure for: \(outputURL.lastPathComponent)", category: "Debug")
             Logger.shared.logEPUBStructure(at: outputURL)
             
             progress(0.5 + (0.5 * Double(batchIndex + 1) / Double(batches.count)))
