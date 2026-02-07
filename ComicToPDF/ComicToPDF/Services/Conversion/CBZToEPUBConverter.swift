@@ -204,7 +204,7 @@ class CBZToEPUBConverter {
             <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
-                    <dc:title>\(epubName)</dc:title>
+                    <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
                     <meta property="rendition:layout">pre-paginated</meta>
@@ -228,8 +228,10 @@ class CBZToEPUBConverter {
             try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
             
             // ✅ FIX: Generate EPUB 3.0 Navigation Document (Mandatory)
+            // Added DOCTYPE for strict validation (E013 fix candidate)
             let navContent = """
             <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE html>
             <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
             <head>
                 <title>Navigation</title>
