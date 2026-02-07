@@ -571,6 +571,34 @@ class ConversionManager: ObservableObject {
                 // ✅ Fix: Use localized sort to match Finder/ZipUtilities (1, 2, 10 vs 1, 10, 2)
                 let sortedEntries = archive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
                 
+                // Check mimetype for EPUBs
+                if ext == "epub" {
+                    if let mimetypeEntry = archive["mimetype"] {
+                        Logger.shared.log("[Flight Recorder] [0] mimetype Size: \(mimetypeEntry.uncompressedSize)", category: "Debug")
+                        
+                        // Check Compression Method
+                        let compressionMethod = mimetypeEntry.type == .file ? (mimetypeEntry.compressedSize == mimetypeEntry.uncompressedSize ? "STORED (Likely)" : "DEFLATED") : "UNKNOWN"
+                        Logger.shared.log("[Flight Recorder] [0] Compression: \(compressionMethod) (C: \(mimetypeEntry.compressedSize) / U: \(mimetypeEntry.uncompressedSize))", category: "Debug")
+                        
+                        if mimetypeEntry.uncompressedSize == 20 {
+                            Logger.shared.log("[Flight Recorder] ✅ Mimetype size is correct (20 bytes)", category: "Debug")
+                        } else {
+                            Logger.shared.log("[Flight Recorder] ❌ Mimetype size is WRONG: \(mimetypeEntry.uncompressedSize)", category: "Debug")
+                        }
+                        
+                        var data = Data()
+                        _ = try? archive.extract(mimetypeEntry, consumer: { data.append($0) })
+                        if let content = String(data: data, encoding: .ascii) {
+                           Logger.shared.log("[Flight Recorder] 📄 Mimetype Content: '\(content)'", category: "Debug")
+                           if content != "application/epub+zip" {
+                               Logger.shared.log("[Flight Recorder] ❌ Mimetype Content INVALID", category: "Debug")
+                           }
+                        }
+                    } else {
+                         Logger.shared.log("[Flight Recorder] ❌ Mimetype file MISSING!", category: "Debug")
+                    }
+                }
+
                 for entry in sortedEntries {
                     // Skip directories explicit check
                     if entry.type == .directory { continue }

@@ -407,8 +407,6 @@ class CBZToEPUBConverter {
         </html>
         """
     }
-        """
-    }
     
     // MARK: - Helpers
     private func resizeImage(_ image: UIImage, targetSize: CGSize?) -> UIImage {
