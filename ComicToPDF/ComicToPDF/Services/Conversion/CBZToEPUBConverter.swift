@@ -314,16 +314,18 @@ class CBZToEPUBConverter {
             let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(outputFilename)
             if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
             
-            // ✅ FIX: Manual Zipping to ensure mimetype is UNCOMPRESSED
+            // ✅ FIX: Manual Zipping to ensure mimetype is UNCOMPRESSED and FIRST
             guard let archive = Archive(url: outputURL, accessMode: .create) else {
                 throw NSError(domain: "Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create EPUB archive"])
             }
             
-            // 1. Add mimetype (STORED, No Compression)
+            // 1. Add mimetype (STORED, No Compression, No Extra Fields)
             let mimetypePath = batchDir.appendingPathComponent("mimetype")
+            try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
+            // Using fileURL-based addEntry avoids explicit metadata passed in closure, helping avoid extra fields
             try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
             
-            // 2. Add META-INF/container.xml
+            // 2. Add META-INF/container.xml (Strictly Second)
             let containerPath = metaInfDir.appendingPathComponent("container.xml")
             try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
             
@@ -341,7 +343,9 @@ class CBZToEPUBConverter {
             }
             
             generatedFiles.append(outputURL)
-        
+            
+            // ✅ DEBUG: Log Structure immediately for verification
+            ConversionManager.logEPUBStructure(at: outputURL)
             
             progress(0.5 + (0.5 * Double(batchIndex + 1) / Double(batches.count)))
         }

@@ -1491,7 +1491,7 @@ class ConversionManager: ObservableObject {
     }
     
     // ✅ DEBUG: Dump EPUB Integrity Report
-    private func logEPUBStructure(at url: URL) {
+    static func logEPUBStructure(at url: URL) {
         Logger.shared.log("🔍 [Flight Recorder] Analyzing EPUB Structure: \(url.lastPathComponent)", category: "Debug")
         
         guard let archive = try? Archive(url: url, accessMode: .read) else {
