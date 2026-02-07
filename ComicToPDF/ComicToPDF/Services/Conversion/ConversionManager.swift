@@ -1497,17 +1497,14 @@ class ConversionManager: ObservableObject {
         
         var i = 0
         for entry in archive {
-            let compression = (entry.centralDirectoryStructure.compressionMethod == .none) ? "STORED" : "DEFLATED"
-            Logger.shared.log("[\(i)] \(entry.path) (\(compression)) Size: \(entry.uncompressedSize)", category: "Debug")
+            Logger.shared.log("[\(i)] \(entry.path) Size: \(entry.uncompressedSize)", category: "Debug")
             
             // Check Mimetype
             if i == 0 {
                 if entry.path != "mimetype" {
                     Logger.shared.log("❌ CRITICAL: First file is NOT mimetype! Found: \(entry.path)", category: "Debug")
-                } else if entry.centralDirectoryStructure.compressionMethod != .none {
-                     Logger.shared.log("❌ CRITICAL: Mimetype is COMPRESSED!", category: "Debug")
                 } else {
-                     Logger.shared.log("✅ Mimetype is correct (First & Stored)", category: "Debug")
+                     Logger.shared.log("✅ Mimetype is first file", category: "Debug")
                 }
                 
                 // Dump Content
