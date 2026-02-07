@@ -212,9 +212,7 @@ class CBZToEPUBConverter {
                     <meta property="rendition:spread">auto</meta>
                     <meta name="fixed-layout" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
-                    <meta name="book-type" content="comic"/> <!-- ✅ KEY: Unlocks Guided View -->
-                    <meta name="zero-gutter" content="true"/>
-                    <meta name="region-mag" content="true"/>
+                    <meta name="book-type" content="comic"/> 
                     <meta name="cover" content="img_1"/>
                 </metadata>
                 <manifest>
@@ -314,8 +312,6 @@ class CBZToEPUBConverter {
                     <meta name="fixed-layout" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
                     <meta name="book-type" content="comic"/> 
-                    <meta name="zero-gutter" content="true"/>
-                    <meta name="region-mag" content="true"/>
                     <meta name="cover" content="img_1"/>
                 </metadata>
                 <manifest>
