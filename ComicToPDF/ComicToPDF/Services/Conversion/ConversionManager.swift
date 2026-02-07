@@ -1382,19 +1382,27 @@ class ConversionManager: ObservableObject {
                      // Try to find image
                      let imageBase = String(format: "image_%04d", pageNum)
                      var imageName: String? = nil
+                     var entryPath: String? = nil
+                     
                      for ext in ["jpg", "jpeg", "png", "webp"] {
                          let p = "OEBPS/images/\(imageBase).\(ext)"
                          if sourceArchive[p] != nil {
                              imageName = "\(imageBase).\(ext)"
+                             entryPath = p
                              break
                          }
                      }
                      
-                     if let img = imageName {
-                         let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: img, title: "Page \(pageNum)", panels: pagePanels)
+                     if let img = imageName, let path = entryPath, let entry = sourceArchive[path] {
+                         var imgData = Data()
+                         _ = try sourceArchive.extract(entry) { imgData.append($0) }
+                         
+                         let size = UIImage(data: imgData)?.size ?? CGSize(width: 1000, height: 1500)
+                         let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: img, title: "Page \(pageNum)", width: Int(size.width), height: Int(size.height), panels: pagePanels)
+                         
                          if let data = xhtmlContent.data(using: .utf8) {
-                             let path = String(format: "OEBPS/text/page_%04d.xhtml", pageNum)
-                             xhtmlUpdates[path] = data
+                             let savePath = String(format: "OEBPS/text/page_%04d.xhtml", pageNum)
+                             xhtmlUpdates[savePath] = data
                          }
                      }
                 }
