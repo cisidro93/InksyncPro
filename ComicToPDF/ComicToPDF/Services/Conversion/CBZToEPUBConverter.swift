@@ -166,8 +166,13 @@ class CBZToEPUBConverter {
                     }
                 }
                 
+                // Get Dimensions for Viewport
+                let imageSize = UIImage(data: item.data)?.size ?? CGSize(width: 1000, height: 1500)
+                let PageWidth = Int(imageSize.width)
+                let PageHeight = Int(imageSize.height)
+
                 // Create XHTML
-                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", panels: pagePanels)
+                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", width: PageWidth, height: PageHeight, panels: pagePanels)
                 let xhtmlName = String(format: "page_%04d.xhtml", localIndex + 1)
                 try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
                 
@@ -396,7 +401,7 @@ class CBZToEPUBConverter {
         return generatedFiles
     }
     
-    static func generateXHTML(imageName: String, title: String, panels: [PanelExtractor.Panel]) -> String {
+    static func generateXHTML(imageName: String, title: String, width: Int, height: Int, panels: [PanelExtractor.Panel]) -> String {
         // NOTE: We are removing manual 'app-amzn-magnify' tags.
         // Modern Send-to-Kindle for EPUBs often rejects strictly-formatted fixed-layout books with custom proprietary tags.
         // We will rely on "book-type=comic" and "fixed-layout=true" to trigger the device's native comic treatment.
@@ -409,7 +414,7 @@ class CBZToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <title>\(title)</title>
-            <meta name="viewport" content="width=100%, height=100%"/>
+            <meta name="viewport" content="width=\(width), height=\(height)"/>
         <style type="text/css">
             body { margin: 0; padding: 0; background-color: #FFFFFF; height: 100vh; width: 100vw; overflow: hidden; }
             .page-container { position: relative; width: 100%; height: 100%; }
