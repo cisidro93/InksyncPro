@@ -1124,6 +1124,7 @@ class ConversionManager: ObservableObject {
         defer { isConverting = false; statusMessage = nil }
         
         do {
+            Logger.shared.log("Starting Cloud Export for \(pdf.name)", category: "Export")
             // Copy Source -> Temp
             try fileManager.copyItem(at: pdf.url, to: exportURL)
             
@@ -1157,7 +1158,7 @@ class ConversionManager: ObservableObject {
             return exportURL
             
         } catch {
-            print("Export Failed: \(error)")
+            Logger.shared.log("❌ Cloud Export Failed: \(error)", category: "Export")
             return nil
         }
     }
@@ -1177,6 +1178,7 @@ class ConversionManager: ObservableObject {
         try? fileManager.removeItem(at: targetURL)
         
         do {
+            Logger.shared.log("Starting Local Export for \(pdf.name)", category: "Export")
             try fileManager.copyItem(at: pdf.url, to: targetURL)
             
             // 2. Ensure OPF Metadata (ASIN/Layout)
@@ -1186,11 +1188,13 @@ class ConversionManager: ObservableObject {
             let panels = await getCombinedManifest(for: pdf)
             if !panels.isEmpty {
                 try await injectMetadata(into: targetURL, panels: panels, metadata: pdf.metadata)
+            } else {
+                 Logger.shared.log("⚠️ Skipping injection: No panels found for \(pdf.name)", category: "Export")
             }
             
             return targetURL
         } catch {
-            print("Local Export Failed: \(error)")
+            Logger.shared.log("❌ Local Export Failed: \(error)", category: "Export")
             return nil
         }
     }
