@@ -219,6 +219,7 @@ class CBZToEPUBConverter {
                 </metadata>
                 <manifest>
                     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+                    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/> <!-- ✅ FIX: Mandatory for EPUB 3.0 -->
                     \(manifestItems.joined(separator: "\n        "))
                 </manifest>
                 <spine toc="ncx">
@@ -227,6 +228,26 @@ class CBZToEPUBConverter {
             </package>
             """
             try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+            
+            // ✅ FIX: Generate EPUB 3.0 Navigation Document (Mandatory)
+            let navContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+            <head>
+                <title>Navigation</title>
+                <meta charset="utf-8" />
+            </head>
+            <body>
+                <nav epub:type="toc" id="toc">
+                    <h1>Table of Contents</h1>
+                    <ol>
+                        <li><a href="text/page_0001.xhtml">Start Reading</a></li>
+                    </ol>
+                </nav>
+            </body>
+            </html>
+            """
+            try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
             
             let ncxContent = """
             <?xml version="1.0" encoding="UTF-8"?>
