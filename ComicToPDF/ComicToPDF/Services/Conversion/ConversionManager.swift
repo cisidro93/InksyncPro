@@ -459,6 +459,10 @@ class ConversionManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             let combinedManifest = await getCombinedManifest(for: file)
             
+            // ✅ Log Settings for Debugging (User Request)
+            Logger.shared.log("Starting Conversion for '\(file.name)'", category: "Converter")
+            Logger.shared.log("Settings: Format=\(jobSettings.outputFormat.rawValue), Quality=\(jobSettings.compressionQuality.rawValue), Manga=\(jobSettings.mangaMode), Split=\(jobSettings.enablePanelSplit)", category: "Settings")
+            
             do {
                 let resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
                     Task { @MainActor in
@@ -637,10 +641,19 @@ class ConversionManager: ObservableObject {
             return nil
         }
         
-        // Find ComicInfo.xml (Search for suffix to handle root or OEBPS/)
-        let entry = archive.makeIterator().first { $0.path.lowercased().hasSuffix("comicinfo.xml") }
+        // Find ComicInfo.xml (Prioritize META-INF for new standard, then Root/OEBPS)
+        var comicInfoEntry: Archive.Element? = nil
         
-        guard let validEntry = entry else {
+        if let entry = archive["META-INF/ComicInfo.xml"] {
+            comicInfoEntry = entry
+        } else if let entry = archive["ComicInfo.xml"] {
+             comicInfoEntry = entry
+        } else {
+             // Fallback: Search for any ComicInfo.xml (e.g. inside OEBPS)
+             comicInfoEntry = archive.makeIterator().first { $0.path.lowercased().hasSuffix("comicinfo.xml") }
+        }
+        
+        guard let entry = comicInfoEntry else {
             Logger.shared.log("No ComicInfo.xml found", category: "SmartPanels")
             
             // Log what WAS found
@@ -654,7 +667,7 @@ class ConversionManager: ObservableObject {
         
         var xmlData = Data()
         do {
-            _ = try archive.extract(validEntry) { xmlData.append($0) }
+            _ = try archive.extract(entry) { xmlData.append($0) }
         } catch {
             Logger.shared.log("Failed to extract XML data", category: "SmartPanels")
             return nil
@@ -1461,7 +1474,8 @@ class ConversionManager: ObservableObject {
                     }
                     
                     if entry.path == targetComicInfoPath { continue }
-                    if entry.path == "ComicInfo.xml" { continue } // Also skip root if it exists, just in case.
+                    if entry.path == "ComicInfo.xml" { continue } 
+                    if entry.path == "META-INF/ComicInfo.xml" { continue } // ✅ Skip new location too
                     if entry.path == opfPath { continue }
                     if xhtmlUpdates.keys.contains(entry.path) { continue }
                     
@@ -1480,13 +1494,15 @@ class ConversionManager: ObservableObject {
             // 4. INJECT NEW/UPDATED FILES
             
             // ComicInfo check: Ensure it lives next to OPF
+            // ComicInfo check: Ensure it lives in META-INF (Best Practice for ignoring files in Manifest)
+            // If it was in OEBPS, we arguably should MOVE it, but for now let's just write to META-INF if that's where we target.
+            
             let comicInfoPath: String
-            if let opf = opfPath, let lastSlash = opf.lastIndex(of: "/") {
-                 let dir = opf[..<lastSlash]
-                 comicInfoPath = "\(dir)/ComicInfo.xml"
-            } else {
-                 comicInfoPath = "ComicInfo.xml" // Fallback to root
-            }
+            // ✅ Fix: Target META-INF/ComicInfo.xml
+            comicInfoPath = "META-INF/ComicInfo.xml"
+            
+            // If the original file had it elsewhere, we might be duplicating it, but that's safer than E013.
+            // (We already skip copying the old ones in the loop above)
             
             try newArchive.addEntry(with: comicInfoPath, type: .file, uncompressedSize: Int64(comicInfoData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
                 return comicInfoData.subdata(in: Int(pos)..<min(Int(pos)+size, comicInfoData.count))

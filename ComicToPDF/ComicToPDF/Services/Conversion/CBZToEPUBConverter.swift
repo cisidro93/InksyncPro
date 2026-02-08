@@ -292,7 +292,13 @@ class CBZToEPUBConverter {
                 }
                 xml += "  </Pages>\n</ComicInfo>"
                 do {
-                    try xml.write(to: oebpsDir.appendingPathComponent("ComicInfo.xml"), atomically: true, encoding: .utf8)
+                    // ✅ FIX: Move ComicInfo.xml to META-INF (Outside OPF Scope)
+                    // Kindle throws E013 if 'unknown' files exist in OEBPS/ without being in Manifest.
+                    // But if we put it in Manifest, Kindle complains about media-type.
+                    // Solution: Move to META-INF/ComicInfo.xml where Kindle ignores it.
+                    let metaInfDir = tempDir.appendingPathComponent("META-INF")
+                    try xml.write(to: metaInfDir.appendingPathComponent("ComicInfo.xml"), atomically: true, encoding: .utf8) 
+                    
                     // ✅ FIX: DO NOT Declare in Manifest for Kindle
                     // Kindle E013 (Incompatible Document) is likely triggered by "unknown" items in the manifest.
                     // We will write the file (so it exists for InkSync import) but HIDE it from the OPF.
