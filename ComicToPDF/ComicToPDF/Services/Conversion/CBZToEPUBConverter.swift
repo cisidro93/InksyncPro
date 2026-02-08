@@ -296,9 +296,9 @@ class CBZToEPUBConverter {
                     // Kindle throws E013 if 'unknown' files exist in OEBPS/ without being in Manifest.
                     // But if we put it in Manifest, Kindle complains about media-type.
                     // Solution: Move to META-INF/ComicInfo.xml where Kindle ignores it.
-                    let metaInfDir = tempDir.appendingPathComponent("META-INF")
-                    try? FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true, attributes: nil)
-                    try xml.write(to: metaInfDir.appendingPathComponent("ComicInfo.xml"), atomically: true, encoding: .utf8) 
+                    // Note: metaInfDir is defined at top of loop (inside batchDir)
+                    let comicInfoURL = metaInfDir.appendingPathComponent("ComicInfo.xml")
+                    try xml.write(to: comicInfoURL, atomically: true, encoding: .utf8) 
                     
                     // ✅ FIX: DO NOT Declare in Manifest for Kindle
                     // Kindle E013 (Incompatible Document) is likely triggered by "unknown" items in the manifest.
@@ -377,6 +377,12 @@ class CBZToEPUBConverter {
                 // 2. Add META-INF/container.xml (Strictly Second)
                 let containerPath = metaInfDir.appendingPathComponent("container.xml")
                 try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
+                
+                // 3. Add META-INF/ComicInfo.xml (If it exists)
+                let comicInfoPath = metaInfDir.appendingPathComponent("ComicInfo.xml")
+                if fileManager.fileExists(atPath: comicInfoPath.path) {
+                    try archive.addEntry(with: "META-INF/ComicInfo.xml", fileURL: comicInfoPath, compressionMethod: .deflate)
+                }
                 
                 // 3. Add OEBPS Content recursively
                 let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil)!
