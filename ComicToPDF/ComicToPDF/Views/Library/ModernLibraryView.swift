@@ -251,8 +251,10 @@ struct ModernLibraryView: View {
                                     contextMenuContent(pdf)
                                 }
                             } else {
+                                // ✅ iPad / SplitView Path
                                 ModernFileRow(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
-                                    .listRowBackground(Color.black)
+                                    .tag(pdf) // Explicit tag ensures List selection works reliably
+                                    .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black) // Manual highlight support
                                     .listRowSeparatorTint(Color(white: 0.2))
                                     .swipeActions(edge: .leading) {
                                         swipeActionsLeading(pdf)
