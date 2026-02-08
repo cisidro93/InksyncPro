@@ -297,6 +297,7 @@ class CBZToEPUBConverter {
                     // But if we put it in Manifest, Kindle complains about media-type.
                     // Solution: Move to META-INF/ComicInfo.xml where Kindle ignores it.
                     let metaInfDir = tempDir.appendingPathComponent("META-INF")
+                    try? FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true, attributes: nil)
                     try xml.write(to: metaInfDir.appendingPathComponent("ComicInfo.xml"), atomically: true, encoding: .utf8) 
                     
                     // ✅ FIX: DO NOT Declare in Manifest for Kindle
@@ -305,7 +306,7 @@ class CBZToEPUBConverter {
                     // Standard EPUB readers typically ignore un-manifested files (only validators complain).
                     // manifestItems.append("<item id=\"comicinfo\" href=\"ComicInfo.xml\" media-type=\"application/xml\"/>")
                 } catch {
-                    Logger.shared.log("Failed to write OEBPS/ComicInfo.xml: \(error)", category: "Converter")
+                    Logger.shared.log("Failed to write META-INF/ComicInfo.xml: \(error)", category: "Converter")
                 }
             } else {
                 Logger.shared.log("Batch \(batchIndex): No panels to write", category: "Converter")
