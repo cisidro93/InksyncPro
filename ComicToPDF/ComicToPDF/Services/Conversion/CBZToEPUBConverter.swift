@@ -329,9 +329,6 @@ class CBZToEPUBConverter {
                     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/> <!-- ✅ FIX: Mandatory for EPUB 3.0 -->
                     \(manifestItems.joined(separator: "\n        "))
                 </manifest>
-                    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                    \(manifestItems.joined(separator: "\n        "))
-                </manifest>
                 <spine toc="ncx">
                     \(spineItems.joined(separator: "\n        "))
                 </spine>
