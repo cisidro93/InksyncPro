@@ -1357,14 +1357,9 @@ class ConversionManager: ObservableObject {
                          }
                     }
                     
-                    // 3. ComicInfo Manifest Item
-                    if !opfString.contains("ComicInfo.xml") {
-                        if let range = opfString.range(of: "</manifest>") {
-                             let itemTag = "\n    <item id=\"comicinfo\" href=\"ComicInfo.xml\" media-type=\"application/xml\"/>"
-                             opfString.insert(contentsOf: itemTag, at: range.lowerBound)
-                             modified = true
-                        }
-                    } 
+                    // 3. ComicInfo Manifest Item (REMOVED for E013 Fix)
+                    // Kindle rejects "application/xml" in manifest if not a standard EPUB item.
+                    // We keep physical file but hide from OPF. 
                     
                     if modified {
                         opfData = opfString.data(using: .utf8)
