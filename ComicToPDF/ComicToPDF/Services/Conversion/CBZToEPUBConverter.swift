@@ -420,12 +420,11 @@ class CBZToEPUBConverter {
         <style type="text/css">
             body { margin: 0; padding: 0; background-color: #FFFFFF; height: 100vh; width: 100vw; overflow: hidden; }
             .page-container { position: relative; width: 100%; height: 100%; }
+            img.bg { width: 100%; height: 100%; object-fit: contain; }
             @media (prefers-color-scheme: dark) {
                 body { background-color: #000000; }
             }
         </style>
-                img.bg { width: 100%; height: 100%; object-fit: contain; }
-            </style>
         </head>
         <body>
             <div class="page-container" id="img-container">
