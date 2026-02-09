@@ -219,13 +219,14 @@ class CBZToEPUBConverter {
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
                     <meta name="book-type" content="comic"/> 
                     <meta name="cover" content="img_1"/>
+                    \(settings.mangaMode ? "<meta name=\"primary-writing-mode\" content=\"horizontal-rl\"/>" : "")
                 </metadata>
                 <manifest>
                     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
                     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/> <!-- ✅ FIX: Mandatory for EPUB 3.0 -->
                     \(manifestItems.joined(separator: "\n        "))
                 </manifest>
-                <spine toc="ncx">
+                <spine toc="ncx" page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
                     \(spineItems.joined(separator: "\n        "))
                 </spine>
             </package>
