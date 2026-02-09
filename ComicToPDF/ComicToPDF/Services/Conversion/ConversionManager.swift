@@ -1435,19 +1435,28 @@ class ConversionManager: ObservableObject {
                     let base64 = comicInfoData.base64EncodedString()
                     
                     // A. Remove existing tag if present (prevent duplication)
-                    // A. Remove existing tag if present (prevent duplication)
                     // We remove both 'property' (legacy/error) and 'name' (correct) versions to ensure a clean state
                     let pattern = "<meta (property=\"inksync:comicinfo\"|name=\"inksync-comicinfo\")[^>]*>.*?</meta>\\s*|<meta name=\"inksync-comicinfo\" content=\".*?\"/>\\s*"
+                    let originalOPF = opfString
                     if let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) {
                         let range = NSRange(opfString.startIndex..<opfString.endIndex, in: opfString)
                         opfString = regex.stringByReplacingMatches(in: opfString, options: [], range: range, withTemplate: "")
+                        if opfString != originalOPF {
+                            modified = true
+                            Logger.shared.log("Removed legacy inksync-comicinfo tag", category: "Injection")
+                        }
                     }
                     
-                    // B. Insert New Tag (Using strictly 'meta name' content attribute for Kindle E013 safety)
-                    if let range = opfString.range(of: "</metadata>") {
-                         let metaTag = "\n    <meta name=\"inksync-comicinfo\" content=\"\(base64)\"/>"
-                         opfString.insert(contentsOf: metaTag, at: range.lowerBound)
-                         modified = true
+                    // B. Insert New Tag (CONDITIONAL - Only for Guided View)
+                    if conversionSettings.isGuidedView {
+                        if let range = opfString.range(of: "</metadata>") {
+                             let metaTag = "\n    <meta name=\"inksync-comicinfo\" content=\"\(base64)\"/>"
+                             opfString.insert(contentsOf: metaTag, at: range.lowerBound)
+                             modified = true
+                             Logger.shared.log("Injected inksync-comicinfo metadata (Guided View)", category: "Injection")
+                        }
+                    } else {
+                        Logger.shared.log("Skipping metadata injection (Standard Mode)", category: "Injection")
                     } 
                     
                     if modified {
