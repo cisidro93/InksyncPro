@@ -1427,15 +1427,17 @@ class ConversionManager: ObservableObject {
                     let base64 = comicInfoData.base64EncodedString()
                     
                     // A. Remove existing tag if present (prevent duplication)
-                    let pattern = "<meta property=\"inksync:comicinfo\">.*?</meta>\\s*"
+                    // A. Remove existing tag if present (prevent duplication)
+                    // We remove both 'property' (legacy/error) and 'name' (correct) versions to ensure a clean state
+                    let pattern = "<meta (property=\"inksync:comicinfo\"|name=\"inksync-comicinfo\")[^>]*>.*?</meta>\\s*|<meta name=\"inksync-comicinfo\" content=\".*?\"/>\\s*"
                     if let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) {
                         let range = NSRange(opfString.startIndex..<opfString.endIndex, in: opfString)
                         opfString = regex.stringByReplacingMatches(in: opfString, options: [], range: range, withTemplate: "")
                     }
                     
-                    // B. Insert New Tag
+                    // B. Insert New Tag (Using strictly 'meta name' content attribute for Kindle E013 safety)
                     if let range = opfString.range(of: "</metadata>") {
-                         let metaTag = "\n    <meta property=\"inksync:comicinfo\">\(base64)</meta>"
+                         let metaTag = "\n    <meta name=\"inksync-comicinfo\" content=\"\(base64)\"/>"
                          opfString.insert(contentsOf: metaTag, at: range.lowerBound)
                          modified = true
                     } 
