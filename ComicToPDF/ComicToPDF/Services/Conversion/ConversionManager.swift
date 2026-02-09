@@ -642,32 +642,29 @@ class ConversionManager: ObservableObject {
         }
         
         // 1. Check for Embedded Metadata in OPF (New Standard)
-        // We look for <meta name="inksync-comicinfo" content="BASE64"/>
-        // This avoids E013 errors by not including a physical ComicInfo.xml file.
-        
         // Find OPF
         if let opfEntry = archive.makeIterator().first(where: { $0.path.hasSuffix(".opf") }) {
             var opfData = Data()
+            // Extract OPF data
             if let _ = try? archive.extract(opfEntry, consumer: { opfData.append($0) }),
                let opfString = String(data: opfData, encoding: .utf8) {
                 
-                // Search for our specific tag
-                if let range = opfString.range(of: "name=\"inksync-comicinfo\"") {
-                    let suffix = opfString[range.upperBound...]
-                    // Robust check: look for content=" after name
-                    if let contentStart = suffix.range(of: "content=\"") {
-                        let contentSuffix = suffix[contentStart.upperBound...]
-                        if let contentEnd = contentSuffix.range(of: "\"") {
-                            let base64 = String(contentSuffix[..<contentEnd.lowerBound])
-                        if let xmlData = Data(base64Encoded: base64) {
-                            Logger.shared.log("Found Embedded ComicInfo in OPF", category: "SmartPanels")
-                            let parser = ComicInfoPanelParser(data: xmlData)
-                            let result = parser.parse()
-                            if !result.isEmpty {
-                                await MainActor.run { processingStatus = "Metadata Found (Embedded)" }
-                                try? await Task.sleep(nanoseconds: 500_000_000)
-                                return result
-                            } 
+                // Search for our specific tag and attributes strictly
+                if let range = opfString.range(of: "name=\"inksync-comicinfo\""),
+                   let suffix = Optional(opfString[range.upperBound...]),
+                   let contentStart = suffix.range(of: "content=\""),
+                   let contentSuffix = Optional(suffix[contentStart.upperBound...]),
+                   let contentEnd = contentSuffix.range(of: "\"") {
+                       
+                    let base64 = String(contentSuffix[..<contentEnd.lowerBound])
+                    if let xmlData = Data(base64Encoded: base64) {
+                        Logger.shared.log("Found Embedded ComicInfo in OPF", category: "SmartPanels")
+                        let parser = ComicInfoPanelParser(data: xmlData)
+                        let result = parser.parse()
+                        if !result.isEmpty {
+                            await MainActor.run { processingStatus = "Metadata Found (Embedded)" }
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            return result
                         }
                     }
                 }
