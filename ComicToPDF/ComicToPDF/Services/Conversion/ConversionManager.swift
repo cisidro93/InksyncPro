@@ -642,7 +642,7 @@ class ConversionManager: ObservableObject {
         }
         
         // 1. Check for Embedded Metadata in OPF (New Standard)
-        // We look for <meta property="inksync:comicinfo">BASE64</meta> in the OPF file.
+        // We look for <meta name="inksync-comicinfo" content="BASE64"/>
         // This avoids E013 errors by not including a physical ComicInfo.xml file.
         
         // Find OPF
@@ -651,10 +651,14 @@ class ConversionManager: ObservableObject {
             if let _ = try? archive.extract(opfEntry, consumer: { opfData.append($0) }),
                let opfString = String(data: opfData, encoding: .utf8) {
                 
-                if let range = opfString.range(of: "property=\"inksync:comicinfo\">") {
+                // Search for our specific tag
+                if let range = opfString.range(of: "name=\"inksync-comicinfo\"") {
                     let suffix = opfString[range.upperBound...]
-                    if let endRange = suffix.range(of: "<") {
-                        let base64 = String(suffix[..<endRange.lowerBound])
+                    // Robust check: look for content=" after name
+                    if let contentStart = suffix.range(of: "content=\"") {
+                        let contentSuffix = suffix[contentStart.upperBound...]
+                        if let contentEnd = contentSuffix.range(of: "\"") {
+                            let base64 = String(contentSuffix[..<contentEnd.lowerBound])
                         if let xmlData = Data(base64Encoded: base64) {
                             Logger.shared.log("Found Embedded ComicInfo in OPF", category: "SmartPanels")
                             let parser = ComicInfoPanelParser(data: xmlData)

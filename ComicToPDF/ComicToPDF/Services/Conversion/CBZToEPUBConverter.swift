@@ -206,7 +206,7 @@ class CBZToEPUBConverter {
             
             var opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# inksync: http://inksync.app/metadata">
+            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
@@ -223,7 +223,7 @@ class CBZToEPUBConverter {
                 </metadata>
                 <manifest>
                     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/> <!-- ✅ FIX: Mandatory for EPUB 3.0 -->
+                    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
                     \(manifestItems.joined(separator: "\n        "))
                 </manifest>
                 <spine toc="ncx" page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
@@ -300,9 +300,10 @@ class CBZToEPUBConverter {
                 
                 if let data = xml.data(using: .utf8) {
                     let base64 = data.base64EncodedString()
-                    // Insert into OPF metadata block (before </metadata>)
+                    // Insert generic meta name tag (safest for Kindle)
+                    // We avoid 'property' and custom namespaces to prevent E013 errors
                     if let range = opfContent.range(of: "</metadata>") {
-                        let metaTag = "\n    <meta property=\"inksync:comicinfo\">\(base64)</meta>"
+                        let metaTag = "\n    <meta name=\"inksync-comicinfo\" content=\"\(base64)\"/>"
                         opfContent.insert(contentsOf: metaTag, at: range.lowerBound)
                     }
                 }
