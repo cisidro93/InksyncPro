@@ -43,13 +43,6 @@ struct ContentView: View {
         .environmentObject(wifiServer)
         // ✅ NEW: Apply Dynamic Text Size Globally
         .environment(\.dynamicTypeSize, conversionManager.conversionSettings.textSize.swiftUIValue)
-        // ✅ Show Onboarding on First Launch
-        .fullScreenCover(isPresented: Binding(
-            get: { !hasShownOnboarding },
-            set: { hasShownOnboarding = !$0 }
-        )) {
-            OnboardingView()
-        }
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
         .sheet(item: $pdfToEdit) { pdf in 
             PageManagerView(pdf: pdf)
