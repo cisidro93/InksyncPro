@@ -206,7 +206,7 @@ class CBZToEPUBConverter {
             
             var opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# inksync: http://inksync.app/metadata">
+            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
