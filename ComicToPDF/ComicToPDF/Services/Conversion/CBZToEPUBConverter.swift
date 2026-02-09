@@ -204,6 +204,20 @@ class CBZToEPUBConverter {
             let heightID = Int(contentSize.height)
             let bookUUID = UUID().uuidString
             
+            // ✅ E013 FIX: Conditional Fixed-Layout Metadata
+            // Amazon REJECTS "Standard" EPUBs that declare Fixed-Layout when they have no interactive content.
+            // Fixed-Layout metadata should ONLY be present for Guided View (with panel data).
+            let fixedLayoutMetadata = settings.isGuidedView ? """
+                    <meta property="rendition:layout">pre-paginated</meta>
+                    <meta property="rendition:orientation">auto</meta>
+                    <meta property="rendition:spread">auto</meta>
+                    <meta name="fixed-layout" content="true"/>
+                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
+                    <meta name="book-type" content="comic"/> 
+""" : """
+                    <meta name="book-type" content="comic"/> 
+"""
+            
             var opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
@@ -212,12 +226,7 @@ class CBZToEPUBConverter {
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-                    <meta property="rendition:layout">pre-paginated</meta>
-                    <meta property="rendition:orientation">auto</meta>
-                    <meta property="rendition:spread">auto</meta>
-                    <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
-                    <meta name="book-type" content="comic"/> 
+\(fixedLayoutMetadata)
                     <meta name="cover" content="img_1"/>
                     \(settings.mangaMode ? "<meta name=\"primary-writing-mode\" content=\"horizontal-rl\"/>" : "")
                 </metadata>

@@ -1419,13 +1419,18 @@ class ConversionManager: ObservableObject {
                         }
                     }
                     
-                    // 2. Fixed Layout Metadata
-                    if !opfString.contains("rendition:layout") {
-                         if let range = opfString.range(of: "</metadata>") {
-                             let tag = "\n    <meta property=\"rendition:layout\">pre-paginated</meta>\n    <meta property=\"rendition:orientation\">auto</meta>\n    <meta property=\"rendition:spread\">auto</meta>\n    <meta name=\"fixed-layout\" content=\"true\"/>"
-                             opfString.insert(contentsOf: tag, at: range.lowerBound)
-                             modified = true
-                         }
+                    // 2. Fixed Layout Metadata (CONDITIONAL - Only for Guided View)
+                    if conversionSettings.isGuidedView {
+                        if !opfString.contains("rendition:layout") {
+                             if let range = opfString.range(of: "</metadata>") {
+                                 let tag = "\n    <meta property=\"rendition:layout\">pre-paginated</meta>\n    <meta property=\"rendition:orientation\">auto</meta>\n    <meta property=\"rendition:spread\">auto</meta>\n    <meta name=\"fixed-layout\" content=\"true\"/>"
+                                 opfString.insert(contentsOf: tag, at: range.lowerBound)
+                                 modified = true
+                                 Logger.shared.log("Injected Fixed-Layout metadata (Guided View)", category: "Injection")
+                             }
+                        }
+                    } else {
+                        Logger.shared.log("Skipping Fixed-Layout metadata (Standard Mode)", category: "Injection")
                     }
                     
                     // 3. Embed ComicInfo as Base64 (Zero Footprint)
