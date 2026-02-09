@@ -418,9 +418,22 @@ class CBZToEPUBConverter {
             <title>\(title)</title>
             <meta name="viewport" content="width=\(width), height=\(height)"/>
         <style type="text/css">
-            body { margin: 0; padding: 0; background-color: #FFFFFF; height: 100vh; width: 100vw; overflow: hidden; }
-            .page-container { position: relative; width: 100%; height: 100%; }
-            img.bg { width: 100%; height: 100%; object-fit: contain; }
+            body { margin: 0; padding: 0; background-color: #FFFFFF; }
+            .page-container { 
+                position: relative; 
+                width: 100%; 
+                height: 100vh; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+            }
+            img.bg { 
+                max-width: 100%; 
+                max-height: 100vh; 
+                width: auto; 
+                height: auto; 
+                object-fit: contain; 
+            }
             @media (prefers-color-scheme: dark) {
                 body { background-color: #000000; }
             }
