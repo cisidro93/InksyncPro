@@ -423,26 +423,33 @@ class CBZToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <title>\(title)</title>
-            <meta name="viewport" content="width=\(width), height=\(height)"/>
         <style type="text/css">
-            body { margin: 0; padding: 0; background-color: #FFFFFF; }
+            html, body { 
+                margin: 0; 
+                padding: 0; 
+                background-color: #FFFFFF;
+                width: 100%;
+                height: 100%;
+            }
             .page-container { 
-                position: relative; 
-                width: 100%; 
-                height: 100vh; 
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
                 display: flex; 
                 align-items: center; 
                 justify-content: center; 
             }
             img.bg { 
                 max-width: 100%; 
-                max-height: 100vh; 
+                max-height: 100%; 
                 width: auto; 
                 height: auto; 
                 object-fit: contain; 
             }
             @media (prefers-color-scheme: dark) {
-                body { background-color: #000000; }
+                html, body { background-color: #000000; }
             }
         </style>
         </head>
