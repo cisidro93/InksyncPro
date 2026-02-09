@@ -11,7 +11,7 @@ struct OnboardingPage: Identifiable {
 
 // MARK: - Onboarding View
 struct OnboardingView: View {
-    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var currentPage = 0
     @State private var isAnimating = false
     @Binding var showOnboarding: Bool
@@ -37,8 +37,8 @@ struct OnboardingView: View {
         ),
         OnboardingPage(
             icon: "icloud.and.arrow.up",
-            title: "Cloud Sync to Kindle",
-            description: "One-tap delivery to your Kindle library via Send to Kindle. Your comics, instantly available across all your devices.",
+            title: "Quick Send to Kindle",
+            description: "Easy delivery to your Kindle library via Send to Kindle. Share your converted files and they'll appear in your library within minutes.",
             gradient: [Color.green, Color.mint]
         ),
         OnboardingPage(
@@ -134,7 +134,7 @@ struct OnboardingView: View {
     
     private func skipOnboarding() {
         withAnimation(.easeOut(duration: 0.3)) {
-            hasSeenOnboarding = true
+            hasCompletedOnboarding = true
             showOnboarding = false
         }
     }

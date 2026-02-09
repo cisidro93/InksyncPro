@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Help Center View
 struct HelpCenterView: View {
-    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showingOnboarding = false
     @Environment(\.dismiss) private var dismiss
     
@@ -76,8 +76,8 @@ struct HelpCenterView: View {
                     HelpRow(
                         icon: "icloud.and.arrow.up.fill",
                         iconColor: .cyan,
-                        title: "Cloud Sync to Kindle",
-                        subtitle: "Send directly to your device"
+                        title: "Quick Send to Kindle",
+                        subtitle: "Share directly to your device"
                     )
                 }
                 
@@ -200,8 +200,8 @@ struct OnboardingReplayView: View {
         ),
         OnboardingPage(
             icon: "icloud.and.arrow.up",
-            title: "Cloud Sync to Kindle",
-            description: "One-tap delivery to your Kindle library via Send to Kindle. Your comics, instantly available across all your devices.",
+            title: "Quick Send to Kindle",
+            description: "Easy delivery to your Kindle library via Send to Kindle. Share your converted files and they'll appear in your library within minutes.",
             gradient: [Color.green, Color.mint]
         )
     ]
@@ -400,9 +400,9 @@ struct FeatureGuideView: View {
                 case .cloudSync:
                     FeatureContent(
                         sections: [
-                            ("Send to Kindle", "Long-press a converted file and select 'Cloud Sync (Send to Kindle)' from the share menu."),
-                            ("Kindle Email", "Files are sent to your Kindle's email address (@kindle.com) for automatic delivery."),
-                            ("WiFi Sync", "Connect your Kindle to WiFi to receive the file. It typically arrives within minutes."),
+                            ("Send to Kindle", "Long-press a converted file and select 'Quick Send to Kindle' from the share menu."),
+                            ("Kindle Email", "Files are sent to your Kindle's email address (@kindle.com) for delivery."),
+                            ("WiFi Sync", "Connect your Kindle to WiFi to receive the file. Delivery typically takes 2-5 minutes."),
                             ("Library Access", "Your comic will appear in your Kindle library on all linked devices.")
                         ]
                     )

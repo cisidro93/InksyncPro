@@ -299,7 +299,8 @@ struct BlurView: UIViewRepresentable {
 
 // MARK: - Splash Screen
 struct SplashScreenView: View {
-    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+    // Track if user has completed onboarding (default: false = not seen yet)
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var isActive = false
     @State private var logoScale: CGFloat = 0.8
     @State private var logoOpacity: Double = 0
@@ -346,8 +347,8 @@ struct SplashScreenView: View {
                         logoOpacity = 1.0
                     }
                     
-                    // Check if user has seen onboarding
-                    if !hasSeenOnboarding {
+                    // Check if user has completed onboarding
+                    if !hasCompletedOnboarding {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 showOnboarding = true
