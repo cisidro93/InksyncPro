@@ -299,47 +299,70 @@ struct BlurView: UIViewRepresentable {
 
 // MARK: - Splash Screen
 struct SplashScreenView: View {
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @State private var isActive = false
     @State private var logoScale: CGFloat = 0.8
     @State private var logoOpacity: Double = 0
+    @State private var showOnboarding = false
     @EnvironmentObject var conversionManager: ConversionManager
     
     var body: some View {
-        if isActive {
-            ContentView()
-        } else {
-            ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 24/255, green: 24/255, blue: 27/255),
-                        Color(red: 39/255, green: 39/255, blue: 42/255)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                
-                VStack(spacing: 24) {
-                    AppLogoAnimated(size: 140)
-                        .scaleEffect(logoScale)
-                        .opacity(logoOpacity)
+        Group {
+            if showOnboarding {
+                // First Launch: Show Onboarding
+                OnboardingView(showOnboarding: $showOnboarding)
+                    .environmentObject(conversionManager)
+            } else if isActive {
+                // Main App
+                ContentView()
+            } else {
+                // Quick Splash (Returning Users)
+                ZStack {
+                    LinearGradient(
+                        colors: [
+                            Color(red: 24/255, green: 24/255, blue: 27/255),
+                            Color(red: 39/255, green: 39/255, blue: 42/255)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea()
                     
-                    Text("Inksync Pro")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .opacity(logoOpacity)
+                    VStack(spacing: 24) {
+                        AppLogoAnimated(size: 140)
+                            .scaleEffect(logoScale)
+                            .opacity(logoOpacity)
+                        
+                        Text("InkSync Pro")
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .opacity(logoOpacity)
+                    }
                 }
-            }
-            .onAppear {
-                withAnimation(.easeOut(duration: 0.6)) {
-                    logoScale = 1.0
-                    logoOpacity = 1.0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    withAnimation(.easeInOut(duration: 0.3)) { isActive = true }
+                .onAppear {
+                    withAnimation(.easeOut(duration: 0.6)) {
+                        logoScale = 1.0
+                        logoOpacity = 1.0
+                    }
+                    
+                    // Check if user has seen onboarding
+                    if !hasSeenOnboarding {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                showOnboarding = true
+                            }
+                        }
+                    } else {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                isActive = true
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
+
