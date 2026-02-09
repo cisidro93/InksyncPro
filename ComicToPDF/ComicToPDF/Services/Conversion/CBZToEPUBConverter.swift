@@ -7,7 +7,14 @@ class CBZToEPUBConverter {
         Logger.shared.log("Starting Conversion. Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
         
         let fileManager = FileManager.default
-        let baseFilename = sourceURL.deletingPathExtension().lastPathComponent
+        
+        // Strip ALL extensions (handles cases like "file.cbz.cbz" or "file.epub.cbz")
+        var baseFilename = sourceURL.lastPathComponent
+        while !baseFilename.isEmpty && baseFilename.contains(".") {
+            let stripped = (baseFilename as NSString).deletingPathExtension
+            if stripped == baseFilename { break } // No more extensions
+            baseFilename = stripped
+        }
         
         // 1. Safe Extraction
         progress(0.1)
