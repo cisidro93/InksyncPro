@@ -433,7 +433,7 @@ class CBZToEPUBConverter {
             html, body { 
                 margin: 0; 
                 padding: 0; 
-                background-color: #FFFFFF;
+                background-color: #000000;
                 width: 100%;
                 height: 100%;
             }
@@ -446,16 +446,13 @@ class CBZToEPUBConverter {
                 display: flex; 
                 align-items: center; 
                 justify-content: center; 
+                background-color: #000000;
             }
             img.bg { 
-                max-width: 100%; 
-                max-height: 100%; 
-                width: auto; 
-                height: auto; 
-                object-fit: contain; 
-            }
-            @media (prefers-color-scheme: dark) {
-                html, body { background-color: #000000; }
+                width: 100%; 
+                height: 100%; 
+                object-fit: cover;
+                object-position: center;
             }
         </style>
         </head>
