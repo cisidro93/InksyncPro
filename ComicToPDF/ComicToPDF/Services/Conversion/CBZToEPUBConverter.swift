@@ -291,22 +291,19 @@ class CBZToEPUBConverter {
                     }
                 }
                 xml += "  </Pages>\n</ComicInfo>"
-                do {
-                    // ✅ FIX: Move ComicInfo.xml to META-INF (Outside OPF Scope)
-                    // Kindle throws E013 if 'unknown' files exist in OEBPS/ without being in Manifest.
-                    // But if we put it in Manifest, Kindle complains about media-type.
-                    // Solution: Move to META-INF/ComicInfo.xml where Kindle ignores it.
-                    // Note: metaInfDir is defined at top of loop (inside batchDir)
-                    let comicInfoURL = metaInfDir.appendingPathComponent("ComicInfo.xml")
-                    try xml.write(to: comicInfoURL, atomically: true, encoding: .utf8) 
-                    
-                    // ✅ FIX: DO NOT Declare in Manifest for Kindle
-                    // Kindle E013 (Incompatible Document) is likely triggered by "unknown" items in the manifest.
-                    // We will write the file (so it exists for InkSync import) but HIDE it from the OPF.
-                    // Standard EPUB readers typically ignore un-manifested files (only validators complain).
-                    // manifestItems.append("<item id=\"comicinfo\" href=\"ComicInfo.xml\" media-type=\"application/xml\"/>")
-                } catch {
-                    Logger.shared.log("Failed to write META-INF/ComicInfo.xml: \(error)", category: "Converter")
+                // ✅ FIX: Embed ComicInfo as Base64 in OPF Metadata (Zero Footprint)
+                // Kindle E013 rejects unmanifested files in META-INF or OEBPS.
+                // We cannot manifest it because it's not a valid EPUB core media type.
+                // Solution: Store the XML raw string as Base64 inside a <meta> tag in the OPF.
+                // This is standard-compliant (custom metadata) and stays with the file.
+                
+                if let data = xml.data(using: .utf8) {
+                    let base64 = data.base64EncodedString()
+                    // Insert into OPF metadata block (before </metadata>)
+                    if let range = opfContent.range(of: "</metadata>") {
+                        let metaTag = "\n    <meta property=\"inksync:comicinfo\">\(base64)</meta>"
+                        opfContent.insert(contentsOf: metaTag, at: range.lowerBound)
+                    }
                 }
             } else {
                 Logger.shared.log("Batch \(batchIndex): No panels to write", category: "Converter")
@@ -314,11 +311,6 @@ class CBZToEPUBConverter {
             
             try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
             
-            // Re-write OPF with updated Manifest (since we might have appended ComicInfo)
-            let finalOpfContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
-                <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName)</dc:title>
                     <dc:language>en</dc:language>
@@ -378,11 +370,11 @@ class CBZToEPUBConverter {
                 let containerPath = metaInfDir.appendingPathComponent("container.xml")
                 try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
                 
-                // 3. Add META-INF/ComicInfo.xml (If it exists)
-                let comicInfoPath = metaInfDir.appendingPathComponent("ComicInfo.xml")
-                if fileManager.fileExists(atPath: comicInfoPath.path) {
-                    try archive.addEntry(with: "META-INF/ComicInfo.xml", fileURL: comicInfoPath, compressionMethod: .deflate)
-                }
+                // 3. Add META-INF/ComicInfo.xml (REMOVED: Now embedded in OPF)
+                // let comicInfoPath = metaInfDir.appendingPathComponent("ComicInfo.xml")
+                // if fileManager.fileExists(atPath: comicInfoPath.path) {
+                //    try archive.addEntry(with: "META-INF/ComicInfo.xml", fileURL: comicInfoPath, compressionMethod: .deflate)
+                // }
                 
                 // 3. Add OEBPS Content recursively
                 let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil)!

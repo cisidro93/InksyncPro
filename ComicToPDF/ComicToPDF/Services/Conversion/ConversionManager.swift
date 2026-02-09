@@ -641,6 +641,36 @@ class ConversionManager: ObservableObject {
             return nil
         }
         
+        // 1. Check for Embedded Metadata in OPF (New Standard)
+        // We look for <meta property="inksync:comicinfo">BASE64</meta> in the OPF file.
+        // This avoids E013 errors by not including a physical ComicInfo.xml file.
+        
+        // Find OPF
+        if let opfEntry = archive.makeIterator().first(where: { $0.path.hasSuffix(".opf") }) {
+            var opfData = Data()
+            if let _ = try? archive.extract(opfEntry, consumer: { opfData.append($0) }),
+               let opfString = String(data: opfData, encoding: .utf8) {
+                
+                if let range = opfString.range(of: "property=\"inksync:comicinfo\">") {
+                    let suffix = opfString[range.upperBound...]
+                    if let endRange = suffix.range(of: "<") {
+                        let base64 = String(suffix[..<endRange.lowerBound])
+                        if let xmlData = Data(base64Encoded: base64) {
+                            Logger.shared.log("Found Embedded ComicInfo in OPF", category: "SmartPanels")
+                            let parser = ComicInfoPanelParser(data: xmlData)
+                            let result = parser.parse()
+                            if !result.isEmpty {
+                                await MainActor.run { processingStatus = "Metadata Found (Embedded)" }
+                                try? await Task.sleep(nanoseconds: 500_000_000)
+                                return result
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback: Physical File (Legacy)
         // Find ComicInfo.xml (Prioritize META-INF for new standard, then Root/OEBPS)
         var comicInfoEntry: Archive.Element? = nil
         
@@ -654,7 +684,7 @@ class ConversionManager: ObservableObject {
         }
         
         guard let entry = comicInfoEntry else {
-            Logger.shared.log("No ComicInfo.xml found", category: "SmartPanels")
+            Logger.shared.log("No ComicInfo Metadata found (Embedded or File)", category: "SmartPanels")
             
             // Log what WAS found
             let files = archive.makeIterator().prefix(10).map { $0.path }
@@ -1370,9 +1400,25 @@ class ConversionManager: ObservableObject {
                          }
                     }
                     
-                    // 3. ComicInfo Manifest Item (REMOVED for E013 Fix)
-                    // Kindle rejects "application/xml" in manifest if not a standard EPUB item.
-                    // We keep physical file but hide from OPF. 
+                    // 3. Embed ComicInfo as Base64 (Zero Footprint)
+                    // Kindle rejects valid XML files if they aren't in the Manifest, and rejects them IN the manifest if they aren't core types.
+                    // Solution: Embed as Base64 metadata in OPF.
+                    
+                    let base64 = comicInfoData.base64EncodedString()
+                    
+                    // A. Remove existing tag if present (prevent duplication)
+                    let pattern = "<meta property=\"inksync:comicinfo\">.*?</meta>\\s*"
+                    if let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) {
+                        let range = NSRange(opfString.startIndex..<opfString.endIndex, in: opfString)
+                        opfString = regex.stringByReplacingMatches(in: opfString, options: [], range: range, withTemplate: "")
+                    }
+                    
+                    // B. Insert New Tag
+                    if let range = opfString.range(of: "</metadata>") {
+                         let metaTag = "\n    <meta property=\"inksync:comicinfo\">\(base64)</meta>"
+                         opfString.insert(contentsOf: metaTag, at: range.lowerBound)
+                         modified = true
+                    } 
                     
                     if modified {
                         opfData = opfString.data(using: .utf8)
@@ -1497,16 +1543,11 @@ class ConversionManager: ObservableObject {
             // ComicInfo check: Ensure it lives in META-INF (Best Practice for ignoring files in Manifest)
             // If it was in OEBPS, we arguably should MOVE it, but for now let's just write to META-INF if that's where we target.
             
-            let comicInfoPath: String
-            // ✅ Fix: Target META-INF/ComicInfo.xml
-            comicInfoPath = "META-INF/ComicInfo.xml"
-            
-            // If the original file had it elsewhere, we might be duplicating it, but that's safer than E013.
-            // (We already skip copying the old ones in the loop above)
-            
-            try newArchive.addEntry(with: comicInfoPath, type: .file, uncompressedSize: Int64(comicInfoData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
-                return comicInfoData.subdata(in: Int(pos)..<min(Int(pos)+size, comicInfoData.count))
-            }
+            // ComicInfo File Injection (REMOVED)
+            // We now embed this in the OPF metadata above.
+            // keeping this comment for context.
+            // let comicInfoPath = "META-INF/ComicInfo.xml"
+            // try newArchive.addEntry(...)
             
             // OPF
             if let data = opfData, let path = opfPath {
