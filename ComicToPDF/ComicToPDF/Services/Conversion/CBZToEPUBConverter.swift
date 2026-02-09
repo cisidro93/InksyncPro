@@ -206,7 +206,7 @@ class CBZToEPUBConverter {
             
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
+            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# inksync: http://inksync.app/metadata">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
@@ -311,29 +311,9 @@ class CBZToEPUBConverter {
             
             try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
             
-                    <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
-                    <dc:title>\(epubName)</dc:title>
-                    <dc:language>en</dc:language>
-                    <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-                    <meta property="rendition:layout">pre-paginated</meta>
-                    <meta property="rendition:orientation">auto</meta>
-                    <meta property="rendition:spread">auto</meta>
-                    <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
-                    <meta name="book-type" content="comic"/> 
-                    <meta name="cover" content="img_1"/>
-                </metadata>
-                <manifest>
-                    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/> <!-- ✅ FIX: Mandatory for EPUB 3.0 -->
-                    \(manifestItems.joined(separator: "\n        "))
-                </manifest>
-                <spine toc="ncx">
-                    \(spineItems.joined(separator: "\n        "))
-                </spine>
-            </package>
-            """
-            try finalOpfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+
+
+            try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
 
             
             // Zip

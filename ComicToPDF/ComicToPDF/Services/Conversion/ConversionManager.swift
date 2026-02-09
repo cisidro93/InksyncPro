@@ -1378,15 +1378,34 @@ class ConversionManager: ObservableObject {
                         }
                     }
                     
-                    // 1b. Ensure 'rendition' prefix is declared in <package>
-                    // If we use rendition:layout, the prefix must be defined in the root element.
-                    if !opfString.contains("http://www.idpf.org/vocab/rendition/#") {
+                    // 1b. Ensure 'rendition' AND 'inksync' prefixes are declared in <package>
+                    // If we use rendition:layout or inksync:comicinfo, the prefixes must be defined in the root element.
+                    if !opfString.contains("http://www.idpf.org/vocab/rendition/#") || !opfString.contains("http://inksync.app/metadata") {
                         if let range = opfString.range(of: "<package") {
                             if let endOfOpen = opfString[range.upperBound...].range(of: ">") {
-                                // Insert the prefix attribute before the closing '>' of the package tag
-                                let prefixDef = " prefix=\"rendition: http://www.idpf.org/vocab/rendition/#\""
-                                opfString.insert(contentsOf: prefixDef, at: endOfOpen.lowerBound)
-                                modified = true
+                                // We need to check if 'prefix' attribute already exists
+                                let tagContent = opfString[range.upperBound..<endOfOpen.lowerBound]
+                                
+                                if tagContent.contains("prefix=\"") {
+                                    // Append to existing prefix attribute
+                                    if let prefixRange = opfString.range(of: "prefix=\"") {
+                                        let insertionPoint = prefixRange.upperBound
+                                        var newPrefixes = ""
+                                        if !opfString.contains("http://www.idpf.org/vocab/rendition/#") {
+                                            newPrefixes += "rendition: http://www.idpf.org/vocab/rendition/# "
+                                        }
+                                        if !opfString.contains("http://inksync.app/metadata") {
+                                            newPrefixes += "inksync: http://inksync.app/metadata "
+                                        }
+                                        opfString.insert(contentsOf: newPrefixes, at: insertionPoint)
+                                        modified = true
+                                    }
+                                } else {
+                                    // Insert new prefix attribute
+                                    let prefixDef = " prefix=\"rendition: http://www.idpf.org/vocab/rendition/# inksync: http://inksync.app/metadata\""
+                                    opfString.insert(contentsOf: prefixDef, at: endOfOpen.lowerBound)
+                                    modified = true
+                                }
                             }
                         }
                     }
