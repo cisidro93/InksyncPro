@@ -226,7 +226,7 @@ class CBZToEPUBConverter {
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-\(fixedLayoutMetadata)
+                    \(fixedLayoutMetadata)
                     <meta name="cover" content="img_1"/>
                     \(settings.mangaMode ? "<meta name=\"primary-writing-mode\" content=\"horizontal-rl\"/>" : "")
                 </metadata>
