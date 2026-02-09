@@ -217,17 +217,23 @@ class CBZToEPUBConverter {
             let heightID = Int(contentSize.height)
             let bookUUID = UUID().uuidString
             
-            // ✅ E013 FIX: Conditional Fixed-Layout Metadata
-            // Amazon REJECTS "Standard" EPUBs that declare Fixed-Layout when they have no interactive content.
-            // Fixed-Layout metadata should ONLY be present for Guided View (with panel data).
+            // ✅ SURGICAL FIX: Proper Viewport for Kindle
+            // Set viewport to Kindle Scribe/Colorsoft dimensions (1860x2480 at 300ppi)
+            // This ensures the EPUB canvas matches Kindle's actual screen, eliminating gray bars
+            // while preserving full image content (no cropping)
+            let kindleWidth = 1860
+            let kindleHeight = 2480
+            
             let fixedLayoutMetadata = settings.isGuidedView ? """
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">auto</meta>
                     <meta property="rendition:spread">auto</meta>
                     <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
+                    <meta name="original-resolution" content="\(kindleWidth)x\(kindleHeight)"/> 
                     <meta name="book-type" content="comic"/> 
 """ : """
+                    <meta property="rendition:layout">pre-paginated</meta>
+                    <meta name="original-resolution" content="\(kindleWidth)x\(kindleHeight)"/> 
                     <meta name="book-type" content="comic"/> 
 """
             
@@ -429,30 +435,37 @@ class CBZToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <title>\(title)</title>
+        <meta name="viewport" content="width=1860, height=2480"/>
         <style type="text/css">
-            html, body { 
+            * { 
                 margin: 0; 
                 padding: 0; 
-                background-color: #000000;
+                box-sizing: border-box;
+            }
+            html, body { 
                 width: 100%;
                 height: 100%;
+                background-color: #000000;
+                overflow: hidden;
             }
             .page-container { 
                 position: absolute;
                 top: 0;
                 left: 0;
-                right: 0;
-                bottom: 0;
+                width: 100%;
+                height: 100%;
                 display: flex; 
                 align-items: center; 
                 justify-content: center; 
                 background-color: #000000;
             }
             img.bg { 
-                width: 100%; 
-                height: 100%; 
-                object-fit: cover;
-                object-position: center;
+                max-width: 100%; 
+                max-height: 100%; 
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                display: block;
             }
         </style>
         </head>
