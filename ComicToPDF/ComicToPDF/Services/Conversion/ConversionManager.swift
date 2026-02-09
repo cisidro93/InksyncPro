@@ -812,7 +812,9 @@ class ConversionManager: ObservableObject {
         
         let fileManager = FileManager.default
         let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let newURL = docDir.appendingPathComponent(cleanName).appendingPathExtension(pdf.url.pathExtension)
+        
+        // Don't automatically append extension - user should provide the full name they want
+        let newURL = docDir.appendingPathComponent(cleanName)
         
         // Prevent overwrite
         if fileManager.fileExists(atPath: newURL.path) {

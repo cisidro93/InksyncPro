@@ -188,22 +188,28 @@ class CBZToEPUBConverter {
                 manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
                 manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>")
                 
-                // ✅ NEW: Calculate Spread Property (Kindle Landscape)
+                // ✅ Page Spread Property (Only for Guided View / Fixed-Layout)
+                // Standard EPUBs should NOT use page-spread as it forces landscape 2-page views
+                // which confuses Kindle's page counter (30 pages -> 17 "spreads")
                 var spreadProp = ""
-                if item.index == 0 {
-                    spreadProp = "page-spread-center"
-                } else {
-                    let isOdd = (item.index % 2 != 0)
-                    // LTR: Odd index (Page 2) = Left, Even index (Page 3) = Right
-                    // RTL: Odd index (Page 2) = Right, Even index (Page 3) = Left
-                    if settings.mangaMode {
-                         spreadProp = isOdd ? "page-spread-right" : "page-spread-left"
+                if settings.isGuidedView {
+                    if item.index == 0 {
+                        spreadProp = "page-spread-center"
                     } else {
-                         spreadProp = isOdd ? "page-spread-left" : "page-spread-right"
+                        let isOdd = (item.index % 2 != 0)
+                        // LTR: Odd index (Page 2) = Left, Even index (Page 3) = Right
+                        // RTL: Odd index (Page 2) = Right, Even index (Page 3) = Left
+                        if settings.mangaMode {
+                             spreadProp = isOdd ? "page-spread-right" : "page-spread-left"
+                        } else {
+                             spreadProp = isOdd ? "page-spread-left" : "page-spread-right"
+                        }
                     }
                 }
                 
-                spineItems.append("<itemref idref=\"page_\(localIndex+1)\" properties=\"\(spreadProp)\"/>")
+                let spreadAttr = spreadProp.isEmpty ? "" : " properties=\"\(spreadProp)\""
+                spineItems.append("<itemref idref=\"page_\(localIndex+1)\"\(spreadAttr)/>")
+
             }
             
             // OPF & TOC
