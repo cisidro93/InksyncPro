@@ -674,6 +674,10 @@ class ConversionManager: ObservableObject {
             }
         }
 
+                }
+            }
+        }
+
         // 2. Fallback: Physical File (Legacy)
         // Find ComicInfo.xml (Prioritize META-INF for new standard, then Root/OEBPS)
         var comicInfoEntry: Archive.Element? = nil
@@ -1670,6 +1674,7 @@ class ConversionManager: ObservableObject {
             }
         }
     }
+}
 
 
 // MARK: - Sidecar Models (Internal Use)
@@ -1776,6 +1781,5 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
             currentPanels = []
         }
     }
-}
 }
 
