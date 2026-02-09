@@ -204,7 +204,7 @@ class CBZToEPUBConverter {
             let heightID = Int(contentSize.height)
             let bookUUID = UUID().uuidString
             
-            let opfContent = """
+            var opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# inksync: http://inksync.app/metadata">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -230,7 +230,7 @@ class CBZToEPUBConverter {
                 </spine>
             </package>
             """
-            try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+            // try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8) // Removed redundant write
             
             // ✅ FIX: Generate EPUB 3.0 Navigation Document (Mandatory)
             // Added DOCTYPE for strict validation (E013 fix candidate)
