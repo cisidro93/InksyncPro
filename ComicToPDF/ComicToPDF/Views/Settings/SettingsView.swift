@@ -162,6 +162,13 @@ struct SettingsView: View {
                     Label("View Debug Logs", systemImage: "ladybug")
                 }
             }
+            
+            // ✅ NEW: Help & Support Section
+            Section(header: Text("Help & Support")) {
+                NavigationLink(destination: HelpCenterView()) {
+                    Label("Help Center", systemImage: "questionmark.circle.fill")
+                }
+            }
 
         }
         .navigationTitle("Settings")
