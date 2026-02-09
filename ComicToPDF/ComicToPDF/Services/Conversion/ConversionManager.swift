@@ -667,10 +667,9 @@ class ConversionManager: ObservableObject {
                                 await MainActor.run { processingStatus = "Metadata Found (Embedded)" }
                                 try? await Task.sleep(nanoseconds: 500_000_000)
                                 return result
-                            }
+                            } 
                         }
                     }
-                }
                 }
             }
         }
