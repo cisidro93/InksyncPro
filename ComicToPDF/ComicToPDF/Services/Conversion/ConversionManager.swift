@@ -347,7 +347,7 @@ class ConversionManager: ObservableObject {
     func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String, mangaMode: Bool) async {
         isConverting = true; processingStatus = "Merging..."; statusMessage = "Starting merge..."
         let fileManager = FileManager.default; let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let safeName = outputName.isEmpty ? "Merged_Collection" : outputName; let outputURL = docDir.appendingPathComponent("\(safeName).epub")
+        let safeName = outputName.isEmpty ? "Merged Collection" : outputName; let outputURL = docDir.appendingPathComponent("\(safeName).epub")
         let merger = EPUBMerger(); let sourceURLs = pdfs.map { $0.url }
         var inheritedCover: UIImage?
         if let firstPDF = pdfs.first { inheritedCover = getThumbnail(for: firstPDF) }
@@ -371,7 +371,11 @@ class ConversionManager: ObservableObject {
     
     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool) async {
         isConverting = true; conversionProgress = 0.0; processingStatus = "Converting..."; statusMessage = "Starting..."
-        let converter = CBZToEPUBConverter(); var jobSettings = conversionSettings; jobSettings.mangaMode = mangaMode; 
+        let converter = CBZToEPUBConverter()
+        var jobSettings = conversionSettings
+        jobSettings.mangaMode = mangaMode
+        // ✅ E013 FIX: Verify user actually wants Guided View before injecting 50KB+ metadata
+        jobSettings.isGuidedView = jobSettings.enablePanelSplit 
         
         await MainActor.run { processingStatus = "Reading Source Panels..." }
         try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s Delay for Visibility
@@ -407,6 +411,8 @@ class ConversionManager: ObservableObject {
             let converter = CBZToEPUBConverter()
             var jobSettings = conversionSettings
             // We use global settings for the batch. If specific manga settings are needed, we default to global for now.
+            // ✅ E013 FIX: Conditional Injection
+            jobSettings.isGuidedView = jobSettings.enablePanelSplit
             
             await MainActor.run { processingStatus = "Reading Source Panels..." }
             try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s Delay for Visibility
@@ -454,6 +460,8 @@ class ConversionManager: ObservableObject {
             var jobSettings = conversionSettings
             // ✅ Override Manga Mode for this batch
             jobSettings.mangaMode = mangaMode
+            // ✅ E013 FIX: Conditional Injection
+            jobSettings.isGuidedView = jobSettings.enablePanelSplit
             
             await MainActor.run { processingStatus = "Reading Source Panels..." }
             try? await Task.sleep(nanoseconds: 1_500_000_000)

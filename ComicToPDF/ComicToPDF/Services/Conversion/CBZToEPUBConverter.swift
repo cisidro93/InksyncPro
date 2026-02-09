@@ -292,20 +292,29 @@ class CBZToEPUBConverter {
                     }
                 }
                 xml += "  </Pages>\n</ComicInfo>"
+                xml += "  </Pages>\n</ComicInfo>"
+                
                 // ✅ FIX: Embed ComicInfo as Base64 in OPF Metadata (Zero Footprint)
                 // Kindle E013 rejects unmanifested files in META-INF or OEBPS.
                 // We cannot manifest it because it's not a valid EPUB core media type.
                 // Solution: Store the XML raw string as Base64 inside a <meta> tag in the OPF.
                 // This is standard-compliant (custom metadata) and stays with the file.
                 
-                if let data = xml.data(using: .utf8) {
-                    let base64 = data.base64EncodedString()
-                    // Insert generic meta name tag (safest for Kindle)
-                    // We avoid 'property' and custom namespaces to prevent E013 errors
-                    if let range = opfContent.range(of: "</metadata>") {
-                        let metaTag = "\n    <meta name=\"inksync-comicinfo\" content=\"\(base64)\"/>"
-                        opfContent.insert(contentsOf: metaTag, at: range.lowerBound)
+                // 🕵️‍♂️ CONDITIONAL INJECTION (E013 FIX)
+                // Only inject this massive blob if the user actually wants Guided View.
+                // Standard conversions should be clean EPUBs.
+                if settings.isGuidedView {
+                    if let data = xml.data(using: .utf8) {
+                        let base64 = data.base64EncodedString()
+                        // Insert generic meta name tag (safest for Kindle)
+                        // We avoid 'property' and custom namespaces to prevent E013 errors
+                        if let range = opfContent.range(of: "</metadata>") {
+                            let metaTag = "\n    <meta name=\"inksync-comicinfo\" content=\"\(base64)\"/>"
+                            opfContent.insert(contentsOf: metaTag, at: range.lowerBound)
+                        }
                     }
+                } else {
+                     Logger.shared.log("Skipping ComicInfo injection (Standard Mode)", category: "Converter")
                 }
             } else {
                 Logger.shared.log("Batch \(batchIndex): No panels to write", category: "Converter")
@@ -319,13 +328,13 @@ class CBZToEPUBConverter {
 
             
             // Zip
-            // ✅ Sanitize Filename (Enterprise Grade)
-            // Restore spaces to underscores, remove special chars. Kindle hates spaces.
+            // ✅ Sanitize Filename (User Preference: Spaces over Underscores)
+            // Replace underscores with spaces, allow natural spaces, remove special chars.
             let safeName = epubName.map { char -> String in
-                if char.isLetter || char.isNumber || char == "-" || char == "_" {
+                if char.isLetter || char.isNumber || char == "-" {
                     return String(char)
-                } else if char.isWhitespace {
-                    return "_"
+                } else if char == "_" || char.isWhitespace {
+                    return " "
                 } else {
                     return ""
                 }
