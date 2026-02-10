@@ -107,7 +107,8 @@ struct PageManagerView: View {
     @State private var draggedItem: GridPageItem? // ✅ Drag for Reordering
     @State private var showingMetadataEditor = false
     @State private var showingTrimSheet = false
-
+    @State private var extractedText: String = ""
+    @State private var showingTextResult = false
 
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
@@ -215,6 +216,8 @@ struct PageManagerView: View {
                             .padding(.bottom, 80)
                             // ✅ GLIDING SELECTION GESTURE (Conditional)
                             // Only attach drag gesture when isSelectionMode is TRUE
+                            // This is a rough heuristic but effective for "Gliding"
+                            // Better approach: Calculate precise layout
                             .gesture(
                                 isSelectionMode ?
                                 DragGesture()
@@ -271,8 +274,26 @@ struct PageManagerView: View {
                                 .foregroundColor(.orange)
                                 .cornerRadius(8)
                             }
+                        } else {
+                            // ✅ Book Specific: Extract Text
+                             if selectedPages.count == 1 {
+                                 Button {
+                                     Task { await extractTextFromSelected() }
+                                 } label: {
+                                     VStack(spacing: 4) {
+                                         Image(systemName: "text.viewfinder")
+                                             .font(.title2)
+                                         Text("OCR")
+                                             .font(.caption)
+                                     }
+                                     .frame(maxWidth: .infinity)
+                                     .padding()
+                                     .background(Color.purple.opacity(0.1))
+                                     .foregroundColor(.purple)
+                                     .cornerRadius(8)
+                                 }
+                             }
                         }
-
                         
                         // Delete Button
                         Button(role: .destructive) {
@@ -281,6 +302,7 @@ struct PageManagerView: View {
                             VStack(spacing: 4) {
                                 Image(systemName: "trash")
                                     .font(.title2)
+                                    .padding(.bottom, 2)
                                 Text("Delete")
                                     .font(.caption)
                             }
@@ -290,11 +312,6 @@ struct PageManagerView: View {
                             .foregroundColor(.red)
                             .cornerRadius(8)
                         }
-                    }
-                    .padding()
-                }
-                .background(Color(UIColor.systemBackground))
-            }
                     }
                     .padding()
                 }
@@ -325,6 +342,28 @@ struct PageManagerView: View {
         )) { index in
             editorView(for: index)
         }
+        .sheet(isPresented: $showingTextResult) {
+            NavigationView {
+                ScrollView {
+                    Text(extractedText)
+                        .padding()
+                        .textSelection(.enabled)
+                }
+                .navigationTitle("Extracted Text")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Done") { showingTextResult = false }
+                    }
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button(action: {
+                            UIPasteboard.general.string = extractedText
+                        }) {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                    }
+                }
+            }
+        }
     }
     
     // ✅ Helper to avoid duplicating the view code
@@ -354,6 +393,25 @@ struct PageManagerView: View {
     
     func selectAll() {
         selectedPages = Set(viewModel.items.map { $0.index })
+    }
+    
+    func extractTextFromSelected() async {
+        guard let index = selectedPages.first, let item = viewModel.items.first(where: { $0.index == index }) else { return }
+        
+        viewModel.isLoading = true
+        viewModel.statusText = "Scanning Text..."
+        
+        do {
+            if let image = UIImage(contentsOfFile: item.url.path) {
+                let text = try await OCREngine.shared.recognizeText(from: image)
+                extractedText = text
+                showingTextResult = true
+            }
+            viewModel.isLoading = false
+        } catch {
+            viewModel.errorMessage = "OCR Failed: \(error.localizedDescription)"
+            viewModel.isLoading = false
+        }
     }
     
     func splitSelected() async {

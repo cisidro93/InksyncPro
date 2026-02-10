@@ -586,8 +586,16 @@ class ConversionManager: ObservableObject {
         let converter = CBZToEPUBConverter()
         var jobSettings = conversionSettings
         jobSettings.mangaMode = mangaMode
-        // ✅ E013 FIX: Verify user actually wants Guided View before injecting 50KB+ metadata
-        jobSettings.isGuidedView = jobSettings.enablePanelSplit 
+        
+        // \u2705 Smart Content Type Handling
+        if pdf.contentType == .book {
+            jobSettings.mangaMode = false
+            jobSettings.enablePanelSplit = false
+            jobSettings.isGuidedView = false
+        } else {
+            // \u2705 E013 FIX: Verify user actually wants Guided View before injecting 50KB+ metadata
+            jobSettings.isGuidedView = jobSettings.enablePanelSplit
+        } 
         
         await MainActor.run { processingStatus = "Reading Source Panels..." }
         try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s Delay for Visibility
@@ -623,8 +631,16 @@ class ConversionManager: ObservableObject {
             let converter = CBZToEPUBConverter()
             var jobSettings = conversionSettings
             // We use global settings for the batch. If specific manga settings are needed, we default to global for now.
-            // ✅ E013 FIX: Conditional Injection
-            jobSettings.isGuidedView = jobSettings.enablePanelSplit
+            
+            // \u2705 Smart Content Type Handling
+            if pdf.contentType == .book {
+                jobSettings.mangaMode = false
+                jobSettings.enablePanelSplit = false
+                jobSettings.isGuidedView = false
+            } else {
+                // \u2705 E013 FIX: Conditional Injection
+                jobSettings.isGuidedView = jobSettings.enablePanelSplit
+            }
             
             await MainActor.run { processingStatus = "Reading Source Panels..." }
             try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s Delay for Visibility

@@ -46,27 +46,50 @@ struct ConvertView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Reading Experience").font(.headline).padding(.bottom, 5)
                     ForEach(ConversionMode.allCases) { mode in
-                        Button(action: { selectedMode = mode; updateSettings(for: mode) }) {
+                        let isBook = pdf.contentType == .book
+                        let isDisabled = isBook && mode == .hybrid
+                        
+                        Button(action: { 
+                            if !isDisabled {
+                                selectedMode = mode; updateSettings(for: mode) 
+                            }
+                        }) {
                             HStack(spacing: 15) {
                                 Image(systemName: mode.icon).font(.title2).frame(width: 30)
-                                    .foregroundColor(selectedMode == mode ? .white : .blue)
+                                    .foregroundColor(isDisabled ? .gray : (selectedMode == mode ? .white : .blue))
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(mode.rawValue).font(.headline)
-                                        .foregroundColor(selectedMode == mode ? .white : .primary)
+                                    HStack {
+                                        Text(mode.rawValue).font(.headline)
+                                            .foregroundColor(isDisabled ? .gray : (selectedMode == mode ? .white : .primary))
+                                        
+                                        if mode == .hybrid {
+                                            if isBook {
+                                                Text("(Comics Only)")
+                                                    .font(.caption2)
+                                                    .bold()
+                                                    .foregroundColor(.white)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Color.gray)
+                                                    .cornerRadius(4)
+                                            }
+                                        }
+                                    }
+                                    
                                     Text(mode.description).font(.caption)
-                                        .foregroundColor(selectedMode == mode ? .white.opacity(0.8) : .secondary)
+                                        .foregroundColor(isDisabled ? .gray.opacity(0.8) : (selectedMode == mode ? .white.opacity(0.8) : .secondary))
                                 }
                                 Spacer()
                                 if selectedMode == mode { Image(systemName: "checkmark.circle.fill").foregroundColor(.white) }
                             }
                             .padding()
-                            .background(selectedMode == mode ? Color.blue : Color(UIColor.secondarySystemGroupedBackground))
+                            .background(selectedMode == mode ? (isDisabled ? Color.gray.opacity(0.3) : Color.blue) : Color(UIColor.secondarySystemGroupedBackground))
                             .cornerRadius(12)
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(selectedMode == mode ? Color.blue : Color.gray.opacity(0.2), lineWidth: 1))
                         }
                         .buttonStyle(PlainButtonStyle())
-                        .disabled(conversionManager.isConverting)
-                        .opacity(conversionManager.isConverting ? 0.6 : 1.0)
+                        .disabled(conversionManager.isConverting || isDisabled)
+                        .opacity(conversionManager.isConverting ? 0.6 : (isDisabled ? 0.6 : 1.0))
                     }
                 }
                 .padding(.vertical, 5)
