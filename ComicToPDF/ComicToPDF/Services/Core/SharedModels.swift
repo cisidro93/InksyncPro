@@ -7,6 +7,40 @@ import UniformTypeIdentifiers
 
 // MARK: - Core Data Models
 
+// ✅ NEW: Content Type Classification
+enum ContentType: String, Codable, CaseIterable {
+    case comic = "Comic"
+    case manga = "Manga"
+    case book = "Book"
+    case hybrid = "Hybrid"
+    
+    var icon: String {
+        switch self {
+        case .comic: return "book.closed"
+        case .manga: return "text.book.closed"
+        case .book: return "text.alignleft"
+        case .hybrid: return "doc.richtext"
+        }
+    }
+    
+    var badgeColor: Color {
+        switch self {
+        case .comic: return .blue
+        case .manga: return .purple
+        case .book: return .green
+        case .hybrid: return .orange
+        }
+    }
+    
+    var supportsGuidedView: Bool {
+        switch self {
+        case .comic, .manga: return true
+        case .book: return false
+        case .hybrid: return true  // User can toggle
+        }
+    }
+}
+
 struct ConvertedPDF: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
@@ -17,13 +51,14 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
     var collectionId: UUID?
     var isFavorite: Bool = false
     var coverImageData: Data?
+    var contentType: ContentType = .comic  // ✅ NEW: Track content type
     
     var formattedSize: String {
         let mb = Double(fileSize) / 1024 / 1024
         return String(format: "%.1f MB", mb)
     }
     
-    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, coverImageData: Data? = nil) {
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic) {
         self.id = id
         self.name = name
         self.url = url
@@ -33,6 +68,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
         self.collectionId = collectionId
         self.isFavorite = isFavorite
         self.coverImageData = coverImageData
+        self.contentType = contentType
     }
     
     func toPDFDocument() -> PDFDocument {
