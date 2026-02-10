@@ -52,13 +52,14 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
     var isFavorite: Bool = false
     var coverImageData: Data?
     var contentType: ContentType = .comic  // ✅ NEW: Track content type
+    var chapters: [Chapter] = [] // ✅ NEW: Detected Chapters
     
     var formattedSize: String {
         let mb = Double(fileSize) / 1024 / 1024
         return String(format: "%.1f MB", mb)
     }
     
-    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic) {
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = []) {
         self.id = id
         self.name = name
         self.url = url
@@ -69,6 +70,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
         self.isFavorite = isFavorite
         self.coverImageData = coverImageData
         self.contentType = contentType
+        self.chapters = chapters
     }
     
     func toPDFDocument() -> PDFDocument {
@@ -111,7 +113,15 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var tags: [String] = []
     // ✅ Calibre-style Reading Options
     var isManga: Bool? // Overrides global setting if present
+    var isManga: Bool? // Overrides global setting if present
     var isWebtoon: Bool? // For vertical scroll support
+}
+
+// ✅ NEW: Chapter Structure
+struct Chapter: Identifiable, Codable, Hashable {
+    var id: UUID = UUID()
+    var title: String
+    var pageIndex: Int // 0-based index of the start page
 }
 
 struct PDFCollection: Identifiable, Codable, Equatable {
@@ -231,6 +241,31 @@ enum AppTextSize: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+// ✅ NEW: OCR Language Preference
+enum OCRLanguage: String, CaseIterable, Codable, Identifiable {
+    case english = "en-US"
+    case french = "fr-FR"
+    case german = "de-DE"
+    case spanish = "es-ES"
+    case italian = "it-IT"
+    case chineseSimplified = "zh-Hans"
+    case japanese = "ja-JP"
+    
+     var id: String { rawValue }
+     
+     var displayName: String {
+         switch self {
+         case .english: return "English"
+         case .french: return "French"
+         case .german: return "German"
+         case .spanish: return "Spanish"
+         case .italian: return "Italian"
+         case .chineseSimplified: return "Chinese (Simplified)"
+         case .japanese: return "Japanese"
+         }
+     }
+}
+
 // ✅ NEW: Panel Editor Presentation Mode
 enum PanelEditorPresentationMode: String, CaseIterable, Codable, Identifiable {
     case sheet = "Windowed (Sheet)"
@@ -249,6 +284,7 @@ struct ConversionSettings: Codable, Equatable {
     var splitMode: FileSizeSplitMode = .none 
     var textSize: AppTextSize = .medium // ✅ New Preference 
     var panelEditorMode: PanelEditorPresentationMode = .sheet // ✅ New Preference
+    var ocrLanguage: OCRLanguage = .english // ✅ New Preference
     
     // ✅ NEW: Guided View Flag
     // If true, injects 'inksync-comicinfo' metadata. If false, output is standard EPUB without custom data.

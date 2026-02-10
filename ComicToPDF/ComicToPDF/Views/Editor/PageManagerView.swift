@@ -109,6 +109,12 @@ struct PageManagerView: View {
     @State private var showingTrimSheet = false
     @State private var extractedText: String = ""
     @State private var showingTextResult = false
+    @State private var showingChapters = false // ✅ NEW
+    
+    // ✅ Live PDF Reference (Replaces local copy to reflect updates)
+    var livePDF: ConvertedPDF {
+        conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) ?? pdf
+    }
 
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
@@ -141,6 +147,25 @@ struct PageManagerView: View {
                         .font(.body)
                         .padding(8)
                         .foregroundColor(isSelectionMode ? .blue : .primary)
+                }
+                
+                // ✅ NEW: Scan/View Chapters (Books Only)
+                if livePDF.contentType == .book {
+                     Menu {
+                         Button(action: { Task { await scanChapters() } }) {
+                             Label("Scan for Chapters", systemImage: "doc.text.magnifyingglass")
+                         }
+                         
+                         if !livePDF.chapters.isEmpty {
+                             Button(action: { showingChapters = true }) {
+                                 Label("View Chapters (\(livePDF.chapters.count))", systemImage: "list.bullet")
+                             }
+                         }
+                     } label: {
+                         Image(systemName: "list.bullet.rectangle")
+                             .font(.body)
+                             .padding(8)
+                     }
                 }
                 
                 Button(action: { showingMetadataEditor = true }) {
@@ -342,6 +367,34 @@ struct PageManagerView: View {
         )) { index in
             editorView(for: index)
         }
+        .sheet(isPresented: $showingChapters) {
+             NavigationView {
+                 List {
+                     if livePDF.chapters.isEmpty {
+                         Text("No chapters detected.")
+                             .foregroundColor(.secondary)
+                     } else {
+                         ForEach(livePDF.chapters) { chapter in
+                             Button(action: {
+                                 // Close sheet first
+                                 showingChapters = false
+                             }) {
+                                 HStack {
+                                     Text(chapter.title)
+                                         .font(.headline)
+                                     Spacer()
+                                     Text("Page \(chapter.pageIndex + 1)")
+                                         .font(.caption)
+                                         .foregroundColor(.secondary)
+                                 }
+                             }
+                         }
+                     }
+                 }
+                 .navigationTitle("Chapters")
+                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showingChapters = false } } }
+             }
+        }
         .sheet(isPresented: $showingTextResult) {
             NavigationView {
                 ScrollView {
@@ -403,7 +456,7 @@ struct PageManagerView: View {
         
         do {
             if let image = UIImage(contentsOfFile: item.url.path) {
-                let text = try await OCREngine.shared.recognizeText(from: image)
+                let text = try await OCREngine.shared.recognizeText(from: image, languages: [conversionManager.conversionSettings.ocrLanguage.rawValue])
                 extractedText = text
                 showingTextResult = true
             }
@@ -527,6 +580,19 @@ struct PageManagerView: View {
                     selectedPages.insert(viewModel.items[i].index)
                 }
             }
+        }
+    }
+    // ✅ Chapter Scanning
+    func scanChapters() async {
+        viewModel.isLoading = true
+        await conversionManager.detectChapters(for: pdf)
+        viewModel.isLoading = false
+        
+        // Refresh
+        await viewModel.loadPages(from: pdf)
+        
+        if !livePDF.chapters.isEmpty {
+            showingChapters = true
         }
     }
 }

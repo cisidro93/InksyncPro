@@ -1247,6 +1247,38 @@ class ConversionManager: ObservableObject {
         }
     }
     
+    // MARK: - Chapter Detection
+    func detectChapters(for pdf: ConvertedPDF) async {
+        guard pdf.contentType == .book || pdf.contentType == .hybrid else { return }
+        
+        isConverting = true; processingStatus = "Scanning Chapters..."; statusMessage = "0%"
+        defer { isConverting = false; statusMessage = nil; processingStatus = "" }
+        
+        do {
+            let languages = [conversionSettings.ocrLanguage.rawValue]
+            let chapters = try await ChapterDetector.shared.detectChapters(in: pdf, languages: languages) { progress in
+                Task { @MainActor in
+                    self.statusMessage = String(format: "%.0f%%", progress * 100)
+                }
+            }
+            
+            await MainActor.run {
+                if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    convertedPDFs[idx].chapters = chapters
+                    saveLibrary()
+                }
+                processingStatus = "Found \(chapters.count) chapters!"
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            
+        } catch {
+             Logger.shared.log("Chapter detection failed: \(error)", category: "OCR")
+             await MainActor.run {
+                 processingStatus = "Scan Failed"
+             }
+        }
+    }
+    
     // Split / Extract Logic
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL {
         let fileManager = FileManager.default

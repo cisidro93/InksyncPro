@@ -121,6 +121,15 @@ struct SettingsView: View {
                 }
             }
             
+            Section(header: Text("Text Recognition (OCR)")) {
+                Picker("Language", selection: $conversionManager.conversionSettings.ocrLanguage) {
+                    ForEach(OCRLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            
             Section(header: Text("Integrations")) {
                 SecureField("ComicVine API Key", text: $conversionManager.conversionSettings.comicVineAPIKey)
                 Link("Get API Key", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
