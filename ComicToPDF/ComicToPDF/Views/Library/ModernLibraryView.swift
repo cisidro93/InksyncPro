@@ -459,7 +459,19 @@ struct ModernFileRow: View {
                     .lineLimit(1)
                 
                 HStack(spacing: 6) {
-                    MockBadge(text: pdf.url.pathExtension.uppercased(), color: Theme.orange.opacity(0.2), textColor: Theme.orange)
+                    // Content Type Badge
+                    HStack(spacing: 3) {
+                        Image(systemName: pdf.contentType.icon)
+                            .font(.system(size: 8))
+                        Text(pdf.contentType.rawValue.uppercased())
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(pdf.contentType.badgeColor.opacity(0.2))
+                    .foregroundColor(pdf.contentType.badgeColor)
+                    .cornerRadius(4)
+                    
                     Text(pdf.formattedSize)
                         .font(.caption)
                         .foregroundColor(Theme.textSecondary)
@@ -484,18 +496,3 @@ struct ModernFileRow: View {
     }
 }
 
-struct MockBadge: View {
-    let text: String
-    let color: Color
-    let textColor: Color
-    
-    var body: some View {
-        Text(text)
-            .font(.system(size: 10, weight: .bold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color)
-            .foregroundColor(textColor)
-            .cornerRadius(4)
-    }
-}

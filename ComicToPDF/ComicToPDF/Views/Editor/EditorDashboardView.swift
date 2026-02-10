@@ -73,9 +73,25 @@ struct EditorRowView: View {
                         .foregroundColor(.primary)
                         .lineLimit(2)
                     
-                    Text("\(pdf.pageCount) Pages")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        // Content Type Badge
+                        HStack(spacing: 4) {
+                            Image(systemName: pdf.contentType.icon)
+                                .font(.caption2)
+                            Text(pdf.contentType.rawValue)
+                                .font(.caption2)
+                                .bold()
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(pdf.contentType.badgeColor)
+                        .cornerRadius(4)
+                        
+                        Text("\(pdf.pageCount) Pages")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                     
                     if editedPageCount > 0 {
                         HStack(spacing: 4) {
