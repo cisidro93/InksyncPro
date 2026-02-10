@@ -423,11 +423,48 @@ class CBZToEPUBConverter {
     }
     
     static func generateXHTML(imageName: String, title: String, width: Int, height: Int, panels: [PanelExtractor.Panel]) -> String {
-        // NOTE: We are removing manual 'app-amzn-magnify' tags.
-        // Modern Send-to-Kindle for EPUBs often rejects strictly-formatted fixed-layout books with custom proprietary tags.
-        // We will rely on "book-type=comic" and "fixed-layout=true" to trigger the device's native comic treatment.
-        // If users want precise Panel View, they should use the "Kindle Comic Creator" workflow with the source images,
-        // or we can implement a separate "Kindle Native" export later.
+        // ✅ INTELLIGENT PANEL VIEW: Use actual user-drawn panel coordinates
+        // This is superior to KCC's dumb 4-quad zoom because we know the real panel locations!
+        // Panels are in Vision normalized coordinates (0-1, bottom-left origin)
+        // We need to transform to HTML coordinates (top-left origin)
+        
+        var panelDivs = ""
+        
+        if !panels.isEmpty {
+            for (index, panel) in panels.enumerated() {
+                // Transform from Vision coords (bottom-left origin) to HTML/EPUB coords (top-left origin)
+                let box = panel.boundingBox
+                
+                // Convert to top-left origin percentage
+                let xPercent = box.minX * 100
+                let yPercent = (1.0 - box.maxY) * 100  // Flip Y axis
+                let wPercent = box.width * 100
+                let hPercent = box.height * 100
+                
+                // ===== AMAZON'S app-amzn-magnify FORMAT =====
+                // Amazon expects JSON with targetId, sourceId, ordinal
+                let targetId = "panel-target-\(index)"
+                let sourceId = "panel-source-\(index)"
+                let magnifyData = """
+{"targetId":"\(targetId)","sourceId":"\(sourceId)","ordinal":\(index + 1)}
+"""
+                
+                // Create tap target div (source) over the panel area
+                panelDivs += """
+            <div class="app-amzn-magnify" id="\(sourceId)" 
+                 data-app-amzn-magnify='\(magnifyData)'
+                 style="position: absolute; 
+                        left: \(String(format: "%.2f", xPercent))%; 
+                        top: \(String(format: "%.2f", yPercent))%; 
+                        width: \(String(format: "%.2f", wPercent))%; 
+                        height: \(String(format: "%.2f", hPercent))%; 
+                        z-index: 10; 
+                        cursor: pointer;">
+            </div>
+            
+"""
+            }
+        }
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -467,13 +504,18 @@ class CBZToEPUBConverter {
                 object-fit: contain;
                 display: block;
             }
+            /* Panel tap targets - invisible overlay for Amazon Panel View */
+            .app-amzn-magnify {
+                background: transparent;
+                border: none;
+            }
         </style>
         </head>
         <body>
             <div class="page-container" id="img-container">
                 <img class="bg" src="../images/\(imageName)" alt="comic page"/>
             </div>
-        </body>
+\(panelDivs)        </body>
         </html>
         """
     }
