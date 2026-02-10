@@ -113,7 +113,6 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var tags: [String] = []
     // ✅ Calibre-style Reading Options
     var isManga: Bool? // Overrides global setting if present
-    var isManga: Bool? // Overrides global setting if present
     var isWebtoon: Bool? // For vertical scroll support
 }
 
