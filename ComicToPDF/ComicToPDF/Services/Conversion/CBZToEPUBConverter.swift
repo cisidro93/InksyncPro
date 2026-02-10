@@ -515,7 +515,7 @@ class CBZToEPUBConverter {
             <div class="page-container" id="img-container">
                 <img class="bg" src="../images/\(imageName)" alt="comic page"/>
             </div>
-\(panelDivs)        </body>
+        \(panelDivs)</body>
         </html>
         """
     }
