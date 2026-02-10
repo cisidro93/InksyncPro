@@ -231,6 +231,101 @@ class ConversionManager: ObservableObject {
     
     func removeFromLibrary(_ pdf: ConvertedPDF) { deletePDF(pdf) }
     
+    // MARK: - Page Management
+    
+    /// Delete specific pages from a converted PDF (CBZ)
+    /// - Parameters:
+    ///   - pdf: The ConvertedPDF object to modify
+    ///   - pageIndices: Set of 0-based page indices to remove
+    func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>) async {
+        guard !pageIndices.isEmpty else { return }
+        
+        await MainActor.run { processingStatus = "Deleting \(pageIndices.count) pages..." }
+        
+        do {
+            // 1. Extract CBZ to Temp Directory
+            let result = try await ZipUtilities.extractComic(from: pdf.url)
+            let tempDir = result.workingDir
+            var imageFiles = result.imageURLs
+            
+            // 2. Delete Selected Files
+            // Sort indices in descending order to avoid shift issues if we were modifying an array by index,
+            // but here we are deleting files by path, so order matters less, but safe to be consistent.
+            // Actually, imageFiles matches 0..N pages.
+            
+            let sortedIndices = pageIndices.sorted(by: >)
+            var deletedCount = 0
+            
+            for index in sortedIndices {
+                if index < imageFiles.count {
+                    let fileURL = imageFiles[index]
+                    try FileManager.default.removeItem(at: fileURL)
+                    deletedCount += 1
+                }
+            }
+            
+            guard deletedCount > 0 else {
+                try FileManager.default.removeItem(at: tempDir)
+                await MainActor.run { processingStatus = "" }
+                return
+            }
+            
+            // 3. Re-Create CBZ Archive
+            // We need to create a new CBZ from the remaining files in tempDir
+            // Note: ZipUtilities.zipDirectory will zip the contents.
+            
+            // Create a temporary destination for the new CBZ
+            let newCBZURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
+            try await ZipUtilities.zipDirectory(tempDir, to: newCBZURL)
+            
+            // 4. Atomically Swap Files
+            if FileManager.default.fileExists(atPath: pdf.url.path) {
+                try FileManager.default.removeItem(at: pdf.url)
+            }
+            try FileManager.default.moveItem(at: newCBZURL, to: pdf.url)
+            
+            // 5. Update Metadata
+            // We need to recount files to be sure
+            // But we know how many we deleted.
+            // Let's just update the in-memory object.
+            
+            // Get new file size
+            let attr = try FileManager.default.attributesOfItem(atPath: pdf.url.path)
+            let newSize = attr[.size] as? Int64 ?? 0
+            
+            await MainActor.run {
+                if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    convertedPDFs[idx].pageCount -= deletedCount
+                    convertedPDFs[idx].fileSize = newSize
+                    
+                    // Also clear any panel overrides for deleted pages? 
+                    // This is complex because indices shift.
+                    // For now, if you delete pages, we should probably warn that panel data might be misaligned
+                    // OR we just clear it for safety if it exists.
+                    if convertedPDFs[idx].contentType == .book {
+                        // Books don't have panel data usually, so fine.
+                    } else {
+                        // For comics, this is risky. Let's clear panel data for now to avoid crashes.
+                        panelOverrides[pdf.id] = nil
+                    }
+                    
+                    saveLibrary()
+                }
+                processingStatus = ""
+                Logger.shared.log("Deleted \(deletedCount) pages from \(pdf.name)", category: "Edit")
+            }
+            
+            // Cleanup
+            try FileManager.default.removeItem(at: tempDir)
+            
+        } catch {
+            await MainActor.run {
+                processingStatus = "Delete failed: \(error.localizedDescription)"
+            }
+            Logger.shared.log("Error deleting pages: \(error)", category: "Edit")
+        }
+    }
+    
     func addConvertedPDF(url: URL, pageCount: Int = 0, fileSize: Int64 = 0, duration: TimeInterval = 0) {
          let pdf = ConvertedPDF(name: url.lastPathComponent, url: url, pageCount: pageCount, fileSize: fileSize, metadata: PDFMetadata(title: url.lastPathComponent), collectionId: nil)
          convertedPDFs.append(pdf)

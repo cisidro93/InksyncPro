@@ -236,41 +236,43 @@ struct PageManagerView: View {
                 VStack {
                     Divider()
                     HStack(spacing: 16) {
-                        // Split/Extract Button
-                        Button {
-                            Task { await splitSelected() }
-                        } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: "square.and.arrow.up.on.square")
-                                    .font(.title2)
-                                Text("New Comic")
-                                    .font(.caption)
+                        // Only show Split/Trim for Comics
+                        if pdf.contentType != .book {
+                            // Split/Extract Button
+                            Button {
+                                Task { await splitSelected() }
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "square.and.arrow.up.on.square")
+                                        .font(.title2)
+                                    Text("New Comic")
+                                        .font(.caption)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue.opacity(0.1))
+                                .foregroundColor(.blue)
+                                .cornerRadius(8)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.blue.opacity(0.1))
-                            .foregroundColor(.blue)
-                            .cornerRadius(8)
+                            
+                            // Trim Button
+                            Button {
+                                showingTrimSheet = true
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "scissors")
+                                        .font(.title2)
+                                    Text("Trim")
+                                        .font(.caption)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.orange.opacity(0.1))
+                                .foregroundColor(.orange)
+                                .cornerRadius(8)
+                            }
                         }
-                        
 
-                        
-                        // Trim Button
-                        Button {
-                            showingTrimSheet = true
-                        } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: "scissors")
-                                    .font(.title2)
-                                Text("Trim")
-                                    .font(.caption)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.orange.opacity(0.1))
-                            .foregroundColor(.orange)
-                            .cornerRadius(8)
-                        }
                         
                         // Delete Button
                         Button(role: .destructive) {
@@ -293,19 +295,32 @@ struct PageManagerView: View {
                 }
                 .background(Color(UIColor.systemBackground))
             }
+                    }
+                    .padding()
+                }
+                .background(Color(UIColor.systemBackground))
+            }
         }
         .task {
             // Trigger load once
             await viewModel.loadPages(from: pdf)
         }
         .sheet(item: Binding<Int?>(
-            get: { conversionManager.conversionSettings.panelEditorMode == .sheet ? pageToEdit : nil },
+            get: { 
+                // Disallow panel editor for books
+                if pdf.contentType == .book { return nil }
+                return conversionManager.conversionSettings.panelEditorMode == .sheet ? pageToEdit : nil 
+            },
             set: { if $0 == nil { pageToEdit = nil } }
         )) { index in
             editorView(for: index)
         }
         .fullScreenCover(item: Binding<Int?>(
-            get: { conversionManager.conversionSettings.panelEditorMode == .fullScreen ? pageToEdit : nil },
+            get: { 
+                // Disallow panel editor for books
+                if pdf.contentType == .book { return nil }
+                return conversionManager.conversionSettings.panelEditorMode == .fullScreen ? pageToEdit : nil 
+            },
             set: { if $0 == nil { pageToEdit = nil } }
         )) { index in
             editorView(for: index)

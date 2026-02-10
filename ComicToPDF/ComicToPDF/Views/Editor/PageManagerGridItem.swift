@@ -43,7 +43,10 @@ struct PageManagerGridItem: View {
                 )
                 .id(item.index)
                 .onTapGesture {
-                    if isSelectionMode || isSelected {
+                    // \u2705 Smart Interaction based on Content Type
+                    let isBook = (pdf.contentType == .book || pdf.contentType == .hybrid)
+                    
+                    if isSelectionMode || isSelected || isBook {
                         onToggleSelection()
                     } else {
                         if let image = UIImage(contentsOfFile: item.url.path) {
