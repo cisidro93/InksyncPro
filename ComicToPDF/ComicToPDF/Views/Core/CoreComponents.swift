@@ -364,6 +364,15 @@ struct SplashScreenView: View {
                 }
             }
         }
+        .onChange(of: hasCompletedOnboarding) { completed in
+            // When onboarding is completed, go straight to main app
+            if completed {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showOnboarding = false
+                    isActive = true
+                }
+            }
+        }
     }
 }
 

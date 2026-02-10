@@ -149,19 +149,26 @@ struct OnboardingPageView: View {
         VStack(spacing: 30) {
             Spacer()
             
-            // Icon
-            ZStack {
-                Circle()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(width: 120, height: 120)
-                
-                Image(systemName: page.icon)
-                    .font(.system(size: 60, weight: .medium))
-                    .foregroundColor(.white)
+            // Icon - Use AppLogoAnimated for "Welcome" page, SF Symbol for others
+            if page.title == "Welcome to InkSync Pro" {
+                AppLogoAnimated(size: 120)
+                    .scaleEffect(isAnimating ? 1.0 : 0.8)
+                    .opacity(isAnimating ? 1.0 : 0.3)
+                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: isAnimating)
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(width: 120, height: 120)
+                    
+                    Image(systemName: page.icon)
+                        .font(.system(size: 60, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                .scaleEffect(isAnimating ? 1.0 : 0.8)
+                .opacity(isAnimating ? 1.0 : 0.3)
+                .animation(.spring(response: 0.6, dampingFraction: 0.7), value: isAnimating)
             }
-            .scaleEffect(isAnimating ? 1.0 : 0.8)
-            .opacity(isAnimating ? 1.0 : 0.3)
-            .animation(.spring(response: 0.6, dampingFraction: 0.7), value: isAnimating)
             
             // Title
             Text(page.title)
