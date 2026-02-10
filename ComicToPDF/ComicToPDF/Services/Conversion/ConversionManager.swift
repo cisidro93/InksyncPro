@@ -237,92 +237,61 @@ class ConversionManager: ObservableObject {
     /// - Parameters:
     ///   - pdf: The ConvertedPDF object to modify
     ///   - pageIndices: Set of 0-based page indices to remove
-    func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>) async {
+    func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>) async throws {
         guard !pageIndices.isEmpty else { return }
         
         await MainActor.run { processingStatus = "Deleting \(pageIndices.count) pages..." }
         
-        do {
-            // 1. Extract CBZ to Temp Directory
-            let result = try await ZipUtilities.extractComic(from: pdf.url)
-            let tempDir = result.workingDir
-            var imageFiles = result.imageURLs
-            
-            // 2. Delete Selected Files
-            // Sort indices in descending order to avoid shift issues if we were modifying an array by index,
-            // but here we are deleting files by path, so order matters less, but safe to be consistent.
-            // Actually, imageFiles matches 0..N pages.
-            
-            let sortedIndices = pageIndices.sorted(by: >)
-            var deletedCount = 0
-            
-            for index in sortedIndices {
-                if index < imageFiles.count {
-                    let fileURL = imageFiles[index]
-                    try FileManager.default.removeItem(at: fileURL)
-                    deletedCount += 1
+        // 1. Extract CBZ to Temp Directory
+        let result = try await ZipUtilities.extractComic(from: pdf.url)
+        let tempDir = result.workingDir
+        var imageFiles = result.imageURLs
+        
+        // Ensure cleanup even on error
+        defer { 
+            try? FileManager.default.removeItem(at: tempDir)
+            Task { await MainActor.run { processingStatus = "" } }
+        }
+
+        // 2. Delete Selected Files
+        let sortedIndices = pageIndices.sorted(by: >)
+        var deletedCount = 0
+        
+        for index in sortedIndices {
+            if index < imageFiles.count {
+                let fileURL = imageFiles[index]
+                try FileManager.default.removeItem(at: fileURL)
+                deletedCount += 1
+            }
+        }
+        
+        guard deletedCount > 0 else { return }
+        
+        // 3. Re-Create CBZ Archive
+        let newCBZURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
+        try await ZipUtilities.zipDirectory(tempDir, to: newCBZURL)
+        
+        // 4. Atomically Swap Files
+        if FileManager.default.fileExists(atPath: pdf.url.path) {
+            try FileManager.default.removeItem(at: pdf.url)
+        }
+        try FileManager.default.moveItem(at: newCBZURL, to: pdf.url)
+        
+        // 5. Update Metadata
+        let attr = try FileManager.default.attributesOfItem(atPath: pdf.url.path)
+        let newSize = attr[.size] as? Int64 ?? 0
+        
+        await MainActor.run {
+            if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                convertedPDFs[idx].pageCount -= deletedCount
+                convertedPDFs[idx].fileSize = newSize
+                
+                if convertedPDFs[idx].contentType != .book {
+                     panelOverrides[pdf.id] = nil
                 }
+                saveLibrary()
             }
-            
-            guard deletedCount > 0 else {
-                try FileManager.default.removeItem(at: tempDir)
-                await MainActor.run { processingStatus = "" }
-                return
-            }
-            
-            // 3. Re-Create CBZ Archive
-            // We need to create a new CBZ from the remaining files in tempDir
-            // Note: ZipUtilities.zipDirectory will zip the contents.
-            
-            // Create a temporary destination for the new CBZ
-            let newCBZURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
-            try await ZipUtilities.zipDirectory(tempDir, to: newCBZURL)
-            
-            // 4. Atomically Swap Files
-            if FileManager.default.fileExists(atPath: pdf.url.path) {
-                try FileManager.default.removeItem(at: pdf.url)
-            }
-            try FileManager.default.moveItem(at: newCBZURL, to: pdf.url)
-            
-            // 5. Update Metadata
-            // We need to recount files to be sure
-            // But we know how many we deleted.
-            // Let's just update the in-memory object.
-            
-            // Get new file size
-            let attr = try FileManager.default.attributesOfItem(atPath: pdf.url.path)
-            let newSize = attr[.size] as? Int64 ?? 0
-            
-            await MainActor.run {
-                if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    convertedPDFs[idx].pageCount -= deletedCount
-                    convertedPDFs[idx].fileSize = newSize
-                    
-                    // Also clear any panel overrides for deleted pages? 
-                    // This is complex because indices shift.
-                    // For now, if you delete pages, we should probably warn that panel data might be misaligned
-                    // OR we just clear it for safety if it exists.
-                    if convertedPDFs[idx].contentType == .book {
-                        // Books don't have panel data usually, so fine.
-                    } else {
-                        // For comics, this is risky. Let's clear panel data for now to avoid crashes.
-                        panelOverrides[pdf.id] = nil
-                    }
-                    
-                    saveLibrary()
-                }
-                processingStatus = ""
-                Logger.shared.log("Deleted \(deletedCount) pages from \(pdf.name)", category: "Edit")
-            }
-            
-            // Cleanup
-            try FileManager.default.removeItem(at: tempDir)
-            
-        } catch {
-            await MainActor.run {
-                processingStatus = "Delete failed: \(error.localizedDescription)"
-            }
-            Logger.shared.log("Error deleting pages: \(error)", category: "Edit")
+            Logger.shared.log("Deleted \(deletedCount) pages from \(pdf.name)", category: "Edit")
         }
     }
     
@@ -1096,70 +1065,6 @@ class ConversionManager: ObservableObject {
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].collectionId = collectionId; saveLibrary() }
     }
     
-    // Page Ops
-    func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>) async throws {
-        let sourceURL = pdf.url
-        
-        try await Task.detached {
-            let fileManager = FileManager.default
-            let tempID = UUID().uuidString
-            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(tempID)
-            let tempArchiveURL = fileManager.temporaryDirectory.appendingPathComponent("\(tempID).cbz")
-            
-            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            defer { try? fileManager.removeItem(at: tempDir); try? fileManager.removeItem(at: tempArchiveURL) }
-            
-            guard let sourceArchive = try? Archive(url: sourceURL, accessMode: .read),
-                  let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create) else {
-                throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
-            }
-            
-            // 1. Map Entries to Indices (reproducing sorting logic)
-            // We sort by path to match how we displayed them (Natural Sort)
-            let sortedEntries = sourceArchive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-            let imageEntries = sortedEntries.filter { entry in
-                let ext = (entry.path as NSString).pathExtension.lowercased()
-                return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
-            }
-            
-            // Identify paths to remove
-            var pathsToRemove: Set<String> = []
-            for (index, entry) in imageEntries.enumerated() {
-                if pageIndices.contains(index) {
-                    pathsToRemove.insert(entry.path)
-                }
-            }
-            
-            // 2. Stream Copy (Extract Temp -> Add -> Delete Temp)
-            // This avoids unzipping the entire 4GB file at once.
-            for entry in sourceArchive {
-                if !pathsToRemove.contains(entry.path) {
-                    let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
-                    
-                    // Extract Single Entry
-                    _ = try sourceArchive.extract(entry, to: tempFile)
-                    
-                    // Add to New Archive (Deflate)
-                    // Fix: Cast uncompressedSize to Int64
-                    try destArchive.addEntry(with: entry.path, type: entry.type, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: entry.fileAttributes[.modificationDate] as? Date ?? Date(), permissions: entry.fileAttributes[.posixPermissions] as? UInt16, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
-                        // Stream from file
-                        let fileHandle = try? FileHandle(forReadingFrom: tempFile)
-                        try? fileHandle?.seek(toOffset: UInt64(position))
-                        return fileHandle?.readData(ofLength: size) ?? Data()
-                    }
-                    
-                    // Cleanup Single Entry
-                    try? fileManager.removeItem(at: tempFile)
-                }
-            }
-            
-            // 3. Swap Files
-            if fileManager.fileExists(atPath: sourceURL.path) { try fileManager.removeItem(at: sourceURL) }
-            try fileManager.moveItem(at: tempArchiveURL, to: sourceURL)
-            
-        }.value
-        scanLibrary()
-    }
     func reorderPages(_ pdf: ConvertedPDF, newOrder: [Int]) async throws -> URL {
         // Physical Reorder: We create a new CBZ with files renamed to match the new order.
         let fileManager = FileManager.default

@@ -46,7 +46,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
     var name: String
     let url: URL
     var pageCount: Int
-    let fileSize: Int64
+    var fileSize: Int64
     var metadata: PDFMetadata
     var collectionId: UUID?
     var isFavorite: Bool = false
