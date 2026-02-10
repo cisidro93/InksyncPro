@@ -4,7 +4,7 @@ import SwiftUI
 struct InksyncProApp: App {
     var body: some Scene {
         WindowGroup { 
-            SplashScreenView()
+            ContentView()
                 .environmentObject(ConversionManager())
         }
     }

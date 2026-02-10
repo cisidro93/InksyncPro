@@ -151,7 +151,12 @@ struct OnboardingPageView: View {
             
             // Icon - Use AppLogoAnimated for "Welcome" page, SF Symbol for others
             if page.title == "Welcome to InkSync Pro" {
-                AppLogoAnimated(size: 120)
+                Image("AppLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 120, height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .shadow(radius: 10)
                     .scaleEffect(isAnimating ? 1.0 : 0.8)
                     .opacity(isAnimating ? 1.0 : 0.3)
                     .animation(.spring(response: 0.6, dampingFraction: 0.7), value: isAnimating)

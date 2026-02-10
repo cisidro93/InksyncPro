@@ -331,6 +331,13 @@ class ConversionManager: ObservableObject {
     /// Detect content type from file extension and content analysis
     func detectContentType(from url: URL) -> ContentType {
         let ext = url.pathExtension.lowercased()
+        let filename = url.deletingPathExtension().lastPathComponent.lowercased()
+        
+        // 1. Strong Keyword Check for Manga
+        let mangaKeywords = ["manga", "tankobon", "volume", "chapter", "inuyasha", "shonen", "shoujo", "seinen", "josei"]
+        if mangaKeywords.contains(where: { filename.contains($0) }) {
+             return .manga
+        }
         
         switch ext {
         case "cbz", "cbr", "zip":
@@ -427,6 +434,7 @@ class ConversionManager: ObservableObject {
             await MainActor.run {
                 processingStatus = "PDF import failed: \(error.localizedDescription)"
                 Logger.shared.log("PDF import error: \(error)", category: "Import")
+                self.appAlert = AppAlert(title: "Import Failed", message: "Could not import PDF: \(error.localizedDescription)")
             }
             // Clear error after 3 seconds
             try? await Task.sleep(nanoseconds: 3_000_000_000)

@@ -29,7 +29,9 @@ struct ContentView: View {
     @State private var webExportPDF: ConvertedPDF?
     
     // ✅ Onboarding State
-    @AppStorage("hasShownOnboarding") private var hasShownOnboarding = false
+    // ✅ Onboarding State
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @State private var showOnboarding = false
 
     var body: some View {
         Group {
@@ -78,6 +80,14 @@ struct ContentView: View {
                  await conversionManager.processImportedFiles(urls: [url])
                  await conversionManager.processingStatus = ""
              }
+    }
+    .sheet(isPresented: $showOnboarding) {
+        OnboardingView(showOnboarding: $showOnboarding)
+            .environmentObject(conversionManager)
+    }
+    .onAppear {
+        if !hasCompletedOnboarding {
+            showOnboarding = true
         }
     }
     
@@ -369,6 +379,9 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This file is over 50MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
+        }
+        .alert(item: $conversionManager.appAlert) { alert in
+            Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
     }
 }
