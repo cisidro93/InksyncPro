@@ -242,6 +242,15 @@ class ConversionManager: ObservableObject {
         for url in urls {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
+            // \u2705 NEW: Handle PDF imports differently
+            let ext = url.pathExtension.lowercased()
+            if ext == "pdf" {
+                await importPDF(url: url)
+                continue
+            }
+            
+            // Existing CBZ/CBR/ZIP handling
             do {
                 let fileName = url.lastPathComponent
                 let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -251,6 +260,114 @@ class ConversionManager: ObservableObject {
             } catch { print("Import Failed: \(error)") }
         }
         scanLibrary()
+    }
+    
+    // MARK: - \u2705 PDF Import Support
+    
+    /// Detect content type from file extension and content analysis
+    func detectContentType(from url: URL) -> ContentType {
+        let ext = url.pathExtension.lowercased()
+        
+        switch ext {
+        case "cbz", "cbr", "zip":
+            // Check if manga mode is enabled globally
+            return conversionSettings.mangaMode ? .manga : .comic
+            
+        case "pdf":
+            // Analyze PDF to determine if it's a book or comic
+            let importer = PDFImporter()
+            let hasText = importer.hasTextContent(url: url)
+            return hasText ? .book : .hybrid
+            
+        case "epub":
+            // Future: Parse EPUB metadata
+            return .book
+            
+        default:
+            return .hybrid
+        }
+    }
+    
+    /// Import PDF by extracting pages as images and creating CBZ
+    func importPDF(url: URL) async {
+        let fileName = url.deletingPathExtension().lastPathComponent
+        await MainActor.run { processingStatus = "Importing \(fileName)..." }
+        
+        do {
+            let importer = PDFImporter()
+            
+            // Extract pages as images at 300 DPI
+            let images = try await importer.importPDF(url: url, dpi: 300, compressionQuality: conversionSettings.compressionQuality)
+            
+            // Create temp directory for images
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            
+            // Save images as JPEG
+            for (index, image) in images.enumerated() {
+                let imageName = String(format: "page_%04d.jpg", index + 1)
+                let imageURL = tempDir.appendingPathComponent(imageName)
+                
+                if let data = image.jpegData(compressionQuality: conversionSettings.compressionQuality.value) {
+                    try data.write(to: imageURL)
+                }
+            }
+            
+            // Create CBZ from images (reuse existing zip logic)
+            let cbzName = fileName + ".cbz"
+            let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let cbzURL = docDir.appendingPathComponent(cbzName)
+            
+            // Remove existing if present
+            if FileManager.default.fileExists(atPath: cbzURL.path) {
+                try FileManager.default.removeItem(at: cbzURL)
+            }
+            
+            // Zip temp directory into CBZ
+            try await ZipUtilities.zipDirectory(tempDir, to: cbzURL)
+            
+            // Detect content type
+            let contentType = detectContentType(from: url)
+            
+            // Get file size
+            let attributes = try FileManager.default.attributesOfItem(atPath: cbzURL.path)
+            let fileSize = attributes[.size] as? Int64 ?? 0
+            
+            // Create ConvertedPDF entry
+            var newPDF = ConvertedPDF(
+                id: UUID(),
+                name: fileName,
+                url: cbzURL,
+                pageCount: images.count,
+                fileSize: fileSize,
+                metadata: PDFMetadata(title: fileName),
+                contentType: contentType
+            )
+            
+            // Extract cover for thumbnail
+            if let coverData = images.first?.jpegData(compressionQuality: 0.8) {
+                newPDF.coverImageData = coverData
+            }
+            
+            await MainActor.run {
+                convertedPDFs.append(newPDF)
+                saveLibrary()
+                processingStatus = ""
+                Logger.shared.log("Imported PDF: \(fileName) as \(contentType.rawValue)", category: "Import")
+            }
+            
+            // Cleanup temp directory
+            try? FileManager.default.removeItem(at: tempDir)
+            
+        } catch {
+            await MainActor.run {
+                processingStatus = "PDF import failed: \(error.localizedDescription)"
+                Logger.shared.log("PDF import error: \(error)", category: "Import")
+            }
+            // Clear error after 3 seconds
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await MainActor.run { processingStatus = "" }
+        }
     }
     
     // MARK: - STABLE FILE EXTRACTION
