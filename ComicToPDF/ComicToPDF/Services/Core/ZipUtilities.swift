@@ -71,4 +71,46 @@ struct ZipUtilities {
             }
         }
     }
+    
+    /// Zips a directory into a single archive file
+    /// - Parameters:
+    ///   - sourceURL: The directory to zip
+    ///   - destinationURL: The destination URL for the zip file
+    static func zipDirectory(_ sourceURL: URL, to destinationURL: URL) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let fileManager = FileManager.default
+                    
+                    // Remove existing file if present
+                    if fileManager.fileExists(atPath: destinationURL.path) {
+                        try fileManager.removeItem(at: destinationURL)
+                    }
+                    
+                    // Creates a new archive at destinationURL
+                    guard let archive = try? Archive(url: destinationURL, accessMode: .create) else {
+                        throw NSError(domain: "ZipError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create archive at \(destinationURL.path)"])
+                    }
+                    
+                    // Get all files in source directory
+                    let fileURLs = try fileManager.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: nil)
+                    
+                    for fileURL in fileURLs {
+                        let fileName = fileURL.lastPathComponent
+                        // Skip hidden system files
+                        if fileName.hasPrefix(".") || fileName == "__MACOSX" { continue }
+                        
+                        try archive.addEntry(with: fileName, relativeTo: sourceURL)
+                    }
+                    
+                    print("✅ Successfully zipped to \(destinationURL.lastPathComponent)")
+                    continuation.resume()
+                    
+                } catch {
+                    print("❌ Zipping failed: \(error)")
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
 }
