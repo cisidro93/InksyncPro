@@ -365,10 +365,15 @@ class ConversionManager: ObservableObject {
         await MainActor.run { processingStatus = "Importing \(fileName)..." }
         
         do {
+            // \u2705 CRITICAL FIX: Copy PDF to temp to avoid Security Scope loss during long import
+            let tempPDFURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
+            try FileManager.default.copyItem(at: url, to: tempPDFURL)
+            defer { try? FileManager.default.removeItem(at: tempPDFURL) }
+            
             let importer = PDFImporter()
             
             // Extract pages as images at 300 DPI
-            let images = try await importer.importPDF(url: url, dpi: 300, compressionQuality: conversionSettings.compressionQuality)
+            let images = try await importer.importPDF(url: tempPDFURL, dpi: 300, compressionQuality: conversionSettings.compressionQuality)
             
             // Create temp directory for images
             let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
