@@ -4,6 +4,7 @@ struct LogsView: View {
     @Environment(\.dismiss) var dismiss
     @State private var logs: String = "Loading..."
     @State private var showingCopiedAlert = false
+    @State private var isSharing = false
     
     var body: some View {
         ScrollView {
@@ -23,6 +24,9 @@ struct LogsView: View {
                 Menu {
                     Button(action: refreshLogs) {
                         Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    Button(action: { isSharing = true }) {
+                        Label("Share Log File", systemImage: "square.and.arrow.up")
                     }
                     Button(action: copyToClipboard) {
                         Label("Copy All", systemImage: "doc.on.doc")
@@ -50,6 +54,9 @@ struct LogsView: View {
                 }
             }
         )
+        .sheet(isPresented: $isSharing) {
+             ShareSheet(activityItems: [Logger.shared.logFileURL])
+        }
     }
     
     private func refreshLogs() {

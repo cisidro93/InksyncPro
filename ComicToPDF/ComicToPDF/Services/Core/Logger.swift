@@ -11,7 +11,7 @@ class Logger: ObservableObject {
     
     private init() {}
     
-    private var logFileURL: URL {
+    var logFileURL: URL {
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docDir.appendingPathComponent(logFileName)
     }
