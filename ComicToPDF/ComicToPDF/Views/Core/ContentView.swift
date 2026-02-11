@@ -90,6 +90,44 @@ struct ContentView: View {
             showOnboarding = true
         }
     }
+    .sheet(isPresented: $showingBatchMergeReorder) {
+        BatchMergeReorderView(selectedFiles: $batchMergeItems)
+    }
+    .confirmationDialog("Large File Detected", isPresented: $showingLargeFileAlert, titleVisibility: .visible) {
+        Button("Save to 'Downloads' & Open Website") {
+            if let pdf = largeFilePDF {
+                Task {
+                    if let exportURL = await conversionManager.exportForCloudSync(pdf) {
+                         await MainActor.run {
+                             var tempPDF = pdf
+                             tempPDF = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
+                             webExportPDF = tempPDF
+                             showingWebExport = true
+                         }
+                    }
+                }
+            }
+        }
+        Button("Share via System Sheet") {
+            if let pdf = largeFilePDF {
+                Task {
+                    if let exportURL = await conversionManager.exportForCloudSync(pdf) {
+                        await MainActor.run {
+                            let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
+                            pdfToShare = wrapper
+                        }
+                    }
+                }
+            }
+        }
+        Button("Cancel", role: .cancel) { }
+    } message: {
+        Text("This file is over 50MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
+    }
+    .alert(item: $conversionManager.appAlert) { alert in
+        Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+    }
+}
     
     var iPhoneLayout: some View {
         TabView(selection: $selectedTab) {
@@ -328,61 +366,7 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
-        .sheet(isPresented: $showingBatchMergeReorder) {
-            BatchMergeReorderView(selectedFiles: $batchMergeItems)
-        }
 
-        // ✅ Updated confirmationDialog with Workflow
-        .confirmationDialog("Large File Detected", isPresented: $showingLargeFileAlert, titleVisibility: .visible) {
-            Button("Save to 'Downloads' & Open Website") {
-                // Start Save & Open Flow
-                if let pdf = largeFilePDF {
-                    Task {
-                        // 1. Generate Metadata-Embedded File
-                        if let exportURL = await conversionManager.exportForCloudSync(pdf) {
-                             await MainActor.run {
-                                 // We need to pass the URL to the exporter. 
-                                 // But GenericFileDocument takes a URL.
-                                 // We update the state to point to this new temp file.
-                                 // NOTE: We need a way to pass this URL to .fileExporter
-                                 // We can just update webExportPDF to be a dummy struct with this URL?
-                                 // Or better, add a separate state for 'exportURL' and update GenericFileDocument call.
-                                 // For now, let's Mutate the PDF struct in memory to point to the temp URL? 
-                                 // No, that's dangerous.
-                                 // Let's rely on 'webExportPDF' but we need to change how GenericFileDocument uses it.
-                                 // Actually, we can just introduce a specific 'tempExportURL' state.
-                                 // But for minimal changes:
-                                 var tempPDF = pdf
-                                 tempPDF = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata) 
-                                 webExportPDF = tempPDF
-                                 showingWebExport = true
-                             }
-                        }
-                    }
-                }
-            }
-            Button("Share via System Sheet") {
-                if let pdf = largeFilePDF {
-                    Task {
-                        if let exportURL = await conversionManager.exportForCloudSync(pdf) {
-                            await MainActor.run {
-                                // Create a dummy PDF wrapper pointing to temp file for the sheet
-                                var tempPDF = pdf
-                                // reusing existing init logic to swap URL
-                                let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
-                                pdfToShare = wrapper
-                            }
-                        }
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This file is over 50MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
-        }
-        .alert(item: $conversionManager.appAlert) { alert in
-            Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
-        }
     }
 }
 
