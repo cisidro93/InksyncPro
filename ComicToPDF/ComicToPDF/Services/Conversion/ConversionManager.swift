@@ -371,21 +371,39 @@ class ConversionManager: ObservableObject {
             defer { try? FileManager.default.removeItem(at: tempPDFURL) }
             
             let importer = PDFImporter()
+            let pageCount = importer.getPageCount(url: tempPDFURL)
             
-            // Extract pages as images at 300 DPI
-            let images = try await importer.importPDF(url: tempPDFURL, dpi: 300, compressionQuality: conversionSettings.compressionQuality)
+            guard pageCount > 0 else { throw PDFImporter.ImportError.emptyPDF }
             
             // Create temp directory for images
             let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
             
-            // Save images as JPEG
-            for (index, image) in images.enumerated() {
-                let imageName = String(format: "page_%04d.jpg", index + 1)
-                let imageURL = tempDir.appendingPathComponent(imageName)
+            var extractedCount = 0
+            
+            // \u2705 CRITICAL FIX: Stream processing to prevent OOM
+            // Process one page at a time, save to disk, and release memory
+            for index in 0..<pageCount {
+                // Check for cancellation
+                if Task.isCancelled { break }
                 
-                if let data = image.jpegData(compressionQuality: conversionSettings.compressionQuality.value) {
-                    try data.write(to: imageURL)
+                // Update Progress
+                let progress = Double(index + 1) / Double(pageCount)
+                await MainActor.run {
+                    processingStatus = "Importing Page \(index + 1) of \(pageCount)"
+                    conversionProgress = progress
+                }
+                
+                // Autoreleasepool ensures UIImage is deallocated immediately after loop iteration
+                try autoreleasepool {
+                    let image = try importer.extractPage(url: tempPDFURL, pageIndex: index, dpi: 300)
+                    let imageName = String(format: "page_%04d.jpg", index + 1)
+                    let imageURL = tempDir.appendingPathComponent(imageName)
+                    
+                    if let data = image.jpegData(compressionQuality: conversionSettings.compressionQuality.value) {
+                        try data.write(to: imageURL)
+                        extractedCount += 1
+                    }
                 }
             }
             
@@ -414,14 +432,15 @@ class ConversionManager: ObservableObject {
                 id: UUID(),
                 name: fileName,
                 url: cbzURL,
-                pageCount: images.count,
+                pageCount: extractedCount,
                 fileSize: fileSize,
                 metadata: PDFMetadata(title: fileName),
                 contentType: contentType
             )
             
-            // Extract cover for thumbnail
-            if let coverData = images.first?.jpegData(compressionQuality: 0.8) {
+            // Extract cover for thumbnail (Reusable from first page file)
+            let firstPageURL = tempDir.appendingPathComponent("page_0001.jpg")
+            if let coverData = try? Data(contentsOf: firstPageURL) {
                 newPDF.coverImageData = coverData
             }
             
@@ -429,7 +448,7 @@ class ConversionManager: ObservableObject {
                 convertedPDFs.append(newPDF)
                 saveLibrary()
                 processingStatus = ""
-                Logger.shared.log("Imported PDF: \(fileName) as \(contentType.rawValue)", category: "Import")
+                Logger.shared.log("Imported PDF: \(fileName) (\(extractedCount) pages) as \(contentType.rawValue)", category: "Import")
             }
             
             // Cleanup temp directory

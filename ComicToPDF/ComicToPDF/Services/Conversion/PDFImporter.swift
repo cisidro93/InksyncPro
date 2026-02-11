@@ -5,38 +5,34 @@ import Foundation
 /// PDF Import Engine: Extracts pages from PDF documents as high-resolution images
 class PDFImporter {
     
-    /// Import PDF and extract all pages as images
-    /// - Parameters:
-    ///   - url: PDF file URL
-    ///   - dpi: Rendering resolution (default 300 for print quality)
-    ///   - compressionQuality: JPEG compression quality
-    /// - Returns: Array of UIImages, one per page
+    /// Get total page count
+    func getPageCount(url: URL) -> Int {
+        guard let pdf = PDFDocument(url: url) else { return 0 }
+        return pdf.pageCount
+    }
+    
+    /// Extract a single page as an image (Memory Safe)
+    func extractPage(url: URL, pageIndex: Int, dpi: CGFloat = 300) throws -> UIImage {
+        // use autoreleasepool block in caller if doing tight loop
+        guard let pdf = PDFDocument(url: url) else { throw ImportError.invalidPDF }
+        guard let page = pdf.page(at: pageIndex) else { throw ImportError.pageNotFound }
+        return renderPage(page, dpi: dpi)
+    }
+    
+    /// Legacy: Import all (WARNING: High Memory Usage)
     func importPDF(url: URL, dpi: CGFloat = 300, compressionQuality: CompressionPreset = .balanced) async throws -> [UIImage] {
-        guard let pdf = PDFDocument(url: url) else {
-            throw ImportError.invalidPDF
-        }
-        
+        guard let pdf = PDFDocument(url: url) else { throw ImportError.invalidPDF }
         let pageCount = pdf.pageCount
-        guard pageCount > 0 else {
-            throw ImportError.emptyPDF
-        }
+        guard pageCount > 0 else { throw ImportError.emptyPDF }
         
         var extractedImages: [UIImage] = []
         
         for pageIndex in 0..<pageCount {
-            guard let page = pdf.page(at: pageIndex) else {
-                // Skip corrupted pages
-                continue
+            if let page = pdf.page(at: pageIndex) {
+                let image = renderPage(page, dpi: dpi)
+                extractedImages.append(image)
             }
-            
-            let image = renderPage(page, dpi: dpi)
-            extractedImages.append(image)
         }
-        
-        guard !extractedImages.isEmpty else {
-            throw ImportError.extractionFailed
-        }
-        
         return extractedImages
     }
     
