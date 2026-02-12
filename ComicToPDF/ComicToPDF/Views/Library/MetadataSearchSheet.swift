@@ -127,10 +127,8 @@ struct MetadataSearchSheet: View {
                 
                 // Update Cover Art
                 if let data = coverData {
-                    if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        conversionManager.convertedPDFs[index].coverImageData = data
-                        conversionManager.savePDFs()
-                    }
+                    conversionManager.saveCoverImage(data, for: pdf)
+                    conversionManager.savePDFs()
                 }
                 
                 dismiss()

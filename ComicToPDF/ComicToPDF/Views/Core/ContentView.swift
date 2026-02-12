@@ -127,25 +127,24 @@ struct ContentView: View {
     .alert(item: $conversionManager.appAlert) { alert in
         Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
     }
-    .overlay {
+    .overlay(alignment: .bottom) {
         if !conversionManager.processingStatus.isEmpty {
-            ZStack {
-                Color.black.opacity(0.4).ignoresSafeArea()
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(1.5)
-                    Text(conversionManager.processingStatus)
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(24)
-                .background(Color(red: 28/255, green: 28/255, blue: 30/255))
-                .cornerRadius(16)
-                .shadow(radius: 20)
-                .padding(40)
+            HStack(spacing: 12) {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                Text(conversionManager.processingStatus)
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                    .lineLimit(1)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color(red: 28/255, green: 28/255, blue: 30/255))
+            .cornerRadius(30)
+            .shadow(radius: 10)
+            .padding(.bottom, 60) // Lift above tab bar if present
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.spring(), value: conversionManager.processingStatus)
         }
     }
 }

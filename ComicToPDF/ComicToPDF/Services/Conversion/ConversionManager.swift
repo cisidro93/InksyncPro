@@ -42,6 +42,7 @@ class ConversionManager: ObservableObject {
         scanLibrary()
         createWelcomeFile()
         performStartupOptimization()
+        Task { await MainActor.run { self.migrateCoversToDisk() } }
     }
     
     private func performStartupOptimization() {
@@ -138,6 +139,94 @@ class ConversionManager: ObservableObject {
         self.panelOverrides[pdfID] = panels
         self.saveLibrary()
         print("✅ Restored panels for imported file (ID: \(pdfID))")
+    }
+    
+    // MARK: - Cover Image Management (Memory Optimization)
+    
+    func getCoverURL(for pdf: ConvertedPDF) -> URL? {
+        // Filename: cover_{UUID}.jpg
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
+    }
+    
+    /// Migrates legacy Data-based covers to disk-based storage
+    func migrateCoversToDisk() {
+        print("💾 [Migration] Checking for legacy cover data...")
+        var updated = false
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        
+        for i in 0..<convertedPDFs.count {
+            if let data = convertedPDFs[i].coverImageData {
+                let coverURL = docDir.appendingPathComponent("cover_\(convertedPDFs[i].id.uuidString).jpg")
+                
+                // Write to disk
+                try? data.write(to: coverURL)
+                
+                // Clear from memory
+                convertedPDFs[i].coverImageData = nil
+                updated = true
+                print("   -> Migrated cover: \(convertedPDFs[i].name)")
+            }
+        }
+        
+        if updated {
+            saveLibrary()
+            print("💾 [Migration] Cover migration complete. Library saved.")
+        }
+    }
+    
+    /// Thread-safe, memory-efficient cover loader
+    func loadCoverThumbnail(for pdf: ConvertedPDF) async -> UIImage? {
+        let key = pdf.id.uuidString as NSString
+        
+        // 1. Check Cache
+        if let cached = thumbnailCache.object(forKey: key) {
+            return cached
+        }
+        
+        // 2. Load from Disk (Background Thread)
+        return await Task.detached(priority: .userInitiated) {
+            // Path: cover_{UUID}.jpg
+            if let url = await self.getCoverURL(for: pdf),
+               FileManager.default.fileExists(atPath: url.path) {
+                
+                if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
+                    let thumbnail = image.preparingThumbnail(of: CGSize(width: 80, height: 120)) ?? image
+                    await MainActor.run {
+                        self.thumbnailCache.setObject(thumbnail, forKey: key)
+                    }
+                    return thumbnail
+                }
+            }
+            
+            // 3. Fallback: Check legacy data (Migration in progress?)
+            if let data = pdf.coverImageData, let image = UIImage(data: data) {
+                 return image
+            }
+            
+            return nil
+        }.value
+    }
+    
+    /// Save cover image to disk and update cache
+    func saveCoverImage(_ data: Data, for pdf: ConvertedPDF) {
+        let coverFilename = "cover_\(pdf.id.uuidString).jpg"
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let coverURL = docDir.appendingPathComponent(coverFilename)
+        
+        try? data.write(to: coverURL)
+        
+        // Update Cache
+        if let image = UIImage(data: data) {
+            let thumbnail = image.preparingThumbnail(of: CGSize(width: 80, height: 120)) ?? image
+            let key = pdf.id.uuidString as NSString
+            thumbnailCache.setObject(thumbnail, forKey: key)
+        }
+        
+        // Ensure memory property is nil (if we are updating an existing object that might have it)
+        if let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs[index].coverImageData = nil
+        }
     }
     
     // ✅ NEW: Centralized manifest logic to fix panel loss
@@ -441,7 +530,17 @@ class ConversionManager: ObservableObject {
             // Extract cover for thumbnail (Reusable from first page file)
             let firstPageURL = tempDir.appendingPathComponent("page_0001.jpg")
             if let coverData = try? Data(contentsOf: firstPageURL) {
-                newPDF.coverImageData = coverData
+                // \u2705 Memory Optimization: Save cover to disk, NOT in struct
+                let coverFilename = "cover_\(newPDF.id.uuidString).jpg"
+                let coverURL = docDir.appendingPathComponent(coverFilename)
+                try? coverData.write(to: coverURL)
+                
+                // Set cache immediately so UI update is instant
+                if let image = UIImage(data: coverData) {
+                   // Downsample for cache if needed, but for now just cache
+                   let thumbnail = image.preparingThumbnail(of: CGSize(width: 80, height: 120)) ?? image
+                   thumbnailCache.setObject(thumbnail, forKey: newPDF.id.uuidString as NSString)
+                }
             }
             
             await MainActor.run {

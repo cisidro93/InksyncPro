@@ -434,11 +434,13 @@ struct ModernFileRow: View {
     let pdf: ConvertedPDF
     let isSelected: Bool
     let isBatch: Bool
+    @EnvironmentObject var conversionManager: ConversionManager
+    @State private var coverImage: UIImage?
     
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                if let data = pdf.coverImageData, let img = UIImage(data: data) {
+                if let img = coverImage {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -451,6 +453,12 @@ struct ModernFileRow: View {
             .frame(width: 40, height: 56)
             .cornerRadius(4)
             .clipped()
+            .task {
+                // \u2705 Lazy Load Cover
+                if coverImage == nil {
+                    coverImage = await conversionManager.loadCoverThumbnail(for: pdf)
+                }
+            }
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(pdf.name)

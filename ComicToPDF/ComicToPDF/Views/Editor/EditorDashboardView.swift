@@ -62,7 +62,7 @@ struct EditorRowView: View {
         Button(action: action) {
             HStack(spacing: 16) {
                 // Cover
-               ComicCoverLoader(url: pdf.url)
+               ComicCoverLoader(pdf: pdf)
                     .frame(width: 60, height: 90)
                     .cornerRadius(8)
                     .shadow(radius: 2)
@@ -127,7 +127,7 @@ struct EditorRowView: View {
 }
 
 struct ComicCoverLoader: View {
-    let url: URL
+    let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var image: UIImage?
     
@@ -146,44 +146,10 @@ struct ComicCoverLoader: View {
                     )
             }
         }
-        .onAppear {
-            loadCover()
-        }
-    }
-    
-    private func loadCover() {
-        if let cached = conversionManager.thumbnailCache.object(forKey: url.path as NSString) {
-            self.image = cached
-        } else {
-             // Fallback: Try to use the coverImageData from PDF if available (fastest)
-             // We can find the PDF object in conversionManager lists if needed, but 'url' is our key.
-             // Actually, the calling view 'EditorRowView' has the 'pdf' object. 
-             // Ideally we pass the whole PDF, but URL is what we have here.
-             // We will try a background extraction if cache miss.
-             
-             Task {
-                 if let existingPDF = conversionManager.convertedPDFs.first(where: { $0.url == url }),
-                    let data = existingPDF.coverImageData,
-                    let uiImage = UIImage(data: data) {
-                     await MainActor.run {
-                         self.image = uiImage
-                         conversionManager.thumbnailCache.setObject(uiImage, forKey: url.path as NSString)
-                     }
-                     return
-                 }
-                 
-                 // If no data, try extracting
-                 let generated = await Task.detached {
-                      return ConversionManager.extractCoverImageStatic(from: url)
-                 }.value
-                 
-                 if let generated {
-                     await MainActor.run {
-                         self.image = generated
-                         conversionManager.thumbnailCache.setObject(generated, forKey: url.path as NSString)
-                     }
-                 }
-             }
+        .task {
+            if image == nil {
+                image = await conversionManager.loadCoverThumbnail(for: pdf)
+            }
         }
     }
 }
