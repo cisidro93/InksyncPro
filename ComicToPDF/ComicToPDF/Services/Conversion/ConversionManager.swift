@@ -399,7 +399,9 @@ class ConversionManager: ObservableObject {
             // \u2705 NEW: Handle PDF imports differently
             let ext = url.pathExtension.lowercased()
             if ext == "pdf" {
-                await importPDF(url: url)
+                Task {
+                    await importPDF(url: url)
+                }
                 continue
             }
             
@@ -1523,7 +1525,11 @@ class ConversionManager: ObservableObject {
         try? fileManager.removeItem(at: exportURL)
         
         isConverting = true; processingStatus = "Preparing Export..."; statusMessage = "Embedding Metadata..."
-        defer { isConverting = false; statusMessage = nil }
+        defer { 
+            isConverting = false 
+            statusMessage = nil 
+            Task { @MainActor in self.processingStatus = "" }
+        }
         
         do {
             Logger.shared.log("Starting Cloud Export for \(pdf.name)", category: "Export")
