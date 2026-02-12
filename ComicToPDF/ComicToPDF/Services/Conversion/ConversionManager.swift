@@ -460,64 +460,102 @@ class ConversionManager: ObservableObject {
             defer { try? FileManager.default.removeItem(at: tempPDFURL) }
             
             let importer = PDFImporter()
-            let pageCount = importer.getPageCount(url: tempPDFURL)
+            // \u2705 Capture settings MainActor-side to pass to background task
+            let settings = conversionSettings
+            // \u2705 Capture self (weakly or just rely on class instance if we need)
+            // Ideally we need to access MainActor properties via await MainActor.run or capture them before.
+            // We pass 'settings' into the closure context clearly.
+            let conversionManager = self 
             
-            guard pageCount > 0 else { throw PDFImporter.ImportError.emptyPDF }
-            
-            // Create temp directory for images
-            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            
-            var extractedCount = 0
-            
-            // \u2705 CRITICAL FIX: Stream processing to prevent OOM
-            // Process one page at a time, save to disk, and release memory
-            for index in 0..<pageCount {
-                // Check for cancellation
-                if Task.isCancelled { break }
+            // 3. Offload Heavy Lifting to Background Thread (Detached Task)
+            let (extractedCount, newCoverData) = try await Task.detached(priority: .userInitiated) { () -> (Int, Data?) in
+                let pageCount = importer.getPageCount(url: tempPDFURL)
+                guard pageCount > 0 else { throw PDFImporter.ImportError.emptyPDF }
                 
-                // Update Progress
-                let progress = Double(index + 1) / Double(pageCount)
-                await MainActor.run {
-                    processingStatus = "Importing Page \(index + 1) of \(pageCount)"
-                    conversionProgress = progress
-                }
+                // Create temp directory for images
+                let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: tempDir) }
                 
-                // Autoreleasepool ensures UIImage is deallocated immediately after loop iteration
-                try autoreleasepool {
-                    let image = try importer.extractPage(url: tempPDFURL, pageIndex: index, dpi: 300)
-                    let imageName = String(format: "page_%04d.jpg", index + 1)
-                    let imageURL = tempDir.appendingPathComponent(imageName)
+                // Enterprise Parallel Processing (Bounded Concurrency)
+                // iPhone 14 Pro Max has 6 cores. We refrain from maxing out to avoid thermal throttling/OOM.
+                let maxConcurrent = 4 
+                
+                return try await withThrowingTaskGroup(of: (Int, Data?).self) { group in
+                    var processedCount = 0
+                    var firstPageData: Data? = nil
                     
-                    if let data = image.jpegData(compressionQuality: conversionSettings.compressionQuality.value) {
-                        try data.write(to: imageURL)
-                        extractedCount += 1
+                    for index in 0..<pageCount {
+                        // Rate Limiter
+                        if index >= maxConcurrent {
+                           if let result = try await group.next() {
+                               if result.0 == 0 { firstPageData = result.1 }
+                               processedCount += 1
+                               
+                               // Update Progress on Main Actor
+                               let progress = Double(processedCount) / Double(pageCount)
+                               await MainActor.run {
+                                   conversionManager.processingStatus = "Importing Page \(processedCount) of \(pageCount)"
+                                   conversionManager.conversionProgress = progress
+                               }
+                           }
+                        }
+                        
+                        group.addTask {
+                             // Autoreleasepool essential for image ops
+                             try autoreleasepool {
+                                let image = try importer.extractPage(url: tempPDFURL, pageIndex: index, dpi: 300)
+                                let imageName = String(format: "page_%04d.jpg", index + 1)
+                                let imageURL = tempDir.appendingPathComponent(imageName)
+                                
+                                if let data = image.jpegData(compressionQuality: settings.compressionQuality.value) {
+                                    try data.write(to: imageURL)
+                                    // Return cover data if first page
+                                    return (index, index == 0 ? data : nil)
+                                }
+                                return (index, nil)
+                             }
+                        }
                     }
+                    
+                    // Harvest remaining tasks
+                    for try await result in group {
+                        if result.0 == 0 { firstPageData = result.1 }
+                        processedCount += 1
+                        let progress = Double(processedCount) / Double(pageCount)
+                        await MainActor.run {
+                            conversionManager.processingStatus = "Importing Page \(processedCount) of \(pageCount)"
+                            conversionManager.conversionProgress = progress
+                        }
+                    }
+                    
+                    // Zip temp directory into CBZ (Back on background thread)
+                    let cbzName = fileName + ".cbz"
+                    let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    let cbzURL = docDir.appendingPathComponent(cbzName)
+                    
+                    if FileManager.default.fileExists(atPath: cbzURL.path) {
+                        try FileManager.default.removeItem(at: cbzURL)
+                    }
+                    
+                    try await ZipUtilities.zipDirectory(tempDir, to: cbzURL)
+                    
+                    return (pageCount, firstPageData)
                 }
-            }
-            
-            // Create CBZ from images (reuse existing zip logic)
-            let cbzName = fileName + ".cbz"
-            let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let cbzURL = docDir.appendingPathComponent(cbzName)
-            
-            // Remove existing if present
-            if FileManager.default.fileExists(atPath: cbzURL.path) {
-                try FileManager.default.removeItem(at: cbzURL)
-            }
-            
-            // Zip temp directory into CBZ
-            try await ZipUtilities.zipDirectory(tempDir, to: cbzURL)
+            }.value
             
             // Detect content type
             let contentType = detectContentType(from: url)
             
             // Get file size
+            let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let cbzName = fileName + ".cbz"
+            let cbzURL = docDir.appendingPathComponent(cbzName)
             let attributes = try FileManager.default.attributesOfItem(atPath: cbzURL.path)
             let fileSize = attributes[.size] as? Int64 ?? 0
             
             // Create ConvertedPDF entry
-            var newPDF = ConvertedPDF(
+            let newPDF = ConvertedPDF(
                 id: UUID(),
                 name: fileName,
                 url: cbzURL,
@@ -527,20 +565,9 @@ class ConversionManager: ObservableObject {
                 contentType: contentType
             )
             
-            // Extract cover for thumbnail (Reusable from first page file)
-            let firstPageURL = tempDir.appendingPathComponent("page_0001.jpg")
-            if let coverData = try? Data(contentsOf: firstPageURL) {
-                // \u2705 Memory Optimization: Save cover to disk, NOT in struct
-                let coverFilename = "cover_\(newPDF.id.uuidString).jpg"
-                let coverURL = docDir.appendingPathComponent(coverFilename)
-                try? coverData.write(to: coverURL)
-                
-                // Set cache immediately so UI update is instant
-                if let image = UIImage(data: coverData) {
-                   // Downsample for cache if needed, but for now just cache
-                   let thumbnail = image.preparingThumbnail(of: CGSize(width: 80, height: 120)) ?? image
-                   thumbnailCache.setObject(thumbnail, forKey: newPDF.id.uuidString as NSString)
-                }
+            // Save Cover using Helper
+            if let coverData = newCoverData {
+                saveCoverImage(coverData, for: newPDF)
             }
             
             await MainActor.run {
@@ -549,9 +576,6 @@ class ConversionManager: ObservableObject {
                 processingStatus = ""
                 Logger.shared.log("Imported PDF: \(fileName) (\(extractedCount) pages) as \(contentType.rawValue)", category: "Import")
             }
-            
-            // Cleanup temp directory
-            try? FileManager.default.removeItem(at: tempDir)
             
         } catch {
             await MainActor.run {
