@@ -227,6 +227,10 @@ struct PrecisionCanvasView: View {
         .task {
             loadPage()
         }
+        .onDisappear {
+            // ✅ Clean up temporary files when closing editor
+            conversionManager.endSession()
+        }
     }
     
     @State private var isInspectorPresented: Bool = true
@@ -253,10 +257,6 @@ struct PrecisionCanvasView: View {
                      editorState.log("Error: Failed to load page image")
                  }
              }
-        }
-        .onDisappear {
-            // ✅ Clean up temporary files when closing editor
-            conversionManager.endSession()
         }
     }
     
