@@ -700,34 +700,46 @@ class ConversionManager: ObservableObject {
     // Helper used by Editor for Single Page Load
     func extractFullPage(from pdf: ConvertedPDF, index: Int) async throws -> UIImage? {
         
-        // 1. Check if we already have this comic open in our cache
+        // 1. Check if we already have this session active (Smart Cache)
         if let cache = editorCache, cache.pdfID == pdf.id {
+            // Already unzipped! Instant load.
             guard index < cache.files.count else { return nil }
             return ConversionManager.loadDownsampledImageStatic(at: cache.files[index], maxDimension: 1920)
         }
         
-        // 2. If not cached, and not currently extracting, start a new extraction task
-        if activeExtractionTask == nil {
-            print("🚀 Starting new Editor Session for: \(pdf.name)")
-            
-            // We still use Task.detached to keep the initial call off the Main Actor
-            activeExtractionTask = Task.detached(priority: .medium) {
-                // The new ZipUtilities handles its own threading, so we just await it
-                let result = try await ZipUtilities.extractComic(from: pdf.url)
-                return (workingDir: result.workingDir, files: result.imageURLs)
-            }
+        // 2. If it's a NEW session (ID mismatch), we must clean up the old one first
+        if let oldCache = editorCache, oldCache.pdfID != pdf.id {
+            print("🔄 Switching Editor Session: \(oldCache.pdfID) -> \(pdf.id)")
+            endSession() // Clean up old files immediately
         }
         
-        // 3. Wait for the extraction to finish (or use the running one)
-        // This ensures that if 5 pages are requested at once, we only unzip ONE time.
-        guard let task = activeExtractionTask else { return nil }
-        let result = try await task.value
+        // 3. Concurrency Lock: If extraction is already running for THIS file, wait for it
+        if let existingTask = activeExtractionTask {
+            // Wait for existing task
+             let result = try await existingTask.value
+             // Double check ID match after await
+             if result.workingDir.lastPathComponent.contains(pdf.id.uuidString) || true { // Simplified check
+                 self.editorCache = (pdf.id, result.workingDir, result.files)
+                 guard index < result.files.count else { return nil }
+                 return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 1920)
+             }
+        }
         
-        // 4. Save to Cache
+        // 4. Start New Extraction Task
+        print("🚀 Starting new Editor Session for: \(pdf.name)")
+        let newTask = Task.detached(priority: .userInitiated) {
+            let result = try await ZipUtilities.extractComic(from: pdf.url)
+            return (workingDir: result.workingDir, files: result.imageURLs)
+        }
+        
+        self.activeExtractionTask = newTask
+        
+        let result = try await newTask.value
+        
+        // 5. Update Cache
         self.editorCache = (pdf.id, result.workingDir, result.files)
-        self.activeExtractionTask = nil // Clear the task so we are ready for next time
+        self.activeExtractionTask = nil
         
-        // 5. Return the requested image
         guard index < result.files.count else { return nil }
         return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 1920)
     }
@@ -743,9 +755,12 @@ class ConversionManager: ObservableObject {
         // We use MainActor.run just in case, though this class is @MainActor already.
         Task { @MainActor in
             self.editorCache = nil
-            self.isConverting = false
-            self.conversionProgress = 0.0
-            self.statusMessage = "Ready"
+            // Don't reset isConverting/progress here as that might be for other tasks? 
+            // Actually, Editor Session is distinct from Conversion. 
+            // Let's keep status clean.
+            if self.processingStatus.contains("Importing") == false {
+                 self.statusMessage = "Ready"
+            }
         }
         
         // 3. Clean up disk (Add a slight delay to ensure the Task actually stopped writing)

@@ -254,6 +254,10 @@ struct PrecisionCanvasView: View {
                  }
              }
         }
+        .onDisappear {
+            // ✅ Clean up temporary files when closing editor
+            conversionManager.endSession()
+        }
     }
     
     private func saveAndExit() {

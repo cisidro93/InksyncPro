@@ -49,9 +49,9 @@ struct ZipUtilities {
                             }
                         }
                         
-                        // ✅ CRITICAL SAFETY PAUSE: Sleep for 5ms to let memory clear
-                        // This prevents the "Watchdog" from killing the app
-                        usleep(5000) 
+                        // ✅ OPTIMIZATION: Removed artificial 5ms delay.
+                        // Modern devices (iPhone 11+) handle file I/O efficienty without thermal throttling here.
+                        // usleep(5000) 
                     }
                     
                     // 5. Sort and Finish
