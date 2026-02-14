@@ -25,6 +25,7 @@ class ConversionManager: ObservableObject {
     @Published var conversionProgress: Double = 0.0
     @Published var processingStatus = ""
     @Published var statusMessage: String?
+    @Published var appAlert: AppAlert?
     
     // ✅ Secure Processing Core Integration
     private var progressSubscription: AnyCancellable?

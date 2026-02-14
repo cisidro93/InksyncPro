@@ -47,6 +47,9 @@ struct ContentView: View {
         .environmentObject(SecurityManager.shared) // ✅ Security Context
         .environment(\.dynamicTypeSize, conversionManager.conversionSettings.textSize.swiftUIValue)
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
+        .alert(item: $conversionManager.appAlert) { alert in
+            Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
         // ... (existing sheets) ...
     }
     
