@@ -25,8 +25,26 @@ struct NormalizedRect: Codable, Equatable, Hashable {
     var minY: Double { origin.y }
     var maxX: Double { origin.x + size.width }
     var maxY: Double { origin.y + size.height }
-    var width: Double { size.width }
-    var height: Double { size.height }
+    
+    var x: Double {
+        get { origin.x }
+        set { origin.x = newValue }
+    }
+    
+    var y: Double {
+        get { origin.y }
+        set { origin.y = newValue }
+    }
+    
+    var width: Double {
+        get { size.width }
+        set { size.width = newValue }
+    }
+    
+    var height: Double {
+        get { size.height }
+        set { size.height = newValue }
+    }
     
     var center: NormalizedCoordinate {
         NormalizedCoordinate(
