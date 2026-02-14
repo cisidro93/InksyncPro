@@ -153,8 +153,7 @@ struct ConvertView: View {
         }
         .sheet(isPresented: $showingPreview) {
             // ✅ FIX: Default to Page 3 (4th page) for better panel check, fallback to 0 if short doc
-            PanelEditorView(pdf: pdf, pageIndex: 3)
-                .environmentObject(conversionManager)
+            PrecisionCanvasView(pdf: pdf, pageIndex: 3, conversionManager: conversionManager)
         }
     }
     

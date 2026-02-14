@@ -422,12 +422,11 @@ struct PageManagerView: View {
     // ✅ Helper to avoid duplicating the view code
     @ViewBuilder
     func editorView(for index: Int) -> some View {
-        PanelEditorView(
+        PrecisionCanvasView(
             pdf: pdf,
             pageIndex: index,
-            initialImage: selectedImageForEditor
+            conversionManager: conversionManager
         )
-        .environmentObject(conversionManager)
     }
     
     func toggleSelection(_ index: Int) {

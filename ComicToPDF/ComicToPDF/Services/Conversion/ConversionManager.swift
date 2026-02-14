@@ -25,6 +25,62 @@ class ConversionManager: ObservableObject {
     // Guided View Data
     @Published var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]] = [:]
     
+    // ✅ NEW: Precision Canvas Models (Normalized Coordinates)
+    @Published var pageModels: [UUID: [Int: PageModel]] = [:]  
+    
+    // ✅ Helper to get or create PageModel
+    func getPageModel(for pdfID: UUID, pageIndex: Int) -> PageModel {
+        if let model = pageModels[pdfID]?[pageIndex] {
+            return model
+        }
+        
+        // Check legacy overrides and migrate if needed
+        var newModel = PageModel(pageIndex: pageIndex)
+        if let legacyPanels = panelOverrides[pdfID]?[pageIndex] {
+            // We assume legacy panels are stored as 0-1 normalized CGRects (if they were from Vision)
+            // But PanelEditorView uses image-relative coords. 
+            // Actually PanelExtractor.Panel stores boundingBox which IS normalized 0-1 in Vision,
+            // but might be different in Editor.
+            // Let's assume they are 0-1 relative to image.
+            newModel.panels = legacyPanels.map { panel in
+                let rect = panel.boundingBox
+                return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
+            }
+        }
+        return newModel
+    }
+    
+    func savePageModel(_ model: PageModel, for pdfID: UUID) {
+        if pageModels[pdfID] == nil {
+            pageModels[pdfID] = [:]
+        }
+        pageModels[pdfID]?[model.pageIndex] = model
+        
+        // Sync back to legacy panelOverrides for Export/Injection compatibility
+        // Convert NormalizedRect (0-1000 Top-Left) -> Vision Rect (0-1 Bottom-Left)
+        let legacyPanels = model.panels.map { rect -> PanelExtractor.Panel in
+            let x = rect.origin.x / 1000.0
+            let y = rect.origin.y / 1000.0
+            let w = rect.width / 1000.0
+            let h = rect.height / 1000.0
+            
+            // Flip Y back to Vision (Bottom-Left)
+            // y_vision = 1.0 - y_top_left - height
+            let yVision = 1.0 - y - h
+            
+            let visionRect = CGRect(x: x, y: yVision, width: w, height: h)
+            return PanelExtractor.Panel(boundingBox: visionRect)
+        }
+        
+        if panelOverrides[pdfID] == nil {
+            panelOverrides[pdfID] = [:]
+        }
+        panelOverrides[pdfID]?[model.pageIndex] = legacyPanels
+        
+        // Auto-save library changes
+        saveLibrary()
+    }
+    
     // UI State
     @Published var isConverting = false
     @Published var conversionProgress: Double = 0.0

@@ -50,6 +50,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
     var metadata: PDFMetadata
     var collectionId: UUID?
     var isFavorite: Bool = false
+    var isPrivate: Bool = false // ✅ NEW: Privacy Flag
     var coverImageData: Data?
     var contentType: ContentType = .comic  // ✅ NEW: Track content type
     var chapters: [Chapter] = [] // ✅ NEW: Detected Chapters
@@ -59,7 +60,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
         return String(format: "%.1f MB", mb)
     }
     
-    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = []) {
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = []) {
         self.id = id
         self.name = name
         self.url = url
@@ -68,6 +69,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
         self.metadata = metadata
         self.collectionId = collectionId
         self.isFavorite = isFavorite
+        self.isPrivate = isPrivate
         self.coverImageData = coverImageData
         self.contentType = contentType
         self.chapters = chapters
@@ -504,4 +506,16 @@ struct AppAlert: Identifiable {
     let id = UUID()
     let title: String
     let message: String
+}
+
+// MARK: - Editor Models (Precision Canvas)
+
+struct PageModel: Identifiable, Codable, Equatable, Hashable {
+    var id: UUID = UUID()
+    var pageIndex: Int
+    var panels: [NormalizedRect] = []
+    var proposedPanels: [NormalizedRect] = [] // AI Suggestions
+    
+    // We don't store UndoManager here because it's a class and not Codable.
+    // UndoManager will be managed by PageEditorState at runtime.
 }
