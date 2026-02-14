@@ -459,3 +459,128 @@ extension ConversionManager {
         }
     }
 }
+
+// MARK: - Sheet Handlers Extension
+extension View {
+    func librarySheetHandlers(
+        showingDocumentPicker: Binding<Bool>,
+        showingWiFiSheet: Binding<Bool>,
+        showingMergeSheet: Binding<Bool>,
+        showingWebExport: Binding<Bool>,
+        showingAddCollection: Binding<Bool>,
+        showingLargeFileAlert: Binding<Bool>,
+        pdfToShare: Binding<ConvertedPDF?>,
+        pdfToEdit: Binding<ConvertedPDF?>,
+        pdfToRename: Binding<ConvertedPDF?>,
+        sharePayload: Binding<LibraryView.SharePayload?>,
+        webExportPDF: Binding<ConvertedPDF?>,
+        largeFilePDF: Binding<ConvertedPDF?>,
+        newCollectionName: Binding<String>,
+        renameText: Binding<String>,
+        conversionManager: ConversionManager,
+        onImport: @escaping ([URL]) -> Void
+    ) -> some View {
+        self
+            .sheet(isPresented: showingDocumentPicker) {
+                DocumentPicker(onDocumentsPicked: onImport)
+            }
+            .sheet(isPresented: showingWiFiSheet) {
+                WiFiView()
+            }
+            .sheet(item: pdfToShare) { pdf in
+                ShareSheet(activityItems: [pdf.url])
+            }
+            .sheet(item: pdfToEdit) { pdf in
+                PageManagerView(pdf: pdf)
+            }
+            .sheet(item: sharePayload) { payload in
+                ShareSheet(activityItems: payload.items)
+            }
+            .sheet(isPresented: showingMergeSheet) {
+                FileMergeView(initialSelection: []) 
+            }
+            .fileExporter(
+                isPresented: showingWebExport,
+                document: GenericFileDocument(url: webExportPDF.wrappedValue?.url ?? URL(fileURLWithPath: "")),
+                contentType: {
+                    guard let ext = webExportPDF.wrappedValue?.url.pathExtension.lowercased() else { return .pdf }
+                    if ext == "epub" { return .epub }
+                    if ext == "cbz" { return UTType("com.macitbetter.cbz-archive") ?? .zip }
+                    if ext == "cbr" { return UTType("com.macitbetter.cbr-archive") ?? .zip }
+                    if ext == "zip" { return .zip }
+                    return .pdf
+                }(),
+                defaultFilename: webExportPDF.wrappedValue?.name ?? "Comic"
+            ) { result in
+                switch result {
+                case .success:
+                    if let url = URL(string: "https://www.amazon.com/gp/sendtokindle") {
+                        UIApplication.shared.open(url)
+                    }
+                case .failure(let error):
+                    print("Export failed: \(error.localizedDescription)")
+                }
+            }
+            .alert("New Collection", isPresented: showingAddCollection) {
+                TextField("Collection Name", text: newCollectionName)
+                Button("Cancel", role: .cancel) { newCollectionName.wrappedValue = "" }
+                Button("Create") {
+                    if !newCollectionName.wrappedValue.isEmpty {
+                        conversionManager.createCollection(name: newCollectionName.wrappedValue, icon: "folder", color: "Blue")
+                        newCollectionName.wrappedValue = ""
+                    }
+                }
+            }
+            .confirmationDialog("Large File Detected", isPresented: showingLargeFileAlert, titleVisibility: .visible) {
+                Button("Save to 'Downloads' & Open Website") {
+                    if let pdf = largeFilePDF.wrappedValue {
+                        Task {
+                             if let exportURL = await conversionManager.exportForCloudSync(pdf) {
+                                 await MainActor.run {
+                                     let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
+                                     webExportPDF.wrappedValue = wrapper
+                                     showingWebExport.wrappedValue = true
+                                 }
+                             }
+                        }
+                    }
+                }
+                Button("Share via System Sheet") {
+                    if let pdf = largeFilePDF.wrappedValue {
+                        Task {
+                             if let exportURL = await conversionManager.exportForCloudSync(pdf) {
+                                 await MainActor.run {
+                                     let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
+                                     pdfToShare.wrappedValue = wrapper
+                                 }
+                             }
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("File is >50MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
+            }
+            .alert("Rename File", isPresented: Binding(
+                get: { pdfToRename.wrappedValue != nil },
+                set: { if !$0 { pdfToRename.wrappedValue = nil } }
+            )) {
+                TextField("New Name", text: renameText)
+                Button("Cancel", role: .cancel) { pdfToRename.wrappedValue = nil }
+                Button("Rename") {
+                    if let pdf = pdfToRename.wrappedValue {
+                        conversionManager.renamePDF(pdf, to: renameText.wrappedValue)
+                    }
+                    pdfToRename.wrappedValue = nil
+                }
+            } message: {
+                Text("Enter a new name for this file.")
+            }
+            .alert(item: Binding<AppAlert?>(
+                get: { conversionManager.appAlert },
+                set: { conversionManager.appAlert = $0 }
+            )) { alert in
+                Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+            }
+    }
+}
