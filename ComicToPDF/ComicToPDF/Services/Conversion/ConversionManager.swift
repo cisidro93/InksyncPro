@@ -44,7 +44,13 @@ class ConversionManager: ObservableObject {
             // Let's assume they are 0-1 relative to image.
             newModel.panels = legacyPanels.map { panel in
                 let rect = panel.boundingBox
-                return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
+                // Heuristic: If values are small (0-1), normalize them.
+                // If they are large (>1), assume they are already normalized (0-1000) or pixels we can't easily resize without image data so we pass through.
+                if rect.width <= 2.0 && rect.height <= 2.0 {
+                     return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
+                } else {
+                     return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
+                }
             }
         }
         return newModel

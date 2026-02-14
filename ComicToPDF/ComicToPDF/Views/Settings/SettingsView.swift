@@ -167,6 +167,8 @@ struct SettingsView: View {
             }
             
             Section(header: Text("Debugging")) {
+                Toggle("Show Editor Debugger", isOn: $conversionManager.conversionSettings.showEditorDebug)
+                
                 NavigationLink(destination: LogsView()) {
                     Label("View Debug Logs", systemImage: "ladybug")
                 }

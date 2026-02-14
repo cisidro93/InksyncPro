@@ -287,6 +287,9 @@ struct ConversionSettings: Codable, Equatable {
     var panelEditorMode: PanelEditorPresentationMode = .sheet // ✅ New Preference
     var ocrLanguage: OCRLanguage = .english // ✅ New Preference
     
+    // ✅ NEW: Debugger Visibility
+    var showEditorDebug: Bool = false
+    
     // ✅ NEW: Guided View Flag
     // If true, injects 'inksync-comicinfo' metadata. If false, output is standard EPUB without custom data.
     var isGuidedView: Bool = false
@@ -316,8 +319,9 @@ struct ConversionSettings: Codable, Equatable {
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
     
     // Custom Codable implementation to handle migration
+                            
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitMode, epubSettings, imageEnhancement, textSize, panelEditorMode, isGuidedView
+        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitMode, epubSettings, imageEnhancement, textSize, panelEditorMode, isGuidedView, showEditorDebug
         case comicVineAPIKey // Used for legacy read only
     }
     
@@ -337,6 +341,7 @@ struct ConversionSettings: Codable, Equatable {
         textSize = try container.decodeIfPresent(AppTextSize.self, forKey: .textSize) ?? .medium
         panelEditorMode = try container.decodeIfPresent(PanelEditorPresentationMode.self, forKey: .panelEditorMode) ?? .sheet
         isGuidedView = try container.decodeIfPresent(Bool.self, forKey: .isGuidedView) ?? false
+        showEditorDebug = try container.decodeIfPresent(Bool.self, forKey: .showEditorDebug) ?? false
         
         // ⚠️ MIGRATION: Check if JSON contains the legacy key
         if let legacyKey = try? container.decodeIfPresent(String.self, forKey: .comicVineAPIKey), !legacyKey.isEmpty {
@@ -361,6 +366,7 @@ struct ConversionSettings: Codable, Equatable {
         try container.encode(textSize, forKey: .textSize)
         try container.encode(panelEditorMode, forKey: .panelEditorMode)
         try container.encode(isGuidedView, forKey: .isGuidedView)
+        try container.encode(showEditorDebug, forKey: .showEditorDebug)
         // We purposefully DO NOT encode comicVineAPIKey so it disappears from JSON next save
     }
 }

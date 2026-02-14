@@ -130,6 +130,30 @@ struct PrecisionCanvasView: View {
                     
                     Spacer()
                     
+                    // ✅ Delete Button (Only when panel is selected)
+                    if let index = selectedPanelIndex {
+                        Button {
+                            withAnimation {
+                                if index < editorState.pageModel.panels.count {
+                                    let rect = editorState.pageModel.panels[index]
+                                    editorState.execute(.removePanel(index: index, rect: rect))
+                                    selectedPanelIndex = nil
+                                    currentDragRect = nil
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "trash.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.red)
+                        }
+                        .padding()
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .transition(.scale)
+                    }
+                    
+                    Spacer()
+                    
                     HStack(spacing: 20) {
                         Button {
                             withAnimation { editorState.undo() }

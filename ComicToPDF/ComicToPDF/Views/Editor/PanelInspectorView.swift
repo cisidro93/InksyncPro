@@ -5,6 +5,7 @@ import SwiftUI
 
 struct PanelInspectorView: View {
     @ObservedObject var editorState: PageEditorState
+    @EnvironmentObject var conversionManager: ConversionManager
     
     var body: some View {
         Form {
@@ -77,21 +78,23 @@ struct PanelInspectorView: View {
                     labeledContent("Snap Guides", value: "\(editorState.snapGuides.count)")
                 }
                 
-                Section(header: Text("Debug Log")) {
-                    if editorState.debugLog.isEmpty {
-                        Text("No events yet.")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                    } else {
-                        List {
-                            ForEach(editorState.debugLog.reversed(), id: \.self) { log in
-                                Text(log)
-                                    .font(.caption2)
-                                    .monospaced() // Code-like look for logs
-                                    .foregroundColor(.secondary)
+                if conversionManager.conversionSettings.showEditorDebug {
+                    Section(header: Text("Debug Log")) {
+                        if editorState.debugLog.isEmpty {
+                            Text("No events yet.")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        } else {
+                            List {
+                                ForEach(editorState.debugLog.reversed(), id: \.self) { log in
+                                    Text(log)
+                                        .font(.caption2)
+                                        .monospaced() // Code-like look for logs
+                                        .foregroundColor(.secondary)
+                                }
                             }
+                            .frame(maxHeight: 200)
                         }
-                        .frame(maxHeight: 200)
                     }
                 }
                 
