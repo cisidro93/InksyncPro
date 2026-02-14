@@ -256,21 +256,17 @@ struct PrecisionCanvasView: View {
                      GeometryReader { overlayGeo in
                          Color.black.opacity(0.85)
                              .mask(
-                                 Rectangle()
-                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                     .overlay(
-                                         // The "Hole"
-                                         Rectangle()
-                                             .aspectRatio(3.0/4.0, contentMode: .fit)
-                                             .blendMode(.destinationOut)
-                                     )
-                                     .compositingGroup()
+                                 PreviewMaskShape()
+                                     .fill(style: FillStyle(eoFill: true))
                              )
                              .overlay(
-                                 // Border for the hole
+                                 // Border for the hole (Re-calcuated or use Shape stroke?)
+                                 // Shape stroke on composite path is tricky.
+                                 // Adjusted: Just use a separate rectangle for the border.
                                  Rectangle()
                                      .aspectRatio(3.0/4.0, contentMode: .fit)
                                      .border(Color.white.opacity(0.3), width: 1)
+                                     .allowsHitTesting(false)
                              )
                              .ignoresSafeArea()
                              .allowsHitTesting(false)
@@ -377,9 +373,7 @@ struct PrecisionCanvasView: View {
         }
     }
     
-    // ✅ ENTERPRISE FIX: Content-Aware Coordinate System Detection
-    // We analyze the *distribution* of panel coordinates relative to the image size
-    // to deterministically identify if they are Pixels, Normalized(0-1), or Normalized(0-1000).
+    // ✅ Enhanced Logging for Validation
     private func validateAndFixPanels(for imageSize: CGSize) {
         guard !editorState.pageModel.panels.isEmpty else { return }
         
@@ -394,56 +388,49 @@ struct PrecisionCanvasView: View {
         
         guard !unionRect.isNull else { return }
         
+        editorState.log("🔍 Inspecting Panel Coordinates...")
+        editorState.log("   - Union Rect: \(unionRect)")
+        editorState.log("   - Image Size: \(imageSize)")
+        
         var detectedSystem: CoordinateSystem? = nil
         
         // 2. Analyze Bounds
-        // Case A: Normalized 0-1
-        // If the entire content fits in 0-1.1 range
         if unionRect.maxX <= 1.1 && unionRect.maxY <= 1.1 {
             detectedSystem = .normalizedZeroOne
-        }
-        // Case B: Pixel Coordinates
-        // If the content extends significantly beyond 1000 (e.g. > 1100)
-        // OR if it matches Image Dimensions closer than 1000 scale.
-        else if unionRect.maxY > 1100 {
+        } else if unionRect.maxY > 1100 {
             detectedSystem = .pixels
-        }
-        // Case C: Ambiguous (Content is < 1000, but Image is 2000)
-        // Check alignment with Image Height vs 1000
-        else {
+        } else {
+             // Ambiguous Case
              let bottomMatchPixels = abs(unionRect.maxY - imageSize.height)
              let bottomMatchNorm   = abs(unionRect.maxY - 1000.0)
              
-             // If panels go to bottom of image, which scale fits better?
-             // Only if image is significantly different from 1000
              if abs(imageSize.height - 1000) > 100 {
                  if bottomMatchPixels < bottomMatchNorm {
                      detectedSystem = .pixels
                  } else {
-                     detectedSystem = .normalizedThousand // Assumed
+                     detectedSystem = .normalizedThousand
                  }
              } else {
-                 // Image is close to 1000px, or content is small. 
-                 // Assume standard 0-1000 (no change needed usually)
                  detectedSystem = .normalizedThousand
              }
         }
         
-        // 3. Apply Migration
         if let system = detectedSystem {
-            editorState.log("📊 Detected Coordinate System: \(system)")
+            editorState.log("   - Detected System: \(system)")
             
             var fixedPanels: [NormalizedRect] = []
             var changed = false
             
             switch system {
             case .normalizedZeroOne:
+                 editorState.log("   -> Action: Scaling up by 1000x")
                  fixedPanels = panels.map { 
                      NormalizedRect(x: $0.x * 1000, y: $0.y * 1000, width: $0.width * 1000, height: $0.height * 1000)
                  }
                  changed = true
                  
             case .pixels:
+                 editorState.log("   -> Action: Normalizing from Pixels to 0-1000")
                  fixedPanels = panels.map {
                      NormalizedRect(
                         x: ($0.x / imageSize.width) * 1000.0,
@@ -455,22 +442,57 @@ struct PrecisionCanvasView: View {
                  changed = true
                  
             case .normalizedThousand:
-                 // No change
+                 editorState.log("   -> Action: None (Already correct)")
                  break
             }
             
             if changed {
                 editorState.pageModel.panels = fixedPanels
-                editorState.log("✅ Migrated \(fixedPanels.count) panels to 0-1000 Standard.")
+                editorState.log("✅ Validation Complete: Migrated \(fixedPanels.count) panels.")
             }
         }
     }
-    
+
     enum CoordinateSystem {
         case normalizedZeroOne
         case normalizedThousand
         case pixels
     }
+    
+    // ... handles ...
+
+    // MARK: - Gestures
+    
+    // ...
+}
+
+// ✅ Robust Preview Mask Shape
+struct PreviewMaskShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        
+        // 1. Full Screen Rect
+        path.addRect(rect)
+        
+        // 2. Hole Rect (3:4 Ratio)
+        let targetRatio = 3.0/4.0
+        var holeRect = rect
+        
+        if rect.width / rect.height > targetRatio {
+            // Screen is wider than target (Pillars needed)
+            holeRect.size.width = rect.height * targetRatio
+            holeRect.origin.x = (rect.width - holeRect.width) / 2
+        } else {
+            // Screen is taller than target (Letterbox needed)
+            holeRect.size.height = rect.width / targetRatio
+            holeRect.origin.y = (rect.height - holeRect.height) / 2
+        }
+        
+        path.addRect(holeRect)
+        
+        return path
+    }
+}
     
     // MARK: - Helper for Handles
     private func getHandleRects(for rect: CGRect) -> [CGRect] {
