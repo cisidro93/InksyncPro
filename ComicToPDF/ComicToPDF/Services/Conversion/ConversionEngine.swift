@@ -156,4 +156,9 @@ actor ConversionEngine {
         progressSubject.send(.completed(file: url, result: cbzURL))
         return cbzURL
     }
+
+    // MARK: - Private Helpers
+    private func reportProgress(url: URL, progress: Double) {
+        progressSubject.send(.progress(file: url, current: Int(progress * 100), total: 100, message: "Converting..."))
+    }
 }

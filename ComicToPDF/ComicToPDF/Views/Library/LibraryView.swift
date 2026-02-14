@@ -56,41 +56,7 @@ struct LibraryView: View {
 
     var body: some View {
         NavigationView {
-            ZStack {
-                if conversionManager.convertedPDFs.isEmpty {
-                    emptyStateView
-                } else {
-                    pdfListView
-                }
-                
-                // Floating Action Button
-                if !conversionManager.convertedPDFs.isEmpty {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            Button(action: { showingDocumentPicker = true }) {
-                                Image(systemName: "plus")
-                                    .font(.title)
-                                    .foregroundColor(.white)
-                                    .frame(width: 60, height: 60)
-                                    .background(Color.blue)
-                                    .clipShape(Circle())
-                                    .shadow(radius: 4)
-                            }
-                            .padding()
-                        }
-                    }
-                }
-                
-                if isImporting {
-                    Color.black.opacity(0.4).edgesIgnoringSafeArea(.all)
-                    ProgressView("Importing...")
-                        .padding()
-                        .background(Color(UIColor.systemBackground))
-                        .cornerRadius(10)
-                }
-            }
+            mainContent
             .navigationTitle("Library")
             .toolbar {
                 // ✅ Wi-Fi Transfer Button
@@ -350,6 +316,44 @@ struct LibraryView: View {
         showingBatchMergeReorder = true
     }
     
+    var mainContent: some View {
+        ZStack {
+            if conversionManager.convertedPDFs.isEmpty {
+                emptyStateView
+            } else {
+                pdfListView
+            }
+            
+            // Floating Action Button
+            if !conversionManager.convertedPDFs.isEmpty {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: { showingDocumentPicker = true }) {
+                            Image(systemName: "plus")
+                                .font(.title)
+                                .foregroundColor(.white)
+                                .frame(width: 60, height: 60)
+                                .background(Color.blue)
+                                .clipShape(Circle())
+                                .shadow(radius: 4)
+                        }
+                        .padding()
+                    }
+                }
+            }
+            
+            if isImporting {
+                Color.black.opacity(0.4).edgesIgnoringSafeArea(.all)
+                ProgressView("Importing...")
+                    .padding()
+                    .background(Color(UIColor.systemBackground))
+                    .cornerRadius(10)
+            }
+        }
+    }
+
     var emptyStateView: some View {
         VStack(spacing: 20) {
             Image(systemName: "books.vertical")

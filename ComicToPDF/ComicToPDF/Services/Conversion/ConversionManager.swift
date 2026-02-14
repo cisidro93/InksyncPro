@@ -530,9 +530,10 @@ class ConversionManager: ObservableObject {
                                processedCount += 1
                                
                                // Update Progress on Main Actor
-                               let progress = Double(processedCount) / Double(pageCount)
+                               let currentCount = processedCount
+                               let progress = Double(currentCount) / Double(pageCount)
                                await MainActor.run {
-                                   conversionManager.processingStatus = "Importing Page \(processedCount) of \(pageCount)"
+                                   conversionManager.processingStatus = "Importing Page \(currentCount) of \(pageCount)"
                                    conversionManager.conversionProgress = progress
                                }
                            }
@@ -559,9 +560,10 @@ class ConversionManager: ObservableObject {
                     for try await result in group {
                         if result.0 == 0 { firstPageData = result.1 }
                         processedCount += 1
-                        let progress = Double(processedCount) / Double(pageCount)
+                        let currentCount = processedCount
+                        let progress = Double(currentCount) / Double(pageCount)
                         await MainActor.run {
-                            conversionManager.processingStatus = "Importing Page \(processedCount) of \(pageCount)"
+                            conversionManager.processingStatus = "Importing Page \(currentCount) of \(pageCount)"
                             conversionManager.conversionProgress = progress
                         }
                     }
