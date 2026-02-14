@@ -77,53 +77,7 @@ struct LibraryView: View {
                 
                 // ✅ Bottom Toolbar (Delete / Export)
                 ToolbarItemGroup(placement: .bottomBar) {
-                    if editMode == .active {
-                         Button(role: .destructive) {
-                             deleteSelection()
-                         } label: {
-                             Label("Delete", systemImage: "trash")
-                         }
-                         
-                         Spacer()
-                         
-                         Text("\(selection.count) Selected")
-                             .font(.caption)
-                             .foregroundColor(.secondary)
-                         
-                         Spacer()
-                         
-                         // ✅ Batch Convert Button
-                         Button {
-                             performBatchConversion()
-                         } label: {
-                             Label("Convert", systemImage: "arrow.triangle.2.circlepath")
-                         }
-                         
-                         Spacer()
-                         
-                         // ✅ Convert & Merge Button
-                         Button {
-                             prepareBatchMerge()
-                         } label: {
-                             Label("Merge & Convert", systemImage: "doc.on.doc.fill")
-                         }
-                         
-                         Spacer()
-                         
-                         Button {
-                             exportSelection()
-                         } label: {
-                             Label("Export", systemImage: "square.and.arrow.up")
-                         }
-                         
-                         Spacer()
-                         
-                         Button {
-                             showingMergeSheet = true
-                         } label: {
-                             Label("Merge", systemImage: "arrow.triangle.merge")
-                         }
-                    }
+                    bottomToolbarItems
                 }
             }
             .sheet(isPresented: $showingDocumentPicker) {
@@ -310,6 +264,57 @@ struct LibraryView: View {
     
     @State private var showingBatchMergeReorder = false
     @State private var batchMergeItems: [ConvertedPDF] = []
+    
+    @ViewBuilder
+    var bottomToolbarItems: some View {
+        if editMode == .active {
+             Button(role: .destructive) {
+                 deleteSelection()
+             } label: {
+                 Label("Delete", systemImage: "trash")
+             }
+             
+             Spacer()
+             
+             Text("\(selection.count) Selected")
+                 .font(.caption)
+                 .foregroundColor(.secondary)
+             
+             Spacer()
+             
+             // ✅ Batch Convert Button
+             Button {
+                 performBatchConversion()
+             } label: {
+                 Label("Convert", systemImage: "arrow.triangle.2.circlepath")
+             }
+             
+             Spacer()
+             
+             // ✅ Convert & Merge Button
+             Button {
+                 prepareBatchMerge()
+             } label: {
+                 Label("Merge & Convert", systemImage: "doc.on.doc.fill")
+             }
+             
+             Spacer()
+             
+             Button {
+                 exportSelection()
+             } label: {
+                 Label("Export", systemImage: "square.and.arrow.up")
+             }
+             
+             Spacer()
+             
+             Button {
+                 showingMergeSheet = true
+             } label: {
+                 Label("Merge", systemImage: "arrow.triangle.merge")
+             }
+        }
+    }
     
     func prepareBatchMerge() {
         batchMergeItems = conversionManager.convertedPDFs.filter { selection.contains($0.id) }

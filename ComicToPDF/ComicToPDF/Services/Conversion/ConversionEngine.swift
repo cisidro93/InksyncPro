@@ -88,7 +88,7 @@ actor ConversionEngine {
             progressSubject.send(.progress(file: url, current: i, total: 100, message: "Processing page \(i)..."))
         }
         
-        let outputURL = try await converter.convert(
+        let outputURLs = try await converter.convert(
             sourceURL: url,
             settings: settings,
             manualManifest: nil, // We could pass overrides here if we had them in settings
@@ -102,7 +102,11 @@ actor ConversionEngine {
             }
         )
         
-        return outputURL
+        guard let firstURL = outputURLs.first else {
+             throw NSError(domain: "ConversionEngine", code: 2, userInfo: [NSLocalizedDescriptionKey: "No output file produced"])
+        }
+        
+        return firstURL
     }
 
     // MARK: - PDF Import Logic
