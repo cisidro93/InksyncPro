@@ -224,6 +224,9 @@ struct PrecisionCanvasView: View {
                     }
                 }
         }
+        .task {
+            loadPage()
+        }
     }
     
     @State private var isInspectorPresented: Bool = true
