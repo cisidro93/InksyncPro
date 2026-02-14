@@ -229,11 +229,11 @@ class CBZToEPUBConverter {
                     <meta property="rendition:orientation">auto</meta>
                     <meta property="rendition:spread">auto</meta>
                     <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="\(kindleWidth)x\(kindleHeight)"/> 
+                    <meta name="original-resolution" content="1000x1000"/> 
                     <meta name="book-type" content="comic"/> 
 """ : """
                     <meta property="rendition:layout">pre-paginated</meta>
-                    <meta name="original-resolution" content="\(kindleWidth)x\(kindleHeight)"/> 
+                    <meta name="original-resolution" content="1000x1000"/> 
                     <meta name="book-type" content="comic"/> 
 """
             
@@ -423,101 +423,99 @@ class CBZToEPUBConverter {
     }
     
     static func generateXHTML(imageName: String, title: String, width: Int, height: Int, panels: [PanelExtractor.Panel]) -> String {
-        // ✅ INTELLIGENT PANEL VIEW: Use actual user-drawn panel coordinates
-        // This is superior to KCC's dumb 4-quad zoom because we know the real panel locations!
-        // Panels are in Vision normalized coordinates (0-1, bottom-left origin)
-        // We need to transform to HTML coordinates (top-left origin)
+        // ✅ STRATEGY: 1000x1000 SVG Viewport (Mission Directive)
+        // We use a fixed 1000x1000 coordinate system for the SVG container.
+        // The image is preserved in its aspect ratio within this viewbox.
+        // Panels (0-1000 Normalized) map 1:1 to this system.
         
-        var panelDivs = ""
+        let viewportSize = 1000
+        
+        // Calculate image Aspect Ratio placement
+        let imageAspect = Double(width) / Double(height)
+        let viewportAspect = 1.0 // 1000/1000
+        
+        // Letterboxing Logic (Fit inside 1000x1000)
+        var renderW: Double
+        var renderH: Double
+        var renderX: Double
+        var renderY: Double
+        
+        if imageAspect > viewportAspect {
+            // Wider: Fit to Width
+            renderW = 1000.0
+            renderH = 1000.0 / imageAspect
+            renderX = 0.0
+            renderY = (1000.0 - renderH) / 2.0
+        } else {
+            // Taller: Fit to Height
+            renderH = 1000.0
+            renderW = 1000.0 * imageAspect
+            renderY = 0.0
+            renderX = (1000.0 - renderW) / 2.0
+        }
+        
+        var panelOverlays = ""
         
         if !panels.isEmpty {
             for (index, panel) in panels.enumerated() {
-                // Transform from Vision coords (bottom-left origin) to HTML/EPUB coords (top-left origin)
-                let box = panel.boundingBox
+                // Panels are 0-1 normalized (Vision/Bottom-Left)
+                // We need 0-1000 (SVG/Top-Left) RELATIVE TO THE IMAGE
                 
-                // Convert to top-left origin percentage
-                let xPercent = box.minX * 100
-                let yPercent = (1.0 - box.maxY) * 100  // Flip Y axis
-                let wPercent = box.width * 100
-                let hPercent = box.height * 100
+                // 1. Flip Y (Vision -> Top-Left)
+                let normY = 1.0 - panel.boundingBox.maxY
                 
-                // ===== AMAZON'S app-amzn-magnify FORMAT =====
-                // Amazon expects JSON with targetId, sourceId, ordinal
-                let targetId = "panel-target-\(index)"
-                let sourceId = "panel-source-\(index)"
+                // 2. Scale to Image Render Size
+                let pX = (panel.boundingBox.minX * renderW) + renderX
+                let pY = (normY * renderH) + renderY
+                let pW = (panel.boundingBox.width * renderW)
+                let pH = (panel.boundingBox.height * renderH)
+                
+                // 3. Metadata
+                let targetId = "panel-target-\(index + 1)"
+                let sourceId = "panel-source-\(index + 1)"
+                
+                // Amazon JSON Payload
                 let magnifyData = """
 {"targetId":"\(targetId)","sourceId":"\(sourceId)","ordinal":\(index + 1)}
 """
-                
-                // Create tap target div (source) over the panel area
-                panelDivs += """
-            <div class="app-amzn-magnify" id="\(sourceId)" 
-                 data-app-amzn-magnify='\(magnifyData)'
-                 style="position: absolute; 
-                        left: \(String(format: "%.2f", xPercent))%; 
-                        top: \(String(format: "%.2f", yPercent))%; 
-                        width: \(String(format: "%.2f", wPercent))%; 
-                        height: \(String(format: "%.2f", hPercent))%; 
-                        z-index: 10; 
-                        cursor: pointer;">
-            </div>
-            
+                // 4. Create Overlay Element (Transparent Tap Target)
+                // We use an anchor tag <a> because Kindle sometimes strips divs but respects anchors for navigation
+                panelOverlays += """
+                <a class="app-region-magnification" 
+                   id="\(sourceId)"
+                   data-amzn-magnification='\(magnifyData)'
+                   style="position: absolute; left: \(String(format: "%.1f", pX))px; top: \(String(format: "%.1f", pY))px; width: \(String(format: "%.1f", pW))px; height: \(String(format: "%.1f", pH))px; z-index: 10;">
+                </a>
 """
             }
         }
         
         return """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-        <head>
-            <title>\(title)</title>
-        <meta name="viewport" content="width=1860, height=2480"/>
-        <style type="text/css">
-            * { 
-                margin: 0; 
-                padding: 0; 
-                box-sizing: border-box;
-            }
-            html, body { 
-                width: 100%;
-                height: 100%;
-                background-color: #000000;
-                overflow: hidden;
-            }
-            .page-container { 
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                display: flex; 
-                align-items: center; 
-                justify-content: center; 
-                background-color: #000000;
-            }
-            img.bg { 
-                max-width: 100%; 
-                max-height: 100%; 
-                width: auto;
-                height: auto;
-                object-fit: contain;
-                display: block;
-            }
-            /* Panel tap targets - invisible overlay for Amazon Panel View */
-            .app-amzn-magnify {
-                background: transparent;
-                border: none;
-            }
-        </style>
-        </head>
-        <body>
-            <div class="page-container" id="img-container">
-                <img class="bg" src="../images/\(imageName)" alt="comic page"/>
-            </div>
-        \(panelDivs)</body>
-        </html>
-        """
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+    <title>\(title)</title>
+    <meta name="viewport" content="width=1000, height=1000"/>
+    <style type="text/css">
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; }
+        svg { width: 100%; height: 100%; }
+        .app-region-magnification { border: 0; background-color: transparent; -webkit-tap-highlight-color: rgba(0,0,0,0); }
+    </style>
+</head>
+<body>
+    <div style="width:1000px; height:1000px; position:relative; margin:0 auto;">
+        <!-- Background Image -->
+        <img src="../images/\(imageName)" 
+             style="position:absolute; left:\(String(format: "%.1f", renderX))px; top:\(String(format: "%.1f", renderY))px; width:\(String(format: "%.1f", renderW))px; height:\(String(format: "%.1f", renderH))px;" 
+             alt="comic page"/>
+             
+        <!-- Guided View Overlays -->
+        \(panelOverlays)
+    </div>
+</body>
+</html>
+"""
     }
     
     // MARK: - Helpers

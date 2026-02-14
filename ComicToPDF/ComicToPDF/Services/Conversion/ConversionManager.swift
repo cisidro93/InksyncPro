@@ -2221,3 +2221,87 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
     }
 }
 
+// MARK: - Pre-Flight Validation & Export
+extension ConversionManager {
+    enum ValidationResult {
+        case success
+        case warning(String)
+        case failure(String)
+    }
+    
+    func validateForExport(_ pdf: ConvertedPDF) -> ValidationResult {
+        Logger.shared.log("Running Pre-Flight Check for: \(pdf.name)", category: "Validation")
+        
+        // 1. Check for Panels (if Guided View is active)
+        if conversionSettings.isGuidedView {
+            let panels = panelOverrides[pdf.id] ?? [:]
+            if panels.isEmpty {
+                return .warning("Guided View is enabled, but no panels were detected. The EPUB will export with default full-page views.")
+            }
+            
+            // 2. Deep Dive: Ordinal & Coordinate Checks
+            for (pageIndex, pagePanels) in panels {
+                // Check Density
+                if pagePanels.count > 20 {
+                    return .warning("Page \(pageIndex + 1) has \(pagePanels.count) panels. This may cause performance issues on older Kindle devices.")
+                }
+                
+                // Check Bounds (Vision 0-1)
+                for (pIndex, panel) in pagePanels.enumerated() {
+                    let r = panel.boundingBox
+                    if r.minX < -0.01 || r.maxX > 1.01 || r.minY < -0.01 || r.maxY > 1.01 {
+                        // Allow 1% margin of error for float precision
+                        return .failure("Page \(pageIndex + 1), Panel \(pIndex + 1) has invalid coordinates. Please re-scan this page.")
+                    }
+                    
+                    if r.width < 0.05 || r.height < 0.05 {
+                         return .warning("Page \(pageIndex + 1), Panel \(pIndex + 1) is extremely small (<5%). Check for artifacts.")
+                    }
+                }
+            }
+        }
+        
+        return .success
+    }
+    
+    // MARK: - Export Orchestration
+    func exportEPUB(pdf: ConvertedPDF) async {
+        // 1. Validate
+        let validation = validateForExport(pdf)
+        switch validation {
+        case .failure(let error):
+            await MainActor.run {
+                self.appAlert = AppAlert(title: "Pre-Flight Check Failed", message: error)
+            }
+            return
+        case .warning(let message):
+            // In a real app, we'd show a confirmation dialog here.
+            // For now, we log it and proceed (or show alert).
+            await MainActor.run {
+                self.processingStatus = "Warning: \(message). Proceeding..."
+            }
+            try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
+            
+        case .success:
+            break
+        }
+        
+        // 2. Export
+        do {
+            // Commit any pending edits
+            saveLibrary()
+            
+            // Call Engine
+            let _ = try await ConversionEngine.shared.process(url: pdf.url, settings: conversionSettings)
+            
+            await MainActor.run {
+                self.appAlert = AppAlert(title: "Export Success", message: "EPUB generated successfully.")
+            }
+            
+        } catch {
+            await MainActor.run {
+                self.appAlert = AppAlert(title: "Export Failed", message: error.localizedDescription)
+            }
+        }
+    }
+}

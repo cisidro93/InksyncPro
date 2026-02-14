@@ -73,6 +73,35 @@ struct PrecisionCanvasView: View {
                                 context.stroke(path, with: .color(.green), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
                             }
                             
+                            // Draw Snap Guides
+                            // 1. Static Detected Gutters (Faint)
+                            if selectedTool == .edit || selectedTool == .anchor {
+                                for guide in editorState.snapGuides {
+                                    let start = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: size)
+                                    let end = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: size)
+                                    
+                                    var path = Path()
+                                    path.move(to: start)
+                                    path.addLine(to: end)
+                                    
+                                    context.stroke(path, with: .color(.blue.opacity(0.15)), lineWidth: 1)
+                                }
+                            }
+                            
+                            // 2. Active Snap Guides (Bright Blue + Haptic)
+                            for guide in activeSnapGuides {
+                                let start = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: size)
+                                let end = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: size)
+                                
+                                var path = Path()
+                                path.move(to: start)
+                                path.addLine(to: end)
+                                
+                                context.stroke(path, with: .color(.cyan), lineWidth: 2)
+                                // Add "Liquid" Glow
+                                context.stroke(path, with: .color(.cyan.opacity(0.5)), lineWidth: 4)
+                            }
+                            
                             // Draw Dragging Rect
                             if let dragRect = currentDragRect {
                                 let rect = CoordinateConverter.denormalize(rect: dragRect, in: size)
@@ -178,9 +207,27 @@ struct PrecisionCanvasView: View {
                     .ignoresSafeArea()
             }
         }
-        .onAppear { loadPage() }
-        .secureVaultPrivacy() // Apply the modifier we created earlier
+        .inspector(isPresented: $isInspectorPresented) {
+            PanelInspectorView(editorState: editorState)
+                .inspectorColumnWidth(min: 280, ideal: 320, max: 400)
+                .presentationDetents([.medium, .large])
+                .presentationBackgroundInteraction(.enabled)
+                // iOS 26 Aesthetic: Ultra Thin Material
+                .background(.ultraThinMaterial)
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            isInspectorPresented.toggle()
+                        } label: {
+                            Label("Inspector", systemImage: "sidebar.trailing")
+                        }
+                    }
+                }
+        }
     }
+    
+    @State private var isInspectorPresented: Bool = true
+    @State private var activeSnapGuides: [SnapGuide] = []
     
     // MARK: - Logic
     
@@ -189,6 +236,12 @@ struct PrecisionCanvasView: View {
             if let image = try await conversionManager.extractFullPage(from: pdf, index: pageIndex) {
                  await MainActor.run {
                      self.pageImage = image
+                 }
+                 
+                 // 🧠 Run Magnetic Engine (Gutter Detection)
+                 let guides = await SnapEngine.shared.detectGutters(in: image)
+                 await MainActor.run {
+                     editorState.snapGuides = guides
                  }
             }
         }
@@ -241,16 +294,48 @@ struct PrecisionCanvasView: View {
                     
                 case .edit:
                     // Logic to select access panels
-                    // Simple hit test
                     if value.translation == .zero { // Tap start
                          if let index = hitTest(point) {
                              selectedPanelIndex = index
+                             // Initial Drag State
+                             currentDragRect = editorState.pageModel.panels[index]
+                             dragStart = point 
                          } else {
                              selectedPanelIndex = nil
+                             currentDragRect = nil
                          }
-                    } else if let index = selectedPanelIndex {
-                         // Dragging panel logic (simplified for now)
-                         // Ideally we'd move the panel here
+                    } else if let index = selectedPanelIndex, let start = dragStart, var currentRect = currentDragRect {
+                         // 🧲 Magnetic Drag
+                         let dx = point.x - start.x
+                         let dy = point.y - start.y
+                         
+                         // Apply delta to original rect (we need original to avoid drift, but simplified here we use currentRect as base if we updated it?)
+                         // Better: Store `originalPanelRect` in state. For now, we assume `editorState.pageModel.panels[index]` is the source of truth used at start.
+                         // But `currentDragRect` is being updated.
+                         // Let's rely on `dragStart` delta.
+                         
+                         let original = editorState.pageModel.panels[index]
+                         let targetRect = NormalizedRect(
+                             x: original.x + dx,
+                             y: original.y + dy,
+                             width: original.width,
+                             height: original.height
+                         )
+                         
+                         // Run Snap Engine
+                         let (snapped, guides) = SnapEngine.shared.snapMove(
+                             targetRect,
+                             guides: editorState.snapGuides,
+                             otherPanels: editorState.pageModel.panels.filter { $0 != original }
+                         )
+                         
+                         currentDragRect = snapped
+                         
+                         // Haptics
+                         if !guides.isEmpty && activeSnapGuides.isEmpty {
+                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                         }
+                         activeSnapGuides = guides
                     }
                     
                 case .anchor:
@@ -263,13 +348,28 @@ struct PrecisionCanvasView: View {
                     let w = abs(point.x - start.x)
                     let h = abs(point.y - start.y)
                     
-                    currentDragRect = NormalizedRect(x: minX, y: minY, width: w, height: h)
+                    let rawRect = NormalizedRect(x: minX, y: minY, width: w, height: h)
+                    
+                    // 🧲 Snap Resize/Creation
+                    let (snapped, guides) = SnapEngine.shared.snapRect(
+                        rawRect,
+                        guides: editorState.snapGuides,
+                        otherPanels: editorState.pageModel.panels
+                    )
+                    
+                    currentDragRect = snapped
+                    activeSnapGuides = guides
+                    
+                    if !guides.isEmpty {
+                        UIImpactFeedbackGenerator(style: .rigid).impactOccurred() // Rigid for structural snap
+                    }
                 }
             }
             .onEnded { value in
                 defer {
                     dragStart = nil
                     currentDragRect = nil
+                    activeSnapGuides = []
                 }
                 
                 if selectedTool == .anchor, let rect = currentDragRect {
@@ -277,6 +377,14 @@ struct PrecisionCanvasView: View {
                      if rect.width > 20 && rect.height > 20 { // Minimal size (2% of screen)
                          editorState.execute(.addPanel(rect))
                      }
+                }
+                
+                if selectedTool == .edit, let index = selectedPanelIndex, let newRect = currentDragRect {
+                    // Commit Move
+                    let oldRect = editorState.pageModel.panels[index]
+                    if newRect != oldRect {
+                        editorState.execute(.resizePanel(index: index, oldRect: oldRect, newRect: newRect))
+                    }
                 }
                 
                 if selectedTool == .knife {

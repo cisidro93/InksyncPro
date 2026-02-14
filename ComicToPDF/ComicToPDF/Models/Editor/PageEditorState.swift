@@ -3,7 +3,9 @@ import SwiftUI
 import Combine
 
 class PageEditorState: ObservableObject {
-    @Published var pageModel: PageModel
+    @Published var selectedPanelIndex: Int?
+    @Published var activeTool: WorkAreaToolbar.Tool = .edit
+    @Published var snapGuides: [SnapGuide] = [] // ✅ Magnetic Gutter-Snap
     @Published var canUndo: Bool = false
     @Published var canRedo: Bool = false
     @Published var isProcessing: Bool = false
