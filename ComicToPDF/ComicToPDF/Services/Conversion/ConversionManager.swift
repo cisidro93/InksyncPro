@@ -324,7 +324,7 @@ class ConversionManager: ObservableObject {
         Logger.shared.log("Building Manifest for \(pdf.name) (ID: \(pdf.id))", category: "Manifest")
         
         // Merge with source panels if available
-        if let sourcePanels = await extractSmartPanels(from: pdf.url) {
+        if let sourcePanels = try? await extractSmartPanels(from: pdf.url) {
             Logger.shared.log("Merging \(sourcePanels.count) source pages into manifest", category: "Manifest")
             for (pageIndex, panels) in sourcePanels {
                 if combined[pageIndex] == nil {

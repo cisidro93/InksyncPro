@@ -75,12 +75,15 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
         self.chapters = chapters
     }
     
-    func toPDFDocument() -> PDFDocument {
-        return PDFDocument(url: url) ?? PDFDocument()
-    }
+// ✅ Shared Error Type
+enum ConversionError: Error {
+    case invalidFormat
+    case archiveCreationFailed
+    case missingMetadata
+    case cancelled
 }
 
-// ✅ Generic Wrapper for .fileExporter (Handles PDF & EPUB)
+// ... existing code
 struct GenericFileDocument: FileDocument {
     var fileURL: URL
     var tempFileToDelete: URL?

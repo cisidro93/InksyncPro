@@ -150,7 +150,7 @@ struct PrecisionCanvasView: View {
                                         .padding(4)
                                         .background(Color.black.opacity(0.7).cornerRadius(4))
                                     
-                                    context.draw(text, at: CGPoint(x: rect.midX, y: rect.maxY + 10), anchor: .top)
+                                    context.draw(context.resolve(text), at: CGPoint(x: rect.midX, y: rect.maxY + 10), anchor: .top)
                                 } else {
                                     // "Ready to Draw" indicator? Maybe just a text overlay is enough (handled in ZStack)
                                 }
