@@ -64,7 +64,8 @@ struct PanelInspectorView: View {
                    })
                    
                    Button("Delete Panel", role: .destructive) {
-                       editorState.execute(.removePanel(index))
+                       let rect = editorState.pageModel.panels[index]
+                       editorState.execute(.removePanel(index: index, rect: rect))
                        editorState.selectedPanelIndex = nil
                    }
                 }
