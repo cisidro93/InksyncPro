@@ -67,11 +67,16 @@ struct PrecisionCanvasView: View {
                             }
                             
                             // Draw Proposed Panels (Dashed - More Subtle)
-                            for panel in editorState.pageModel.proposedPanels {
-                                let rect = CoordinateConverter.denormalize(rect: panel, in: size)
-                                var path = Path(rect)
-                                // Thinner, less opaque green
-                                context.stroke(path, with: .color(Color.green.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                            // Only show if tool is Scan OR we are explicitly previewing proposals?
+                            // User complained "AI panel detector covering page".
+                            // Let's hide it unless selectedTool == .scan
+                            if selectedTool == .scan {
+                                for panel in editorState.pageModel.proposedPanels {
+                                    let rect = CoordinateConverter.denormalize(rect: panel, in: size)
+                                    var path = Path(rect)
+                                    // Thinner, less opaque green
+                                    context.stroke(path, with: .color(Color.green.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                                }
                             }
                             
                             // Draw Snap Guides
@@ -123,6 +128,31 @@ struct PrecisionCanvasView: View {
                                 for handle in handles {
                                     context.fill(Path(handle), with: .color(.white))
                                     context.stroke(Path(handle), with: .color(.blue), lineWidth: 1)
+                                }
+                            }
+                            
+                            // 🏗️ Anchor Tool Visuals
+                            if selectedTool == .anchor {
+                                // 1. Crosshair Cursor (Simulated via overlay or just a guide?)
+                                // Let's draw a subtle grid or crosshair at drag location?
+                                // Or mainly just draw the Drag Rect in a different color.
+                                
+                                if let dragRect = currentDragRect {
+                                    let rect = CoordinateConverter.denormalize(rect: dragRect, in: size)
+                                    // Filled semi-transparent rect to show "Creation"
+                                    context.fill(Path(rect), with: .color(.green.opacity(0.3)))
+                                    context.stroke(Path(rect), with: .color(.green), lineWidth: 2)
+                                    
+                                    // Dimensions Label
+                                    let text = Text("\(Int(rect.width)) x \(Int(rect.height))")
+                                        .font(.caption)
+                                        .foregroundColor(.white)
+                                        .padding(4)
+                                        .background(Color.black.opacity(0.7).cornerRadius(4))
+                                    
+                                    context.draw(text, at: CGPoint(x: rect.midX, y: rect.maxY + 10), anchor: .top)
+                                } else {
+                                    // "Ready to Draw" indicator? Maybe just a text overlay is enough (handled in ZStack)
                                 }
                             }
                         }
@@ -198,6 +228,16 @@ struct PrecisionCanvasView: View {
                 
                 Spacer()
                 
+                if selectedTool == .anchor {
+                    Text("Drag to create a new panel")
+                        .font(.caption)
+                        .padding(8)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(8)
+                        .padding(.bottom, 8)
+                        .transition(.opacity)
+                }
+
                 // MARK: - Toolbar (Bottom)
                 WorkAreaToolbar(
                     selectedTool: $selectedTool,
@@ -212,29 +252,32 @@ struct PrecisionCanvasView: View {
             
                 if selectedTool == .preview {
                      // Kindle Scribe Simulator (3:4 Ratio Mask)
+                     // Enterprise Grade: Resolution Independent Letterboxing
                      GeometryReader { overlayGeo in
-                         let targetRatio = 3.0 / 4.0
-                         let currentRatio = overlayGeo.size.width / overlayGeo.size.height
-                         
-                         if currentRatio > targetRatio {
-                             // Too wide, pillars
-                             HStack {
-                                 Color.black.opacity(0.8)
-                                 Spacer()
-                                 Color.black.opacity(0.8)
-                             }
-                         } else {
-                             // Too tall, letterbox
-                             VStack {
-                                 Color.black.opacity(0.8)
-                                 Spacer()
-                                 Color.black.opacity(0.8)
-                             }
-                         }
+                         Color.black.opacity(0.85)
+                             .mask(
+                                 Rectangle()
+                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                     .overlay(
+                                         // The "Hole"
+                                         Rectangle()
+                                             .aspectRatio(3.0/4.0, contentMode: .fit)
+                                             .blendMode(.destinationOut)
+                                     )
+                                     .compositingGroup()
+                             )
+                             .overlay(
+                                 // Border for the hole
+                                 Rectangle()
+                                     .aspectRatio(3.0/4.0, contentMode: .fit)
+                                     .border(Color.white.opacity(0.3), width: 1)
+                             )
+                             .ignoresSafeArea()
+                             .allowsHitTesting(false)
                      }
                      .ignoresSafeArea()
                      .allowsHitTesting(false)
-                     .allowsHitTesting(false)
+                     .zIndex(100) // Ensure on top
                 }
 
             // MARK: - Security Overlay
@@ -295,13 +338,13 @@ struct PrecisionCanvasView: View {
                   // 🧠 Run Magnetic Engine (Gutter Detection)
                   let guides = await SnapEngine.shared.detectGutters(in: image)
                   await MainActor.run {
-                      editorState.snapGuides = guides
-                      editorState.log("SnapEngine: Found \(guides.count) guides")
+                      self.pageImage = image
+                      
+                      // 🚀 Run Deep Fix for Legacy Panels
+                      validateAndFixPanels(for: image.size)
+                      
+                      editorState.log("Page loaded successfully")
                   }
-             } else {
-                 await MainActor.run {
-                     editorState.log("Error: Failed to load page image")
-                 }
              }
         }
     }
@@ -332,6 +375,101 @@ struct PrecisionCanvasView: View {
                 editorState.log("AI Scan: Found \(normalized.count) panels")
             }
         }
+    }
+    
+    // ✅ ENTERPRISE FIX: Content-Aware Coordinate System Detection
+    // We analyze the *distribution* of panel coordinates relative to the image size
+    // to deterministically identify if they are Pixels, Normalized(0-1), or Normalized(0-1000).
+    private func validateAndFixPanels(for imageSize: CGSize) {
+        guard !editorState.pageModel.panels.isEmpty else { return }
+        
+        let panels = editorState.pageModel.panels
+        
+        // 1. Calculate the bounding union of all panels
+        var unionRect: CGRect = .null
+        for p in panels {
+            let rect = CGRect(x: p.x, y: p.y, width: p.width, height: p.height)
+            unionRect = unionRect.isNull ? rect : unionRect.union(rect)
+        }
+        
+        guard !unionRect.isNull else { return }
+        
+        var detectedSystem: CoordinateSystem? = nil
+        
+        // 2. Analyze Bounds
+        // Case A: Normalized 0-1
+        // If the entire content fits in 0-1.1 range
+        if unionRect.maxX <= 1.1 && unionRect.maxY <= 1.1 {
+            detectedSystem = .normalizedZeroOne
+        }
+        // Case B: Pixel Coordinates
+        // If the content extends significantly beyond 1000 (e.g. > 1100)
+        // OR if it matches Image Dimensions closer than 1000 scale.
+        else if unionRect.maxY > 1100 {
+            detectedSystem = .pixels
+        }
+        // Case C: Ambiguous (Content is < 1000, but Image is 2000)
+        // Check alignment with Image Height vs 1000
+        else {
+             let bottomMatchPixels = abs(unionRect.maxY - imageSize.height)
+             let bottomMatchNorm   = abs(unionRect.maxY - 1000.0)
+             
+             // If panels go to bottom of image, which scale fits better?
+             // Only if image is significantly different from 1000
+             if abs(imageSize.height - 1000) > 100 {
+                 if bottomMatchPixels < bottomMatchNorm {
+                     detectedSystem = .pixels
+                 } else {
+                     detectedSystem = .normalizedThousand // Assumed
+                 }
+             } else {
+                 // Image is close to 1000px, or content is small. 
+                 // Assume standard 0-1000 (no change needed usually)
+                 detectedSystem = .normalizedThousand
+             }
+        }
+        
+        // 3. Apply Migration
+        if let system = detectedSystem {
+            editorState.log("📊 Detected Coordinate System: \(system)")
+            
+            var fixedPanels: [NormalizedRect] = []
+            var changed = false
+            
+            switch system {
+            case .normalizedZeroOne:
+                 fixedPanels = panels.map { 
+                     NormalizedRect(x: $0.x * 1000, y: $0.y * 1000, width: $0.width * 1000, height: $0.height * 1000)
+                 }
+                 changed = true
+                 
+            case .pixels:
+                 fixedPanels = panels.map {
+                     NormalizedRect(
+                        x: ($0.x / imageSize.width) * 1000.0,
+                        y: ($0.y / imageSize.height) * 1000.0,
+                        width: ($0.width / imageSize.width) * 1000.0,
+                        height: ($0.height / imageSize.height) * 1000.0
+                     )
+                 }
+                 changed = true
+                 
+            case .normalizedThousand:
+                 // No change
+                 break
+            }
+            
+            if changed {
+                editorState.pageModel.panels = fixedPanels
+                editorState.log("✅ Migrated \(fixedPanels.count) panels to 0-1000 Standard.")
+            }
+        }
+    }
+    
+    enum CoordinateSystem {
+        case normalizedZeroOne
+        case normalizedThousand
+        case pixels
     }
     
     // MARK: - Helper for Handles
