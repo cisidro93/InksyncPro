@@ -7,6 +7,10 @@ struct FileMergeView: View {
     @State private var outputName: String = ""
     @State private var mangaMode: Bool = false
     
+    init(initialSelection: Set<UUID> = []) {
+        _selectedPDFs = State(initialValue: initialSelection)
+    }
+    
     var body: some View {
         NavigationStack {
             Form {
