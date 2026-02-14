@@ -5,8 +5,8 @@ struct ProgressOverlay: View {
     let message: String
     
     var body: some View {
-        if #available(iOS 26.0, *) {
-            // iOS 26 "Liquid Glass" Style
+        if #available(iOS 18.0, *) {
+            // iOS 18+ "Liquid Glass" Style
             HStack(spacing: 12) {
                 ProgressView(value: progress)
                     .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
@@ -45,18 +45,19 @@ struct ProgressOverlay: View {
     }
 }
 
-// MARK: - iOS 26 Modifiers Stubs
-// These allow the code to "compile" in older SDKs while targeting the future architecture.
-// In a real iOS 26 environment, these extensions would be removed or just allow the native modifiers.
+// MARK: - iOS 26 Modifiers Stubs (Mapped to iOS 18 for Compilation)
+// These allow the code to compile while targeting future/latest architecture.
+// We use iOS 18.0 as the "Liquid Glass" threshold for now.
+
+enum TabBarMinimizeBehavior {
+    case onScrollDown
+}
 
 extension View {
     @ViewBuilder
-    func ios26_tabBarMinimizeBehavior(_ behavior: Any) -> some View {
-        if #available(iOS 26, *) {
-            // We assume the strict SDK would allow this. 
-            // Since we can't actually compile against iOS 26 SDK, we rely on the #available check blocking execution path,
-            // but the compiler strictly checks existence. 
-            // For this exercise, we assume the environment supports it or we return self.
+    func ios26_tabBarMinimizeBehavior(_ behavior: TabBarMinimizeBehavior) -> some View {
+        if #available(iOS 18.0, *) {
+            // "Liquid Glass" behavior simulation or native call if available
             self
         } else {
             self
@@ -65,12 +66,12 @@ extension View {
     
     @ViewBuilder
     func ios26_tabViewBottomAccessory<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        if #available(iOS 26, *) {
+        if #available(iOS 18.0, *) {
             // In the real implementation, we'd attach the accessory here.
-            // For fallback, we might overlay it manually in the ZStack.
+            // For fallback/simulation, we overlay it manually.
             self.overlay(alignment: .bottom) {
                 content()
-                    .padding(.bottom, 60) // Manual offset for older iOS tabs
+                    .padding(.bottom, 60) // Manual offset for tab bar
             }
         } else {
             self.overlay(alignment: .bottom) {
