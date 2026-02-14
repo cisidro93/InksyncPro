@@ -90,13 +90,21 @@ actor ConversionEngine {
         
         let outputURL = try await converter.convert(
             sourceURL: url,
-            format: .epub,
-            isManga: settings.mangaMode,
-            title: url.deletingPathExtension().lastPathComponent,
-            author: "Unknown"
+            settings: settings,
+            manualManifest: nil, // We could pass overrides here if we had them in settings
+            progress: { progress in
+                // Adapt closure to async stream/subject if needed, but for now just fire and forget or ignore
+                // Since this is inside an actor, we need to be careful.
+                // The convert method expects a closure (User provided: @escaping (Double) -> Void)
+                Task { [weak self] in
+                    await self?.reportProgress(url: url, progress: progress)
+                }
+            }
         )
         
         return outputURL
+    }
+
     // MARK: - PDF Import Logic
     func performPDFImport(url: URL, destFolder: URL) async throws -> URL {
         progressSubject.send(.started(file: url))

@@ -1,6 +1,7 @@
 import SwiftUI
 import PDFKit
 import ZIPFoundation
+import Combine
 
 @MainActor
 class ConversionManager: ObservableObject {
@@ -11,6 +12,10 @@ class ConversionManager: ObservableObject {
     @Published var sendHistory: [ConvertedPDF] = []
     @Published var activeTasks: [AppBackgroundTask] = []
     @Published var conversionSettings = ConversionSettings()
+    
+    // MARK: - Internal State
+    private let libraryFileName = "library.json"
+    internal var thumbnailCache = NSCache<NSString, UIImage>()
     
     // MARK: - Editor Session Cache
     // Prevents "Death Spiral" by keeping the comic unzipped while editing
