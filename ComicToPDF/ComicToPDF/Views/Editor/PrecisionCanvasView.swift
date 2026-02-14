@@ -144,13 +144,18 @@ struct PrecisionCanvasView: View {
                                     context.stroke(Path(rect), with: .color(.green), lineWidth: 2)
                                     
                                     // Dimensions Label
-                                    let text = Text("\(Int(rect.width)) x \(Int(rect.height))")
-                                        .font(.caption)
-                                        .foregroundColor(.white)
-                                        .padding(4)
-                                        .background(Color.black.opacity(0.7).cornerRadius(4))
+                                    let textString = "\(Int(rect.width)) x \(Int(rect.height))"
+                                    let text = Text(textString).font(.caption).foregroundColor(.white)
+                                    let resolvedText = context.resolve(text)
+                                    let textSize = resolvedText.measure(in: CGSize(width: 200, height: 50))
                                     
-                                    context.draw(context.resolve(text), at: CGPoint(x: rect.midX, y: rect.maxY + 10), anchor: .top)
+                                    let textRect = CGRect(x: rect.midX - textSize.width/2 - 4,
+                                                          y: rect.maxY + 10,
+                                                          width: textSize.width + 8,
+                                                          height: textSize.height + 8)
+                                    
+                                    context.fill(Path(roundedRect: textRect, cornerRadius: 4), with: .color(Color.black.opacity(0.7)))
+                                    context.draw(resolvedText, at: CGPoint(x: rect.midX, y: rect.maxY + 14), anchor: .top)
                                 } else {
                                     // "Ready to Draw" indicator? Maybe just a text overlay is enough (handled in ZStack)
                                 }
