@@ -70,12 +70,48 @@ struct PanelInspectorView: View {
                    }
                 }
             } else {
-                ContentUnavailableView(
-                    "No Selection",
-                    systemImage: "square.dashed",
-                    description: Text("Select a panel to edit its properties.")
-                )
+                // ✅ Empty State -> show Page Properties & Log
+                Section(header: Text("Page \(editorState.pageModel.panels.count) Panels")) {
+                    labeledContent("Total Panels", value: "\(editorState.pageModel.panels.count)")
+                    labeledContent("Proposed", value: "\(editorState.pageModel.proposedPanels.count)")
+                    labeledContent("Snap Guides", value: "\(editorState.snapGuides.count)")
+                }
+                
+                Section(header: Text("Debug Log")) {
+                    if editorState.debugLog.isEmpty {
+                        Text("No events yet.")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    } else {
+                        List {
+                            ForEach(editorState.debugLog.reversed(), id: \.self) { log in
+                                Text(log)
+                                    .font(.caption2)
+                                    .monospaced() // Code-like look for logs
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .frame(maxHeight: 200)
+                    }
+                }
+                
+                Section {
+                    ContentUnavailableView(
+                        "No Panel Selected",
+                        systemImage: "square.dashed",
+                        description: Text("Select a panel on the canvas to edit its layout.")
+                    )
+                }
             }
+        }
+    }
+    
+    @ViewBuilder
+    func labeledContent(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text(value).foregroundColor(.secondary)
         }
     }
 }

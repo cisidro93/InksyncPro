@@ -233,17 +233,23 @@ struct PrecisionCanvasView: View {
     
     private func loadPage() {
         Task {
-            if let image = try await conversionManager.extractFullPage(from: pdf, index: pageIndex) {
+             if let image = try await conversionManager.extractFullPage(from: pdf, index: pageIndex) {
+                  await MainActor.run {
+                      self.pageImage = image
+                      editorState.log("Page loaded successfully")
+                  }
+                  
+                  // 🧠 Run Magnetic Engine (Gutter Detection)
+                  let guides = await SnapEngine.shared.detectGutters(in: image)
+                  await MainActor.run {
+                      editorState.snapGuides = guides
+                      editorState.log("SnapEngine: Found \(guides.count) guides")
+                  }
+             } else {
                  await MainActor.run {
-                     self.pageImage = image
+                     editorState.log("Error: Failed to load page image")
                  }
-                 
-                 // 🧠 Run Magnetic Engine (Gutter Detection)
-                 let guides = await SnapEngine.shared.detectGutters(in: image)
-                 await MainActor.run {
-                     editorState.snapGuides = guides
-                 }
-            }
+             }
         }
     }
     
@@ -255,6 +261,7 @@ struct PrecisionCanvasView: View {
     private func runScan() {
         guard let image = pageImage else { return }
         editorState.isProcessing = true
+        editorState.log("Starting AI Scan...")
         
         Task {
              let detected = await PanelExtractor.detectPanels(in: image)
@@ -269,6 +276,7 @@ struct PrecisionCanvasView: View {
             await MainActor.run {
                 editorState.pageModel.proposedPanels = normalized
                 editorState.isProcessing = false
+                editorState.log("AI Scan: Found \(normalized.count) panels")
             }
         }
     }
@@ -300,9 +308,11 @@ struct PrecisionCanvasView: View {
                              // Initial Drag State
                              currentDragRect = editorState.pageModel.panels[index]
                              dragStart = point 
+                             editorState.log("Selected Panel \(index + 1)")
                          } else {
                              selectedPanelIndex = nil
                              currentDragRect = nil
+                             // Don't log deselect to avoid noise? Or maybe we should.
                          }
                     } else if let index = selectedPanelIndex, let start = dragStart, var currentRect = currentDragRect {
                          // 🧲 Magnetic Drag

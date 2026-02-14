@@ -10,8 +10,16 @@ class PageEditorState: ObservableObject {
     @Published var canUndo: Bool = false
     @Published var canRedo: Bool = false
     @Published var isProcessing: Bool = false
+    @Published var debugLog: [String] = [] // ✅ User Request: Error Log
     
     private var undoManager: UndoManager
+    
+    func log(_ message: String) {
+        let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        debugLog.append("[\(timestamp)] \(message)")
+        // Keep log size manageable
+        if debugLog.count > 50 { debugLog.removeFirst() }
+    }
     
     init(pageModel: PageModel, undoManager: UndoManager) {
         self.pageModel = pageModel
@@ -63,6 +71,13 @@ class PageEditorState: ObservableObject {
         // Apply command
         command.apply(to: &pageModel)
         undoManagerChanged()
+        
+        // Log it
+        if case .commitProposals(let p) = command {
+            log("Committed \(p.count) proposals")
+        } else {
+            log("Executed command") // Generic log for now, could be more specific
+        }
     }
     
     func undo() {
