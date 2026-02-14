@@ -66,8 +66,6 @@ struct LibraryView: View {
                     }
                 }
                 
-                // Sort Menu Removed (Moved to main view)
-                
                 // ✅ Select Button
                 ToolbarItem(placement: .navigationBarTrailing) {
                      Button(editMode == .active ? "Done" : "Select") {
@@ -80,117 +78,30 @@ struct LibraryView: View {
                     bottomToolbarItems
                 }
             }
-            .sheet(isPresented: $showingDocumentPicker) {
-                DocumentPicker(onDocumentsPicked: { urls in
+            .librarySheetHandlers(
+                showingDocumentPicker: $showingDocumentPicker,
+                showingWiFiSheet: $showingWiFiSheet,
+                showingMergeSheet: $showingMergeSheet,
+                showingWebExport: $showingWebExport,
+                showingAddCollection: $showingAddCollection,
+                showingLargeFileAlert: $showingLargeFileAlert,
+                pdfToShare: $pdfToShare,
+                pdfToEdit: $pdfToEdit,
+                pdfToRename: $pdfToRename,
+                sharePayload: $sharePayload,
+                webExportPDF: $webExportPDF,
+                largeFilePDF: $largeFilePDF,
+                newCollectionName: $newCollectionName,
+                renameText: $renameText,
+                conversionManager: conversionManager,
+                onImport: { urls in
                     isImporting = true
                     Task {
                         await conversionManager.processImportedFiles(urls: urls)
                         isImporting = false
                     }
-                })
-            }
-            .sheet(isPresented: $showingWiFiSheet) {
-                WiFiView()
-            }
-            // ✅ Fix: Sheet only presents when 'pdfToShare' is not nil
-            .sheet(item: $pdfToShare) { pdf in
-                ShareSheet(activityItems: [pdf.url])
-            }
-
-            .sheet(item: $pdfToEdit) { pdf in
-                PageManagerView(pdf: pdf)
-            }
-            .sheet(item: $sharePayload) { payload in
-                ShareSheet(activityItems: payload.items)
-            }
-            .sheet(isPresented: $showingMergeSheet) {
-                FileMergeView(initialSelection: selection)
-            }
-            // ✅ "Save for Web" File Exporter
-            .fileExporter(
-                isPresented: $showingWebExport,
-                document: GenericFileDocument(url: webExportPDF?.url ?? URL(fileURLWithPath: "")),
-                contentType: {
-                    guard let ext = webExportPDF?.url.pathExtension.lowercased() else { return .pdf }
-                    if ext == "epub" { return .epub }
-                    if ext == "cbz" { return UTType("com.macitbetter.cbz-archive") ?? .zip }
-                    if ext == "cbr" { return UTType("com.macitbetter.cbr-archive") ?? .zip }
-                    if ext == "zip" { return .zip }
-                    return .pdf
-                }(),
-                defaultFilename: webExportPDF?.name ?? "Comic"
-            ) { result in
-                switch result {
-                case .success:
-                    // Automatically open Safari after saving
-                    if let url = URL(string: "https://www.amazon.com/gp/sendtokindle") {
-                        UIApplication.shared.open(url)
-                    }
-                case .failure(let error):
-                    print("Export failed: \(error.localizedDescription)")
                 }
-            }
-            .alert("New Collection", isPresented: $showingAddCollection) {
-                TextField("Collection Name", text: $newCollectionName)
-                Button("Cancel", role: .cancel) { newCollectionName = "" }
-                Button("Create") {
-                    if !newCollectionName.isEmpty {
-                        conversionManager.createCollection(name: newCollectionName, icon: "folder", color: "Blue")
-                        newCollectionName = ""
-                    }
-                }
-            }
-            // ✅ Large File Alert attached to Main View
-            .confirmationDialog("Large File Detected", isPresented: $showingLargeFileAlert, titleVisibility: .visible) {
-                Button("Save to 'Downloads' & Open Website") {
-                    // Start the Save & Open Flow
-                    if let pdf = largeFilePDF {
-                        Task {
-                             if let exportURL = await conversionManager.exportForCloudSync(pdf) {
-                                 await MainActor.run {
-                                     let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
-                                     webExportPDF = wrapper
-                                     showingWebExport = true
-                                 }
-                             }
-                        }
-                    }
-                }
-                Button("Share via System Sheet") {
-                    // Fallback to standard share
-                    if let pdf = largeFilePDF {
-                        Task {
-                             if let exportURL = await conversionManager.exportForCloudSync(pdf) {
-                                 await MainActor.run {
-                                     let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
-                                     pdfToShare = wrapper
-                                 }
-                             }
-                        }
-                    }
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("File is >50MB. To upload via browser, save it to 'Downloads' first. We will open the website for you immediately after saving.")
-            }
-            .alert("Rename File", isPresented: Binding(
-                get: { pdfToRename != nil },
-                set: { if !$0 { pdfToRename = nil } }
-            )) {
-                TextField("New Name", text: $renameText)
-                Button("Cancel", role: .cancel) { pdfToRename = nil }
-                Button("Rename") {
-                    if let pdf = pdfToRename {
-                        conversionManager.renamePDF(pdf, to: renameText)
-                    }
-                    pdfToRename = nil
-                }
-            } message: {
-                Text("Enter a new name for this file.")
-            }
-            .alert(item: $conversionManager.appAlert) { alert in
-                Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
-            }
+            )
         }
     }
     
