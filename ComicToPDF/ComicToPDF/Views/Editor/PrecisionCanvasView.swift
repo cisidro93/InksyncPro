@@ -192,9 +192,9 @@ struct PrecisionCanvasView: View {
                      }
                      .ignoresSafeArea()
                      .allowsHitTesting(false)
+                     .allowsHitTesting(false)
                 }
 
-            }
             // MARK: - Security Overlay
             if pdf.isPrivate {
                FaceIDOverlay()

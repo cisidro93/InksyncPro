@@ -8,11 +8,11 @@ struct NormalizedCoordinate: Codable, Equatable, Hashable {
     var y: Double
     
     static let zero = NormalizedCoordinate(x: 0, y: 0)
-    static let max = NormalizedCoordinate(x: 1000, y: 1000)
+    static let maximum = NormalizedCoordinate(x: 1000, y: 1000)
     
     init(x: Double, y: Double) {
-        self.x = (x.isNaN || x.isInfinite) ? 0 : min(max(x, 0), 1000)
-        self.y = (y.isNaN || y.isInfinite) ? 0 : min(max(y, 0), 1000)
+        self.x = (x.isNaN || x.isInfinite) ? 0 : min(Swift.max(x, 0), 1000)
+        self.y = (y.isNaN || y.isInfinite) ? 0 : min(Swift.max(y, 0), 1000)
     }
 }
 

@@ -181,13 +181,13 @@ class SnapEngine {
         // Snap X (Left/Right) - *Usually snap positions, but rect is Origin/Size*
         // We snap the edges.
         
-        let minXRes = snap(value: rect.x, type: .vertical, guides: guides, siblingValues: vSiblings)
+        let minXRes = snap(value: rect.origin.x, type: .vertical, guides: guides, siblingValues: vSiblings)
         if let g = minXRes.guide { activeGuides.append(g) }
         
         let maxXRes = snap(value: rect.maxX, type: .vertical, guides: guides, siblingValues: vSiblings)
         if let g = maxXRes.guide { activeGuides.append(g) }
         
-        let minYRes = snap(value: rect.y, type: .horizontal, guides: guides, siblingValues: hSiblings)
+        let minYRes = snap(value: rect.origin.y, type: .horizontal, guides: guides, siblingValues: hSiblings)
         if let g = minYRes.guide { activeGuides.append(g) }
         
         let maxYRes = snap(value: rect.maxY, type: .horizontal, guides: guides, siblingValues: hSiblings)
@@ -214,9 +214,9 @@ class SnapEngine {
         if newMaxX > newX && newMaxY > newY {
             // Update active guides based on what actually snapped
             var finalGuides: [SnapGuide] = []
-            if abs(newX - rect.x) > 0.1, let g = minXRes.guide { finalGuides.append(g) }
+            if abs(newX - rect.origin.x) > 0.1, let g = minXRes.guide { finalGuides.append(g) }
             if abs(newMaxX - rect.maxX) > 0.1, let g = maxXRes.guide { finalGuides.append(g) }
-            if abs(newY - rect.y) > 0.1, let g = minYRes.guide { finalGuides.append(g) }
+            if abs(newY - rect.origin.y) > 0.1, let g = minYRes.guide { finalGuides.append(g) }
             if abs(newMaxY - rect.maxY) > 0.1, let g = maxYRes.guide { finalGuides.append(g) }
             
             return (NormalizedRect(x: newX, y: newY, width: newMaxX - newX, height: newMaxY - newY), finalGuides)
@@ -242,14 +242,14 @@ class SnapEngine {
         
         // 1. Horizontal Snapping (X)
         // Check Left Edge
-        let leftSnap = snap(value: rect.x, type: .vertical, guides: guides, siblingValues: vSiblings)
+        let leftSnap = snap(value: rect.origin.x, type: .vertical, guides: guides, siblingValues: vSiblings)
         // Check Right Edge
         let rightSnap = snap(value: rect.maxX, type: .vertical, guides: guides, siblingValues: vSiblings)
         
-        var newX = rect.x
+        var newX = rect.origin.x
         
         // Prioritize the closest snap
-        let leftDist = abs(leftSnap.snapped - rect.x)
+        let leftDist = abs(leftSnap.snapped - rect.origin.x)
         let rightDist = abs(rightSnap.snapped - rect.maxX)
         
         if leftDist < snapThreshold && leftDist <= rightDist {
@@ -261,12 +261,12 @@ class SnapEngine {
         }
         
         // 2. Vertical Snapping (Y)
-        let topSnap = snap(value: rect.y, type: .horizontal, guides: guides, siblingValues: hSiblings)
+        let topSnap = snap(value: rect.origin.y, type: .horizontal, guides: guides, siblingValues: hSiblings)
         let bottomSnap = snap(value: rect.maxY, type: .horizontal, guides: guides, siblingValues: hSiblings)
         
-        var newY = rect.y
+        var newY = rect.origin.y
         
-        let topDist = abs(topSnap.snapped - rect.y)
+        let topDist = abs(topSnap.snapped - rect.origin.y)
         let bottomDist = abs(bottomSnap.snapped - rect.maxY)
         
         if topDist < snapThreshold && topDist <= bottomDist {
