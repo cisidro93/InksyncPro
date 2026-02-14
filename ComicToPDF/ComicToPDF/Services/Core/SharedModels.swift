@@ -75,6 +75,11 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
         self.chapters = chapters
     }
     
+    func toPDFDocument() -> PDFDocument {
+        return PDFDocument(url: url) ?? PDFDocument()
+    }
+}
+
 // ✅ Shared Error Type
 enum ConversionError: Error {
     case invalidFormat
