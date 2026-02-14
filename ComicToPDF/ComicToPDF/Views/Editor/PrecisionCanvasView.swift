@@ -464,7 +464,8 @@ struct PrecisionCanvasView: View {
     // MARK: - Gestures
     
     // ...
-}
+    // ...
+
 
 // ✅ Robust Preview Mask Shape
 struct PreviewMaskShape: Shape {

@@ -1108,15 +1108,13 @@ class ConversionManager: ObservableObject {
     }
     
     // ✅ NEW: Extract Smart Panels from ComicInfo.xml
-    func extractSmartPanels(from url: URL) async -> [Int: [PanelExtractor.Panel]]? {
+    func extractSmartPanels(from url: URL) async throws -> [Int: [PanelExtractor.Panel]]? {
         await MainActor.run { processingStatus = "Reading Source Panels..." } // Re-assert status
         
         Logger.shared.log("Inspection Started: \(url.lastPathComponent)", category: "SmartPanels")
+        // Create Archive Accessor
         guard let archive = try? Archive(url: url, accessMode: .read) else {
-            Logger.shared.log("Could not open archive: \(url.lastPathComponent)", category: "SmartPanels")
-            await MainActor.run { processingStatus = "Error: Invalid Archive" }
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            return nil
+            throw ConversionError.invalidFormat
         }
         
         // 1. Check for Embedded Metadata in OPF (New Standard)
