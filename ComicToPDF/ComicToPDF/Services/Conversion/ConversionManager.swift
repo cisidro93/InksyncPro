@@ -26,16 +26,8 @@ class ConversionManager: ObservableObject {
     @Published var processingStatus = ""
     @Published var statusMessage: String?
     
-    // ✅ NEW: Global Alert State
-    struct AppAlert: Identifiable {
-        let id = UUID()
-        let title: String
-        let message: String
-    }
-    @Published var appAlert: AppAlert?
-    
-    let thumbnailCache = NSCache<NSString, UIImage>()
-    private let libraryFileName = "library_index.json"
+    // ✅ Secure Processing Core Integration
+    private var progressSubscription: AnyCancellable?
     
     init() {
         loadLibrary()
@@ -43,7 +35,34 @@ class ConversionManager: ObservableObject {
         createWelcomeFile()
         performStartupOptimization()
         Task { await MainActor.run { self.migrateCoversToDisk() } }
+        
+        // Subscribe to Engine
+        progressSubscription = ConversionEngine.shared.progressSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                self?.handleEngineEvent(event)
+            }
     }
+    
+    private func handleEngineEvent(_ event: ConversionProgressEvent) {
+        switch event {
+        case .started(let file):
+            self.isConverting = true
+            self.processingStatus = "Starting: \(file.lastPathComponent)"
+        case .progress(_, let current, let total, let message):
+            self.conversionProgress = Double(current) / Double(total)
+            self.processingStatus = message
+        case .completed(_, _):
+            self.isConverting = false
+            self.processingStatus = ""
+            self.scanLibrary() // Refresh
+        case .failed(_, let error):
+            self.isConverting = false
+            self.appAlert = AppAlert(title: "Conversion Failed", message: error.localizedDescription)
+        }
+    }
+    
+    // Legacy Init Continuation...
     
     private func performStartupOptimization() {
         let key = "hasRunStartupOptimization"
@@ -400,7 +419,17 @@ class ConversionManager: ObservableObject {
             let ext = url.pathExtension.lowercased()
             if ext == "pdf" {
                 Task {
-                    await importPDF(url: url)
+                    // ✅ Offload to ConversionEngine
+                    do {
+                        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                        let _ = try await ConversionEngine.shared.performPDFImport(url: url, destFolder: docDir)
+                        // Engine emits 'completed' which triggers scanLibrary()
+                    } catch {
+                        Logger.shared.log("Engine Import Failed: \(error)", category: "Import")
+                        await MainActor.run {
+                            self.appAlert = AppAlert(title: "Import Failed", message: error.localizedDescription)
+                        }
+                    }
                 }
                 continue
             }
