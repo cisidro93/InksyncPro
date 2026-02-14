@@ -35,7 +35,7 @@ struct PanelInspectorView: View {
                     }
                 )
                 
-                Section("Position & Size") {
+                Section(header: Text("Position & Size")) {
                     HStack {
                         Text("X")
                         TextField("X", value: panelBinding.x, format: .number)
@@ -58,7 +58,7 @@ struct PanelInspectorView: View {
                     }
                 }
                 
-                Section("Smart Actions") {
+                Section(header: Text("Smart Actions")) {
                    Button("Snap to Grid", action: {
                        // Logic to snap this specific panel
                    })
