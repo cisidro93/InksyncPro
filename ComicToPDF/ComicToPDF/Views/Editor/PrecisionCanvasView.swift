@@ -66,11 +66,12 @@ struct PrecisionCanvasView: View {
                                 context.draw(text, at: textPoint, anchor: .topLeading)
                             }
                             
-                            // Draw Proposed Panels (Dashed)
+                            // Draw Proposed Panels (Dashed - More Subtle)
                             for panel in editorState.pageModel.proposedPanels {
                                 let rect = CoordinateConverter.denormalize(rect: panel, in: size)
                                 var path = Path(rect)
-                                context.stroke(path, with: .color(.green), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                                // Thinner, less opaque green
+                                context.stroke(path, with: .color(Color.green.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                             }
                             
                             // Draw Snap Guides
@@ -106,6 +107,23 @@ struct PrecisionCanvasView: View {
                             if let dragRect = currentDragRect {
                                 let rect = CoordinateConverter.denormalize(rect: dragRect, in: size)
                                 context.stroke(Path(rect), with: .color(.white), lineWidth: 1)
+                                
+                                // Draw Handles if Resizing
+                                if activeHandle != nil {
+                                    let handles = getHandleRects(for: rect)
+                                    for handle in handles {
+                                        context.fill(Path(handle), with: .color(.white))
+                                        context.stroke(Path(handle), with: .color(.black), lineWidth: 1)
+                                    }
+                                }
+                            } else if let index = selectedPanelIndex {
+                                // Draw Handles for Selected Panel (Idle)
+                                let rect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: size)
+                                let handles = getHandleRects(for: rect)
+                                for handle in handles {
+                                    context.fill(Path(handle), with: .color(.white))
+                                    context.stroke(Path(handle), with: .color(.blue), lineWidth: 1)
+                                }
                             }
                         }
                         .gesture(canvasGesture(in: geo.size))
@@ -260,6 +278,10 @@ struct PrecisionCanvasView: View {
     @State private var isInspectorPresented: Bool = true
     @State private var activeSnapGuides: [SnapGuide] = []
     
+    // Resize State
+    enum ResizeHandle { case topLeft, topRight, bottomLeft, bottomRight }
+    @State private var activeHandle: ResizeHandle? = nil
+
     // MARK: - Logic
     
     private func loadPage() {
@@ -312,6 +334,27 @@ struct PrecisionCanvasView: View {
         }
     }
     
+    // MARK: - Helper for Handles
+    private func getHandleRects(for rect: CGRect) -> [CGRect] {
+        let size: CGFloat = 16
+        return [
+            CGRect(x: rect.minX - size/2, y: rect.minY - size/2, width: size, height: size), // TopLeft
+            CGRect(x: rect.maxX - size/2, y: rect.minY - size/2, width: size, height: size), // TopRight
+            CGRect(x: rect.minX - size/2, y: rect.maxY - size/2, width: size, height: size), // BottomLeft
+            CGRect(x: rect.maxX - size/2, y: rect.maxY - size/2, width: size, height: size)  // BottomRight
+        ]
+    }
+    
+    private func hitTestHandle(at point: CGPoint, for rect: CGRect) -> ResizeHandle? {
+        let handles = getHandleRects(for: rect)
+        // Order matches enum: TL, TR, BL, BR
+        if handles[0].contains(point) { return .topLeft }
+        if handles[1].contains(point) { return .topRight }
+        if handles[2].contains(point) { return .bottomLeft }
+        if handles[3].contains(point) { return .bottomRight }
+        return nil
+    }
+
     // MARK: - Gestures
     
     private func canvasGesture(in size: CGSize) -> some Gesture {
@@ -334,49 +377,129 @@ struct PrecisionCanvasView: View {
                 case .edit:
                     // Logic to select access panels
                     if value.translation == .zero { // Tap start
+                         // 1. Check Handles First
+                         if let index = selectedPanelIndex {
+                             let currentPanelRect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: size)
+                             if let handle = hitTestHandle(at: value.location, for: currentPanelRect) {
+                                 activeHandle = handle
+                                 currentDragRect = editorState.pageModel.panels[index]
+                                 dragStart = point
+                                 return // Start Resizing
+                             }
+                         }
+                    
                          if let index = hitTest(point) {
                              selectedPanelIndex = index
                              // Initial Drag State
                              currentDragRect = editorState.pageModel.panels[index]
                              dragStart = point 
+                             activeHandle = nil // Moving, not resizing
                              editorState.log("Selected Panel \(index + 1)")
                          } else {
                              selectedPanelIndex = nil
                              currentDragRect = nil
+                             activeHandle = nil
                              // Don't log deselect to avoid noise? Or maybe we should.
                          }
                     } else if let index = selectedPanelIndex, let start = dragStart, var currentRect = currentDragRect {
-                         // 🧲 Magnetic Drag
-                         let dx = point.x - start.x
-                         let dy = point.y - start.y
                          
-                         // Apply delta to original rect (we need original to avoid drift, but simplified here we use currentRect as base if we updated it?)
-                         // Better: Store `originalPanelRect` in state. For now, we assume `editorState.pageModel.panels[index]` is the source of truth used at start.
-                         // But `currentDragRect` is being updated.
-                         // Let's rely on `dragStart` delta.
-                         
-                         let original = editorState.pageModel.panels[index]
-                         let targetRect = NormalizedRect(
-                             x: original.x + dx,
-                             y: original.y + dy,
-                             width: original.width,
-                             height: original.height
-                         )
-                         
-                         // Run Snap Engine
-                         let (snapped, guides) = SnapEngine.shared.snapMove(
-                             targetRect,
-                             guides: editorState.snapGuides,
-                             otherPanels: editorState.pageModel.panels.filter { $0 != original }
-                         )
-                         
-                         currentDragRect = snapped
-                         
-                         // Haptics
-                         if !guides.isEmpty && activeSnapGuides.isEmpty {
-                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                         // Determine mode: Resize or Move
+                         if let handle = activeHandle {
+                             // Resizing Logic
+                             var newRect = currentRect
+                             
+                             let dx = point.x - start.x
+                             let dy = point.y - start.y
+                             
+                             // Simple unconstrained resize first
+                             switch handle {
+                             case .topLeft:
+                                 newRect.origin.x += dx
+                                 newRect.origin.y += dy
+                                 newRect.size.width -= dx
+                                 newRect.size.height -= dy
+                             case .topRight:
+                                 newRect.origin.y += dy
+                                 newRect.size.width += dx
+                                 newRect.size.height -= dy
+                             case .bottomLeft:
+                                 newRect.origin.x += dx
+                                 newRect.size.width -= dx
+                                 newRect.size.height += dy
+                             case .bottomRight:
+                                 newRect.size.width += dx
+                                 newRect.size.height += dy
+                             }
+                             
+                             // Update dragStart for delta calculation in next frame?
+                             // No, dragGesture provides cumulative translation, but we are using point-start logic.
+                             // Actually, using point (location) is absolute.
+                             // Issue: `point` is current location. `start` is start location. `dx` is total delta.
+                             // If we apply `dx` to `currentRect` (which we might be updating incorrectly), it fails.
+                             // We should apply to `original` panel state.
+                             let original = editorState.pageModel.panels[index]
+                             var targetRect = original
+                             
+                             let totalDx = point.x - start.x
+                             let totalDy = point.y - start.y
+                             
+                             switch handle {
+                             case .topLeft:
+                                 targetRect.origin.x += totalDx
+                                 targetRect.origin.y += totalDy
+                                 targetRect.size.width -= totalDx
+                                 targetRect.size.height -= totalDy
+                             case .topRight:
+                                 targetRect.origin.y += totalDy
+                                 targetRect.size.width += totalDx
+                                 targetRect.size.height -= totalDy
+                             case .bottomLeft:
+                                 targetRect.origin.x += totalDx
+                                 targetRect.size.width -= totalDx
+                                 targetRect.size.height += totalDy
+                             case .bottomRight:
+                                 targetRect.size.width += totalDx
+                                 targetRect.size.height += totalDy
+                             }
+                             
+                             // Resolve negative sizes
+                             if targetRect.width < 10 { targetRect.size.width = 10; targetRect.origin.x = original.maxX - 10 } // Simplified
+                             if targetRect.height < 10 { targetRect.size.height = 10; targetRect.origin.y = original.maxY - 10 }
+                             
+                             // Snap Resize?
+                             // ... (Omitted for brevity, good enough for now)
+                             
+                             currentDragRect = targetRect
+                             
+                         } else {
+                             // Moving Logic
+                             // 🧲 Magnetic Drag
+                             let dx = point.x - start.x
+                             let dy = point.y - start.y
+                             
+                             let original = editorState.pageModel.panels[index]
+                             let targetRect = NormalizedRect(
+                                 x: original.x + dx,
+                                 y: original.y + dy,
+                                 width: original.width,
+                                 height: original.height
+                             )
+                             
+                             // Run Snap Engine
+                             let (snapped, guides) = SnapEngine.shared.snapMove(
+                                 targetRect,
+                                 guides: editorState.snapGuides,
+                                 otherPanels: editorState.pageModel.panels.filter { $0 != original }
+                             )
+                             
+                             currentDragRect = snapped
+                             
+                             // Haptics
+                             if !guides.isEmpty && activeSnapGuides.isEmpty {
+                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                             }
+                             activeSnapGuides = guides
                          }
-                         activeSnapGuides = guides
                     }
                     
                 case .anchor:
@@ -411,6 +534,7 @@ struct PrecisionCanvasView: View {
                     dragStart = nil
                     currentDragRect = nil
                     activeSnapGuides = []
+                    activeHandle = nil
                 }
                 
                 if selectedTool == .anchor, let rect = currentDragRect {
@@ -421,7 +545,7 @@ struct PrecisionCanvasView: View {
                 }
                 
                 if selectedTool == .edit, let index = selectedPanelIndex, let newRect = currentDragRect {
-                    // Commit Move
+                    // Commit Move OR Resize
                     let oldRect = editorState.pageModel.panels[index]
                     if newRect != oldRect {
                         editorState.execute(.resizePanel(index: index, oldRect: oldRect, newRect: newRect))

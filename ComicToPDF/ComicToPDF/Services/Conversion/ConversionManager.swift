@@ -46,7 +46,9 @@ class ConversionManager: ObservableObject {
                 let rect = panel.boundingBox
                 // Heuristic: If values are small (0-1), normalize them.
                 // If they are large (>1), assume they are already normalized (0-1000) or pixels we can't easily resize without image data so we pass through.
-                if rect.width <= 2.0 && rect.height <= 2.0 {
+                // Heuristic: If values are small (strictly <= 1.0), normalize them.
+                // We use 1.1 as a safety buffer for slight floating point errors.
+                if rect.maxX <= 1.1 && rect.maxY <= 1.1 {
                      return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
                 } else {
                      return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
