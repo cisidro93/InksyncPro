@@ -51,6 +51,14 @@ struct ContentView: View {
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
         // ... (existing sheets) ...
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView(showOnboarding: $showOnboarding)
+        }
+        .onAppear {
+            if !hasCompletedOnboarding {
+                showOnboarding = true
+            }
+        }
     }
     
     // ✅ iOS 26 "Liquid Glass" Layout
