@@ -38,6 +38,7 @@ class ConversionManager: ObservableObject {
         
         // Check legacy overrides and migrate if needed
         if let legacyPanels = panelOverrides[pdfID]?[pageIndex] {
+             var allNormalized = true
              newModel.panels = legacyPanels.map { panel in
                 let rect = panel.boundingBox
                 // Heuristic: If values are small (strictly <= 1.1), normalize them (Vision 0-1).
@@ -45,14 +46,17 @@ class ConversionManager: ObservableObject {
                 if rect.maxX <= 1.1 && rect.maxY <= 1.1 {
                      return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
                 } else {
+                     // Large Values -> Could be 0-1000 (good) or Pixels (bad)
+                     allNormalized = false
                      return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
                 }
             }
             
-            // If we successfully loaded panels, tag them as normalized (assuming the heuristic worked)
-            // Ideally, panelOverrides (Vision) are always 0-1.
-            if !newModel.panels.isEmpty {
+            // If we migrated legacy panels, ONLY check if ALL were 0-1 (Vision)
+            if !newModel.panels.isEmpty && allNormalized {
                  newModel.coordinateSystem = .normalized
+            } else {
+                 newModel.coordinateSystem = .unknown // Force validation in Editor
             }
         }
         return newModel
