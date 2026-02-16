@@ -120,6 +120,11 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
+    // ✅ Rich Metadata
+    var writer: String?
+    var penciller: String?
+    var comicVineID: Int?
+    var seriesID: Int?
     var tags: [String] = []
     // ✅ Calibre-style Reading Options
     var isManga: Bool? // Overrides global setting if present

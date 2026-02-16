@@ -9,6 +9,56 @@ struct SettingsView: View {
     @State private var showingDeleteAlert = false
     @State private var deviceToDelete: KindleDevice?
     
+    // ✅ NEW: API Key Verification State
+    @State private var isVerifying = false
+    @State private var verificationStatus: KeyStatus = .none
+    
+    enum KeyStatus {
+        case none, verifying, success, invalid, localizedError(String)
+        
+        var title: String {
+            switch self {
+            case .none: return "Verify Key"
+            case .verifying: return "Verifying..."
+            case .success: return "Key Validated"
+            case .invalid: return "Invalid Key"
+            case .localizedError(let msg): return msg
+            }
+        }
+        
+        var icon: String? {
+            switch self {
+            case .success: return "checkmark.circle.fill"
+            case .invalid, .localizedError: return "exclamationmark.triangle.fill"
+            default: return nil
+            }
+        }
+        
+        var color: Color {
+            switch self {
+            case .success: return .green
+            case .invalid, .localizedError: return .red
+            default: return .primary
+            }
+        }
+    }
+    
+    func verifyAPIKey() {
+        let key = conversionManager.conversionSettings.comicVineAPIKey
+        guard !key.isEmpty else { return }
+        
+        isVerifying = true
+        verificationStatus = .verifying
+        
+        Task {
+            let isValid = await ComicVineService.shared.validateAPIKey(key)
+            await MainActor.run {
+                isVerifying = false
+                verificationStatus = isValid ? .success : .invalid
+            }
+        }
+    }
+    
     var body: some View {
         Form {
 
@@ -132,7 +182,26 @@ struct SettingsView: View {
             
             Section(header: Text("Integrations")) {
                 SecureField("ComicVine API Key", text: $conversionManager.conversionSettings.comicVineAPIKey)
-                Link("Get API Key", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                
+                if !conversionManager.conversionSettings.comicVineAPIKey.isEmpty {
+                    Button(action: verifyAPIKey) {
+                        HStack {
+                            Text(verificationStatus.title)
+                            if isVerifying {
+                                ProgressView().padding(.leading, 5)
+                            } else if let icon = verificationStatus.icon {
+                                Image(systemName: icon)
+                                    .foregroundColor(verificationStatus.color)
+                            }
+                        }
+                    }
+                    .disabled(isVerifying)
+                }
+                
+                Link("Get Free API Key", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
                     .font(.caption)
                     .foregroundColor(.blue)
             }

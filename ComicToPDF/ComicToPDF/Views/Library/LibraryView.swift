@@ -20,6 +20,7 @@ struct LibraryView: View {
     // ✅ Fix: Data-Driven Sheet State (Prevents Blank Pages)
     @State private var pdfToShare: ConvertedPDF?
     @State private var pdfToEdit: ConvertedPDF?
+    @State private var pdfToMetadataEdit: ConvertedPDF?
     @State private var pdfToRename: ConvertedPDF?
     @State private var renameText = ""
     @State private var showingLargeFileAlert = false
@@ -87,6 +88,7 @@ struct LibraryView: View {
                 showingLargeFileAlert: $showingLargeFileAlert,
                 pdfToShare: $pdfToShare,
                 pdfToEdit: $pdfToEdit,
+                pdfToMetadataEdit: $pdfToMetadataEdit,
                 pdfToRename: $pdfToRename,
                 sharePayload: $sharePayload,
                 webExportPDF: $webExportPDF,
@@ -377,6 +379,12 @@ struct LibraryView: View {
                             Label("Edit Book & Pages", systemImage: "doc.on.doc")
                         }
                         
+                        Button {
+                            pdfToMetadataEdit = pdf
+                        } label: {
+                            Label("Edit Metadata", systemImage: "tag")
+                        }
+                        
                         // 5. Comic Vault Export
                         Button {
                             Task {
@@ -471,6 +479,7 @@ extension View {
         showingLargeFileAlert: Binding<Bool>,
         pdfToShare: Binding<ConvertedPDF?>,
         pdfToEdit: Binding<ConvertedPDF?>,
+        pdfToMetadataEdit: Binding<ConvertedPDF?>,
         pdfToRename: Binding<ConvertedPDF?>,
         sharePayload: Binding<LibraryView.SharePayload?>,
         webExportPDF: Binding<ConvertedPDF?>,
@@ -492,6 +501,12 @@ extension View {
             }
             .sheet(item: pdfToEdit) { pdf in
                 PageManagerView(pdf: pdf)
+            }
+            .sheet(item: pdfToMetadataEdit) { pdf in
+                // We need a binding to the item in the array to allow saving
+                if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    MetadataEditorSheet(pdf: $conversionManager.convertedPDFs[index])
+                }
             }
             .sheet(item: sharePayload) { payload in
                 ShareSheet(activityItems: payload.items)
