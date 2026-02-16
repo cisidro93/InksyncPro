@@ -154,7 +154,7 @@ class ConversionManager: ObservableObject {
         let memory = ProcessInfo.processInfo.physicalMemory
         let ramGB = Double(memory) / 1024.0 / 1024.0 / 1024.0
         
-        print("📱 [Optimization] Detecting Device Capabilities: \(String(format: "%.1f", ramGB)) GB RAM")
+        "📱 [Optimization] Detecting Device Capabilities: \(String(format: "%.1f", ramGB)) GB RAM")
         
         if ramGB > 5.5 {
             // High End Device (iPad Pro M1/M2/M4, iPhone 14 Pro+, etc) -> >6GB
@@ -240,7 +240,7 @@ class ConversionManager: ObservableObject {
     func savePanelOverrides(for pdfID: UUID, panels: [Int: [PanelExtractor.Panel]]) {
         self.panelOverrides[pdfID] = panels
         self.saveLibrary()
-        print("✅ Restored panels for imported file (ID: \(pdfID))")
+        "✅ Restored panels for imported file (ID: \(pdfID))")
     }
     
     // MARK: - Cover Image Management (Memory Optimization)
@@ -253,7 +253,7 @@ class ConversionManager: ObservableObject {
     
     /// Migrates legacy Data-based covers to disk-based storage
     func migrateCoversToDisk() {
-        print("💾 [Migration] Checking for legacy cover data...")
+        "💾 [Migration] Checking for legacy cover data...")
         var updated = false
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         
@@ -267,13 +267,13 @@ class ConversionManager: ObservableObject {
                 // Clear from memory
                 convertedPDFs[i].coverImageData = nil
                 updated = true
-                print("   -> Migrated cover: \(convertedPDFs[i].name)")
+                "   -> Migrated cover: \(convertedPDFs[i].name)")
             }
         }
         
         if updated {
             saveLibrary()
-            print("💾 [Migration] Cover migration complete. Library saved.")
+            "💾 [Migration] Cover migration complete. Library saved.")
         }
     }
     
@@ -524,7 +524,7 @@ class ConversionManager: ObservableObject {
                 let destURL = docDir.appendingPathComponent(fileName)
                 if FileManager.default.fileExists(atPath: destURL.path) { try FileManager.default.removeItem(at: destURL) }
                 try FileManager.default.copyItem(at: url, to: destURL)
-            } catch { print("Import Failed: \(error)") }
+            } catch { "Import Failed: \(error)") }
         }
         scanLibrary()
     }
@@ -730,7 +730,7 @@ class ConversionManager: ObservableObject {
         
         // 2. If it's a NEW session (ID mismatch), we must clean up the old one first
         if let oldCache = editorCache, oldCache.pdfID != pdf.id {
-            print("🔄 Switching Editor Session: \(oldCache.pdfID) -> \(pdf.id)")
+            "🔄 Switching Editor Session: \(oldCache.pdfID) -> \(pdf.id)")
             endSession() // Clean up old files immediately
         }
         
@@ -747,7 +747,7 @@ class ConversionManager: ObservableObject {
         }
         
         // 4. Start New Extraction Task
-        print("🚀 Starting new Editor Session for: \(pdf.name)")
+        "🚀 Starting new Editor Session for: \(pdf.name)")
         let newTask = Task.detached(priority: .userInitiated) {
             let result = try await ZipUtilities.extractComic(from: pdf.url)
             return (workingDir: result.workingDir, files: result.imageURLs)
@@ -766,7 +766,7 @@ class ConversionManager: ObservableObject {
     }
     
     func endSession() {
-        print("🛑 Ending Session...")
+        "🛑 Ending Session...")
         
         // 1. Cancel the background unzipping IMMEDIATELY
         activeExtractionTask?.cancel()
@@ -791,7 +791,7 @@ class ConversionManager: ObservableObject {
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) {
             if let cache = cacheToDelete {
                  try? FileManager.default.removeItem(at: cache.folder)
-                 print("🗑️ Cleaned up session folder: \(cache.folder.lastPathComponent)")
+                 "🗑️ Cleaned up session folder: \(cache.folder.lastPathComponent)")
             }
         }
     }
@@ -912,7 +912,7 @@ class ConversionManager: ObservableObject {
                 await MainActor.run { self.scanLibrary() }
                 Logger.shared.log("Batch Conversion successful: \(pdf.name)", category: "Converter")
             } catch {
-                print("❌ Batch Error for \(pdf.name): \(error)")
+                "❌ Batch Error for \(pdf.name): \(error)")
                 Logger.shared.log("Batch Error for \(pdf.name): \(error)", category: "Converter")
                 await MainActor.run { self.statusMessage = "Error on \(pdf.name)" }
                 try? await Task.sleep(nanoseconds: 1 * 1_000_000_000)
@@ -970,7 +970,7 @@ class ConversionManager: ObservableObject {
                 }
                 
             } catch {
-                print("❌ Batch Merge Error on \(file.name): \(error)")
+                "❌ Batch Merge Error on \(file.name): \(error)")
                 await MainActor.run { self.statusMessage = "Failed: \(file.name)" }
                 try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
                 isConverting = false
@@ -1001,7 +1001,7 @@ class ConversionManager: ObservableObject {
         let merger = EPUBMerger()
         do {
             try await merger.mergeEPUBs(sourceURLs: generatedEPUBs, outputURL: finalOutputURL, settings: mergeSettings)
-            print("✅ Merge Success: \(finalOutputURL)")
+            "✅ Merge Success: \(finalOutputURL)")
             
             // 3. Cleanup Intermediates
             await MainActor.run { self.statusMessage = "Cleaning up..." }
@@ -1021,7 +1021,7 @@ class ConversionManager: ObservableObject {
             await MainActor.run { self.statusMessage = nil }
             
         } catch {
-            print("❌ Merge Failed: \(error)")
+            "❌ Merge Failed: \(error)")
             await MainActor.run {
                 self.statusMessage = "Merge Failed: \(error.localizedDescription)"
                 self.isConverting = false
@@ -1109,12 +1109,12 @@ class ConversionManager: ObservableObject {
                                 return image
                             }
                         } catch {
-                            print("Failed to extract entry for thumbnail: \(entry.path)")
+                            "Failed to extract entry for thumbnail: \(entry.path)")
                         }
                     }
                 }
             } catch {
-                print("Thumbnail Extraction Error for \(url.lastPathComponent): \(error)")
+                "Thumbnail Extraction Error for \(url.lastPathComponent): \(error)")
             }
         }
         return nil
@@ -2052,7 +2052,7 @@ class ConversionManager: ObservableObject {
             if let data = opfData, let path = opfPath {
                 // Log OPF for debugging
                 if let opfStr = String(data: data, encoding: .utf8) {
-                    print("📝 [OPF Injection] Final OPF Content:\n\(opfStr)")
+                    "📝 [OPF Injection] Final OPF Content:\n\(opfStr)")
                 }
                 
                 try newArchive.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
@@ -2142,7 +2142,7 @@ class ConversionManager: ObservableObject {
                 try archive.addEntry(with: opfPath, type: .file, uncompressedSize: Int64(newData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
                      return newData.subdata(in: Int(position)..<min(Int(position)+size, newData.count))
                 }
-                print("✅ [KindleOPF] Injected Metadata into \(url.lastPathComponent)")
+                "✅ [KindleOPF] Injected Metadata into \(url.lastPathComponent)")
             }
         }
     }

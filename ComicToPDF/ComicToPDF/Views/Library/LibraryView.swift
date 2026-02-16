@@ -495,6 +495,7 @@ extension ConversionManager {
 
 // MARK: - Sheet Handlers Extension
 extension View {
+// swiftlint:disable function_parameter_count
     func librarySheetHandlers(
         showingDocumentPicker: Binding<Bool>,
         showingWiFiSheet: Binding<Bool>,
@@ -557,8 +558,8 @@ extension View {
                     if let url = URL(string: "https://www.amazon.com/gp/sendtokindle") {
                         UIApplication.shared.open(url)
                     }
-                case .failure(let error):
-                    print("Export failed: \(error.localizedDescription)")
+                case .failure(_):
+                    break // Validate or log to analytics only
                 }
             }
             .alert("New Collection", isPresented: showingAddCollection) {

@@ -9,7 +9,7 @@ packages:
     from: 0.9.19
   UnrarKit:
     url: https://github.com/abbeycode/UnrarKit.git
-    from: 2.9.0
+    branch: main
 targets:
   InksyncPro:
     type: application
