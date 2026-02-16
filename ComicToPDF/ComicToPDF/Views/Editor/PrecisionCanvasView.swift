@@ -407,33 +407,22 @@ struct PrecisionCanvasView: View {
         var detectedSystem: CoordinateSystem? = nil
         
         // 2. Analyze Bounds
+        // 2. Analyze Bounds
         if unionRect.maxX <= 1.1 && unionRect.maxY <= 1.1 {
             detectedSystem = .normalizedZeroOne
-        } else if unionRect.maxY > 1100 {
-            detectedSystem = .pixels
         } else {
-             // Ambiguous Case (Values are > 1.1 but <= 1100)
-             // Determine if these are "Small Normals" vs "Top-Area Pixels"
-             
-             // If image is High-Res (significantly > 1000), ambiguity usually means Pixels.
-             // Because Legacy data is often Pixels, whereas 0-1000 is a new internal format.
-             if imageSize.height > 1500 {
-                 detectedSystem = .pixels
-                 editorState.log("   -> High-Res Image detected. Assuming Pixels for legacy safety.")
-             } else {
-                 let bottomMatchPixels = abs(unionRect.maxY - imageSize.height)
-                 let bottomMatchNorm   = abs(unionRect.maxY - 1000.0)
-                 
-                 if abs(imageSize.height - 1000) > 100 {
-                     if bottomMatchPixels < bottomMatchNorm {
-                         detectedSystem = .pixels
-                     } else {
-                         detectedSystem = .normalizedThousand
-                     }
-                 } else {
-                     detectedSystem = .normalizedThousand
-                 }
-             }
+            // Any value > 1.1 MUST be Pixels.
+            // Why? Because "Normalized 0-1000" is an internal format that is converted to 0-1 on save.
+            // Therefore, it implies that the persistent store (panelOverrides) ONLY contains 0-1 OR Legacy Pixels.
+            // It cannot contain 0-1000.
+            detectedSystem = .pixels
+            editorState.log("   -> Values > 1.1 detected. Treating as Legacy Pixels.")
+        }
+        
+        // Safety: Ensure valid image size for normalization
+        if detectedSystem == .pixels && (imageSize.width < 1 || imageSize.height < 1) {
+             editorState.log("⚠️ Cannot repair pixels without valid image size. Aborting.")
+             return
         }
         
         if let system = detectedSystem {
