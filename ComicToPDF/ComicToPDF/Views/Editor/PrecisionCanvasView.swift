@@ -248,51 +248,51 @@ struct PrecisionCanvasView: View {
                                 Text("Scan").font(.caption2)
                             }
                         }
-                        .foregroundColor(editorState.selectedTool == .edit ? .white : .secondary) // Highlight action? No, scan is action.
+                        .foregroundColor(selectedTool == .edit ? .white : .secondary) // Highlight action? No, scan is action.
                         .frame(maxWidth: .infinity)
                         
                         // Tool: Edit
-                        Button { editorState.selectedTool = .edit } label: {
+                        Button { selectedTool = .edit } label: {
                             VStack(spacing: 4) {
                                 Image(systemName: "cursorarrow.rays")
                                     .font(.system(size: 20))
                                 Text("Edit").font(.caption2)
                             }
                         }
-                        .foregroundColor(editorState.selectedTool == .edit ? .blue : .primary)
+                        .foregroundColor(selectedTool == .edit ? .blue : .primary)
                         .frame(maxWidth: .infinity)
                         
                         // Tool: Knife
-                        Button { editorState.selectedTool = .knife } label: {
+                        Button { selectedTool = .knife } label: {
                             VStack(spacing: 4) {
                                 Image(systemName: "scissors")
                                     .font(.system(size: 20))
                                 Text("Split").font(.caption2)
                             }
                         }
-                        .foregroundColor(editorState.selectedTool == .knife ? .blue : .primary)
+                        .foregroundColor(selectedTool == .knife ? .blue : .primary)
                         .frame(maxWidth: .infinity)
                         
                         // Tool: Anchor
-                        Button { editorState.selectedTool = .anchor } label: {
+                        Button { selectedTool = .anchor } label: {
                             VStack(spacing: 4) {
                                 Image(systemName: "plus.square.dashed")
                                     .font(.system(size: 20))
                                 Text("Add").font(.caption2)
                             }
                         }
-                        .foregroundColor(editorState.selectedTool == .anchor ? .blue : .primary)
+                        .foregroundColor(selectedTool == .anchor ? .blue : .primary)
                         .frame(maxWidth: .infinity)
                         
                         // Tool: Preview
-                        Button { editorState.selectedTool = .preview } label: {
+                        Button { selectedTool = .preview } label: {
                             VStack(spacing: 4) {
                                 Image(systemName: "eye")
                                     .font(.system(size: 20))
                                 Text("Preview").font(.caption2)
                             }
                         }
-                        .foregroundColor(editorState.selectedTool == .preview ? .blue : .primary)
+                        .foregroundColor(selectedTool == .preview ? .blue : .primary)
                         .frame(maxWidth: .infinity)
                         
                         // Commit Button (if needed)
