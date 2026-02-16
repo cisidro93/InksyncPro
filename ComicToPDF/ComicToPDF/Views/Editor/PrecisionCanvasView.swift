@@ -342,7 +342,13 @@ struct PrecisionCanvasView: View {
                       self.pageImage = image
                       
                       // 🚀 Run Deep Fix for Legacy Panels
-                      validateAndFixPanels(for: image.size)
+                      // ✅ FIX: Use Pixel Dimensions, not Points (image.size)
+                      // Legacy data is in Pixels. Vision/Image.size is Points.
+                      let pixelSize = CGSize(
+                          width: CGFloat(image.cgImage?.width ?? Int(image.size.width)),
+                          height: CGFloat(image.cgImage?.height ?? Int(image.size.height))
+                      )
+                      validateAndFixPanels(for: pixelSize)
                       
                       editorState.log("Page loaded successfully")
                   }
