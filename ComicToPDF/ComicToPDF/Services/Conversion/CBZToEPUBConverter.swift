@@ -89,7 +89,7 @@ class CBZToEPUBConverter {
             let exceedsLimit = (currentBatchSize + itemSize + overheadBuffer) > limit
             
             if !isNoLimit && exceedsLimit && !currentBatch.isEmpty {
-                print("⚠️ Auto-Splitting at \(currentBatchSize) bytes (Image: \(index))")
+                Logger.shared.log("⚠️ Auto-Splitting at \(currentBatchSize) bytes (Image: \(index))", category: "Converter")
                 batches.append(currentBatch)
                 currentBatch = []
                 currentBatchSize = 0

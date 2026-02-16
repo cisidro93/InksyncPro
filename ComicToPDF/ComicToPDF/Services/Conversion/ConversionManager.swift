@@ -1300,7 +1300,7 @@ class ConversionManager: ObservableObject {
         // Prevent overwrite
         if fileManager.fileExists(atPath: newURL.path) {
             // Simple handling: fail or alert. For now, we will append a counter if we were fancy, but let's just return to avoid data loss.
-            print("Rename failed: File exists")
+            Logger.shared.log("Rename failed: File exists", category: "Library")
             return
         }
         
@@ -1332,7 +1332,7 @@ class ConversionManager: ObservableObject {
                 objectWillChange.send()
             }
         } catch {
-            print("Rename Error: \(error)")
+            Logger.shared.log("Rename Error: \(error)", category: "Library")
         }
     }
     
