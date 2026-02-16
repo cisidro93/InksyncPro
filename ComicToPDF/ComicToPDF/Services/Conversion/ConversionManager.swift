@@ -34,35 +34,44 @@ class ConversionManager: ObservableObject {
             return model
         }
         
-        // Check legacy overrides and migrate if needed
         var newModel = PageModel(pageIndex: pageIndex)
+        
+        // Check legacy overrides and migrate if needed
         if let legacyPanels = panelOverrides[pdfID]?[pageIndex] {
-            // We assume legacy panels are stored as 0-1 normalized CGRects (if they were from Vision)
-            // But PanelEditorView uses image-relative coords. 
-            // Actually PanelExtractor.Panel stores boundingBox which IS normalized 0-1 in Vision,
-            // but might be different in Editor.
-            // Let's assume they are 0-1 relative to image.
-            newModel.panels = legacyPanels.map { panel in
+             newModel.panels = legacyPanels.map { panel in
                 let rect = panel.boundingBox
-                // Heuristic: If values are small (0-1), normalize them.
-                // If they are large (>1), assume they are already normalized (0-1000) or pixels we can't easily resize without image data so we pass through.
-                // Heuristic: If values are small (strictly <= 1.0), normalize them.
-                // We use 1.1 as a safety buffer for slight floating point errors.
+                // Heuristic: If values are small (strictly <= 1.1), normalize them (Vision 0-1).
+                // If larger, assume they are already normalized (0-1000) or pixels.
                 if rect.maxX <= 1.1 && rect.maxY <= 1.1 {
                      return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
                 } else {
                      return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
                 }
             }
+            
+            // If we successfully loaded panels, tag them as normalized (assuming the heuristic worked)
+            // Ideally, panelOverrides (Vision) are always 0-1.
+            if !newModel.panels.isEmpty {
+                 newModel.coordinateSystem = .normalized
+            }
         }
         return newModel
     }
     
     func savePageModel(_ model: PageModel, for pdfID: UUID) {
-        if pageModels[pdfID] == nil {
-            pageModels[pdfID] = [:]
+        if pageModels[pdfID] == nil { pageModels[pdfID] = [:] }
+        // Ensure we save the coordinate system state
+        var modelToSave = model
+        if modelToSave.coordinateSystem == .unknown {
+            // If saving an unknown model that has panels, assume it is now normalized? 
+            // No, only if we actually validated it. 
+            // But if it came from the editor, it's likely been validated or edited.
+            // Let's safe-guard: if it has panels and we are saving, it's likely been touched.
+            if !modelToSave.panels.isEmpty {
+                modelToSave.coordinateSystem = .normalized
+            }
         }
-        pageModels[pdfID]?[model.pageIndex] = model
+        pageModels[pdfID]?[model.pageIndex] = modelToSave
         
         // Sync back to legacy panelOverrides for Export/Injection compatibility
         // Convert NormalizedRect (0-1000 Top-Left) -> Vision Rect (0-1 Bottom-Left)

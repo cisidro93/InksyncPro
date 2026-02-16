@@ -372,6 +372,7 @@ struct PrecisionCanvasView: View {
             
             await MainActor.run {
                 editorState.pageModel.proposedPanels = normalized
+                editorState.pageModel.coordinateSystem = .normalized // ✅ Tag as Trusted
                 editorState.isProcessing = false
                 editorState.log("AI Scan: Found \(normalized.count) panels")
             }
@@ -393,7 +394,13 @@ struct PrecisionCanvasView: View {
         
         guard !unionRect.isNull else { return }
         
-        editorState.log("🔍 Inspecting Panel Coordinates...")
+        // 0. CHECK EXPLICIT TAG
+        if editorState.pageModel.coordinateSystem == .normalized {
+            editorState.log("✅ Panels are tagged as Normalized. Skipping heuristics.")
+            return
+        }
+        
+        editorState.log("🔍 Inspecting Panel Coordinates (Legacy/Unknown)...")
         editorState.log("   - Union Rect: \(unionRect)")
         editorState.log("   - Image Size: \(imageSize)")
         
@@ -405,18 +412,27 @@ struct PrecisionCanvasView: View {
         } else if unionRect.maxY > 1100 {
             detectedSystem = .pixels
         } else {
-             // Ambiguous Case
-             let bottomMatchPixels = abs(unionRect.maxY - imageSize.height)
-             let bottomMatchNorm   = abs(unionRect.maxY - 1000.0)
+             // Ambiguous Case (Values are > 1.1 but <= 1100)
+             // Determine if these are "Small Normals" vs "Top-Area Pixels"
              
-             if abs(imageSize.height - 1000) > 100 {
-                 if bottomMatchPixels < bottomMatchNorm {
-                     detectedSystem = .pixels
+             // If image is High-Res (significantly > 1000), ambiguity usually means Pixels.
+             // Because Legacy data is often Pixels, whereas 0-1000 is a new internal format.
+             if imageSize.height > 1500 {
+                 detectedSystem = .pixels
+                 editorState.log("   -> High-Res Image detected. Assuming Pixels for legacy safety.")
+             } else {
+                 let bottomMatchPixels = abs(unionRect.maxY - imageSize.height)
+                 let bottomMatchNorm   = abs(unionRect.maxY - 1000.0)
+                 
+                 if abs(imageSize.height - 1000) > 100 {
+                     if bottomMatchPixels < bottomMatchNorm {
+                         detectedSystem = .pixels
+                     } else {
+                         detectedSystem = .normalizedThousand
+                     }
                  } else {
                      detectedSystem = .normalizedThousand
                  }
-             } else {
-                 detectedSystem = .normalizedThousand
              }
         }
         
@@ -455,6 +471,9 @@ struct PrecisionCanvasView: View {
                 editorState.pageModel.panels = fixedPanels
                 editorState.log("✅ Validation Complete: Migrated \(fixedPanels.count) panels.")
             }
+            
+            // ✅ Mark as Trusted for future loads
+            editorState.pageModel.coordinateSystem = .normalized
         }
     }
 

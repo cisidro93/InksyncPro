@@ -530,6 +530,17 @@ struct PageModel: Identifiable, Codable, Equatable, Hashable {
     var panels: [NormalizedRect] = []
     var proposedPanels: [NormalizedRect] = [] // AI Suggestions
     
+    // ✅ NEW: Explicit Coordinate System Tracking
+    // This allows us to trust "Known Good" panels (e.g. from Auto-Scan) and only run heuristics on Legacy/Unknown data.
+    var coordinateSystem: PageCoordinateSystem = .unknown 
+    
     // We don't store UndoManager here because it's a class and not Codable.
     // UndoManager will be managed by PageEditorState at runtime.
+}
+
+// ✅ Coordinate System Helper
+enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
+    case unknown = "check_required" // Legacy files, needs heuristic
+    case normalized = "normalized_0_1000" // Known Good (New Scan, Validated)
+    case pixels = "pixels" // Raw pixels (needs conversion)
 }
