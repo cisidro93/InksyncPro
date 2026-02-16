@@ -736,8 +736,8 @@ class WiFiServer: ObservableObject {
         
         // 3. UDP Multicast Trigger (Most Reliable)
         // Sending a packet to a multicast address (224.0.0.1) forces the OS to check Local Network permissions immediately.
-        guard let multicastAddress = NWEndpoint.Host("224.0.0.1"),
-              let multicastPort = try? NWEndpoint.Port(rawValue: 9999) else { return }
+        let multicastAddress = NWEndpoint.Host("224.0.0.1")
+        guard let multicastPort = try? NWEndpoint.Port(rawValue: 9999) else { return }
         
         let udpConnection = NWConnection(host: multicastAddress, port: multicastPort, using: .udp)
         udpConnection.start(queue: .global())
