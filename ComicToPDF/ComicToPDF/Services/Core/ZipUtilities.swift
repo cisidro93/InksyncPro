@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 import ZIPFoundation
-import PDFKit // ✅ NEW
+// import UnrarKit
 
 struct ZipUtilities {
     
@@ -54,22 +54,23 @@ struct ZipUtilities {
                                 }
                             }
                         }
-                    } else if ["cbr", "rar"].contains(ext) {
-                        // --- RAR / CBR PATH ---
-                        let archive = try UnrarKit.Archive(url: sourceURL)
-                        try archive.extractFiles(to: tempDir)
-                        
-                        // Enumerate extracted files
-                        let keys: [URLResourceKey] = [.isRegularFileKey]
-                        let enumerator = fileManager.enumerator(at: tempDir, includingPropertiesForKeys: keys)
-                        
-                        while let fileURL = enumerator?.nextObject() as? URL {
-                             let fileExt = fileURL.pathExtension.lowercased()
-                             if ["jpg", "jpeg", "png", "webp", "gif"].contains(fileExt) {
-                                  extractedFiles.append(fileURL)
-                             }
-                        }
-                        
+//                    } else if ["cbr", "rar"].contains(ext) {
+//                        // --- RAR / CBR PATH ---
+//                        // LEGACY: UnrarKit disabled due to build issues.
+//                        // let archive = try UnrarKit.Archive(url: sourceURL)
+//                        // try archive.extractFiles(to: tempDir)
+//                        //
+//                        // // Enumerate extracted files
+//                        // let keys: [URLResourceKey] = [.isRegularFileKey]
+//                        // let enumerator = fileManager.enumerator(at: tempDir, includingPropertiesForKeys: keys)
+//                        //
+//                        // while let fileURL = enumerator?.nextObject() as? URL {
+//                        //      let fileExt = fileURL.pathExtension.lowercased()
+//                        //      if ["jpg", "jpeg", "png", "webp", "gif"].contains(fileExt) {
+//                        //           extractedFiles.append(fileURL)
+//                        //      }
+//                        // }
+
                     } else {
                         // --- ZIP / CBZ PATH (Legacy) ---
                         // Initialize Archive

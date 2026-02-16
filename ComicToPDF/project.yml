@@ -7,9 +7,7 @@ packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation.git
     from: 0.9.19
-  UnrarKit:
-    url: https://github.com/abbeycode/UnrarKit.git
-    branch: v2.11
+
 targets:
   InksyncPro:
     type: application
@@ -19,7 +17,7 @@ targets:
 
     dependencies:
       - package: ZIPFoundation
-      - package: UnrarKit
+
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.antigravity.InksyncPro
