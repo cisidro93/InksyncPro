@@ -5,10 +5,10 @@ struct MetadataSearchSheet: View {
     @EnvironmentObject var conversionManager: ConversionManager
     
     let pdf: ConvertedPDF
-    @StateObject private var service = ComicVineService()
+    // Service is now a singleton
     
     @State private var query = ""
-    @State private var results: [CVIssue] = []
+    @State private var results: [ComicVineVolume] = [] // Changed from CVIssue to ComicVineVolume
     @State private var isLoading = false
     @State private var errorMessage: String?
     
@@ -17,7 +17,7 @@ struct MetadataSearchSheet: View {
             VStack {
                 // Search Bar
                 HStack {
-                    TextField("Series Name & Issue (e.g. Saga 10)", text: $query)
+                    TextField("Series Name (e.g. Saga)", text: $query)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .onSubmit { performSearch() }
                     
@@ -31,7 +31,7 @@ struct MetadataSearchSheet: View {
                 .padding()
                 
                 // API Key Warning
-                if service.apiKey.isEmpty {
+                if conversionManager.conversionSettings.comicVineAPIKey.isEmpty {
                     Text("⚠️ Please set ComicVine API Key in Settings")
                         .font(.caption)
                         .foregroundColor(.red)
@@ -43,28 +43,25 @@ struct MetadataSearchSheet: View {
                     ProgressView()
                     Spacer()
                 } else {
-                    List(results) { issue in
-                        Button(action: { applyMetadata(issue) }) {
+                    List(results) { volume in
+                        Button(action: { selectVolume(volume) }) {
                             HStack {
                                 // Async Image for Result Preview
-                                AsyncImage(url: URL(string: issue.image?.small_url ?? "")) { phase in
+                                AsyncImage(url: URL(string: volume.image?.icon_url ?? "")) { phase in
                                     if let image = phase.image {
                                         image.resizable().aspectRatio(contentMode: .fit)
                                     } else {
-                                        Color.gray.frame(width: 55, height: 75) // Adjusted width for better look
+                                        Color.gray.frame(width: 55, height: 75)
                                     }
                                 }
                                 .frame(width: 50, height: 75)
                                 .cornerRadius(4)
                                 
                                 VStack(alignment: .leading) {
-                                    Text(issue.fullTitle).font(.headline)
-                                    Text(issue.cover_date ?? "Unknown Date").font(.caption).foregroundColor(.secondary)
-                                    if let desc = issue.description {
-                                        Text(desc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)) // Strip HTML
-                                            .font(.caption2)
-                                            .lineLimit(2)
-                                            .foregroundColor(.gray)
+                                    Text(volume.name).font(.headline)
+                                    Text(volume.publisher?.name ?? "Unknown Publisher").font(.caption).foregroundColor(.secondary)
+                                    if let year = volume.start_year {
+                                        Text(year).font(.caption2).foregroundColor(.gray)
                                     }
                                 }
                             }
@@ -72,67 +69,119 @@ struct MetadataSearchSheet: View {
                     }
                 }
             }
-            .navigationTitle("Find Metadata")
+            .navigationTitle("Find Series")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }
             }
             .onAppear {
                 // Pre-fill query with filename
-                query = pdf.name.replacingOccurrences(of: "_", with: " ")
-                // Load API Key from Settings
-                service.apiKey = conversionManager.conversionSettings.comicVineAPIKey
+                query = cleanFilename(pdf.name)
             }
         }
     }
     
     func performSearch() {
         guard !query.isEmpty else { return }
+        let key = conversionManager.conversionSettings.comicVineAPIKey
+        guard !key.isEmpty else { return }
+        
         isLoading = true
         errorMessage = nil
         
         Task {
             do {
-                results = try await service.searchIssues(query: query)
+                results = try await ComicVineService.shared.searchVolumes(query: query, apiKey: key)
                 isLoading = false
             } catch {
-                isLoading = false
-                errorMessage = error.localizedDescription
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
     
-    func applyMetadata(_ issue: CVIssue) {
+    func selectVolume(_ volume: ComicVineVolume) {
+        // In the new flow, selecting a volume implies we want to apply its series data
+        // and try to find the issue number from the filename.
+        
         isLoading = true
         Task {
-            // 1. Fetch High-Res Cover
-            var coverData: Data? = nil
-            if let url = issue.image?.original_url {
-                if let image = try? await service.fetchCoverImage(url: url) {
-                    coverData = image.jpegData(compressionQuality: 0.7)
-                }
+            let key = conversionManager.conversionSettings.comicVineAPIKey
+            // Try to guess issue number
+            if let issueNum = extractIssueNumber(from: pdf.name) {
+                 if let issue = try? await ComicVineService.shared.getIssue(volumeID: volume.id, issueNumber: issueNum, apiKey: key) {
+                     await applyIssueMetadata(issue, volume: volume)
+                     return
+                 }
             }
             
-            // 2. Update PDF Metadata
+            // Fallback: Just apply Series info
+            await applySeriesMetadata(volume)
+        }
+    }
+    
+    func applyIssueMetadata(_ issue: ComicVineIssueDetails, volume: ComicVineVolume) async {
+        await MainActor.run {
             var newMeta = pdf.metadata
-            newMeta.title = issue.name ?? newMeta.title
-            newMeta.series = issue.volume?.name ?? newMeta.series
+            newMeta.title = issue.name ?? newMeta.title // Issues often don't have names, keeping old might be better or use Series #Num
+            newMeta.series = volume.name
             newMeta.volume = issue.issue_number ?? newMeta.volume
-            newMeta.publisher = "ComicVine Fetched"
+            newMeta.issueNumber = issue.issue_number
+            newMeta.publisher = volume.publisher?.name
+            newMeta.publicationDate = issue.cover_date // String
             newMeta.summary = issue.description?.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil) ?? ""
             newMeta.tags.append("ComicVine")
             
-            await MainActor.run {
-                // Update Metadata
-                conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
-                
-                // Update Cover Art
-                if let data = coverData {
-                    conversionManager.saveCoverImage(data, for: pdf)
-                    conversionManager.savePDFs()
-                }
-                
-                dismiss()
+            conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
+             // Fetch cover if available?
+             if let url = issue.image?.original_url {
+                 Task { await fetchAndSaveCover(url) }
+             }
+            dismiss()
+        }
+    }
+    
+    func applySeriesMetadata(_ volume: ComicVineVolume) async {
+        await MainActor.run {
+            var newMeta = pdf.metadata
+            newMeta.series = volume.name
+            newMeta.publisher = volume.publisher?.name
+            newMeta.tags.append("ComicVine")
+            
+            conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
+            dismiss()
+        }
+    }
+    
+    func fetchAndSaveCover(_ urlString: String) async {
+        guard let url = URL(string: urlString) else { return }
+        if let data = try? Data(contentsOf: url) {
+             await MainActor.run {
+                 conversionManager.saveCoverImage(data, for: pdf)
+                 conversionManager.saveLibrary()
+             }
+        }
+    }
+    
+    // MARK: - Helpers
+    func cleanFilename(_ name: String) -> String {
+        var clean = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
+        clean = clean.replacingOccurrences(of: "_", with: " ")
+        if let range = clean.range(of: "\\(.*?\\)", options: .regularExpression) {
+             clean.removeSubrange(range)
+        }
+        return clean.trimmingCharacters(in: .whitespaces)
+    }
+    
+    func extractIssueNumber(from name: String) -> String? {
+        let pattern = "#?(\\d+)"
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) {
+            if let range = Range(match.range(at: 1), in: name) {
+                return String(name[range])
             }
         }
+        return nil
     }
 }

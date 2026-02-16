@@ -14,6 +14,13 @@ struct MetadataEditorSheet: View {
     @State private var showResults = false
     @State private var errorMessage: String?
     
+    // Date Formatter
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }
+    
     init(pdf: Binding<ConvertedPDF>) {
         self._pdf = pdf
         self._editedMetadata = State(initialValue: pdf.wrappedValue.metadata)
@@ -61,7 +68,23 @@ struct MetadataEditorSheet: View {
                     TextField("Writer", text: Binding(get: { editedMetadata.writer ?? "" }, set: { editedMetadata.writer = $0.isEmpty ? nil : $0 }))
                     TextField("Penciller", text: Binding(get: { editedMetadata.penciller ?? "" }, set: { editedMetadata.penciller = $0.isEmpty ? nil : $0 }))
                     TextField("Publisher", text: Binding(get: { editedMetadata.publisher ?? "" }, set: { editedMetadata.publisher = $0.isEmpty ? nil : $0 }))
-                    TextField("Publication Date", text: Binding(get: { editedMetadata.publicationDate ?? "" }, set: { editedMetadata.publicationDate = $0.isEmpty ? nil : $0 }))
+                    
+                    // Date Binding
+                    TextField("Publication Date (YYYY-MM-DD)", text: Binding(
+                        get: {
+                            if let date = editedMetadata.publicationDate {
+                                return dateFormatter.string(from: date)
+                            }
+                            return ""
+                        },
+                        set: { newValue in
+                            if let date = dateFormatter.date(from: newValue) {
+                                editedMetadata.publicationDate = date
+                            } else if newValue.isEmpty {
+                                editedMetadata.publicationDate = nil
+                            }
+                        }
+                    ))
                 }
                 
                 // MARK: - Summary
@@ -113,13 +136,6 @@ struct MetadataEditorSheet: View {
     // MARK: - Logic
     
     func saveChanges() {
-        // Commit changes to the PDF binding
-        var updatedPDF = pdf
-        updatedPDF.metadata = editedMetadata
-        // contentType and isPrivate are bound directly to pdf, so they are already set?
-        // Wait, binding to 'pdf.contentType' in the form updates the binding directly.
-        // But 'editedMetadata' is local.
-        
         // We need to write back metadata
         pdf.metadata = editedMetadata
         
@@ -169,21 +185,19 @@ struct MetadataEditorSheet: View {
         // Now fetch specific issue
         // We need to guess the issue number from the filename
         guard let issueNumStr = extractIssueNumber(from: pdf.name), let issueNum = Int(issueNumStr) else {
-            isSearching = false
-            errorMessage = "Could not detect issue number from filename."
+            // Apply partial volume data if issue number logic fails
+             Task {
+                 await MainActor.run {
+                     editedMetadata.series = volume.name
+                     editedMetadata.seriesID = volume.id
+                     editedMetadata.volume = volume.name
+                     editedMetadata.publisher = volume.publisher?.name
+                     isSearching = false
+                     errorMessage = "Could not detect issue number from filename. Applied series info only."
+                 }
+             }
             return
         }
-        
-        // PROBLEM: ComicVine API doesn't let us search Issues by VolumeID + Number easily without filtering.
-        // But we have the Volume ID.
-        // We can search for issues filtered by volume.
-        // Or we just assume the user picked the volume, and we apply that?
-        // Wait, usually users want the *Issue* metadata (Summary, Release Date).
-        // If we only have Volume, we can't get that.
-        
-        // Enhanced Strategy:
-        // We searched for VOLUMES. User picked a VOLUME.
-        // Now we find the ISSUE in that volume.
         
         Task {
             do {
@@ -194,12 +208,14 @@ struct MetadataEditorSheet: View {
                         // Populate Fields
                         editedMetadata.series = volume.name
                         editedMetadata.seriesID = volume.id
-                        editedMetadata.volume = volume.name
+                        editedMetadata.volume = volume.name // Often Volume maps to Series Name in comics
                         editedMetadata.issueNumber = "\(issueNum)"
                         editedMetadata.publisher = volume.publisher?.name
                         
                         // Detail Fields
-                        editedMetadata.publicationDate = issue.cover_date
+                        if let dateString = issue.cover_date {
+                            editedMetadata.publicationDate = dateFormatter.date(from: dateString)
+                        }
                         
                         // Parse HTML description to plain text (simple strip)
                         if let desc = issue.description {
@@ -226,7 +242,7 @@ struct MetadataEditorSheet: View {
                          editedMetadata.issueNumber = "\(issueNum)"
                          editedMetadata.publisher = volume.publisher?.name
                          isSearching = false
-                         errorMessage = "Issue #\(issueNum) not found in volume."
+                         errorMessage = "Issue #\(issueNum) not found in volume. Applied series info."
                      }
                 }
             } catch {
