@@ -30,6 +30,15 @@ struct LibraryView: View {
         case dateAdded, name, size
     }
     
+    // ✅ NEW: View Mode
+    enum LibraryMode: String, CaseIterable, Identifiable {
+        case files = "Files"
+        case series = "Series"
+        var id: String { rawValue }
+    }
+    
+    @State private var libraryMode: LibraryMode = .files
+    
     var filteredPDFs: [ConvertedPDF] {
         let pdfs = conversionManager.convertedPDFs
         let result: [ConvertedPDF]
@@ -239,7 +248,23 @@ struct LibraryView: View {
             if conversionManager.convertedPDFs.isEmpty {
                 emptyStateView
             } else {
-                pdfListView
+                VStack(spacing: 0) {
+                    // ✅ Mode Picker
+                    Picker("View Mode", selection: $libraryMode) {
+                        ForEach(LibraryMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.top)
+                    
+                    if libraryMode == .files {
+                        pdfListView
+                    } else {
+                        SeriesLibraryView(conversionManager: conversionManager)
+                    }
+                }
             }
             
             // Floating Action Button
