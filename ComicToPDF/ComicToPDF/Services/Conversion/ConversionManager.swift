@@ -1975,7 +1975,7 @@ class ConversionManager: ObservableObject {
         
         // Scope to ensure archive closes (deinit) before move
         do {
-            guard let newArchive = Archive(url: newArchiveURL, accessMode: .create) else {
+            guard let newArchive = try? Archive(url: newArchiveURL, accessMode: .create) else {
                 Logger.shared.log("Failed to create temporary archive", category: "Injection")
                 return 
             }

@@ -9,6 +9,6 @@ struct SeriesGroup: Identifiable, Hashable {
     let issues: [ConvertedPDF]
     
     var lastUpdated: Date {
-        issues.map { $0.metadata.creationDate ?? Date.distantPast }.max() ?? Date.distantPast
+        issues.map { $0.metadata.publicationDate ?? Date.distantPast }.max() ?? Date.distantPast
     }
 }

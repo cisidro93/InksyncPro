@@ -53,7 +53,7 @@ struct PrecisionCanvasView: View {
                                 context.fill(Path(rect), with: .color(Color.blue.opacity(0.1)))
                                 
                                 // Stroke
-                                var path = Path(rect)
+                                let path = Path(rect)
                                 context.stroke(path, with: .color(isSelected ? .yellow : .blue), lineWidth: isSelected ? 3 : 2)
                                 
                                 // Label
@@ -73,7 +73,7 @@ struct PrecisionCanvasView: View {
                             if selectedTool == .scan {
                                 for panel in editorState.pageModel.proposedPanels {
                                     let rect = CoordinateConverter.denormalize(rect: panel, in: size)
-                                    var path = Path(rect)
+                                    let path = Path(rect)
                                     // Thinner, less opaque green
                                     context.stroke(path, with: .color(Color.green.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                                 }

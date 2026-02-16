@@ -27,7 +27,7 @@ struct SmartCropper {
         )
         
         var sourceBuffer = vImage_Buffer()
-        var error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, cgImage, vImage_Flags(kvImageNoFlags))
+        let error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, cgImage, vImage_Flags(kvImageNoFlags))
         guard error == kvImageNoError else { return nil }
         defer { free(sourceBuffer.data) }
         

@@ -531,7 +531,10 @@ extension View {
             .sheet(item: pdfToMetadataEdit) { pdf in
                 // We need a binding to the item in the array to allow saving
                 if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    MetadataEditorSheet(pdf: $conversionManager.convertedPDFs[index])
+                    MetadataEditorSheet(pdf: Binding(
+                        get: { conversionManager.convertedPDFs[index] },
+                        set: { conversionManager.convertedPDFs[index] = $0 }
+                    ))
                 }
             }
             .sheet(item: sharePayload) { payload in

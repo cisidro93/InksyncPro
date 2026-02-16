@@ -129,7 +129,14 @@ struct MetadataSearchSheet: View {
             newMeta.volume = issue.issue_number ?? newMeta.volume
             newMeta.issueNumber = issue.issue_number
             newMeta.publisher = volume.publisher?.name
-            newMeta.publicationDate = issue.cover_date // String
+            
+            // Fix: Parse Date String (YYYY-MM-DD)
+            if let dateString = issue.cover_date {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd"
+                newMeta.publicationDate = formatter.date(from: dateString)
+            }
+            
             newMeta.summary = issue.description?.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil) ?? ""
             newMeta.tags.append("ComicVine")
             

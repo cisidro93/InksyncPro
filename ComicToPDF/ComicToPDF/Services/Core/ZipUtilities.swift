@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import ZIPFoundation
+import PDFKit
 // import UnrarKit
 
 struct ZipUtilities {
