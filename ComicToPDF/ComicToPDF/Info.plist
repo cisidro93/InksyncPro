@@ -72,6 +72,10 @@
             <key>LSItemContentTypes</key>
             <array>
                 <string>com.antigravity.cbz</string>
+                <string>com.antigravity.cbr</string>
+                <string>com.rarlab.rar-archive</string>
+                <string>public.rar</string>
+                <string>com.adobe.pdf</string>
                 <string>org.7-zip.7-zip-archive</string>
                 <string>public.archive</string>
                 <string>public.zip-archive</string>
@@ -94,7 +98,7 @@
                 <string>public.archive</string>
             </array>
             <key>UTTypeDescription</key>
-            <string>Comic Book Archive</string>
+            <string>Comic Book Archive (Zip)</string>
             <key>UTTypeIconFiles</key>
             <array/>
             <key>UTTypeIdentifier</key>
@@ -104,6 +108,25 @@
                 <key>public.filename-extension</key>
                 <array>
                     <string>cbz</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>Comic Book Archive (Rar)</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.antigravity.cbr</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
                     <string>cbr</string>
                 </array>
             </dict>

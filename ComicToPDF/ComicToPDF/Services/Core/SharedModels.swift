@@ -290,6 +290,7 @@ struct ConversionSettings: Codable, Equatable {
     var targetDevice: KindleDeviceType = .scribeColorsoft // ✅ Target Newest Device
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
+    var trimMargins: Bool = false // ✅ NEW: Smart Margin Removal
     var splitMode: FileSizeSplitMode = .none 
     var textSize: AppTextSize = .medium // ✅ New Preference 
     var panelEditorMode: PanelEditorPresentationMode = .sheet // ✅ New Preference
@@ -329,7 +330,7 @@ struct ConversionSettings: Codable, Equatable {
     // Custom Codable implementation to handle migration
                             
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitMode, epubSettings, imageEnhancement, textSize, panelEditorMode, isGuidedView, showEditorDebug
+        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, trimMargins, splitMode, epubSettings, imageEnhancement, textSize, panelEditorMode, isGuidedView, showEditorDebug
         case comicVineAPIKey // Used for legacy read only
     }
     
@@ -343,6 +344,7 @@ struct ConversionSettings: Codable, Equatable {
         targetDevice = try container.decode(KindleDeviceType.self, forKey: .targetDevice)
         mangaMode = try container.decode(Bool.self, forKey: .mangaMode)
         enablePanelSplit = try container.decode(Bool.self, forKey: .enablePanelSplit)
+        trimMargins = try container.decodeIfPresent(Bool.self, forKey: .trimMargins) ?? false
         splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
         epubSettings = try container.decode(EPUBSettings.self, forKey: .epubSettings)
         imageEnhancement = try container.decode(ImageEnhancementSettings.self, forKey: .imageEnhancement)
@@ -368,6 +370,7 @@ struct ConversionSettings: Codable, Equatable {
         try container.encode(targetDevice, forKey: .targetDevice)
         try container.encode(mangaMode, forKey: .mangaMode)
         try container.encode(enablePanelSplit, forKey: .enablePanelSplit)
+        try container.encode(trimMargins, forKey: .trimMargins)
         try container.encode(splitMode, forKey: .splitMode)
         try container.encode(epubSettings, forKey: .epubSettings)
         try container.encode(imageEnhancement, forKey: .imageEnhancement)

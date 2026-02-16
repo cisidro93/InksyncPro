@@ -9,6 +9,16 @@ struct ImageProcessor {
         
         var finalImage = image
         
+        // 0. Smart Margin Removal (Full-Bleed) - ✅ NEW
+        if settings.trimMargins {
+            if let cropRect = SmartCropper.suggestCrop(for: finalImage) {
+                // Apply the crop
+                if let cropped = crop(image: finalImage, to: cropRect) {
+                    finalImage = cropped
+                }
+            }
+        }
+        
         // 1. Resize if needed (Optimize for Device)
         if settings.optimizeForDevice {
             // Get target resolution (Default to Scribe if not found)
