@@ -233,26 +233,89 @@ struct PrecisionCanvasView: View {
                 
                 Spacer()
                 
-                if selectedTool == .anchor {
-                    Text("Drag to create a new panel")
-                        .font(.caption)
-                        .padding(8)
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(8)
-                        .padding(.bottom, 8)
-                        .transition(.opacity)
+                // MARK: - Hybrid Bottom Toolbar (Classic Layout + iOS 26 Style)
+                VStack(spacing: 0) {
+                    Divider().opacity(0.3)
+                    
+                    HStack {
+                        // Tool: Scan
+                        Button {
+                           runScan()
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 20))
+                                Text("Scan").font(.caption2)
+                            }
+                        }
+                        .foregroundColor(editorState.selectedTool == .edit ? .white : .secondary) // Highlight action? No, scan is action.
+                        .frame(maxWidth: .infinity)
+                        
+                        // Tool: Edit
+                        Button { editorState.selectedTool = .edit } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "cursorarrow.rays")
+                                    .font(.system(size: 20))
+                                Text("Edit").font(.caption2)
+                            }
+                        }
+                        .foregroundColor(editorState.selectedTool == .edit ? .blue : .primary)
+                        .frame(maxWidth: .infinity)
+                        
+                        // Tool: Knife
+                        Button { editorState.selectedTool = .knife } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "scissors")
+                                    .font(.system(size: 20))
+                                Text("Split").font(.caption2)
+                            }
+                        }
+                        .foregroundColor(editorState.selectedTool == .knife ? .blue : .primary)
+                        .frame(maxWidth: .infinity)
+                        
+                        // Tool: Anchor
+                        Button { editorState.selectedTool = .anchor } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "plus.square.dashed")
+                                    .font(.system(size: 20))
+                                Text("Add").font(.caption2)
+                            }
+                        }
+                        .foregroundColor(editorState.selectedTool == .anchor ? .blue : .primary)
+                        .frame(maxWidth: .infinity)
+                        
+                        // Tool: Preview
+                        Button { editorState.selectedTool = .preview } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "eye")
+                                    .font(.system(size: 20))
+                                Text("Preview").font(.caption2)
+                            }
+                        }
+                        .foregroundColor(editorState.selectedTool == .preview ? .blue : .primary)
+                        .frame(maxWidth: .infinity)
+                        
+                        // Commit Button (if needed)
+                        if !editorState.pageModel.proposedPanels.isEmpty {
+                            Divider()
+                            Button {
+                                withAnimation { editorState.commitProposals() }
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(.green)
+                                    Text("Commit").font(.caption2).foregroundColor(.green)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(.top, 12)
+                    .padding(.bottom, 34) // Safe Area
+                    .background(.ultraThinMaterial) // iOS 26 Glass
                 }
-
-                // MARK: - Toolbar (Bottom)
-                WorkAreaToolbar(
-                    selectedTool: $selectedTool,
-                    isProcessing: $editorState.isProcessing,
-                    onScan: runScan,
-                    onCommit: {
-                        withAnimation { editorState.commitProposals() }
-                    },
-                    canCommit: !editorState.pageModel.proposedPanels.isEmpty
-                )
+                .edgesIgnoringSafeArea(.bottom)
             }
             
                 if selectedTool == .preview {
