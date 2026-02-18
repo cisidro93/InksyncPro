@@ -1986,7 +1986,7 @@ class ConversionManager: ObservableObject {
     <meta property="rendition:orientation">auto</meta>
     <meta property="rendition:spread">auto</meta>
     <meta name="fixed-layout" content="true"/>
-    <meta name="region-mag" content="true"/>
+    <meta name="RegionMagnification" content="true"/>
     <meta name="book-type" content="comic"/>\(resolutionTag)
 """
                                  opfString.insert(contentsOf: tag, at: range.lowerBound)

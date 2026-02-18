@@ -266,10 +266,11 @@ class CBZToEPUBConverter {
                     <meta property="rendition:orientation">auto</meta>
                     <meta property="rendition:spread">none</meta> 
                     <meta name="fixed-layout" content="true"/>
-                    <meta name="region-mag" content="true"/>
+                    <meta name="RegionMagnification" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
                     <meta name="book-type" content="comic"/> 
                     <meta name="primary-writing-mode" content="horizontal-lr"/>
+                    <meta name="orientation-lock" content="none"/>
 """ : """
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:spread">none</meta>
@@ -478,11 +479,30 @@ class CBZToEPUBConverter {
                 // 1. Flip Y (Vision -> Top-Left)
                 let normY = 1.0 - panel.boundingBox.maxY
                 
-                // 2. Scale to Image Size (No Offset)
-                let pX = (panel.boundingBox.minX * Double(width))
-                let pY = (normY * Double(height))
-                let pW = (panel.boundingBox.width * Double(width))
-                let pH = (panel.boundingBox.height * Double(height))
+                // 2. Scale to Image Size (No Offset) & CLAMP
+                // Kindle ignores regions clearly outside the viewport or with negative dimensions
+                // 2. Scale to Image Size (No Offset) & CLAMP
+                // Kindle ignores regions clearly outside the viewport or with negative dimensions
+                let rawPX = (panel.boundingBox.minX * Double(width))
+                let rawPY = (normY * Double(height))
+                let rawPW = (panel.boundingBox.width * Double(width))
+                let rawPH = (panel.boundingBox.height * Double(height))
+                
+                // Clamp Logic (Pixel Space)
+                let pX = max(0, min(Double(width), rawPX))
+                let pY = max(0, min(Double(height), rawPY))
+                let pW = min(Double(width) - pX, rawPW)
+                let pH = min(Double(height) - pY, rawPH)
+                
+                // Skip invalid/tiny panels
+                if pW < 5 || pH < 5 { continue }
+                
+                // ✅ CONVERT TO PERCENTAGE (Strict Requirement from Template)
+                // Format: "12.34%"
+                let pctX = String(format: "%.3f%%", (pX / Double(width)) * 100.0)
+                let pctY = String(format: "%.3f%%", (pY / Double(height)) * 100.0)
+                let pctW = String(format: "%.3f%%", (pW / Double(width)) * 100.0)
+                let pctH = String(format: "%.3f%%", (pH / Double(height)) * 100.0)
                 
                 // 3. Metadata
                 let targetId = "panel-target-\(index + 1)"
@@ -493,21 +513,19 @@ class CBZToEPUBConverter {
 {"targetId":"\(targetId)","sourceId":"\(sourceId)","ordinal":\(index + 1)}
 """
                 // 4. Create Overlay Element (Transparent Tap Target)
-                // 4. Create Overlay Element (Transparent Tap Target) AND Target Element (Zoom Area)
-                // The Source controls the "Tap Area". The Target controls the "Zoom View".
+                // TEMPLATE RULE: <a> and target <div> must be SIBLINGS
                 
                 // Source (Tap Target)
                 panelOverlays += """
                 <a class="app-region-magnification" 
                    id="\(sourceId)"
                    data-amzn-magnification='\(magnifyData)'
-                   style="position: absolute; left: \(String(format: "%.1f", pX))px; top: \(String(format: "%.1f", pY))px; width: \(String(format: "%.1f", pW))px; height: \(String(format: "%.1f", pH))px; z-index: 10;">
+                   style="position: absolute; left: \(pctX); top: \(pctY); width: \(pctW); height: \(pctH); z-index: 10; display: block;">
+                    <div class="panel-source" style="width: 100%; height: 100%;"></div>
                 </a>
-"""
-                // Target (Zoom Area) - Must match targetId
-                panelOverlays += """
                 <div id="\(targetId)"
-                     style="position: absolute; left: \(String(format: "%.1f", pX))px; top: \(String(format: "%.1f", pY))px; width: \(String(format: "%.1f", pW))px; height: \(String(format: "%.1f", pH))px; z-index: 5; pointer-events: none;">
+                     class="panel-target"
+                     style="position: absolute; left: \(pctX); top: \(pctY); width: \(pctW); height: \(pctH); z-index: 5; pointer-events: none;">
                 </div>
 """
             }
@@ -541,6 +559,8 @@ class CBZToEPUBConverter {
         }
         /* Panels are positioned absolutely relative to page-container (which matches viewport/image size) */
         .app-region-magnification { border: 0; background-color: transparent; -webkit-tap-highlight-color: rgba(0,0,0,0); }
+        .panel-source { background-color: transparent; }
+        .panel-target { background-color: transparent; }
     </style>
 </head>
 <body>

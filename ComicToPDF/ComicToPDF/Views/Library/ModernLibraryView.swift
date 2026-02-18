@@ -250,6 +250,7 @@ struct ModernLibraryView: View {
                      Text("Library")
                          .font(.system(size: 28, weight: .bold))
                          .foregroundColor(.white)
+                         .fixedSize(horizontal: true, vertical: false)
                 }
                 
                 Spacer()
