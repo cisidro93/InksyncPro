@@ -157,11 +157,16 @@ class CBZToEPUBConverter {
                 let destURL = imagesDir.appendingPathComponent(newImageName)
                 try item.data.write(to: destURL)
                 
-                // ✅ CAPTURE RESOLUTION (Once)
+                // ✅ CAPTURE RESOLUTION & COVER (Once)
                 if !hasCapturedResolution {
                     if let image = UIImage(data: item.data) {
                         contentSize = image.size
                         hasCapturedResolution = true
+                        
+                        // Capture Cover Data for Split Volumes
+                        if batchIndex == 0 && localIndex == 0 {
+                            firstBatchCoverData = item.data
+                        }
                     }
                 }
                 
@@ -183,28 +188,58 @@ class CBZToEPUBConverter {
                 let xhtmlName = String(format: "page_%04d.xhtml", localIndex + 1)
                 try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
                 
+                // ✅ Phase 4: Split Volume Cover Retention
+                // If this is Batch > 0 (Split Part) AND it's the first item, 
+                // we want to inject the captured cover image as the TRUE first page.
+                if batchIndex > 0 && localIndex == 0, let coverData = firstBatchCoverData {
+                    // 1. Write Cover Image
+                    let coverName = "cover_reused.jpg"
+                    let coverURL = imagesDir.appendingPathComponent(coverName)
+                    try? coverData.write(to: coverURL)
+                    
+                    // 2. Write Cover XHTML
+                    // We use standard full-page cover layout
+                    let coverWidth = Int(contentSize.width)
+                    let coverHeight = Int(contentSize.height)
+                    let coverXHTML = CBZToEPUBConverter.generateXHTML(imageName: coverName, title: "Cover", width: coverWidth, height: coverHeight, panels: [])
+                    let coverXHTMLName = "cover_reused.xhtml"
+                    try? coverXHTML.write(to: textDir.appendingPathComponent(coverXHTMLName), atomically: true, encoding: .utf8)
+                    
+                    // 3. Add to Manifest (Top of list)
+                    manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+                    manifestItems.append("<item id=\"cover_reused_page\" href=\"text/\(coverXHTMLName)\" media-type=\"application/xhtml+xml\"/>")
+                    
+                    // 4. Add to Spine (First item)
+                    // No spread properties for cover usually, or center
+                    spineItems.append("<itemref idref=\"cover_reused_page\" properties=\"page-spread-center\"/>")
+                }
+
                 // Manifest
-                let properties = (localIndex == 0) ? "properties=\"cover-image\"" : ""
+                // If valid split cover was injected above, this page is no longer the "cover-image" property holder
+                // But generally, the first item of a split file is just "Page 1 of Part 2".
+                let properties = (localIndex == 0 && batchIndex == 0) ? "properties=\"cover-image\"" : ""
                 manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
                 manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>")
                 
-                // ✅ Page Spread Property (Only for Guided View / Fixed-Layout)
-                // Standard EPUBs should NOT use page-spread as it forces landscape 2-page views
-                // which confuses Kindle's page counter (30 pages -> 17 "spreads")
+                // ✅ Page Spread Property
+                // FIX: "isGuidedView" implies we want the device to handle panel zooming on a SINGLE canvas.
+                // Forcing page-spread-* properties causes the Kindle to group pages into 2-page spreads, 
+                // breaking the flow and panel-to-panel navigation.
+                // We REMOVE spread properties for GuidedView to ensure a linear, single-page flow.
                 var spreadProp = ""
-                if settings.isGuidedView {
-                    if item.index == 0 {
-                        spreadProp = "page-spread-center"
-                    } else {
-                        let isOdd = (item.index % 2 != 0)
-                        // LTR: Odd index (Page 2) = Left, Even index (Page 3) = Right
-                        // RTL: Odd index (Page 2) = Right, Even index (Page 3) = Left
-                        if settings.mangaMode {
-                             spreadProp = isOdd ? "page-spread-right" : "page-spread-left"
-                        } else {
-                             spreadProp = isOdd ? "page-spread-left" : "page-spread-right"
-                        }
-                    }
+                if !settings.isGuidedView {
+                     // Only apply spread logic if NOT in Guided View mode
+                     // (or if user explicitly wanted spreads, but current issue is 2x2 forcing)
+                     if item.index == 0 {
+                         spreadProp = "page-spread-center"
+                     } else {
+                         let isOdd = (item.index % 2 != 0)
+                          if settings.mangaMode {
+                              spreadProp = isOdd ? "page-spread-right" : "page-spread-left"
+                          } else {
+                              spreadProp = isOdd ? "page-spread-left" : "page-spread-right"
+                          }
+                     }
                 }
                 
                 let spreadAttr = spreadProp.isEmpty ? "" : " properties=\"\(spreadProp)\""
@@ -229,13 +264,13 @@ class CBZToEPUBConverter {
                     <meta property="rendition:orientation">auto</meta>
                     <meta property="rendition:spread">none</meta> 
                     <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="1000x1000"/> 
+                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
                     <meta name="book-type" content="comic"/> 
                     <meta name="primary-writing-mode" content="horizontal-lr"/>
 """ : """
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:spread">none</meta>
-                    <meta name="original-resolution" content="1000x1000"/> 
+                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
                     <meta name="book-type" content="comic"/> 
 """
             

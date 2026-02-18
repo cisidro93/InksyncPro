@@ -142,6 +142,14 @@ struct SettingsView: View {
                             .font(.caption).monospacedDigit()
                     }
                 }
+                
+                // ✅ NEW: Smart Cropping (MangaSender Style)
+                Toggle("Smart Margin Removal", isOn: $conversionManager.conversionSettings.trimMargins)
+                if conversionManager.conversionSettings.trimMargins {
+                    Text("Automatically removes white/black borders to maximize screen usage.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
             
             Section(header: Text("Defaults (Applied at Start)")) {
