@@ -112,6 +112,7 @@ class CBZToEPUBConverter {
         // Track resolution from the first image of the first batch for consistency
         var contentSize = CGSize(width: 1080, height: 1920) // Default fallback
         var hasCapturedResolution = false
+        var firstBatchCoverData: Data? = nil // ✅ Phase 4: Store cover for splits
         
         for (batchIndex, batch) in batches.enumerated() {
             let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
