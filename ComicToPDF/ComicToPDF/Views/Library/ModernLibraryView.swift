@@ -235,6 +235,134 @@ struct ModernLibraryView: View {
             pdfToSearchMetadata = pdf
         } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
     }
+
+    // MARK: - Extracted Header
+    var liquidGlassHeader: some View {
+        VStack(spacing: 16) {
+            
+            // Row 1: Integrated Search & Title
+            HStack(spacing: 12) {
+                // Title / Brand
+                HStack(spacing: 6) {
+                     Image(systemName: "books.vertical.fill")
+                         .font(.system(size: 24, weight: .bold))
+                         .foregroundStyle(Theme.orange.gradient)
+                     Text("Library")
+                         .font(.system(size: 28, weight: .bold))
+                         .foregroundColor(.white)
+                }
+                
+                Spacer()
+                
+                // Large Integrated Search Bar
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(Theme.textSecondary)
+                    
+                    TextField("Search Collection...", text: $searchText)
+                        .font(.system(size: 17))
+                        .foregroundColor(.white)
+                        .tint(Theme.orange)
+                    
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                    }
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .background(.ultraThinMaterial) // Liquid Glass Field
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(.white.opacity(0.1), lineWidth: 1)
+                )
+                .frame(maxWidth: 400) // Constrain width on large screens
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            
+            // Row 2: Cohesive Action Center (Scrollable Pills)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    
+                    // 1. Target Selector Pill (Fixed & Prominent)
+                    Menu {
+                        Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                            ForEach(OutputFormat.allCases) { format in
+                                Label(format.rawValue, systemImage: format.icon).tag(format)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("TARGET")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Theme.textSecondary)
+                                .tracking(1)
+                            
+                            // Separator
+                            Rectangle().fill(Theme.textSecondary.opacity(0.3)).frame(width: 1, height: 12)
+                            
+                            // Value
+                            Text(conversionManager.conversionSettings.outputFormat.rawValue)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(Theme.orange)
+                                .fixedSize() // Prevent truncation
+                            
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.thickMaterial)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
+                    }
+                    
+                    // Divider
+                    Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
+                    
+                    // 2. Action Pills (Enterprise Labels)
+                    Group {
+                        ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.blue) { activeSheet = .importer }
+                        ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
+                        ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { activeSheet = .cloud }
+                        ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { activeSheet = .merge }
+                    }
+                    
+                    // 3. Selection / Batch
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            isBatchMode.toggle()
+                            if !isBatchMode { multiSelection.removeAll() }
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.badge.questionmark")
+                            Text(isBatchMode ? "Done" : "Select")
+                        }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(isBatchMode ? .white : Theme.text)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(isBatchMode ? Theme.orange : .thickMaterial)
+                        .clipShape(Capsule())
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.bottom, 16)
+        }
+        .background(.regularMaterial) // Glass Header Background
+        .overlay(
+            Rectangle().frame(height: 1).foregroundColor(.white.opacity(0.05)),
+            alignment: .bottom
+        )
+    }
 }
 
 // MARK: - Subcomponents
