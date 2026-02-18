@@ -533,7 +533,7 @@ class ConversionManager: ObservableObject {
                          let imageURLs = try EPUBImporter.extractImages(from: url, to: tempExtractDir)
                          
                          // 3. Zip to CBZ
-                         try ZipUtilities.createCBZ(from: imageURLs, to: cbzURL)
+                         try await ZipUtilities.zipDirectory(tempExtractDir, to: cbzURL)
                          
                          // 4. Cleanup
                          try? FileManager.default.removeItem(at: tempExtractDir)
@@ -1804,11 +1804,7 @@ class ConversionManager: ObservableObject {
             saveLibrary()
             
             // 2. Call Engine (Standard EPUB Conversion)
-            let resultURLs = try await ConversionEngine.shared.process(url: pdf.url, settings: conversionSettings)
-            
-            guard let finalEPUB = resultURLs.first else { return nil }
-            
-            // 3. Move to Export Folder
+            let finalEPUB = try await ConversionEngine.shared.process(url: pdf.url, settings: conversionSettings)
             // Engine extracts to temp, we need to move it to "KindleExports"
             let finalName = finalEPUB.lastPathComponent
             let destURL = exportDir.appendingPathComponent(finalName)
