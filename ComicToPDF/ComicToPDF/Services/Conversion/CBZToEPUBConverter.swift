@@ -473,7 +473,6 @@ class CBZToEPUBConverter {
                      style="position: absolute; left: \(String(format: "%.1f", pX))px; top: \(String(format: "%.1f", pY))px; width: \(String(format: "%.1f", pW))px; height: \(String(format: "%.1f", pH))px; z-index: 5; pointer-events: none;">
                 </div>
 """
-"""
             }
         }
         
