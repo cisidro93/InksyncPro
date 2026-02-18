@@ -265,6 +265,7 @@ class CBZToEPUBConverter {
                     <meta property="rendition:orientation">auto</meta>
                     <meta property="rendition:spread">none</meta> 
                     <meta name="fixed-layout" content="true"/>
+                    <meta name="region-mag" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
                     <meta name="book-type" content="comic"/> 
                     <meta name="primary-writing-mode" content="horizontal-lr"/>
