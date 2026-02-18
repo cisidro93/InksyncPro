@@ -104,6 +104,16 @@ struct CoordinateConverter {
         return NormalizedCoordinate(x: x, y: y)
     }
     
+    // ✅ NEW: CGRect Support (Handles Offsets)
+    static func normalize(point: CGPoint, in containerRect: CGRect) -> NormalizedCoordinate {
+        guard containerRect.width > 0, containerRect.height > 0 else { return .zero }
+        
+        let x = ((point.x - containerRect.minX) / containerRect.width) * 1000.0
+        let y = ((point.y - containerRect.minY) / containerRect.height) * 1000.0
+        
+        return NormalizedCoordinate(x: x, y: y)
+    }
+    
     // MARK: - From Normalized (0-1000)
     
     static func denormalize(rect: NormalizedRect, in containerSize: CGSize) -> CGRect {
@@ -118,6 +128,21 @@ struct CoordinateConverter {
     static func denormalize(point: NormalizedCoordinate, in containerSize: CGSize) -> CGPoint {
         let x = (point.x / 1000.0) * containerSize.width
         let y = (point.y / 1000.0) * containerSize.height
+        return CGPoint(x: x, y: y)
+    }
+    
+    // ✅ NEW: CGRect Support (Handles Offsets)
+    static func denormalize(rect: NormalizedRect, in containerRect: CGRect) -> CGRect {
+        let x = containerRect.minX + (rect.origin.x / 1000.0) * containerRect.width
+        let y = containerRect.minY + (rect.origin.y / 1000.0) * containerRect.height
+        let w = (rect.size.width / 1000.0) * containerRect.width
+        let h = (rect.size.height / 1000.0) * containerRect.height
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+    
+    static func denormalize(point: NormalizedCoordinate, in containerRect: CGRect) -> CGPoint {
+        let x = containerRect.minX + (point.x / 1000.0) * containerRect.width
+        let y = containerRect.minY + (point.y / 1000.0) * containerRect.height
         return CGPoint(x: x, y: y)
     }
 }

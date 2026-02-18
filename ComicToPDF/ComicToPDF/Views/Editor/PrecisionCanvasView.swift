@@ -1,5 +1,6 @@
 import SwiftUI
 import Vision
+import AVFoundation
 
 struct PrecisionCanvasView: View {
     @EnvironmentObject var conversionManager: ConversionManager
@@ -35,6 +36,8 @@ struct PrecisionCanvasView: View {
             // MARK: - Main Canvas
             if let image = pageImage {
                 GeometryReader { geo in
+                    let displayedRect = AVMakeRect(aspectRatio: image.size, insideRect: CGRect(origin: .zero, size: geo.size))
+                    
                     ZStack(alignment: .topLeading) {
                         Image(uiImage: image)
                             .resizable()
@@ -46,7 +49,7 @@ struct PrecisionCanvasView: View {
                         Canvas { context, size in
                             // Draw Active Panels
                             for (index, panel) in editorState.pageModel.panels.enumerated() {
-                                let rect = CoordinateConverter.denormalize(rect: panel, in: size)
+                                let rect = CoordinateConverter.denormalize(rect: panel, in: displayedRect)
                                 let isSelected = (index == selectedPanelIndex)
                                 
                                 // Fill
@@ -66,13 +69,10 @@ struct PrecisionCanvasView: View {
                                 context.draw(text, at: textPoint, anchor: .topLeading)
                             }
                             
-                            // Draw Proposed Panels (Dashed - More Subtle)
-                            // Only show if tool is Scan OR we are explicitly previewing proposals?
-                            // User complained "AI panel detector covering page".
-                            // Let's hide it unless selectedTool == .scan
+                            // Draw Proposed Panels
                             if selectedTool == .scan {
                                 for panel in editorState.pageModel.proposedPanels {
-                                    let rect = CoordinateConverter.denormalize(rect: panel, in: size)
+                                    let rect = CoordinateConverter.denormalize(rect: panel, in: displayedRect)
                                     let path = Path(rect)
                                     // Thinner, less opaque green
                                     context.stroke(path, with: .color(Color.green.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
@@ -80,11 +80,10 @@ struct PrecisionCanvasView: View {
                             }
                             
                             // Draw Snap Guides
-                            // 1. Static Detected Gutters (Faint)
                             if selectedTool == .edit || selectedTool == .anchor {
                                 for guide in editorState.snapGuides {
-                                    let start = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: size)
-                                    let end = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: size)
+                                    let start = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: displayedRect)
+                                    let end = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: displayedRect)
                                     
                                     var path = Path()
                                     path.move(to: start)
@@ -94,23 +93,22 @@ struct PrecisionCanvasView: View {
                                 }
                             }
                             
-                            // 2. Active Snap Guides (Bright Blue + Haptic)
+                            // 2. Active Snap Guides
                             for guide in activeSnapGuides {
-                                let start = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: size)
-                                let end = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: size)
+                                let start = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: displayedRect)
+                                let end = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: displayedRect)
                                 
                                 var path = Path()
                                 path.move(to: start)
                                 path.addLine(to: end)
                                 
                                 context.stroke(path, with: .color(.cyan), lineWidth: 2)
-                                // Add "Liquid" Glow
                                 context.stroke(path, with: .color(.cyan.opacity(0.5)), lineWidth: 4)
                             }
                             
                             // Draw Dragging Rect
                             if let dragRect = currentDragRect {
-                                let rect = CoordinateConverter.denormalize(rect: dragRect, in: size)
+                                let rect = CoordinateConverter.denormalize(rect: dragRect, in: displayedRect)
                                 context.stroke(Path(rect), with: .color(.white), lineWidth: 1)
                                 
                                 // Draw Handles if Resizing
@@ -123,7 +121,7 @@ struct PrecisionCanvasView: View {
                                 }
                             } else if let index = selectedPanelIndex {
                                 // Draw Handles for Selected Panel (Idle)
-                                let rect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: size)
+                                let rect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: displayedRect)
                                 let handles = getHandleRects(for: rect)
                                 for handle in handles {
                                     context.fill(Path(handle), with: .color(.white))
@@ -131,37 +129,23 @@ struct PrecisionCanvasView: View {
                                 }
                             }
                             
-                            // 🏗️ Anchor Tool Visuals
+                            // Anchor Tool Visuals
                             if selectedTool == .anchor {
-                                // 1. Crosshair Cursor (Simulated via overlay or just a guide?)
-                                // Let's draw a subtle grid or crosshair at drag location?
-                                // Or mainly just draw the Drag Rect in a different color.
-                                
                                 if let dragRect = currentDragRect {
-                                    let rect = CoordinateConverter.denormalize(rect: dragRect, in: size)
-                                    // Filled semi-transparent rect to show "Creation"
+                                    let rect = CoordinateConverter.denormalize(rect: dragRect, in: displayedRect)
                                     context.fill(Path(rect), with: .color(.green.opacity(0.3)))
                                     context.stroke(Path(rect), with: .color(.green), lineWidth: 2)
                                     
-                                    // Dimensions Label
                                     let textString = "\(Int(rect.width)) x \(Int(rect.height))"
                                     let text = Text(textString).font(.caption).foregroundColor(.white)
                                     let resolvedText = context.resolve(text)
-                                    let textSize = resolvedText.measure(in: CGSize(width: 200, height: 50))
                                     
-                                    let textRect = CGRect(x: rect.midX - textSize.width/2 - 4,
-                                                          y: rect.maxY + 10,
-                                                          width: textSize.width + 8,
-                                                          height: textSize.height + 8)
-                                    
-                                    context.fill(Path(roundedRect: textRect, cornerRadius: 4), with: .color(Color.black.opacity(0.7)))
-                                    context.draw(resolvedText, at: CGPoint(x: rect.midX, y: rect.maxY + 14), anchor: .top)
-                                } else {
-                                    // "Ready to Draw" indicator? Maybe just a text overlay is enough (handled in ZStack)
+                                    let textRect = CGRect(x: rect.midX - 25, y: rect.maxY + 10, width: 50, height: 20) // Simplified
+                                    // context.draw(resolvedText, at: ...)
                                 }
                             }
                         }
-                        .gesture(canvasGesture(in: geo.size))
+                        .gesture(canvasGesture(in: displayedRect))
                     }
                     .onAppear { viewSize = geo.size }
                     .onChange(of: geo.size) { newSize in viewSize = newSize }
@@ -600,10 +584,10 @@ struct PreviewMaskShape: Shape {
 
     // MARK: - Gestures
     
-    private func canvasGesture(in size: CGSize) -> some Gesture {
+    private func canvasGesture(in rect: CGRect) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                let point = CoordinateConverter.normalize(point: value.location, in: size)
+                let point = CoordinateConverter.normalize(point: value.location, in: rect)
                 
                 switch selectedTool {
                 case .scan, .preview:
@@ -622,7 +606,7 @@ struct PreviewMaskShape: Shape {
                     if value.translation == .zero { // Tap start
                          // 1. Check Handles First
                          if let index = selectedPanelIndex {
-                             let currentPanelRect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: size)
+                             let currentPanelRect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: rect)
                              if let handle = hitTestHandle(at: value.location, for: currentPanelRect) {
                                  activeHandle = handle
                                  currentDragRect = editorState.pageModel.panels[index]
@@ -797,7 +781,7 @@ struct PreviewMaskShape: Shape {
                 
                 if selectedTool == .knife {
                      // Perform split at line
-                     let splitX = CoordinateConverter.normalize(point: value.location, in: size).x
+                     let splitX = CoordinateConverter.normalize(point: value.location, in: rect).x
                      performKnifeSplit(at: splitX)
                 }
             }
