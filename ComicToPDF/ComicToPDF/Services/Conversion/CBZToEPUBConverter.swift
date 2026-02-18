@@ -423,52 +423,26 @@ class CBZToEPUBConverter {
     }
     
     static func generateXHTML(imageName: String, title: String, width: Int, height: Int, panels: [PanelExtractor.Panel]) -> String {
-        // ✅ STRATEGY: 1000x1000 SVG Viewport (Mission Directive)
-        // We use a fixed 1000x1000 coordinate system for the SVG container.
-        // The image is preserved in its aspect ratio within this viewbox.
-        // Panels (0-1000 Normalized) map 1:1 to this system.
-        
-        let viewportSize = 1000
-        
-        // Calculate image Aspect Ratio placement
-        let imageAspect = Double(width) / Double(height)
-        let viewportAspect = 1.0 // 1000/1000
-        
-        // Letterboxing Logic (Fit inside 1000x1000)
-        var renderW: Double
-        var renderH: Double
-        var renderX: Double
-        var renderY: Double
-        
-        if imageAspect > viewportAspect {
-            // Wider: Fit to Width
-            renderW = 1000.0
-            renderH = 1000.0 / imageAspect
-            renderX = 0.0
-            renderY = (1000.0 - renderH) / 2.0
-        } else {
-            // Taller: Fit to Height
-            renderH = 1000.0
-            renderW = 1000.0 * imageAspect
-            renderY = 0.0
-            renderX = (1000.0 - renderW) / 2.0
-        }
+        // ✅ STRATEGY: Viewport Matches Image Size (No Gray Bars)
+        // We set the viewport to the exact image dimensions.
+        // The device will scale this viewport to fit the screen, eliminating our manual letterboxing.
+        // Panels map 1:1 to image coordinates.
         
         var panelOverlays = ""
         
         if !panels.isEmpty {
             for (index, panel) in panels.enumerated() {
                 // Panels are 0-1 normalized (Vision/Bottom-Left)
-                // We need 0-1000 (SVG/Top-Left) RELATIVE TO THE IMAGE
+                // We map directly to image dimensions (Top-Left)
                 
                 // 1. Flip Y (Vision -> Top-Left)
                 let normY = 1.0 - panel.boundingBox.maxY
                 
-                // 2. Scale to Image Render Size
-                let pX = (panel.boundingBox.minX * renderW) + renderX
-                let pY = (normY * renderH) + renderY
-                let pW = (panel.boundingBox.width * renderW)
-                let pH = (panel.boundingBox.height * renderH)
+                // 2. Scale to Image Size (No Offset)
+                let pX = (panel.boundingBox.minX * Double(width))
+                let pY = (normY * Double(height))
+                let pW = (panel.boundingBox.width * Double(width))
+                let pH = (panel.boundingBox.height * Double(height))
                 
                 // 3. Metadata
                 let targetId = "panel-target-\(index + 1)"
@@ -479,7 +453,6 @@ class CBZToEPUBConverter {
 {"targetId":"\(targetId)","sourceId":"\(sourceId)","ordinal":\(index + 1)}
 """
                 // 4. Create Overlay Element (Transparent Tap Target)
-                // We use an anchor tag <a> because Kindle sometimes strips divs but respects anchors for navigation
                 panelOverlays += """
                 <a class="app-region-magnification" 
                    id="\(sourceId)"
@@ -496,19 +469,34 @@ class CBZToEPUBConverter {
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
     <title>\(title)</title>
-    <meta name="viewport" content="width=1000, height=1000"/>
+    <meta name="viewport" content="width=\(width), height=\(height)"/>
     <style type="text/css">
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; }
-        svg { width: 100%; height: 100%; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000000; /* Force black background to hide letterboxing */
+        }
+        .page-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        img.bg {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* Ensure proper scaling */
+            display: block;
+        }
+        /* Panels are positioned absolutely relative to page-container (which matches viewport/image size) */
         .app-region-magnification { border: 0; background-color: transparent; -webkit-tap-highlight-color: rgba(0,0,0,0); }
     </style>
 </head>
 <body>
-    <div style="width:1000px; height:1000px; position:relative; margin:0 auto;">
+    <div class="page-container">
         <!-- Background Image -->
-        <img src="../images/\(imageName)" 
-             style="position:absolute; left:\(String(format: "%.1f", renderX))px; top:\(String(format: "%.1f", renderY))px; width:\(String(format: "%.1f", renderW))px; height:\(String(format: "%.1f", renderH))px;" 
-             alt="comic page"/>
+        <img src="../images/\(imageName)" class="bg" alt="comic page"/>
              
         <!-- Guided View Overlays -->
         \(panelOverlays)
