@@ -173,7 +173,8 @@ class CBZToEPUBConverter {
                 
                 // Detect Panels (Global Index Lookup)
                 var pagePanels = manualManifest?[item.index] ?? []
-                if pagePanels.isEmpty && settings.enablePanelSplit {
+                // ✅ FIX: Ensure panels are detected for Guided View even if "Panel Split" (Physical Split) is off
+                if pagePanels.isEmpty && (settings.enablePanelSplit || settings.isGuidedView) {
                     if let image = UIImage(data: item.data) {
                         pagePanels = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: settings.mangaMode)
                     }
