@@ -107,6 +107,7 @@ struct PanelInspectorView: View {
                      labeledContent("Total Panels", value: "\(editorState.pageModel.panels.count)")
                      labeledContent("Proposed", value: "\(editorState.pageModel.proposedPanels.count)")
                 }
+                }
         }
     }
     
