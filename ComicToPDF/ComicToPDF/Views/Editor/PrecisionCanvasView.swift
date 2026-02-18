@@ -591,33 +591,51 @@ struct PreviewMaskShape: Shape {
                     )
                     
                 case .edit:
-                    // Logic to select access panels
-                    if value.translation == .zero { // Tap start
-                         // 1. Check Handles First
-                         if let index = editorState.selectedPanelIndex {
-                             let currentPanelRect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: rect)
-                             if let handle = hitTestHandle(at: value.location, for: currentPanelRect) {
-                                 activeHandle = handle
-                                 currentDragRect = editorState.pageModel.panels[index]
-                                 dragStart = point
-                                 return // Start Resizing
+                         // Logic to select access panels
+                         if value.translation == .zero { // Tap start
+                             // 1. Check Handles First
+                             if let index = editorState.selectedPanelIndex {
+                                 let currentPanelRect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: rect)
+                                 if let handle = hitTestHandle(at: value.location, for: currentPanelRect) {
+                                     activeHandle = handle
+                                     currentDragRect = editorState.pageModel.panels[index]
+                                     dragStart = point
+                                     return // Start Resizing
+                                 }
                              }
-                         }
-                    
-                         if let index = hitTest(point) {
-                             editorState.selectedPanelIndex = index
-                             // Initial Drag State
-                             currentDragRect = editorState.pageModel.panels[index]
-                             dragStart = point 
-                             activeHandle = nil // Moving, not resizing
-                             editorState.log("Selected Panel \(index + 1)")
-                         } else {
-                             editorState.selectedPanelIndex = nil
-                             currentDragRect = nil
-                             activeHandle = nil
-                             // Don't log deselect to avoid noise? Or maybe we should.
-                         }
-                    } else if let index = editorState.selectedPanelIndex, let start = dragStart, var currentRect = currentDragRect {
+                        
+                             let hits = hitTestAll(point)
+                             if !hits.isEmpty {
+                                 // Cycle Selection Logic
+                                 if let current = editorState.selectedPanelIndex, let idx = hits.firstIndex(of: current) {
+                                     // Provide next panel in the hit list (cycling)
+                                     let nextIdx = (idx + 1) % hits.count
+                                     let newSelection = hits[nextIdx]
+                                     editorState.selectedPanelIndex = newSelection
+                                     currentDragRect = editorState.pageModel.panels[newSelection]
+                                     editorState.log("Selected Panel \(newSelection + 1) (Cycling \(nextIdx + 1)/\(hits.count))")
+                                 } else {
+                                     // Select the top-most (first in reversed list is visually top)
+                                     // hitTestAll returns indices. We want the one that is "highest" in Z-order.
+                                     // The basic hitTest returns the *last* one (highest index).
+                                     // Let's verify hitTestAll order.
+                                     
+                                     // If we just pick the first one from our new hitTestAll...
+                                     if let newSelection = hits.first {
+                                        editorState.selectedPanelIndex = newSelection
+                                        currentDragRect = editorState.pageModel.panels[newSelection]
+                                        editorState.log("Selected Panel \(newSelection + 1)")
+                                     }
+                                 }
+                                 
+                                 dragStart = point 
+                                 activeHandle = nil // Moving, not resizing
+                             } else {
+                                 editorState.selectedPanelIndex = nil
+                                 currentDragRect = nil
+                                 activeHandle = nil
+                             }
+                         } else if let index = editorState.selectedPanelIndex, let start = dragStart, var currentRect = currentDragRect {
                          
                          
                          // Determine mode: Resize or Move
@@ -806,15 +824,20 @@ struct PreviewMaskShape: Shape {
         }
     }
     
-    private func hitTest(_ point: NormalizedCoordinate) -> Int? {
-        // Find last panel containing point (topmost)
+    private func hitTestAll(_ point: NormalizedCoordinate) -> [Int] {
+        // Find ALL panels containing point, sorted by Z-order (Top/Highest Index -> Bottom/Lowest Index)
+        var hits: [Int] = []
         for (index, panel) in editorState.pageModel.panels.enumerated().reversed() {
             if point.x >= panel.minX && point.x <= panel.maxX &&
                point.y >= panel.minY && point.y <= panel.maxY {
-                return index
+                hits.append(index)
             }
         }
-        return nil
+        return hits
+    }
+
+    private func hitTest(_ point: NormalizedCoordinate) -> Int? {
+        return hitTestAll(point).first
     }
 }
 

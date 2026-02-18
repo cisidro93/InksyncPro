@@ -71,41 +71,42 @@ struct PanelInspectorView: View {
                    }
                 }
             } else {
-                // ✅ Empty State -> show Page Properties & Log
-                Section(header: Text("Page \(editorState.pageModel.panels.count) Panels")) {
-                    labeledContent("Total Panels", value: "\(editorState.pageModel.panels.count)")
-                    labeledContent("Proposed", value: "\(editorState.pageModel.proposedPanels.count)")
-                    labeledContent("Snap Guides", value: "\(editorState.snapGuides.count)")
-                }
-                
-                if conversionManager.conversionSettings.showEditorDebug {
-                    Section(header: Text("Debug Log")) {
-                        if editorState.debugLog.isEmpty {
-                            Text("No events yet.")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
-                        } else {
-                            List {
-                                ForEach(editorState.debugLog.reversed(), id: \.self) { log in
-                                    Text(log)
-                                        .font(.caption2)
-                                        .monospaced() // Code-like look for logs
-                                        .foregroundColor(.secondary)
+                // ✅ Empty State -> Now functionality: Layer List
+                Section(header: Text("Panel Layers (Z-Order)")) {
+                    if editorState.pageModel.panels.isEmpty {
+                        ContentUnavailableView(
+                            "No Panels Detected",
+                            systemImage: "square.dashed",
+                            description: Text("Use the 'Scan' tool or 'Add' tool to create panels.")
+                        )
+                    } else {
+                        List {
+                            // Reversed so top-most is at top of list
+                            ForEach(Array(editorState.pageModel.panels.enumerated().reversed()), id: \.offset) { index, panel in
+                                Button {
+                                    editorState.selectedPanelIndex = index
+                                } label: {
+                                    HStack {
+                                        Text("Panel \(index + 1)")
+                                            .fontWeight(.bold)
+                                        Spacer()
+                                        if index == editorState.selectedPanelIndex {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
                                 }
+                                .foregroundColor(.primary)
                             }
-                            .frame(maxHeight: 200)
                         }
+                        .frame(maxHeight: 300) // Limit height
                     }
                 }
                 
-                Section {
-                    ContentUnavailableView(
-                        "No Panel Selected",
-                        systemImage: "square.dashed",
-                        description: Text("Select a panel on the canvas to edit its layout.")
-                    )
+                Section(header: Text("Page Properties")) {
+                     labeledContent("Total Panels", value: "\(editorState.pageModel.panels.count)")
+                     labeledContent("Proposed", value: "\(editorState.pageModel.proposedPanels.count)")
                 }
-            }
         }
     }
     

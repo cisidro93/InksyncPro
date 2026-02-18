@@ -186,7 +186,7 @@ class CBZToEPUBConverter {
                 let PageHeight = Int(imageSize.height)
 
                 // Create XHTML
-                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", width: PageWidth, height: PageHeight, panels: pagePanels)
+                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", width: PageWidth, height: PageHeight, panels: pagePanels, pageIndex: localIndex + 1)
                 let xhtmlName = String(format: "page_%04d.xhtml", localIndex + 1)
                 try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
                 
@@ -203,7 +203,7 @@ class CBZToEPUBConverter {
                     // We use standard full-page cover layout
                     let coverWidth = Int(contentSize.width)
                     let coverHeight = Int(contentSize.height)
-                    let coverXHTML = CBZToEPUBConverter.generateXHTML(imageName: coverName, title: "Cover", width: coverWidth, height: coverHeight, panels: [])
+                    let coverXHTML = CBZToEPUBConverter.generateXHTML(imageName: coverName, title: "Cover", width: coverWidth, height: coverHeight, panels: [], pageIndex: 0)
                     let coverXHTMLName = "cover_reused.xhtml"
                     try? coverXHTML.write(to: textDir.appendingPathComponent(coverXHTMLName), atomically: true, encoding: .utf8)
                     
@@ -463,7 +463,7 @@ class CBZToEPUBConverter {
         return generatedFiles
     }
     
-    static func generateXHTML(imageName: String, title: String, width: Int, height: Int, panels: [PanelExtractor.Panel]) -> String {
+    static func generateXHTML(imageName: String, title: String, width: Int, height: Int, panels: [PanelExtractor.Panel], pageIndex: Int) -> String {
         // ✅ STRATEGY: Viewport Matches Image Size (No Gray Bars)
         // We set the viewport to the exact image dimensions.
         // The device will scale this viewport to fit the screen, eliminating our manual letterboxing.
@@ -479,8 +479,6 @@ class CBZToEPUBConverter {
                 // 1. Flip Y (Vision -> Top-Left)
                 let normY = 1.0 - panel.boundingBox.maxY
                 
-                // 2. Scale to Image Size (No Offset) & CLAMP
-                // Kindle ignores regions clearly outside the viewport or with negative dimensions
                 // 2. Scale to Image Size (No Offset) & CLAMP
                 // Kindle ignores regions clearly outside the viewport or with negative dimensions
                 let rawPX = (panel.boundingBox.minX * Double(width))
@@ -505,23 +503,27 @@ class CBZToEPUBConverter {
                 let pctH = String(format: "%.3f%%", (pH / Double(height)) * 100.0)
                 
                 // 3. Metadata
-                let targetId = "panel-target-\(index + 1)"
-                let sourceId = "panel-source-\(index + 1)"
+                // ID Format: p{Page}-panel{Index}-{Type}
+                // Must be unique across the book
+                let targetId = "p\(pageIndex)-panel\(index + 1)-t"
+                let sourceId = "p\(pageIndex)-panel\(index + 1)-s"
                 
                 // Amazon JSON Payload
+                // "ordinal" starts at 1
                 let magnifyData = """
 {"targetId":"\(targetId)","sourceId":"\(sourceId)","ordinal":\(index + 1)}
 """
                 // 4. Create Overlay Element (Transparent Tap Target)
                 // TEMPLATE RULE: <a> and target <div> must be SIBLINGS
+                // CLASS: app-amzn-magnify (Critical)
+                // ATTRIBUTE: data-app-amzn-magnify (Critical)
                 
                 // Source (Tap Target)
                 panelOverlays += """
-                <a class="app-region-magnification" 
-                   id="\(sourceId)"
-                   data-amzn-magnification='\(magnifyData)'
-                   style="position: absolute; left: \(pctX); top: \(pctY); width: \(pctW); height: \(pctH); z-index: 10; display: block;">
-                    <div class="panel-source" style="width: 100%; height: 100%;"></div>
+                <a class="app-amzn-magnify" 
+                   data-app-amzn-magnify='\(magnifyData)'
+                   style="display: block; position: absolute; left: \(pctX); top: \(pctY); width: \(pctW); height: \(pctH); z-index: 10;">
+                    <div id="\(sourceId)" class="panel-source" style="width: 100%; height: 100%;"></div>
                 </a>
                 <div id="\(targetId)"
                      class="panel-target"
@@ -558,7 +560,8 @@ class CBZToEPUBConverter {
             display: block;
         }
         /* Panels are positioned absolutely relative to page-container (which matches viewport/image size) */
-        .app-region-magnification { border: 0; background-color: transparent; -webkit-tap-highlight-color: rgba(0,0,0,0); }
+        /* Panels are positioned absolutely relative to page-container (which matches viewport/image size) */
+        .app-amzn-magnify { border: 0; background-color: transparent; -webkit-tap-highlight-color: rgba(0,0,0,0); }
         .panel-source { background-color: transparent; }
         .panel-target { background-color: transparent; }
     </style>
