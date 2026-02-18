@@ -227,12 +227,14 @@ class CBZToEPUBConverter {
             let fixedLayoutMetadata = settings.isGuidedView ? """
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">auto</meta>
-                    <meta property="rendition:spread">auto</meta>
+                    <meta property="rendition:spread">none</meta> 
                     <meta name="fixed-layout" content="true"/>
                     <meta name="original-resolution" content="1000x1000"/> 
                     <meta name="book-type" content="comic"/> 
+                    <meta name="primary-writing-mode" content="horizontal-lr"/>
 """ : """
                     <meta property="rendition:layout">pre-paginated</meta>
+                    <meta property="rendition:spread">none</meta>
                     <meta name="original-resolution" content="1000x1000"/> 
                     <meta name="book-type" content="comic"/> 
 """
