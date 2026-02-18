@@ -456,11 +456,23 @@ class CBZToEPUBConverter {
 """
                 // 4. Create Overlay Element (Transparent Tap Target)
                 panelOverlays += """
+                // 4. Create Overlay Element (Transparent Tap Target) AND Target Element (Zoom Area)
+                // The Source controls the "Tap Area". The Target controls the "Zoom View".
+                
+                // Source (Tap Target)
+                panelOverlays += """
                 <a class="app-region-magnification" 
                    id="\(sourceId)"
                    data-amzn-magnification='\(magnifyData)'
                    style="position: absolute; left: \(String(format: "%.1f", pX))px; top: \(String(format: "%.1f", pY))px; width: \(String(format: "%.1f", pW))px; height: \(String(format: "%.1f", pH))px; z-index: 10;">
                 </a>
+"""
+                // Target (Zoom Area) - Must match targetId
+                panelOverlays += """
+                <div id="\(targetId)"
+                     style="position: absolute; left: \(String(format: "%.1f", pX))px; top: \(String(format: "%.1f", pY))px; width: \(String(format: "%.1f", pW))px; height: \(String(format: "%.1f", pH))px; z-index: 5; pointer-events: none;">
+                </div>
+"""
 """
             }
         }
