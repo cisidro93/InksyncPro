@@ -1,37 +1,102 @@
 import SwiftUI
 
 struct LogsView: View {
+    @ObservedObject var logger = Logger.shared
     @Environment(\.dismiss) var dismiss
-    @State private var logs: String = "Loading..."
+    
     @State private var showingCopiedAlert = false
     @State private var isSharing = false
+    @State private var showErrorsOnly = false
+    
+    var errorCount: Int {
+        logger.parsedLogs.filter { $0.type == .error }.count
+    }
+    
+    var filteredLogs: [LogEntry] {
+        if showErrorsOnly {
+            return logger.parsedLogs.filter { $0.type == .error || $0.type == .warning }
+        }
+        return logger.parsedLogs
+    }
     
     var body: some View {
-        ScrollView {
-            Text(logs)
-                .font(.system(.caption, design: .monospaced))
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 0) {
+            // ✅ Status Header
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("System Status")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    if errorCount == 0 {
+                        Label("0 Errors Detected", systemImage: "checkmark.shield.fill")
+                            .foregroundColor(.green)
+                            .font(.headline)
+                    } else {
+                        Label("\(errorCount) Errors Detected", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                            .font(.headline)
+                    }
+                }
+                Spacer()
+                
+                Toggle("Errors Only", isOn: $showErrorsOnly)
+                    .toggleStyle(.button)
+                    .font(.caption)
+            }
+            .padding()
+            .background(Color(UIColor.secondarySystemBackground))
+            
+            Divider()
+            
+            // ✅ Log List
+            List(filteredLogs) { entry in
+                HStack(alignment: .top) {
+                    Image(systemName: entry.type.icon)
+                        .foregroundColor(entry.type.color)
+                        .font(.caption)
+                        .frame(width: 20)
+                        
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.message)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        
+                        HStack {
+                            Text(entry.category)
+                                .font(.caption2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.1))
+                                .cornerRadius(4)
+                            
+                            Spacer()
+                            Text(entry.timestamp, style: .time)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .listRowBackground(entry.type == .error ? Color.red.opacity(0.05) : nil)
+            }
+            .listStyle(.plain)
         }
-        .navigationTitle("Debug Logs (v2)")
+        .navigationTitle("Flight Recorder")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { refreshLogs() }
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button("Done") { dismiss() }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Button(action: refreshLogs) {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
                     Button(action: { isSharing = true }) {
                         Label("Share Log File", systemImage: "square.and.arrow.up")
                     }
                     Button(action: copyToClipboard) {
                         Label("Copy All", systemImage: "doc.on.doc")
                     }
-                    Button(role: .destructive, action: clearLogs) {
+                    Button(role: .destructive, action: logger.clearLogs) {
                         Label("Clear Logs", systemImage: "trash")
                     }
                 } label: {
@@ -55,21 +120,12 @@ struct LogsView: View {
             }
         )
         .sheet(isPresented: $isSharing) {
-             ShareSheet(activityItems: [Logger.shared.logFileURL])
+             ShareSheet(activityItems: [logger.logFileURL])
         }
     }
     
-    private func refreshLogs() {
-        logs = Logger.shared.getLogs()
-    }
-    
-    private func clearLogs() {
-        Logger.shared.clearLogs()
-        refreshLogs()
-    }
-    
     private func copyToClipboard() {
-        UIPasteboard.general.string = logs
+        UIPasteboard.general.string = logger.getLogs()
         withAnimation { showingCopiedAlert = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             withAnimation { showingCopiedAlert = false }

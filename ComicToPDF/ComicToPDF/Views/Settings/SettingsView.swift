@@ -157,10 +157,22 @@ struct SettingsView: View {
                 Toggle("Default Panel Detection", isOn: $conversionManager.conversionSettings.enablePanelSplit)
                 
                 if conversionManager.conversionSettings.enablePanelSplit {
-                    Toggle("Guided View (Show Full Page First)", isOn: $conversionManager.conversionSettings.epubSettings.includeFullPage)
-                        .foregroundColor(.blue)
-
-                    // ✅ NEW: Export Format Toggle REMOVED - Enforcing EPUB
+                    // ✅ NEW: Export Format
+                    Picker("Output Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                        ForEach(OutputFormat.allCases) { format in
+                            HStack {
+                                Image(systemName: format.icon)
+                                Text(format.rawValue)
+                            }
+                            .tag(format)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    if conversionManager.conversionSettings.outputFormat == .epub {
+                        Toggle("Guided View (Show Full Page First)", isOn: $conversionManager.conversionSettings.epubSettings.includeFullPage)
+                            .foregroundColor(.blue)
+                    }
                     
                     // ✅ NEW: Editor Presentation Mode
                     Picker("Editor Presentation", selection: $conversionManager.conversionSettings.panelEditorMode) {

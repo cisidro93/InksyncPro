@@ -76,6 +76,7 @@
                 <string>com.rarlab.rar-archive</string>
                 <string>public.rar</string>
                 <string>com.adobe.pdf</string>
+                <string>org.idpf.epub-container</string>
                 <string>org.7-zip.7-zip-archive</string>
                 <string>public.archive</string>
                 <string>public.zip-archive</string>

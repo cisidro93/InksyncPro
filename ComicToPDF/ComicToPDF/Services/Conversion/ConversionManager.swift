@@ -498,14 +498,15 @@ class ConversionManager: ObservableObject {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            // \u2705 NEW: Handle PDF imports differently
+            // ✅ NEW: Handle PDF imports differently
             let ext = url.pathExtension.lowercased()
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+
             if ext == "pdf" {
                 Task {
                     // ✅ Offload to ConversionEngine
                     do {
-                        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                        let _ = try await ConversionEngine.shared.performPDFImport(url: url, destFolder: docDir)
+                        let _ = try await ConversionEngine.shared.performPDFImport(url: url, destFolder: documentsDir)
                         // Engine emits 'completed' which triggers scanLibrary()
                     } catch {
                         Logger.shared.log("Engine Import Failed: \(error)", category: "Import")
@@ -515,6 +516,40 @@ class ConversionManager: ObservableObject {
                     }
                 }
                 continue
+            } else if ext == "epub" {
+                 // ✅ NEW: EPUB Import
+                 Task {
+                     do {
+                         // 1. Create Destination
+                         let cleanName = (url.lastPathComponent as NSString).deletingPathExtension
+                         let cbzName = cleanName + ".cbz"
+                         let cbzURL = documentsDir.appendingPathComponent(cbzName)
+                         
+                         // 2. Extract Images via Helper
+                         // We extract to a temporary folder first
+                         let tempExtractDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                         try FileManager.default.createDirectory(at: tempExtractDir, withIntermediateDirectories: true)
+                         
+                         let imageURLs = try EPUBImporter.extractImages(from: url, to: tempExtractDir)
+                         
+                         // 3. Zip to CBZ
+                         try ZipUtilities.createCBZ(from: imageURLs, to: cbzURL)
+                         
+                         // 4. Cleanup
+                         try? FileManager.default.removeItem(at: tempExtractDir)
+                         try? FileManager.default.removeItem(at: url) // Consume original? Usually yes for "Import"
+                         
+                         await MainActor.run {
+                             self.scanLibrary()
+                             self.appAlert = AppAlert(title: "Import Success", message: "Imported EPUB as Comic.")
+                         }
+                     } catch {
+                         await MainActor.run {
+                             self.appAlert = AppAlert(title: "EPUB Import Failed", message: error.localizedDescription)
+                         }
+                     }
+                 }
+                 continue
             }
             
             // Existing CBZ/CBR/ZIP handling
@@ -1642,6 +1677,34 @@ class ConversionManager: ObservableObject {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
         
+        // \u2705 NEW: PDF Branch
+        if conversionSettings.outputFormat == .pdf {
+            let exportName = pdf.name.replacingOccurrences(of: ".cbz", with: ".pdf")
+            let exportURL = tempDir.appendingPathComponent(exportName)
+            
+            isConverting = true; processingStatus = "Generating PDF..."
+            defer { 
+                isConverting = false 
+                Task { @MainActor in self.processingStatus = "" }
+            }
+            
+            do {
+                // 1. Extract Images
+                let imageURLs = try await extractImageURLs(from: pdf.url)
+                
+                // 2. Generate PDF
+                try PDFGenerator.generate(from: imageURLs, to: exportURL) { progress in
+                    Task { @MainActor in self.conversionProgress = progress }
+                }
+                
+                return exportURL
+            } catch {
+                Logger.shared.log("❌ PDF Export Failed: \(error)", category: "Export")
+                return nil
+            }
+        }
+        
+        // ... Existing EPUB Logic ...
         // 1. Create a Temporary Copy of the Source File
         // We do this to avoid modifying the original library file in place, 
         // ensuring "Export" is a non-destructive action.
@@ -1663,7 +1726,6 @@ class ConversionManager: ObservableObject {
             // Copy Source -> Temp
             try fileManager.copyItem(at: pdf.url, to: exportURL)
             
-            // 2. Prepare Panels Data (Retrieving from overrides or auto-detection if needed)
             // 2. Prepare Panels Data (Retrieving from overrides or auto-detection if needed)
             var panelsToInject = await getCombinedManifest(for: pdf)
             
@@ -1712,24 +1774,51 @@ class ConversionManager: ObservableObject {
         // Remove existing
         try? fileManager.removeItem(at: targetURL)
         
-        do {
-            Logger.shared.log("Starting Local Export for \(pdf.name)", category: "Export")
-            try fileManager.copyItem(at: pdf.url, to: targetURL)
+        // ✅ NEW: PDF Branch
+        if conversionSettings.outputFormat == .pdf {
+            isConverting = true; processingStatus = "Generating PDF..."
+            defer { isConverting = false; Task { @MainActor in self.processingStatus = "" } }
             
-            // 2. Ensure OPF Metadata (ASIN/Layout)
-            // try await ensureKindleOPF(at: targetURL) // ❌ Disabled: Merged into injectMetadata for Safe Re-Zip
-            
-            // 3. Ensure ComicInfo/SmartPanels (Best Effort)
-            let panels = await getCombinedManifest(for: pdf)
-            if !panels.isEmpty {
-                try await injectMetadata(into: targetURL, panels: panels, metadata: pdf.metadata)
-            } else {
-                 Logger.shared.log("⚠️ Skipping injection: No panels found for \(pdf.name)", category: "Export")
+            do {
+                let pdName = pdf.name.replacingOccurrences(of: ".cbz", with: ".pdf")
+                let pdfURL = exportDir.appendingPathComponent(pdName)
+                try? fileManager.removeItem(at: pdfURL) // Clean old
+                
+                // 1. Extract
+                let imageURLs = try await extractImageURLs(from: pdf.url)
+                
+                // 2. Generate
+                try PDFGenerator.generate(from: imageURLs, to: pdfURL) { progress in
+                    Task { @MainActor in self.conversionProgress = progress }
+                }
+                
+                return pdfURL
+            } catch {
+                Logger.shared.log("❌ PDF Export Failed: \(error)", category: "Export")
+                return nil
             }
+        }
+        
+        do {
+            // 1. Commit any pending edits
+            saveLibrary()
             
-            return targetURL
+            // 2. Call Engine (Standard EPUB Conversion)
+            let resultURLs = try await ConversionEngine.shared.process(url: pdf.url, settings: conversionSettings)
+            
+            guard let finalEPUB = resultURLs.first else { return nil }
+            
+            // 3. Move to Export Folder
+            // Engine extracts to temp, we need to move it to "KindleExports"
+            let finalName = finalEPUB.lastPathComponent
+            let destURL = exportDir.appendingPathComponent(finalName)
+            if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+            try fileManager.moveItem(at: finalEPUB, to: destURL)
+            
+            return destURL
+            
         } catch {
-            Logger.shared.log("❌ Local Export Failed: \(error)", category: "Export")
+            Logger.shared.log("Export Failed: \(error)", category: "Export")
             return nil
         }
     }
