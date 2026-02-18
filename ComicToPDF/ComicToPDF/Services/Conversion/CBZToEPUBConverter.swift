@@ -455,7 +455,6 @@ class CBZToEPUBConverter {
 {"targetId":"\(targetId)","sourceId":"\(sourceId)","ordinal":\(index + 1)}
 """
                 // 4. Create Overlay Element (Transparent Tap Target)
-                panelOverlays += """
                 // 4. Create Overlay Element (Transparent Tap Target) AND Target Element (Zoom Area)
                 // The Source controls the "Tap Area". The Target controls the "Zoom View".
                 
