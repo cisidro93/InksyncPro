@@ -68,151 +68,132 @@ struct ModernLibraryView: View {
     var body: some View {
         VStack(spacing: 0) {
             // MARK: - Toolbar & Filter Header
-            VStack(spacing: 0) {
-                // Toolbar Row 1
-                HStack(spacing: 12) {
-                    // Book Icon (Library)
-                    Button(action: {}) {
-                        Image(systemName: "books.vertical.fill")
-                            .font(.system(size: 20))
-                            .foregroundColor(Theme.orange)
-                    }
+                // MARK: - Liquid Glass Control Center
+                VStack(spacing: 16) {
                     
-                    // Target Selector Menu
-                    Menu {
-                        Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
-                            ForEach(OutputFormat.allCases) { format in
-                                Label(format.rawValue, systemImage: format.icon).tag(format)
-                            }
-                        }
-                    } label: {
+                    // Row 1: Integrated Search & Title
+                    HStack(spacing: 12) {
+                        // Title / Brand
                         HStack(spacing: 6) {
-                            Text("Target:")
-                                .font(.system(size: 15))
+                             Image(systemName: "books.vertical.fill")
+                                 .font(.system(size: 24, weight: .bold))
+                                 .foregroundStyle(Theme.orange.gradient)
+                             Text("Library")
+                                 .font(.system(size: 28, weight: .bold))
+                                 .foregroundColor(.white)
+                        }
+                        
+                        Spacer()
+                        
+                        // Large Integrated Search Bar
+                        HStack(spacing: 10) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(Theme.textSecondary)
                             
-                            // Shortened display name for the badge
-                            let badgeText: String = {
-                                switch conversionManager.conversionSettings.outputFormat {
-                                case .epub: return "EPUB"
-                                case .pdf: return "PDF"
-                                case .cbz: return "CBZ"
-                                }
-                            }()
+                            TextField("Search Collection...", text: $searchText)
+                                .font(.system(size: 17))
+                                .foregroundColor(.white)
+                                .tint(Theme.orange)
                             
-                            Text(badgeText)
-                                .font(.system(size: 12, weight: .bold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Theme.orange)
-                                .foregroundColor(.black)
-                                .cornerRadius(6)
-                        }
-                    }
-                    
-                    // More Button
-                    Menu {
-                        Button(action: { activeSheet = .merge }) { Label("Merge Files", systemImage: "arrow.triangle.merge") }
-                        Button(role: .destructive) { /* Batch Delete Logic? */ } label: { Label("Delete All", systemImage: "trash") }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 20))
-                            .foregroundColor(Theme.textSecondary)
-                    }
-                    
-                    Spacer()
-                    
-                    // Actions
-                    HStack(spacing: 16) {
-                        Button(action: { activeSheet = .cloud }) {
-                            Image(systemName: "icloud.and.arrow.down")
-                                .font(.system(size: 20))
-                                .foregroundColor(Theme.orange)
-                        }
-                        
-                        Button(action: { activeSheet = .wifi }) {
-                            Image(systemName: "wifi") // Simplified for SF Symbol
-                                .font(.system(size: 20))
-                                .foregroundColor(Theme.orange)
-                        }
-                        
-                        Button(action: { activeSheet = .importer }) {
-                            Image(systemName: "doc.badge.plus")
-                                .font(.system(size: 20))
-                                .foregroundColor(Theme.orange)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                
-                // Toolbar Row 2 (Search & Filter)
-                HStack(spacing: 16) {
-                    // Search Box
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 16))
-                            .foregroundColor(Theme.textTertiary)
-                        TextField("Search...", text: $searchText)
-                            .font(.system(size: 17))
-                            .foregroundColor(Theme.text)
-                            .accentColor(Theme.blue)
-                    }
-                    .padding(.vertical, 9)
-                    .padding(.horizontal, 12)
-                    .background(Theme.surface)
-                    .cornerRadius(10)
-                    
-                    // Icons
-                    HStack(spacing: 18) {
-                        // View Toggle (Placeholder)
-                        Button(action: {}) {
-                            Image(systemName: "list.bullet")
-                                .font(.system(size: 20))
-                                .foregroundColor(Theme.blue)
-                        }
-                        
-                        // Sort
-                        Menu {
-                            Picker("Sort", selection: $sortOption) {
-                                Text("Date").tag(LibraryView.SortOption.dateAdded)
-                                Text("Name").tag(LibraryView.SortOption.name)
-                                Text("Size").tag(LibraryView.SortOption.size)
+                            if !searchText.isEmpty {
+                                Button(action: { searchText = "" }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(Theme.textSecondary)
+                                }
                             }
-                        } label: {
-                            Image(systemName: "arrow.up.arrow.down")
-                                .font(.system(size: 20))
-                                .foregroundColor(Theme.blue)
                         }
-                        
-                        // Settings (Placeholder)
-                        Button(action: {}) {
-                            Image(systemName: "slider.horizontal.3")
-                                .font(.system(size: 20))
-                                .foregroundColor(Theme.blue)
-                        }
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 16)
+                        .background(.ultraThinMaterial) // Liquid Glass Field
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(.white.opacity(0.1), lineWidth: 1)
+                        )
+                        .frame(maxWidth: 400) // Constrain width on large screens
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
                     
-                    Spacer()
-                    
-                    // Select Button
-                    Button(action: {
-                        withAnimation {
-                            isBatchMode.toggle()
-                            if !isBatchMode { multiSelection.removeAll() }
+                    // Row 2: Cohesive Action Center (Scrollable Pills)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            
+                            // 1. Target Selector Pill (Fixed & Prominent)
+                            Menu {
+                                Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                                    ForEach(OutputFormat.allCases) { format in
+                                        Label(format.rawValue, systemImage: format.icon).tag(format)
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text("TARGET")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(Theme.textSecondary)
+                                        .tracking(1)
+                                    
+                                    // Separator
+                                    Rectangle().fill(Theme.textSecondary.opacity(0.3)).frame(width: 1, height: 12)
+                                    
+                                    // Value
+                                    Text(conversionManager.conversionSettings.outputFormat.rawValue)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(Theme.orange)
+                                        .fixedSize() // Prevent truncation
+                                    
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(Theme.textSecondary)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(.thickMaterial)
+                                .clipShape(Capsule())
+                                .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
+                            }
+                            
+                            // Divider
+                            Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
+                            
+                            // 2. Action Pills (Enterprise Labels)
+                            Group {
+                                ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.blue) { activeSheet = .importer }
+                                ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
+                                ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { activeSheet = .cloud }
+                                ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { activeSheet = .merge }
+                            }
+                            
+                            // 3. Selection / Batch
+                            Button(action: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    isBatchMode.toggle()
+                                    if !isBatchMode { multiSelection.removeAll() }
+                                }
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "checkmark.circle.badge.questionmark")
+                                    Text(isBatchMode ? "Done" : "Select")
+                                }
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(isBatchMode ? .white : Theme.text)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(isBatchMode ? Theme.orange : .thickMaterial)
+                                .clipShape(Capsule())
+                            }
                         }
-                    }) {
-                        Text(isBatchMode ? "Done" : "Select")
-                            .font(.system(size: 17))
-                            .foregroundColor(Theme.orange)
+                        .padding(.horizontal, 20)
                     }
+                    .padding(.bottom, 16)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
-            }
-            .background(Color.black) // Header Background
-            
-            Divider().background(Color(white: 0.2))
+                .background(.regularMaterial) // Glass Header Background
+                .overlay(
+                    Rectangle().frame(height: 1).foregroundColor(.white.opacity(0.05)),
+                    alignment: .bottom
+                )
+
             
             // ... (Content Area) ...
             if conversionManager.convertedPDFs.isEmpty {
