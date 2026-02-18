@@ -12,7 +12,7 @@ struct PrecisionCanvasView: View {
     @StateObject private var editorState: PageEditorState
     @State private var pageImage: UIImage?
     @State private var selectedTool: WorkAreaToolbar.ToolType = .edit
-    @State private var selectedPanelIndex: Int?
+    // @State private var selectedPanelIndex: Int? // ❌ Removed: Use editorState.selectedPanelIndex
     @State private var zoomScale: CGFloat = 1.0
     @State private var viewSize: CGSize = .zero
     
@@ -50,7 +50,7 @@ struct PrecisionCanvasView: View {
                             // Draw Active Panels
                             for (index, panel) in editorState.pageModel.panels.enumerated() {
                                 let rect = CoordinateConverter.denormalize(rect: panel, in: displayedRect)
-                                let isSelected = (index == selectedPanelIndex)
+                                let isSelected = (index == editorState.selectedPanelIndex)
                                 
                                 // Fill
                                 context.fill(Path(rect), with: .color(Color.blue.opacity(0.1)))
@@ -119,7 +119,7 @@ struct PrecisionCanvasView: View {
                                         context.stroke(Path(handle), with: .color(.black), lineWidth: 1)
                                     }
                                 }
-                            } else if let index = selectedPanelIndex {
+                            } else if let index = editorState.selectedPanelIndex {
                                 // Draw Handles for Selected Panel (Idle)
                                 let rect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: displayedRect)
                                 let handles = getHandleRects(for: rect)
@@ -168,13 +168,13 @@ struct PrecisionCanvasView: View {
                     Spacer()
                     
                     // ✅ Delete Button (Only when panel is selected)
-                    if let index = selectedPanelIndex {
+                    if let index = editorState.selectedPanelIndex {
                         Button {
                             withAnimation {
                                 if index < editorState.pageModel.panels.count {
                                     let rect = editorState.pageModel.panels[index]
                                     editorState.execute(.removePanel(index: index, rect: rect))
-                                    selectedPanelIndex = nil
+                                    editorState.selectedPanelIndex = nil
                                     currentDragRect = nil
                                 }
                             }
@@ -302,31 +302,7 @@ struct PrecisionCanvasView: View {
                 .edgesIgnoringSafeArea(.bottom)
             }
             
-                if selectedTool == .preview {
-                     // Kindle Scribe Simulator (3:4 Ratio Mask)
-                     // Enterprise Grade: Resolution Independent Letterboxing
-                     GeometryReader { overlayGeo in
-                         Color.black.opacity(0.85)
-                             .mask(
-                                 PreviewMaskShape()
-                                     .fill(style: FillStyle(eoFill: true))
-                             )
-                             .overlay(
-                                 // Border for the hole (Re-calcuated or use Shape stroke?)
-                                 // Shape stroke on composite path is tricky.
-                                 // Adjusted: Just use a separate rectangle for the border.
-                                 Rectangle()
-                                     .aspectRatio(3.0/4.0, contentMode: .fit)
-                                     .border(Color.white.opacity(0.3), width: 1)
-                                     .allowsHitTesting(false)
-                             )
-                             .ignoresSafeArea()
-                             .allowsHitTesting(false)
-                     }
-                     .ignoresSafeArea()
-                     .allowsHitTesting(false)
-                     .zIndex(100) // Ensure on top
-                }
+            /* Preview handled via fullScreenCover */
 
             // MARK: - Security Overlay
             if pdf.isPrivate {
@@ -359,6 +335,19 @@ struct PrecisionCanvasView: View {
         }
         .task {
             loadPage()
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { selectedTool == .preview },
+            set: { if !$0 { selectedTool = .edit } }
+        )) {
+            if let image = pageImage {
+                 let previewPanels = editorState.pageModel.panels.map { p in
+                     CGRect(x: p.x / 1000.0, y: p.y / 1000.0, width: p.width / 1000.0, height: p.height / 1000.0)
+                 }
+                 GuidedViewPreview(image: image, panels: previewPanels)
+            } else {
+                Color.black.edgesIgnoringSafeArea(.all) // Fallback
+            }
         }
         .onDisappear {
             // ✅ Clean up temporary files when closing editor
@@ -605,7 +594,7 @@ struct PreviewMaskShape: Shape {
                     // Logic to select access panels
                     if value.translation == .zero { // Tap start
                          // 1. Check Handles First
-                         if let index = selectedPanelIndex {
+                         if let index = editorState.selectedPanelIndex {
                              let currentPanelRect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: rect)
                              if let handle = hitTestHandle(at: value.location, for: currentPanelRect) {
                                  activeHandle = handle
@@ -616,19 +605,20 @@ struct PreviewMaskShape: Shape {
                          }
                     
                          if let index = hitTest(point) {
-                             selectedPanelIndex = index
+                             editorState.selectedPanelIndex = index
                              // Initial Drag State
                              currentDragRect = editorState.pageModel.panels[index]
                              dragStart = point 
                              activeHandle = nil // Moving, not resizing
                              editorState.log("Selected Panel \(index + 1)")
                          } else {
-                             selectedPanelIndex = nil
+                             editorState.selectedPanelIndex = nil
                              currentDragRect = nil
                              activeHandle = nil
                              // Don't log deselect to avoid noise? Or maybe we should.
                          }
-                    } else if let index = selectedPanelIndex, let start = dragStart, var currentRect = currentDragRect {
+                    } else if let index = editorState.selectedPanelIndex, let start = dragStart, var currentRect = currentDragRect {
+                         
                          
                          // Determine mode: Resize or Move
                          if let handle = activeHandle {
@@ -771,7 +761,7 @@ struct PreviewMaskShape: Shape {
                      }
                 }
                 
-                if selectedTool == .edit, let index = selectedPanelIndex, let newRect = currentDragRect {
+                if selectedTool == .edit, let index = editorState.selectedPanelIndex, let newRect = currentDragRect {
                     // Commit Move OR Resize
                     let oldRect = editorState.pageModel.panels[index]
                     if newRect != oldRect {

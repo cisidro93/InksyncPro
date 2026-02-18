@@ -114,8 +114,22 @@ struct GuidedViewPreview: View {
         )
         
         // Use CGImage for cropping
-        if let cgImage = image.cgImage?.cropping(to: cropRect) {
+        // bounds check
+        if cropRect.width <= 0 || cropRect.height <= 0 || cropRect.isInfinite || cropRect.isEmpty {
+             Logger.shared.log("Invalid crop rect: \(cropRect)", category: "ERROR")
+             return image
+        }
+        
+        // Ensure within image bounds
+        let imageRect = CGRect(origin: .zero, size: image.size)
+        // If cropRect is outside image bounds, CGImage.cropping handles it by returning partial or nil?
+        // Let's be safe.
+        let intersection = cropRect.intersection(CGRect(x: 0, y: 0, width: width, height: height))
+        
+        if let cgImage = image.cgImage?.cropping(to: intersection) {
             return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+        } else {
+            Logger.shared.log("CGImage crop failed", category: "ERROR")
         }
         
         return image // Fallback
