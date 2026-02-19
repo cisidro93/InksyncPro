@@ -196,10 +196,16 @@ class CBZToEPUBConverter {
             var spineItems: [String] = []
             var manifestItems: [String] = []
             
+            // ✅ Prepare Metadata Identifiers (Used in multiple places)
+            let widthID = Int(contentSize.width)
+            let heightID = Int(contentSize.height)
+            let bookUUID = UUID().uuidString
+            let writingMode = settings.mangaMode ? "horizontal-rl" : "horizontal-lr"
+            let spreadMode = settings.isGuidedView ? "none" : "auto"
+            
             // Add CSS to Manifest
             manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
             
-            // Process Items in this Batch
             // ✅ VALIDATION FIX: Restore Navigation Documents (Required for EPUB 3 / Kindle Back-Compat)
             // Even if the user doesn't want a VISIBLE TOC, these files are mandatory for the book structure.
             // We use linear="no" in the spine to hide the HTML TOC.
@@ -225,7 +231,7 @@ class CBZToEPUBConverter {
             </body>
             </html>
             """
-            try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+            try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: String.Encoding.utf8)
             Logger.shared.log("✅ Wrote nav.xhtml", category: "Converter")
             
             let ncxContent = """
@@ -241,7 +247,7 @@ class CBZToEPUBConverter {
                 </navMap>
             </ncx>
             """
-            try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
+            try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
             Logger.shared.log("✅ Wrote toc.ncx", category: "Converter")
             
             // Process Items in this Batch
