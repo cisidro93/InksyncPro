@@ -261,21 +261,22 @@ class CBZToEPUBConverter {
             let kindleWidth = 1860
             let kindleHeight = 2480
             
-            let fixedLayoutMetadata = settings.isGuidedView ? """
+            let writingMode = settings.mangaMode ? "horizontal-rl" : "horizontal-lr"
+            let spreadMode = settings.isGuidedView ? "none" : "auto"
+            
+            // ✅ UNIFIED METADATA (Always Enable Kindle Features)
+            // We always include RegionMagnification and fixed-layout tags.
+            // If panels exist, they work. If not, it falls back to 2x2 or full page.
+            let fixedLayoutMetadata = """
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">auto</meta>
-                    <meta property="rendition:spread">none</meta> 
+                    <meta property="rendition:spread">\(spreadMode)</meta>
                     <meta name="fixed-layout" content="true"/>
                     <meta name="RegionMagnification" content="true"/>
-                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
-                    <meta name="book-type" content="comic"/> 
-                    <meta name="primary-writing-mode" content="horizontal-lr"/>
+                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
+                    <meta name="book-type" content="comic"/>
+                    <meta name="primary-writing-mode" content="\(writingMode)"/>
                     <meta name="orientation-lock" content="none"/>
-""" : """
-                    <meta property="rendition:layout">pre-paginated</meta>
-                    <meta property="rendition:spread">none</meta>
-                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/> 
-                    <meta name="book-type" content="comic"/> 
 """
             
             var opfContent = """
@@ -288,7 +289,6 @@ class CBZToEPUBConverter {
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
                     \(fixedLayoutMetadata)
                     <meta name="cover" content="img_1"/>
-                    \(settings.mangaMode ? "<meta name=\"primary-writing-mode\" content=\"horizontal-rl\"/>" : "")
                 </metadata>
                 <manifest>
                     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
