@@ -593,14 +593,17 @@ class CBZToEPUBConverter {
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=\(width), height=\(height)"/>
+    <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
+    <style>
+        body { margin: 0; padding: 0; background-color: black; }
+        .page-container { position: relative; width: \(width)px; height: \(height)px; margin: 0 auto; }
         img.bg {
             width: 100%;
             height: 100%;
-            object-fit: contain; /* Ensure proper scaling */
+            object-fit: contain;
             display: block;
         }
-        /* Panels are positioned absolutely relative to page-container (which matches viewport/image size) */
-        /* Panels are positioned absolutely relative to page-container (which matches viewport/image size) */
+        /* Overrides/ensure transparency */
         .app-amzn-magnify { border: 0; background-color: transparent; -webkit-tap-highlight-color: rgba(0,0,0,0); }
         .panel-source { background-color: transparent; }
         .panel-target { background-color: transparent; }
