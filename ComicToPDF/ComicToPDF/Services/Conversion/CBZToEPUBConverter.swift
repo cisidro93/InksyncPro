@@ -212,8 +212,7 @@ class CBZToEPUBConverter {
             let widthID = Int(contentSize.width)
             let heightID = Int(contentSize.height)
             let bookUUID = UUID().uuidString
-            let writingMode = settings.mangaMode ? "horizontal-rl" : "horizontal-lr"
-            let spreadMode = settings.isGuidedView ? "none" : "auto"
+            // Note: writingMode and spreadMode are defined later near OPF generation for strict compliance
             
             // Add CSS to Manifest
             manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
@@ -376,6 +375,7 @@ class CBZToEPUBConverter {
             // We must use "landscape" (or "portrait" for manga) to enforce the comic book behavior.
             let orientation = settings.mangaMode ? "portrait" : "landscape"
             let spreadMode = "landscape" // Always allow spreads for comics
+            let writingMode = settings.mangaMode ? "horizontal-rl" : "horizontal-lr"
             
             let fixedLayoutMetadata = """
                     <meta property="rendition:layout">pre-paginated</meta>
