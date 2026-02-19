@@ -196,7 +196,19 @@ class CBZToEPUBConverter {
             var spineItems: [String] = []
             var manifestItems: [String] = []
             
-            // ✅ Prepare Metadata Identifiers (Used in multiple places)
+            // ✅ CRITICAL FIX: Pre-Calculate Resolution for Metadata
+            // We must know the content size BEFORE generating the OPF/NCX/NAV files.
+            // If we wait until the loop, 'widthID' and 'heightID' will be 0, causing Kindle to break.
+            if !batch.isEmpty {
+                if let firstItem = batch.first, let image = UIImage(data: firstItem.data) {
+                    contentSize = image.size
+                    hasCapturedResolution = true
+                    // Also capture cover if this is the very first batch
+                    if batchIndex == 0 { firstBatchCoverData = firstItem.data }
+                }
+            }
+            
+            // ✅ Prepare Metadata Identifiers (Now with valid dimensions)
             let widthID = Int(contentSize.width)
             let heightID = Int(contentSize.height)
             let bookUUID = UUID().uuidString
