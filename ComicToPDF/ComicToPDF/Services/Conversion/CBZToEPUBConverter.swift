@@ -371,12 +371,15 @@ class CBZToEPUBConverter {
             let kindleWidth = 1860
             let kindleHeight = 2480
             
-            // ✅ UNIFIED METADATA (Always Enable Kindle Features)
-            // We always include RegionMagnification and fixed-layout tags.
-            // If panels exist, they work. If not, it falls back to 2x2 or full page.
+            // ✅ UNIFIED METADATA (Strictly match Master Template)
+            // "none" spread/orientation breaks Kindle fixed-layout recognition.
+            // We must use "landscape" (or "portrait" for manga) to enforce the comic book behavior.
+            let orientation = settings.mangaMode ? "portrait" : "landscape"
+            let spreadMode = "landscape" // Always allow spreads for comics
+            
             let fixedLayoutMetadata = """
                     <meta property="rendition:layout">pre-paginated</meta>
-                    <meta property="rendition:orientation">auto</meta>
+                    <meta property="rendition:orientation">\(orientation)</meta>
                     <meta property="rendition:spread">\(spreadMode)</meta>
                     <meta name="fixed-layout" content="true"/>
                     <meta name="RegionMagnification" content="true"/>
@@ -406,8 +409,11 @@ class CBZToEPUBConverter {
             </package>
             """
             
-            // ✅ Inject ComicInfo.xml for App Round-Trip Persistence
-            // This ensures that if the user opens this EPUB in Inksync, the panels are restored.
+            // ✅ Inject ComicInfo.xml...
+            // (Only injected if panels exist)
+            
+            // ... (Rest of OPF writing)
+
             var batchPanels: [Int: [PanelExtractor.Panel]] = [:]
             for (localIndex, item) in batch.enumerated() {
                 let pagePanels = manualManifest?[item.index] ?? [] 
@@ -568,9 +574,9 @@ class CBZToEPUBConverter {
                 
                 // Amazon JSON Payload
                 // "ordinal" starts at 1
-                let magnifyData = """
-{"targetId":"\(targetId)","sourceId":"\(sourceId)","ordinal":\(index + 1)}
-"""
+                // ✅ STRICT FIX: Single-line JSON to prevent attribute breakage
+                let magnifyData = "{\"targetId\":\"\(targetId)\",\"sourceId\":\"\(sourceId)\",\"ordinal\":\(index + 1)}"
+
                 // 4. Create Overlay Element (Transparent Tap Target)
                 // TEMPLATE RULE: <a> and target <div> must be SIBLINGS
                 // CLASS: app-amzn-magnify (Critical)
