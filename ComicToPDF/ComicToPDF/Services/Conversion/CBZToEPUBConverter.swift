@@ -349,10 +349,8 @@ class CBZToEPUBConverter {
 
             }
             
-            // OPF & TOC
-            let widthID = Int(contentSize.width)
-            let heightID = Int(contentSize.height)
-            let bookUUID = UUID().uuidString
+            // OPF Generation
+            // (Identifiers are already defined at top of scope)
             
             // ✅ SURGICAL FIX: Proper Viewport for Kindle
             // Set viewport to Kindle Scribe/Colorsoft dimensions (1860x2480 at 300ppi)
@@ -360,9 +358,6 @@ class CBZToEPUBConverter {
             // while preserving full image content (no cropping)
             let kindleWidth = 1860
             let kindleHeight = 2480
-            
-            let writingMode = settings.mangaMode ? "horizontal-rl" : "horizontal-lr"
-            let spreadMode = settings.isGuidedView ? "none" : "auto"
             
             // ✅ UNIFIED METADATA (Always Enable Kindle Features)
             // We always include RegionMagnification and fixed-layout tags.
@@ -451,7 +446,7 @@ class CBZToEPUBConverter {
                 Logger.shared.log("Batch \(batchIndex): No panels to write", category: "Converter")
             }
             
-            try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+            try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: String.Encoding.utf8)
 
             
             // Zip
