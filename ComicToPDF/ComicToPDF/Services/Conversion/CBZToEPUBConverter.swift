@@ -370,11 +370,16 @@ class CBZToEPUBConverter {
             let kindleWidth = 1860
             let kindleHeight = 2480
             
-            // ✅ UNIFIED METADATA (Strictly match Master Template)
-            // "none" spread/orientation breaks Kindle fixed-layout recognition.
-            // We must use "landscape" (or "portrait" for manga) to enforce the comic book behavior.
-            let orientation = settings.mangaMode ? "portrait" : "landscape"
-            let spreadMode = "landscape" // Always allow spreads for comics
+            // ✅ DYNAMIC ORIENTATION (Fixes "Locked Landscape" on Portrait Comics)
+            // If the content is taller than it is wide, we must tell Kindle it's a Portrait book.
+            // Otherwise, it forces landscape mode and letterboxes the portrait pages.
+            let isPortrait = heightID > widthID
+            let orientation = isPortrait ? "portrait" : "landscape"
+            
+            // "landscape" spread mode allows 2-page spreads when the device is in landscape,
+            // but doesn't force the device INTO landscape if the book is portrait.
+            let spreadMode = "landscape" 
+            
             let writingMode = settings.mangaMode ? "horizontal-rl" : "horizontal-lr"
             
             let fixedLayoutMetadata = """
