@@ -199,11 +199,50 @@ class CBZToEPUBConverter {
             // Add CSS to Manifest
             manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
             
+            // Process Items in this Batch
             // ✅ VALIDATION FIX: Restore Navigation Documents (Required for EPUB 3 / Kindle Back-Compat)
             // Even if the user doesn't want a VISIBLE TOC, these files are mandatory for the book structure.
             // We use linear="no" in the spine to hide the HTML TOC.
             manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
             manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
+            
+            // Generate NAV and NCX immediately to ensure they exist for Zipping
+            let navContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE html>
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+            <head>
+                <title>Navigation</title>
+                <meta charset="utf-8" />
+            </head>
+            <body>
+                <nav epub:type="toc" id="toc">
+                    <h1>Table of Contents</h1>
+                    <ol>
+                        <li><a href="text/page_0001.xhtml">Start Reading</a></li>
+                    </ol>
+                </nav>
+            </body>
+            </html>
+            """
+            try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+            Logger.shared.log("✅ Wrote nav.xhtml", category: "Converter")
+            
+            let ncxContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+                <head><meta name="dtb:uid" content="urn:uuid:\(bookUUID)"/></head>
+                <docTitle><text>\(epubName)</text></docTitle>
+                <navMap>
+                    <navPoint id="navPoint-1" playOrder="1">
+                        <navLabel><text>Start</text></navLabel>
+                        <content src="text/page_0001.xhtml"/>
+                    </navPoint>
+                </navMap>
+            </ncx>
+            """
+            try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
+            Logger.shared.log("✅ Wrote toc.ncx", category: "Converter")
             
             // Process Items in this Batch
             for (localIndex, item) in batch.enumerated() {
