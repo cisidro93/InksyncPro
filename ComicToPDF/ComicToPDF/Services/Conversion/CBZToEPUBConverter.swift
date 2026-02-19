@@ -4,7 +4,7 @@ import ZIPFoundation
 class CBZToEPUBConverter {
     
     func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, progress: @escaping (Double) -> Void) async throws -> [URL] {
-        Logger.shared.log("Starting Enterprise Conversion. Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
+        Logger.shared.log("Starting Enterprise Conversion (No TOC). Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
         
         let fileManager = FileManager.default
         
@@ -149,27 +149,46 @@ class CBZToEPUBConverter {
             // ✅ CSS GENERATION (Critical for Kindle Panel View)
             // This ensures the .app-amzn-magnify class has absolute positioning and z-index.
             let cssContent = """
-            body { margin: 0; padding: 0; background-color: #000000; }
-            .page-container { width: 100vw; height: 100vh; position: relative; }
-            img.bg { width: 100%; height: 100%; object-fit: contain; }
+            * { margin: 0; padding: 0; border: 0; }
+            html, body {
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                background-color: #000000;
+            }
+            .page {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            .page-image {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+            }
             /* Kindle Panel View Overlays */
-            .app-amzn-magnify {
+            a.app-amzn-magnify {
                 display: block;
                 position: absolute;
                 z-index: 10;
-                background-color: transparent;
-                -webkit-tap-highlight-color: rgba(0,0,0,0);
+                text-decoration: none;
+                background: transparent;
+            }
+            .panel-source {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                background: transparent;
             }
             .panel-target {
                 position: absolute;
                 z-index: 5;
                 pointer-events: none;
-                background-color: transparent;
-            }
-            .panel-source {
-                width: 100%;
-                height: 100%;
-                background-color: transparent;
+                background: transparent;
             }
             """
             try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
@@ -177,14 +196,11 @@ class CBZToEPUBConverter {
             var spineItems: [String] = []
             var manifestItems: [String] = []
             
-            // Add CSS, NCX, NAV to Manifest immediately (They are static)
+            // Add CSS to Manifest immediately (They are static)
             manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
-            manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
-            manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
             
             // Process Items in this Batch
             for (localIndex, item) in batch.enumerated() {
-                let ext = "jpg"
                 let trueExt = (item.url.pathExtension.lowercased() == "png") ? "png" : "jpg"
                 let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
                 
@@ -217,11 +233,9 @@ class CBZToEPUBConverter {
                 
                 // Get Dimensions for Viewport
                 let imageSize = UIImage(data: item.data)?.size ?? CGSize(width: 1000, height: 1500)
-                let PageWidth = Int(imageSize.width)
-                let PageHeight = Int(imageSize.height)
 
                 // Create XHTML
-                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", width: PageWidth, height: PageHeight, panels: pagePanels, pageIndex: localIndex + 1)
+                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", width: Int(imageSize.width), height: Int(imageSize.height), panels: pagePanels, pageIndex: localIndex + 1)
                 let xhtmlName = String(format: "page_%04d.xhtml", localIndex + 1)
                 try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
                 
@@ -328,49 +342,12 @@ class CBZToEPUBConverter {
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
                 </manifest>
-                <spine toc="ncx" page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
-                    <itemref idref="nav" linear="no"/> <!-- ✅ Add NAV to Spine (Linear=No) -->
+                <spine page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
                     \(spineItems.joined(separator: "\n        "))
                 </spine>
             </package>
             """
-            // try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8) // Removed redundant write
             
-            // ✅ FIX: Generate EPUB 3.0 Navigation Document (Mandatory)
-            // Added DOCTYPE for strict validation (E013 fix candidate)
-            let navContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE html>
-            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
-            <head>
-                <title>Navigation</title>
-                <meta charset="utf-8" />
-            </head>
-            <body>
-                <nav epub:type="toc" id="toc">
-                    <h1>Table of Contents</h1>
-                    <ol>
-                        <li><a href="text/page_0001.xhtml">Start Reading</a></li>
-                    </ol>
-                </nav>
-            </body>
-            </html>
-            """
-            try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
-            
-            let ncxContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-                <head><meta name="dtb:uid" content="urn:uuid:\(bookUUID)"/></head>
-                <docTitle><text>\(epubName)</text></docTitle>
-                <navMap>
-                    <navPoint id="navPoint-1" playOrder="1">
-                        <navLabel><text>Start</text></navLabel>
-                        <content src="text/page_0001.xhtml"/>
-                    </navPoint>
-                </navMap>
-            </ncx>
-            """
             // ✅ Inject ComicInfo.xml for App Round-Trip Persistence
             // This ensures that if the user opens this EPUB in Inksync, the panels are restored.
             var batchPanels: [Int: [PanelExtractor.Panel]] = [:]
@@ -422,10 +399,6 @@ class CBZToEPUBConverter {
                 Logger.shared.log("Batch \(batchIndex): No panels to write", category: "Converter")
             }
             
-            try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
-            
-
-
             try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
 
             
@@ -462,12 +435,6 @@ class CBZToEPUBConverter {
                 // 2. Add META-INF/container.xml (Strictly Second)
                 let containerPath = metaInfDir.appendingPathComponent("container.xml")
                 try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
-                
-                // 3. Add META-INF/ComicInfo.xml (REMOVED: Now embedded in OPF)
-                // let comicInfoPath = metaInfDir.appendingPathComponent("ComicInfo.xml")
-                // if fileManager.fileExists(atPath: comicInfoPath.path) {
-                //    try archive.addEntry(with: "META-INF/ComicInfo.xml", fileURL: comicInfoPath, compressionMethod: .deflate)
-                // }
                 
                 // 3. Add OEBPS Content recursively
                 let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil)!
@@ -553,15 +520,10 @@ class CBZToEPUBConverter {
                 
                 // Source (Tap Target)
                 panelOverlays += """
-                <a class="app-amzn-magnify" 
-                   data-app-amzn-magnify='\(magnifyData)'
-                   style="display: block; position: absolute; left: \(pctX); top: \(pctY); width: \(pctW); height: \(pctH); z-index: 10;">
-                    <div id="\(sourceId)" class="panel-source" style="width: 100%; height: 100%;"></div>
+                <a class="app-amzn-magnify" data-app-amzn-magnify='\(magnifyData)'>
+                    <div id="\(sourceId)" class="panel-source" style="top: \(pctY); left: \(pctX); width: \(pctW); height: \(pctH);"></div>
                 </a>
-                <div id="\(targetId)"
-                     class="panel-target"
-                     style="position: absolute; left: \(pctX); top: \(pctY); width: \(pctW); height: \(pctH); z-index: 5; pointer-events: none;">
-                </div>
+                <div id="\(targetId)" class="panel-target" style="top: \(pctY); left: \(pctX); width: \(pctW); height: \(pctH);"></div>
 """
             }
         }
@@ -571,21 +533,8 @@ class CBZToEPUBConverter {
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
-    <title>\(title)</title>
+    <meta charset="UTF-8"/>
     <meta name="viewport" content="width=\(width), height=\(height)"/>
-    <style type="text/css">
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background-color: #000000; /* Force black background to hide letterboxing */
-        }
-        .page-container {
-            width: 100%;
-            height: 100%;
-            position: relative;
-        }
         img.bg {
             width: 100%;
             height: 100%;
