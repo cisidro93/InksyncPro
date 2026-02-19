@@ -297,8 +297,10 @@ class CBZToEPUBConverter {
                 let imageSize = UIImage(data: item.data)?.size ?? CGSize(width: 1000, height: 1500)
 
                 // Create XHTML
-                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(localIndex + 1)", width: Int(imageSize.width), height: Int(imageSize.height), panels: pagePanels, pageIndex: localIndex + 1)
-                let xhtmlName = String(format: "page_%04d.xhtml", localIndex + 1)
+                // ✅ FIX: Use Global Index (item.index) for Page ID to ensure uniqueness across batches
+                let globalPageNum = item.index + 1
+                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(globalPageNum)", width: Int(imageSize.width), height: Int(imageSize.height), panels: pagePanels, pageIndex: globalPageNum)
+                let xhtmlName = String(format: "page_%04d.xhtml", globalPageNum)
                 try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
                 
                 // ✅ Phase 4: Split Volume Cover Retention
