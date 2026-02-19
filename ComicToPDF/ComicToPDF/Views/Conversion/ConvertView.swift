@@ -161,9 +161,11 @@ struct ConvertView: View {
         switch mode {
         case .standard:
             conversionManager.conversionSettings.enablePanelSplit = false
+            conversionManager.conversionSettings.isGuidedView = false // ✅ Disable Guided View
         case .hybrid:
             conversionManager.conversionSettings.enablePanelSplit = true
             conversionManager.conversionSettings.epubSettings.includeFullPage = true
+            conversionManager.conversionSettings.isGuidedView = true // ✅ Enable Guided View
         }
     }
 }

@@ -4,7 +4,7 @@ import ZIPFoundation
 class CBZToEPUBConverter {
     
     func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, progress: @escaping (Double) -> Void) async throws -> [URL] {
-        Logger.shared.log("Starting Conversion. Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
+        Logger.shared.log("Starting Enterprise Conversion. Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
         
         let fileManager = FileManager.default
         
@@ -125,11 +125,13 @@ class CBZToEPUBConverter {
             let oebpsDir = batchDir.appendingPathComponent("OEBPS")
             let imagesDir = oebpsDir.appendingPathComponent("images")
             let textDir = oebpsDir.appendingPathComponent("text")
+            let cssDir = oebpsDir.appendingPathComponent("css") // ✅ NEW: CSS Directory
             let metaInfDir = batchDir.appendingPathComponent("META-INF")
             
             try? fileManager.removeItem(at: batchDir)
             try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
             try fileManager.createDirectory(at: textDir, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: cssDir, withIntermediateDirectories: true) // ✅ Create CSS Dir
             try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
             
             // Standard EPUB Files
@@ -144,8 +146,41 @@ class CBZToEPUBConverter {
             """
             try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
             
+            // ✅ CSS GENERATION (Critical for Kindle Panel View)
+            // This ensures the .app-amzn-magnify class has absolute positioning and z-index.
+            let cssContent = """
+            body { margin: 0; padding: 0; background-color: #000000; }
+            .page-container { width: 100vw; height: 100vh; position: relative; }
+            img.bg { width: 100%; height: 100%; object-fit: contain; }
+            /* Kindle Panel View Overlays */
+            .app-amzn-magnify {
+                display: block;
+                position: absolute;
+                z-index: 10;
+                background-color: transparent;
+                -webkit-tap-highlight-color: rgba(0,0,0,0);
+            }
+            .panel-target {
+                position: absolute;
+                z-index: 5;
+                pointer-events: none;
+                background-color: transparent;
+            }
+            .panel-source {
+                width: 100%;
+                height: 100%;
+                background-color: transparent;
+            }
+            """
+            try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
+            
             var spineItems: [String] = []
             var manifestItems: [String] = []
+            
+            // Add CSS, NCX, NAV to Manifest immediately (They are static)
+            manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
+            manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
+            manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
             
             // Process Items in this Batch
             for (localIndex, item) in batch.enumerated() {
@@ -281,7 +316,7 @@ class CBZToEPUBConverter {
             
             var opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
+            <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
@@ -291,11 +326,10 @@ class CBZToEPUBConverter {
                     <meta name="cover" content="img_1"/>
                 </metadata>
                 <manifest>
-                    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
                     \(manifestItems.joined(separator: "\n        "))
                 </manifest>
                 <spine toc="ncx" page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
+                    <itemref idref="nav" linear="no"/> <!-- ✅ Add NAV to Spine (Linear=No) -->
                     \(spineItems.joined(separator: "\n        "))
                 </spine>
             </package>
@@ -360,7 +394,6 @@ class CBZToEPUBConverter {
                         xml += "    </Page>\n"
                     }
                 }
-                xml += "  </Pages>\n</ComicInfo>"
                 xml += "  </Pages>\n</ComicInfo>"
                 
                 // ✅ FIX: Embed ComicInfo as Base64 in OPF Metadata (Zero Footprint)
