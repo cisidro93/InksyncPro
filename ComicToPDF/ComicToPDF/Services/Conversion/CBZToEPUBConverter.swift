@@ -401,7 +401,6 @@ class CBZToEPUBConverter {
                     \(manifestItems.joined(separator: "\n        "))
                 </manifest>
                 <spine toc="ncx" page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
-                    <itemref idref="nav" linear="no"/> <!-- ✅ Add NAV to Spine (Linear=No to Hide from Flow) -->
                     \(spineItems.joined(separator: "\n        "))
                 </spine>
             </package>
