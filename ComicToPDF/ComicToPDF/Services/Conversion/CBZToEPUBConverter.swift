@@ -196,8 +196,14 @@ class CBZToEPUBConverter {
             var spineItems: [String] = []
             var manifestItems: [String] = []
             
-            // Add CSS to Manifest immediately (They are static)
+            // Add CSS to Manifest
             manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
+            
+            // ✅ VALIDATION FIX: Restore Navigation Documents (Required for EPUB 3 / Kindle Back-Compat)
+            // Even if the user doesn't want a VISIBLE TOC, these files are mandatory for the book structure.
+            // We use linear="no" in the spine to hide the HTML TOC.
+            manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
+            manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
             
             // Process Items in this Batch
             for (localIndex, item) in batch.enumerated() {
@@ -342,7 +348,8 @@ class CBZToEPUBConverter {
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
                 </manifest>
-                <spine page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
+                <spine toc="ncx" page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
+                    <itemref idref="nav" linear="no"/> <!-- ✅ Add NAV to Spine (Linear=No to Hide from Flow) -->
                     \(spineItems.joined(separator: "\n        "))
                 </spine>
             </package>
