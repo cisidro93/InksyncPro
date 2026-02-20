@@ -535,11 +535,11 @@ class CBZToEPUBConverter {
     }
     
     static func generateXHTML(imageName: String, title: String, width: Int, height: Int, panels: [PanelExtractor.Panel], pageIndex: Int) -> String {
-        // ✅ STRATEGY: Hybrid ID-Based with CSS Background Cropping
-        // 1. KDP Docs say "Target div is displayed". If it's empty, you see nothing.
-        // 2. Coordinate-based (JSON only) failed in testing.
-        // 3. Solution: Use ID-based, but FILL the target div with the panel image using CSS.
-        //    We use background-image with calculated position/size to show JUST the panel region.
+        // ✅ STRATEGY: KCC-Style Non-Destructive Full Screen Zoom
+        // 1. Target Div is FULL SCREEN (covers page).
+        // 2. Content is the FULL IMAGE.
+        // 3. We calculate CSS to Scale and Position the image so the PANEL centers on screen.
+        //    (Strict "Aspect Fit" logic).
         
         var panelOverlays = ""
         
@@ -548,7 +548,8 @@ class CBZToEPUBConverter {
                 // 1. Geometry - Flip Y (Vision Origin Bottom-Left -> Top-Left)
                 let normY = 1.0 - panel.boundingBox.maxY
                 
-                // 2. Scale to Image Size (No Offset) & CLAMP
+                // Panel Source Geometry (For the Tappable Region - Same as before)
+                // Scale to Image Size (No Offset) & CLAMP
                 let rawPX = (panel.boundingBox.minX * Double(width))
                 let rawPY = (normY * Double(height))
                 let rawPW = (panel.boundingBox.width * Double(width))
@@ -561,73 +562,60 @@ class CBZToEPUBConverter {
                 
                 if pW < 5 || pH < 5 { continue }
                 
-                // 3. CSS Percentages for Placement (Outer Divs)
-                let pctX = String(format: "%.3f%%", (pX / Double(width)) * 100.0)
-                let pctY = String(format: "%.3f%%", (pY / Double(height)) * 100.0)
-                let pctW = String(format: "%.3f%%", (pW / Double(width)) * 100.0)
-                let pctH = String(format: "%.3f%%", (pH / Double(height)) * 100.0)
+                // Source Percentages (Tappable Area)
+                let srcLeft = String(format: "%.3f%%", (pX / Double(width)) * 100.0)
+                let srcTop = String(format: "%.3f%%", (pY / Double(height)) * 100.0)
+                let srcWidth = String(format: "%.3f%%", (pW / Double(width)) * 100.0)
+                let srcHeight = String(format: "%.3f%%", (pH / Double(height)) * 100.0)
                 
-                // 4. Background Image Calculation (The "Crop")
-                // To show just the panel region in the target div:
-                // background-size: Ratio of Page / Panel. (e.g. if Panel is 50% width, BG is 200% width)
-                // background-position: Ratio of X / (Page - Panel). Complex CSS math.
-                // EASIER: Use simple percentages relative to the DIV.
+                // 2. Target Geometry (The Zoom Math)
+                // Goal: Fit the Panel Rect (pW, pH) into the Screen Rect (width, height)
                 
-                // bgWidth% = (PageWidth / PanelWidth) * 100
-                // bgHeight% = (PageHeight / PanelHeight) * 100
-                let bgW = (Double(width) / pW) * 100.0
-                let bgH = (Double(height) / pH) * 100.0
+                // Calculate Scale Factor (Fit Screen)
+                let scaleX = Double(width) / pW
+                let scaleY = Double(height) / pH
+                let zoomScale = min(scaleX, scaleY) // Aspect Fit
                 
-                // bgPosX% = (pX / (PageWidth - PanelWidth)) * 100
-                // This is how CSS background-position percentages work (aligning edges).
-                // Formula: pos% = (offset / (container - object)) * 100? No.
-                // Standard CSS background-position: 0% = Left align, 100% = Right align.
-                // If we want to align the image such that pX is at 0...
-                // Actually, let's use PIXELS for background-position to be safe and precise, 
-                // but percentages for size/layout.
-                // Wait, mixed units might be tricky. Let's try standard CSS Sprite logic.
-                // position: absolute; ...
-                // background-position: -pX -pY
-                // BUT background-size must be the PAGE size.
-                // We can't use pixels easily because the device scales the page.
+                // Calculate New "Virtual" Image Dimensions
+                let zoomedImgW = Double(width) * zoomScale
+                let zoomedImgH = Double(height) * zoomScale
                 
-                // Re-calculating for Responsive CSS:
-                // background-size: (PageWidth / PanelWidth) * 100 % (Relative to Target Div)
-                // background-position:
-                //   X: (pX / (PageWidth - PanelWidth)) * 100 % ??? No.
-                //   Let's use the explicit formulas:
-                //   bpX = - (pX / pW) * 100 % (Relative to Target Width) ? No.
-                //   Let's use a simpler trick: Inner Image.
-                //   Using background-image is cleaner if we get the math right.
-                //   Correct Math for background-position in %: 
-                //   pos% = ( x / (container_width - image_width) ) ... NO, that's for alignment.
-                //   We want to shift.
-                //   Let's stick to the simplest robust way:
-                //   Target Div (overflow:hidden) -> Inner Img (position:absolute).
-                //   Inner Img Width = (PageWidth / PanelWidth) * 100 %
-                //   Inner Img Left = -(pX / pW) * 100 %
+                // Calculate Offsets to Center the Panel
+                // 1. Shift Image so Panel Top-Left is at 0,0:  -pX * scale, -pY * scale
+                // 2. Add Center Offset: (ScreenW - PanelW*scale) / 2
                 
-                let imgW_pct = (Double(width) / pW) * 100.0
-                let imgH_pct = (Double(height) / pH) * 100.0
-                let imgL_pct = -(pX / pW) * 100.0
-                let imgT_pct = -(pY / pH) * 100.0
+                let panelScaledW = pW * zoomScale
+                let panelScaledH = pH * zoomScale
                 
-                let innerImgStyle = String(format: "position:absolute; width:%.3f%%; height:%.3f%%; top:%.3f%%; left:%.3f%%; max-width:none; max-height:none;", imgW_pct, imgH_pct, imgT_pct, imgL_pct)
+                let centeringOffsetX = (Double(width) - panelScaledW) / 2.0
+                let centeringOffsetY = (Double(height) - panelScaledH) / 2.0
                 
-                // 5. Metadata
+                let imgLeftPos = -(pX * zoomScale) + centeringOffsetX
+                let imgTopPos = -(pY * zoomScale) + centeringOffsetY
+                
+                // Convert to Percentages of the CONTAINER (which is 100% Page W/H)
+                let imgCssWidth = String(format: "%.3f%%", (zoomedImgW / Double(width)) * 100.0)
+                let imgCssHeight = String(format: "%.3f%%", (zoomedImgH / Double(height)) * 100.0)
+                let imgCssLeft = String(format: "%.3f%%", (imgLeftPos / Double(width)) * 100.0)
+                let imgCssTop = String(format: "%.3f%%", (imgTopPos / Double(height)) * 100.0)
+                
+                
+                // 3. Metadata
                 let targetId = "p\(pageIndex)-panel\(index + 1)-t"
                 let sourceId = "p\(pageIndex)-panel\(index + 1)-s"
                 let magnifyData = "{\"targetId\":\"\(targetId)\",\"sourceId\":\"\(sourceId)\",\"ordinal\":\(index + 1)}"
 
-                // 6. Output HTML
-                // Source: Transparent Overlay
+                // 4. Output HTML
+                // Source: Transparent Overlay on original page
                 panelOverlays += """
-                <a class="app-amzn-magnify" data-app-amzn-magnify='\(magnifyData)' style="display:block; position:absolute; top:\(pctY); left:\(pctX); width:\(pctW); height:\(pctH); z-index:10;">
+                <a class="app-amzn-magnify" data-app-amzn-magnify='\(magnifyData)' style="display:block; position:absolute; top:\(srcTop); left:\(srcLeft); width:\(srcWidth); height:\(srcHeight); z-index:10;">
                     <div id="\(sourceId)" class="panel-source" style="width:100%; height:100%;"></div>
                 </a>
                 
-                <div id="\(targetId)" class="panel-target" style="overflow:hidden; position:absolute; top:\(pctY); left:\(pctX); width:\(pctW); height:\(pctH); z-index:5;">
-                    <img src="../images/\(imageName)" style="\(innerImgStyle)" alt="zoomed panel" />
+                <!-- Target: Full Screen Hidden Container (Kindle toggles display) -->
+                <!-- Important: display:none to start. Position fixed/absolute to cover page. -->
+                <div id="\(targetId)" class="panel-target" style="display:none; overflow:hidden; position:absolute; top:0; left:0; width:100%; height:100%; z-index:20; background-color:black;">
+                    <img src="../images/\(imageName)" style="position:absolute; width:\(imgCssWidth); height:\(imgCssHeight); top:\(imgCssTop); left:\(imgCssLeft); max-width:none; max-height:none;" alt="zoomed panel" />
                 </div>
 """
             }
@@ -643,7 +631,7 @@ class CBZToEPUBConverter {
     <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
     <style>
         body { margin: 0; padding: 0; background-color: black; }
-        .page-container { position: relative; width: \(width)px; height: \(height)px; margin: 0 auto; }
+        .page-container { position: relative; width: \(width)px; height: \(height)px; margin: 0 auto; overflow: hidden; }
         img.bg {
             width: 100%;
             height: 100%;
@@ -658,7 +646,7 @@ class CBZToEPUBConverter {
         <!-- Background Image -->
         <img src="../images/\(imageName)" class="bg" alt="comic page"/>
              
-        <!-- Guided View Overlays (Hybrid ID-Based with Content) -->
+        <!-- Guided View Overlays (KCC-Style Full Screen Zoom) -->
         \(panelOverlays)
     </div>
 </body>
