@@ -535,67 +535,70 @@ class CBZToEPUBConverter {
     }
     
     static func generateXHTML(imageName: String, title: String, width: Int, height: Int, panels: [PanelExtractor.Panel], pageIndex: Int) -> String {
-        // ✅ STRATEGY: Viewport Matches Image Size (No Gray Bars)
-        // We set the viewport to the exact image dimensions.
-        // The device will scale this viewport to fit the screen, eliminating our manual letterboxing.
-        // Panels map 1:1 to image coordinates.
+        // ✅ STRATEGY: Coordinate-Based Region Magnification (The "Native" Kindle Comic Way)
+        // Instead of pointing to an empty "target" div (which fails in current generation),
+        // we use the 'parent' + 'ul/ur/ll/lr' JSON format.
+        // This tells Kindle specifically to zoom into a region of the PARENT image.
         
         var panelOverlays = ""
         
         if !panels.isEmpty {
             for (index, panel) in panels.enumerated() {
-                // Panels are 0-1 normalized (Vision/Bottom-Left)
-                // We map directly to image dimensions (Top-Left)
+                let pIndex = index + 1
                 
-                // 1. Flip Y (Vision -> Top-Left)
+                // 1. Geometry Calculations (Normalized 0-1 -> Pixels -> Percent)
+                // Note: Panel.boundingBox is Vision-Normalized (Origin Bottom-Left)
+                // We need Top-Left for CSS & Kindle JSON
+                
                 let normY = 1.0 - panel.boundingBox.maxY
                 
-                // 2. Scale to Image Size (No Offset) & CLAMP
-                // Kindle ignores regions clearly outside the viewport or with negative dimensions
-                let rawPX = (panel.boundingBox.minX * Double(width))
-                let rawPY = (normY * Double(height))
-                let rawPW = (panel.boundingBox.width * Double(width))
-                let rawPH = (panel.boundingBox.height * Double(height))
+                // Raw Pixels
+                let rawX = panel.boundingBox.minX * Double(width)
+                let rawY = normY * Double(height)
+                let rawW = panel.boundingBox.width * Double(width)
+                let rawH = panel.boundingBox.height * Double(height)
                 
-                // Clamp Logic (Pixel Space)
-                let pX = max(0, min(Double(width), rawPX))
-                let pY = max(0, min(Double(height), rawPY))
-                let pW = min(Double(width) - pX, rawPW)
-                let pH = min(Double(height) - pY, rawPH)
+                // Clamped Pixels (Kindle Integrity)
+                let pX = max(0, min(Double(width), rawX))
+                let pY = max(0, min(Double(height), rawY))
+                let pW = min(Double(width) - pX, rawW)
+                let pH = min(Double(height) - pY, rawH)
                 
-                // Skip invalid/tiny panels
                 if pW < 5 || pH < 5 { continue }
                 
-                // ✅ CONVERT TO PERCENTAGE (Strict Requirement from Template)
-                // Format: "12.34%"
-                let pctX = String(format: "%.3f%%", (pX / Double(width)) * 100.0)
-                let pctY = String(format: "%.3f%%", (pY / Double(height)) * 100.0)
-                let pctW = String(format: "%.3f%%", (pW / Double(width)) * 100.0)
-                let pctH = String(format: "%.3f%%", (pH / Double(height)) * 100.0)
+                // CSS Percentages (For the clickable <a> tag)
+                // We MUST give the anchor dimensions so it covers the panel and catches taps
+                let cssTop = String(format: "%.3f", (pY / Double(height)) * 100.0)
+                let cssLeft = String(format: "%.3f", (pX / Double(width)) * 100.0)
+                let cssWidth = String(format: "%.3f", (pW / Double(width)) * 100.0)
+                let cssHeight = String(format: "%.3f", (pH / Double(height)) * 100.0)
                 
-                // 3. Metadata
-                // ID Format: p{Page}-panel{Index}-{Type}
-                // Must be unique across the book
-                let targetId = "p\(pageIndex)-panel\(index + 1)-t"
-                let sourceId = "p\(pageIndex)-panel\(index + 1)-s"
+                // 2. Kindle JSON Payload (Coordinate-Based)
+                // "parent": The ID of the container holding the image ("img-container")
+                // "ul", "ur", "ll", "lr": Integer coordinate arrays [x, y] relative to unscaled image size
+                // "ord": Reading order
                 
-                // Amazon JSON Payload
-                // "ordinal" starts at 1
-                // ✅ STRICT FIX: Single-line JSON to prevent attribute breakage
-                let magnifyData = "{\"targetId\":\"\(targetId)\",\"sourceId\":\"\(sourceId)\",\"ordinal\":\(index + 1)}"
-
-                // 4. Create Overlay Element (Transparent Tap Target)
-                // TEMPLATE RULE: <a> and target <div> must be SIBLINGS
-                // CLASS: app-amzn-magnify (Critical)
-                // ATTRIBUTE: data-app-amzn-magnify (Critical)
+                let minX = Int(pX)
+                let minY = Int(pY)
+                let maxX = Int(pX + pW)
+                let maxY = Int(pY + pH)
                 
-                // Source (Tap Target)
+                // Coordinates Arrays
+                let ul = "[\(minX), \(minY)]"
+                let ur = "[\(maxX), \(minY)]"
+                let lr = "[\(maxX), \(maxY)]"
+                let ll = "[\(minX), \(maxY)]"
+                
+                let jsonPayload = "{\"ord\":\(pIndex), \"parent\":\"img-container\", \"ul\":\(ul), \"ur\":\(ur), \"lr\":\(lr), \"ll\":\(ll)}"
+                
+                // 3. HTML Element
+                // No sibling target div needed! The JSON does all the work.
                 panelOverlays += """
-                <a class="app-amzn-magnify" data-app-amzn-magnify='\(magnifyData)'>
-                    <div id="\(sourceId)" class="panel-source" style="top: \(pctY); left: \(pctX); width: \(pctW); height: \(pctH);"></div>
+                <a class="app-amzn-magnify" 
+                   style="display:block; position:absolute; top:\(cssTop)%; left:\(cssLeft)%; width:\(cssWidth)%; height:\(cssHeight)%; z-index:10;"
+                   data-app-amzn-magnify='\(jsonPayload)'>
                 </a>
-                <div id="\(targetId)" class="panel-target" style="top: \(pctY); left: \(pctX); width: \(pctW); height: \(pctH);"></div>
-"""
+                """
             }
         }
         
@@ -616,18 +619,15 @@ class CBZToEPUBConverter {
             object-fit: contain;
             display: block;
         }
-        /* Overrides/ensure transparency */
-        .app-amzn-magnify { border: 0; background-color: transparent; -webkit-tap-highlight-color: rgba(0,0,0,0); }
-        .panel-source { background-color: transparent; }
-        .panel-target { background-color: transparent; }
     </style>
 </head>
 <body>
-    <div class="page-container">
+    <!-- ✅ ID Added for Parent Reference -->
+    <div class="page-container" id="img-container">
         <!-- Background Image -->
         <img src="../images/\(imageName)" class="bg" alt="comic page"/>
              
-        <!-- Guided View Overlays -->
+        <!-- Guided View Overlays (Coordinate-Based) -->
         \(panelOverlays)
     </div>
 </body>
