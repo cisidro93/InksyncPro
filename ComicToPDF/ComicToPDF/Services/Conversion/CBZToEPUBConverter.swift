@@ -535,70 +535,101 @@ class CBZToEPUBConverter {
     }
     
     static func generateXHTML(imageName: String, title: String, width: Int, height: Int, panels: [PanelExtractor.Panel], pageIndex: Int) -> String {
-        // ✅ STRATEGY: Coordinate-Based Region Magnification (The "Native" Kindle Comic Way)
-        // Instead of pointing to an empty "target" div (which fails in current generation),
-        // we use the 'parent' + 'ul/ur/ll/lr' JSON format.
-        // This tells Kindle specifically to zoom into a region of the PARENT image.
+        // ✅ STRATEGY: Hybrid ID-Based with CSS Background Cropping
+        // 1. KDP Docs say "Target div is displayed". If it's empty, you see nothing.
+        // 2. Coordinate-based (JSON only) failed in testing.
+        // 3. Solution: Use ID-based, but FILL the target div with the panel image using CSS.
+        //    We use background-image with calculated position/size to show JUST the panel region.
         
         var panelOverlays = ""
         
         if !panels.isEmpty {
             for (index, panel) in panels.enumerated() {
-                let pIndex = index + 1
-                
-                // 1. Geometry Calculations (Normalized 0-1 -> Pixels -> Percent)
-                // Note: Panel.boundingBox is Vision-Normalized (Origin Bottom-Left)
-                // We need Top-Left for CSS & Kindle JSON
-                
+                // 1. Geometry - Flip Y (Vision Origin Bottom-Left -> Top-Left)
                 let normY = 1.0 - panel.boundingBox.maxY
                 
-                // Raw Pixels
-                let rawX = panel.boundingBox.minX * Double(width)
-                let rawY = normY * Double(height)
-                let rawW = panel.boundingBox.width * Double(width)
-                let rawH = panel.boundingBox.height * Double(height)
+                // 2. Scale to Image Size (No Offset) & CLAMP
+                let rawPX = (panel.boundingBox.minX * Double(width))
+                let rawPY = (normY * Double(height))
+                let rawPW = (panel.boundingBox.width * Double(width))
+                let rawPH = (panel.boundingBox.height * Double(height))
                 
-                // Clamped Pixels (Kindle Integrity)
-                let pX = max(0, min(Double(width), rawX))
-                let pY = max(0, min(Double(height), rawY))
-                let pW = min(Double(width) - pX, rawW)
-                let pH = min(Double(height) - pY, rawH)
+                let pX = max(0, min(Double(width), rawPX))
+                let pY = max(0, min(Double(height), rawPY))
+                let pW = min(Double(width) - pX, rawPW)
+                let pH = min(Double(height) - pY, rawPH)
                 
                 if pW < 5 || pH < 5 { continue }
                 
-                // CSS Percentages (For the clickable <a> tag)
-                // We MUST give the anchor dimensions so it covers the panel and catches taps
-                let cssTop = String(format: "%.3f", (pY / Double(height)) * 100.0)
-                let cssLeft = String(format: "%.3f", (pX / Double(width)) * 100.0)
-                let cssWidth = String(format: "%.3f", (pW / Double(width)) * 100.0)
-                let cssHeight = String(format: "%.3f", (pH / Double(height)) * 100.0)
+                // 3. CSS Percentages for Placement (Outer Divs)
+                let pctX = String(format: "%.3f%%", (pX / Double(width)) * 100.0)
+                let pctY = String(format: "%.3f%%", (pY / Double(height)) * 100.0)
+                let pctW = String(format: "%.3f%%", (pW / Double(width)) * 100.0)
+                let pctH = String(format: "%.3f%%", (pH / Double(height)) * 100.0)
                 
-                // 2. Kindle JSON Payload (Coordinate-Based)
-                // "parent": The ID of the container holding the image ("img-container")
-                // "ul", "ur", "ll", "lr": Integer coordinate arrays [x, y] relative to unscaled image size
-                // "ord": Reading order
+                // 4. Background Image Calculation (The "Crop")
+                // To show just the panel region in the target div:
+                // background-size: Ratio of Page / Panel. (e.g. if Panel is 50% width, BG is 200% width)
+                // background-position: Ratio of X / (Page - Panel). Complex CSS math.
+                // EASIER: Use simple percentages relative to the DIV.
                 
-                let minX = Int(pX)
-                let minY = Int(pY)
-                let maxX = Int(pX + pW)
-                let maxY = Int(pY + pH)
+                // bgWidth% = (PageWidth / PanelWidth) * 100
+                // bgHeight% = (PageHeight / PanelHeight) * 100
+                let bgW = (Double(width) / pW) * 100.0
+                let bgH = (Double(height) / pH) * 100.0
                 
-                // Coordinates Arrays
-                let ul = "[\(minX), \(minY)]"
-                let ur = "[\(maxX), \(minY)]"
-                let lr = "[\(maxX), \(maxY)]"
-                let ll = "[\(minX), \(maxY)]"
+                // bgPosX% = (pX / (PageWidth - PanelWidth)) * 100
+                // This is how CSS background-position percentages work (aligning edges).
+                // Formula: pos% = (offset / (container - object)) * 100? No.
+                // Standard CSS background-position: 0% = Left align, 100% = Right align.
+                // If we want to align the image such that pX is at 0...
+                // Actually, let's use PIXELS for background-position to be safe and precise, 
+                // but percentages for size/layout.
+                // Wait, mixed units might be tricky. Let's try standard CSS Sprite logic.
+                // position: absolute; ...
+                // background-position: -pX -pY
+                // BUT background-size must be the PAGE size.
+                // We can't use pixels easily because the device scales the page.
                 
-                let jsonPayload = "{\"ord\":\(pIndex), \"parent\":\"img-container\", \"ul\":\(ul), \"ur\":\(ur), \"lr\":\(lr), \"ll\":\(ll)}"
+                // Re-calculating for Responsive CSS:
+                // background-size: (PageWidth / PanelWidth) * 100 % (Relative to Target Div)
+                // background-position:
+                //   X: (pX / (PageWidth - PanelWidth)) * 100 % ??? No.
+                //   Let's use the explicit formulas:
+                //   bpX = - (pX / pW) * 100 % (Relative to Target Width) ? No.
+                //   Let's use a simpler trick: Inner Image.
+                //   Using background-image is cleaner if we get the math right.
+                //   Correct Math for background-position in %: 
+                //   pos% = ( x / (container_width - image_width) ) ... NO, that's for alignment.
+                //   We want to shift.
+                //   Let's stick to the simplest robust way:
+                //   Target Div (overflow:hidden) -> Inner Img (position:absolute).
+                //   Inner Img Width = (PageWidth / PanelWidth) * 100 %
+                //   Inner Img Left = -(pX / pW) * 100 %
                 
-                // 3. HTML Element
-                // No sibling target div needed! The JSON does all the work.
+                let imgW_pct = (Double(width) / pW) * 100.0
+                let imgH_pct = (Double(height) / pH) * 100.0
+                let imgL_pct = -(pX / pW) * 100.0
+                let imgT_pct = -(pY / pH) * 100.0
+                
+                let innerImgStyle = String(format: "position:absolute; width:%.3f%%; height:%.3f%%; top:%.3f%%; left:%.3f%%; max-width:none; max-height:none;", imgW_pct, imgH_pct, imgT_pct, imgL_pct)
+                
+                // 5. Metadata
+                let targetId = "p\(pageIndex)-panel\(index + 1)-t"
+                let sourceId = "p\(pageIndex)-panel\(index + 1)-s"
+                let magnifyData = "{\"targetId\":\"\(targetId)\",\"sourceId\":\"\(sourceId)\",\"ordinal\":\(index + 1)}"
+
+                // 6. Output HTML
+                // Source: Transparent Overlay
                 panelOverlays += """
-                <a class="app-amzn-magnify" 
-                   style="display:block; position:absolute; top:\(cssTop)%; left:\(cssLeft)%; width:\(cssWidth)%; height:\(cssHeight)%; z-index:10;"
-                   data-app-amzn-magnify='\(jsonPayload)'>
+                <a class="app-amzn-magnify" data-app-amzn-magnify='\(magnifyData)' style="display:block; position:absolute; top:\(pctY); left:\(pctX); width:\(pctW); height:\(pctH); z-index:10;">
+                    <div id="\(sourceId)" class="panel-source" style="width:100%; height:100%;"></div>
                 </a>
-                """
+                
+                <div id="\(targetId)" class="panel-target" style="overflow:hidden; position:absolute; top:\(pctY); left:\(pctX); width:\(pctW); height:\(pctH); z-index:5;">
+                    <img src="../images/\(imageName)" style="\(innerImgStyle)" alt="zoomed panel" />
+                </div>
+"""
             }
         }
         
@@ -619,15 +650,15 @@ class CBZToEPUBConverter {
             object-fit: contain;
             display: block;
         }
+        .app-amzn-magnify { border: 0; background-color: transparent; -webkit-tap-highlight-color: rgba(0,0,0,0); }
     </style>
 </head>
 <body>
-    <!-- ✅ ID Added for Parent Reference -->
-    <div class="page-container" id="img-container">
+    <div class="page-container">
         <!-- Background Image -->
         <img src="../images/\(imageName)" class="bg" alt="comic page"/>
              
-        <!-- Guided View Overlays (Coordinate-Based) -->
+        <!-- Guided View Overlays (Hybrid ID-Based with Content) -->
         \(panelOverlays)
     </div>
 </body>
