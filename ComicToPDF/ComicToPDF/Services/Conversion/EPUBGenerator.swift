@@ -186,47 +186,54 @@ class EPUBGenerator {
             
             extraCSS = """
                 .app-amzn-magnify {
-                     position: absolute;
-                     z-index: 2;
+                    display: block;
+                    position: absolute;
+                    z-index: 10;
+                    text-decoration: none;
+                    background: transparent;
+                }
+                .panel-source {
+                    position: absolute;
+                    width: 100%;
+                    height: 100%;
+                    background: transparent;
+                }
+                .panel-target {
+                    position: absolute;
+                    z-index: 20;
+                    background: transparent;
                 }
             """
             
             // Loop through panels and create overlay divs
-            // We'll use percentage-based positioning for universal scaling
             for (index, panel) in panels.enumerated() {
                 let pIndex = index + 1
                 let rect = panel.boundingBox
                 
                 // Convert normalized rect (0-1) to percentages
-                let top = String(format: "%.2f", (1.0 - rect.maxY) * 100) // CoreGraphics origin is bottom-left, CSS is top-left
-                let left = String(format: "%.2f", rect.minX * 100)
-                let width = String(format: "%.2f", rect.width * 100)
-                let height = String(format: "%.2f", rect.height * 100)
+                // Vision origin is bottom-left, CSS is top-left
+                let top = String(format: "%.3f", (1.0 - rect.maxY) * 100) 
+                let left = String(format: "%.3f", rect.minX * 100)
+                let width = String(format: "%.3f", rect.width * 100)
+                let height = String(format: "%.3f", rect.height * 100)
                 
-                // Coordinate-Based Region Magnification
-                // This tells Kindle to zoom into specific coordinates of the 'parent' container.
-                // Coordinates are Integers (Percentages 0-100).
-                // NOTE: 'rect' is Normalized Top-Left Origin (SwiftUI/Vision Standard for this app).
+                let targetId = "p\(pageNumber)-panel\(pIndex)-t"
+                let sourceId = "p\(pageNumber)-panel\(pIndex)-s"
+                let magnifyData = "{\"targetId\":\"\(targetId)\",\"sourceId\":\"\(sourceId)\",\"ordinal\":\(pIndex)}"
                 
-                let minX = Int(rect.minX * 100)
-                let minY = Int(rect.minY * 100)
-                let maxX = Int(rect.maxX * 100)
-                let maxY = Int(rect.maxY * 100)
-                
-                // Kindle Format: [x, y] from Top-Left
-                
-                // Construct the coordinate arrays [x, y]
-                let ul = "[\(minX), \(minY)]"
-                let ur = "[\(maxX), \(minY)]"
-                let lr = "[\(maxX), \(maxY)]"
-                let ll = "[\(minX), \(maxY)]"
-                
-                let jsonString = "{\"ord\":\(pIndex), \"parent\":\"img-container\", \"ul\":\(ul), \"ur\":\(ur), \"lr\":\(lr), \"ll\":\(ll)}"
+                // Negative margins to crop the target image to just the panel contents
+                let imgCssLeft = String(format: "%.3f%%", -(rect.minX / rect.width) * 100.0)
+                let imgCssTop = String(format: "%.3f%%", -((1.0 - rect.maxY) / rect.height) * 100.0)
+                let imgCssWidth = String(format: "%.3f%%", (1.0 / rect.width) * 100.0)
+                let imgCssHeight = String(format: "%.3f%%", (1.0 / rect.height) * 100.0)
                 
                 panelsHTML += """
-                <div id="panel-\(pIndex)" class="app-amzn-magnify" 
-                     style="top: \(top)%; left: \(left)%; width: \(width)%; height: \(height)%; cursor: pointer;"
-                     data-app-amzn-magnify='\(jsonString)'>
+                <a class="app-amzn-magnify" data-app-amzn-magnify='\(magnifyData)' style="top: \(top)%; left: \(left)%; width: \(width)%; height: \(height)%;">
+                    <div id="\(sourceId)" class="panel-source"></div>
+                </a>
+                
+                <div id="\(targetId)" class="panel-target" style="display:none; overflow:hidden; top:\(top)%; left:\(left)%; width:\(width)%; height:\(height)%;">
+                    <img src="../images/\(imageName)" style="position:absolute; width:\(imgCssWidth); height:\(imgCssHeight); top:\(imgCssTop); left:\(imgCssLeft); max-width:none; max-height:none;" alt="zoomed panel" />
                 </div>
                 """
             }
@@ -240,16 +247,24 @@ class EPUBGenerator {
             <title>Page \(pageNumber)</title>
             <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
             <style type="text/css">
-                body { margin: 0; padding: 0; text-align: center; background-color: white; }
-                .page { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-                img { max-width: 100%; max-height: 100%; object-fit: contain; z-index: 1; position: absolute; }
+                body { margin: 0; padding: 0; background-color: black; }
+                .page { position: relative; width: 100vw; height: 100vh; overflow: hidden; margin: 0 auto; }
+                img.bg {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                    display: block;
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                }
                 /* Region Magnification Overlays */
                 \(extraCSS)
             </style>
         </head>
         <body>
             <div class="page" id="img-container">
-                <img src="../images/\(imageName)" alt="Page \(pageNumber)"/>
+                <img src="../images/\(imageName)" class="bg" alt="Page \(pageNumber)"/>
                 \(panelsHTML)
             </div>
         </body>

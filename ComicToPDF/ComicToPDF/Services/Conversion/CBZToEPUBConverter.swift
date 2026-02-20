@@ -573,36 +573,11 @@ class CBZToEPUBConverter {
                 let srcHeight = String(format: "%.3f%%", (pH / Double(height)) * 100.0)
                 
                 // 2. Target Geometry (The Zoom Math)
-                // Goal: Fit the Panel Rect (pW, pH) into the Screen Rect (width, height)
-                
-                // Calculate Scale Factor (Fit Screen)
-                let scaleX = Double(width) / pW
-                let scaleY = Double(height) / pH
-                let zoomScale = min(scaleX, scaleY) // Aspect Fit
-                
-                // Calculate New "Virtual" Image Dimensions
-                let zoomedImgW = Double(width) * zoomScale
-                let zoomedImgH = Double(height) * zoomScale
-                
-                // Calculate Offsets to Center the Panel
-                // 1. Shift Image so Panel Top-Left is at 0,0:  -pX * scale, -pY * scale
-                // 2. Add Center Offset: (ScreenW - PanelW*scale) / 2
-                
-                let panelScaledW = pW * zoomScale
-                let panelScaledH = pH * zoomScale
-                
-                let centeringOffsetX = (Double(width) - panelScaledW) / 2.0
-                let centeringOffsetY = (Double(height) - panelScaledH) / 2.0
-                
-                let imgLeftPos = -(pX * zoomScale) + centeringOffsetX
-                let imgTopPos = -(pY * zoomScale) + centeringOffsetY
-                
-                // Convert to Percentages of the CONTAINER (which is 100% Page W/H)
-                let imgCssWidth = String(format: "%.3f%%", (zoomedImgW / Double(width)) * 100.0)
-                let imgCssHeight = String(format: "%.3f%%", (zoomedImgH / Double(height)) * 100.0)
-                let imgCssLeft = String(format: "%.3f%%", (imgLeftPos / Double(width)) * 100.0)
-                let imgCssTop = String(format: "%.3f%%", (imgTopPos / Double(height)) * 100.0)
-                
+                // New Approach (Based on Amazon Guidelines / Perplexity Research)
+                // We don't manually stretch the inner image or offset it.
+                // We just create a target div that perfectly frames the original panel on the page.
+                // Kindle's Region Magnification engine will AUTOMATICALLY scale this target div
+                // up to ~150% and center it on the screen when tapped.
                 
                 // 3. Metadata
                 let targetId = "p\(pageIndex)-panel\(index + 1)-t"
@@ -610,15 +585,24 @@ class CBZToEPUBConverter {
                 let magnifyData = "{\"targetId\":\"\(targetId)\",\"sourceId\":\"\(sourceId)\",\"ordinal\":\(index + 1)}"
 
                 // 4. Output HTML
-                // Source: Transparent Overlay on original page
+                // Source: Transparent Overlay on original page (Tap Target)
+                // Target: Hidden div holding the same image, but cropped to the panel area via CSS.
+                // We use clipping (overflow hidden) and negative margins on the inner image to show *just* the panel.
+                
+                // Calculate the negative margins to align the image inside the panel target
+                let imgCssLeft = String(format: "%.3f%%", -(pX / pW) * 100.0)
+                let imgCssTop = String(format: "%.3f%%", -(pY / pH) * 100.0)
+                let imgCssWidth = String(format: "%.3f%%", (Double(width) / pW) * 100.0)
+                let imgCssHeight = String(format: "%.3f%%", (Double(height) / pH) * 100.0)
+                
                 panelOverlays += """
                 <a class="app-amzn-magnify" data-app-amzn-magnify='\(magnifyData)' style="display:block; position:absolute; top:\(srcTop); left:\(srcLeft); width:\(srcWidth); height:\(srcHeight); z-index:10;">
                     <div id="\(sourceId)" class="panel-source" style="width:100%; height:100%;"></div>
                 </a>
                 
-                <!-- Target: Full Screen Hidden Container (Kindle toggles display) -->
-                <!-- Important: display:none to start. Position fixed/absolute to cover page. -->
-                <div id="\(targetId)" class="panel-target" style="display:none; overflow:hidden; position:absolute; top:0; left:0; width:100%; height:100%; z-index:20; background-color:black;">
+                <!-- Target: Hidden Container (Kindle toggles display and scales it up) -->
+                <!-- It sits exactly where the source panel is on the page, but clips the image to just the panel contents -->
+                <div id="\(targetId)" class="panel-target" style="display:none; overflow:hidden; position:absolute; top:\(srcTop); left:\(srcLeft); width:\(srcWidth); height:\(srcHeight); z-index:20; background-color:black;">
                     <img src="../images/\(imageName)" style="position:absolute; width:\(imgCssWidth); height:\(imgCssHeight); top:\(imgCssTop); left:\(imgCssLeft); max-width:none; max-height:none;" alt="zoomed panel" />
                 </div>
 """
