@@ -892,9 +892,23 @@ class ConversionManager: ObservableObject {
         let combinedManifest = await getCombinedManifest(for: pdf)
         
         do {
-            let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
-            isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
-            Logger.shared.log("Conversion Successful: \(pdf.name) -> \(newURLs.count) files", category: "Converter")
+            if jobSettings.outputFormat == .pdf {
+                let fileManager = FileManager.default
+                let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
+                
+                let imageURLs = try await extractImageURLs(from: pdf.url)
+                try PDFGenerator.generate(from: imageURLs, to: outputURL) { progress in
+                    Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" }
+                }
+                
+                isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete!"; scanLibrary()
+                Logger.shared.log("Conversion Successful: \(pdf.name) -> PDF", category: "Converter")
+            } else {
+                let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
+                isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
+                Logger.shared.log("Conversion Successful: \(pdf.name) -> \(newURLs.count) files", category: "Converter")
+            }
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
         } catch { 
             Logger.shared.log("Conversion Failed: \(error)", category: "Converter")
@@ -937,15 +951,32 @@ class ConversionManager: ObservableObject {
             let combinedManifest = await getCombinedManifest(for: pdf)
             
             do {
-                _ = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
-                    Task { @MainActor in
-                        self.conversionProgress = progress
-                        self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(progress * 100))%)"
+                if jobSettings.outputFormat == .pdf {
+                    let fileManager = FileManager.default
+                    let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                    let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
+                    
+                    let imageURLs = try await extractImageURLs(from: pdf.url)
+                    try PDFGenerator.generate(from: imageURLs, to: outputURL) { progress in
+                        Task { @MainActor in
+                            self.conversionProgress = progress
+                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(progress * 100))%)"
+                        }
                     }
+                    
+                    await MainActor.run { self.scanLibrary() }
+                    Logger.shared.log("Batch Conversion successful: \(pdf.name) -> PDF", category: "Converter")
+                } else {
+                    _ = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
+                        Task { @MainActor in
+                            self.conversionProgress = progress
+                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(progress * 100))%)"
+                        }
+                    }
+                    // Scan after each successful conversion so user sees progress
+                    await MainActor.run { self.scanLibrary() }
+                    Logger.shared.log("Batch Conversion successful: \(pdf.name)", category: "Converter")
                 }
-                // Scan after each successful conversion so user sees progress
-                await MainActor.run { self.scanLibrary() }
-                Logger.shared.log("Batch Conversion successful: \(pdf.name)", category: "Converter")
             } catch {
 
                 Logger.shared.log("Batch Error for \(pdf.name): \(error)", category: "Converter")

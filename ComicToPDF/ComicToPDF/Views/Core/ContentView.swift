@@ -75,6 +75,9 @@ struct ContentView: View {
                     useNavigationStack: true
                 )
                 .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: ConvertedPDF.self) { pdf in
+                    ConvertView(pdf: pdf)
+                }
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
             .tag(0)
