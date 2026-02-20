@@ -313,7 +313,7 @@ class EPUBGenerator {
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
                 <meta name="book-type" content="comic"/>
-                <meta name="region-mag" content="true"/>
+                <meta name="RegionMagnification" content="true"/>
                 <meta name="cover" content="image1"/>
                 <meta name="original-resolution" content="1024x1536"/>
                 <meta name="primary-writing-mode" content="horizontal-rl"/>
