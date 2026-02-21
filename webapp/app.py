@@ -165,6 +165,38 @@ def get_status(task_id):
 def download_file(filename):
     return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True, download_name=filename.split('_', 1)[1])
 
+@app.route('/download_all')
+def download_all():
+    import io
+    import zipfile
+    from flask import send_file
+    
+    memory_file = io.BytesIO()
+    folder_path = app.config['OUTPUT_FOLDER']
+    files_added = 0
+    
+    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                # Exclude hidden files or old zips if any lie around
+                if not file.startswith('.'):
+                    file_path = os.path.join(root, file)
+                    # Remove UUID prefix if there is one for cleaner extraction
+                    archive_name = file.split('_', 1)[1] if '_' in file else file
+                    zf.write(file_path, archive_name)
+                    files_added += 1
+                    
+    if files_added == 0:
+        return "No files to download", 404
+        
+    memory_file.seek(0)
+    return send_file(
+        memory_file,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='ComicSync_Library.zip'
+    )
+
 if __name__ == '__main__':
     # Run on 0.0.0.0 to be accessible from other devices
     app.run(host='0.0.0.0', port=5000, debug=False)
