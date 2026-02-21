@@ -67,7 +67,7 @@ class ExternalStorageManager: NSObject {
         from viewController: UIViewController,
         completion: @escaping (URL?) -> Void
     ) {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory])
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
         picker.delegate = self
         picker.allowsMultipleSelection = false
         
