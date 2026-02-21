@@ -24,7 +24,8 @@ def main(page):
             "selected_file": "/storage/emulated/0/Download",
             "output_format": "epub", # default to epub for kindle
             "compress_enabled": False,
-            "manga_mode": False
+            "manga_mode": False,
+            "server_running": False
         }
         
         # Initialize engines
@@ -98,6 +99,65 @@ def main(page):
                 
                 def on_browse_click(e):
                     show_browser_ui(state["current_path"])
+
+                def get_local_ip():
+                    import socket
+                    try:
+                        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                        s.connect(("8.8.8.8", 80))
+                        ip = s.getsockname()[0]
+                        s.close()
+                        return ip
+                    except: return "127.0.0.1"
+
+                server_url_txt = ft.Text("", color="black", weight="w900", size=16, text_align="center")
+                
+                def toggle_server(e):
+                    global web_server
+                    if not state["server_running"]:
+                        status_txt.value = "STARTING MEDIA SERVER..."
+                        page.update()
+                        
+                        def run_server():
+                            global web_server
+                            try:
+                                import sys, os
+                                webapp_path = os.path.join(os.path.dirname(__file__), "webapp")
+                                if webapp_path not in sys.path:
+                                    sys.path.append(webapp_path)
+                                from app import app as flask_app
+                                from werkzeug.serving import make_server
+                                
+                                web_server = make_server('0.0.0.0', 5000, flask_app)
+                                state["server_running"] = True
+                                ip = get_local_ip()
+                                server_url_txt.value = f"SERVER ACTIVE AT:\nhttp://{ip}:5000"
+                                btn_server.content.value = "STOP WI-FI SERVER"
+                                status_txt.value = "SERVER RUNNING"
+                                page.update()
+                                
+                                web_server.serve_forever()
+                            except Exception as err:
+                                state["server_running"] = False
+                                status_txt.value = f"SERVER ERROR: {err}"
+                                page.update()
+
+                        import threading
+                        threading.Thread(target=run_server, daemon=True).start()
+                    else:
+                        try:
+                            global web_server
+                            web_server.shutdown()
+                            state["server_running"] = False
+                            server_url_txt.value = ""
+                            btn_server.content.value = "START WI-FI SERVER"
+                            status_txt.value = "SERVER STOPPED"
+                            page.update()
+                        except Exception as err:
+                            status_txt.value = f"STOP ERROR: {err}"
+                            page.update()
+                            
+                btn_server = eink_button("START WI-FI SERVER", on_click=toggle_server, expand=True)
 
                 def on_progress(p, msg):
                     progress_bar.value = p/100
@@ -176,7 +236,11 @@ def main(page):
                             sw_manga,
                             
                             ft.Container(bgcolor="black", height=2),
-                            eink_button("CONVERT TO WI-FI SERVER", on_click=run_convert, expand=True, is_primary=True),
+                            eink_button("CONVERT FILE", on_click=run_convert, expand=True, is_primary=True),
+                            
+                            ft.Container(height=10),
+                            btn_server,
+                            server_url_txt,
                             
                             ft.Container(height=20),
                             progress_bar,
@@ -252,7 +316,7 @@ def main(page):
                         full_path = os.path.join(start_path, item)
                         if os.path.isdir(full_path):
                             file_list.controls.append(list_item(item, "📂", lambda _, p=full_path: navigate(p), is_dir=True))
-                        elif item.lower().endswith('.cbz'):
+                        elif item.lower().endswith(('.cbz', '.cbr')):
                             file_list.controls.append(list_item(item, "📄", lambda _, p=full_path: select(p), is_file=True))
                             
             except Exception as e:
