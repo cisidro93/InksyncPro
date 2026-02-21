@@ -11,3 +11,8 @@ dist/
 venv/
 .idea/
 .vscode/
+legacy_archive/
+backup_before_ipados/
+*.cbz
+*.pdf
+*.epub
