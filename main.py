@@ -405,11 +405,11 @@ def main(page):
                 start_path = state["current_path"]
                 
                 try:
-                    if state["view_mode"] == "external":
-                        if start_path == "/storage":
-                            for drive in get_android_drives():
-                                 file_list.controls.append(list_item(drive, "💾", drive, is_dir=True))
-                        else:
+                    if state["view_mode"] == "external" and start_path == "/storage":
+                        for drive in get_android_drives():
+                             file_list.controls.append(list_item(drive, "💾", drive, is_dir=True))
+                    else:
+                        if state["view_mode"] == "external":
                             parent = os.path.dirname(start_path)
                             file_list.controls.append(
                                 ft.Row([
@@ -417,12 +417,12 @@ def main(page):
                                     ft.Container(content=ft.Text("DRIVES", color="black", weight="w900"), on_click=lambda _: navigate("/storage"), bgcolor="white", border=ft.border.all(2,"black"), padding=15, ink=True),
                                 ])
                             )
-                    else:
-                        if start_path != comic_library_dir:
-                            parent = os.path.dirname(start_path)
-                            file_list.controls.append(
-                                ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True)
-                            )
+                        else:
+                            if start_path != comic_library_dir:
+                                parent = os.path.dirname(start_path)
+                                file_list.controls.append(
+                                    ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True)
+                                )
                         
                         items = sorted(os.listdir(start_path))
                         for item in items:
