@@ -49,8 +49,7 @@ def main(page):
                         padding=20,
                         border_radius=0, 
                         ink=True,
-                        expand=expand,
-                        alignment=ft.alignment.center
+                        expand=expand
                     )
 
                 path_input = ft.TextField(
