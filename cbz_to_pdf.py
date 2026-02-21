@@ -80,46 +80,23 @@ def convert_cbz_to_pdf(input_path: Union[str, Path], pdf_path: Union[str, Path],
             # Sort images
             image_files.sort()
             
-            # Check total size if max_size_mb is set
-            if max_size_mb:
-                total_size = sum(os.path.getsize(f) for f in image_files)
-                target_size = max_size_mb * 1024 * 1024
+            # Optimize Images
+            try:
+                import image_processor
                 
-                if total_size > target_size:
-                    report_progress(40, f"Resizing (Limit: {max_size_mb}MB)...")
-                    ratio = target_size / total_size
-                    scale_factor = math.sqrt(ratio) * 0.95
+                def opt_progress(p, m):
+                    report_progress(p, m)
                     
-                    for i, img_path in enumerate(image_files):
-                        try:
-                            prog = 40 + int((i / len(image_files)) * 40)
-                            if i % 10 == 0:
-                                report_progress(prog, f"Resizing {i+1}/{len(image_files)}...")
-                            
-                            with Image.open(img_path) as img:
-                                img = img.convert('RGB')
-                                new_width = int(img.width * scale_factor)
-                                new_height = int(img.height * scale_factor)
-                                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                                img.save(img_path, "JPEG", quality=85, optimize=True)
-                        except Exception as e:
-                            print(f"Warning: Could not resize {img_path}: {e}")
-                else:
-                    report_progress(40, "Size OK. Skipping resize.")
-
-            elif compress:
-                report_progress(40, f"Compressing {len(image_files)} images...")
-                for i, img_path in enumerate(image_files):
-                    try:
-                        prog = 40 + int((i / len(image_files)) * 40)
-                        if i % 10 == 0:
-                             report_progress(prog, f"Compressing {i+1}/{len(image_files)}...")
-                        
-                        with Image.open(img_path) as img:
-                            img = img.convert('RGB')
-                            img.save(img_path, "JPEG", quality=quality, optimize=True)
-                    except Exception as e:
-                        print(f"Warning: Could not compress {img_path}: {e}")
+                image_processor.optimize_images(
+                    image_files, 
+                    max_size_mb=max_size_mb, 
+                    optimize_for_eink=compress, # Map compress generic flag to the e-ink optimization routines
+                    progress_callback=opt_progress,
+                    progress_start=40,
+                    progress_end=80
+                )
+            except Exception as e:
+                print(f"Failed to load image_processor: {e}")
 
             report_progress(80, f"Found {len(image_files)} images. Generating PDF...")
 

@@ -24,7 +24,7 @@ os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 # Store task status in memory (for simplicity)
 tasks = {}
 
-def conversion_worker(task_id, input_path, output_path, output_format, compress, max_size_mb, send_to_kindle):
+def conversion_worker(task_id, input_path, output_path, output_format, optimize, max_size_mb, send_to_kindle):
     """Background worker for conversion."""
     try:
         def progress_callback(percentage, message):
@@ -37,6 +37,7 @@ def conversion_worker(task_id, input_path, output_path, output_format, compress,
                 input_path,
                 output_path,
                 manga_mode=False, # Web app does not currently expose manga mode
+                optimize=optimize,
                 progress_callback=progress_callback
             )
         else:
@@ -44,7 +45,7 @@ def conversion_worker(task_id, input_path, output_path, output_format, compress,
                 input_path, 
                 output_path, 
                 progress_callback=progress_callback,
-                compress=compress,
+                compress=optimize, # Map optimize parameter to the engine's compress argument
                 max_size_mb=max_size_mb
             )
 
@@ -121,7 +122,7 @@ def upload_file():
         file.save(input_path)
         
         # Options
-        compress = request.form.get('compress') == 'true'
+        optimize = request.form.get('optimize') == 'true'
         output_format = request.form.get('format', 'epub').lower()
         
         kindle_val = request.form.get('kindle')
@@ -146,7 +147,7 @@ def upload_file():
             'message': 'Starting...',
             'filename': output_filename,
         }
-        thread = threading.Thread(target=conversion_worker, args=(task_id, input_path, output_path, output_format, compress, max_size_mb, send_to_kindle))
+        thread = threading.Thread(target=conversion_worker, args=(task_id, input_path, output_path, output_format, optimize, max_size_mb, send_to_kindle))
         thread.start()
 
         return jsonify({'task_id': task_id})

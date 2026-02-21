@@ -14,6 +14,7 @@ def convert_cbz_to_epub(
     input_path: Union[str, Path], 
     epub_path: Union[str, Path], 
     manga_mode: bool = False,
+    optimize: bool = False,
     progress_callback: Optional[Callable[[int, str], None]] = None
 ) -> bool:
     """
@@ -65,6 +66,24 @@ def convert_cbz_to_epub(
                 raise ValueError("No images found in the archive.")
                 
             image_files.sort()
+            
+            # 2.5 Optimize Images
+            try:
+                import image_processor
+                
+                def opt_progress(p, m):
+                    report_progress(p, m)
+                    
+                image_processor.optimize_images(
+                    image_files, 
+                    max_size_mb=None, # Usually let the user determine file limits on EPUBs via general optimization switch
+                    optimize_for_eink=optimize,
+                    progress_callback=opt_progress,
+                    progress_start=30,
+                    progress_end=40
+                )
+            except Exception as e:
+                 print(f"Failed to load image_processor: {e}")
             
             # 3. Create EPUB Build Directory
             report_progress(40, "Building EPUB structure...")

@@ -109,7 +109,6 @@ def main(page):
                 val = e.control.value
                 state["output_format"] = val
                 # Update visibility of specific settings
-                sw_compress.visible = (val == "pdf")
                 sw_manga.visible = (val == "epub")
                 page.update()
 
@@ -123,11 +122,11 @@ def main(page):
             )
 
             # Feature Controls
-            sw_compress = ft.Switch(
-                label="Compress Images (Max 50MB) [PDF Only]", 
-                value=state["compress_enabled"],
+            sw_optimize = ft.Switch(
+                label="Optimize for E-ink (Save Space, Keep Color)", 
+                value=state["compress_enabled"], # Repurposing this state key for general optimization
                 on_change=lambda e: state.update({"compress_enabled": e.control.value}),
-                visible=(state["output_format"] == "pdf"),
+                visible=True, # Visible for both formats now
                 active_color="black"
             )
             
@@ -182,14 +181,15 @@ def main(page):
                                 src, 
                                 dst, 
                                 progress_callback=on_progress,
-                                compress=state["compress_enabled"],
-                                max_size_mb=50
+                                compress=state["compress_enabled"], # Now effectively means 'optimize'
+                                max_size_mb=None # No strict limit, rely on optimization resizing
                             )
                         elif state["output_format"] == "epub":
                             success = cbz_to_epub_engine(
                                 src,
                                 dst,
                                 manga_mode=state["manga_mode"],
+                                optimize=state["compress_enabled"], # We need to update cbz_to_epub signature to accept this
                                 progress_callback=on_progress
                             )
                         
@@ -220,7 +220,7 @@ def main(page):
                         ft.Container(bgcolor="black", height=2),
                         ft.Text("OUTPUT FORMAT", size=18, weight="w900"),
                         format_radios,
-                        sw_compress,
+                        sw_optimize,
                         sw_manga,
                         
                         ft.Container(bgcolor="black", height=2),

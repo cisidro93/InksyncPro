@@ -46,9 +46,9 @@
                 <div class="space-y-4 mb-6">
                     <div class="flex items-center justify-between">
                         <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="checkbox" id="compress-check"
+                            <input type="checkbox" id="optimize-check"
                                 class="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 bg-gray-700 focus:ring-blue-500">
-                            <span class="text-sm text-gray-300">Compress Images</span>
+                            <span class="text-sm text-gray-300">E-Ink Optimization (Save Space)</span>
                         </label>
                     </div>
 
@@ -147,7 +147,7 @@
         const downloadBtn = document.getElementById('download-btn');
         const resetBtn = document.getElementById('reset-btn');
         const errorMsg = document.getElementById('error-msg');
-        const compressCheck = document.getElementById('compress-check');
+        const optimizeCheck = document.getElementById('optimize-check');
         const kindleCheck = document.getElementById('kindle-check');
         const limitSizeCheck = document.getElementById('limit-size-check');
         const maxSizeInput = document.getElementById('max-size-input');
@@ -235,7 +235,7 @@
 
             const formData = new FormData();
             formData.append('file', selectedFile);
-            formData.append('compress', compressCheck.checked);
+            formData.append('optimize', optimizeCheck.checked);
             formData.append('kindle', kindleCheck.checked);
 
             const formatRadio = document.querySelector('input[name="format"]:checked');
