@@ -71,9 +71,6 @@ def main(page):
         except Exception as e:
             log(f"IMPORT FAILURE: {e}\n{traceback.format_exc()}", is_error=True)
 
-    # Boot Sequence (Run synchronously to avoid Android Flet threading issues with page.update)
-    load_engines()
-
     # --- MAIN CONVERTER SCREEN (E-INK STYLED) ---
     def show_main_ui():
         try:
@@ -326,6 +323,9 @@ def main(page):
             )
         )
         page.update()
+
+    # Boot Sequence (Run synchronously to avoid Android Flet threading issues with page.update)
+    load_engines()
 
 if __name__ == "__main__":
     ft.app(target=main)
