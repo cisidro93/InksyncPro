@@ -25,8 +25,16 @@ def main(page):
             "output_format": "epub", # default to epub for kindle
             "compress_enabled": False,
             "manga_mode": False,
-            "server_running": False
+            "server_running": False,
+            "view_mode": "external" # 'external' for Import, 'internal' for Convert
         }
+        
+        # Initialize internal storage directory
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        comic_library_dir = os.path.join(base_dir, "comic_library")
+        os.makedirs(comic_library_dir, exist_ok=True)
+        downloads_dir = os.path.join(base_dir, "webapp", "downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
         
         # Initialize engines
         import cbz_to_pdf
@@ -101,6 +109,26 @@ def main(page):
                     ft.Text("SETTINGS", size=18, weight="w900"),
                     format_radios, sw_optimize, sw_manga
                 ])
+                
+                # View Mode Toggle
+                def on_mode_change(e):
+                    state["view_mode"] = e.control.value
+                    state["selected_items"].clear()
+                    if state["view_mode"] == "external":
+                        state["current_path"] = "/storage/emulated/0/Download"
+                    else:
+                        state["current_path"] = comic_library_dir
+                    render_ui()
+                    
+                mode_toggle = ft.SegmentedButton(
+                    selected={state["view_mode"]},
+                    on_change=lambda e: on_mode_change(e),
+                    segments=[
+                        ft.Segment(value="external", label=ft.Text("SD CARD (Import)", weight="bold")),
+                        ft.Segment(value="internal", label=ft.Text("LIBRARY (Convert)", weight="bold"))
+                    ],
+                    selected_icon=ft.icons.CHECK,
+                )
 
                 # Wi-Fi Server
                 def get_local_ip():
@@ -171,7 +199,7 @@ def main(page):
                     
                     def worker():
                         try:
-                            # 1. Expand Directories into individual files
+                            # 1. Expand Directories into individual files (Convert Mode)
                             files_to_process = []
                             for p in selected_paths:
                                 if os.path.isdir(p):
@@ -238,6 +266,66 @@ def main(page):
                     import threading
                     threading.Thread(target=worker).start()
 
+                def run_import(e):
+                    if not state["selected_items"]: return
+                    
+                    status_txt.value = "IMPORTING FILES..."
+                    progress_bar.visible = True
+                    page.update()
+                    
+                    selected_paths = list(state["selected_items"])
+                    
+                    def worker():
+                        try:
+                            import shutil
+                            # 1. Expand Directories into individual files
+                            files_to_process = []
+                            for p in selected_paths:
+                                if os.path.isdir(p):
+                                    for root, _, files in os.walk(p):
+                                        for f in files:
+                                            if f.lower().endswith(('.cbz', '.cbr')):
+                                                files_to_process.append(os.path.join(root, f))
+                                elif os.path.isfile(p) and p.lower().endswith(('.cbz', '.cbr')):
+                                    files_to_process.append(p)
+                                    
+                            total_files = len(files_to_process)
+                            if total_files == 0:
+                                status_txt.value = "NO VALID COMICS FOUND IN SELECTION."
+                                progress_bar.visible = False
+                                page.update()
+                                return
+                                
+                            success_count = 0
+                            for idx, src in enumerate(files_to_process):
+                                src_filename = os.path.basename(src)
+                                status_txt.value = f"[{idx+1}/{total_files}] IMPORTING {src_filename.upper()}..."
+                                progress_bar.value = (idx+1)/total_files
+                                page.update()
+                                
+                                dst = os.path.join(comic_library_dir, src_filename)
+                                try:
+                                    if not os.path.exists(dst):
+                                        shutil.copy2(src, dst)
+                                    success_count += 1
+                                except Exception as inner_e:
+                                    print(f"Skipping {src} setup due to error: {inner_e}")
+                            
+                            status_txt.value = f"IMPORT COMPLETE: {success_count}/{total_files} READY IN INTERNAL LIBRARY."
+                            progress_bar.value = 1.0
+                            
+                            state["selected_items"].clear()
+                            page.update()
+                            time.sleep(2)
+                            render_ui()
+                            
+                        except Exception as err:
+                            status_txt.value = f"IMPORT ERROR: {str(err).upper()}"
+                            page.update()
+                            
+                    import threading
+                    threading.Thread(target=worker).start()
+
                 def count_comics():
                     count = 0
                     for p in state["selected_items"]:
@@ -253,14 +341,18 @@ def main(page):
                     return count
                     
                 total_comics = count_comics()
+                total_comics = count_comics()
                 if state["selected_items"] and total_comics == 0:
-                    convert_btn_text = "0 COMICS FOUND IN SELECTION"
+                    convert_btn_text = "0 COMICS FOUND"
                 elif total_comics > 0:
-                    convert_btn_text = f"CONVERT {total_comics} COMIC(S)"
+                    verb = "IMPORT" if state["view_mode"] == "external" else "CONVERT"
+                    convert_btn_text = f"{verb} {total_comics} COMIC(S)"
                 else:
-                    convert_btn_text = "SELECT COMICS TO CONVERT"
+                    verb = "IMPORT" if state["view_mode"] == "external" else "CONVERT"
+                    convert_btn_text = f"SELECT COMICS TO {verb}"
                     
-                btn_convert = eink_button(convert_btn_text, on_click=run_convert, expand=True, is_primary=True, disabled=total_comics==0)
+                target_action = run_import if state["view_mode"] == "external" else run_convert
+                btn_convert = eink_button(convert_btn_text, on_click=target_action, expand=True, is_primary=True, disabled=total_comics==0)
 
                 # --- NATIVE FILE BROWSER ---
                 def navigate(path):
@@ -301,18 +393,24 @@ def main(page):
                 start_path = state["current_path"]
                 
                 try:
-                    if start_path == "/storage":
-                        for drive in get_android_drives():
-                             file_list.controls.append(list_item(drive, "💾", drive, is_dir=True))
+                    if state["view_mode"] == "external":
+                        if start_path == "/storage":
+                            for drive in get_android_drives():
+                                 file_list.controls.append(list_item(drive, "💾", drive, is_dir=True))
+                        else:
+                            parent = os.path.dirname(start_path)
+                            file_list.controls.append(
+                                ft.Row([
+                                    ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True),
+                                    ft.Container(content=ft.Text("DRIVES", color="black", weight="w900"), on_click=lambda _: navigate("/storage"), bgcolor="white", border=ft.border.all(2,"black"), padding=15, ink=True),
+                                ])
+                            )
                     else:
-                        parent = os.path.dirname(start_path)
-                        # Top nav handles
-                        file_list.controls.append(
-                            ft.Row([
-                                ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True),
-                                ft.Container(content=ft.Text("DRIVES", color="black", weight="w900"), on_click=lambda _: navigate("/storage"), bgcolor="white", border=ft.border.all(2,"black"), padding=15, ink=True),
-                            ])
-                        )
+                        if start_path != comic_library_dir:
+                            parent = os.path.dirname(start_path)
+                            file_list.controls.append(
+                                ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True)
+                            )
                         
                         items = sorted(os.listdir(start_path))
                         for item in items:
@@ -345,7 +443,7 @@ def main(page):
                             ft.Container(bgcolor="black", height=4),
                             settings_col,
                             ft.Container(bgcolor="black", height=2),
-                            
+                            mode_toggle,
                             ft.Text(start_path, color="black", size=14, weight="bold"),
                             ft.Container(content=file_list, height=400),
                             
