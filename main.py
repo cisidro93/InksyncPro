@@ -3,316 +3,330 @@ import sys
 import os
 import traceback
 import time
+import threading
 
-# Global var for the engine
-conversion_engine = None
+# Global variables for engines
+cbz_to_pdf_engine = None
+cbz_to_epub_engine = None
 
 def main(page):
-    page.title = "CBZ Converter (Page Swap)"
+    # E-ink Optimized App configuration
+    page.title = "ComicToEink"
     page.scroll = "auto"
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.padding = 20
+    page.padding = 10
+    page.bgcolor = "white"
     
     # Global State
     state = {
         "current_path": "/storage/emulated/0/Download",
         "selected_file": "/storage/emulated/0/Download",
+        "output_format": "epub", # default to epub for kindle
         "compress_enabled": False,
-        "email_sender": "",
-        "email_password": "",
-        "email_recipient": ""
+        "manga_mode": False
     }
     
-    # 1. Boot Message
-    boot_text = ft.Text("System Boot: Initializing...", color="blue", size=16, weight="bold")
-    log_column = ft.Column(scroll="auto")
-    page.add(boot_text, log_column)
+    # 1. Boot Message (E-ink stark contrast)
+    boot_text = ft.Text("SYSTEM STARTUP", color="black", size=24, weight="w900")
+    log_column = ft.Column(scroll="auto", expand=True)
+    page.add(
+        ft.Container(
+            content=ft.Column([boot_text, log_column]),
+            padding=20,
+            border=ft.border.all(4, "black"),
+            bgcolor="white"
+        )
+    )
 
-    def log(msg, color="black"):
+    def log(msg, is_error=False):
         print(msg)
-        log_column.controls.append(ft.Text(msg, color=color, size=12))
+        color = "black" if not is_error else "red"
+        # Always use bold/heavy fonts for e-ink readability
+        log_column.controls.append(ft.Text(f"> {msg}", color=color, size=18, weight="bold"))
         page.update()
 
-    log(f"Python: {sys.version}")
-    log("Mode: Full Page Browser (No Dialogs)")
+    log(f"Python Runtime: {sys.version}")
+    log("Initializing Enterprise E-ink Interface...")
     
-    def load_engine_click(e):
-        global conversion_engine
-        
-        btn_load.disabled = True
-        btn_load.text = "Loading Engine..."
-        page.update()
-        
+    def load_engines():
+        global cbz_to_pdf_engine
+        global cbz_to_epub_engine
         try:
-            log("Importing CBZ Engine...")
+            log("Loading PDF Engine...")
             import cbz_to_pdf
-            
             if hasattr(cbz_to_pdf, 'convert_cbz_to_pdf'):
-                conversion_engine = cbz_to_pdf.convert_cbz_to_pdf
-                log("Engine Loaded!", "green")
+                cbz_to_pdf_engine = cbz_to_pdf.convert_cbz_to_pdf
+            
+            log("Loading EPUB Engine...")
+            import cbz_to_epub
+            if hasattr(cbz_to_epub, 'convert_cbz_to_epub'):
+                cbz_to_epub_engine = cbz_to_epub.convert_cbz_to_epub
+                
+            if cbz_to_epub_engine and cbz_to_pdf_engine:
+                log("Engines OK. Launching UI...")
+                time.sleep(0.5)
                 show_main_ui()
             else:
-                log("Error: convert function missing", "red")
-                btn_load.disabled = False
+                log("FATAL: Engine bindings missing.", is_error=True)
                 
         except Exception as e:
-            log(f"IMPORT ERROR: {e}", "red")
-            btn_load.disabled = False
+            log(f"IMPORT FAILURE: {e}", is_error=True)
 
-    # --- SETTINGS SCREEN ---
-    def show_settings_ui():
-        page.clean()
-        
-        txt_sender = ft.TextField(label="Your Gmail", value=state["email_sender"])
-        txt_pass = ft.TextField(label="App Password", value=state["email_password"], password=True, can_reveal_password=True)
-        txt_kindle = ft.TextField(label="Kindle Email", value=state["email_recipient"])
-        
-        def save_settings(e):
-            state["email_sender"] = txt_sender.value
-            state["email_password"] = txt_pass.value
-            state["email_recipient"] = txt_kindle.value
-            show_main_ui()
-            
-        def cancel_settings(e):
-            show_main_ui()
-            
-        page.add(
-            ft.Text("Settings", size=24, weight="bold"),
-            ft.Text("Kindle / Email Configuration", size=16, weight="bold"),
-            txt_sender,
-            txt_pass,
-            txt_kindle,
-            ft.Container(height=20),
-            ft.Row([
-                ft.ElevatedButton("Save", on_click=save_settings, bgcolor="blue", color="white"),
-                ft.TextButton("Cancel", on_click=cancel_settings)
-            ])
-        )
-        page.update()
+    # Boot Sequence
+    threading.Thread(target=load_engines).start()
 
-    # --- MAIN CONVERTER SCREEN ---
+    # --- MAIN CONVERTER SCREEN (E-INK STYLED) ---
     def show_main_ui():
         try:
             page.clean()
             
+            # Helper to create highly visible e-ink buttons
+            def eink_button(text, on_click, expand=False, is_primary=False):
+                return ft.Container(
+                    content=ft.Text(text, size=20, weight="w900", color="white" if is_primary else "black", text_align="center"),
+                    on_click=on_click,
+                    bgcolor="black" if is_primary else "white",
+                    border=ft.border.all(3, "black"),
+                    padding=20,
+                    border_radius=0, # Sharp corners for e-ink clarity
+                    ink=True,
+                    expand=expand,
+                    alignment=ft.alignment.center
+                )
+
             path_input = ft.TextField(
-                label="File Path", 
+                label="Selected File", 
                 value=state["selected_file"], 
-                expand=True
+                expand=True,
+                read_only=True,
+                border_color="black",
+                border_width=2,
+                text_size=18
             )
             
-            # New Feature Controls
+            # Toggle format
+            def select_format(e):
+                val = e.control.value
+                state["output_format"] = val
+                # Update visibility of specific settings
+                sw_compress.visible = (val == "pdf")
+                sw_manga.visible = (val == "epub")
+                page.update()
+
+            format_radios = ft.RadioGroup(
+                content=ft.Row([
+                    ft.Radio(value="epub", label="EPUB (Kindle)"),
+                    ft.Radio(value="pdf", label="PDF (Universal)")
+                ]),
+                value=state["output_format"],
+                on_change=select_format
+            )
+
+            # Feature Controls
             sw_compress = ft.Switch(
-                label="Compress PDF (Max 50MB)", 
+                label="Compress Images (Max 50MB) [PDF Only]", 
                 value=state["compress_enabled"],
-                on_change=lambda e: state.update({"compress_enabled": e.control.value})
+                on_change=lambda e: state.update({"compress_enabled": e.control.value}),
+                visible=(state["output_format"] == "pdf"),
+                active_color="black"
             )
             
-            progress_bar = ft.ProgressBar(width=300, visible=False)
-            status_txt = ft.Text("Ready. Browse or type path.", color="green")
-            percent_txt = ft.Text("", weight="bold")
+            sw_manga = ft.Switch(
+                label="Manga Mode (Right-to-Left) [EPUB Only]", 
+                value=state["manga_mode"],
+                on_change=lambda e: state.update({"manga_mode": e.control.value}),
+                visible=(state["output_format"] == "epub"),
+                active_color="black"
+            )
+            
+            progress_bar = ft.ProgressBar(width=300, visible=False, color="black", bgcolor="white")
+            status_txt = ft.Text("STANDING BY", color="black", weight="w900", size=24)
             
             def on_browse_click(e):
                 show_browser_ui(state["current_path"])
 
-            def on_settings_click(e):
-                show_settings_ui()
-
             def on_progress(p, msg):
                 progress_bar.value = p/100
-                status_txt.value = msg
-                percent_txt.value = f"{int(p)}%"
+                status_txt.value = f"{int(p)}% | {msg.upper()}"
                 page.update()
                 
             def run_convert(e):
                 src = path_input.value
-                if not src:
-                    status_txt.value = "Enter a path first."
-                    status_txt.color = "red"
+                if not src or "Download" in src and src == state["current_path"]:
+                    status_txt.value = "ERROR: SELECT A FILE"
                     page.update()
                     return
                 
                 state["selected_file"] = src 
-                dst = src.replace(".cbz", ".pdf")
                 
-                status_txt.value = f"Starting..."
-                status_txt.color = "black"
-                percent_txt.value = "0%"
+                # Setup Output Path (Route directly to webapp/downloads to enable immediate Wi-Fi Sync)
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                downloads_dir = os.path.join(base_dir, "webapp", "downloads")
+                os.makedirs(downloads_dir, exist_ok=True)
+                
+                # Create output filename based on source format
+                src_filename = os.path.basename(src)
+                out_ext = f".{state['output_format']}"
+                out_filename = src_filename.replace(".cbz", out_ext).replace(".cbr", out_ext)
+                dst = os.path.join(downloads_dir, out_filename)
+                
+                status_txt.value = "INITIALIZING..."
                 progress_bar.visible = True
                 page.update()
                 
-                import threading
                 def worker():
                     try:
-                        success = conversion_engine(
-                            src, 
-                            dst, 
-                            progress_callback=on_progress,
-                            compress=state["compress_enabled"],
-                            max_size_mb=50
-                        )
+                        success = False
+                        if state["output_format"] == "pdf":
+                            success = cbz_to_pdf_engine(
+                                src, 
+                                dst, 
+                                progress_callback=on_progress,
+                                compress=state["compress_enabled"],
+                                max_size_mb=50
+                            )
+                        elif state["output_format"] == "epub":
+                            success = cbz_to_epub_engine(
+                                src,
+                                dst,
+                                manga_mode=state["manga_mode"],
+                                progress_callback=on_progress
+                            )
                         
                         if success is False:
-                             raise Exception("Conversion returned False")
+                             raise Exception("Engine returned False")
 
-                        status_txt.value = "Conversion Complete!"
-                        status_txt.color = "green"
+                        status_txt.value = "JOB COMPLETE (READY FOR WI-FI SYNC)"
                         page.update()
-                        
-                        if state["email_sender"] and state["email_recipient"]:
-                            on_progress(100, "Sending to Kindle...")
-                            try:
-                                import email_sender
-                                sent, msg = email_sender.send_email(
-                                    dst, 
-                                    state["email_sender"], 
-                                    state["email_password"], 
-                                    state["email_recipient"]
-                                )
-                                if sent:
-                                    status_txt.value = "Done + Sent to Kindle!"
-                                else:
-                                    status_txt.value = f"Done, but Email Failed: {msg}"
-                            except Exception as e:
-                                 status_txt.value = f"Done (Email error: {e})"
-                            page.update()
 
-                    except Exception as e:
-                        status_txt.value = f"Error: {e}"
-                        status_txt.color = "red"
+                    except Exception as err:
+                        status_txt.value = f"ERROR: {str(err).upper()}"
                         page.update()
                 
                 threading.Thread(target=worker).start()
                 
             # Layout
             page.add(
-                ft.Row([
-                    ft.Text("CBZ to PDF", size=24, weight="bold"),
-                    ft.TextButton("[Settings]", on_click=on_settings_click) 
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Container(height=10),
-                ft.Row([
-                    path_input,
-                    ft.ElevatedButton("Browse", on_click=on_browse_click)
-                ]),
-                sw_compress,
-                ft.Container(height=10),
-                ft.ElevatedButton("Convert to PDF", on_click=run_convert, width=200),
-                ft.Container(height=20),
-                progress_bar,
-                ft.Row([percent_txt, status_txt], spacing=10)
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("COMIC SYNC PRO", size=36, weight="w900", color="black"),
+                        ft.Container(bgcolor="black", height=4), # Thick separator
+                        
+                        ft.Row([
+                            path_input,
+                            eink_button("BROWSE", on_click=on_browse_click)
+                        ]),
+                        
+                        ft.Container(bgcolor="black", height=2),
+                        ft.Text("OUTPUT FORMAT", size=18, weight="w900"),
+                        format_radios,
+                        sw_compress,
+                        sw_manga,
+                        
+                        ft.Container(bgcolor="black", height=2),
+                        eink_button("CONVERT TO WI-FI SERVER", on_click=run_convert, expand=True, is_primary=True),
+                        
+                        ft.Container(height=20),
+                        progress_bar,
+                        status_txt
+                    ], spacing=15),
+                    padding=20,
+                    border=ft.border.all(4, "black")
+                )
             )
             page.update()
             
         except Exception as e:
-            log(f"UI ERROR: {e}", "red")
-            log(traceback.format_exc(), "red")
+            log(f"UI ERROR: {e}", is_error=True)
 
-    # --- HELPER: Detect SD Cards ---
+    # --- FULL PAGE FILE BROWSER (E-INK STYLED) ---
     def get_android_drives():
-        drives = set()
-        drives.add("/storage/emulated/0") # Internal Default
-        
+        drives = {"/storage/emulated/0"}
         try:
             with open("/proc/mounts", "r") as f:
                 for line in f:
                     parts = line.split()
                     if len(parts) > 1:
-                        mount_point = parts[1]
-                        # Look for storage mounts
-                        if mount_point.startswith("/storage") and mount_point != "/storage":
-                            # Avoid duplicates like /storage/self/primary
-                            if "self" not in mount_point and "emulated" not in mount_point:
-                                drives.add(mount_point)
-        except Exception as e:
-            print(f"Error reading mounts: {e}")
-            
+                        mount = parts[1]
+                        if mount.startswith("/storage") and mount != "/storage":
+                            if "self" not in mount and "emulated" not in mount:
+                                drives.add(mount)
+        except: pass
         return sorted(list(drives))
 
-    # --- FULL PAGE FILE BROWSER ---
     def show_browser_ui(start_path):
         page.clean()
-        
-        # State Update
         state["current_path"] = start_path
         
-        file_list = ft.Column(scroll="auto", expand=True)
-        path_display = ft.Text(start_path, color="grey", size=12)
+        file_list = ft.Column(scroll="auto", expand=True, spacing=2)
+        path_display = ft.Text(start_path, color="black", size=16, weight="bold")
         
-        def navigate(path):
-            show_browser_ui(path)
-            
+        def navigate(path): show_browser_ui(path)
         def select(path):
             state["selected_file"] = path
             state["current_path"] = os.path.dirname(path)
             show_main_ui()
             
-        def go_back(e):
-            show_main_ui()
+        # Helper for massive e-ink list items
+        def list_item(text, icon, on_click, is_dir=False, is_file=False):
+            return ft.Container(
+                content=ft.Row([
+                    ft.Text(icon, size=24),
+                    ft.Text(text, size=20, weight="w900" if is_dir else "w700", color="white" if is_file else "black", no_wrap=True)
+                ]),
+                on_click=on_click,
+                bgcolor="black" if is_file else "white",
+                border=ft.border.all(2, "black"),
+                padding=15,
+                ink=True
+            )
 
-        # Build List
         try:
-            # SPECIAL CASE: ROOT STORAGE SELECTION
             if start_path == "/storage":
-                file_list.controls.append(ft.Text("Detected Storage Volumes:", weight="bold"))
-                
-                drives = get_android_drives()
-                for drive in drives:
-                     file_list.controls.append(
-                        ft.ElevatedButton(f"💾 {drive}", on_click=lambda _, p=drive: navigate(p), width=300, bgcolor="orange", color="white")
-                    )
+                file_list.controls.append(ft.Text("DRIVES", weight="w900", size=24))
+                for drive in get_android_drives():
+                     file_list.controls.append(list_item(drive, "💾", lambda _, p=drive: navigate(p), is_dir=True))
             else:
-                # Normal Directory Listing
                 parent = os.path.dirname(start_path)
-                
-                # Navigation Helpers
                 file_list.controls.append(
                     ft.Row([
-                        ft.ElevatedButton(".. (UP)", on_click=lambda _: navigate(parent), expand=True, bgcolor="grey", color="white"),
-                        ft.ElevatedButton("Switch Drive", on_click=lambda _: navigate("/storage"), expand=True, bgcolor="orange", color="white"),
+                        ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True),
+                        ft.Container(content=ft.Text("DRIVES", color="black", weight="w900"), on_click=lambda _: navigate("/storage"), bgcolor="white", border=ft.border.all(2,"black"), padding=15, ink=True),
                     ])
                 )
                 
                 items = sorted(os.listdir(start_path))
                 for item in items:
                     full_path = os.path.join(start_path, item)
-                    is_dir = os.path.isdir(full_path)
-                    
-                    if is_dir:
-                        file_list.controls.append(
-                            ft.OutlinedButton(f"📂 {item}", on_click=lambda _, p=full_path: navigate(p), width=300)
-                        )
-                    else:
-                        # IT IS A FILE - Show all of them
-                        if item.lower().endswith('.cbz'):
-                            # Valid CBZ
-                            file_list.controls.append(
-                                ft.ElevatedButton(f"📄 {item}", on_click=lambda _, p=full_path: select(p), width=300, bgcolor="blue", color="white")
-                            )
-                        else:
-                            # Other File (Debug visibility)
-                            file_list.controls.append(
-                                ft.ElevatedButton(f"⬜ {item}", on_click=lambda _, p=full_path: select(p), width=300, bgcolor="grey", color="white")
-                            )
+                    if os.path.isdir(full_path):
+                        file_list.controls.append(list_item(item, "📂", lambda _, p=full_path: navigate(p), is_dir=True))
+                    elif item.lower().endswith('.cbz'):
+                        file_list.controls.append(list_item(item, "📄", lambda _, p=full_path: select(p), is_file=True))
                         
         except Exception as e:
-            file_list.controls.append(ft.Text(f"Access Error: {e}", color="red"))
-            # Fallback to drive list if we hit a wall
-            file_list.controls.append(ft.ElevatedButton("Go to Detected Drives", on_click=lambda _: navigate("/storage"), bgcolor="orange", color="white"))
+            file_list.controls.append(ft.Text(f"ACCESS DENIED: {e}", color="black", weight="w900"))
 
         page.add(
-            ft.Text("Select File", size=24, weight="bold"),
-            path_display,
-            ft.Divider(),
-            ft.Container(content=file_list, height=400, border=ft.border.all(1, "grey"), padding=5),
-            ft.Divider(),
-            ft.ElevatedButton("Cancel", on_click=go_back)
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("SELECT FILE", size=32, weight="w900"),
+                    path_display,
+                    ft.Container(bgcolor="black", height=4),
+                    ft.Container(content=file_list, height=500),
+                    ft.Container(bgcolor="black", height=4),
+                    ft.Container(
+                        content=ft.Text("CANCEL", size=20, weight="w900", text_align="center"),
+                        on_click=lambda _: show_main_ui(),
+                        border=ft.border.all(3, "black"),
+                        padding=15,
+                        ink=True
+                    )
+                ]),
+                padding=20,
+                border=ft.border.all(4, "black")
+            )
         )
         page.update()
-
-    btn_load = ft.ElevatedButton("LOAD ENGINE", on_click=load_engine_click, bgcolor="blue", color="white")
-    page.add(ft.Divider(), btn_load)
-    page.update()
 
 if __name__ == "__main__":
     ft.app(target=main)

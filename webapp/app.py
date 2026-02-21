@@ -6,9 +6,9 @@ from flask import Flask, render_template, request, jsonify, send_from_directory,
 from PySide6.QtCore import QSettings
 
 # Add parent directory to path to import cbz_to_pdf
-# Add parent directory to path to import cbz_to_pdf
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cbz_to_pdf
+import cbz_to_epub
 import email_sender
 from utils import resource_path
 
@@ -24,20 +24,29 @@ os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 # Store task status in memory (for simplicity)
 tasks = {}
 
-def conversion_worker(task_id, input_path, output_path, compress, max_size_mb, send_to_kindle):
+def conversion_worker(task_id, input_path, output_path, output_format, compress, max_size_mb, send_to_kindle):
     """Background worker for conversion."""
     try:
         def progress_callback(percentage, message):
             tasks[task_id]['progress'] = percentage
             tasks[task_id]['message'] = message
 
-        success = cbz_to_pdf.convert_cbz_to_pdf(
-            input_path, 
-            output_path, 
-            progress_callback=progress_callback,
-            compress=compress,
-            max_size_mb=max_size_mb
-        )
+        success = False
+        if output_format == 'epub':
+            success = cbz_to_epub.convert_cbz_to_epub(
+                input_path,
+                output_path,
+                manga_mode=False, # Web app does not currently expose manga mode
+                progress_callback=progress_callback
+            )
+        else:
+            success = cbz_to_pdf.convert_cbz_to_pdf(
+                input_path, 
+                output_path, 
+                progress_callback=progress_callback,
+                compress=compress,
+                max_size_mb=max_size_mb
+            )
 
         if success:
             if send_to_kindle:
@@ -113,6 +122,7 @@ def upload_file():
         
         # Options
         compress = request.form.get('compress') == 'true'
+        output_format = request.form.get('format', 'epub').lower()
         
         kindle_val = request.form.get('kindle')
         send_to_kindle = kindle_val and kindle_val.lower() in ['true', 'on', '1']
@@ -126,7 +136,8 @@ def upload_file():
         else:
             max_size_mb = None
 
-        output_filename = os.path.splitext(file.filename)[0] + ".pdf"
+        ext = f".{output_format}"
+        output_filename = os.path.splitext(file.filename)[0] + ext
         output_path = os.path.join(app.config['OUTPUT_FOLDER'], f"{task_id}_{output_filename}")
 
         tasks[task_id] = {
@@ -135,7 +146,7 @@ def upload_file():
             'message': 'Starting...',
             'filename': output_filename,
         }
-        thread = threading.Thread(target=conversion_worker, args=(task_id, input_path, output_path, compress, max_size_mb, send_to_kindle))
+        thread = threading.Thread(target=conversion_worker, args=(task_id, input_path, output_path, output_format, compress, max_size_mb, send_to_kindle))
         thread.start()
 
         return jsonify({'task_id': task_id})

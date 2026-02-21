@@ -83,6 +83,23 @@
                     </div>
                 </div>
 
+                <!-- Format Selection -->
+                <div class="mb-6 bg-gray-700/50 p-4 rounded-lg border border-gray-600">
+                    <p class="text-sm font-semibold text-gray-300 mb-3">Output Format</p>
+                    <div class="flex space-x-4">
+                        <label class="flex items-center space-x-2 cursor-pointer">
+                            <input type="radio" name="format" value="epub" checked
+                                class="form-radio h-4 w-4 text-blue-500 bg-gray-700 border-gray-500 focus:ring-blue-500">
+                            <span class="text-gray-200">EPUB (Kindle)</span>
+                        </label>
+                        <label class="flex items-center space-x-2 cursor-pointer">
+                            <input type="radio" name="format" value="pdf"
+                                class="form-radio h-4 w-4 text-blue-500 bg-gray-700 border-gray-500 focus:ring-blue-500">
+                            <span class="text-gray-200">PDF</span>
+                        </label>
+                    </div>
+                </div>
+
                 <button id="convert-btn"
                     class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
                     Convert
@@ -220,6 +237,10 @@
             formData.append('file', selectedFile);
             formData.append('compress', compressCheck.checked);
             formData.append('kindle', kindleCheck.checked);
+
+            const formatRadio = document.querySelector('input[name="format"]:checked');
+            formData.append('format', formatRadio ? formatRadio.value : 'epub');
+
             if (limitSizeCheck.checked) {
                 formData.append('max_size_mb', maxSizeInput.value);
             }
@@ -258,6 +279,8 @@
                         statusText.textContent = 'Done!';
 
                         downloadBtn.href = data.download_url;
+                        const fileExt = data.download_url.split('.').pop().toUpperCase();
+                        downloadBtn.textContent = `Download ${fileExt}`;
                         downloadBtn.classList.remove('hidden');
                         resetBtn.classList.remove('hidden');
                     } else {
