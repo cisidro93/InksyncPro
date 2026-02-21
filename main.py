@@ -26,50 +26,15 @@ def main(page):
         "manga_mode": False
     }
     
-    # 1. Boot Message (E-ink stark contrast)
-    boot_text = ft.Text("SYSTEM STARTUP", color="black", size=24, weight="w900")
-    log_column = ft.Column(scroll="auto", expand=True)
-    page.add(
-        ft.Container(
-            content=ft.Column([boot_text, log_column]),
-            padding=20,
-            border=ft.border.all(4, "black"),
-            bgcolor="white"
-        )
-    )
-
-    def log(msg, is_error=False):
-        print(msg)
-        color = "black" if not is_error else "red"
-        # Always use bold/heavy fonts for e-ink readability
-        log_column.controls.append(ft.Text(f"> {msg}", color=color, size=18, weight="bold"))
-        page.update()
-
-    log(f"Python Runtime: {sys.version}")
-    log("Initializing Enterprise E-ink Interface...")
-    
-    def load_engines():
+    try:
+        import cbz_to_pdf
+        import cbz_to_epub
         global cbz_to_pdf_engine
         global cbz_to_epub_engine
-        try:
-            log("Loading PDF Engine...")
-            import cbz_to_pdf
-            if hasattr(cbz_to_pdf, 'convert_cbz_to_pdf'):
-                cbz_to_pdf_engine = cbz_to_pdf.convert_cbz_to_pdf
-            
-            log("Loading EPUB Engine...")
-            import cbz_to_epub
-            if hasattr(cbz_to_epub, 'convert_cbz_to_epub'):
-                cbz_to_epub_engine = cbz_to_epub.convert_cbz_to_epub
-                
-            if cbz_to_epub_engine and cbz_to_pdf_engine:
-                log("Engines OK. Launching UI...")
-                show_main_ui()
-            else:
-                log("FATAL: Engine bindings missing.", is_error=True)
-                
-        except Exception as e:
-            log(f"IMPORT FAILURE: {e}\n{traceback.format_exc()}", is_error=True)
+        cbz_to_pdf_engine = cbz_to_pdf.convert_cbz_to_pdf
+        cbz_to_epub_engine = cbz_to_epub.convert_cbz_to_epub
+    except Exception as e:
+        print(f"Failed to load engine imports: {e}")
 
     # --- MAIN CONVERTER SCREEN (E-INK STYLED) ---
     def show_main_ui():
@@ -324,8 +289,8 @@ def main(page):
         )
         page.update()
 
-    # Boot Sequence 
-    threading.Thread(target=load_engines).start()
+    # Start the fast UI synchronously
+    show_main_ui()
 
 if __name__ == "__main__":
     ft.app(target=main)

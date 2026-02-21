@@ -45,20 +45,19 @@ def optimize_images(
                 if i % 10 == 0:
                     report(prog, f"Optimizing {i+1}/{total_images}...")
                 
-                with Image.open(img_path) as img:
-                    img = img.convert('RGB') # Ensure it's not RGBA or P
-                    modified = False
+                with Image.open(img_path) as original_img:
+                    img = original_img.convert('RGB') # Loads into memory and creates a copy
                     
-                    # 1. Resize if taller than target
-                    if img.height > MAX_HEIGHT:
-                        ratio = MAX_HEIGHT / img.height
-                        new_width = int(img.width * ratio)
-                        img = img.resize((new_width, MAX_HEIGHT), Image.Resampling.LANCZOS)
-                        modified = True
-                    
-                    # 2. Re-save as aggressive JPEG even if wasn't resized, to strip bloat
-                    # 65-75% quality is visually indistinguishable on e-ink but saves 80% file size
-                    img.save(img_path, "JPEG", quality=75, optimize=True)
+                # File handle is now safely closed.
+                # 1. Resize if taller than target
+                if img.height > MAX_HEIGHT:
+                    ratio = MAX_HEIGHT / img.height
+                    new_width = int(img.width * ratio)
+                    img = img.resize((new_width, MAX_HEIGHT), Image.Resampling.LANCZOS)
+                
+                # 2. Re-save as aggressive JPEG to strip bloat
+                # 65-75% quality is visually indistinguishable on e-ink but saves 80% file size
+                img.save(img_path, "JPEG", quality=75, optimize=True)
                         
             except Exception as e:
                 print(f"Warning: Could not optimize {img_path}: {e}")
@@ -80,12 +79,13 @@ def optimize_images(
                     if i % 10 == 0:
                         report(prog, f"Fitting size {i+1}/{total_images}...")
                         
-                    with Image.open(img_path) as img:
-                        img = img.convert('RGB')
-                        new_width = int(img.width * scale_factor)
-                        new_height = int(img.height * scale_factor)
-                        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                        img.save(img_path, "JPEG", quality=85, optimize=True)
+                    with Image.open(img_path) as original_img:
+                        img = original_img.convert('RGB')
+                        
+                    new_width = int(img.width * scale_factor)
+                    new_height = int(img.height * scale_factor)
+                    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    img.save(img_path, "JPEG", quality=85, optimize=True)
                 except Exception as e:
                     print(f"Warning: Could not strictly resize {img_path}: {e}")
         else:
