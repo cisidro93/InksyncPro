@@ -238,8 +238,29 @@ def main(page):
                     import threading
                     threading.Thread(target=worker).start()
 
-                convert_btn_text = f"CONVERT {len(state['selected_items'])} ITEM(S)" if state["selected_items"] else "SELECT ITEMS TO CONVERT"
-                btn_convert = eink_button(convert_btn_text, on_click=run_convert, expand=True, is_primary=True, disabled=len(state["selected_items"])==0)
+                def count_comics():
+                    count = 0
+                    for p in state["selected_items"]:
+                        if os.path.isdir(p):
+                            try:
+                                for root, _, files in os.walk(p):
+                                    for f in files:
+                                        if f.lower().endswith(('.cbz', '.cbr')):
+                                            count += 1
+                            except: pass
+                        elif os.path.isfile(p) and p.lower().endswith(('.cbz', '.cbr')):
+                            count += 1
+                    return count
+                    
+                total_comics = count_comics()
+                if state["selected_items"] and total_comics == 0:
+                    convert_btn_text = "0 COMICS FOUND IN SELECTION"
+                elif total_comics > 0:
+                    convert_btn_text = f"CONVERT {total_comics} COMIC(S)"
+                else:
+                    convert_btn_text = "SELECT COMICS TO CONVERT"
+                    
+                btn_convert = eink_button(convert_btn_text, on_click=run_convert, expand=True, is_primary=True, disabled=total_comics==0)
 
                 # --- NATIVE FILE BROWSER ---
                 def navigate(path):

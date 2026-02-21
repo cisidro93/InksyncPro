@@ -3,7 +3,6 @@ import sys
 import uuid
 import threading
 from flask import Flask, render_template, request, jsonify, send_from_directory, current_app
-from PySide6.QtCore import QSettings
 
 # Add parent directory to path to import cbz_to_pdf
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -54,13 +53,22 @@ def conversion_worker(task_id, input_path, output_path, output_format, optimize,
                 tasks[task_id]['message'] = 'Sending to Kindle...'
                 tasks[task_id]['progress'] = 99
                 
-                # Read settings
-                settings = QSettings("Antigravity", "CBZtoPDF")
-                sender = settings.value("sender_email", "")
-                password = settings.value("sender_password", "")
-                kindle_email = settings.value("kindle_email", "")
-                smtp_server = settings.value("smtp_server", "smtp.gmail.com")
-                smtp_port = settings.value("smtp_port", "587")
+                # Read settings (Desktop only)
+                sender = ""
+                password = ""
+                kindle_email = ""
+                smtp_server = "smtp.gmail.com"
+                smtp_port = "587"
+                try:
+                    from PySide6.QtCore import QSettings
+                    settings = QSettings("Antigravity", "CBZtoPDF")
+                    sender = settings.value("sender_email", "")
+                    password = settings.value("sender_password", "")
+                    kindle_email = settings.value("kindle_email", "")
+                    smtp_server = settings.value("smtp_server", "smtp.gmail.com")
+                    smtp_port = settings.value("smtp_port", "587")
+                except ImportError:
+                    pass
 
                 if not sender or not password or not kindle_email:
                      tasks[task_id]['message'] = 'Conversion done, but Email settings missing.'
