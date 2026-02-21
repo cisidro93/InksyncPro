@@ -316,8 +316,23 @@ def main(page):
                         full_path = os.path.join(start_path, item)
                         if os.path.isdir(full_path):
                             file_list.controls.append(list_item(item, "📂", lambda _, p=full_path: navigate(p), is_dir=True))
-                        elif item.lower().endswith(('.cbz', '.cbr')):
-                            file_list.controls.append(list_item(item, "📄", lambda _, p=full_path: select(p), is_file=True))
+                        else:
+                            # It's a file. Show it to debug Android permissions
+                            if item.lower().endswith(('.cbz', '.cbr')):
+                                file_list.controls.append(list_item(item, "📄", lambda _, p=full_path: select(p), is_file=True))
+                            else:
+                                # Render non-matching files as grayed out / disabled
+                                file_list.controls.append(
+                                    ft.Container(
+                                        content=ft.Row([
+                                            ft.Text("⚠️", size=24),
+                                            ft.Text(item, size=16, color="grey", no_wrap=True)
+                                        ]),
+                                        bgcolor="#EEEEEE",
+                                        border=ft.border.all(1, "grey"),
+                                        padding=15
+                                    )
+                                )
                             
             except Exception as e:
                 file_list.controls.append(ft.Text(f"ACCESS DENIED: {e}", color="black", weight="w900"))
