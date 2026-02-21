@@ -110,9 +110,10 @@ def main(page):
                     format_radios, sw_optimize, sw_manga
                 ])
                 
-                # View Mode Toggle
-                def on_mode_change(e):
-                    state["view_mode"] = e.control.value
+                # E-Ink Optimized View Mode Toggle
+                def on_mode_change(new_mode):
+                    if state["view_mode"] == new_mode: return
+                    state["view_mode"] = new_mode
                     state["selected_items"].clear()
                     if state["view_mode"] == "external":
                         state["current_path"] = "/storage/emulated/0/Download"
@@ -120,15 +121,26 @@ def main(page):
                         state["current_path"] = comic_library_dir
                     render_ui()
                     
-                mode_toggle = ft.SegmentedButton(
-                    selected={state["view_mode"]},
-                    on_change=lambda e: on_mode_change(e),
-                    segments=[
-                        ft.Segment(value="external", label=ft.Text("SD CARD (Import)", weight="bold")),
-                        ft.Segment(value="internal", label=ft.Text("LIBRARY (Convert)", weight="bold"))
-                    ],
-                    selected_icon=ft.icons.CHECK,
-                )
+                mode_toggle = ft.Row([
+                    ft.Container(
+                        content=ft.Text("SD CARD [IMPORT]", size=16, weight="w900", color="white" if state["view_mode"] == "external" else "black", text_align="center"),
+                        on_click=lambda _: on_mode_change("external"),
+                        bgcolor="black" if state["view_mode"] == "external" else "white",
+                        border=ft.border.all(3, "black"),
+                        padding=12,
+                        expand=True,
+                        ink=True
+                    ),
+                    ft.Container(
+                        content=ft.Text("LIBRARY [CONVERT]", size=16, weight="w900", color="white" if state["view_mode"] == "internal" else "black", text_align="center"),
+                        on_click=lambda _: on_mode_change("internal"),
+                        bgcolor="black" if state["view_mode"] == "internal" else "white",
+                        border=ft.border.all(3, "black"),
+                        padding=12,
+                        expand=True,
+                        ink=True
+                    )
+                ], spacing=0)
 
                 # Wi-Fi Server
                 def get_local_ip():
