@@ -61,9 +61,6 @@ struct FolderPicker: UIViewControllerRepresentable {
         picker.delegate = context.coordinator
         return picker
     }
-        picker.delegate = context.coordinator
-        return picker
-    }
 
     func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
 

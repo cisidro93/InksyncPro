@@ -577,10 +577,11 @@ class ConversionManager: ObservableObject {
         let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         
         guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return }
+        let fileURLs = enumerator.allObjects as? [URL] ?? []
         
         var newlyImported: [ConvertedPDF] = []
         
-        for case let fileURL as URL in enumerator {
+        for fileURL in fileURLs {
             guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
                   let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
             
