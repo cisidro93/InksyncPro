@@ -64,16 +64,15 @@ def main(page):
                 
             if cbz_to_epub_engine and cbz_to_pdf_engine:
                 log("Engines OK. Launching UI...")
-                time.sleep(0.5)
                 show_main_ui()
             else:
                 log("FATAL: Engine bindings missing.", is_error=True)
                 
         except Exception as e:
-            log(f"IMPORT FAILURE: {e}", is_error=True)
+            log(f"IMPORT FAILURE: {e}\n{traceback.format_exc()}", is_error=True)
 
-    # Boot Sequence
-    threading.Thread(target=load_engines).start()
+    # Boot Sequence (Run synchronously to avoid Android Flet threading issues with page.update)
+    load_engines()
 
     # --- MAIN CONVERTER SCREEN (E-INK STYLED) ---
     def show_main_ui():
