@@ -62,6 +62,19 @@ class ExternalStorageManager: NSObject {
         viewController.present(picker, animated: true)
     }
     
+    /// Select a folder from external storage
+    func selectFolderFromExternalStorage(
+        from viewController: UIViewController,
+        completion: @escaping (URL?) -> Void
+    ) {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
+        picker.delegate = self
+        picker.allowsMultipleSelection = false
+        
+        self.importFolderCompletion = completion
+        viewController.present(picker, animated: true)
+    }
+    
     // MARK: - Export to External Storage
     
     /// Export a single file to external storage
@@ -144,6 +157,7 @@ class ExternalStorageManager: NSObject {
     
     private var importCompletion: ((URL?) -> Void)?
     private var importMultipleCompletion: (([URL]) -> Void)?
+    private var importFolderCompletion: ((URL?) -> Void)?
     private var exportCompletion: ((Bool, URL?) -> Void)?
     private var exportMultipleCompletion: ((Bool) -> Void)?
 }
@@ -154,7 +168,17 @@ extension ExternalStorageManager: UIDocumentPickerDelegate {
     
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         
-        if let completion = importCompletion {
+        if let completion = importFolderCompletion {
+            // Folder import
+            guard let url = urls.first else {
+                completion(nil)
+                importFolderCompletion = nil
+                return
+            }
+            completion(url)
+            importFolderCompletion = nil
+            
+        } else if let completion = importCompletion {
             // Single file import
             guard let url = urls.first else {
                 completion(nil)
@@ -203,11 +227,13 @@ extension ExternalStorageManager: UIDocumentPickerDelegate {
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
         importCompletion?(nil)
         importMultipleCompletion?([])
+        importFolderCompletion?(nil)
         exportCompletion?(false, nil)
         exportMultipleCompletion?(false)
         
         importCompletion = nil
         importMultipleCompletion = nil
+        importFolderCompletion = nil
         exportCompletion = nil
         exportMultipleCompletion = nil
     }

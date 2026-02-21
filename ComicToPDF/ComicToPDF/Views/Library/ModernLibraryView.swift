@@ -28,7 +28,7 @@ struct ModernLibraryView: View {
     @State private var searchText = ""
     
     enum SidebarSheet: Identifiable {
-        case importer, wifi, cloud, merge
+        case importer, wifi, cloud, merge, folderImporter
         var id: Int { hashValue }
     }
     
@@ -74,7 +74,7 @@ struct ModernLibraryView: View {
             
             // ... (Content Area) ...
             if conversionManager.convertedPDFs.isEmpty {
-                ModernEmptyState(onImport: { activeSheet = .importer })
+                ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: { activeSheet = .folderImporter })
             } else {
                 List(selection: useNavigationStack ? nil : $selectedPDF) {
                     ForEach(filteredPDFs) { pdf in
@@ -136,6 +136,8 @@ struct ModernLibraryView: View {
             switch item {
             case .importer, .cloud:
                 DocumentPicker(onDocumentsPicked: { urls in Task { await conversionManager.processImportedFiles(urls: urls); activeSheet = nil } })
+            case .folderImporter:
+                FolderPicker(onFolderPicked: { url in Task { await conversionManager.importFolderStructure(from: url); activeSheet = nil } })
             case .wifi: WiFiView()
             case .merge: FileMergeView()
             }
@@ -329,7 +331,27 @@ struct ModernLibraryView: View {
                     
                     // 2. Action Pills (Enterprise Labels)
                     Group {
-                        ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.blue) { activeSheet = .importer }
+                        Menu {
+                            Button(action: { activeSheet = .importer }) {
+                                Label("Import Comic Files", systemImage: "doc.badge.plus")
+                            }
+                            Button(action: { activeSheet = .folderImporter }) {
+                                Label("Import Folder (Series)", systemImage: "folder.badge.plus")
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "doc.badge.plus")
+                                    .font(.system(size: 14))
+                                Text("Import")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.thinMaterial)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
+                        }
                         ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
                         ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { activeSheet = .cloud }
                         ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { activeSheet = .merge }
@@ -370,6 +392,7 @@ struct ModernLibraryView: View {
 
 struct ModernEmptyState: View {
     var onImport: () -> Void
+    var onFolderImport: () -> Void
     
     var body: some View {
         VStack(spacing: 24) {
@@ -396,7 +419,14 @@ struct ModernEmptyState: View {
                 .fontWeight(.semibold)
                 .foregroundColor(Theme.text)
             
-            Button(action: onImport) {
+            Menu {
+                Button(action: onImport) {
+                    Label("Import Comic Files", systemImage: "doc.badge.plus")
+                }
+                Button(action: onFolderImport) {
+                    Label("Import Folder (Series)", systemImage: "folder.badge.plus")
+                }
+            } label: {
                 HStack {
                     Image(systemName: "plus")
                     Text("Import Comic")

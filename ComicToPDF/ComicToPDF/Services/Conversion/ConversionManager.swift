@@ -564,6 +564,79 @@ class ConversionManager: ObservableObject {
         scanLibrary()
     }
     
+    // MARK: - iOS Folder Series Import
+    
+    func importFolderStructure(from folderURL: URL) async {
+        let accessing = folderURL.startAccessingSecurityScopedResource()
+        defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
+        
+        await MainActor.run { self.isConverting = true; self.processingStatus = "Scanning Folder..." }
+        defer { Task { await MainActor.run { self.isConverting = false; self.processingStatus = "" } } }
+        
+        let fileManager = FileManager.default
+        let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        
+        guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return }
+        
+        var newlyImported: [ConvertedPDF] = []
+        
+        for case let fileURL as URL in enumerator {
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
+                  let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
+            
+            let ext = fileURL.pathExtension.lowercased()
+            guard ["cbz", "cbr", "zip"].contains(ext) else { continue }
+            
+            let parentFolderURL = fileURL.deletingLastPathComponent()
+            let seriesName = parentFolderURL.lastPathComponent
+            
+            let fileName = fileURL.lastPathComponent
+            let destURL = documentsDir.appendingPathComponent(fileName)
+            
+            do {
+                if fileManager.fileExists(atPath: destURL.path) {
+                    try fileManager.removeItem(at: destURL)
+                }
+                try fileManager.copyItem(at: fileURL, to: destURL)
+                
+                let attr = try fileManager.attributesOfItem(atPath: destURL.path)
+                let size = attr[.size] as? Int64 ?? 0
+                
+                var metadata = PDFMetadata(title: fileName)
+                // ✅ Intelligent Series Name Assignment
+                metadata.series = seriesName
+                
+                let pdf = ConvertedPDF(
+                    name: fileName,
+                    url: destURL,
+                    pageCount: 0,
+                    fileSize: size,
+                    metadata: metadata,
+                    contentType: detectContentType(from: fileURL)
+                )
+                
+                newlyImported.append(pdf)
+                
+            } catch {
+                Logger.shared.log("Failed to import \(fileName): \(error.localizedDescription)", category: "Import")
+            }
+        }
+        
+        await MainActor.run {
+            for newPdf in newlyImported {
+                self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == newPdf.url.lastPathComponent })
+                self.convertedPDFs.append(newPdf)
+            }
+            self.saveLibrary()
+        }
+        
+        for pdf in newlyImported {
+            Task { await self.generateCoverThumbnail(for: pdf) }
+        }
+        
+        await MainActor.run { self.scanLibrary() }
+    }
+    
     // MARK: - \u2705 PDF Import Support
     
     /// Detect content type from file extension and content analysis

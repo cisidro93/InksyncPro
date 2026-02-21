@@ -46,6 +46,39 @@ struct DocumentPicker: UIViewControllerRepresentable {
     }
 }
 
+// MARK: - FolderPicker
+struct FolderPicker: UIViewControllerRepresentable {
+    var onFolderPicked: (URL) -> Void
+    var onError: ((String) -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+        picker.allowsMultipleSelection = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        var parent: FolderPicker
+
+        init(_ parent: FolderPicker) {
+            self.parent = parent
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            if let url = urls.first {
+                parent.onFolderPicked(url)
+            }
+        }
+    }
+}
+
 // MARK: - ShareSheet & DocumentExporter
 // Common Button Style
 struct BorderlessButtonStyle: ButtonStyle {
