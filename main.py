@@ -324,8 +324,8 @@ def main(page):
         )
         page.update()
 
-    # Boot Sequence (Run synchronously to avoid Android Flet threading issues with page.update)
-    load_engines()
+    # Boot Sequence 
+    threading.Thread(target=load_engines).start()
 
 if __name__ == "__main__":
     ft.app(target=main)
