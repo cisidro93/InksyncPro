@@ -13,6 +13,14 @@ class ConversionManager: ObservableObject {
     @Published var activeTasks: [AppBackgroundTask] = []
     @Published var conversionSettings = ConversionSettings()
     
+    // ✅ NEW: Persistent Watched Folders
+    struct WatchedFolder: Codable, Identifiable, Equatable {
+        var id: UUID = UUID()
+        var name: String
+        var bookmarkData: Data
+    }
+    @Published var watchedFolders: [WatchedFolder] = []
+    
     // MARK: - Internal State
     private let libraryFileName = "library.json"
     internal var thumbnailCache = NSCache<NSString, UIImage>()
@@ -197,8 +205,9 @@ class ConversionManager: ObservableObject {
             let history: [ConvertedPDF]
             let devices: [KindleDevice]
             var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil // ✅ NEW: Persistence
+            var watchedFolders: [WatchedFolder]? = nil // ✅ NEW: Watched Folders
         }
-        let index = LibraryIndex(files: convertedPDFs, collections: collections, settings: conversionSettings, history: sendHistory, devices: kindleDevices, panelOverrides: panelOverrides)
+        let index = LibraryIndex(files: convertedPDFs, collections: collections, settings: conversionSettings, history: sendHistory, devices: kindleDevices, panelOverrides: panelOverrides, watchedFolders: watchedFolders)
         if let url = fileURL(for: libraryFileName), let encoded = try? JSONEncoder().encode(index) {
             try? encoded.write(to: url)
         }
@@ -214,6 +223,7 @@ class ConversionManager: ObservableObject {
             let history: [ConvertedPDF]
             let devices: [KindleDevice]
             var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil // ✅ NEW
+            var watchedFolders: [WatchedFolder]? = nil // ✅ NEW
         }
         guard let url = fileURL(for: libraryFileName), let data = try? Data(contentsOf: url), let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) else { return }
         self.convertedPDFs = index.files
@@ -222,6 +232,7 @@ class ConversionManager: ObservableObject {
         self.sendHistory = index.history
         self.kindleDevices = index.devices
         self.panelOverrides = index.panelOverrides ?? [:] // ✅ Restore overrides
+        self.watchedFolders = index.watchedFolders ?? [] // ✅ Restore Watched Folders
     }
     
     private func fileURL(for name: String) -> URL? {
@@ -564,64 +575,108 @@ class ConversionManager: ObservableObject {
         scanLibrary()
     }
     
-    // MARK: - iOS Folder Series Import
+    // MARK: - iOS Watched Folder Persistent Sync
     
     func importFolderStructure(from folderURL: URL) async {
-        let accessing = folderURL.startAccessingSecurityScopedResource()
-        defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
+        // 1. Save Bookmark for Persistent Watching
+        do {
+            let bookmarkData = try folderURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+            
+            await MainActor.run {
+                // Prevent duplicate watches
+                if !self.watchedFolders.contains(where: { $0.bookmarkData == bookmarkData }) {
+                    let watched = WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
+                    self.watchedFolders.append(watched)
+                    self.saveLibrary()
+                }
+            }
+        } catch {
+            Logger.shared.log("Failed to create security bookmark for folder: \(error.localizedDescription)", category: "Import")
+        }
         
-        await MainActor.run { self.isConverting = true; self.processingStatus = "Scanning Folder..." }
+        // 2. Immediately Sync
+        await syncWatchedFolders()
+    }
+    
+    func syncWatchedFolders() async {
+        guard !watchedFolders.isEmpty else { return }
+        await MainActor.run { self.isConverting = true; self.processingStatus = "Syncing Folders..." }
         defer { Task { await MainActor.run { self.isConverting = false; self.processingStatus = "" } } }
         
         let fileManager = FileManager.default
         let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         
-        guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return }
-        let fileURLs = enumerator.allObjects as? [URL] ?? []
-        
         var newlyImported: [ConvertedPDF] = []
+        var staleBookmarkIndices: [Int] = []
         
-        for fileURL in fileURLs {
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
-                  let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
-            
-            let ext = fileURL.pathExtension.lowercased()
-            guard ["cbz", "cbr", "zip"].contains(ext) else { continue }
-            
-            let parentFolderURL = fileURL.deletingLastPathComponent()
-            let seriesName = parentFolderURL.lastPathComponent
-            
-            let fileName = fileURL.lastPathComponent
-            let destURL = documentsDir.appendingPathComponent(fileName)
-            
+        for (index, folder) in watchedFolders.enumerated() {
+            var isStale = false
             do {
-                if fileManager.fileExists(atPath: destURL.path) {
-                    try fileManager.removeItem(at: destURL)
+                let resolvedURL = try URL(resolvingBookmarkData: folder.bookmarkData, options: .withoutUI, relativeTo: nil, bookmarkDataIsStale: &isStale)
+                
+                if isStale {
+                    staleBookmarkIndices.append(index)
+                    continue
                 }
-                try fileManager.copyItem(at: fileURL, to: destURL)
                 
-                let attr = try fileManager.attributesOfItem(atPath: destURL.path)
-                let size = attr[.size] as? Int64 ?? 0
+                let accessing = resolvedURL.startAccessingSecurityScopedResource()
+                defer { if accessing { resolvedURL.stopAccessingSecurityScopedResource() } }
                 
-                var metadata = PDFMetadata(title: fileName)
-                // ✅ Intelligent Series Name Assignment
-                metadata.series = seriesName
+                guard let enumerator = fileManager.enumerator(at: resolvedURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { continue }
+                let fileURLs = enumerator.allObjects as? [URL] ?? []
                 
-                let pdf = ConvertedPDF(
-                    name: fileName,
-                    url: destURL,
-                    pageCount: 0,
-                    fileSize: size,
-                    metadata: metadata,
-                    contentType: detectContentType(from: fileURL)
-                )
-                
-                newlyImported.append(pdf)
-                
+                for fileURL in fileURLs {
+                    guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
+                          let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
+                    
+                    let ext = fileURL.pathExtension.lowercased()
+                    guard ["cbz", "cbr", "zip"].contains(ext) else { continue }
+                    
+                    let fileName = fileURL.lastPathComponent
+                    let destURL = documentsDir.appendingPathComponent(fileName)
+                    
+                    // Skip if already in Library to save vast amounts of IO time
+                    if await MainActor.run(resultType: Bool.self, block: { self.convertedPDFs.contains(where: { $0.name == fileName }) }) {
+                        continue
+                    }
+                    
+                    do {
+                        if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+                        try fileManager.copyItem(at: fileURL, to: destURL)
+                        
+                        let attr = try fileManager.attributesOfItem(atPath: destURL.path)
+                        let size = attr[.size] as? Int64 ?? 0
+                        
+                        let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
+                        var metadata = PDFMetadata(title: fileName)
+                        metadata.series = seriesName
+                        
+                        let pdf = ConvertedPDF(
+                            name: fileName,
+                            url: destURL,
+                            pageCount: 0,
+                            fileSize: size,
+                            metadata: metadata,
+                            contentType: detectContentType(from: fileURL)
+                        )
+                        newlyImported.append(pdf)
+                    } catch {
+                        Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import")
+                    }
+                }
             } catch {
-                Logger.shared.log("Failed to import \(fileName): \(error.localizedDescription)", category: "Import")
+                Logger.shared.log("Could not resolve bookmark for \(folder.name): \(error.localizedDescription)", category: "Import")
             }
         }
+        
+        if !staleBookmarkIndices.isEmpty {
+            await MainActor.run {
+                for i in staleBookmarkIndices.sorted(by: >) { self.watchedFolders.remove(at: i) }
+                self.saveLibrary()
+            }
+        }
+        
+        if newlyImported.isEmpty { return }
         
         await MainActor.run {
             for newPdf in newlyImported {

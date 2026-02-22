@@ -138,6 +138,16 @@ struct ModernLibraryView: View {
                 DocumentPicker(onDocumentsPicked: { urls in Task { await conversionManager.processImportedFiles(urls: urls); activeSheet = nil } })
             case .folderImporter:
                 FolderPicker(onFolderPicked: { url in Task { await conversionManager.importFolderStructure(from: url); activeSheet = nil } })
+                    .overlay(
+                        VStack {
+                            Spacer()
+                            Text("Tap 'Open' at the top right to start Syncing this Folder")
+                                .font(.callout).bold().foregroundColor(.white)
+                                .padding()
+                                .background(Color.blue.cornerRadius(10))
+                                .padding(.bottom, 40)
+                        }
+                    )
             case .wifi: WiFiView()
             case .merge: FileMergeView()
             }
@@ -167,6 +177,11 @@ struct ModernLibraryView: View {
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
             loadFiles(from: providers)
             return true
+        }
+        .onAppear {
+            Task {
+                await conversionManager.syncWatchedFolders()
+            }
         }
     }
     
