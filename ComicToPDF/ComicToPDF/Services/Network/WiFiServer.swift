@@ -91,6 +91,7 @@ class WiFiServer: ObservableObject {
             self.listener = listener
             
         } catch {
+            Logger.shared.log("Failed to bind WiFi server to port 8080: \(error.localizedDescription)", category: "Network")
             print("Failed to start server: \(error)")
             DispatchQueue.main.async {
                 if error.localizedDescription.contains("NoAuth") || "\(error)".contains("-65555") {
@@ -370,6 +371,7 @@ class WiFiServer: ObservableObject {
                 self.startBackgroundTask()
             }
         } catch {
+            Logger.shared.log("WiFi Transfer Failed to open file for writing: \(error.localizedDescription)", category: "Network")
             print("Failed to open file for writing: \(error)")
         }
     }
@@ -452,6 +454,7 @@ class WiFiServer: ObservableObject {
                     let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
                      sendResponse(connection, 200, data: data, contentType: contentType, filename: downloadFilename)
                 } catch {
+                    Logger.shared.log("WiFi Transfer Internal Mapping Error: \(error.localizedDescription)", category: "Network")
                     sendResponse(connection, 500, "Internal Server Error")
                 }
             } else {

@@ -555,6 +555,7 @@ class ConversionManager: ObservableObject {
                              self.appAlert = AppAlert(title: "Import Success", message: "Imported EPUB as Comic.")
                          }
                      } catch {
+                         Logger.shared.log("EPUB Import Failed: \(error.localizedDescription)", category: "Import")
                          await MainActor.run {
                              self.appAlert = AppAlert(title: "EPUB Import Failed", message: error.localizedDescription)
                          }
@@ -570,7 +571,9 @@ class ConversionManager: ObservableObject {
                 let destURL = docDir.appendingPathComponent(fileName)
                 if FileManager.default.fileExists(atPath: destURL.path) { try FileManager.default.removeItem(at: destURL) }
                 try FileManager.default.copyItem(at: url, to: destURL)
-            } catch { }
+            } catch { 
+                Logger.shared.log("Failed to copy imported file \(url.lastPathComponent): \(error.localizedDescription)", category: "Import")
+            }
         }
         scanLibrary()
     }

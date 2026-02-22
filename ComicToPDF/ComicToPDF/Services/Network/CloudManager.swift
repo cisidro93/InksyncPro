@@ -24,7 +24,10 @@ class CloudManager: ObservableObject {
                 if FileManager.default.fileExists(atPath: destinationURL.path) { try FileManager.default.removeItem(at: destinationURL) }
                 try FileManager.default.copyItem(at: pdf.url, to: destinationURL)
                 DispatchQueue.main.async { completion(.success(destinationURL)) }
-            } catch { DispatchQueue.main.async { completion(.failure(error)) } }
+            } catch { 
+                Logger.shared.log("iCloud Export Failed: \(error.localizedDescription)", category: "Network")
+                DispatchQueue.main.async { completion(.failure(error)) } 
+            }
         }
     }
     
@@ -41,7 +44,10 @@ class CloudManager: ObservableObject {
                     if FileManager.default.fileExists(atPath: destinationURL.path) { try FileManager.default.removeItem(at: destinationURL) }
                     try FileManager.default.copyItem(at: pdf.url, to: destinationURL)
                     exportedURLs.append(destinationURL)
-                } catch { lastError = error }
+                } catch { 
+                    Logger.shared.log("iCloud Bulk Export Failed for \(pdf.name): \(error.localizedDescription)", category: "Network")
+                    lastError = error 
+                }
             }
             DispatchQueue.main.async {
                 progressHandler(1.0, "Complete!")
