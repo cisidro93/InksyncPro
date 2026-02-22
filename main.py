@@ -318,7 +318,26 @@ def main(page):
                                 dst = os.path.join(comic_library_dir, src_filename)
                                 try:
                                     if not os.path.exists(dst):
-                                        shutil.copy2(src, dst)
+                                        file_size = os.path.getsize(src)
+                                        copied_size = 0
+                                        chunk_size = 1024 * 1024 # 1MB chunks
+                                        with open(src, 'rb') as fsrc:
+                                            with open(dst, 'wb') as fdst:
+                                                while True:
+                                                    buf = fsrc.read(chunk_size)
+                                                    if not buf:
+                                                        break
+                                                    fdst.write(buf)
+                                                    copied_size += len(buf)
+                                                    
+                                                    # UI Update during heavy copy
+                                                    perc = copied_size / file_size if file_size > 0 else 1.0
+                                                    mb_copied = copied_size / (1024 * 1024)
+                                                    mb_total = file_size / (1024 * 1024)
+                                                    status_txt.value = f"[{idx+1}/{total_files}] COPYING {src_filename.upper()}... {mb_copied:.1f}MB / {mb_total:.1f}MB ({int(perc*100)}%)"
+                                                    progress_bar.value = perc
+                                                    page.update()
+                                                    
                                     success_count += 1
                                 except Exception as inner_e:
                                     print(f"Skipping {src} setup due to error: {inner_e}")
