@@ -315,7 +315,12 @@ def main(page):
                                 progress_bar.value = (idx+1)/total_files
                                 page.update()
                                 
-                                dst = os.path.join(comic_library_dir, src_filename)
+                                # Extract parent folder to maintain series grouping
+                                parent_name = os.path.basename(os.path.dirname(src))
+                                target_dir = os.path.join(comic_library_dir, parent_name)
+                                os.makedirs(target_dir, exist_ok=True)
+                                
+                                dst = os.path.join(target_dir, src_filename)
                                 try:
                                     if not os.path.exists(dst):
                                         file_size = os.path.getsize(src)
