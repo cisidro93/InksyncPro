@@ -639,7 +639,7 @@ class ConversionManager: ObservableObject {
                     let destURL = documentsDir.appendingPathComponent(fileName)
                     
                     // Skip if already in Library to save vast amounts of IO time
-                    if await MainActor.run(resultType: Bool.self, block: { self.convertedPDFs.contains(where: { $0.name == fileName }) }) {
+                    if await MainActor.run(resultType: Bool.self, body: { self.convertedPDFs.contains(where: { $0.name == fileName }) }) {
                         continue
                     }
                     
