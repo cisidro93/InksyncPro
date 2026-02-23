@@ -143,9 +143,6 @@ struct ModernLibraryView: View {
             return true
         }
         .onAppear {
-            Task {
-                await conversionManager.syncWatchedFolders()
-            }
             // Backfill thumbnails for any files imported before the cover fix
             conversionManager.backfillMissingThumbnails()
         }
@@ -385,7 +382,6 @@ struct ModernLibraryView: View {
                         ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.orange) {
                             activeSheet = .importer
                         }
-                        ActionPill(title: "Sync", icon: "arrow.triangle.2.circlepath", color: Theme.orange) { Task { await conversionManager.syncWatchedFolders() } }
                         ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
                         ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { activeSheet = .cloud }
                         ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { activeSheet = .merge }

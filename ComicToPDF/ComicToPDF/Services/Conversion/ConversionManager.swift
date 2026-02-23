@@ -786,10 +786,14 @@ class ConversionManager: ObservableObject {
                     self.convertedPDFs.append(pdf)
                 }
                 self.saveLibrary()
-                // Then trigger grouping sheet
-                self.pendingSeriesGroup = PendingSeriesGroup(pdfs: importedPDFs, suggestedName: dominantSeries)
             }
             for pdf in importedPDFs { Task { await self.generateCoverThumbnail(for: pdf) } }
+            // Delay before presenting the sheet: the DocumentPicker sheet must fully
+            // dismiss before SwiftUI can present a new sheet, otherwise it is silently dropped.
+            try? await Task.sleep(nanoseconds: 700_000_000) // 0.7 seconds
+            await MainActor.run {
+                self.pendingSeriesGroup = PendingSeriesGroup(pdfs: importedPDFs, suggestedName: dominantSeries)
+            }
         } else {
             // Single file — just add it normally
             await finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries)
