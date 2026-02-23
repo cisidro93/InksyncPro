@@ -34,7 +34,6 @@ struct ModernLibraryView: View {
     
     @State private var activeSheet: SidebarSheet?
     // UI State
-    @State private var useNavigationStack = false
     @State private var sortOption: LibraryView.SortOption = .dateAdded
     @State private var showingSortMenu = false
     

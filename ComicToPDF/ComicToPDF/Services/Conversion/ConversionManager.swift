@@ -772,8 +772,9 @@ class ConversionManager: ObservableObject {
             }
             
             if !staleBookmarkIndices.isEmpty {
+                let indicesToRemove = staleBookmarkIndices
                 await MainActor.run {
-                    for i in staleBookmarkIndices.sorted(by: >) { self.watchedFolders.remove(at: i) }
+                    for i in indicesToRemove.sorted(by: >) { self.watchedFolders.remove(at: i) }
                     self.saveLibrary()
                 }
             }
