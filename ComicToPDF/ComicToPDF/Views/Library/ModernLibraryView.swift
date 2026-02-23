@@ -453,14 +453,7 @@ struct ModernEmptyState: View {
                 .fontWeight(.semibold)
                 .foregroundColor(Theme.text)
             
-            Menu {
-                Button(action: onImport) {
-                    Label("Import Comic Files", systemImage: "doc.badge.plus")
-                }
-                Button(action: onFolderImport) {
-                    Label("Import Folder (Series)", systemImage: "folder.badge.plus")
-                }
-            } label: {
+            Button(action: onImport) {
                 HStack {
                     Image(systemName: "plus")
                     Text("Import Comic")
