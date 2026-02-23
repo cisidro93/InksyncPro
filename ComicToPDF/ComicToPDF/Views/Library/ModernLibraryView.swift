@@ -98,30 +98,32 @@ struct ModernLibraryView: View {
         .sheet(item: $pdfToSearchMetadata) { pdf in
             MetadataSearchSheet(pdf: pdf)
         }
-        .alert(\"Rename File\", isPresented: Binding(
+        // ✅ Rename Alert
+        .alert("Rename File", isPresented: Binding(
             get: { pdfToRename != nil },
             set: { if !$0 { pdfToRename = nil } }
         )) {
-            TextField(\"New Name\", text: $renameText)
-            Button(\"Cancel\", role: .cancel) { }
-            Button(\"Rename\") {
+            TextField("New Name", text: $renameText)
+            Button("Cancel", role: .cancel) { }
+            Button("Rename") {
                 if let pdf = pdfToRename {
                     conversionManager.renamePDF(pdf, to: renameText)
                 }
             }
         }
         // Layer 4: Manual series assignment alert
-        .alert(\"Add to Series\", isPresented: Binding(
+        .alert("Add to Series", isPresented: Binding(
             get: { pdfToAssignSeries != nil },
             set: { if !$0 { pdfToAssignSeries = nil } }
         )) {
-            TextField(\"Series Name\", text: $assignSeriesText)
-            Button(\"Cancel\", role: .cancel) { pdfToAssignSeries = nil }
-            Button(\"Assign\") {
+            TextField("Series Name", text: $assignSeriesText)
+            Button("Cancel", role: .cancel) { pdfToAssignSeries = nil }
+            Button("Assign") {
                 if let pdf = pdfToAssignSeries {
                     let name = assignSeriesText.trimmingCharacters(in: .whitespaces)
-                    guard !name.isEmpty else { return }
-                    conversionManager.assignToSeries(pdf, seriesName: name)
+                    if !name.isEmpty {
+                        conversionManager.assignToSeries(pdf, seriesName: name)
+                    }
                 }
                 pdfToAssignSeries = nil
             }

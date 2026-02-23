@@ -70,7 +70,8 @@ struct ContentView: View {
                 }
             )
         }
-    
+    }
+
     // ✅ iOS 26 "Liquid Glass" Layout
     var liquidGlassLayout: some View {
         TabView(selection: $selectedTab) {
