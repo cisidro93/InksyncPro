@@ -50,9 +50,15 @@ class SeriesViewModel: ObservableObject {
                 return lhs.name < rhs.name
             }
             
-            // Representative Cover (First issue or latest?)
-            // Usually first issue cover is best for Series
-            let cover = sortedIssues.first?.coverImageData
+            // Cross-reference with persistent PDFCollections to check for User Override
+            var cover: Data? = nil
+            if let matchingCollection = self.manager.collections.first(where: { $0.name == seriesName }),
+               let explicitID = matchingCollection.explicitCoverFileID,
+               let explicitPDF = issues.first(where: { $0.id == explicitID }) {
+                cover = explicitPDF.coverImageData
+            } else {
+                cover = sortedIssues.first?.coverImageData
+            }
             
             let group = SeriesGroup(
                 id: seriesName,

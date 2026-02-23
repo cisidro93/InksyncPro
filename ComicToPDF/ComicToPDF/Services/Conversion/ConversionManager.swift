@@ -2724,4 +2724,25 @@ extension ConversionManager {
             }
         }
     }
+    
+    // MARK: - Collection Management
+    
+    func setExplicitSeriesCover(for pdf: ConvertedPDF) {
+        Task { @MainActor in
+            if let seriesName = pdf.metadata.series, !seriesName.isEmpty {
+                if let index = self.collections.firstIndex(where: { $0.name == seriesName }) {
+                    self.collections[index].explicitCoverFileID = pdf.id
+                    self.saveLibrary()
+                    // Force the pipeline to rebuild SeriesGroup lists
+                    self.convertedPDFs = self.convertedPDFs
+                }
+            } else if let collectionId = pdf.collectionId {
+                if let index = self.collections.firstIndex(where: { $0.id == collectionId }) {
+                    self.collections[index].explicitCoverFileID = pdf.id
+                    self.saveLibrary()
+                    self.convertedPDFs = self.convertedPDFs
+                }
+            }
+        }
+    }
 }

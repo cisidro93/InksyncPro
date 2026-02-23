@@ -144,6 +144,7 @@ struct PDFCollection: Identifiable, Codable, Equatable {
     var icon: String
     var color: String
     var creationDate: Date
+    var explicitCoverFileID: UUID?
 }
 
 func colorFor(_ name: String) -> Color {

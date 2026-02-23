@@ -253,6 +253,13 @@ struct ModernLibraryView: View {
             pdfToRename = pdf
         } label: { Label("Rename", systemImage: "pencil") }
         
+        // Show Cover Select only if the PDF is part of a series or collection
+        if (pdf.metadata.series != nil && !pdf.metadata.series!.isEmpty) || pdf.collectionId != nil {
+            Button {
+                conversionManager.setExplicitSeriesCover(for: pdf)
+            } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }
+        }
+        
         Button {
             Task { await conversionManager.embedPanels(for: pdf) }
         } label: { Label("Embed Panels", systemImage: "flame") }
