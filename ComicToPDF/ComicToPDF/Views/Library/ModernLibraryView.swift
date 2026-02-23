@@ -74,63 +74,8 @@ struct ModernLibraryView: View {
 
             
             // ... (Content Area) ...
-            if conversionManager.convertedPDFs.isEmpty {
-                ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: { isFolderPickerPresented = true })
-            } else {
-                List(selection: useNavigationStack ? nil : $selectedPDF) {
-                    ForEach(filteredPDFs) { pdf in
-                         // ... (Batch Mode Logic) ...
-                        if isBatchMode {
-                             // ...
-                             Button {
-                                 if multiSelection.contains(pdf.id) {
-                                     multiSelection.remove(pdf.id)
-                                 } else {
-                                     multiSelection.insert(pdf.id)
-                                 }
-                             } label: {
-                                 ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
-                             }
-                             .listRowBackground(Color.black)
-                             .listRowSeparatorTint(Color(white: 0.2))
-                        } else {
-                            if useNavigationStack {
-                                NavigationLink(value: pdf) {
-                                    ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
-                                }
-                                .listRowBackground(Color.black)
-                                .listRowSeparatorTint(Color(white: 0.2))
-                                .swipeActions(edge: .leading) {
-                                    swipeActionsLeading(pdf)
-                                }
-                                .swipeActions(edge: .trailing) {
-                                    swipeActionsTrailing(pdf)
-                                }
-                                .contextMenu {
-                                    contextMenuContent(pdf)
-                                }
-                            } else {
-                                // ✅ iPad / SplitView Path
-                                ModernFileRow(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
-                                    .tag(pdf) // Explicit tag ensures List selection works reliably
-                                    .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black) // Manual highlight support
-                                    .listRowSeparatorTint(Color(white: 0.2))
-                                    .swipeActions(edge: .leading) {
-                                        swipeActionsLeading(pdf)
-                                    }
-                                    .swipeActions(edge: .trailing) {
-                                        swipeActionsTrailing(pdf)
-                                    }
-                                    .contextMenu {
-                                        contextMenuContent(pdf)
-                                    }
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
-                .background(Color.black)
-            }
+            // ... (Content Area) ...
+            pdfListLayout
         }
         .background(Color.black.ignoresSafeArea())
         .sheet(item: $activeSheet) { item in
@@ -199,6 +144,63 @@ struct ModernLibraryView: View {
                     }
                 }
             }
+        }
+    }
+    
+    @ViewBuilder private var pdfListLayout: some View {
+        if conversionManager.convertedPDFs.isEmpty {
+            ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: { isFolderPickerPresented = true })
+        } else {
+            List(selection: useNavigationStack ? nil : $selectedPDF) {
+                ForEach(filteredPDFs) { pdf in
+                    if isBatchMode {
+                         Button {
+                             if multiSelection.contains(pdf.id) {
+                                 multiSelection.remove(pdf.id)
+                             } else {
+                                 multiSelection.insert(pdf.id)
+                             }
+                         } label: {
+                             ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
+                         }
+                         .listRowBackground(Color.black)
+                         .listRowSeparatorTint(Color(white: 0.2))
+                    } else {
+                        if useNavigationStack {
+                            NavigationLink(value: pdf) {
+                                ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
+                            }
+                            .listRowBackground(Color.black)
+                            .listRowSeparatorTint(Color(white: 0.2))
+                            .swipeActions(edge: .leading) {
+                                swipeActionsLeading(pdf)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                swipeActionsTrailing(pdf)
+                            }
+                            .contextMenu {
+                                contextMenuContent(pdf)
+                            }
+                        } else {
+                            ModernFileRow(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
+                                .tag(pdf)
+                                .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
+                                .listRowSeparatorTint(Color(white: 0.2))
+                                .swipeActions(edge: .leading) {
+                                    swipeActionsLeading(pdf)
+                                }
+                                .swipeActions(edge: .trailing) {
+                                    swipeActionsTrailing(pdf)
+                                }
+                                .contextMenu {
+                                    contextMenuContent(pdf)
+                                }
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .background(Color.black)
         }
     }
 
@@ -369,6 +371,7 @@ struct ModernLibraryView: View {
                             .clipShape(Capsule())
                             .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
                         }
+                        ActionPill(title: "Sync", icon: "arrow.triangle.2.circlepath", color: Theme.orange) { Task { await conversionManager.syncWatchedFolders() } }
                         ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
                         ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { activeSheet = .cloud }
                         ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { activeSheet = .merge }

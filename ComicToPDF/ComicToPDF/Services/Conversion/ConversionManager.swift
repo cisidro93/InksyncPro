@@ -584,6 +584,21 @@ class ConversionManager: ObservableObject {
         let accessing = folderURL.startAccessingSecurityScopedResource()
         defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
 
+        // 1. Opportunistically attempt to save bookmark for persistent sync
+        do {
+            let bookmarkData = try folderURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+            await MainActor.run {
+                if !self.watchedFolders.contains(where: { $0.bookmarkData == bookmarkData }) {
+                    let watched = WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
+                    self.watchedFolders.append(watched)
+                    self.saveLibrary()
+                }
+            }
+        } catch {
+            Logger.shared.log("Note: Could not create persistent bookmark for folder. Reverting to one-time copy. (Expected for third-party sandboxes like Aidoku).", category: "Import")
+        }
+
+        // 2. Perform one-time deep import
         await MainActor.run { self.isConverting = true; self.processingStatus = "Preparing Folder Sync..." }
         defer { Task { await MainActor.run { self.isConverting = false; self.processingStatus = "" } } }
         
@@ -606,7 +621,8 @@ class ConversionManager: ObservableObject {
             while let fileURL = enumerator.nextObject() as? URL {
                 fileCount += 1
                 if fileCount % 10 == 0 {
-                    await MainActor.run { self.processingStatus = "Scanning \(folderURL.lastPathComponent) (\(fileCount) items)..." }
+                    let currentCount = fileCount
+                    await MainActor.run { self.processingStatus = "Scanning \(folderURL.lastPathComponent) (\(currentCount) items)..." }
                     await Task.yield()
                 }
                 
@@ -655,12 +671,123 @@ class ConversionManager: ObservableObject {
             return newlyImported
         }.value
         
+        await completeFolderImport(newPDFs, folderName: folderURL.lastPathComponent)
+    }
+    
+    func syncWatchedFolders() async {
+        let localFolders = await MainActor.run { self.watchedFolders }
+        guard !localFolders.isEmpty else { return }
+        
+        await MainActor.run { self.isConverting = true; self.processingStatus = "Background Folder Sync..." }
+        defer { Task { await MainActor.run { self.isConverting = false; self.processingStatus = "" } } }
+        
+        let existingNames = await MainActor.run { Set(self.convertedPDFs.map { $0.name }) }
+        
+        let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) {
+            let fileManager = FileManager.default
+            let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            var newlyImported: [ConvertedPDF] = []
+            var staleBookmarkIndices: [Int] = []
+            
+            for (index, folder) in localFolders.enumerated() {
+                var isStale = false
+                do {
+                    await MainActor.run { self.processingStatus = "Resolving \(folder.name)..." }
+                    let resolvedURL = try URL(resolvingBookmarkData: folder.bookmarkData, options: .withoutUI, relativeTo: nil, bookmarkDataIsStale: &isStale)
+                    
+                    if isStale {
+                        staleBookmarkIndices.append(index)
+                        continue
+                    }
+                    
+                    let accessing = resolvedURL.startAccessingSecurityScopedResource()
+                    defer { if accessing { resolvedURL.stopAccessingSecurityScopedResource() } }
+                    
+                    let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
+                    guard let enumerator = fileManager.enumerator(at: resolvedURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
+                        continue
+                    }
+                    
+                    var fileCount = 0
+                    
+                    while let fileURL = enumerator.nextObject() as? URL {
+                        fileCount += 1
+                        if fileCount % 10 == 0 {
+                            let currentCount = fileCount
+                            await MainActor.run { self.processingStatus = "Scanning \(folder.name) (\(currentCount) items)..." }
+                            await Task.yield()
+                        }
+                        
+                        guard let resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)),
+                              let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
+                        
+                        let ext = fileURL.pathExtension.lowercased()
+                        guard ["cbz", "cbr", "zip", "epub"].contains(ext) else { continue }
+                        
+                        let fileName = fileURL.lastPathComponent
+                        let destURL = documentsDir.appendingPathComponent(fileName)
+                        
+                        if existingNames.contains(fileName) || newlyImported.contains(where: { $0.name == fileName }) {
+                            continue
+                        }
+                        
+                        do {
+                            await MainActor.run { self.processingStatus = "Syncing \(fileName)..." }
+                            if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+                            try fileManager.copyItem(at: fileURL, to: destURL)
+                            
+                            let attr = try fileManager.attributesOfItem(atPath: destURL.path)
+                            let size = attr[.size] as? Int64 ?? 0
+                            
+                            let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
+                            var metadata = PDFMetadata(title: fileName)
+                            metadata.series = seriesName
+                            
+                            let contentExt = destURL.pathExtension.lowercased()
+                            var cType: ContentType = .book
+                            if contentExt == "pdf" { cType = .book }
+                            else if contentExt == "epub" { cType = .book }
+                            else { cType = .comic }
+                            
+                            let pdf = ConvertedPDF(
+                                name: fileName,
+                                url: destURL,
+                                pageCount: 0,
+                                fileSize: size,
+                                metadata: metadata,
+                                contentType: cType
+                            )
+                            newlyImported.append(pdf)
+                        } catch {
+                            Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import")
+                        }
+                    }
+                    
+                } catch {
+                    Logger.shared.log("Could not resolve bookmark for \(folder.name): \(error.localizedDescription)", category: "Import")
+                }
+            }
+            
+            if !staleBookmarkIndices.isEmpty {
+                await MainActor.run {
+                    for i in staleBookmarkIndices.sorted(by: >) { self.watchedFolders.remove(at: i) }
+                    self.saveLibrary()
+                }
+            }
+            
+            return newlyImported
+        }.value
+        
+        await completeFolderImport(newPDFs, folderName: "")
+    }
+
+    private func completeFolderImport(_ newPDFs: [ConvertedPDF], folderName: String) async {
         if newPDFs.isEmpty { return }
         
         await MainActor.run {
             for var newPdf in newPDFs {
                 // Map series metadata to actual UI Collections for smart grouping
-                if let seriesName = newPdf.metadata.series, !seriesName.isEmpty, seriesName != folderURL.lastPathComponent {
+                if let seriesName = newPdf.metadata.series, !seriesName.isEmpty, seriesName != folderName {
                     if let existingCol = self.collections.first(where: { $0.name == seriesName }) {
                         newPdf.collectionId = existingCol.id
                     } else {
