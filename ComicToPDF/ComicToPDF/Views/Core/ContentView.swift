@@ -29,12 +29,8 @@ struct ContentView: View {
     @State private var webExportPDF: ConvertedPDF?
     
     // ✅ Onboarding State
-    // ✅ Onboarding State
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
-    
-    // ✅ Root-level folder picker (avoids iOS 16/17 delegate swallowing bug in nested views)
-    @State private var showFolderPicker = false
 
     var body: some View {
         ZStack {
@@ -44,39 +40,21 @@ struct ContentView: View {
                 iPadLayout
             }
         }
-        .secureVaultPrivacy() // ✅ Enterprise Privacy Blur
+        .secureVaultPrivacy()
         .environmentObject(conversionManager)
         .environmentObject(wifiServer)
-        .environmentObject(SecurityManager.shared) // ✅ Security Context
+        .environmentObject(SecurityManager.shared)
         .environment(\.dynamicTypeSize, conversionManager.conversionSettings.textSize.swiftUIValue)
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
         .alert(item: $conversionManager.appAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
-        // ... (existing sheets) ...
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView(showOnboarding: $showOnboarding)
         }
         .onAppear {
             if !hasCompletedOnboarding {
                 showOnboarding = true
-            }
-        }
-        // ✅ ROOT-LEVEL folder picker — attached to outermost view so iOS properly routes the delegate
-        .fileImporter(
-            isPresented: $showFolderPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                Logger.shared.log("Root fileImporter success: \(url.lastPathComponent)", category: "System")
-                Task {
-                    await conversionManager.importFolderStructure(from: url)
-                }
-            case .failure(let error):
-                Logger.shared.log("Root fileImporter error: \(error.localizedDescription)", category: "System")
             }
         }
     }
@@ -93,7 +71,12 @@ struct ContentView: View {
                     showingBatchMergeReorder: $showingBatchMergeReorder,
                     batchMergeItems: $batchMergeItems,
                     useNavigationStack: true,
-                    onFolderImport: { showFolderPicker = true }
+                    onFolderImport: {
+                        FolderImportCoordinator.present { url in
+                            guard let url = url else { return }
+                            Task { await conversionManager.importFolderStructure(from: url) }
+                        }
+                    }
                 )
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: ConvertedPDF.self) { pdf in
@@ -153,7 +136,12 @@ struct ContentView: View {
                         showingBatchMergeReorder: $showingBatchMergeReorder,
                         batchMergeItems: $batchMergeItems,
                         useNavigationStack: false,
-                        onFolderImport: { showFolderPicker = true }
+                        onFolderImport: {
+                            FolderImportCoordinator.present { url in
+                                guard let url = url else { return }
+                                Task { await conversionManager.importFolderStructure(from: url) }
+                            }
+                        }
                     )
                     .toolbar(.hidden, for: .navigationBar)
                 } else if selectedTab == 1 {
