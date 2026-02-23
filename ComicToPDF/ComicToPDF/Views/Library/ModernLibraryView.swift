@@ -426,7 +426,7 @@ struct ModernLibraryView: View {
 
 struct ModernEmptyState: View {
     var onImport: () -> Void
-    var onFolderImport: () -> Void
+    var onFolderImport: (() -> Void)?
     
     var body: some View {
         VStack(spacing: 24) {
