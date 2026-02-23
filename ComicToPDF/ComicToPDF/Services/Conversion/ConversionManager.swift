@@ -658,7 +658,18 @@ class ConversionManager: ObservableObject {
         if newPDFs.isEmpty { return }
         
         await MainActor.run {
-            for newPdf in newPDFs {
+            for var newPdf in newPDFs {
+                // Map series metadata to actual UI Collections for smart grouping
+                if let seriesName = newPdf.metadata.series, !seriesName.isEmpty, seriesName != folderURL.lastPathComponent {
+                    if let existingCol = self.collections.first(where: { $0.name == seriesName }) {
+                        newPdf.collectionId = existingCol.id
+                    } else {
+                        let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "folder", color: "blue", creationDate: Date())
+                        self.collections.append(newCol)
+                        newPdf.collectionId = newCol.id
+                    }
+                }
+                
                 self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == newPdf.url.lastPathComponent })
                 self.convertedPDFs.append(newPdf)
             }
