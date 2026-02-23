@@ -646,7 +646,7 @@ class ConversionManager: ObservableObject {
                             await Task.yield()
                         }
                         
-                        guard let resourceValues = try? fileURL.resourceValues(forKeys: keys),
+                        guard let resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)),
                               let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
                         
                         let ext = fileURL.pathExtension.lowercased()
@@ -712,14 +712,14 @@ class ConversionManager: ObservableObject {
         if newPDFs.isEmpty { return }
         
         await MainActor.run {
-            for newPdf in newlyImported {
+            for newPdf in newPDFs {
                 self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == newPdf.url.lastPathComponent })
                 self.convertedPDFs.append(newPdf)
             }
             self.saveLibrary()
         }
         
-        for pdf in newlyImported {
+        for pdf in newPDFs {
             Task { await self.generateCoverThumbnail(for: pdf) }
         }
         
