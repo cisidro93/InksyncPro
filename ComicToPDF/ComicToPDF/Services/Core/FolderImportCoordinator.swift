@@ -1,82 +1,77 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// A persistent coordinator that presents an iOS folder picker outside of SwiftUI's
-/// broken `.fileImporter` / UIViewControllerRepresentable wrapper stack.
+/// Presents a multi-file picker that lets the user select CBZ/CBR/EPUB files from
+/// ANY location — including third-party app sandboxes like Aidoku — and returns them
+/// as copies that InksyncPro owns.
 ///
-/// The iOS 16/17 bug: SwiftUI's `.fileImporter(allowedContentTypes: [.folder])` silently
-/// drops the completion callback when its host view is embedded in a NavigationStack
-/// or TabView — even at the root window level. This class bypasses SwiftUI entirely.
-///
-/// Retains itself until the picker is dismissed to prevent premature deallocation.
+/// Background: iOS sandboxing prevents folder-level security-scoped access to another
+/// app's container. However, individual FILE copies are always permitted. We use this
+/// to simulate "Import Folder": the user navigates to the folder and selects all the
+/// files they want. InksyncPro then infers the series name from the common parent
+/// directory, preserving automatic collection grouping.
 final class FolderImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
-    // Strong reference kept alive for the duration of picker presentation
+    // Strong self-retention: prevents ARC from deallocating before delegate fires
     private static var live: FolderImportCoordinator?
 
-    private var completion: ((URL?) -> Void)?
+    private var completion: (([URL]) -> Void)?
 
     private override init() {}
 
-    /// Present the folder picker from the top-most view controller in the active window scene.
-    /// - Parameter completion: Called with the selected folder URL, or `nil` on cancel.
-    static func present(completion: @escaping (URL?) -> Void) {
-        // Retain the coordinator so it isn't deallocated before the delegate fires
+    /// Present the multi-file picker from the topmost active view controller.
+    /// - Parameter completion: Returns the list of copied file URLs, or empty on cancel.
+    static func present(completion: @escaping ([URL]) -> Void) {
         let coordinator = FolderImportCoordinator()
         coordinator.completion = completion
         FolderImportCoordinator.live = coordinator
 
         guard let rootVC = FolderImportCoordinator.topViewController() else {
-            Logger.shared.log("FolderImportCoordinator: Could not find a root view controller.", category: "System")
-            completion(nil)
+            Logger.shared.log("FolderImportCoordinator: Could not find root view controller.", category: "System")
+            completion([])
             FolderImportCoordinator.live = nil
             return
         }
 
-        // Use ONLY .folder — mixing .folder + .directory causes a callback-drop bug on iOS 16/17
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+        let supportedTypes: [UTType] = [
+            UTType(filenameExtension: "cbz") ?? .zip,
+            UTType(filenameExtension: "cbr") ?? .archive,
+            UTType(filenameExtension: "cb7") ?? .archive,
+            .epub,
+            .zip,
+            .archive
+        ]
+
+        // asCopy: true is required to access files in third-party app sandboxes
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
         picker.delegate = coordinator
-        picker.allowsMultipleSelection = false
+        picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
 
-        Logger.shared.log("FolderImportCoordinator: Presenting picker on \(type(of: rootVC)).", category: "System")
+        Logger.shared.log("FolderImportCoordinator: Presenting multi-file picker on \(type(of: rootVC)).", category: "System")
         rootVC.present(picker, animated: true)
     }
 
     // MARK: - UIDocumentPickerDelegate
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        Logger.shared.log("FolderImportCoordinator: didPickDocumentsAt — \(urls.count) item(s).", category: "System")
-        guard let url = urls.first else {
-            Logger.shared.log("FolderImportCoordinator: Empty URL array returned.", category: "System")
-            finish(with: nil)
-            return
-        }
-        Logger.shared.log("FolderImportCoordinator: Selected folder → \(url.lastPathComponent)", category: "System")
-        finish(with: url)
-    }
-
-    // Legacy delegate (iOS 14 fallback path still triggered on some iOS 17 builds)
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
-        Logger.shared.log("FolderImportCoordinator: didPickDocumentAt (legacy) — \(url.lastPathComponent)", category: "System")
-        finish(with: url)
+        Logger.shared.log("FolderImportCoordinator: didPickDocumentsAt — \(urls.count) file(s) selected.", category: "System")
+        finish(with: urls)
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-        Logger.shared.log("FolderImportCoordinator: Picker cancelled by user.", category: "System")
-        finish(with: nil)
+        Logger.shared.log("FolderImportCoordinator: Picker cancelled.", category: "System")
+        finish(with: [])
     }
 
     // MARK: - Private
 
-    private func finish(with url: URL?) {
-        completion?(url)
+    private func finish(with urls: [URL]) {
+        completion?(urls)
         completion = nil
-        // Release the strong self-reference after the delegate fires
         FolderImportCoordinator.live = nil
     }
 
-    /// Walk the presented view controller chain to find the topmost one.
     private static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes
         let windowScene = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene

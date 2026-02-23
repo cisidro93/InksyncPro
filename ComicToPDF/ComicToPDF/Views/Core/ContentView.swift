@@ -72,9 +72,9 @@ struct ContentView: View {
                     batchMergeItems: $batchMergeItems,
                     useNavigationStack: true,
                     onFolderImport: {
-                        FolderImportCoordinator.present { url in
-                            guard let url = url else { return }
-                            Task { await conversionManager.importFolderStructure(from: url) }
+                        FolderImportCoordinator.present { urls in
+                            guard !urls.isEmpty else { return }
+                            Task { await conversionManager.processImportedFiles(urls: urls) }
                         }
                     }
                 )
@@ -137,9 +137,9 @@ struct ContentView: View {
                         batchMergeItems: $batchMergeItems,
                         useNavigationStack: false,
                         onFolderImport: {
-                            FolderImportCoordinator.present { url in
-                                guard let url = url else { return }
-                                Task { await conversionManager.importFolderStructure(from: url) }
+                            FolderImportCoordinator.present { urls in
+                                guard !urls.isEmpty else { return }
+                                Task { await conversionManager.processImportedFiles(urls: urls) }
                             }
                         }
                     )
