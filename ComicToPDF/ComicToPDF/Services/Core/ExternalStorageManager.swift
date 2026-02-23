@@ -69,7 +69,7 @@ class ExternalStorageManager: NSObject {
     ) {
         Logger.shared.log("Initializing ExternalStorageManager Folder Picker...", category: "System")
         
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory])
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
         picker.delegate = self
         picker.allowsMultipleSelection = false
         

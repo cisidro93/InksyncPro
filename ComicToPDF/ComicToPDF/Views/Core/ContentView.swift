@@ -32,6 +32,9 @@ struct ContentView: View {
     // ✅ Onboarding State
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
+    
+    // ✅ Root-level folder picker (avoids iOS 16/17 delegate swallowing bug in nested views)
+    @State private var showFolderPicker = false
 
     var body: some View {
         ZStack {
@@ -59,6 +62,23 @@ struct ContentView: View {
                 showOnboarding = true
             }
         }
+        // ✅ ROOT-LEVEL folder picker — attached to outermost view so iOS properly routes the delegate
+        .fileImporter(
+            isPresented: $showFolderPicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Logger.shared.log("Root fileImporter success: \(url.lastPathComponent)", category: "System")
+                Task {
+                    await conversionManager.importFolderStructure(from: url)
+                }
+            case .failure(let error):
+                Logger.shared.log("Root fileImporter error: \(error.localizedDescription)", category: "System")
+            }
+        }
     }
     
     // ✅ iOS 26 "Liquid Glass" Layout
@@ -72,7 +92,8 @@ struct ContentView: View {
                     multiSelection: $multiSelection,
                     showingBatchMergeReorder: $showingBatchMergeReorder,
                     batchMergeItems: $batchMergeItems,
-                    useNavigationStack: true
+                    useNavigationStack: true,
+                    onFolderImport: { showFolderPicker = true }
                 )
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: ConvertedPDF.self) { pdf in

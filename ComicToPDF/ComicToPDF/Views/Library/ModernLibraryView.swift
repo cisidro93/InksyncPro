@@ -23,6 +23,8 @@ struct ModernLibraryView: View {
     
     // ✅ Navigation Mode
     var useNavigationStack: Bool = false
+    // ✅ Root-level folder picker callback (avoids iOS 16/17 delegate swallowing bug)
+    var onFolderImport: (() -> Void)? = nil
     
     // Local State
     @State private var searchText = ""
@@ -136,7 +138,7 @@ struct ModernLibraryView: View {
     
     @ViewBuilder private var pdfListLayout: some View {
         if conversionManager.convertedPDFs.isEmpty {
-            ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: { self.presentFolderPicker() })
+            ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: { onFolderImport?() })
         } else {
             List(selection: useNavigationStack ? nil : $selectedPDF) {
                 ForEach(filteredPDFs) { pdf in
@@ -348,7 +350,7 @@ struct ModernLibraryView: View {
                             Button(action: { activeSheet = .importer }) {
                                 Label("Import Comic Files", systemImage: "doc.badge.plus")
                             }
-                            Button(action: { self.presentFolderPicker() }) {
+                            Button(action: { onFolderImport?() }) {
                                 Label("Import Folder (Recursive)", systemImage: "folder.badge.plus")
                             }
                         } label: {
@@ -559,31 +561,6 @@ struct ActionPill: View {
                 Capsule()
                     .stroke(.white.opacity(0.1), lineWidth: 1)
             )
-        }
-    }
-}
-
-extension ModernLibraryView {
-    private func presentFolderPicker() {
-        // Break out of SwiftUI's restrictive sheet/modal context to fix iOS UIDocumentPicker bugs
-        // A UIDocumentPickerViewController for a folder MUST be presented natively on the topmost UIViewController.
-        if let windowScene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene ?? UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootWindow = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first,
-           var rootVC = rootWindow.rootViewController {
-           
-            // Iterate to the topmost presented view controller to avoid "attempt to present on view controller whose view is not in the window hierarchy"
-            while let presented = rootVC.presentedViewController {
-                rootVC = presented
-            }
-            
-            ExternalStorageManager.shared.selectFolderFromExternalStorage(from: rootVC) { url in
-                guard let url = url else { return }
-                Task {
-                    await conversionManager.importFolderStructure(from: url)
-                }
-            }
-        } else {
-            Logger.shared.log("Error: Could not locate Root View Controller to present Folder Picker.", category: "System")
         }
     }
 }
