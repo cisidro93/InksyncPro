@@ -377,26 +377,13 @@ struct ModernLibraryView: View {
                     
                     // 2. Action Pills (Enterprise Labels)
                     Group {
-                        Menu {
-                            Button(action: { activeSheet = .importer }) {
-                                Label("Import Comic Files", systemImage: "doc.badge.plus")
-                            }
-                            Button(action: { onFolderImport?() }) {
-                                Label("Import Folder (Recursive)", systemImage: "folder.badge.plus")
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "doc.badge.plus")
-                                    .font(.system(size: 14))
-                                Text("Import")
-                                    .font(.system(size: 14, weight: .semibold))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(.thinMaterial)
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
+                        // Direct file import — no folder option
+                        ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.orange) {
+                            activeSheet = .importer
+                        }
+                        // Series-aware import — separate dedicated button
+                        ActionPill(title: "Import Series", icon: "folder.badge.plus", color: Theme.blue) {
+                            onFolderImport?()
                         }
                         ActionPill(title: "Sync", icon: "arrow.triangle.2.circlepath", color: Theme.orange) { Task { await conversionManager.syncWatchedFolders() } }
                         ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
