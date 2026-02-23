@@ -57,7 +57,19 @@ struct ContentView: View {
                 showOnboarding = true
             }
         }
-    }
+        // Layer 3: Post-import series grouping prompt
+        .sheet(item: $conversionManager.pendingSeriesGroup) { group in
+            SeriesGroupingSheet(
+                importedPDFs: group.pdfs,
+                suggestedName: group.suggestedName,
+                onConfirm: { seriesName in
+                    Task { await conversionManager.finalizeSeriesImport(pdfs: group.pdfs, seriesName: seriesName) }
+                },
+                onSkip: {
+                    conversionManager.pendingSeriesGroup = nil
+                }
+            )
+        }
     
     // ✅ iOS 26 "Liquid Glass" Layout
     var liquidGlassLayout: some View {
@@ -74,7 +86,7 @@ struct ContentView: View {
                     onFolderImport: {
                         FolderImportCoordinator.present { urls in
                             guard !urls.isEmpty else { return }
-                            Task { await conversionManager.processImportedFiles(urls: urls) }
+                            Task { await conversionManager.importFilesAsSeries(urls: urls) }
                         }
                     }
                 )
@@ -139,7 +151,7 @@ struct ContentView: View {
                         onFolderImport: {
                             FolderImportCoordinator.present { urls in
                                 guard !urls.isEmpty else { return }
-                                Task { await conversionManager.processImportedFiles(urls: urls) }
+                                Task { await conversionManager.importFilesAsSeries(urls: urls) }
                             }
                         }
                     )

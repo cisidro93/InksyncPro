@@ -21,6 +21,14 @@ class ConversionManager: ObservableObject {
     }
     @Published var watchedFolders: [WatchedFolder] = []
     
+    // MARK: - Series Grouping Prompt (Layer 3)
+    struct PendingSeriesGroup: Identifiable {
+        let id = UUID()
+        let pdfs: [ConvertedPDF]
+        let suggestedName: String
+    }
+    @Published var pendingSeriesGroup: PendingSeriesGroup? = nil
+    
     // MARK: - Internal State
     private let libraryFileName = "library.json"
     internal var thumbnailCache = NSCache<NSString, UIImage>()
@@ -675,6 +683,168 @@ class ConversionManager: ObservableObject {
         }.value
         
         await completeFolderImport(newPDFs)
+    }
+    
+    // MARK: - 4-Layer Series-Aware Import
+    
+    /// Import a batch of files and run them through the 4-layer series detection pipeline.
+    /// Called when the user selects multiple files via "Import Series" or multi-file picker.
+    func importFilesAsSeries(urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        
+        await MainActor.run { self.isConverting = true; self.processingStatus = "Importing files..." }
+        defer { Task { await MainActor.run { self.isConverting = false; self.processingStatus = "" } } }
+        
+        let existingNames = await MainActor.run { Set(self.convertedPDFs.map { $0.name }) }
+        let fileManager = FileManager.default
+        let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        
+        var importedPDFs: [ConvertedPDF] = []
+        var detectedSeriesNames: [String: Int] = [:] // Counter per detected series name
+        
+        for url in urls {
+            let fileName = url.lastPathComponent
+            guard !existingNames.contains(fileName) else { continue }
+            
+            do {
+                await MainActor.run { self.processingStatus = "Copying \(fileName)..." }
+                let destURL = documentsDir.appendingPathComponent(fileName)
+                if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+                try fileManager.copyItem(at: url, to: destURL)
+                
+                let attr = try fileManager.attributesOfItem(atPath: destURL.path)
+                let size = attr[.size] as? Int64 ?? 0
+                
+                // --- Layer 1: ComicInfo.xml ---
+                var metadata = PDFMetadata(title: fileName)
+                let ext = fileName.lowercased()
+                let isArchive = ext.hasSuffix(".cbz") || ext.hasSuffix(".cbr") || ext.hasSuffix(".zip")
+                
+                if isArchive, let comicInfo = ComicInfoParser.parse(from: destURL) {
+                    metadata.series = comicInfo.series
+                    metadata.issueNumber = comicInfo.number
+                    metadata.volume = comicInfo.volume != nil ? String(comicInfo.volume!) : nil
+                    metadata.writer = comicInfo.writer
+                    metadata.publisher = comicInfo.publisher
+                    metadata.summary = comicInfo.summary
+                    if let year = comicInfo.year {
+                        let cal = Calendar.current
+                        var components = DateComponents()
+                        components.year = year
+                        metadata.publicationDate = cal.date(from: components)
+                    }
+                    if let series = comicInfo.series, !series.isEmpty {
+                        detectedSeriesNames[series, default: 0] += 1
+                        Logger.shared.log("Layer 1 (ComicInfo.xml): Series='\(series)' for \(fileName)", category: "Import")
+                    }
+                }
+                
+                // --- Layer 2: Filename Pattern (fallback when ComicInfo has no series) ---
+                if (metadata.series == nil || metadata.series!.isEmpty) {
+                    let detected = SeriesNameDetector.detect(from: fileName)
+                    if detected.confidence != .low {
+                        metadata.series = detected.seriesName
+                        if let num = detected.issueNumber { metadata.issueNumber = String(num) }
+                        detectedSeriesNames[detected.seriesName, default: 0] += 1
+                        Logger.shared.log("Layer 2 (Filename): Series='\(detected.seriesName)' (\(detected.confidence)) for \(fileName)", category: "Import")
+                    }
+                }
+                
+                let contentType = detectContentType(from: destURL)
+                let pdf = ConvertedPDF(
+                    name: fileName,
+                    url: destURL,
+                    pageCount: 0,
+                    fileSize: size,
+                    metadata: metadata,
+                    contentType: contentType
+                )
+                importedPDFs.append(pdf)
+            } catch {
+                Logger.shared.log("importFilesAsSeries: Failed to copy \(fileName): \(error.localizedDescription)", category: "Import")
+            }
+        }
+        
+        guard !importedPDFs.isEmpty else { return }
+        
+        // Determine the dominant series name across all imported files
+        let dominantSeries = detectedSeriesNames.max(by: { $0.value < $1.value })?.key ?? ""
+        let allSameSeries = !dominantSeries.isEmpty &&
+            importedPDFs.allSatisfy { ($0.metadata.series ?? "") == dominantSeries }
+        
+        if allSameSeries && importedPDFs.count > 1 {
+            // Unambiguous — all files agree on series. Add directly, skip Layer 3 prompt.
+            await finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries)
+            Logger.shared.log("Auto-grouped \(importedPDFs.count) files into series '\(dominantSeries)'", category: "Import")
+        } else if importedPDFs.count > 1 {
+            // --- Layer 3: Post-import grouping prompt ---
+            // Files disagree on series name or have none. Show the grouping sheet.
+            await MainActor.run {
+                // First add imports to library ungrouped so they're visible immediately
+                for pdf in importedPDFs {
+                    self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
+                    self.convertedPDFs.append(pdf)
+                }
+                self.saveLibrary()
+                // Then trigger grouping sheet
+                self.pendingSeriesGroup = PendingSeriesGroup(pdfs: importedPDFs, suggestedName: dominantSeries)
+            }
+            for pdf in importedPDFs { Task { await self.generateCoverThumbnail(for: pdf) } }
+        } else {
+            // Single file — just add it normally
+            await finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries)
+        }
+    }
+    
+    /// Apply a confirmed series name to a batch of PDFs and save to the library.
+    func finalizeSeriesImport(pdfs: [ConvertedPDF], seriesName: String) async {
+        await MainActor.run {
+            let targetCollection: PDFCollection
+            if let existing = self.collections.first(where: { $0.name == seriesName }), !seriesName.isEmpty {
+                targetCollection = existing
+            } else if !seriesName.isEmpty {
+                let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "books.vertical", color: "orange", creationDate: Date())
+                self.collections.append(newCol)
+                targetCollection = newCol
+            } else {
+                // No series — just add all files without grouping
+                for pdf in pdfs {
+                    self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
+                    self.convertedPDFs.append(pdf)
+                }
+                self.saveLibrary()
+                return
+            }
+            
+            for var pdf in pdfs {
+                pdf.collectionId = targetCollection.id
+                pdf.metadata.series = seriesName
+                self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
+                self.convertedPDFs.append(pdf)
+            }
+            self.saveLibrary()
+            self.scanLibrary()
+        }
+        for pdf in pdfs { Task { await self.generateCoverThumbnail(for: pdf) } }
+    }
+    
+    /// Assign an existing library item to an existing or new series collection.
+    func assignToSeries(_ pdf: ConvertedPDF, seriesName: String) {
+        let targetCollection: PDFCollection
+        if let existing = self.collections.first(where: { $0.name == seriesName }) {
+            targetCollection = existing
+        } else {
+            let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "books.vertical", color: "orange", creationDate: Date())
+            self.collections.append(newCol)
+            targetCollection = newCol
+        }
+        
+        if let index = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            self.convertedPDFs[index].collectionId = targetCollection.id
+            self.convertedPDFs[index].metadata.series = seriesName
+        }
+        self.saveLibrary()
+        Logger.shared.log("Layer 4: Manually assigned '\(pdf.name)' to series '\(seriesName)'", category: "Import")
     }
     
     func syncWatchedFolders() async {

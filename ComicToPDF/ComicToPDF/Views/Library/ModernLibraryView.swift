@@ -47,6 +47,10 @@ struct ModernLibraryView: View {
     @State private var pdfToExport: ConvertedPDF?
     @State private var pdfToSearchMetadata: ConvertedPDF?
     
+    // ✅ Layer 4: Manual Series Assignment
+    @State private var pdfToAssignSeries: ConvertedPDF?
+    @State private var assignSeriesText = ""
+    
     var filteredPDFs: [ConvertedPDF] {
         let pdfs = conversionManager.convertedPDFs
         let result: [ConvertedPDF]
@@ -94,18 +98,35 @@ struct ModernLibraryView: View {
         .sheet(item: $pdfToSearchMetadata) { pdf in
             MetadataSearchSheet(pdf: pdf)
         }
-        // ✅ NEW: Rename Alert
-        .alert("Rename File", isPresented: Binding(
+        .alert(\"Rename File\", isPresented: Binding(
             get: { pdfToRename != nil },
             set: { if !$0 { pdfToRename = nil } }
         )) {
-            TextField("New Name", text: $renameText)
-            Button("Cancel", role: .cancel) { }
-            Button("Rename") {
+            TextField(\"New Name\", text: $renameText)
+            Button(\"Cancel\", role: .cancel) { }
+            Button(\"Rename\") {
                 if let pdf = pdfToRename {
                     conversionManager.renamePDF(pdf, to: renameText)
                 }
             }
+        }
+        // Layer 4: Manual series assignment alert
+        .alert(\"Add to Series\", isPresented: Binding(
+            get: { pdfToAssignSeries != nil },
+            set: { if !$0 { pdfToAssignSeries = nil } }
+        )) {
+            TextField(\"Series Name\", text: $assignSeriesText)
+            Button(\"Cancel\", role: .cancel) { pdfToAssignSeries = nil }
+            Button(\"Assign\") {
+                if let pdf = pdfToAssignSeries {
+                    let name = assignSeriesText.trimmingCharacters(in: .whitespaces)
+                    guard !name.isEmpty else { return }
+                    conversionManager.assignToSeries(pdf, seriesName: name)
+                }
+                pdfToAssignSeries = nil
+            }
+        } message: {
+            Text("Enter the series name to group this file into a collection.")
         }
         .alert(item: $conversionManager.appAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
@@ -234,6 +255,12 @@ struct ModernLibraryView: View {
             renameText = pdf.name
             pdfToRename = pdf
         } label: { Label("Rename", systemImage: "pencil") }
+        
+        // Layer 4: Manual series assignment
+        Button {
+            assignSeriesText = pdf.metadata.series ?? ""
+            pdfToAssignSeries = pdf
+        } label: { Label("Add to Series...", systemImage: "books.vertical") }
         
         // Show Cover Select only if the PDF is part of a series or collection
         if (pdf.metadata.series != nil && !pdf.metadata.series!.isEmpty) || pdf.collectionId != nil {
