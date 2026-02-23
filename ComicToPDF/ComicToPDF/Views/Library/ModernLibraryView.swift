@@ -117,14 +117,9 @@ struct ModernLibraryView: View {
                 await conversionManager.syncWatchedFolders()
             }
         }
-        .fileImporter(
-            isPresented: $isFolderPickerPresented,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
+        .sheet(isPresented: $isFolderPickerPresented) {
+            FolderPicker { url in
+                isFolderPickerPresented = false
                 
                 // IMPORTANT: Start accessing synchronously before the closure returns to prevent iOS URL revocation
                 let accessing = url.startAccessingSecurityScopedResource()
@@ -133,9 +128,11 @@ struct ModernLibraryView: View {
                     await conversionManager.importFolderStructure(from: url)
                     if accessing { url.stopAccessingSecurityScopedResource() }
                 }
-            case .failure(let error):
-                Logger.shared.log("Folder picker error: \(error.localizedDescription)", category: "System")
+            } onError: { errorMsg in
+                isFolderPickerPresented = false
+                Logger.shared.log("Folder picker error: \(errorMsg)", category: "System")
             }
+            .ignoresSafeArea()
         }
     }
     
