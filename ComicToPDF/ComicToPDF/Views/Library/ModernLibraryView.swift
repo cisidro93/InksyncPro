@@ -125,7 +125,14 @@ struct ModernLibraryView: View {
             switch result {
             case .success(let urls):
                 guard let url = urls.first else { return }
-                Task { await conversionManager.importFolderStructure(from: url) }
+                
+                // IMPORTANT: Start accessing synchronously before the closure returns to prevent iOS URL revocation
+                let accessing = url.startAccessingSecurityScopedResource()
+                
+                Task {
+                    await conversionManager.importFolderStructure(from: url)
+                    if accessing { url.stopAccessingSecurityScopedResource() }
+                }
             case .failure(let error):
                 Logger.shared.log("Folder picker error: \(error.localizedDescription)", category: "System")
             }
