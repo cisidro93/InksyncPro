@@ -152,7 +152,8 @@ struct ContentView: View {
                         multiSelection: $multiSelection,
                         showingBatchMergeReorder: $showingBatchMergeReorder,
                         batchMergeItems: $batchMergeItems,
-                        useNavigationStack: false
+                        useNavigationStack: false,
+                        onFolderImport: { showFolderPicker = true }
                     )
                     .toolbar(.hidden, for: .navigationBar)
                 } else if selectedTab == 1 {
