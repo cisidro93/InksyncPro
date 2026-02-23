@@ -56,8 +56,15 @@ struct FolderPicker: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
-        picker.allowsMultipleSelection = false
+        let types: [UTType] = [.folder, .directory]
+        // Hack for iOS 16+: Set allowsMultipleSelection to true so "Open" remains enabled
+        // even if the user just wants to select the current directory they're viewing.
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: false)
+        if #available(iOS 16.0, *) {
+             picker.allowsMultipleSelection = true
+        } else {
+             picker.allowsMultipleSelection = false
+        }
         picker.delegate = context.coordinator
         return picker
     }
@@ -71,10 +78,20 @@ struct FolderPicker: UIViewControllerRepresentable {
             self.parent = parent
         }
 
+        // Modern API
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             if let url = urls.first {
                 parent.onFolderPicked(url)
             }
+        }
+        
+        // Fallback for some iOS targets that glitch on the modern array version when `.folder` is used
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
+            parent.onFolderPicked(url)
+        }
+        
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            // Optional cancellation handling
         }
     }
 }
