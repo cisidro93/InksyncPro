@@ -119,7 +119,7 @@ struct ModernLibraryView: View {
         }
         .fileImporter(
             isPresented: $isFolderPickerPresented,
-            allowedContentTypes: [.directory],
+            allowedContentTypes: [.folder],
             allowsMultipleSelection: false
         ) { result in
             switch result {
