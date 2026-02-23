@@ -674,9 +674,9 @@ class ConversionManager: ObservableObject {
                             
                             // Light-weight fallback ContentType logic to prevent PDFDocument slow init on worker thread
                             let contentExt = destURL.pathExtension.lowercased()
-                            var cType: ConvertedPDF.ContentType = .book
-                            if contentExt == "pdf" { cType = .pdfDocument }
-                            else { cType = .cbzArchive }
+                            var cType: ContentType = .book
+                            if contentExt == "pdf" { cType = .book }
+                            else { cType = .comic }
                             
                             let pdf = ConvertedPDF(
                                 name: fileName,
