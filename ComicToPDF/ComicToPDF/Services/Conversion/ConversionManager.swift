@@ -582,21 +582,7 @@ class ConversionManager: ObservableObject {
     
     func importFolderStructure(from folderURL: URL) async {
 
-        // 1. Opportunistically attempt to save bookmark for persistent sync
-        do {
-            let bookmarkData = try folderURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-            await MainActor.run {
-                if !self.watchedFolders.contains(where: { $0.bookmarkData == bookmarkData }) {
-                    let watched = WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
-                    self.watchedFolders.append(watched)
-                    self.saveLibrary()
-                }
-            }
-        } catch {
-            Logger.shared.log("Note: Could not create persistent bookmark for folder. Reverting to one-time copy. (Expected for third-party sandboxes like Aidoku).", category: "Import")
-        }
-
-        // 2. Perform one-time deep import
+        // Perform deep import and bookmark creation asynchronously
         await MainActor.run { self.isConverting = true; self.processingStatus = "Preparing Folder Sync..." }
         defer { Task { await MainActor.run { self.isConverting = false; self.processingStatus = "" } } }
         
@@ -607,6 +593,21 @@ class ConversionManager: ObservableObject {
             let accessing = folderURL.startAccessingSecurityScopedResource()
             defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
             
+            // 1. Opportunistically attempt to save bookmark for persistent sync while securely accessing
+            do {
+                let bookmarkData = try folderURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                await MainActor.run {
+                    if !self.watchedFolders.contains(where: { $0.bookmarkData == bookmarkData }) {
+                        let watched = WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
+                        self.watchedFolders.append(watched)
+                        self.saveLibrary()
+                    }
+                }
+            } catch {
+                Logger.shared.log("Note: Could not create persistent bookmark for folder: \(error.localizedDescription). Reverting to one-time copy.", category: "Import")
+            }
+            
+            // 2. Scan and enumerate
             let fileManager = FileManager.default
             let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
             var newlyImported: [ConvertedPDF] = []

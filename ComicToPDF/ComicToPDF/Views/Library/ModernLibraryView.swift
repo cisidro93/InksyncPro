@@ -121,12 +121,8 @@ struct ModernLibraryView: View {
             FolderPicker { url in
                 isFolderPickerPresented = false
                 
-                // IMPORTANT: Start accessing synchronously before the closure returns to prevent iOS URL revocation
-                let accessing = url.startAccessingSecurityScopedResource()
-                
                 Task {
                     await conversionManager.importFolderStructure(from: url)
-                    if accessing { url.stopAccessingSecurityScopedResource() }
                 }
             } onError: { errorMsg in
                 isFolderPickerPresented = false
