@@ -1516,13 +1516,34 @@ class ConversionManager: ObservableObject {
 
     // MARK: - Thumbnails & Helpers
     func generateCoverThumbnail(for pdf: ConvertedPDF) async {
+        // Check if we already have a cover on disk
+        if let coverURL = getCoverURL(for: pdf),
+           FileManager.default.fileExists(atPath: coverURL.path) { return }
+        
         let url = pdf.url
-        let image = await Task.detached(priority: .userInitiated) {
+        let image = await Task.detached(priority: .background) {
             return ConversionManager.extractCoverImageStatic(from: url)
         }.value
-        if let image {
-            self.thumbnailCache.setObject(image, forKey: url.path as NSString)
-            self.objectWillChange.send()
+        
+        guard let image = image,
+              let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
+        
+        // Use saveCoverImage which writes to disk AND caches with the correct UUID key
+        saveCoverImage(jpegData, for: pdf)
+        objectWillChange.send()
+    }
+    
+    /// Generate covers for all imported files that are missing one. Called on app launch
+    /// and after bulk imports to backfill any items imported before this fix.
+    func backfillMissingThumbnails() {
+        let pdfsNeedingCovers = convertedPDFs.filter { pdf in
+            guard let coverURL = getCoverURL(for: pdf) else { return true }
+            return !FileManager.default.fileExists(atPath: coverURL.path)
+        }
+        guard !pdfsNeedingCovers.isEmpty else { return }
+        Logger.shared.log("Backfilling thumbnails for \(pdfsNeedingCovers.count) files.", category: "System")
+        for pdf in pdfsNeedingCovers {
+            Task(priority: .background) { await generateCoverThumbnail(for: pdf) }
         }
     }
     

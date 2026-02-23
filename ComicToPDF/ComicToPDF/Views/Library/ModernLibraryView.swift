@@ -141,6 +141,8 @@ struct ModernLibraryView: View {
             Task {
                 await conversionManager.syncWatchedFolders()
             }
+            // Backfill thumbnails for any files imported before the cover fix
+            conversionManager.backfillMissingThumbnails()
         }
     }
     
