@@ -174,7 +174,7 @@ struct ModernLibraryView: View {
         }
         .fileImporter(
             isPresented: $isFolderPickerPresented,
-            allowedContentTypes: [.folder],
+            allowedContentTypes: [.directory],
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -353,7 +353,7 @@ struct ModernLibraryView: View {
                                 Label("Import Comic Files", systemImage: "doc.badge.plus")
                             }
                             Button(action: { isFolderPickerPresented = true }) {
-                                Label("Import Folder (Series)", systemImage: "folder.badge.plus")
+                                Label("Import Folder (Recursive)", systemImage: "folder.badge.plus")
                             }
                         } label: {
                             HStack(spacing: 6) {

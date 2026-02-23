@@ -581,134 +581,77 @@ class ConversionManager: ObservableObject {
     // MARK: - iOS Watched Folder Persistent Sync
     
     func importFolderStructure(from folderURL: URL) async {
-        // 1. Save Bookmark for Persistent Watching
-        do {
-            let accessing = folderURL.startAccessingSecurityScopedResource()
-            defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
-            
-            let bookmarkData = try folderURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-            
-            await MainActor.run {
-                // Prevent duplicate watches
-                if !self.watchedFolders.contains(where: { $0.bookmarkData == bookmarkData }) {
-                    let watched = WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
-                    self.watchedFolders.append(watched)
-                    self.saveLibrary()
-                }
-            }
-        } catch {
-            Logger.shared.log("Failed to create security bookmark for folder: \(error.localizedDescription)", category: "Import")
-        }
-        
-        // 2. Immediately Sync
-        await syncWatchedFolders()
-    }
-    
-    func syncWatchedFolders() async {
-        let localFolders = await MainActor.run { self.watchedFolders }
-        guard !localFolders.isEmpty else { return }
-        
+        let accessing = folderURL.startAccessingSecurityScopedResource()
+        defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
+
         await MainActor.run { self.isConverting = true; self.processingStatus = "Preparing Folder Sync..." }
         defer { Task { await MainActor.run { self.isConverting = false; self.processingStatus = "" } } }
         
-        // Snapshot existing filenames to avoid jumping to MainActor in tight loops
         let existingNames = await MainActor.run { Set(self.convertedPDFs.map { $0.name }) }
-        
+
         let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
             let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            
             var newlyImported: [ConvertedPDF] = []
-            var staleBookmarkIndices: [Int] = []
             
-            for (index, folder) in localFolders.enumerated() {
-                var isStale = false
+            await MainActor.run { self.processingStatus = "Scanning \(folderURL.lastPathComponent)..." }
+            
+            let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
+            guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
+                return []
+            }
+            
+            var fileCount = 0
+            
+            while let fileURL = enumerator.nextObject() as? URL {
+                fileCount += 1
+                if fileCount % 10 == 0 {
+                    await MainActor.run { self.processingStatus = "Scanning \(folderURL.lastPathComponent) (\(fileCount) items)..." }
+                    await Task.yield()
+                }
+                
+                guard let resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)),
+                      let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
+                
+                let ext = fileURL.pathExtension.lowercased()
+                guard ["cbz", "cbr", "zip", "epub"].contains(ext) else { continue }
+                
+                let fileName = fileURL.lastPathComponent
+                let destURL = documentsDir.appendingPathComponent(fileName)
+                
+                if existingNames.contains(fileName) || newlyImported.contains(where: { $0.name == fileName }) { continue }
+                
                 do {
-                    await MainActor.run { self.processingStatus = "Resolving \(folder.name)..." }
-                    let resolvedURL = try URL(resolvingBookmarkData: folder.bookmarkData, options: .withoutUI, relativeTo: nil, bookmarkDataIsStale: &isStale)
+                    await MainActor.run { self.processingStatus = "Importing \(fileName)..." }
+                    if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+                    try fileManager.copyItem(at: fileURL, to: destURL)
                     
-                    if isStale {
-                        staleBookmarkIndices.append(index)
-                        continue
-                    }
+                    let attr = try fileManager.attributesOfItem(atPath: destURL.path)
+                    let size = attr[.size] as? Int64 ?? 0
                     
-                    let accessing = resolvedURL.startAccessingSecurityScopedResource()
+                    let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
+                    var metadata = PDFMetadata(title: fileName)
+                    metadata.series = seriesName
                     
-                    let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
-                    guard let enumerator = fileManager.enumerator(at: resolvedURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
-                        if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
-                        continue
-                    }
+                    let contentExt = destURL.pathExtension.lowercased()
+                    var cType: ContentType = .book
+                    if contentExt == "pdf" { cType = .book }
+                    else if contentExt == "epub" { cType = .book }
+                    else { cType = .comic }
                     
-                    var fileCount = 0
-                    
-                    while let fileURL = enumerator.nextObject() as? URL {
-                        fileCount += 1
-                        if fileCount % 10 == 0 { // Throttle UI updates wildly
-                            await MainActor.run { self.processingStatus = "Scanning \(folder.name) (\(fileCount) items)..." }
-                            await Task.yield()
-                        }
-                        
-                        guard let resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)),
-                              let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
-                        
-                        let ext = fileURL.pathExtension.lowercased()
-                        guard ["cbz", "cbr", "zip"].contains(ext) else { continue }
-                        
-                        let fileName = fileURL.lastPathComponent
-                        let destURL = documentsDir.appendingPathComponent(fileName)
-                        
-                        // Skip if already in Library to save vast amounts of IO time
-                        if existingNames.contains(fileName) || newlyImported.contains(where: { $0.name == fileName }) {
-                            continue
-                        }
-                        
-                        do {
-                            await MainActor.run { self.processingStatus = "Importing \(fileName)..." }
-                            if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-                            try fileManager.copyItem(at: fileURL, to: destURL)
-                            
-                            let attr = try fileManager.attributesOfItem(atPath: destURL.path)
-                            let size = attr[.size] as? Int64 ?? 0
-                            
-                            let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
-                            var metadata = PDFMetadata(title: fileName)
-                            metadata.series = seriesName
-                            
-                            // Light-weight fallback ContentType logic to prevent PDFDocument slow init on worker thread
-                            let contentExt = destURL.pathExtension.lowercased()
-                            var cType: ContentType = .book
-                            if contentExt == "pdf" { cType = .book }
-                            else { cType = .comic }
-                            
-                            let pdf = ConvertedPDF(
-                                name: fileName,
-                                url: destURL,
-                                pageCount: 0,
-                                fileSize: size,
-                                metadata: metadata,
-                                contentType: cType
-                            )
-                            newlyImported.append(pdf)
-                        } catch {
-                            Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import")
-                        }
-                    }
-                    
-                    if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
-                    
+                    let pdf = ConvertedPDF(
+                        name: fileName,
+                        url: destURL,
+                        pageCount: 0,
+                        fileSize: size,
+                        metadata: metadata,
+                        contentType: cType
+                    )
+                    newlyImported.append(pdf)
                 } catch {
-                    Logger.shared.log("Could not resolve bookmark for \(folder.name): \(error.localizedDescription)", category: "Import")
+                    Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import")
                 }
             }
-            
-            if !staleBookmarkIndices.isEmpty {
-                await MainActor.run {
-                    for i in staleBookmarkIndices.sorted(by: >) { self.watchedFolders.remove(at: i) }
-                    self.saveLibrary()
-                }
-            }
-            
             return newlyImported
         }.value
         
@@ -720,13 +663,12 @@ class ConversionManager: ObservableObject {
                 self.convertedPDFs.append(newPdf)
             }
             self.saveLibrary()
+            self.scanLibrary()
         }
         
         for pdf in newPDFs {
             Task { await self.generateCoverThumbnail(for: pdf) }
         }
-        
-        await MainActor.run { self.scanLibrary() }
     }
     
     // MARK: - \u2705 PDF Import Support
