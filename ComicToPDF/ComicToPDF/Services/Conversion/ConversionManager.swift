@@ -671,7 +671,7 @@ class ConversionManager: ObservableObject {
             return newlyImported
         }.value
         
-        await completeFolderImport(newPDFs, folderName: folderURL.lastPathComponent)
+        await completeFolderImport(newPDFs)
     }
     
     func syncWatchedFolders() async {
@@ -778,16 +778,16 @@ class ConversionManager: ObservableObject {
             return newlyImported
         }.value
         
-        await completeFolderImport(newPDFs, folderName: "")
+        await completeFolderImport(newPDFs)
     }
 
-    private func completeFolderImport(_ newPDFs: [ConvertedPDF], folderName: String) async {
+    private func completeFolderImport(_ newPDFs: [ConvertedPDF]) async {
         if newPDFs.isEmpty { return }
         
         await MainActor.run {
             for var newPdf in newPDFs {
                 // Map series metadata to actual UI Collections for smart grouping
-                if let seriesName = newPdf.metadata.series, !seriesName.isEmpty, seriesName != folderName {
+                if let seriesName = newPdf.metadata.series, !seriesName.isEmpty {
                     if let existingCol = self.collections.first(where: { $0.name == seriesName }) {
                         newPdf.collectionId = existingCol.id
                     } else {
