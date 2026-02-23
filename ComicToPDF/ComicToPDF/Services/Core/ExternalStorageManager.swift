@@ -67,7 +67,9 @@ class ExternalStorageManager: NSObject {
         from viewController: UIViewController,
         completion: @escaping (URL?) -> Void
     ) {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
+        Logger.shared.log("Initializing ExternalStorageManager Folder Picker...", category: "System")
+        
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory])
         picker.delegate = self
         picker.allowsMultipleSelection = false
         
@@ -167,14 +169,17 @@ class ExternalStorageManager: NSObject {
 extension ExternalStorageManager: UIDocumentPickerDelegate {
     
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        Logger.shared.log("ExternalStorageManager: didPickDocumentsAt triggered with \(urls.count) URLs.", category: "System")
         
         if let completion = importFolderCompletion {
             // Folder import
             guard let url = urls.first else {
+                Logger.shared.log("ExternalStorageManager: Warning - didPickDocumentsAt received empty URL array for Folder Import.", category: "System")
                 completion(nil)
                 importFolderCompletion = nil
                 return
             }
+            Logger.shared.log("ExternalStorageManager: Successfully captured folder URL: \(url.lastPathComponent)", category: "System")
             completion(url)
             importFolderCompletion = nil
             
@@ -225,6 +230,7 @@ extension ExternalStorageManager: UIDocumentPickerDelegate {
     }
     
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        Logger.shared.log("ExternalStorageManager: documentPickerWasCancelled triggered. User aborted.", category: "System")
         importCompletion?(nil)
         importMultipleCompletion?([])
         importFolderCompletion?(nil)
@@ -236,5 +242,11 @@ extension ExternalStorageManager: UIDocumentPickerDelegate {
         importFolderCompletion = nil
         exportCompletion = nil
         exportMultipleCompletion = nil
+    }
+    
+    // Fallback for some older iOS runtimes where the array version is mysteriously dropped
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
+        Logger.shared.log("ExternalStorageManager: didPickDocumentAt (Singular Fallback) triggered.", category: "System")
+        self.documentPicker(controller, didPickDocumentsAt: [url])
     }
 }
