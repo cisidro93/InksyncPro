@@ -56,9 +56,11 @@ struct FolderPicker: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        // Fallback for iOS 15/16/17 Folder selection stability
         let types: [UTType] = [.folder, .directory]
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: false)
         picker.allowsMultipleSelection = false
+        picker.shouldShowFileExtensions = true
         picker.delegate = context.coordinator
         return picker
     }
@@ -72,20 +74,20 @@ struct FolderPicker: UIViewControllerRepresentable {
             self.parent = parent
         }
 
-        // Modern API
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            if let url = urls.first {
-                parent.onFolderPicked(url)
+            guard let url = urls.first else {
+                parent.onError?("No folder was selected.")
+                return
             }
+            parent.onFolderPicked(url)
         }
         
-        // Fallback for some iOS targets that glitch on the modern array version when `.folder` is used
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
             parent.onFolderPicked(url)
         }
         
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            // Optional cancellation handling
+            parent.onError?("Folder selection was cancelled by the user.")
         }
     }
 }

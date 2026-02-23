@@ -581,8 +581,6 @@ class ConversionManager: ObservableObject {
     // MARK: - iOS Watched Folder Persistent Sync
     
     func importFolderStructure(from folderURL: URL) async {
-        let accessing = folderURL.startAccessingSecurityScopedResource()
-        defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
 
         // 1. Opportunistically attempt to save bookmark for persistent sync
         do {
@@ -605,6 +603,10 @@ class ConversionManager: ObservableObject {
         let existingNames = await MainActor.run { Set(self.convertedPDFs.map { $0.name }) }
 
         let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) {
+            // Lock security scope INSIDE the background thread to prevent MainActor delegate deadlock
+            let accessing = folderURL.startAccessingSecurityScopedResource()
+            defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
+            
             let fileManager = FileManager.default
             let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
             var newlyImported: [ConvertedPDF] = []
