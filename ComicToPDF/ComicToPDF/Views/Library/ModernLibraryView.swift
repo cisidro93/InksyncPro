@@ -87,7 +87,12 @@ struct ModernLibraryView: View {
         .sheet(item: $activeSheet) { item in
             switch item {
             case .importer, .cloud:
-                DocumentPicker(onDocumentsPicked: { urls in Task { await conversionManager.processImportedFiles(urls: urls); activeSheet = nil } })
+                DocumentPicker(onDocumentsPicked: { urls in
+                    Task {
+                        await conversionManager.importFilesAsSeries(urls: urls)
+                        activeSheet = nil
+                    }
+                })
             case .wifi: WiFiView()
             case .merge: FileMergeView()
             }
@@ -163,7 +168,7 @@ struct ModernLibraryView: View {
     
     @ViewBuilder private var pdfListLayout: some View {
         if conversionManager.convertedPDFs.isEmpty {
-            ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: { onFolderImport?() })
+            ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: nil)
         } else {
             List(selection: useNavigationStack ? nil : $selectedPDF) {
                 ForEach(filteredPDFs) { pdf in
@@ -375,15 +380,10 @@ struct ModernLibraryView: View {
                     // Divider
                     Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
                     
-                    // 2. Action Pills (Enterprise Labels)
+                    // 2. Action Pills
                     Group {
-                        // Direct file import — no folder option
                         ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.orange) {
                             activeSheet = .importer
-                        }
-                        // Series-aware import — separate dedicated button
-                        ActionPill(title: "Import Series", icon: "folder.badge.plus", color: Theme.blue) {
-                            onFolderImport?()
                         }
                         ActionPill(title: "Sync", icon: "arrow.triangle.2.circlepath", color: Theme.orange) { Task { await conversionManager.syncWatchedFolders() } }
                         ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
