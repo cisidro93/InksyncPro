@@ -28,11 +28,12 @@ struct ModernLibraryView: View {
     @State private var searchText = ""
     
     enum SidebarSheet: Identifiable {
-        case importer, wifi, cloud, merge, folderImporter
+        case importer, wifi, cloud, merge
         var id: Int { hashValue }
     }
     
     @State private var activeSheet: SidebarSheet?
+    @State private var isFolderPickerPresented = false
     @State private var sortOption: LibraryView.SortOption = .dateAdded
     @State private var showingSortMenu = false
     
@@ -74,7 +75,7 @@ struct ModernLibraryView: View {
             
             // ... (Content Area) ...
             if conversionManager.convertedPDFs.isEmpty {
-                ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: { activeSheet = .folderImporter })
+                ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: { isFolderPickerPresented = true })
             } else {
                 List(selection: useNavigationStack ? nil : $selectedPDF) {
                     ForEach(filteredPDFs) { pdf in
@@ -136,18 +137,6 @@ struct ModernLibraryView: View {
             switch item {
             case .importer, .cloud:
                 DocumentPicker(onDocumentsPicked: { urls in Task { await conversionManager.processImportedFiles(urls: urls); activeSheet = nil } })
-            case .folderImporter:
-                FolderPicker(onFolderPicked: { url in Task { await conversionManager.importFolderStructure(from: url); activeSheet = nil } })
-                    .overlay(
-                        VStack {
-                            Spacer()
-                            Text("Tap 'Open' at the top right to start Syncing this Folder")
-                                .font(.callout).bold().foregroundColor(.white)
-                                .padding()
-                                .background(Color.blue.cornerRadius(10))
-                                .padding(.bottom, 40)
-                        }
-                    )
             case .wifi: WiFiView()
             case .merge: FileMergeView()
             }
@@ -181,6 +170,19 @@ struct ModernLibraryView: View {
         .onAppear {
             Task {
                 await conversionManager.syncWatchedFolders()
+            }
+        }
+        .fileImporter(
+            isPresented: $isFolderPickerPresented,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task { await conversionManager.importFolderStructure(from: url) }
+            case .failure(let error):
+                Logger.shared.log("Folder picker error: \(error.localizedDescription)", category: "System")
             }
         }
     }
@@ -350,7 +352,7 @@ struct ModernLibraryView: View {
                             Button(action: { activeSheet = .importer }) {
                                 Label("Import Comic Files", systemImage: "doc.badge.plus")
                             }
-                            Button(action: { activeSheet = .folderImporter }) {
+                            Button(action: { isFolderPickerPresented = true }) {
                                 Label("Import Folder (Series)", systemImage: "folder.badge.plus")
                             }
                         } label: {
