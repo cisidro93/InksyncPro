@@ -33,7 +33,8 @@ struct ModernLibraryView: View {
     }
     
     @State private var activeSheet: SidebarSheet?
-    @State private var isFolderPickerPresented = false
+    // UI State
+    @State private var useNavigationStack = false
     @State private var sortOption: LibraryView.SortOption = .dateAdded
     @State private var showingSortMenu = false
     
@@ -117,19 +118,6 @@ struct ModernLibraryView: View {
                 await conversionManager.syncWatchedFolders()
             }
         }
-        .sheet(isPresented: $isFolderPickerPresented) {
-            FolderPicker { url in
-                isFolderPickerPresented = false
-                
-                Task {
-                    await conversionManager.importFolderStructure(from: url)
-                }
-            } onError: { errorMsg in
-                isFolderPickerPresented = false
-                Logger.shared.log("Folder picker error: \(errorMsg)", category: "System")
-            }
-            .ignoresSafeArea()
-        }
     }
     
     // Copy of helpers
@@ -149,7 +137,7 @@ struct ModernLibraryView: View {
     
     @ViewBuilder private var pdfListLayout: some View {
         if conversionManager.convertedPDFs.isEmpty {
-            ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: { isFolderPickerPresented = true })
+            ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: { self.presentFolderPicker() })
         } else {
             List(selection: useNavigationStack ? nil : $selectedPDF) {
                 ForEach(filteredPDFs) { pdf in
@@ -361,7 +349,7 @@ struct ModernLibraryView: View {
                             Button(action: { activeSheet = .importer }) {
                                 Label("Import Comic Files", systemImage: "doc.badge.plus")
                             }
-                            Button(action: { isFolderPickerPresented = true }) {
+                            Button(action: { self.presentFolderPicker() }) {
                                 Label("Import Folder (Recursive)", systemImage: "folder.badge.plus")
                             }
                         } label: {
@@ -576,4 +564,27 @@ struct ActionPill: View {
     }
 }
 
-
+extension ModernLibraryView {
+    private func presentFolderPicker() {
+        // Break out of SwiftUI's restrictive sheet/modal context to fix iOS UIDocumentPicker bugs
+        // A UIDocumentPickerViewController for a folder MUST be presented natively on the topmost UIViewController.
+        if let windowScene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene ?? UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootWindow = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first,
+           var rootVC = rootWindow.rootViewController {
+           
+            // Iterate to the topmost presented view controller to avoid "attempt to present on view controller whose view is not in the window hierarchy"
+            while let presented = rootVC.presentedViewController {
+                rootVC = presented
+            }
+            
+            ExternalStorageManager.shared.selectFolderFromExternalStorage(from: rootVC) { url in
+                guard let url = url else { return }
+                Task {
+                    await conversionManager.importFolderStructure(from: url)
+                }
+            }
+        } else {
+            Logger.shared.log("Error: Could not locate Root View Controller to present Folder Picker.", category: "System")
+        }
+    }
+}
