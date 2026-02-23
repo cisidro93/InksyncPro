@@ -583,6 +583,9 @@ class ConversionManager: ObservableObject {
     func importFolderStructure(from folderURL: URL) async {
         // 1. Save Bookmark for Persistent Watching
         do {
+            let accessing = folderURL.startAccessingSecurityScopedResource()
+            defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
+            
             let bookmarkData = try folderURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
             
             await MainActor.run {
