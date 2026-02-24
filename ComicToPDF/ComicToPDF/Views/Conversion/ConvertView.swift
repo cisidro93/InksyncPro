@@ -42,8 +42,8 @@ struct ConvertView: View {
                 }
                 .padding(.vertical, 4)
 
-                // Preview button (Pro Panel only)
-                if selectedPipeline == .proPanelAZW3 {
+                // Preview button — show for either panel pipeline
+                if selectedPipeline == .proPanelEPUB || selectedPipeline == .proPanelAZW3 {
                     Button(action: { showingPreview = true }) {
                         Label("Preview Panel Detection (Page 4)", systemImage: "eye")
                             .frame(maxWidth: .infinity)
@@ -127,11 +127,18 @@ struct ConvertView: View {
                     Text(pipeline.rawValue).font(.headline).foregroundColor(textColor)
 
                     // Warning badge for Pro Panel
-                    if pipeline == .proPanelAZW3 {
+                    // Badges
+                    if pipeline == .proPanelEPUB {
                         if isDisabled {
                             badgePill("Comics Only", color: .gray)
                         } else {
-                            badgePill("⚠ Sideload Only", color: isSelected ? .yellow : .orange)
+                            badgePill("Previewer", color: isSelected ? .purple.opacity(0.8) : .purple)
+                        }
+                    } else if pipeline == .proPanelAZW3 {
+                        if isDisabled {
+                            badgePill("Comics Only", color: .gray)
+                        } else {
+                            badgePill("Legacy · Sideload", color: isSelected ? .yellow : .orange)
                         }
                     }
                 }
@@ -168,13 +175,15 @@ struct ConvertView: View {
     private func pipelineIcon(_ pipeline: OutputPipeline) -> String {
         switch pipeline {
         case .standard:     return "doc.richtext"
-        case .proPanelAZW3: return "rectangle.split.3x1"
+        case .proPanelEPUB: return "rectangle.split.3x1"
+        case .proPanelAZW3: return "bolt.horizontal"
         }
     }
 
     private func cardAccentColor(_ pipeline: OutputPipeline) -> Color {
         switch pipeline {
         case .standard:     return .blue
+        case .proPanelEPUB: return .purple
         case .proPanelAZW3: return .orange
         }
     }
@@ -183,14 +192,16 @@ struct ConvertView: View {
         switch pipeline {
         case .standard:
             return "EPUB · No panel zoom · Cloud-safe (OneDrive, Google Drive, Send-to-Kindle)"
+        case .proPanelEPUB:
+            return "EPUB · Full Amazon panel view · px tap-targets · 150% magnification · Manga-aware"
         case .proPanelAZW3:
-            return "AZW3 · Full panel view · USB or Local Wi-Fi transfer only"
+            return "AZW3 (Legacy) · Sideload via USB or Local Wi-Fi only"
         }
     }
 
-    /// Books do not support Pro Panel (panel detection is meaningless on text-heavy content)
+    /// Books do not support Pro Panel (panel detection is meaningless on text content)
     private func pipelineIsDisabled(_ pipeline: OutputPipeline) -> Bool {
-        pipeline == .proPanelAZW3 && pdf.contentType == .book
+        (pipeline == .proPanelEPUB || pipeline == .proPanelAZW3) && pdf.contentType == .book
     }
 
     private func applyPipeline(_ pipeline: OutputPipeline) {
@@ -198,6 +209,9 @@ struct ConvertView: View {
         switch pipeline {
         case .standard:
             conversionManager.conversionSettings.enablePanelSplit = false
+        case .proPanelEPUB:
+            conversionManager.conversionSettings.enablePanelSplit = true
+            conversionManager.conversionSettings.epubSettings.includeFullPage = true
         case .proPanelAZW3:
             conversionManager.conversionSettings.enablePanelSplit = true
             conversionManager.conversionSettings.epubSettings.includeFullPage = true
