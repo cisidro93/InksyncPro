@@ -3,21 +3,15 @@ import SwiftUI
 struct SeriesDetailView: View {
     let series: SeriesGroup
     @EnvironmentObject var conversionManager: ConversionManager
-    
-    // We reuse LibraryView's navigation links logic by passing selected PDF up?
-    // Or we just replicate the navigation link to ConvertView/PageManager.
-    
     @State private var sortOrder: SortOrder = .ascending
-    
-    enum SortOrder {
-        case ascending, descending
-    }
-    
+    @State private var headerCover: UIImage? = nil
+
+    enum SortOrder { case ascending, descending }
+
     var sortedIssues: [ConvertedPDF] {
-        let issues = series.issues
-        return sortOrder == .ascending ? issues : issues.reversed()
+        sortOrder == .ascending ? series.issues : series.issues.reversed()
     }
-    
+
     var body: some View {
         List {
             Section(header: headerView) {
@@ -49,35 +43,34 @@ struct SeriesDetailView: View {
                 }
             }
         }
+        .task { await loadHeaderCover() }
     }
-    
+
     var headerView: some View {
         HStack {
-            if let data = series.cover, let uiImage = UIImage(data: data) {
-                Image(uiImage: uiImage)
+            if let img = headerCover {
+                Image(uiImage: img)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: 80, height: 120)
                     .cornerRadius(8)
                     .shadow(radius: 4)
+                    .clipped()
             } else {
                 Rectangle()
-                    .fill(Color.gray.opacity(0.3))
+                    .fill(Color(UIColor.secondarySystemBackground))
                     .frame(width: 80, height: 120)
                     .overlay(Image(systemName: "books.vertical").foregroundColor(.gray))
                     .cornerRadius(8)
             }
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(series.title)
-                    .font(.title2)
-                    .bold()
+                    .font(.title2).bold()
                     .foregroundColor(.primary)
-                
                 Text("\(series.count) Issues")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                
                 if let publisher = series.issues.first?.metadata.publisher {
                     Text(publisher)
                         .font(.caption)
@@ -86,9 +79,18 @@ struct SeriesDetailView: View {
                 }
             }
             .padding(.leading)
-            
             Spacer()
         }
         .padding(.vertical)
     }
+
+    private func loadHeaderCover() async {
+        guard let url = series.coverURL else { return }
+        let img = await Task.detached(priority: .userInitiated) {
+            guard let data = try? Data(contentsOf: url) else { return UIImage?.none }
+            return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 160, height: 240))
+        }.value
+        await MainActor.run { headerCover = img }
+    }
 }
+

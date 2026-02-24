@@ -40,15 +40,19 @@ struct LibraryView: View {
     @State private var libraryMode: LibraryMode = .files
     
     var filteredPDFs: [ConvertedPDF] {
-        let pdfs = conversionManager.convertedPDFs
+        // In Files mode, only show ungrouped files — series-grouped files live in their folder.
+        let baseSet = libraryMode == .files
+            ? conversionManager.convertedPDFs.filter {
+                $0.metadata.series == nil || ($0.metadata.series?.isEmpty ?? true)
+              }
+            : conversionManager.convertedPDFs
+
         let result: [ConvertedPDF]
-        
         if searchText.isEmpty {
-            result = pdfs
+            result = baseSet
         } else {
-            result = pdfs.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+            result = baseSet.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
         }
-        
         return sortPDFs(result)
     }
     
@@ -264,6 +268,16 @@ struct LibraryView: View {
                     } else {
                         SeriesLibraryView(conversionManager: conversionManager)
                     }
+                }
+            }
+            .onAppear {
+                // Auto-surface Series view when any files have been grouped into a series.
+                // Only run once — respect any mode the user has manually selected.
+                let hasAnySeries = conversionManager.convertedPDFs.contains {
+                    !($0.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                }
+                if hasAnySeries && libraryMode == .files {
+                    libraryMode = .series
                 }
             }
             

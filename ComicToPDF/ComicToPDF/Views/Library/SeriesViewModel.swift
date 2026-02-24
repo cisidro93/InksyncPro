@@ -5,78 +5,69 @@ import Combine
 @MainActor
 class SeriesViewModel: ObservableObject {
     @Published var seriesGroups: [SeriesGroup] = []
-    
+
     private var cancellables = Set<AnyCancellable>()
     private let manager: ConversionManager
-    
+
     init(manager: ConversionManager) {
         self.manager = manager
-        
-        // Observe changes in the library
+
+        // Rebuild groups any time the library changes
         manager.$convertedPDFs
-            .sink { [weak self] pdfs in
-                self?.groupPDFs(pdfs)
-            }
+            .sink { [weak self] pdfs in self?.groupPDFs(pdfs) }
             .store(in: &cancellables)
     }
-    
+
     private func groupPDFs(_ pdfs: [ConvertedPDF]) {
-        // Dictionary grouping
         var groups: [String: [ConvertedPDF]] = [:]
-        var noSeriesPDFs: [ConvertedPDF] = []
-        
+
         for pdf in pdfs {
-            if let series = pdf.metadata.series, !series.isEmpty {
-                // Normalize Series Name (trim whitespace)
-                let key = series.trimmingCharacters(in: .whitespacesAndNewlines)
-                groups[key, default: []].append(pdf)
-            } else {
-                noSeriesPDFs.append(pdf)
-            }
+            let key = (pdf.metadata.series ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else { continue }
+            groups[key, default: []].append(pdf)
         }
-        
-        // Convert to SeriesGroup models
+
         var result: [SeriesGroup] = []
-        
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+
         for (seriesName, issues) in groups {
-            // Sort issues by Volume -> Issue Number
+            // Sort by issue number → filename
             let sortedIssues = issues.sorted { lhs, rhs in
-                // Simple sort by filename or issue number if available
-                // Ideally we'd parse "Issue #1" etc.
                 if let i1 = lhs.metadata.issueNumber, let i2 = rhs.metadata.issueNumber,
                    let n1 = Int(i1), let n2 = Int(i2) {
                     return n1 < n2
                 }
                 return lhs.name < rhs.name
             }
-            
-            // Cross-reference with persistent PDFCollections to check for User Override
-            var cover: Data? = nil
-            if let matchingCollection = self.manager.collections.first(where: { $0.name == seriesName }),
+
+            // Resolve cover: prefer explicit collection override, then first issue
+            var coverID: UUID? = sortedIssues.first?.id
+
+            if let matchingCollection = manager.collections.first(where: { $0.name == seriesName }),
                let explicitID = matchingCollection.explicitCoverFileID,
-               let explicitPDF = issues.first(where: { $0.id == explicitID }) {
-                cover = explicitPDF.coverImageData
+               issues.contains(where: { $0.id == explicitID }) {
+                // Verify the cover file actually exists on disk before using it
+                let candidateURL = docs.appendingPathComponent("cover_\(explicitID.uuidString).jpg")
+                if FileManager.default.fileExists(atPath: candidateURL.path) {
+                    coverID = explicitID
+                }
             } else {
-                cover = sortedIssues.first?.coverImageData
+                // Walk sorted issues to find the first one whose cover is on disk
+                coverID = sortedIssues.first(where: {
+                    let url = docs.appendingPathComponent("cover_\($0.id.uuidString).jpg")
+                    return FileManager.default.fileExists(atPath: url.path)
+                })?.id ?? sortedIssues.first?.id
             }
-            
-            let group = SeriesGroup(
+
+            result.append(SeriesGroup(
                 id: seriesName,
                 title: seriesName,
-                cover: cover,
+                coverIssueID: coverID,
                 count: sortedIssues.count,
                 issues: sortedIssues
-            )
-            result.append(group)
+            ))
         }
-        
-        // Sort Groups by Title
-        result.sort { $0.title < $1.title }
-        
-        // Handle "Uncategorized" if you want to show them?
-        // For now, libraries usually split "Series" and "All".
-        // The "Series" view usually only shows actual series.
-        // We'll expose result directly.
-        self.seriesGroups = result
+
+        self.seriesGroups = result.sorted { $0.title < $1.title }
     }
 }
