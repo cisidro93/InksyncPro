@@ -51,17 +51,104 @@ struct ModernLibraryView: View {
     @State private var pdfToAssignSeries: ConvertedPDF?
     @State private var assignSeriesText = ""
     
-    var filteredPDFs: [ConvertedPDF] {
-        let pdfs = conversionManager.convertedPDFs
-        let result: [ConvertedPDF]
+    // ✅ NEW: Unified Library Item
+    enum LibraryListItem: Identifiable, Hashable {
+        case single(ConvertedPDF)
+        case series(SeriesGroup)
         
-        if searchText.isEmpty {
-            result = pdfs
-        } else {
-            result = pdfs.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        var id: String {
+            switch self {
+            case .single(let pdf): return "single_\(pdf.id)"
+            case .series(let group): return "series_\(group.id)"
+            }
         }
         
-        return sortPDFs(result)
+        var sortIndex: Int {
+            get { return _sortIndex }
+            set { _sortIndex = newValue }
+        }
+        
+        private var _sortIndex: Int = 0
+        
+        mutating func setSortIndex(_ index: Int) {
+            self._sortIndex = index
+        }
+    }
+    
+    var libraryItems: [LibraryListItem] {
+        let allPDFs = sortPDFs(conversionManager.convertedPDFs)
+        var items: [LibraryListItem] = []
+        var seriesDict: [String: [ConvertedPDF]] = [:]
+        var singles: [ConvertedPDF] = []
+        
+        // Track the first appearance index for sorting
+        var firstAppearanceIndex: [String: Int] = [:]
+        
+        for (index, pdf) in allPDFs.enumerated() {
+            let key = (pdf.metadata.series ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if key.isEmpty {
+                singles.append(pdf)
+                firstAppearanceIndex["single_\(pdf.id)"] = index
+            } else {
+                seriesDict[key, default: []].append(pdf)
+                if firstAppearanceIndex["series_\(key)"] == nil {
+                    firstAppearanceIndex["series_\(key)"] = index
+                }
+            }
+        }
+        
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        
+        for (seriesName, issues) in seriesDict {
+            let sortedIssues = issues.sorted { lhs, rhs in
+                if let i1 = lhs.metadata.issueNumber, let n1 = Int(i1),
+                   let i2 = rhs.metadata.issueNumber, let n2 = Int(i2) {
+                    return n1 < n2
+                }
+                return lhs.name < rhs.name
+            }
+            
+            var coverID: UUID? = sortedIssues.first?.id
+            
+            if let matchingCollection = conversionManager.collections.first(where: { $0.name == seriesName }),
+               let explicitID = matchingCollection.explicitCoverFileID,
+               issues.contains(where: { $0.id == explicitID }) {
+                let candidateURL = docs.appendingPathComponent("cover_\(explicitID.uuidString).jpg")
+                if FileManager.default.fileExists(atPath: candidateURL.path) {
+                    coverID = explicitID
+                }
+            } else {
+                coverID = sortedIssues.first(where: {
+                    let url = docs.appendingPathComponent("cover_\($0.id.uuidString).jpg")
+                    return FileManager.default.fileExists(atPath: url.path)
+                })?.id ?? sortedIssues.first?.id
+            }
+            
+            let group = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: coverID, count: sortedIssues.count, issues: sortedIssues)
+            var item = LibraryListItem.series(group)
+            item.setSortIndex(firstAppearanceIndex["series_\(seriesName)"] ?? 0)
+            items.append(item)
+        }
+        
+        for single in singles {
+            var item = LibraryListItem.single(single)
+            item.setSortIndex(firstAppearanceIndex["single_\(single.id)"] ?? 0)
+            items.append(item)
+        }
+        
+        // Apply Search Filter
+        if !searchText.isEmpty {
+            items = items.filter { item in
+                switch item {
+                case .single(let pdf): return pdf.name.localizedCaseInsensitiveContains(searchText)
+                case .series(let group): return group.title.localizedCaseInsensitiveContains(searchText)
+                }
+            }
+        }
+        
+        // Restore Sorting Order based on first appearance in allPDFs
+        items.sort { $0.sortIndex < $1.sortIndex }
+        return items
     }
     
     func sortPDFs(_ pdfs: [ConvertedPDF]) -> [ConvertedPDF] {
@@ -168,39 +255,58 @@ struct ModernLibraryView: View {
             ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: nil)
         } else {
             List(selection: useNavigationStack ? nil : $selectedPDF) {
-                ForEach(filteredPDFs) { pdf in
-                    if isBatchMode {
-                         Button {
-                             if multiSelection.contains(pdf.id) {
-                                 multiSelection.remove(pdf.id)
-                             } else {
-                                 multiSelection.insert(pdf.id)
-                             }
-                         } label: {
-                             ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
-                         }
-                         .listRowBackground(Color.black)
-                         .listRowSeparatorTint(Color(white: 0.2))
-                    } else {
-                        if useNavigationStack {
-                            NavigationLink(value: pdf) {
-                                ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
+                ForEach(libraryItems) { item in
+                    switch item {
+                    case .series(let group):
+                        if isBatchMode {
+                            Button {
+                                let allSelected = group.issues.allSatisfy { multiSelection.contains($0.id) }
+                                if allSelected {
+                                    for issue in group.issues { multiSelection.remove(issue.id) }
+                                } else {
+                                    for issue in group.issues { multiSelection.insert(issue.id) }
+                                }
+                            } label: {
+                                ModernSeriesRow(group: group, isSelected: group.issues.allSatisfy { multiSelection.contains($0.id) }, isBatch: true)
                             }
                             .listRowBackground(Color.black)
                             .listRowSeparatorTint(Color(white: 0.2))
-                            .swipeActions(edge: .leading) {
-                                swipeActionsLeading(pdf)
+                        } else {
+                            NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
+                                ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+                            }
+                            .listRowBackground(Color.black)
+                            .listRowSeparatorTint(Color(white: 0.2))
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    for issue in group.issues { conversionManager.deletePDF(issue) }
+                                } label: { Label("Delete Series", systemImage: "trash") }
                             }
                             .swipeActions(edge: .trailing) {
-                                swipeActionsTrailing(pdf)
+                                Button(role: .destructive) {
+                                    for issue in group.issues { conversionManager.deletePDF(issue) }
+                                } label: { Label("Delete Series", systemImage: "trash") }
                             }
-                            .contextMenu {
-                                contextMenuContent(pdf)
-                            }
+                        }
+                    case .single(let pdf):
+                        if isBatchMode {
+                             Button {
+                                 if multiSelection.contains(pdf.id) {
+                                     multiSelection.remove(pdf.id)
+                                 } else {
+                                     multiSelection.insert(pdf.id)
+                                 }
+                             } label: {
+                                 ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
+                             }
+                             .listRowBackground(Color.black)
+                             .listRowSeparatorTint(Color(white: 0.2))
                         } else {
-                            ModernFileRow(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
-                                .tag(pdf)
-                                .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
+                            if useNavigationStack {
+                                NavigationLink(value: pdf) {
+                                    ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
+                                }
+                                .listRowBackground(Color.black)
                                 .listRowSeparatorTint(Color(white: 0.2))
                                 .swipeActions(edge: .leading) {
                                     swipeActionsLeading(pdf)
@@ -211,6 +317,21 @@ struct ModernLibraryView: View {
                                 .contextMenu {
                                     contextMenuContent(pdf)
                                 }
+                            } else {
+                                ModernFileRow(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
+                                    .tag(pdf)
+                                    .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
+                                    .listRowSeparatorTint(Color(white: 0.2))
+                                    .swipeActions(edge: .leading) {
+                                        swipeActionsLeading(pdf)
+                                    }
+                                    .swipeActions(edge: .trailing) {
+                                        swipeActionsTrailing(pdf)
+                                    }
+                                    .contextMenu {
+                                        contextMenuContent(pdf)
+                                    }
+                            }
                         }
                     }
                 }
@@ -484,6 +605,7 @@ struct ModernFileRow: View {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                }
                 } else {
                     Rectangle().fill(Theme.surfaceElevated)
                     Image(systemName: "doc.text.fill")
@@ -494,7 +616,7 @@ struct ModernFileRow: View {
             .cornerRadius(4)
             .clipped()
             .task {
-                // \u2705 Lazy Load Cover
+                // ✅ Lazy Load Cover
                 if coverImage == nil {
                     coverImage = await conversionManager.loadCoverThumbnail(for: pdf)
                 }
@@ -569,5 +691,83 @@ struct ActionPill: View {
                     .stroke(.white.opacity(0.1), lineWidth: 1)
             )
         }
+    }
+}
+
+struct ModernSeriesRow: View {
+    let group: SeriesGroup
+    let isSelected: Bool
+    let isBatch: Bool
+    @State private var coverImage: UIImage?
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                // Stack effect
+                if group.count > 1 {
+                    RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated).frame(width: 40, height: 56).offset(x: 3, y: -3)
+                }
+                if let img = coverImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Rectangle().fill(Theme.surfaceElevated)
+                    Image(systemName: "books.vertical.fill")
+                        .foregroundColor(Theme.textSecondary)
+                }
+            }
+            .frame(width: 40, height: 56)
+            .cornerRadius(4)
+            .clipped()
+            .task {
+                if let url = group.coverURL, coverImage == nil {
+                    let img = await Task.detached(priority: .userInitiated) {
+                        guard let data = try? Data(contentsOf: url) else { return UIImage?.none }
+                        return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 80, height: 112))
+                    }.value
+                    await MainActor.run { coverImage = img }
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(group.title)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(Theme.text)
+                    .lineLimit(1)
+                
+                HStack(spacing: 6) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 8))
+                        Text("SERIES")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Theme.blue.opacity(0.2))
+                    .foregroundColor(Theme.blue)
+                    .cornerRadius(4)
+                    
+                    Text("\(group.count) Issues")
+                        .font(.caption)
+                        .foregroundColor(Theme.textSecondary)
+                }
+            }
+            
+            Spacer()
+            
+            if isBatch {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundColor(isSelected ? Theme.blue : Theme.textSecondary)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(Theme.textSecondary)
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 }

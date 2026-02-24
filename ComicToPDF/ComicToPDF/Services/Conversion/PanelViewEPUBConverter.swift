@@ -446,7 +446,7 @@ class PanelViewEPUBConverter {
             tapTargets += """
                   <!-- Panel \(ordinal) tap target -->
                   <div id="\(srcID)" class="tap-target-container" style="position:absolute; top:\(ty)px; left:\(tx)px; width:\(tw)px; height:\(th)px; z-index:10;">
-                    <a class="app-amzn-magnify" data-app-amzn-magnify='\(jsonAttr)' style="display:block; width:100%; height:100%;"></a>
+                    <a class="app-amzn-magnify" data-app-amzn-magnify='\(jsonAttr)' style="display:block; width:\(tw)px; height:\(th)px;"></a>
                   </div>\n
             """
 

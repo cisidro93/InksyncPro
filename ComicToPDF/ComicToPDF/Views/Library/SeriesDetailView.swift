@@ -3,6 +3,9 @@ import SwiftUI
 struct SeriesDetailView: View {
     let series: SeriesGroup
     @EnvironmentObject var conversionManager: ConversionManager
+    @Binding var selectedPDF: ConvertedPDF?
+    var useNavigationStack: Bool
+    
     @State private var sortOrder: SortOrder = .ascending
     @State private var headerCover: UIImage? = nil
 
@@ -16,17 +19,35 @@ struct SeriesDetailView: View {
         List {
             Section(header: headerView) {
                 ForEach(sortedIssues) { pdf in
-                    NavigationLink(destination: ConvertView(pdf: pdf)) {
-                        LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            conversionManager.deletePDF(pdf)
+                    if useNavigationStack {
+                        NavigationLink(value: pdf) {
+                            LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                conversionManager.deletePDF(pdf)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    } else {
+                        Button {
+                            selectedPDF = pdf
                         } label: {
-                            Label("Delete", systemImage: "trash")
+                            LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                conversionManager.deletePDF(pdf)
+                                if selectedPDF?.id == pdf.id { selectedPDF = nil }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
-                }
+                    }
             }
         }
         .listStyle(InsetGroupedListStyle())
