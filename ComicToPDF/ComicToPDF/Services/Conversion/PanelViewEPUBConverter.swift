@@ -172,14 +172,6 @@ class PanelViewEPUBConverter {
                 // Resolve actual pixel dimensions per page (may differ from page 1)
                 let pageSz = UIImage(data: imgData)?.size ?? pageSize
 
-                // ✅ FIX: On-the-fly Panel Detection
-                // If the manifest lacks panels for this page, detect them automatically
-                // just like the old legacy converters did.
-                if pagePanels.isEmpty && settings.enablePanelSplit {
-                    if let image = UIImage(data: imgData) {
-                        pagePanels = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: isManga)
-                    }
-                }
 
                 // Step 3: Build XHTML
                 let xhtml = buildXHTMLPage(
