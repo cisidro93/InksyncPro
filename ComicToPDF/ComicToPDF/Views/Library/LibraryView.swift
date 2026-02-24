@@ -270,16 +270,6 @@ struct LibraryView: View {
                     }
                 }
             }
-            .onAppear {
-                // Auto-surface Series view when any files have been grouped into a series.
-                // Only run once — respect any mode the user has manually selected.
-                let hasAnySeries = conversionManager.convertedPDFs.contains {
-                    !($0.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                }
-                if hasAnySeries && libraryMode == .files {
-                    libraryMode = .series
-                }
-            }
             
             // Floating Action Button
             if !conversionManager.convertedPDFs.isEmpty {
@@ -307,6 +297,16 @@ struct LibraryView: View {
                     .padding()
                     .background(Color(UIColor.systemBackground))
                     .cornerRadius(10)
+            }
+        }
+        .onAppear {
+            // Auto-surface Series view when any files have been grouped into a series.
+            // Respects any later manual tab switch the user makes.
+            let hasAnySeries = conversionManager.convertedPDFs.contains {
+                !($0.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            }
+            if hasAnySeries && libraryMode == .files {
+                libraryMode = .series
             }
         }
     }
