@@ -402,7 +402,22 @@ class ConversionManager: ObservableObject {
                         // 1. Thumbnails
                         await self.generateCoverThumbnail(for: pdf)
                         
-                        // 2. Extract Embedded Panels (if any)
+                        // 2. Page Count
+                        let count = await Task.detached(priority: .background) {
+                            return ConversionManager.getPageCountStatic(from: pdf.url)
+                        }.value
+                        
+                        if count > 0 {
+                            await MainActor.run {
+                                if let idx = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                                    var updated = self.convertedPDFs[idx]
+                                    updated.pageCount = count
+                                    self.convertedPDFs[idx] = updated
+                                }
+                            }
+                        }
+                        
+                        // 3. Extract Embedded Panels (if any)
                         if let validPanels = try? await self.extractSmartPanels(from: pdf.url) {
                             await MainActor.run {
                                 self.savePanelOverrides(for: pdf.id, panels: validPanels)
@@ -410,6 +425,7 @@ class ConversionManager: ObservableObject {
                         }
                     }
                 }
+
                 
                 Logger.shared.log("Library Scanned: Found \(newPDFs.count) new files", category: "Library")
                 saveLibrary()
@@ -1686,6 +1702,33 @@ class ConversionManager: ObservableObject {
         }
         return nil
     }
+    
+    nonisolated static func getPageCountStatic(from url: URL) -> Int {
+        let ext = url.pathExtension.lowercased()
+        if ext == "pdf" {
+            return PDFDocument(url: url)?.pageCount ?? 0
+        }
+
+        if ["cbz", "cbr", "zip", "epub"].contains(ext) {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
+            guard let archive = try? Archive(url: url, accessMode: .read) else { return 0 }
+            
+            var count = 0
+            for entry in archive {
+                if entry.type == .directory { continue }
+                let entryExt = (entry.path as NSString).pathExtension.lowercased()
+                if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
+                    if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
+                    count += 1
+                }
+            }
+            return count
+        }
+        return 0
+    }
+
     
     // ✅ NEW: Extract Smart Panels from ComicInfo.xml
     func extractSmartPanels(from url: URL) async throws -> [Int: [PanelExtractor.Panel]]? {
