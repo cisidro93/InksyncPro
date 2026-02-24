@@ -292,22 +292,27 @@ enum PanelEditorPresentationMode: String, CaseIterable, Codable, Identifiable {
 struct ConversionSettings: Codable, Equatable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
-    var optimizeForDevice: Bool = true // ✅ Default to Optimization On
-    var targetDevice: KindleDeviceType = .scribeColorsoft // ✅ Target Newest Device
+    var optimizeForDevice: Bool = true
+    var targetDevice: KindleDeviceType = .scribeColorsoft
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
-    var trimMargins: Bool = false // ✅ NEW: Smart Margin Removal
-    var splitMode: FileSizeSplitMode = .none 
-    var textSize: AppTextSize = .medium // ✅ New Preference 
-    var panelEditorMode: PanelEditorPresentationMode = .sheet // ✅ New Preference
-    var ocrLanguage: OCRLanguage = .english // ✅ New Preference
+    var trimMargins: Bool = false
+    var splitMode: FileSizeSplitMode = .none
+    var textSize: AppTextSize = .medium
+    var panelEditorMode: PanelEditorPresentationMode = .sheet
+    var ocrLanguage: OCRLanguage = .english
     
-    // ✅ NEW: Debugger Visibility
+    // Debugger Visibility
     var showEditorDebug: Bool = false
     
-    // ✅ NEW: Guided View Flag
-    // If true, injects 'inksync-comicinfo' metadata. If false, output is standard EPUB without custom data.
-    var isGuidedView: Bool = false
+    // Export pipeline — the canonical source of truth for which converter to use.
+    // .standard    → plain EPUB/PDF, no panel zoom metadata, cloud-safe
+    // .proPanelAZW3 → KF8 EPUB as .azw3, full Region Magnification, sideload only
+    var outputPipeline: OutputPipeline = .standard
+    
+    // Legacy computed property — kept for compatibility with existing code.
+    // Do NOT set this directly; change outputPipeline instead.
+    var isGuidedView: Bool { outputPipeline == .proPanelAZW3 }
     
     // ✅ Keychain Integration
     // We remove the stored property and use a computed one.
@@ -336,8 +341,10 @@ struct ConversionSettings: Codable, Equatable {
     // Custom Codable implementation to handle migration
                             
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, trimMargins, splitMode, epubSettings, imageEnhancement, textSize, panelEditorMode, isGuidedView, showEditorDebug
-        case comicVineAPIKey // Used for legacy read only
+        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, trimMargins, splitMode, epubSettings, imageEnhancement, textSize, panelEditorMode, showEditorDebug
+        case outputPipeline   // New canonical export mode
+        case isGuidedView     // Legacy — read-only for migration
+        case comicVineAPIKey  // Legacy API key migration only
     }
     
     init() {}
@@ -356,12 +363,19 @@ struct ConversionSettings: Codable, Equatable {
         imageEnhancement = try container.decode(ImageEnhancementSettings.self, forKey: .imageEnhancement)
         textSize = try container.decodeIfPresent(AppTextSize.self, forKey: .textSize) ?? .medium
         panelEditorMode = try container.decodeIfPresent(PanelEditorPresentationMode.self, forKey: .panelEditorMode) ?? .sheet
-        isGuidedView = try container.decodeIfPresent(Bool.self, forKey: .isGuidedView) ?? false
         showEditorDebug = try container.decodeIfPresent(Bool.self, forKey: .showEditorDebug) ?? false
         
-        // ⚠️ MIGRATION: Check if JSON contains the legacy key
+        // Migration: if new outputPipeline key is present, decode it.
+        // Otherwise fall back to the legacy isGuidedView bool to preserve user's previous setting.
+        if let pipeline = try? container.decodeIfPresent(OutputPipeline.self, forKey: .outputPipeline) {
+            outputPipeline = pipeline ?? .standard
+        } else {
+            let legacyGuided = (try? container.decodeIfPresent(Bool.self, forKey: .isGuidedView)) ?? false
+            outputPipeline = legacyGuided ? .proPanelAZW3 : .standard
+        }
+        
+        // Legacy API key migration
         if let legacyKey = try? container.decodeIfPresent(String.self, forKey: .comicVineAPIKey), !legacyKey.isEmpty {
-            // Save to Keychain
             print("🔐 Migrating Legacy API Key to Keychain...")
             let data = Data(legacyKey.utf8)
             KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
@@ -382,9 +396,10 @@ struct ConversionSettings: Codable, Equatable {
         try container.encode(imageEnhancement, forKey: .imageEnhancement)
         try container.encode(textSize, forKey: .textSize)
         try container.encode(panelEditorMode, forKey: .panelEditorMode)
-        try container.encode(isGuidedView, forKey: .isGuidedView)
+        try container.encode(outputPipeline, forKey: .outputPipeline)
         try container.encode(showEditorDebug, forKey: .showEditorDebug)
-        // We purposefully DO NOT encode comicVineAPIKey so it disappears from JSON next save
+        // comicVineAPIKey is intentionally not encoded (moved to Keychain)
+        // isGuidedView is intentionally not encoded (computed from outputPipeline)
     }
 }
 
@@ -412,6 +427,17 @@ struct ImageEnhancementSettings: Codable, Equatable {
     var sharpness: Double = 0.0
     // ✅ KCC: Gamma Correction (Crucial for E-Ink to prevent black crush)
     var gamma: Double = 1.0 
+}
+
+// MARK: - Output Pipeline
+/// Determines the conversion pipeline used when exporting a comic.
+/// - `.standard`    : Plain EPUB/PDF. No panel zoom metadata. Safe for cloud sync (OneDrive, Google Drive, Send-to-Kindle email).
+/// - `.proPanelAZW3`: KF8 EPUB packaged as .azw3 with Region Magnification panels. Sideload-only (USB, Local Wi-Fi).
+enum OutputPipeline: String, CaseIterable, Codable, Identifiable {
+    case standard     = "Standard (Cloud-Safe)"
+    case proPanelAZW3 = "Pro Panel (Sideload Only)"
+    
+    var id: String { rawValue }
 }
 
 enum OutputFormat: String, CaseIterable, Codable, Identifiable {

@@ -3,108 +3,57 @@ import SwiftUI
 struct ConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     let pdf: ConvertedPDF
-    
+
     @State private var isMangaMode = false
-    @State private var selectedMode: ConversionMode = .hybrid
+    @State private var selectedPipeline: OutputPipeline = .standard
     @State private var showingPreview = false
-    
-    enum ConversionMode: String, CaseIterable, Identifiable {
-        case standard = "Standard"
-        case hybrid = "Guided View"
-        
-        var id: String { rawValue }
-        
-        var icon: String {
-            switch self {
-            case .standard: return "doc.richtext"
-            case .hybrid: return "rectangle.split.3x1"
-            }
-        }
-        
-        var description: String {
-            switch self {
-            case .standard: return "Original layout. Best for tablets."
-            case .hybrid: return "Full page + zoomed panels. Best for Kindle."
-            }
-        }
-    }
-    
+
     var body: some View {
         Form {
+            // MARK: - Source Details
             Section {
-                HStack { Text("File Name"); Spacer(); Text(pdf.name).foregroundColor(.secondary) }
+                HStack { Text("File Name"); Spacer(); Text(pdf.name).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle) }
                 HStack { Text("File Size"); Spacer(); Text(pdf.formattedSize).foregroundColor(.secondary) }
                 Picker("Auto-Split", selection: $conversionManager.conversionSettings.splitMode) {
-                    ForEach(FileSizeSplitMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
+                    ForEach(FileSizeSplitMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
                 }
                 .pickerStyle(.menu)
             } header: { Text("Source Details") }
-            
+
+            // MARK: - Export Pipeline
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Reading Experience").font(.headline).padding(.bottom, 5)
-                    ForEach(ConversionMode.allCases) { mode in
-                        let isBook = pdf.contentType == .book
-                        let isDisabled = isBook && mode == .hybrid
-                        
-                        Button(action: { 
+                    Text("Export Mode").font(.headline).padding(.bottom, 4)
+
+                    ForEach(OutputPipeline.allCases) { pipeline in
+                        let isDisabled = pipelineIsDisabled(pipeline)
+                        Button(action: {
                             if !isDisabled {
-                                selectedMode = mode; updateSettings(for: mode) 
+                                selectedPipeline = pipeline
+                                applyPipeline(pipeline)
                             }
                         }) {
-                            HStack(spacing: 15) {
-                                Image(systemName: mode.icon).font(.title2).frame(width: 30)
-                                    .foregroundColor(isDisabled ? .gray : (selectedMode == mode ? .white : .blue))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack {
-                                        Text(mode.rawValue).font(.headline)
-                                            .foregroundColor(isDisabled ? .gray : (selectedMode == mode ? .white : .primary))
-                                        
-                                        if mode == .hybrid {
-                                            if isBook {
-                                                Text("(Comics Only)")
-                                                    .font(.caption2)
-                                                    .bold()
-                                                    .foregroundColor(.white)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
-                                                    .background(Color.gray)
-                                                    .cornerRadius(4)
-                                            }
-                                        }
-                                    }
-                                    
-                                    Text(mode.description).font(.caption)
-                                        .foregroundColor(isDisabled ? .gray.opacity(0.8) : (selectedMode == mode ? .white.opacity(0.8) : .secondary))
-                                }
-                                Spacer()
-                                if selectedMode == mode { Image(systemName: "checkmark.circle.fill").foregroundColor(.white) }
-                            }
-                            .padding()
-                            .background(selectedMode == mode ? (isDisabled ? Color.gray.opacity(0.3) : Color.blue) : Color(UIColor.secondarySystemGroupedBackground))
-                            .cornerRadius(12)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(selectedMode == mode ? Color.blue : Color.gray.opacity(0.2), lineWidth: 1))
+                            pipelineCard(pipeline, isDisabled: isDisabled)
                         }
                         .buttonStyle(PlainButtonStyle())
                         .disabled(conversionManager.isConverting || isDisabled)
-                        .opacity(conversionManager.isConverting ? 0.6 : (isDisabled ? 0.6 : 1.0))
+                        .opacity(isDisabled || conversionManager.isConverting ? 0.55 : 1.0)
                     }
                 }
-                .padding(.vertical, 5)
-                
-                // ✅ PREVIEW BUTTON
-                if selectedMode != .standard {
+                .padding(.vertical, 4)
+
+                // Preview button (Pro Panel only)
+                if selectedPipeline == .proPanelAZW3 {
                     Button(action: { showingPreview = true }) {
                         Label("Preview Panel Detection (Page 4)", systemImage: "eye")
                             .frame(maxWidth: .infinity)
                     }
-                    .padding(.top, 5)
+                    .padding(.top, 4)
                 }
-                
+
             } header: { Text("Output Format") }
-            
+
+            // MARK: - Layout
             Section {
                 Picker("Reading Direction", selection: $isMangaMode) {
                     Text("Left-to-Right (Western)").tag(false)
@@ -115,22 +64,25 @@ struct ConvertView: View {
             } header: { Text("Layout") } footer: {
                 Text(isMangaMode ? "Panels ordered Right-to-Left." : "Panels ordered Left-to-Right.")
             }
-            
+
+            // MARK: - Convert Button
             Section {
                 if conversionManager.isConverting {
                     VStack(spacing: 8) {
                         HStack {
                             Text("Processing...").font(.headline).foregroundColor(.blue)
                             Spacer()
-                            Text("\(Int(conversionManager.conversionProgress * 100))%").font(.subheadline).foregroundColor(.secondary).monospacedDigit()
+                            Text("\(Int(conversionManager.conversionProgress * 100))%")
+                                .font(.subheadline).foregroundColor(.secondary).monospacedDigit()
                         }
-                        ProgressView(value: conversionManager.conversionProgress, total: 1.0).progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                        ProgressView(value: conversionManager.conversionProgress, total: 1.0)
+                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
                     }
                     .padding(.vertical, 10)
                 } else {
                     Button(action: {
                         Task {
-                            updateSettings(for: selectedMode)
+                            applyPipeline(selectedPipeline)
                             await conversionManager.convertComic(pdf, mangaMode: isMangaMode)
                         }
                     }) {
@@ -138,7 +90,7 @@ struct ConvertView: View {
                     }
                 }
             }
-            
+
             if let status = conversionManager.statusMessage {
                 Section {
                     Text(status).font(.caption).foregroundColor(status.contains("Error") ? .red : .secondary)
@@ -148,24 +100,107 @@ struct ConvertView: View {
         .navigationTitle("Convert Comic")
         .onAppear {
             isMangaMode = conversionManager.conversionSettings.mangaMode
-            if !conversionManager.conversionSettings.enablePanelSplit { selectedMode = .standard }
-            else { selectedMode = .hybrid }
+            selectedPipeline = conversionManager.conversionSettings.outputPipeline
         }
         .sheet(isPresented: $showingPreview) {
-            // ✅ FIX: Default to Page 3 (4th page) for better panel check, fallback to 0 if short doc
             PrecisionCanvasView(pdf: pdf, pageIndex: 3, conversionManager: conversionManager)
         }
     }
-    
-    func updateSettings(for mode: ConversionMode) {
-        switch mode {
+
+    // MARK: - Pipeline Card View
+
+    @ViewBuilder
+    private func pipelineCard(_ pipeline: OutputPipeline, isDisabled: Bool) -> some View {
+        let isSelected = selectedPipeline == pipeline
+        let cardColor: Color = isDisabled ? .gray : (isSelected ? cardAccentColor(pipeline) : Color(UIColor.secondarySystemGroupedBackground))
+        let textColor: Color = isSelected ? .white : (isDisabled ? .gray : .primary)
+        let subtextColor: Color = isSelected ? .white.opacity(0.8) : (isDisabled ? .gray.opacity(0.7) : .secondary)
+
+        HStack(spacing: 14) {
+            Image(systemName: pipelineIcon(pipeline))
+                .font(.title2)
+                .frame(width: 30)
+                .foregroundColor(isDisabled ? .gray : (isSelected ? .white : cardAccentColor(pipeline)))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(pipeline.rawValue).font(.headline).foregroundColor(textColor)
+
+                    // Warning badge for Pro Panel
+                    if pipeline == .proPanelAZW3 {
+                        if isDisabled {
+                            badgePill("Comics Only", color: .gray)
+                        } else {
+                            badgePill("⚠ Sideload Only", color: isSelected ? .yellow : .orange)
+                        }
+                    }
+                }
+                Text(pipelineSubtitle(pipeline)).font(.caption).foregroundColor(subtextColor)
+            }
+
+            Spacer()
+
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill").foregroundColor(.white)
+            }
+        }
+        .padding()
+        .background(cardColor)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isSelected ? cardAccentColor(pipeline) : Color.gray.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func badgePill(_ label: String, color: Color) -> some View {
+        Text(label)
+            .font(.caption2).bold()
+            .foregroundColor(.white)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(color)
+            .cornerRadius(4)
+    }
+
+    // MARK: - Helpers
+
+    private func pipelineIcon(_ pipeline: OutputPipeline) -> String {
+        switch pipeline {
+        case .standard:     return "doc.richtext"
+        case .proPanelAZW3: return "rectangle.split.3x1"
+        }
+    }
+
+    private func cardAccentColor(_ pipeline: OutputPipeline) -> Color {
+        switch pipeline {
+        case .standard:     return .blue
+        case .proPanelAZW3: return .orange
+        }
+    }
+
+    private func pipelineSubtitle(_ pipeline: OutputPipeline) -> String {
+        switch pipeline {
+        case .standard:
+            return "EPUB · No panel zoom · Cloud-safe (OneDrive, Google Drive, Send-to-Kindle)"
+        case .proPanelAZW3:
+            return "AZW3 · Full panel view · USB or Local Wi-Fi transfer only"
+        }
+    }
+
+    /// Books do not support Pro Panel (panel detection is meaningless on text-heavy content)
+    private func pipelineIsDisabled(_ pipeline: OutputPipeline) -> Bool {
+        pipeline == .proPanelAZW3 && pdf.contentType == .book
+    }
+
+    private func applyPipeline(_ pipeline: OutputPipeline) {
+        conversionManager.conversionSettings.outputPipeline = pipeline
+        switch pipeline {
         case .standard:
             conversionManager.conversionSettings.enablePanelSplit = false
-            conversionManager.conversionSettings.isGuidedView = false // ✅ Disable Guided View
-        case .hybrid:
+        case .proPanelAZW3:
             conversionManager.conversionSettings.enablePanelSplit = true
             conversionManager.conversionSettings.epubSettings.includeFullPage = true
-            conversionManager.conversionSettings.isGuidedView = true // ✅ Enable Guided View
         }
     }
 }

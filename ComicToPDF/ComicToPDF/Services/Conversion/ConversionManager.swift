@@ -1296,48 +1296,62 @@ class ConversionManager: ObservableObject {
     
     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool) async {
         isConverting = true; conversionProgress = 0.0; processingStatus = "Converting..."; statusMessage = "Starting..."
-        let converter = CBZToEPUBConverter()
         var jobSettings = conversionSettings
         jobSettings.mangaMode = mangaMode
         
-        // \u2705 Smart Content Type Handling
+        // Smart Content Type Handling: books are always Standard pipeline
         if pdf.contentType == .book {
             jobSettings.mangaMode = false
             jobSettings.enablePanelSplit = false
-            jobSettings.isGuidedView = false
-        } else {
-            // \u2705 E013 FIX: Verify user actually wants Guided View before injecting 50KB+ metadata
-            jobSettings.isGuidedView = jobSettings.enablePanelSplit
-        } 
-        
-        await MainActor.run { processingStatus = "Reading Source Panels..." }
-        try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s Delay for Visibility
-        let combinedManifest = await getCombinedManifest(for: pdf)
+            jobSettings.outputPipeline = .standard
+        }
         
         do {
             if jobSettings.outputFormat == .pdf {
+                // PDF export (always Standard, no panel metadata)
                 let fileManager = FileManager.default
                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                 let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
-                
                 let imageURLs = try await extractImageURLs(from: pdf.url)
                 try PDFGenerator.generate(from: imageURLs, to: outputURL) { progress in
                     Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
-                
                 isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete!"; scanLibrary()
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> PDF", category: "Converter")
+            } else if jobSettings.outputPipeline == .proPanelAZW3 {
+                // Pro Panel pipeline: KF8 AZW3 with 1:1 panel coordinates
+                await MainActor.run { processingStatus = "Reading Source Panels..." }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                let combinedManifest = await getCombinedManifest(for: pdf)
+                let azw3Converter = KF8AZW3Converter()
+                let newURLs = try await azw3Converter.convert(
+                    sourceURL: pdf.url,
+                    settings: jobSettings,
+                    manualManifest: combinedManifest
+                ) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
+                isConverting = false; conversionProgress = 1.0
+                statusMessage = "✅ AZW3 Ready! (\(newURLs.count) file\(newURLs.count == 1 ? "" : "s")) — Sideload via USB or Wi-Fi."
+                scanLibrary()
+                Logger.shared.log("KF8 Conversion Successful: \(pdf.name) -> \(newURLs.count) AZW3 files", category: "Converter")
             } else {
-                let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
-                isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
-                Logger.shared.log("Conversion Successful: \(pdf.name) -> \(newURLs.count) files", category: "Converter")
+                // Standard EPUB (cloud-safe) — no panel metadata injected
+                let converter = CBZToEPUBConverter()
+                let newURLs = try await converter.convert(
+                    sourceURL: pdf.url,
+                    settings: jobSettings,
+                    manualManifest: nil
+                ) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
+                isConverting = false; conversionProgress = 1.0
+                statusMessage = "✅ Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
+                Logger.shared.log("Conversion Successful: \(pdf.name) -> \(newURLs.count) EPUB files", category: "Converter")
             }
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
-        } catch { 
+        } catch {
             Logger.shared.log("Conversion Failed: \(error)", category: "Converter")
-            isConverting = false; statusMessage = "Error: \(error.localizedDescription)" 
+            isConverting = false; statusMessage = "Error: \(error.localizedDescription)"
         }
     }
+
     
     func convertQueue(_ pdfs: [ConvertedPDF]) async {
         guard !pdfs.isEmpty else { return }
@@ -1355,53 +1369,64 @@ class ConversionManager: ObservableObject {
                 self.conversionProgress = 0.0
             }
             
-            let converter = CBZToEPUBConverter()
             var jobSettings = conversionSettings
-            // We use global settings for the batch. If specific manga settings are needed, we default to global for now.
-            
-            // \u2705 Smart Content Type Handling
             if pdf.contentType == .book {
                 jobSettings.mangaMode = false
                 jobSettings.enablePanelSplit = false
-                jobSettings.isGuidedView = false
-            } else {
-                // \u2705 E013 FIX: Conditional Injection
-                jobSettings.isGuidedView = jobSettings.enablePanelSplit
+                jobSettings.outputPipeline = .standard
             }
-            
-            await MainActor.run { processingStatus = "Reading Source Panels..." }
-            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s Delay for Visibility
-            let combinedManifest = await getCombinedManifest(for: pdf)
             
             do {
                 if jobSettings.outputFormat == .pdf {
                     let fileManager = FileManager.default
-                    let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                    let pName = pdf.name
+                        .replacingOccurrences(of: ".cbz", with: "")
+                        .replacingOccurrences(of: ".cbr", with: "")
+                        .replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                     let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
-                    
                     let imageURLs = try await extractImageURLs(from: pdf.url)
-                    try PDFGenerator.generate(from: imageURLs, to: outputURL) { progress in
+                    try PDFGenerator.generate(from: imageURLs, to: outputURL) { p in
                         Task { @MainActor in
-                            self.conversionProgress = progress
-                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(progress * 100))%)"
+                            self.conversionProgress = p
+                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
                         }
                     }
-                    
                     await MainActor.run { self.scanLibrary() }
                     Logger.shared.log("Batch Conversion successful: \(pdf.name) -> PDF", category: "Converter")
-                } else {
-                    _ = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
+                } else if jobSettings.outputPipeline == .proPanelAZW3 {
+                    await MainActor.run { processingStatus = "Reading panels for \(pdf.name)..." }
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    let combinedManifest = await getCombinedManifest(for: pdf)
+                    let azw3Converter = KF8AZW3Converter()
+                    _ = try await azw3Converter.convert(
+                        sourceURL: pdf.url,
+                        settings: jobSettings,
+                        manualManifest: combinedManifest
+                    ) { p in
                         Task { @MainActor in
-                            self.conversionProgress = progress
-                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(progress * 100))%)"
+                            self.conversionProgress = p
+                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
                         }
                     }
-                    // Scan after each successful conversion so user sees progress
+                    await MainActor.run { self.scanLibrary() }
+                    Logger.shared.log("Batch KF8 Conversion successful: \(pdf.name)", category: "Converter")
+                } else {
+                    // Standard EPUB — no panel metadata
+                    let converter = CBZToEPUBConverter()
+                    _ = try await converter.convert(
+                        sourceURL: pdf.url,
+                        settings: jobSettings,
+                        manualManifest: nil
+                    ) { p in
+                        Task { @MainActor in
+                            self.conversionProgress = p
+                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
+                        }
+                    }
                     await MainActor.run { self.scanLibrary() }
                     Logger.shared.log("Batch Conversion successful: \(pdf.name)", category: "Converter")
                 }
             } catch {
-
                 Logger.shared.log("Batch Error for \(pdf.name): \(error)", category: "Converter")
                 await MainActor.run { self.statusMessage = "Error on \(pdf.name)" }
                 try? await Task.sleep(nanoseconds: 1 * 1_000_000_000)
@@ -1432,8 +1457,7 @@ class ConversionManager: ObservableObject {
             var jobSettings = conversionSettings
             // ✅ Override Manga Mode for this batch
             jobSettings.mangaMode = mangaMode
-            // ✅ E013 FIX: Conditional Injection
-            jobSettings.isGuidedView = jobSettings.enablePanelSplit
+            // Pipeline is already set by ConvertView; use it as-is for merge operations.
             
             await MainActor.run { processingStatus = "Reading Source Panels..." }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
