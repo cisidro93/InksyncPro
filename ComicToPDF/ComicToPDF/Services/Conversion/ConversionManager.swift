@@ -395,9 +395,16 @@ class ConversionManager: ObservableObject {
             // Add new ones
             if !newPDFs.isEmpty {
                 convertedPDFs.append(contentsOf: newPDFs)
-                
+                Logger.shared.log("Library Scanned: Found \(newPDFs.count) new files", category: "Library")
+                saveLibrary()
+            }
+            
+            // ✅ FIX: Process any file missing page count or metadata (catches Folder Sync & Series Import)
+            let pdfsToProcess = convertedPDFs.filter { $0.pageCount == 0 }
+            
+            if !pdfsToProcess.isEmpty {
                 // Process Metadata & Thumbnails in Background
-                for pdf in newPDFs {
+                for pdf in pdfsToProcess {
                     Task {
                         // 1. Thumbnails
                         await self.generateCoverThumbnail(for: pdf)
@@ -425,10 +432,6 @@ class ConversionManager: ObservableObject {
                         }
                     }
                 }
-
-                
-                Logger.shared.log("Library Scanned: Found \(newPDFs.count) new files", category: "Library")
-                saveLibrary()
             }
             
             // Cleanup: Remove missing files
@@ -593,7 +596,14 @@ class ConversionManager: ObservableObject {
                 let fileName = url.lastPathComponent
                 let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 let destURL = docDir.appendingPathComponent(fileName)
-                if FileManager.default.fileExists(atPath: destURL.path) { try FileManager.default.removeItem(at: destURL) }
+                if FileManager.default.fileExists(atPath: destURL.path) { 
+                    try FileManager.default.removeItem(at: destURL) 
+                    // ✅ FIX: Remove old reference so scanLibrary treats the replaced file as brand new
+                    // This forces fresh panel extraction from the newly copied CBZ
+                    await MainActor.run {
+                        self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == fileName })
+                    }
+                }
                 try FileManager.default.copyItem(at: url, to: destURL)
             } catch { 
                 Logger.shared.log("Failed to copy imported file \(url.lastPathComponent): \(error.localizedDescription)", category: "Import")
