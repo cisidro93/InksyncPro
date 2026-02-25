@@ -384,7 +384,6 @@ struct PageManagerView: View {
                 }
             }
         }
-        }
         } // End NavigationStack
     }
     
