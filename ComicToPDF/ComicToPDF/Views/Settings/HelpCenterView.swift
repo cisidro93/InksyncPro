@@ -224,12 +224,13 @@ struct OnboardingReplayView: View {
                     Button("Done") {
                         isPresented = false
                     }
-                    .font(.headline)
-                    .foregroundColor(.white.opacity(0.9))
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.2))
-                    .cornerRadius(20)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
                     .padding(.top, 60)
                     .padding(.trailing, 20)
                 }

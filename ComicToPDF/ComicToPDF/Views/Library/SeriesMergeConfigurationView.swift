@@ -30,31 +30,7 @@ struct SeriesMergeConfigurationView: View {
                 Section(header: Text("Merge Order"), footer: Text("Drag to reorder. The top file will be the first issue in the merged volume.")) {
                     List {
                         ForEach(itemsToMerge) { pdf in
-                            HStack {
-                                if let uiImage = conversionManager.getThumbnail(for: pdf) {
-                                    Image(uiImage: uiImage)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 40, height: 60)
-                                        .cornerRadius(4)
-                                        .clipped()
-                                } else {
-                                    Rectangle()
-                                        .fill(Color.gray.opacity(0.2))
-                                        .frame(width: 40, height: 60)
-                                        .cornerRadius(4)
-                                        .overlay(Image(systemName: "doc").foregroundColor(.gray))
-                                }
-                                
-                                VStack(alignment: .leading) {
-                                    Text(pdf.name)
-                                        .font(.subheadline)
-                                        .lineLimit(2)
-                                    Text(pdf.fileSizeFormatted)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
+                            pdfRow(for: pdf)
                         }
                         .onMove(perform: moveItems)
                     }
@@ -84,6 +60,35 @@ struct SeriesMergeConfigurationView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     EditButton()
                 }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func pdfRow(for pdf: ConvertedPDF) -> some View {
+        HStack {
+            if let uiImage = conversionManager.getThumbnail(for: pdf) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 40, height: 60)
+                    .cornerRadius(4)
+                    .clipped()
+            } else {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 40, height: 60)
+                    .cornerRadius(4)
+                    .overlay(Image(systemName: "doc").foregroundColor(.gray))
+            }
+            
+            VStack(alignment: .leading) {
+                Text(pdf.name)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                Text(pdf.fileSizeFormatted)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
     }

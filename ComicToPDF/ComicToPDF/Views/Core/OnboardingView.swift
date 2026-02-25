@@ -66,12 +66,13 @@ struct OnboardingView: View {
                     Spacer()
                     Button(action: skipOnboarding) {
                         Text("Skip")
-                            .font(.headline)
-                            .foregroundColor(.white.opacity(0.9))
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(Color.white.opacity(0.2))
-                            .cornerRadius(20)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
                     }
                     .padding(.top, 20)
                     .padding(.trailing, 20)
@@ -94,30 +95,32 @@ struct OnboardingView: View {
                         Button(action: skipOnboarding) {
                             HStack {
                                 Text("Get Started")
+                                    .font(.title3)
                                     .fontWeight(.bold)
-                                Image(systemName: "arrow.right")
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.title2)
                             }
-                            .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundColor(pages.last?.gradient.first ?? .orange)
                             .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.white.opacity(0.3))
-                            .cornerRadius(16)
+                            .padding(.vertical, 16)
+                            .background(Color.white)
+                            .clipShape(Capsule())
+                            .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
                         }
                         .transition(.scale.combined(with: .opacity))
                     } else {
-                        Button(action: { withAnimation { currentPage += 1 } }) {
+                        Button(action: { withAnimation(.spring()) { currentPage += 1 } }) {
                             HStack {
                                 Text("Next")
+                                    .font(.headline)
                                     .fontWeight(.semibold)
                                 Image(systemName: "arrow.right")
                             }
-                            .font(.headline)
-                            .foregroundColor(.white.opacity(0.9))
+                            .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.white.opacity(0.2))
-                            .cornerRadius(16)
+                            .padding(.vertical, 16)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
                         }
                     }
                 }
