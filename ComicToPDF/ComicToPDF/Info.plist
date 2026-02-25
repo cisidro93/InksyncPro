@@ -47,6 +47,8 @@
     <key>UIRequiresFullScreen</key>
     <false/>
     
+    <key>NSFaceIDUsageDescription</key>
+    <string>Authentication required to access the Private Vault.</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Allow access to transfer files via WiFi</string>
     <key>NSBonjourServices</key>
