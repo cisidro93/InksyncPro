@@ -1388,6 +1388,11 @@ class ConversionManager: ObservableObject {
                     settings: jobSettings,
                     panels: panelsByPage
                 ) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
+                
+                for epubURL in newURLs {
+                    try? await injectMetadata(into: epubURL, panels: panelsByPage, metadata: pdf.metadata)
+                }
+                
                 isConverting = false; conversionProgress = 1.0
                 statusMessage = "✅ Panel View EPUB Ready! (\(newURLs.count) file\(newURLs.count == 1 ? "" : "s"))"
                 scanLibrary()
@@ -1401,6 +1406,11 @@ class ConversionManager: ObservableObject {
                     settings: jobSettings,
                     manualManifest: nil
                 ) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
+                
+                for epubURL in newURLs {
+                    try? await injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata)
+                }
+                
                 isConverting = false; conversionProgress = 1.0
                 statusMessage = "✅ Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> \(newURLs.count) EPUB files", category: "Converter")
@@ -1484,7 +1494,7 @@ class ConversionManager: ObservableObject {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     let combinedManifest = await getCombinedManifest(for: pdf)
                     let pvConverter = PanelViewEPUBConverter()
-                    _ = try await pvConverter.convert(
+                    let newURLs = try await pvConverter.convert(
                         sourceURL: pdf.url,
                         settings: jobSettings,
                         panels: combinedManifest
@@ -1494,12 +1504,15 @@ class ConversionManager: ObservableObject {
                             self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
                         }
                     }
+                    for epubURL in newURLs {
+                        try? await injectMetadata(into: epubURL, panels: combinedManifest, metadata: pdf.metadata)
+                    }
                     await MainActor.run { self.scanLibrary() }
                     Logger.shared.log("Batch KF8 Conversion successful: \(pdf.name)", category: "Converter")
                 } else {
                     // Standard EPUB — no panel metadata
                     let converter = CBZToEPUBConverter()
-                    _ = try await converter.convert(
+                    let newURLs = try await converter.convert(
                         sourceURL: pdf.url,
                         settings: jobSettings,
                         manualManifest: nil
@@ -1508,6 +1521,9 @@ class ConversionManager: ObservableObject {
                             self.conversionProgress = p
                             self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
                         }
+                    }
+                    for epubURL in newURLs {
+                        try? await injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata)
                     }
                     await MainActor.run { self.scanLibrary() }
                     Logger.shared.log("Batch Conversion successful: \(pdf.name)", category: "Converter")
