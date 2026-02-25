@@ -599,7 +599,7 @@ class WiFiServer: ObservableObject {
             <div class="card">
                 <h3>Library Files (Download)</h3>
                 <p style="font-size: 13px; color: #888; margin-bottom: 15px;">
-                    Files are served as-is. Use the <strong>Pro Panel</strong> export in the app to generate AZW3 files for Kindle sideload.
+                    Files are served as-is. Use the <strong>Pro Panel</strong> export in the app to generate EPUB files for Kindle sideload.
                 </p>
                 <ul>
                     \(fileListHTML)

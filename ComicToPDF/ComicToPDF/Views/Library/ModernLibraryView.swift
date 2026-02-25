@@ -65,7 +65,7 @@ struct ModernLibraryView: View {
     }
     
     var libraryItems: [LibraryListItem] {
-        let allPDFs = sortPDFs(conversionManager.convertedPDFs)
+        let allPDFs = sortPDFs(conversionManager.visiblePDFs)
         var items: [(Int, LibraryListItem)] = []
         var seriesDict: [String: [ConvertedPDF]] = [:]
         var singles: [ConvertedPDF] = []
@@ -238,7 +238,7 @@ struct ModernLibraryView: View {
     }
     
     @ViewBuilder private var pdfListLayout: some View {
-        if conversionManager.convertedPDFs.isEmpty {
+        if conversionManager.visiblePDFs.isEmpty {
             ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: nil)
         } else {
             List(selection: useNavigationStack ? nil : $selectedPDF) {
@@ -493,6 +493,9 @@ struct ModernLibraryView: View {
                         ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
                         ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { activeSheet = .cloud }
                         ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { activeSheet = .merge }
+                        ActionPill(title: "Vault", icon: conversionManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: conversionManager.isVaultUnlocked ? Theme.orange : Theme.blue) { 
+                            handleVaultToggle() 
+                        }
                     }
                     
                     // 3. Selection / Batch
@@ -523,6 +526,19 @@ struct ModernLibraryView: View {
             Rectangle().frame(height: 1).foregroundColor(.white.opacity(0.05)),
             alignment: .bottom
         )
+    }
+    
+    // MARK: - Handlers
+    private func handleVaultToggle() {
+        if conversionManager.isVaultUnlocked {
+            withAnimation { conversionManager.isVaultUnlocked = false }
+        } else {
+            Task {
+                if await SecurityManager.shared.authenticate() {
+                    withAnimation { conversionManager.isVaultUnlocked = true }
+                }
+            }
+        }
     }
 }
 

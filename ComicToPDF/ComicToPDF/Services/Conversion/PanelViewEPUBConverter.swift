@@ -343,52 +343,35 @@ class PanelViewEPUBConverter {
 
     /// Synthesises spine `<itemref>` entries with correct spread properties.
     ///
-    /// Western (LTR):
-    ///   page1 → page-spread-left, page2 → page-spread-right, repeat
-    ///
-    /// Manga (RTL):
-    ///   cover → facing-page-right (linear=no)
-    ///   page1 → facing-page-right, page2 → facing-page-left  (first pair)
-    ///   page3 → page-spread-right, page4 → page-spread-left   (subsequent pairs)
-    ///   If odd total → append blank with layout-blank
+    /// Western Logic: 1->left, 2->right, 3->left, 4->right
+    /// Manga Logic: 1->facing-right, 2->facing-left (First pair)
+    ///              3->page-spread-right, 4->page-spread-left (Subsequent pairs)
     private func buildSpineItems(pageCatalog: [PageEntry], isManga: Bool, needsBlank: Bool) -> [String] {
         var items: [String] = []
 
         if isManga {
             for (idx, entry) in pageCatalog.enumerated() {
                 let idref = "page\(entry.paddedNum)"
-                let isFirst = idx == 0
-                if isFirst {
-                    // Cover in manga: linear=no, facing-page-right
-                    items.append(#"<itemref idref="\#(idref)" properties="facing-page-right" linear="no"/>"#)
-                } else {
-                    // Position within remaining pages (0-based after the cover)
-                    let pos = idx - 1
-                    let isFirstPair = (pos < 2)
-                    let isEvenSlot  = (pos % 2 == 0) // even = right page in RTL
+                let isFirstPair = (idx < 2)
+                let isEvenSlot  = (idx % 2 == 0) // even index = right page in RTL (0 -> right, 1 -> left)
 
-                    if isFirstPair {
-                        let prop = isEvenSlot ? "facing-page-right" : "facing-page-left"
-                        items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
-                    } else {
-                        let prop = isEvenSlot ? "page-spread-right" : "page-spread-left"
-                        items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
-                    }
+                if isFirstPair {
+                    let prop = isEvenSlot ? "facing-page-right" : "facing-page-left"
+                    items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
+                } else {
+                    let prop = isEvenSlot ? "page-spread-right" : "page-spread-left"
+                    items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
                 }
             }
             if needsBlank {
                 items.append(#"<itemref idref="page-blank" properties="layout-blank"/>"#)
             }
         } else {
-            // Western: cover is page-spread-center, then alternating left/right
+            // Western: alternating left/right (0 -> left, 1 -> right)
             for (idx, entry) in pageCatalog.enumerated() {
                 let idref = "page\(entry.paddedNum)"
-                if idx == 0 {
-                    items.append(#"<itemref idref="\#(idref)" properties="page-spread-center" linear="no"/>"#)
-                } else {
-                    let prop = (idx % 2 == 1) ? "page-spread-left" : "page-spread-right"
-                    items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
-                }
+                let prop = (idx % 2 == 0) ? "page-spread-left" : "page-spread-right"
+                items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
             }
         }
         return items
@@ -474,8 +457,8 @@ class PanelViewEPUBConverter {
           </head>
           <body>
             <!-- 1. BASE IMAGE -->
-            <div class="page">
-              <img src="../images/\(imageName)" alt="Page \(pageNum)" class="page-image"/>
+            <div>
+              <img src="../images/\(imageName)" alt="Comic Page" class="singlePage"/>
             </div>
 
         \(panelSection)
@@ -568,8 +551,8 @@ class PanelViewEPUBConverter {
         /* PanelView EPUB Stylesheet — fixed-layout Kindle comic */
         * { margin: 0; padding: 0; border: 0; }
         html, body { width: 100%; height: 100%; overflow: hidden; background-color: #000000; }
-        .page { position: absolute; width: 100%; height: 100%; }
-        .page-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        div { position: absolute; width: 100%; height: 100%; }
+        .singlePage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
         /* Tap target container: invisible overlay, absolute pixel positioned */
         .tap-target-container { position: absolute; }

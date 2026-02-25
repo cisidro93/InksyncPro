@@ -12,7 +12,7 @@ struct SeriesLibraryView: View {
 
     /// Files that have no series — shown as a flat list below the series grid
     var ungroupedFiles: [ConvertedPDF] {
-        conversionManager.convertedPDFs.filter {
+        conversionManager.visiblePDFs.filter {
             $0.metadata.series == nil || ($0.metadata.series?.isEmpty ?? true)
         }
     }

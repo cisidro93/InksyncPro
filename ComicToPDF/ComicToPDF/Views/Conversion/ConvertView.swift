@@ -37,40 +37,42 @@ struct ConvertView: View {
             } header: { Text("Output Target") }
 
             // MARK: - Export Pipeline
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("EPUB Export Mode")
-                        .font(.headline)
-                        .padding(.bottom, 4)
-                        .foregroundColor(conversionManager.conversionSettings.outputFormat == .epub ? .primary : .secondary)
+            if conversionManager.conversionSettings.outputFormat == .epub {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("EPUB Export Mode")
+                            .font(.headline)
+                            .padding(.bottom, 4)
+                            .foregroundColor(conversionManager.conversionSettings.outputFormat == .epub ? .primary : .secondary)
 
-                    ForEach(OutputPipeline.allCases) { pipeline in
-                        let isDisabled = pipelineIsDisabled(pipeline)
-                        Button(action: {
-                            if !isDisabled {
-                                selectedPipeline = pipeline
-                                applyPipeline(pipeline)
+                        ForEach(OutputPipeline.allCases) { pipeline in
+                            let isDisabled = pipelineIsDisabled(pipeline)
+                            Button(action: {
+                                if !isDisabled {
+                                    selectedPipeline = pipeline
+                                    applyPipeline(pipeline)
+                                }
+                            }) {
+                                pipelineCard(pipeline, isDisabled: isDisabled)
                             }
-                        }) {
-                            pipelineCard(pipeline, isDisabled: isDisabled)
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(conversionManager.isConverting || isDisabled)
+                            .opacity(isDisabled || conversionManager.isConverting ? 0.55 : 1.0)
                         }
-                        .buttonStyle(PlainButtonStyle())
-                        .disabled(conversionManager.isConverting || isDisabled)
-                        .opacity(isDisabled || conversionManager.isConverting ? 0.55 : 1.0)
                     }
-                }
-                .padding(.vertical, 4)
+                    .padding(.vertical, 4)
 
-                // Preview button — show for either panel pipeline
-                if selectedPipeline == .proPanel {
-                    Button(action: { showingPreview = true }) {
-                        Label("Preview Panel Detection (Page 4)", systemImage: "eye")
-                            .frame(maxWidth: .infinity)
+                    // Preview button — show for either panel pipeline
+                    if selectedPipeline == .proPanel {
+                        Button(action: { showingPreview = true }) {
+                            Label("Preview Panel Detection (Page 4)", systemImage: "eye")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .padding(.top, 4)
                     }
-                    .padding(.top, 4)
-                }
 
-            } header: { Text("Output Format") }
+                } header: { Text("Output Format") }
+            }
 
             // MARK: - Layout
             Section {

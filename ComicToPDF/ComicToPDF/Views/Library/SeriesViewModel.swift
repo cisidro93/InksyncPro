@@ -12,9 +12,13 @@ class SeriesViewModel: ObservableObject {
     init(manager: ConversionManager) {
         self.manager = manager
 
-        // Rebuild groups any time the library changes
-        manager.$convertedPDFs
-            .sink { [weak self] pdfs in self?.groupPDFs(pdfs) }
+        // Rebuild groups any time the library or Vault state changes
+        Publishers.CombineLatest(manager.$convertedPDFs, manager.$isVaultUnlocked)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] pdfs, isUnlocked in 
+                let visible = pdfs.filter { $0.isPrivate == isUnlocked }
+                self?.groupPDFs(visible) 
+            }
             .store(in: &cancellables)
     }
 

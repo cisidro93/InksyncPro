@@ -125,6 +125,13 @@ class ConversionManager: ObservableObject {
     @Published var statusMessage: String?
     @Published var appAlert: AppAlert?
     
+    // ✅ Session Vault State
+    @Published var isVaultUnlocked: Bool = false
+    
+    var visiblePDFs: [ConvertedPDF] {
+        convertedPDFs.filter { $0.isPrivate == isVaultUnlocked }
+    }
+    
     // ✅ Secure Processing Core Integration
     private var progressSubscription: AnyCancellable?
     
@@ -1371,7 +1378,7 @@ class ConversionManager: ObservableObject {
                 isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete!"; scanLibrary()
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> CBZ", category: "Converter")
             } else if jobSettings.outputPipeline == .proPanel {
-                // NEW primary panel path: KF8AZW3Converter (Amazon-compliant, px tap-targets, 150% magnify)
+                // Primary panel path: PanelViewEPUBConverter (Amazon-compliant, px tap-targets, 150% magnify)
                 await MainActor.run { processingStatus = "Loading Panel Data..." }
                 let combinedManifest = await getCombinedManifest(for: pdf)
                 let panelsByPage: [Int: [PanelExtractor.Panel]] = combinedManifest ?? [:]
@@ -1476,11 +1483,11 @@ class ConversionManager: ObservableObject {
                     await MainActor.run { processingStatus = "Reading panels for \(pdf.name)..." }
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     let combinedManifest = await getCombinedManifest(for: pdf)
-                    let azw3Converter = KF8AZW3Converter()
-                    _ = try await azw3Converter.convert(
+                    let pvConverter = PanelViewEPUBConverter()
+                    _ = try await pvConverter.convert(
                         sourceURL: pdf.url,
                         settings: jobSettings,
-                        manualManifest: combinedManifest
+                        panels: combinedManifest
                     ) { p in
                         Task { @MainActor in
                             self.conversionProgress = p
@@ -1601,8 +1608,8 @@ class ConversionManager: ObservableObject {
                 
                 let resultingURLs: [URL]
                 if jobSettings.outputPipeline == .proPanel {
-                    let converter = KF8AZW3Converter()
-                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
+                    let converter = PanelViewEPUBConverter()
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, panels: combinedManifest) { progress in
                         Task { @MainActor in self.conversionProgress = progress }
                     }
                 } else {
