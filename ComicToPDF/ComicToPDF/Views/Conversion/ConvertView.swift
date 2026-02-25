@@ -122,7 +122,7 @@ struct ConvertView: View {
             selectedPipeline = conversionManager.conversionSettings.outputPipeline
         }
         .sheet(isPresented: $showingPreview) {
-            PrecisionCanvasView(pdf: pdf, pageIndex: 3, conversionManager: conversionManager)
+            PrecisionCanvasView(pdf: pdf, pageIndex: .constant(3), totalCount: pdf.pageCount, conversionManager: conversionManager)
         }
     }
 

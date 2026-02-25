@@ -25,7 +25,7 @@ struct PrecisionCanvasView: View {
         self._pageIndex = pageIndex
         self.totalCount = totalCount
         
-        let initialModel = conversionManager.getPageModel(for: pdf.id, pageIndex: pageIndex)
+        let initialModel = conversionManager.getPageModel(for: pdf.id, pageIndex: pageIndex.wrappedValue)
         let undoManager = UndoManager()
         _editorState = StateObject(wrappedValue: PageEditorState(pageModel: initialModel, undoManager: undoManager))
     }

@@ -71,7 +71,7 @@ struct SeriesMergeConfigurationView: View {
                             Spacer()
                         }
                     }
-                    .disabled(itemsToMerge.count < 2 || outputName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(isMergeDisabled)
                 }
             }
             .navigationTitle("Configure Merge")
@@ -86,6 +86,10 @@ struct SeriesMergeConfigurationView: View {
                 }
             }
         }
+    }
+    
+    private var isMergeDisabled: Bool {
+        itemsToMerge.count < 2 || outputName.trimmingCharacters(in: .whitespaces).isEmpty
     }
     
     private func moveItems(from source: IndexSet, to destination: Int) {

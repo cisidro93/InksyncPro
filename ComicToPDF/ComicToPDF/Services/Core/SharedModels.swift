@@ -369,10 +369,10 @@ struct ConversionSettings: Codable, Equatable {
         // Otherwise fall back to the legacy isGuidedView bool to preserve user's previous setting.
         if let pipeline = try? container.decodeIfPresent(OutputPipeline.self, forKey: .outputPipeline) {
             // Handle deprecated proPanelEPUB or AZW3 from old state by coalescing to proPanel
-            if pipeline?.rawValue == "Pro Panel (Sideload Only)" || pipeline?.rawValue == "Pro Panel EPUB (Previewer)" {
+            if pipeline.rawValue == "Pro Panel (Sideload Only)" || pipeline.rawValue == "Pro Panel EPUB (Previewer)" {
                 outputPipeline = .proPanel
             } else {
-                outputPipeline = pipeline ?? .standard
+                outputPipeline = pipeline
             }
         } else {
             let legacyGuided = (try? container.decodeIfPresent(Bool.self, forKey: .isGuidedView)) ?? false
