@@ -1870,6 +1870,22 @@ class ConversionManager: ObservableObject {
              comicInfoEntry = archive.makeIterator().first { $0.path.lowercased().hasSuffix("comicinfo.xml") }
         }
         
+        // 3. Last Resort Fallback: panels.json (Legacy Normalized Panels)
+        if comicInfoEntry == nil, let jsonEntry = archive["panels.json"] ?? archive.makeIterator().first(where: { $0.path.lowercased().hasSuffix("panels.json") }) {
+            var jsonData = Data()
+            do {
+                _ = try archive.extract(jsonEntry) { jsonData.append($0) }
+                let decoded = try JSONDecoder().decode([Int: [PanelExtractor.Panel]].self, from: jsonData)
+                if !decoded.isEmpty {
+                    await MainActor.run { processingStatus = "Metadata Found (panels.json)" }
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    return decoded // panels.json was stored normalized
+                }
+            } catch {
+                Logger.shared.log("Failed to parse legacy panels.json: \(error)", category: "SmartPanels")
+            }
+        }
+        
         guard let entry = comicInfoEntry else {
             Logger.shared.log("No ComicInfo Metadata found (Embedded or File)", category: "SmartPanels")
             
