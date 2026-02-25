@@ -1,0 +1,509 @@
+﻿diff --git a/ComicToPDF/ComicToPDF/Services/Conversion/ConversionManager.swift b/ComicToPDF/ComicToPDF/Services/Conversion/ConversionManager.swift
+index 798e5bb..1507760 100644
+--- a/ComicToPDF/ComicToPDF/Services/Conversion/ConversionManager.swift
++++ b/ComicToPDF/ComicToPDF/Services/Conversion/ConversionManager.swift
+@@ -21,6 +21,14 @@ class ConversionManager: ObservableObject {
+     }
+     @Published var watchedFolders: [WatchedFolder] = []
+     
++    // MARK: - Series Grouping Prompt (Layer 3)
++    struct PendingSeriesGroup: Identifiable {
++        let id = UUID()
++        let pdfs: [ConvertedPDF]
++        let suggestedName: String
++    }
++    @Published var pendingSeriesGroup: PendingSeriesGroup? = nil
++    
+     // MARK: - Internal State
+     private let libraryFileName = "library.json"
+     internal var thumbnailCache = NSCache<NSString, UIImage>()
+@@ -394,7 +402,22 @@ class ConversionManager: ObservableObject {
+                         // 1. Thumbnails
+                         await self.generateCoverThumbnail(for: pdf)
+                         
+-                        // 2. Extract Embedded Panels (if any)
++                        // 2. Page Count
++                        let count = await Task.detached(priority: .background) {
++                            return ConversionManager.getPageCountStatic(from: pdf.url)
++                        }.value
++                        
++                        if count > 0 {
++                            await MainActor.run {
++                                if let idx = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
++                                    var updated = self.convertedPDFs[idx]
++                                    updated.pageCount = count
++                                    self.convertedPDFs[idx] = updated
++                                }
++                            }
++                        }
++                        
++                        // 3. Extract Embedded Panels (if any)
+                         if let validPanels = try? await self.extractSmartPanels(from: pdf.url) {
+                             await MainActor.run {
+                                 self.savePanelOverrides(for: pdf.id, panels: validPanels)
+@@ -402,6 +425,7 @@ class ConversionManager: ObservableObject {
+                         }
+                     }
+                 }
++
+                 
+                 Logger.shared.log("Library Scanned: Found \(newPDFs.count) new files", category: "Library")
+                 saveLibrary()
+@@ -677,6 +701,172 @@ class ConversionManager: ObservableObject {
+         await completeFolderImport(newPDFs)
+     }
+     
++    // MARK: - 4-Layer Series-Aware Import
++    
++    /// Import a batch of files and run them through the 4-layer series detection pipeline.
++    /// Called when the user selects multiple files via "Import Series" or multi-file picker.
++    func importFilesAsSeries(urls: [URL]) async {
++        guard !urls.isEmpty else { return }
++        
++        await MainActor.run { self.isConverting = true; self.processingStatus = "Importing files..." }
++        defer { Task { await MainActor.run { self.isConverting = false; self.processingStatus = "" } } }
++        
++        let existingNames = await MainActor.run { Set(self.convertedPDFs.map { $0.name }) }
++        let fileManager = FileManager.default
++        let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
++        
++        var importedPDFs: [ConvertedPDF] = []
++        var detectedSeriesNames: [String: Int] = [:] // Counter per detected series name
++        
++        for url in urls {
++            let fileName = url.lastPathComponent
++            guard !existingNames.contains(fileName) else { continue }
++            
++            do {
++                await MainActor.run { self.processingStatus = "Copying \(fileName)..." }
++                let destURL = documentsDir.appendingPathComponent(fileName)
++                if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
++                try fileManager.copyItem(at: url, to: destURL)
++                
++                let attr = try fileManager.attributesOfItem(atPath: destURL.path)
++                let size = attr[.size] as? Int64 ?? 0
++                
++                // --- Layer 1: ComicInfo.xml ---
++                var metadata = PDFMetadata(title: fileName)
++                let ext = fileName.lowercased()
++                let isArchive = ext.hasSuffix(".cbz") || ext.hasSuffix(".cbr") || ext.hasSuffix(".zip")
++                
++                if isArchive, let comicInfo = ComicInfoParser.parse(from: destURL) {
++                    metadata.series = comicInfo.series
++                    metadata.issueNumber = comicInfo.number
++                    metadata.volume = comicInfo.volume != nil ? String(comicInfo.volume!) : nil
++                    metadata.writer = comicInfo.writer
++                    metadata.publisher = comicInfo.publisher
++                    metadata.summary = comicInfo.summary
++                    if let year = comicInfo.year {
++                        let cal = Calendar.current
++                        var components = DateComponents()
++                        components.year = year
++                        metadata.publicationDate = cal.date(from: components)
++                    }
++                    if let series = comicInfo.series, !series.isEmpty {
++                        detectedSeriesNames[series, default: 0] += 1
++                        Logger.shared.log("Layer 1 (ComicInfo.xml): Series='\(series)' for \(fileName)", category: "Import")
++                    }
++                }
++                
++                // --- Layer 2: Filename Pattern (fallback when ComicInfo has no series) ---
++                if (metadata.series == nil || metadata.series!.isEmpty) {
++                    let detected = SeriesNameDetector.detect(from: fileName)
++                    if detected.confidence != .low {
++                        metadata.series = detected.seriesName
++                        if let num = detected.issueNumber { metadata.issueNumber = String(num) }
++                        detectedSeriesNames[detected.seriesName, default: 0] += 1
++                        Logger.shared.log("Layer 2 (Filename): Series='\(detected.seriesName)' (\(detected.confidence)) for \(fileName)", category: "Import")
++                    }
++                }
++                
++                let contentType = detectContentType(from: destURL)
++                let pdf = ConvertedPDF(
++                    name: fileName,
++                    url: destURL,
++                    pageCount: 0,
++                    fileSize: size,
++                    metadata: metadata,
++                    contentType: contentType
++                )
++                importedPDFs.append(pdf)
++            } catch {
++                Logger.shared.log("importFilesAsSeries: Failed to copy \(fileName): \(error.localizedDescription)", category: "Import")
++            }
++        }
++        
++        guard !importedPDFs.isEmpty else { return }
++        
++        // Determine the dominant series name across all imported files
++        let dominantSeries = detectedSeriesNames.max(by: { $0.value < $1.value })?.key ?? ""
++        let allSameSeries = !dominantSeries.isEmpty &&
++            importedPDFs.allSatisfy { ($0.metadata.series ?? "") == dominantSeries }
++        
++        if allSameSeries && importedPDFs.count > 1 {
++            // Unambiguous ΓÇö all files agree on series. Add directly, skip Layer 3 prompt.
++            await finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries)
++            Logger.shared.log("Auto-grouped \(importedPDFs.count) files into series '\(dominantSeries)'", category: "Import")
++        } else if importedPDFs.count > 1 {
++            // --- Layer 3: Post-import grouping prompt ---
++            // Files disagree on series name or have none. Show the grouping sheet.
++            await MainActor.run {
++                // First add imports to library ungrouped so they're visible immediately
++                for pdf in importedPDFs {
++                    self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
++                    self.convertedPDFs.append(pdf)
++                }
++                self.saveLibrary()
++            }
++            for pdf in importedPDFs { Task { await self.generateCoverThumbnail(for: pdf) } }
++            // Delay before presenting the sheet: the DocumentPicker sheet must fully
++            // dismiss before SwiftUI can present a new sheet, otherwise it is silently dropped.
++            try? await Task.sleep(nanoseconds: 700_000_000) // 0.7 seconds
++            await MainActor.run {
++                self.pendingSeriesGroup = PendingSeriesGroup(pdfs: importedPDFs, suggestedName: dominantSeries)
++            }
++        } else {
++            // Single file ΓÇö just add it normally
++            await finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries)
++        }
++    }
++    
++    /// Apply a confirmed series name to a batch of PDFs and save to the library.
++    func finalizeSeriesImport(pdfs: [ConvertedPDF], seriesName: String) async {
++        await MainActor.run {
++            let targetCollection: PDFCollection
++            if let existing = self.collections.first(where: { $0.name == seriesName }), !seriesName.isEmpty {
++                targetCollection = existing
++            } else if !seriesName.isEmpty {
++                let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "books.vertical", color: "orange", creationDate: Date())
++                self.collections.append(newCol)
++                targetCollection = newCol
++            } else {
++                // No series ΓÇö just add all files without grouping
++                for pdf in pdfs {
++                    self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
++                    self.convertedPDFs.append(pdf)
++                }
++                self.saveLibrary()
++                return
++            }
++            
++            for var pdf in pdfs {
++                pdf.collectionId = targetCollection.id
++                pdf.metadata.series = seriesName
++                self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
++                self.convertedPDFs.append(pdf)
++            }
++            self.saveLibrary()
++            self.scanLibrary()
++        }
++        for pdf in pdfs { Task { await self.generateCoverThumbnail(for: pdf) } }
++    }
++    
++    /// Assign an existing library item to an existing or new series collection.
++    func assignToSeries(_ pdf: ConvertedPDF, seriesName: String) {
++        let targetCollection: PDFCollection
++        if let existing = self.collections.first(where: { $0.name == seriesName }) {
++            targetCollection = existing
++        } else {
++            let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "books.vertical", color: "orange", creationDate: Date())
++            self.collections.append(newCol)
++            targetCollection = newCol
++        }
++        
++        if let index = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
++            self.convertedPDFs[index].collectionId = targetCollection.id
++            self.convertedPDFs[index].metadata.series = seriesName
++        }
++        self.saveLibrary()
++        Logger.shared.log("Layer 4: Manually assigned '\(pdf.name)' to series '\(seriesName)'", category: "Import")
++    }
++    
+     func syncWatchedFolders() async {
+         let localFolders = await MainActor.run { self.watchedFolders }
+         guard !localFolders.isEmpty else { return }
+@@ -1122,48 +1312,78 @@ class ConversionManager: ObservableObject {
+     
+     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool) async {
+         isConverting = true; conversionProgress = 0.0; processingStatus = "Converting..."; statusMessage = "Starting..."
+-        let converter = CBZToEPUBConverter()
+         var jobSettings = conversionSettings
+         jobSettings.mangaMode = mangaMode
+         
+-        // \u2705 Smart Content Type Handling
++        // Smart Content Type Handling: books are always Standard pipeline
+         if pdf.contentType == .book {
+             jobSettings.mangaMode = false
+             jobSettings.enablePanelSplit = false
+-            jobSettings.isGuidedView = false
+-        } else {
+-            // \u2705 E013 FIX: Verify user actually wants Guided View before injecting 50KB+ metadata
+-            jobSettings.isGuidedView = jobSettings.enablePanelSplit
+-        } 
+-        
+-        await MainActor.run { processingStatus = "Reading Source Panels..." }
+-        try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s Delay for Visibility
+-        let combinedManifest = await getCombinedManifest(for: pdf)
++            jobSettings.outputPipeline = .standard
++        }
+         
+         do {
+             if jobSettings.outputFormat == .pdf {
++                // PDF export (always Standard, no panel metadata)
+                 let fileManager = FileManager.default
+                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                 let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
+-                
+                 let imageURLs = try await extractImageURLs(from: pdf.url)
+                 try PDFGenerator.generate(from: imageURLs, to: outputURL) { progress in
+                     Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" }
+                 }
+-                
+                 isConverting = false; conversionProgress = 1.0; statusMessage = "Γ£à Conversion Complete!"; scanLibrary()
+                 Logger.shared.log("Conversion Successful: \(pdf.name) -> PDF", category: "Converter")
++            } else if jobSettings.outputPipeline == .proPanelEPUB {
++                // NEW primary panel path: PanelViewEPUBConverter (Amazon-compliant, px tap-targets, 150% magnify)
++                await MainActor.run { processingStatus = "Loading Panel Data..." }
++                let combinedManifest = await getCombinedManifest(for: pdf)
++                let panelsByPage: [Int: [PanelExtractor.Panel]] = combinedManifest ?? [:]
++                let pvConverter = PanelViewEPUBConverter()
++                let newURLs = try await pvConverter.convert(
++                    sourceURL: pdf.url,
++                    settings: jobSettings,
++                    panels: panelsByPage
++                ) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
++                isConverting = false; conversionProgress = 1.0
++                statusMessage = "Γ£à Panel View EPUB Ready! (\(newURLs.count) file\(newURLs.count == 1 ? "" : "s"))"
++                scanLibrary()
++                Logger.shared.log("PanelView Conversion Successful: \(pdf.name) -> \(newURLs.count) EPUB files", category: "Converter")
++            } else if jobSettings.outputPipeline == .proPanelAZW3 {
++                // Legacy AZW3 path ΓÇö retained for backward compatibility
++                // Pro Panel pipeline: KF8 AZW3 with 1:1 panel coordinates
++                await MainActor.run { processingStatus = "Reading Source Panels..." }
++                try? await Task.sleep(nanoseconds: 1_500_000_000)
++                let combinedManifest = await getCombinedManifest(for: pdf)
++                let azw3Converter = KF8AZW3Converter()
++                let newURLs = try await azw3Converter.convert(
++                    sourceURL: pdf.url,
++                    settings: jobSettings,
++                    manualManifest: combinedManifest
++                ) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
++                isConverting = false; conversionProgress = 1.0
++                statusMessage = "Γ£à AZW3 Ready! (\(newURLs.count) file\(newURLs.count == 1 ? "" : "s")) ΓÇö Sideload via USB or Wi-Fi."
++                scanLibrary()
++                Logger.shared.log("KF8 Conversion Successful: \(pdf.name) -> \(newURLs.count) AZW3 files", category: "Converter")
+             } else {
+-                let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
+-                isConverting = false; conversionProgress = 1.0; statusMessage = "Γ£à Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
+-                Logger.shared.log("Conversion Successful: \(pdf.name) -> \(newURLs.count) files", category: "Converter")
++                // Standard EPUB (cloud-safe) ΓÇö no panel metadata injected
++                let converter = CBZToEPUBConverter()
++                let newURLs = try await converter.convert(
++                    sourceURL: pdf.url,
++                    settings: jobSettings,
++                    manualManifest: nil
++                ) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
++                isConverting = false; conversionProgress = 1.0
++                statusMessage = "Γ£à Conversion Complete! (\(newURLs.count) files)"; scanLibrary()
++                Logger.shared.log("Conversion Successful: \(pdf.name) -> \(newURLs.count) EPUB files", category: "Converter")
+             }
+             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
+-        } catch { 
++        } catch {
+             Logger.shared.log("Conversion Failed: \(error)", category: "Converter")
+-            isConverting = false; statusMessage = "Error: \(error.localizedDescription)" 
++            isConverting = false; statusMessage = "Error: \(error.localizedDescription)"
+         }
+     }
++
+     
+     func convertQueue(_ pdfs: [ConvertedPDF]) async {
+         guard !pdfs.isEmpty else { return }
+@@ -1181,53 +1401,81 @@ class ConversionManager: ObservableObject {
+                 self.conversionProgress = 0.0
+             }
+             
+-            let converter = CBZToEPUBConverter()
+             var jobSettings = conversionSettings
+-            // We use global settings for the batch. If specific manga settings are needed, we default to global for now.
+-            
+-            // \u2705 Smart Content Type Handling
+             if pdf.contentType == .book {
+                 jobSettings.mangaMode = false
+                 jobSettings.enablePanelSplit = false
+-                jobSettings.isGuidedView = false
+-            } else {
+-                // \u2705 E013 FIX: Conditional Injection
+-                jobSettings.isGuidedView = jobSettings.enablePanelSplit
++                jobSettings.outputPipeline = .standard
+             }
+             
+-            await MainActor.run { processingStatus = "Reading Source Panels..." }
+-            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s Delay for Visibility
+-            let combinedManifest = await getCombinedManifest(for: pdf)
+-            
+             do {
+                 if jobSettings.outputFormat == .pdf {
+                     let fileManager = FileManager.default
+-                    let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
++                    let pName = pdf.name
++                        .replacingOccurrences(of: ".cbz", with: "")
++                        .replacingOccurrences(of: ".cbr", with: "")
++                        .replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                     let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
+-                    
+                     let imageURLs = try await extractImageURLs(from: pdf.url)
+-                    try PDFGenerator.generate(from: imageURLs, to: outputURL) { progress in
++                    try PDFGenerator.generate(from: imageURLs, to: outputURL) { p in
+                         Task { @MainActor in
+-                            self.conversionProgress = progress
+-                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(progress * 100))%)"
++                            self.conversionProgress = p
++                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
+                         }
+                     }
+-                    
+                     await MainActor.run { self.scanLibrary() }
+                     Logger.shared.log("Batch Conversion successful: \(pdf.name) -> PDF", category: "Converter")
++                } else if jobSettings.outputPipeline == .proPanelAZW3 {
++                    await MainActor.run { processingStatus = "Reading panels for \(pdf.name)..." }
++                    try? await Task.sleep(nanoseconds: 1_000_000_000)
++                    let combinedManifest = await getCombinedManifest(for: pdf)
++                    let azw3Converter = KF8AZW3Converter()
++                    _ = try await azw3Converter.convert(
++                        sourceURL: pdf.url,
++                        settings: jobSettings,
++                        manualManifest: combinedManifest
++                    ) { p in
++                        Task { @MainActor in
++                            self.conversionProgress = p
++                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
++                        }
++                    }
++                    await MainActor.run { self.scanLibrary() }
++                    Logger.shared.log("Batch KF8 Conversion successful: \(pdf.name)", category: "Converter")
++                } else if jobSettings.outputPipeline == .proPanelEPUB {
++                    await MainActor.run { processingStatus = "Loading panels for \(pdf.name)..." }
++                    let combinedManifest = await getCombinedManifest(for: pdf)
++                    let panelsByPage: [Int: [PanelExtractor.Panel]] = combinedManifest ?? [:]
++                    let pvConverter = PanelViewEPUBConverter()
++                    _ = try await pvConverter.convert(
++                        sourceURL: pdf.url,
++                        settings: jobSettings,
++                        panels: panelsByPage
++                    ) { p in
++                        Task { @MainActor in
++                            self.conversionProgress = p
++                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
++                        }
++                    }
++                    await MainActor.run { self.scanLibrary() }
++                    Logger.shared.log("Batch PanelView Conversion successful: \(pdf.name)", category: "Converter")
+                 } else {
+-                    _ = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
++                    // Standard EPUB ΓÇö no panel metadata
++                    let converter = CBZToEPUBConverter()
++                    _ = try await converter.convert(
++                        sourceURL: pdf.url,
++                        settings: jobSettings,
++                        manualManifest: nil
++                    ) { p in
+                         Task { @MainActor in
+-                            self.conversionProgress = progress
+-                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(progress * 100))%)"
++                            self.conversionProgress = p
++                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
+                         }
+                     }
+-                    // Scan after each successful conversion so user sees progress
+                     await MainActor.run { self.scanLibrary() }
+                     Logger.shared.log("Batch Conversion successful: \(pdf.name)", category: "Converter")
+                 }
+             } catch {
+-
+                 Logger.shared.log("Batch Error for \(pdf.name): \(error)", category: "Converter")
+                 await MainActor.run { self.statusMessage = "Error on \(pdf.name)" }
+                 try? await Task.sleep(nanoseconds: 1 * 1_000_000_000)
+@@ -1258,8 +1506,7 @@ class ConversionManager: ObservableObject {
+             var jobSettings = conversionSettings
+             // Γ£à Override Manga Mode for this batch
+             jobSettings.mangaMode = mangaMode
+-            // Γ£à E013 FIX: Conditional Injection
+-            jobSettings.isGuidedView = jobSettings.enablePanelSplit
++            // Pipeline is already set by ConvertView; use it as-is for merge operations.
+             
+             await MainActor.run { processingStatus = "Reading Source Panels..." }
+             try? await Task.sleep(nanoseconds: 1_500_000_000)
+@@ -1346,13 +1593,34 @@ class ConversionManager: ObservableObject {
+ 
+     // MARK: - Thumbnails & Helpers
+     func generateCoverThumbnail(for pdf: ConvertedPDF) async {
++        // Check if we already have a cover on disk
++        if let coverURL = getCoverURL(for: pdf),
++           FileManager.default.fileExists(atPath: coverURL.path) { return }
++        
+         let url = pdf.url
+-        let image = await Task.detached(priority: .userInitiated) {
++        let image = await Task.detached(priority: .background) {
+             return ConversionManager.extractCoverImageStatic(from: url)
+         }.value
+-        if let image {
+-            self.thumbnailCache.setObject(image, forKey: url.path as NSString)
+-            self.objectWillChange.send()
++        
++        guard let image = image,
++              let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
++        
++        // Use saveCoverImage which writes to disk AND caches with the correct UUID key
++        saveCoverImage(jpegData, for: pdf)
++        objectWillChange.send()
++    }
++    
++    /// Generate covers for all imported files that are missing one. Called on app launch
++    /// and after bulk imports to backfill any items imported before this fix.
++    func backfillMissingThumbnails() {
++        let pdfsNeedingCovers = convertedPDFs.filter { pdf in
++            guard let coverURL = getCoverURL(for: pdf) else { return true }
++            return !FileManager.default.fileExists(atPath: coverURL.path)
++        }
++        guard !pdfsNeedingCovers.isEmpty else { return }
++        Logger.shared.log("Backfilling thumbnails for \(pdfsNeedingCovers.count) files.", category: "System")
++        for pdf in pdfsNeedingCovers {
++            Task(priority: .background) { await generateCoverThumbnail(for: pdf) }
+         }
+     }
+     
+@@ -1435,6 +1703,33 @@ class ConversionManager: ObservableObject {
+         return nil
+     }
+     
++    nonisolated static func getPageCountStatic(from url: URL) -> Int {
++        let ext = url.pathExtension.lowercased()
++        if ext == "pdf" {
++            return PDFDocument(url: url)?.pageCount ?? 0
++        }
++
++        if ["cbz", "cbr", "zip", "epub"].contains(ext) {
++            let accessing = url.startAccessingSecurityScopedResource()
++            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
++            
++            guard let archive = try? Archive(url: url, accessMode: .read) else { return 0 }
++            
++            var count = 0
++            for entry in archive {
++                if entry.type == .directory { continue }
++                let entryExt = (entry.path as NSString).pathExtension.lowercased()
++                if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
++                    if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
++                    count += 1
++                }
++            }
++            return count
++        }
++        return 0
++    }
++
++    
+     // Γ£à NEW: Extract Smart Panels from ComicInfo.xml
+     func extractSmartPanels(from url: URL) async throws -> [Int: [PanelExtractor.Panel]]? {
+         await MainActor.run { processingStatus = "Reading Source Panels..." } // Re-assert status

@@ -156,154 +156,6 @@ struct PrecisionCanvasView: View {
                     .foregroundColor(.white)
             }
             
-            // MARK: - Toolbar & Overlays (Top)
-            VStack {
-                HStack {
-                    Button("Close") { saveAndExit() }
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                    
-                    Spacer()
-                    
-                    // ✅ Delete Button (Only when panel is selected)
-                    if let index = editorState.selectedPanelIndex {
-                        Button {
-                            withAnimation {
-                                if index < editorState.pageModel.panels.count {
-                                    let rect = editorState.pageModel.panels[index]
-                                    editorState.execute(.removePanel(index: index, rect: rect))
-                                    editorState.selectedPanelIndex = nil
-                                    currentDragRect = nil
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "trash.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(.red)
-                        }
-                        .padding()
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                        .transition(.scale)
-                    }
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 20) {
-                        Button {
-                            withAnimation { editorState.undo() }
-                        } label: {
-                            Image(systemName: "arrow.uturn.backward.circle.fill")
-                                .font(.title2)
-                        }
-                        .disabled(!editorState.canUndo)
-                        
-                        Button {
-                            withAnimation { editorState.redo() }
-                        } label: {
-                            Image(systemName: "arrow.uturn.forward.circle.fill")
-                                .font(.title2)
-                        }
-                        .disabled(!editorState.canRedo)
-                    }
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
-                }
-                .padding()
-                
-                Spacer()
-                
-                // MARK: - Hybrid Bottom Toolbar (Classic Layout + iOS 26 Style)
-                VStack(spacing: 0) {
-                    Divider().opacity(0.3)
-                    
-                    HStack {
-                        // Tool: Scan
-                        Button {
-                           runScan()
-                        } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: "sparkles")
-                                    .font(.system(size: 20))
-                                Text("Scan").font(.caption2)
-                            }
-                        }
-                        .foregroundColor(selectedTool == .edit ? .white : .secondary) // Highlight action? No, scan is action.
-                        .frame(maxWidth: .infinity)
-                        
-                        // Tool: Edit
-                        Button { selectedTool = .edit } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: "cursorarrow.rays")
-                                    .font(.system(size: 20))
-                                Text("Edit").font(.caption2)
-                            }
-                        }
-                        .foregroundColor(selectedTool == .edit ? .blue : .primary)
-                        .frame(maxWidth: .infinity)
-                        
-                        // Tool: Knife
-                        Button { selectedTool = .knife } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: "scissors")
-                                    .font(.system(size: 20))
-                                Text("Split").font(.caption2)
-                            }
-                        }
-                        .foregroundColor(selectedTool == .knife ? .blue : .primary)
-                        .frame(maxWidth: .infinity)
-                        
-                        // Tool: Anchor
-                        Button { selectedTool = .anchor } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: "plus.square.dashed")
-                                    .font(.system(size: 20))
-                                Text("Add").font(.caption2)
-                            }
-                        }
-                        .foregroundColor(selectedTool == .anchor ? .blue : .primary)
-                        .frame(maxWidth: .infinity)
-                        
-                        // Tool: Preview
-                        Button { selectedTool = .preview } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: "eye")
-                                    .font(.system(size: 20))
-                                Text("Preview").font(.caption2)
-                            }
-                        }
-                        .foregroundColor(selectedTool == .preview ? .blue : .primary)
-                        .frame(maxWidth: .infinity)
-                        
-                        // Commit Button (if needed)
-                        if !editorState.pageModel.proposedPanels.isEmpty {
-                            Divider()
-                            Button {
-                                withAnimation { editorState.commitProposals() }
-                            } label: {
-                                VStack(spacing: 4) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(.green)
-                                    Text("Commit").font(.caption2).foregroundColor(.green)
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .padding(.top, 12)
-                    .padding(.bottom, 34) // Safe Area
-                    .background(.ultraThinMaterial) // iOS 26 Glass
-                }
-                .edgesIgnoringSafeArea(.bottom)
-            }
-            
-            /* Preview handled via fullScreenCover */
-
             // MARK: - Security Overlay
             if pdf.isPrivate {
                FaceIDOverlay()
@@ -316,22 +168,81 @@ struct PrecisionCanvasView: View {
                     .ignoresSafeArea()
             }
         }
-        .inspector(isPresented: $isInspectorPresented) {
-            PanelInspectorView(editorState: editorState)
-                .inspectorColumnWidth(min: 280, ideal: 320, max: 400)
-                .presentationDetents([.medium, .large])
-                .presentationBackgroundInteraction(.enabled)
-                // iOS 26 Aesthetic: Ultra Thin Material
-                .background(.ultraThinMaterial)
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            isInspectorPresented.toggle()
-                        } label: {
-                            Label("Inspector", systemImage: "sidebar.trailing")
+        .navigationTitle("Page \(pageIndex + 1)")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                HStack(spacing: 16) {
+                    Button(action: { withAnimation { editorState.undo() } }) {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
+                    .disabled(!editorState.canUndo)
+                    
+                    Button(action: { withAnimation { editorState.redo() } }) {
+                        Image(systemName: "arrow.uturn.forward")
+                    }
+                    .disabled(!editorState.canRedo)
+                    
+                    if let index = editorState.selectedPanelIndex {
+                        Button(role: .destructive, action: {
+                            withAnimation {
+                                if index < editorState.pageModel.panels.count {
+                                    let rect = editorState.pageModel.panels[index]
+                                    editorState.execute(.removePanel(index: index, rect: rect))
+                                    editorState.selectedPanelIndex = nil
+                                    currentDragRect = nil
+                                }
+                            }
+                        }) {
+                            Image(systemName: "trash").foregroundColor(.red)
                         }
                     }
+                    
+                    if !editorState.pageModel.proposedPanels.isEmpty {
+                        Button("Commit") {
+                            withAnimation { editorState.commitProposals() }
+                        }
+                        .bold()
+                        .foregroundColor(.green)
+                    }
                 }
+            }
+            
+            ToolbarItemGroup(placement: .bottomBar) {
+                Spacer()
+                Button(action: runScan) {
+                    VStack(spacing: 4) { Image(systemName: "sparkles"); Text("Scan").font(.caption2) }
+                }
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .edit }) {
+                    VStack(spacing: 4) { Image(systemName: "cursorarrow.rays"); Text("Edit").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .edit ? .blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .knife }) {
+                    VStack(spacing: 4) { Image(systemName: "scissors"); Text("Split").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .knife ? .blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .anchor }) {
+                    VStack(spacing: 4) { Image(systemName: "plus.square.dashed"); Text("Add").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .anchor ? .blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .preview }) {
+                    VStack(spacing: 4) { Image(systemName: "eye"); Text("Preview").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .preview ? .blue : .primary)
+                Spacer()
+            }
         }
         .task {
             loadPage()
@@ -355,7 +266,7 @@ struct PrecisionCanvasView: View {
         }
     }
     
-    @State private var isInspectorPresented: Bool = true
+
     @State private var activeSnapGuides: [SnapGuide] = []
     
     // Resize State

@@ -119,83 +119,9 @@ struct PageManagerView: View {
     let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
     
     var body: some View {
-        // Simple VStack (No Nested Navigation)
-        VStack(spacing: 0) {
-            
-            // Custom Header
-            HStack {
-                Text("Edit Pages")
-                    .font(.headline)
-                Spacer()
-                
-                // ✅ Selection Menu
-                Menu {
-                    Button(action: { selectFirst(20) }) { Label("Select First 20", systemImage: "number.square") }
-                    Button(action: { selectFirst(50) }) { Label("Select First 50", systemImage: "number.square") }
-                    Button(action: { selectFirst(100) }) { Label("Select First 100", systemImage: "number.square") }
-                    Button(action: { selectAll() }) { Label("Select All", systemImage: "checkmark.circle.fill") }
-                    Button(role: .destructive, action: { selectedPages.removeAll() }) { Label("Deselect All", systemImage: "xmark.circle") }
-                } label: {
-                    Image(systemName: "checklist")
-                        .font(.body)
-                        .padding(8)
-                }
-                
-                // ✅ Toggle Selection Mode
-                Button(action: { isSelectionMode.toggle() }) {
-                    Image(systemName: isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
-                        .font(.body)
-                        .padding(8)
-                        .foregroundColor(isSelectionMode ? .blue : .primary)
-                }
-                
-                // ✅ NEW: Scan/View Chapters (Books Only)
-                if livePDF.contentType == .book {
-                     Menu {
-                         Button(action: { Task { await scanChapters() } }) {
-                             Label("Scan for Chapters", systemImage: "doc.text.magnifyingglass")
-                         }
-                         
-                         if !livePDF.chapters.isEmpty {
-                             Button(action: { showingChapters = true }) {
-                                 Label("View Chapters (\(livePDF.chapters.count))", systemImage: "list.bullet")
-                             }
-                         }
-                     } label: {
-                         Image(systemName: "list.bullet.rectangle")
-                             .font(.body)
-                             .padding(8)
-                     }
-                }
-                
-                Button(action: { showingMetadataEditor = true }) {
-                    Image(systemName: "info.circle")
-                        .font(.body)
-                        .padding(8)
-                }
-                
-                Button("Done") {
-                    Task {
-                        if !selectedPages.isEmpty && !isSelectionMode {
-                            // If user just deselected, we don't save.
-                            // But if they reordered, we save.
-                            // We need to check if order successfully changed.
-                            // Since we don't track 'isDirty', we just attempt save if needed.
-                            await saveReorder()
-                        }
-                        // Always clean up and dismiss
-                        viewModel.cleanup()
-                        dismiss()
-                    }
-                }
-                .font(.body.bold())
-            }
-            .padding()
-            .background(Color(UIColor.systemBackground))
-            .shadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
-            .zIndex(1)
-            
-            // Main Content
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Main Content
             ZStack {
                 if let error = viewModel.errorMessage {
                     VStack(spacing: 20) {
@@ -343,29 +269,70 @@ struct PageManagerView: View {
                 .background(Color(UIColor.systemBackground))
             }
         }
+        .navigationTitle("Editor Workspace")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Done") {
+                    Task {
+                        if !selectedPages.isEmpty && !isSelectionMode {
+                            await saveReorder()
+                        }
+                        viewModel.cleanup()
+                        dismiss()
+                    }
+                }
+            }
+            
+            ToolbarItem(placement: .navigationBarTrailing) {
+                HStack {
+                    if livePDF.contentType == .book {
+                        Menu {
+                            Button(action: { Task { await scanChapters() } }) {
+                                Label("Scan for Chapters", systemImage: "doc.text.magnifyingglass")
+                            }
+                            
+                            if !livePDF.chapters.isEmpty {
+                                Button(action: { showingChapters = true }) {
+                                    Label("View Chapters (\(livePDF.chapters.count))", systemImage: "list.bullet")
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "list.bullet.rectangle")
+                        }
+                    }
+                    
+                    Button(action: { showingMetadataEditor = true }) {
+                        Image(systemName: "info.circle")
+                    }
+                    
+                    Button(action: { isSelectionMode.toggle() }) {
+                        Image(systemName: isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
+                    }
+                    
+                    Menu {
+                        Button(action: { selectFirst(20) }) { Label("Select First 20", systemImage: "number.square") }
+                        Button(action: { selectFirst(50) }) { Label("Select First 50", systemImage: "number.square") }
+                        Button(action: { selectFirst(100) }) { Label("Select First 100", systemImage: "number.square") }
+                        Button(action: { selectAll() }) { Label("Select All", systemImage: "checkmark.circle.fill") }
+                        Button(role: .destructive, action: { selectedPages.removeAll() }) { Label("Deselect All", systemImage: "xmark.circle") }
+                    } label: {
+                        Image(systemName: "checklist")
+                    }
+                }
+            }
+        }
+        .navigationDestination(isPresented: Binding(
+            get: { pageToEdit != nil },
+            set: { if !$0 { pageToEdit = nil } }
+        )) {
+            if let index = pageToEdit {
+                editorView(for: index)
+            }
+        }
         .task {
             // Trigger load once
             await viewModel.loadPages(from: pdf)
-        }
-        .sheet(item: Binding<Int?>(
-            get: { 
-                // Disallow panel editor for books
-                if pdf.contentType == .book { return nil }
-                return conversionManager.conversionSettings.panelEditorMode == .sheet ? pageToEdit : nil 
-            },
-            set: { if $0 == nil { pageToEdit = nil } }
-        )) { index in
-            editorView(for: index)
-        }
-        .fullScreenCover(item: Binding<Int?>(
-            get: { 
-                // Disallow panel editor for books
-                if pdf.contentType == .book { return nil }
-                return conversionManager.conversionSettings.panelEditorMode == .fullScreen ? pageToEdit : nil 
-            },
-            set: { if $0 == nil { pageToEdit = nil } }
-        )) { index in
-            editorView(for: index)
         }
         .sheet(isPresented: $showingChapters) {
              NavigationView {
@@ -417,6 +384,8 @@ struct PageManagerView: View {
                 }
             }
         }
+        }
+        } // End NavigationStack
     }
     
     // ✅ Helper to avoid duplicating the view code
