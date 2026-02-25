@@ -20,10 +20,29 @@ struct ConvertView: View {
                 .pickerStyle(.menu)
             } header: { Text("Source Details") }
 
+            // MARK: - Target Format
+            Section {
+                Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                    ForEach(OutputFormat.allCases) { format in
+                        Label(format.rawValue, systemImage: format.icon).tag(format)
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: conversionManager.conversionSettings.outputFormat) { newFormat in
+                    if newFormat != .epub {
+                        selectedPipeline = .standard
+                        applyPipeline(.standard)
+                    }
+                }
+            } header: { Text("Output Target") }
+
             // MARK: - Export Pipeline
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Export Mode").font(.headline).padding(.bottom, 4)
+                    Text("EPUB Export Mode")
+                        .font(.headline)
+                        .padding(.bottom, 4)
+                        .foregroundColor(conversionManager.conversionSettings.outputFormat == .epub ? .primary : .secondary)
 
                     ForEach(OutputPipeline.allCases) { pipeline in
                         let isDisabled = pipelineIsDisabled(pipeline)
@@ -126,11 +145,13 @@ struct ConvertView: View {
                 HStack(spacing: 6) {
                     Text(pipeline.rawValue).font(.headline).foregroundColor(textColor)
 
-                    // Warning badge for Pro Panel
-                    // Badges
                     if pipeline == .proPanel {
                         if isDisabled {
-                            badgePill("Comics Only", color: .gray)
+                            if conversionManager.conversionSettings.outputFormat != .epub {
+                                badgePill("EPUB Only", color: .gray)
+                            } else {
+                                badgePill("Comics Only", color: .gray)
+                            }
                         } else {
                             badgePill("Guided View", color: isSelected ? .purple.opacity(0.8) : .purple)
                         }
@@ -189,9 +210,13 @@ struct ConvertView: View {
         }
     }
 
-    /// Books do not support Pro Panel (panel detection is meaningless on text content)
+    /// Books do not support Pro Panel, and Pro Panel is strictly an EPUB feature.
     private func pipelineIsDisabled(_ pipeline: OutputPipeline) -> Bool {
-        pipeline == .proPanel && pdf.contentType == .book
+        if pipeline == .proPanel {
+            if pdf.contentType == .book { return true }
+            if conversionManager.conversionSettings.outputFormat != .epub { return true }
+        }
+        return false
     }
 
     private func applyPipeline(_ pipeline: OutputPipeline) {

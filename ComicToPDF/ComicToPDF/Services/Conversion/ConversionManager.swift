@@ -1344,6 +1344,32 @@ class ConversionManager: ObservableObject {
                 }
                 isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete!"; scanLibrary()
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> PDF", category: "Converter")
+            } else if jobSettings.outputFormat == .cbz {
+                // CBZ export
+                let fileManager = FileManager.default
+                let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
+                let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
+                
+                await MainActor.run { processingStatus = "Extracting Images..." }
+                let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                
+                let imageURLs = try await extractImageURLs(from: pdf.url)
+                for (idx, url) in imageURLs.enumerated() {
+                    let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+                    let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, ext))
+                    try fileManager.copyItem(at: url, to: dest)
+                    
+                    let p = Double(idx) / Double(imageURLs.count)
+                    await MainActor.run { self.conversionProgress = p; self.processingStatus = "Packaging CBZ..." }
+                }
+                
+                if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
+                try await ZipUtilities.zipDirectory(tempDir, to: outputURL)
+                try fileManager.removeItem(at: tempDir)
+                
+                isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete!"; scanLibrary()
+                Logger.shared.log("Conversion Successful: \(pdf.name) -> CBZ", category: "Converter")
             } else if jobSettings.outputPipeline == .proPanel {
                 // NEW primary panel path: KF8AZW3Converter (Amazon-compliant, px tap-targets, 150% magnify)
                 await MainActor.run { processingStatus = "Loading Panel Data..." }
@@ -1420,6 +1446,32 @@ class ConversionManager: ObservableObject {
                     }
                     await MainActor.run { self.scanLibrary() }
                     Logger.shared.log("Batch Conversion successful: \(pdf.name) -> PDF", category: "Converter")
+                } else if jobSettings.outputFormat == .cbz {
+                    let fileManager = FileManager.default
+                    let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
+                    let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
+                    let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    
+                    let imageURLs = try await extractImageURLs(from: pdf.url)
+                    for (idx, url) in imageURLs.enumerated() {
+                        let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+                        let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, ext))
+                        try fileManager.copyItem(at: url, to: dest)
+                        
+                        let p = Double(idx) / Double(imageURLs.count)
+                        await MainActor.run {
+                            self.conversionProgress = p
+                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
+                        }
+                    }
+                    
+                    if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
+                    try await ZipUtilities.zipDirectory(tempDir, to: outputURL)
+                    try fileManager.removeItem(at: tempDir)
+                    
+                    await MainActor.run { self.scanLibrary() }
+                    Logger.shared.log("Batch Conversion successful: \(pdf.name) -> CBZ", category: "Converter")
                 } else if jobSettings.outputPipeline == .proPanel {
                     await MainActor.run { processingStatus = "Reading panels for \(pdf.name)..." }
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
