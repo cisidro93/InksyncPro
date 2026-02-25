@@ -31,20 +31,14 @@ class SecurityManager: ObservableObject {
         }
     }
     
-    /// Attempt to unlock the vault using FaceID/TouchID
+    /// Attempt to unlock the vault using Device Authentication (FaceID/TouchID -> Passcode fallback)
     func authenticate() async -> Bool {
         context = LAContext() // Reset context
-        var error: NSError?
-        
-        // Check availability
-        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
-            print("Biometrics not available: \(error?.localizedDescription ?? "Unknown")")
-            // Fallback to passcode if needed, or fail
-            return await authenticateWithPasscode()
-        }
         
         do {
-            try await context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Unlock your Comic Vault")
+            // .deviceOwnerAuthentication natively tries Biometrics first, then automatically falls back to Passcode.
+            // This prevents hard crashes on simulators or devices with disabled FaceID.
+            try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your Comic Vault")
             await MainActor.run {
                 self.isVaultLocked = false
             }
@@ -52,20 +46,6 @@ class SecurityManager: ObservableObject {
         } catch {
             print("Authentication failed: \(error.localizedDescription)")
             return false
-        }
-    }
-    
-    private func authenticateWithPasscode() async -> Bool {
-        do {
-             // Fallback to device passcode
-             try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your Comic Vault")
-             await MainActor.run {
-                 self.isVaultLocked = false
-             }
-             return true
-        } catch {
-             print("Passcode Auth failed: \(error.localizedDescription)")
-             return false
         }
     }
     
