@@ -8,20 +8,47 @@ struct WiFiView: View {
     @Environment(\.dismiss) var dismiss
     @State private var qrCodeImage: UIImage?
     
+    private func settingsIcon(_ systemName: String, color: Color) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundColor(.white)
+            .frame(width: 28, height: 28)
+            .background(color)
+            .cornerRadius(6)
+    }
+
     var body: some View {
         NavigationView {
-            VStack(spacing: 30) {
-                Image(systemName: "wifi.circle.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(server.isRunning ? .green : .gray)
-                    .symbolEffect(.pulse, isActive: server.isRunning)
-                
-                Text(server.isRunning ? "Wi-Fi Server Active" : "Wi-Fi Server Stopped")
-                    .font(.title2).bold()
+            Form {
+                Section {
+                    VStack(spacing: 20) {
+                        Image(systemName: "wifi.circle.fill")
+                            .font(.system(size: 72))
+                            .foregroundColor(server.isRunning ? .green : .gray)
+                            .symbolEffect(.pulse, isActive: server.isRunning)
+                        
+                        Text(server.isRunning ? "Wi-Fi Server Active" : "Server Offline")
+                            .font(.title2).bold()
+                        
+                        Button(action: {
+                            if server.isRunning { server.stop() } else { server.start() }
+                        }) {
+                            Text(server.isRunning ? "Stop Server" : "Start Server")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(server.isRunning ? Color.red : Color.green)
+                                .cornerRadius(12)
+                        }
+                    }
+                    .padding(.vertical)
+                    .frame(maxWidth: .infinity)
+                }
                 
                 if server.isRunning {
-                    VStack(spacing: 20) {
-                        VStack(spacing: 5) {
+                    Section(header: Text("Connection Details")) {
+                        VStack(alignment: .leading, spacing: 12) {
                             Text("Type this URL into your browser:")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
@@ -30,101 +57,82 @@ struct WiFiView: View {
                                 .font(.system(.title3, design: .monospaced))
                                 .fontWeight(.bold)
                                 .padding(10)
-                                .background(Color.gray.opacity(0.1))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(UIColor.tertiarySystemFill))
                                 .cornerRadius(8)
                                 .textSelection(.enabled)
                         }
+                        .padding(.vertical, 4)
                         
-                        Divider()
-                        
-                        VStack(spacing: 5) {
+                        VStack(alignment: .leading, spacing: 12) {
                             Text("Security Code (PIN)")
                                 .font(.caption)
                                 .textCase(.uppercase)
                                 .foregroundColor(.secondary)
                             
                             Text(server.securityCode)
-                                .font(.system(size: 44, weight: .heavy, design: .monospaced))
+                                .font(.system(size: 34, weight: .heavy, design: .monospaced))
                                 .foregroundColor(.blue)
-                                .padding(.horizontal)
                         }
+                        .padding(.vertical, 4)
                         
                         HStack {
-                            Image(systemName: "network")
+                            settingsIcon("network", color: server.activeConnections > 0 ? .green : .gray)
                             Text("\(server.activeConnections) Active Connection\(server.activeConnections == 1 ? "" : "s")")
                         }
-                        .font(.footnote)
-                        .foregroundColor(server.activeConnections > 0 ? .green : .secondary)
-                        .padding(.top, 5)
                     }
-                    .padding()
-                    .background(Color(UIColor.secondarySystemBackground))
-                    .cornerRadius(16)
                     
-                    // ✅ QR Code for Quick Connect
                     if let qr = qrCodeImage {
-                        VStack(spacing: 8) {
-                            Text("Scan to Connect")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Image(uiImage: qr)
-                                .resizable()
-                                .interpolation(.none)
-                                .scaledToFit()
-                                .frame(width: 160, height: 160)
-                                .padding(12)
-                                .background(Color.white)
-                                .cornerRadius(12)
-                                .shadow(radius: 2)
+                        Section(header: Text("Quick Connect")) {
+                            VStack(spacing: 12) {
+                                Image(uiImage: qr)
+                                    .resizable()
+                                    .interpolation(.none)
+                                    .scaledToFit()
+                                    .frame(width: 140, height: 140)
+                                    .cornerRadius(12)
+                                
+                                Text("Scan with your mobile device")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical)
                         }
                     }
                 }
                 
-                // ✅ NEW: Progress UI
                 if server.isUploading {
-                    VStack(spacing: 8) {
-                        Text("Uploading: \(server.currentUploadFilename)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        ProgressView(value: server.uploadProgress)
-                            .progressViewStyle(LinearProgressViewStyle(tint: .orange))
-                            .padding(.horizontal)
-                        
-                        Text("\(Int(server.uploadProgress * 100))%")
-                            .font(.caption.bold())
+                    Section(header: Text("In Progress")) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Uploading: \(server.currentUploadFilename)")
+                                .font(.caption)
+                                .lineLimit(1)
+                            
+                            ProgressView(value: server.uploadProgress)
+                                .progressViewStyle(LinearProgressViewStyle(tint: .orange))
+                            
+                            Text("\(Int(server.uploadProgress * 100))%")
+                                .font(.caption.bold())
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                        .padding(.vertical, 4)
                     }
-                    .padding()
-                    .background(Color.secondary.opacity(0.1))
-                    .cornerRadius(12)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 
-                Button(action: {
-                    if server.isRunning { server.stop() } else { server.start() }
-                }) {
-                    Text(server.isRunning ? "Stop Server" : "Start Server")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding()
-                        .frame(maxWidth: 200)
-                        .background(server.isRunning ? Color.red : Color.green)
-                        .cornerRadius(12)
+                Section(header: Text("Alternative: USB Transfer")) {
+                    HStack(alignment: .top, spacing: 16) {
+                        settingsIcon("cable.connector", color: .gray)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("1. Connect to Computer via USB")
+                            Text("2. Open Finder (Mac) or iTunes (PC)")
+                            Text("3. Drag files from the 'Inksync Pro' folder")
+                        }
+                        .font(.subheadline)
+                    }
+                    .padding(.vertical, 4)
                 }
-                
-                Spacer()
-                
-                VStack(alignment: .leading, spacing: 10) {
-                    Divider()
-                    Text("💡 USB Transfer").font(.headline)
-                    Text("1. Connect to Computer via USB.")
-                    Text("2. Open Finder (Mac) or iTunes (PC).")
-                    Text("3. Drag files from the 'Inksync Pro' folder.")
-                }
-                .padding()
-                .foregroundColor(.secondary)
             }
-            .padding()
             .navigationTitle("Transfer Files")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {

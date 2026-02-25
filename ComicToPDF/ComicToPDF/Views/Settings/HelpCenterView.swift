@@ -158,9 +158,11 @@ struct HelpRow: View {
     var body: some View {
         HStack(spacing: 15) {
             Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(iconColor)
-                .frame(width: 32, height: 32)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 28, height: 28)
+                .background(iconColor)
+                .cornerRadius(6)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)

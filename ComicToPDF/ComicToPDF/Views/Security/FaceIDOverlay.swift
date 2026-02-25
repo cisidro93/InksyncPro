@@ -7,50 +7,52 @@ struct FaceIDOverlay: View {
     var body: some View {
         ZStack {
             if securityManager.isVaultLocked {
-                // Blur Effect
+                // Premium Blur Effect
                 Rectangle()
-                    .fill(.ultraThinMaterial)
+                    .fill(.regularMaterial)
                     .ignoresSafeArea()
                 
-                VStack(spacing: 20) {
-                    Image(systemName: "lock.shield.fill")
-                        .font(.system(size: 60))
+                VStack(spacing: 24) {
+                    Image(systemName: "faceid")
+                        .font(.system(size: 72, weight: .light))
                         .foregroundColor(.blue)
-                        .padding()
+                        .padding(24)
                         .background(
                             Circle()
-                                .fill(.ultraThinMaterial)
-                                .shadow(radius: 10)
+                                .fill(Color(UIColor.secondarySystemGroupedBackground))
+                                .shadow(color: .black.opacity(0.1), radius: 20, x: 0, y: 10)
                         )
                     
-                    Text("Vault Locked")
-                        .font(.title2)
-                        .bold()
-                    
-                    Text("Authentication required to access private content.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+                    VStack(spacing: 8) {
+                        Text("App Locked")
+                            .font(.title)
+                            .fontWeight(.semibold)
+                        
+                        Text("Authenticate with Face ID\nto view your private collection.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                    }
                     
                     Button {
                         authenticate()
                     } label: {
-                        HStack {
-                            Image(systemName: "faceid")
-                            Text("Unlock with FaceID")
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(25)
+                        Text("Unlock App")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: 240)
+                            .padding(.vertical, 16)
+                            .background(Color.blue)
+                            .clipShape(Capsule())
+                            .shadow(color: .blue.opacity(0.3), radius: 8, y: 4)
                     }
+                    .padding(.top, 10)
                 }
-                .transition(.opacity)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
-        .animation(.default, value: securityManager.isVaultLocked)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: securityManager.isVaultLocked)
     }
     
     private func authenticate() {
