@@ -1887,7 +1887,7 @@ class ConversionManager: ObservableObject {
         }
         
         guard let entry = comicInfoEntry else {
-            Logger.shared.log("No ComicInfo Metadata found (Embedded or File)", category: "SmartPanels")
+            Logger.shared.log("No ComicInfo or panels.json Metadata found", category: "SmartPanels")
             
             // Log what WAS found
             let files = archive.makeIterator().prefix(10).map { $0.path }

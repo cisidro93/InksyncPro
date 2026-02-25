@@ -401,6 +401,8 @@ class PanelViewEPUBConverter {
         // We just assign 1-based ordinals in array order.
         var tapTargets    = ""
         var magnifyBlocks = ""
+        
+        Logger.shared.log("buildXHTMLPage invoked for page: \(pageNum), received \(panels.count) panels", category: "DEBUG_PV")
 
         for (panelIdx, panel) in panels.enumerated() {
             let ordinal = panelIdx + 1
