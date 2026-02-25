@@ -25,7 +25,7 @@ struct SeriesLibraryView: View {
                 if !viewModel.seriesGroups.isEmpty {
                     LazyVGrid(columns: columns, spacing: 20) {
                         ForEach(viewModel.seriesGroups) { group in
-                            NavigationLink(destination: SeriesDetailView(series: group)) {
+                            NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: .constant(nil), useNavigationStack: true)) {
                                 SeriesCard(group: group)
                             }
                             .buttonStyle(PlainButtonStyle())

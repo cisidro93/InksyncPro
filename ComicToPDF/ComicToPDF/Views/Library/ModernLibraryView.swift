@@ -61,23 +61,17 @@ struct ModernLibraryView: View {
             case .single(let pdf): return "single_\(pdf.id)"
             case .series(let group): return "series_\(group.id)"
             }
-        }
-        
-        var sortIndex: Int {
-            get { return _sortIndex }
-            set { _sortIndex = newValue }
-        }
-        
-        private var _sortIndex: Int = 0
-        
-        mutating func setSortIndex(_ index: Int) {
-            self._sortIndex = index
+        var id: String {
+            switch self {
+            case .single(let pdf): return "single_\(pdf.id)"
+            case .series(let group): return "series_\(group.id)"
+            }
         }
     }
     
     var libraryItems: [LibraryListItem] {
         let allPDFs = sortPDFs(conversionManager.convertedPDFs)
-        var items: [LibraryListItem] = []
+        var items: [(Int, LibraryListItem)] = []
         var seriesDict: [String: [ConvertedPDF]] = [:]
         var singles: [ConvertedPDF] = []
         
@@ -125,21 +119,19 @@ struct ModernLibraryView: View {
             }
             
             let group = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: coverID, count: sortedIssues.count, issues: sortedIssues)
-            var item = LibraryListItem.series(group)
-            item.setSortIndex(firstAppearanceIndex["series_\(seriesName)"] ?? 0)
-            items.append(item)
+            let item = LibraryListItem.series(group)
+            items.append((firstAppearanceIndex["series_\(seriesName)"] ?? 0, item))
         }
         
         for single in singles {
-            var item = LibraryListItem.single(single)
-            item.setSortIndex(firstAppearanceIndex["single_\(single.id)"] ?? 0)
-            items.append(item)
+            let item = LibraryListItem.single(single)
+            items.append((firstAppearanceIndex["single_\(single.id)"] ?? 0, item))
         }
         
         // Apply Search Filter
         if !searchText.isEmpty {
-            items = items.filter { item in
-                switch item {
+            items = items.filter { tuple in
+                switch tuple.1 {
                 case .single(let pdf): return pdf.name.localizedCaseInsensitiveContains(searchText)
                 case .series(let group): return group.title.localizedCaseInsensitiveContains(searchText)
                 }
@@ -147,8 +139,8 @@ struct ModernLibraryView: View {
         }
         
         // Restore Sorting Order based on first appearance in allPDFs
-        items.sort { $0.sortIndex < $1.sortIndex }
-        return items
+        items.sort { $0.0 < $1.0 }
+        return items.map { $0.1 }
     }
     
     func sortPDFs(_ pdfs: [ConvertedPDF]) -> [ConvertedPDF] {
@@ -605,7 +597,6 @@ struct ModernFileRow: View {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                }
                 } else {
                     Rectangle().fill(Theme.surfaceElevated)
                     Image(systemName: "doc.text.fill")
