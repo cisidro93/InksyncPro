@@ -61,11 +61,6 @@ struct ModernLibraryView: View {
             case .single(let pdf): return "single_\(pdf.id)"
             case .series(let group): return "series_\(group.id)"
             }
-        var id: String {
-            switch self {
-            case .single(let pdf): return "single_\(pdf.id)"
-            case .series(let group): return "series_\(group.id)"
-            }
         }
     }
     
