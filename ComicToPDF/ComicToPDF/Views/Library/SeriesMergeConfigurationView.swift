@@ -86,7 +86,7 @@ struct SeriesMergeConfigurationView: View {
                 Text(pdf.name)
                     .font(.subheadline)
                     .lineLimit(2)
-                Text(pdf.fileSizeFormatted)
+                Text(pdf.formattedSize)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
