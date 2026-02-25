@@ -1518,33 +1518,87 @@ class ConversionManager: ObservableObject {
         guard !sourceFiles.isEmpty else { return }
         isConverting = true
         
-        var generatedEPUBs: [URL] = []
         let fileManager = FileManager.default
+        let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var jobSettings = conversionSettings
+        jobSettings.mangaMode = mangaMode
         
-        // 1. Convert Loop
-        for (index, file) in sourceFiles.enumerated() {
-            if Task.isCancelled { break }
-            
-            let currentNum = index + 1
-            await MainActor.run {
-                self.processingStatus = "Step 1/2: Converting \(currentNum) of \(sourceFiles.count)"
-                self.statusMessage = "Converting \(file.name)..."
-                self.conversionProgress = 0.0
+        do {
+            if jobSettings.outputFormat == .pdf || jobSettings.outputFormat == .cbz {
+                // Image-based Bulk Extraction & Merge
+                var allImages: [URL] = []
+                for (index, file) in sourceFiles.enumerated() {
+                    if Task.isCancelled { break }
+                    await MainActor.run {
+                        self.processingStatus = "Step 1/2: Extracting \(index + 1) of \(sourceFiles.count)"
+                        self.statusMessage = "Extracting \(file.name)..."
+                        self.conversionProgress = Double(index) / Double(sourceFiles.count)
+                    }
+                    let images = try await extractImageURLs(from: file.url)
+                    allImages.append(contentsOf: images)
+                }
+                
+                guard !allImages.isEmpty else {
+                    isConverting = false; return
+                }
+                
+                await MainActor.run {
+                    self.processingStatus = "Step 2/2: Merging..."
+                    self.statusMessage = "Merging \(allImages.count) pages..."
+                    self.conversionProgress = 0.5
+                }
+                
+                let ext = jobSettings.outputFormat == .cbz ? ".cbz" : ".pdf"
+                let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + ext
+                let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
+                if fileManager.fileExists(atPath: finalOutputURL.path) { try fileManager.removeItem(at: finalOutputURL) }
+                
+                if jobSettings.outputFormat == .pdf {
+                    try PDFGenerator.generate(from: allImages, to: finalOutputURL) { progress in
+                        Task { @MainActor in self.conversionProgress = 0.5 + (0.5 * progress) }
+                    }
+                } else {
+                    let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    for (idx, url) in allImages.enumerated() {
+                        let pathExt = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+                        let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, pathExt))
+                        try fileManager.copyItem(at: url, to: dest)
+                    }
+                    try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
+                    try fileManager.removeItem(at: tempDir)
+                }
+                
+                await MainActor.run {
+                    self.scanLibrary()
+                    self.statusMessage = "✅ Merge Complete!"
+                    self.processingStatus = ""
+                    self.conversionProgress = 1.0
+                    self.isConverting = false
+                }
+                try? await Task.sleep(nanoseconds: 3 * 1_000_000_000)
+                await MainActor.run { self.statusMessage = nil }
+                return
             }
-            var jobSettings = conversionSettings
-            // ✅ Override Manga Mode for this batch
-            jobSettings.mangaMode = mangaMode
-            // Pipeline is already set by ConvertView; use it as-is for merge operations.
             
-            await MainActor.run { processingStatus = "Reading Source Panels..." }
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            let combinedManifest = await getCombinedManifest(for: file)
+            // EPUB Bulk Merge (Existing Pipeline)
+            var generatedEPUBs: [URL] = []
             
-            // ✅ Log Settings for Debugging (User Request)
-            Logger.shared.log("Starting Conversion for '\(file.name)'", category: "Converter")
-            Logger.shared.log("Settings: Format=\(jobSettings.outputFormat.rawValue), Quality=\(jobSettings.compressionQuality.rawValue), Manga=\(jobSettings.mangaMode), Split=\(jobSettings.enablePanelSplit)", category: "Settings")
-            
-            do {
+            for (index, file) in sourceFiles.enumerated() {
+                if Task.isCancelled { break }
+                let currentNum = index + 1
+                await MainActor.run {
+                    self.processingStatus = "Step 1/2: Converting \(currentNum) of \(sourceFiles.count)"
+                    self.statusMessage = "Converting \(file.name)..."
+                    self.conversionProgress = 0.0
+                }
+                
+                await MainActor.run { processingStatus = "Reading Source Panels..." }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                let combinedManifest = await getCombinedManifest(for: file)
+                
+                Logger.shared.log("Starting Conversion for '\(file.name)'", category: "Converter")
+                
                 let resultingURLs: [URL]
                 if jobSettings.outputPipeline == .proPanel {
                     let converter = KF8AZW3Converter()
@@ -1559,54 +1613,30 @@ class ConversionManager: ObservableObject {
                 }
                 generatedEPUBs.append(contentsOf: resultingURLs)
                 
-                // ✅ NEW: Inject Metadata into Generated EPUBs
-                // This ensures that if the user re-imports this EPUB, the panels are preserved.
-                // We inject the full set of overrides; irrelevant indices will simply be ignored by the importer.
                 for epubURL in resultingURLs {
                     try? await injectMetadata(into: epubURL, panels: combinedManifest, metadata: file.metadata)
                 }
-                
-            } catch {
-
-                await MainActor.run { self.statusMessage = "Failed: \(file.name)" }
-                try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
-                isConverting = false
-                return
             }
-        }
-        
-        // 2. Merge Phase
-        guard !generatedEPUBs.isEmpty else {
-            isConverting = false; return
-        }
-        
-        await MainActor.run {
-            self.processingStatus = "Step 2/2: Merging..."
-            self.statusMessage = "Merging \(generatedEPUBs.count) files..."
-            self.conversionProgress = 0.5 // Indeterminateish
-        }
-        
-        // Create output URL
-        let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + ".epub"
-        let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
-        
-        // Use global settings for the merge container
-        var mergeSettings = conversionSettings
-        mergeSettings.mangaMode = mangaMode
-        
-        let merger = EPUBMerger()
-        do {
-            try await merger.mergeEPUBs(sourceURLs: generatedEPUBs, outputURL: finalOutputURL, settings: mergeSettings)
-
             
-            // 3. Cleanup Intermediates
+            guard !generatedEPUBs.isEmpty else {
+                isConverting = false; return
+            }
+            
+            await MainActor.run {
+                self.processingStatus = "Step 2/2: Merging..."
+                self.statusMessage = "Merging \(generatedEPUBs.count) files..."
+                self.conversionProgress = 0.5
+            }
+            
+            let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + ".epub"
+            let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
+            
+            let merger = EPUBMerger()
+            try await merger.mergeEPUBs(sourceURLs: generatedEPUBs, outputURL: finalOutputURL, settings: jobSettings)
+
             await MainActor.run { self.statusMessage = "Cleaning up..." }
-            for url in generatedEPUBs {
-                try? fileManager.removeItem(at: url)
-            }
+            for url in generatedEPUBs { try? fileManager.removeItem(at: url) }
             
-            // 4. Finish
             await MainActor.run {
                 self.scanLibrary()
                 self.statusMessage = "✅ Merge Complete!"
@@ -1618,7 +1648,6 @@ class ConversionManager: ObservableObject {
             await MainActor.run { self.statusMessage = nil }
             
         } catch {
-
             await MainActor.run {
                 self.statusMessage = "Merge Failed: \(error.localizedDescription)"
                 self.isConverting = false
