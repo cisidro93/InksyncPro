@@ -326,8 +326,11 @@ struct PageManagerView: View {
             get: { pageToEdit != nil },
             set: { if !$0 { pageToEdit = nil } }
         )) {
-            if let index = pageToEdit {
-                editorView(for: index)
+            if let _ = pageToEdit {
+                editorView(for: Binding(
+                    get: { pageToEdit ?? 0 },
+                    set: { pageToEdit = $0 }
+                ))
             }
         }
         .task {
@@ -389,10 +392,11 @@ struct PageManagerView: View {
     
     // ✅ Helper to avoid duplicating the view code
     @ViewBuilder
-    func editorView(for index: Int) -> some View {
+    func editorView(for binding: Binding<Int>) -> some View {
         PrecisionCanvasView(
             pdf: pdf,
-            pageIndex: index,
+            pageIndex: binding,
+            totalCount: viewModel.items.count,
             conversionManager: conversionManager
         )
     }

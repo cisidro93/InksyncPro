@@ -3,7 +3,7 @@ import ZIPFoundation
 
 /// KF8AZW3Converter — Precision Kindle Fixed-Layout Engine
 ///
-/// Produces a KF8-compatible EPUB packaged with a `.azw3` extension.
+/// Produces a KF8-compatible EPUB.
 /// This is the format used by all major Kindle comic tools (KCC, KindleComicCreator)
 /// for sideloading via USB or Local Wi-Fi.
 ///
@@ -210,6 +210,7 @@ class KF8AZW3Converter {
             try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
 
             // Process pages
+            var batchPanels: [Int: [PanelExtractor.Panel]] = [:]
             for (localIndex, item) in batch.enumerated() {
                 let trueExt  = (item.url.pathExtension.lowercased() == "png") ? "png" : "jpg"
                 let safeExt  = (trueExt == "jpg") ? "jpeg" : trueExt
@@ -230,6 +231,9 @@ class KF8AZW3Converter {
                 // CBZToEPUBConverter.generateXHTML handles the Y-flip to top-left origin,
                 // preserving 1:1 pixel correspondence with the source CBZ coordinates.
                 let pagePanels = manualManifest?[item.index] ?? []
+                if !pagePanels.isEmpty {
+                    batchPanels[localIndex] = pagePanels
+                }
 
                 let imageW = Int(UIImage(data: item.data)?.size.width  ?? contentSize.width)
                 let imageH = Int(UIImage(data: item.data)?.size.height ?? contentSize.height)
@@ -270,6 +274,29 @@ class KF8AZW3Converter {
             // KF8-specific OPF metadata
             // region-all-mag-adp: enables Kindle's adaptive region magnification
             // EBOK cover guide entry: required for cover/lock-screen display on Kindle hardware
+            
+            // ✅ Guided View (ComicInfo/panels.json equivalence)
+            var comicInfoMeta = ""
+            if !batchPanels.isEmpty {
+                var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ComicInfo>\n  <Pages>\n"
+                let sortedKeys = batchPanels.keys.sorted()
+                for key in sortedKeys {
+                    if let panels = batchPanels[key] {
+                        xml += "    <Page Image=\"\(key)\">\n"
+                        for panel in panels {
+                            xml += "      <Panel x=\"\(panel.boundingBox.minX)\" y=\"\(panel.boundingBox.minY)\" width=\"\(panel.boundingBox.width)\" height=\"\(panel.boundingBox.height)\" />\n"
+                        }
+                        xml += "    </Page>\n"
+                    }
+                }
+                xml += "  </Pages>\n</ComicInfo>"
+                
+                if let data = xml.data(using: .utf8) {
+                    let base64 = data.base64EncodedString()
+                    comicInfoMeta = "\n                    <meta name=\"inksync-comicinfo\" content=\"\(base64)\"/>"
+                }
+            }
+
             let kf8Metadata = """
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">\(orientation)</meta>
@@ -285,7 +312,7 @@ class KF8AZW3Converter {
                     <meta name="ke-border-color" content="#FFFFFF"/>
                     <meta name="ke-border-width" content="0"/>
                     <meta name="orientation-lock" content="\(orientation)"/>
-                    <meta name="cover" content="img_1"/>
+                    <meta name="cover" content="img_1"/>\(comicInfoMeta)
             """
 
             let opfContent = """
@@ -312,21 +339,21 @@ class KF8AZW3Converter {
 
             try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
 
-            // Package as .azw3 (KF8 EPUB with sideload-friendly extension)
+            // Package as .epub (KF8 EPUB)
             let safeName = baseFilename.map { char -> String in
                 if char.isLetter || char.isNumber || char == "-" { return String(char) }
                 if char == "_" || char.isWhitespace { return " " }
                 return ""
             }.joined()
 
-            let outputFilename = (safeName.isEmpty ? "comic" : safeName) + partSuffix + ".azw3"
+            let outputFilename = (safeName.isEmpty ? "comic" : safeName) + partSuffix + ".epub"
             let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(outputFilename)
             if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
 
             // Manual ZIP: mimetype must be STORED (uncompressed) and FIRST
             try {
                 guard let archive = Archive(url: outputURL, accessMode: .create) else {
-                    throw NSError(domain: "KF8Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create .azw3 archive"])
+                    throw NSError(domain: "KF8Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create .epub archive"])
                 }
 
                 let mimetypePath = batchDir.appendingPathComponent("mimetype")

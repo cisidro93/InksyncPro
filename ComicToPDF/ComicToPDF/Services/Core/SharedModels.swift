@@ -306,15 +306,13 @@ struct ConversionSettings: Codable, Equatable {
     var showEditorDebug: Bool = false
     
     // Export pipeline — the canonical source of truth for which converter to use.
-    // .standard      → plain EPUB/PDF, no panel zoom metadata, cloud-safe
-    // .proPanelAZW3  → KF8 EPUB as .azw3, full Region Magnification, USB/Wi-Fi sideload only
-    // .proPanelEPUB  → PanelViewEPUBConverter: Amazon-compliant EPUB 3.0, px-absolute tap targets,
-    //                   150% magnified panels, Manga-aware spine; for Kindle Previewer testing
+    // .standard  → plain EPUB/PDF, no panel zoom metadata, cloud-safe
+    // .proPanel  → KF8 EPUB (Kindle Region Magnification Panels) for sideloading/previewer
     var outputPipeline: OutputPipeline = .standard
     
     // Legacy computed property — kept for compatibility with existing code.
     // Do NOT set this directly; change outputPipeline instead.
-    var isGuidedView: Bool { outputPipeline == .proPanelAZW3 || outputPipeline == .proPanelEPUB }
+    var isGuidedView: Bool { outputPipeline == .proPanel }
     
     // ✅ Keychain Integration
     // We remove the stored property and use a computed one.
@@ -370,10 +368,15 @@ struct ConversionSettings: Codable, Equatable {
         // Migration: if new outputPipeline key is present, decode it.
         // Otherwise fall back to the legacy isGuidedView bool to preserve user's previous setting.
         if let pipeline = try? container.decodeIfPresent(OutputPipeline.self, forKey: .outputPipeline) {
-            outputPipeline = pipeline ?? .standard
+            // Handle deprecated proPanelEPUB or AZW3 from old state by coalescing to proPanel
+            if pipeline?.rawValue == "Pro Panel (Sideload Only)" || pipeline?.rawValue == "Pro Panel EPUB (Previewer)" {
+                outputPipeline = .proPanel
+            } else {
+                outputPipeline = pipeline ?? .standard
+            }
         } else {
             let legacyGuided = (try? container.decodeIfPresent(Bool.self, forKey: .isGuidedView)) ?? false
-            outputPipeline = legacyGuided ? .proPanelAZW3 : .standard
+            outputPipeline = legacyGuided ? .proPanel : .standard
         }
         
         // Legacy API key migration
@@ -433,15 +436,11 @@ struct ImageEnhancementSettings: Codable, Equatable {
 
 // MARK: - Output Pipeline
 /// Determines the conversion pipeline used when exporting a comic.
-/// - `.standard`    : Plain EPUB/PDF. No panel zoom metadata. Safe for cloud sync (OneDrive, Google Drive, Send-to-Kindle email).
-/// - `.standard`:     Plain EPUB/PDF, no panel zoom metadata, cloud-safe.
-/// - `.proPanelAZW3`: KF8 EPUB packaged as .azw3 with Region Magnification panels. Sideload-only (USB, Local Wi-Fi).
-/// - `.proPanelEPUB`: PanelViewEPUBConverter output — EPUB 3.0 with px-absolute tap targets, 150% magnified
-///                    panels, and Manga-aware spine. Use for Kindle Previewer 3 validation.
+/// - `.standard` : Plain EPUB/PDF. No panel zoom metadata. Safe for cloud sync.
+/// - `.proPanel` : KF8 EPUB with Region Magnification panels.
 enum OutputPipeline: String, CaseIterable, Codable, Identifiable {
-    case standard      = "Standard (Cloud-Safe)"
-    case proPanelAZW3  = "Pro Panel (Sideload Only)"
-    case proPanelEPUB  = "Pro Panel EPUB (Previewer)"
+    case standard = "Standard (Cloud-Safe)"
+    case proPanel = "Pro Panel (Guided View)"
 
     var id: String { rawValue }
 }

@@ -1344,8 +1344,8 @@ class ConversionManager: ObservableObject {
                 }
                 isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete!"; scanLibrary()
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> PDF", category: "Converter")
-            } else if jobSettings.outputPipeline == .proPanelEPUB {
-                // NEW primary panel path: PanelViewEPUBConverter (Amazon-compliant, px tap-targets, 150% magnify)
+            } else if jobSettings.outputPipeline == .proPanel {
+                // NEW primary panel path: KF8AZW3Converter (Amazon-compliant, px tap-targets, 150% magnify)
                 await MainActor.run { processingStatus = "Loading Panel Data..." }
                 let combinedManifest = await getCombinedManifest(for: pdf)
                 let panelsByPage: [Int: [PanelExtractor.Panel]] = combinedManifest ?? [:]
@@ -1359,22 +1359,7 @@ class ConversionManager: ObservableObject {
                 statusMessage = "✅ Panel View EPUB Ready! (\(newURLs.count) file\(newURLs.count == 1 ? "" : "s"))"
                 scanLibrary()
                 Logger.shared.log("PanelView Conversion Successful: \(pdf.name) -> \(newURLs.count) EPUB files", category: "Converter")
-            } else if jobSettings.outputPipeline == .proPanelAZW3 {
-                // Legacy AZW3 path — retained for backward compatibility
-                // Pro Panel pipeline: KF8 AZW3 with 1:1 panel coordinates
-                await MainActor.run { processingStatus = "Reading Source Panels..." }
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                let combinedManifest = await getCombinedManifest(for: pdf)
-                let azw3Converter = KF8AZW3Converter()
-                let newURLs = try await azw3Converter.convert(
-                    sourceURL: pdf.url,
-                    settings: jobSettings,
-                    manualManifest: combinedManifest
-                ) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
-                isConverting = false; conversionProgress = 1.0
-                statusMessage = "✅ AZW3 Ready! (\(newURLs.count) file\(newURLs.count == 1 ? "" : "s")) — Sideload via USB or Wi-Fi."
-                scanLibrary()
-                Logger.shared.log("KF8 Conversion Successful: \(pdf.name) -> \(newURLs.count) AZW3 files", category: "Converter")
+                // Removed Legacy AZW3 & EPUB Paths
             } else {
                 // Standard EPUB (cloud-safe) — no panel metadata injected
                 let converter = CBZToEPUBConverter()
@@ -1435,7 +1420,7 @@ class ConversionManager: ObservableObject {
                     }
                     await MainActor.run { self.scanLibrary() }
                     Logger.shared.log("Batch Conversion successful: \(pdf.name) -> PDF", category: "Converter")
-                } else if jobSettings.outputPipeline == .proPanelAZW3 {
+                } else if jobSettings.outputPipeline == .proPanel {
                     await MainActor.run { processingStatus = "Reading panels for \(pdf.name)..." }
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     let combinedManifest = await getCombinedManifest(for: pdf)
@@ -1452,23 +1437,6 @@ class ConversionManager: ObservableObject {
                     }
                     await MainActor.run { self.scanLibrary() }
                     Logger.shared.log("Batch KF8 Conversion successful: \(pdf.name)", category: "Converter")
-                } else if jobSettings.outputPipeline == .proPanelEPUB {
-                    await MainActor.run { processingStatus = "Loading panels for \(pdf.name)..." }
-                    let combinedManifest = await getCombinedManifest(for: pdf)
-                    let panelsByPage: [Int: [PanelExtractor.Panel]] = combinedManifest ?? [:]
-                    let pvConverter = PanelViewEPUBConverter()
-                    _ = try await pvConverter.convert(
-                        sourceURL: pdf.url,
-                        settings: jobSettings,
-                        panels: panelsByPage
-                    ) { p in
-                        Task { @MainActor in
-                            self.conversionProgress = p
-                            self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
-                        }
-                    }
-                    await MainActor.run { self.scanLibrary() }
-                    Logger.shared.log("Batch PanelView Conversion successful: \(pdf.name)", category: "Converter")
                 } else {
                     // Standard EPUB — no panel metadata
                     let converter = CBZToEPUBConverter()
@@ -1511,8 +1479,6 @@ class ConversionManager: ObservableObject {
                 self.statusMessage = "Converting \(file.name)..."
                 self.conversionProgress = 0.0
             }
-            
-            let converter = CBZToEPUBConverter()
             var jobSettings = conversionSettings
             // ✅ Override Manga Mode for this batch
             jobSettings.mangaMode = mangaMode
@@ -1527,9 +1493,16 @@ class ConversionManager: ObservableObject {
             Logger.shared.log("Settings: Format=\(jobSettings.outputFormat.rawValue), Quality=\(jobSettings.compressionQuality.rawValue), Manga=\(jobSettings.mangaMode), Split=\(jobSettings.enablePanelSplit)", category: "Settings")
             
             do {
-                let resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
-                    Task { @MainActor in
-                        self.conversionProgress = progress
+                let resultingURLs: [URL]
+                if jobSettings.outputPipeline == .proPanel {
+                    let converter = KF8AZW3Converter()
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
+                        Task { @MainActor in self.conversionProgress = progress }
+                    }
+                } else {
+                    let converter = CBZToEPUBConverter()
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
+                        Task { @MainActor in self.conversionProgress = progress }
                     }
                 }
                 generatedEPUBs.append(contentsOf: resultingURLs)
@@ -1636,8 +1609,24 @@ class ConversionManager: ObservableObject {
     
     func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
         if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }
-        Task { await generateCoverThumbnail(for: pdf) }
-        return UIImage(systemName: "doc.text.fill")
+        
+        Task.detached(priority: .userInitiated) {
+            // Check disk cache first to avoid extracting the archive again
+            if let coverURL = await self.getCoverURL(for: pdf),
+               let data = try? Data(contentsOf: coverURL),
+               let image = UIImage(data: data) {
+                
+                await MainActor.run {
+                    self.thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
+                    self.objectWillChange.send()
+                }
+            } else {
+                // Generate from scratch if it doesn't exist
+                await self.generateCoverThumbnail(for: pdf)
+            }
+        }
+        
+        return nil
     }
     
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {

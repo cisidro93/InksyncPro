@@ -7,12 +7,12 @@ struct PrecisionCanvasView: View {
     @Environment(\.dismiss) var dismiss
     
     let pdf: ConvertedPDF
-    let pageIndex: Int
+    @Binding var pageIndex: Int
+    let totalCount: Int
     
     @StateObject private var editorState: PageEditorState
     @State private var pageImage: UIImage?
     @State private var selectedTool: WorkAreaToolbar.ToolType = .edit
-    // @State private var selectedPanelIndex: Int? // ❌ Removed: Use editorState.selectedPanelIndex
     @State private var zoomScale: CGFloat = 1.0
     @State private var viewSize: CGSize = .zero
     
@@ -20,9 +20,10 @@ struct PrecisionCanvasView: View {
     @State private var dragStart:  NormalizedCoordinate?
     @State private var currentDragRect: NormalizedRect?
     
-    init(pdf: ConvertedPDF, pageIndex: Int, conversionManager: ConversionManager) {
+    init(pdf: ConvertedPDF, pageIndex: Binding<Int>, totalCount: Int, conversionManager: ConversionManager) {
         self.pdf = pdf
-        self.pageIndex = pageIndex
+        self._pageIndex = pageIndex
+        self.totalCount = totalCount
         
         let initialModel = conversionManager.getPageModel(for: pdf.id, pageIndex: pageIndex)
         let undoManager = UndoManager()
@@ -173,6 +174,23 @@ struct PrecisionCanvasView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 16) {
+                    if pageIndex > 0 {
+                        Button(action: {
+                            conversionManager.savePageModel(editorState.pageModel, for: pdf.id)
+                            pageIndex -= 1
+                        }) {
+                            Image(systemName: "chevron.left")
+                        }
+                    }
+                    if pageIndex < totalCount - 1 {
+                        Button(action: {
+                            conversionManager.savePageModel(editorState.pageModel, for: pdf.id)
+                            pageIndex += 1
+                        }) {
+                            Image(systemName: "chevron.right")
+                        }
+                    }
+
                     Button(action: { withAnimation { editorState.undo() } }) {
                         Image(systemName: "arrow.uturn.backward")
                     }
@@ -247,6 +265,15 @@ struct PrecisionCanvasView: View {
         .task {
             loadPage()
         }
+        .onChange(of: pageIndex) { newIndex in
+            // When page traversing, instantly load new page without destroying view
+            let newModel = conversionManager.getPageModel(for: pdf.id, pageIndex: newIndex)
+            editorState.pageModel = newModel
+            editorState.selectedPanelIndex = nil
+            currentDragRect = nil
+            selectedTool = .edit
+            loadPage()
+        }
         .fullScreenCover(isPresented: Binding(
             get: { selectedTool == .preview },
             set: { if !$0 { selectedTool = .edit } }
@@ -261,6 +288,8 @@ struct PrecisionCanvasView: View {
             }
         }
         .onDisappear {
+            // ✅ Auto-save changes when leaving the page
+            conversionManager.savePageModel(editorState.pageModel, for: pdf.id)
             // ✅ Clean up temporary files when closing editor
             conversionManager.endSession()
         }

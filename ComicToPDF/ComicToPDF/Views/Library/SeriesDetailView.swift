@@ -8,6 +8,11 @@ struct SeriesDetailView: View {
     
     @State private var sortOrder: SortOrder = .ascending
     @State private var headerCover: UIImage? = nil
+    
+    // Batch Selection
+    @State private var selection = Set<UUID>()
+    @State private var isSelectionMode: Bool = false
+    @State private var showingMergeConfig: Bool = false
 
     enum SortOrder { case ascending, descending }
 
@@ -19,7 +24,26 @@ struct SeriesDetailView: View {
         List {
             Section(header: headerView) {
                 ForEach(sortedIssues) { pdf in
-                    if useNavigationStack {
+                    if isSelectionMode {
+                        Button {
+                            if selection.contains(pdf.id) {
+                                selection.remove(pdf.id)
+                            } else {
+                                selection.insert(pdf.id)
+                            }
+                        } label: {
+                            HStack {
+                                LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
+                                Spacer()
+                                Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
+                                    .font(.title2)
+                            }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Color.black)
+                        
+                    } else if useNavigationStack {
                         NavigationLink(value: pdf) {
                             LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
                         }
@@ -54,17 +78,53 @@ struct SeriesDetailView: View {
         .navigationTitle(series.title)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Picker("Sort", selection: $sortOrder) {
-                        Text("Oldest First").tag(SortOrder.ascending)
-                        Text("Newest First").tag(SortOrder.descending)
+                HStack(spacing: 16) {
+                    Button(action: {
+                        withAnimation {
+                            isSelectionMode.toggle()
+                            selection.removeAll()
+                        }
+                    }) {
+                        Text(isSelectionMode ? "Cancel" : "Select")
+                            .bold(isSelectionMode)
                     }
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
+                    
+                    if !isSelectionMode {
+                        Menu {
+                            Picker("Sort", selection: $sortOrder) {
+                                Text("Oldest First").tag(SortOrder.ascending)
+                                Text("Newest First").tag(SortOrder.descending)
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                        }
+                    }
+                }
+            }
+            
+            ToolbarItemGroup(placement: .bottomBar) {
+                if isSelectionMode {
+                    Button(action: {
+                        showingMergeConfig = true
+                    }) {
+                        Text("Convert & Merge")
+                            .bold()
+                    }
+                    .disabled(selection.count < 2)
+                    
+                    Spacer()
+                    
+                    Text("\(selection.count) Selected")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
         }
-        .task { await loadHeaderCover() }
+        .sheet(isPresented: $showingMergeConfig) {
+            let filesToMerge = series.issues.filter { selection.contains($0.id) }
+            SeriesMergeConfigurationView(sourceFiles: filesToMerge)
+        }
+        .task(id: series.id) { await loadHeaderCover() }
     }
 
     var headerView: some View {
