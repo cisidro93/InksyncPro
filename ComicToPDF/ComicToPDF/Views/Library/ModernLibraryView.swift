@@ -534,8 +534,11 @@ struct ModernLibraryView: View {
             withAnimation { conversionManager.isVaultUnlocked = false }
         } else {
             Task {
-                if await SecurityManager.shared.authenticate() {
-                    withAnimation { conversionManager.isVaultUnlocked = true }
+                let success = await SecurityManager.shared.authenticate()
+                if success {
+                    await MainActor.run {
+                        withAnimation { conversionManager.isVaultUnlocked = true }
+                    }
                 }
             }
         }
