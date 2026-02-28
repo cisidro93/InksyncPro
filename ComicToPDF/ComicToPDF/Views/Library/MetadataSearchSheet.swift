@@ -11,6 +11,7 @@ struct MetadataSearchSheet: View {
     @State private var results: [ComicVineVolume] = [] // Changed from CVIssue to ComicVineVolume
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var showingErrorAlert = false
     
     var body: some View {
         NavigationView {
@@ -73,6 +74,11 @@ struct MetadataSearchSheet: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }
             }
+            .alert("Search Error", isPresented: $showingErrorAlert, presenting: errorMessage) { _ in
+                Button("OK", role: .cancel) { }
+            } message: { msg in
+                Text(msg)
+            }
             .onAppear {
                 // Pre-fill query with filename
                 query = cleanFilename(pdf.name)
@@ -96,6 +102,7 @@ struct MetadataSearchSheet: View {
                 await MainActor.run {
                     isLoading = false
                     errorMessage = error.localizedDescription
+                    showingErrorAlert = true
                 }
             }
         }
@@ -108,16 +115,24 @@ struct MetadataSearchSheet: View {
         isLoading = true
         Task {
             let key = conversionManager.conversionSettings.comicVineAPIKey
-            // Try to guess issue number
-            if let issueNum = extractIssueNumber(from: pdf.name) {
-                 if let issue = try? await ComicVineService.shared.getIssue(volumeID: volume.id, issueNumber: issueNum, apiKey: key) {
-                     await applyIssueMetadata(issue, volume: volume)
-                     return
-                 }
+            do {
+                // Try to guess issue number
+                if let issueNum = extractIssueNumber(from: pdf.name) {
+                     if let issue = try await ComicVineService.shared.getIssue(volumeID: volume.id, issueNumber: issueNum, apiKey: key) {
+                         await applyIssueMetadata(issue, volume: volume)
+                         return
+                     }
+                }
+                
+                // Fallback: Just apply Series info
+                await applySeriesMetadata(volume)
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = error.localizedDescription
+                    showingErrorAlert = true
+                }
             }
-            
-            // Fallback: Just apply Series info
-            await applySeriesMetadata(volume)
         }
     }
     

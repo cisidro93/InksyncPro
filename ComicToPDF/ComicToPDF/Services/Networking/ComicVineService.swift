@@ -53,7 +53,7 @@ class ComicVineService {
                 return true
             }
         } catch {
-            Logger.shared.log("API Key Validation error: \(error.localizedDescription)", category: "Metadata")
+            Logger.shared.log("API Key Validation error: \(error.localizedDescription)", category: "Metadata", type: .error)
         }
         return false
     }
@@ -94,7 +94,7 @@ class ComicVineService {
             let result = try JSONDecoder().decode(ComicVineResult.self, from: data)
             return result.results
         } catch {
-            Logger.shared.log("Search Decoding Error: \(error.localizedDescription)", category: "Metadata")
+            Logger.shared.log("Search Decoding Error: \(error.localizedDescription)", category: "Metadata", type: .error)
             throw ComicVineError.decodingError(error)
         }
     }
@@ -144,7 +144,7 @@ class ComicVineService {
             let result = try JSONDecoder().decode(ComicVineIssueResult.self, from: data)
             return result.results
         } catch {
-             Logger.shared.log("Issue Decoding Error: \(error.localizedDescription)", category: "Metadata")
+             Logger.shared.log("Issue Decoding Error: \(error.localizedDescription)", category: "Metadata", type: .error)
              throw ComicVineError.decodingError(error)
         }
     }

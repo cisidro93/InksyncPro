@@ -25,7 +25,7 @@ class CloudManager: ObservableObject {
                 try FileManager.default.copyItem(at: pdf.url, to: destinationURL)
                 DispatchQueue.main.async { completion(.success(destinationURL)) }
             } catch { 
-                Logger.shared.log("iCloud Export Failed: \(error.localizedDescription)", category: "Network")
+                Logger.shared.log("iCloud Export Failed: \(error.localizedDescription)", category: "Network", type: .error)
                 DispatchQueue.main.async { completion(.failure(error)) } 
             }
         }
@@ -45,7 +45,7 @@ class CloudManager: ObservableObject {
                     try FileManager.default.copyItem(at: pdf.url, to: destinationURL)
                     exportedURLs.append(destinationURL)
                 } catch { 
-                    Logger.shared.log("iCloud Bulk Export Failed for \(pdf.name): \(error.localizedDescription)", category: "Network")
+                    Logger.shared.log("iCloud Bulk Export Failed for \(pdf.name): \(error.localizedDescription)", category: "Network", type: .error)
                     lastError = error 
                 }
             }

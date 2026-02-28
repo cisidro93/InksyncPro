@@ -75,7 +75,7 @@ class WiFiServer: ObservableObject {
                         } else {
                             // ✅ Fix: Show full error details for debugging
                             self.errorMessage = "Failed to start server:\n\(error.localizedDescription)\n(Debug: \(error))"
-                            Logger.shared.log("Server Start Failed: \(error)", category: "Network")
+                            Logger.shared.log("Server Start Failed: \(error)", category: "Network", type: .error)
                         }
                     }
                     if self.isRunning { self.stop() }
@@ -91,7 +91,7 @@ class WiFiServer: ObservableObject {
             self.listener = listener
             
         } catch {
-            Logger.shared.log("Failed to bind WiFi server to port 8080: \(error.localizedDescription)", category: "Network")
+            Logger.shared.log("Failed to bind WiFi server to port 8080: \(error.localizedDescription)", category: "Network", type: .error)
             print("Failed to start server: \(error)")
             DispatchQueue.main.async {
                 if error.localizedDescription.contains("NoAuth") || "\(error)".contains("-65555") {
@@ -162,7 +162,7 @@ class WiFiServer: ObservableObject {
             if isComplete {
                 connection.cancel()
             } else if let error = error {
-                Logger.shared.log("Connection Error: \(error)", category: "Network")
+                Logger.shared.log("Connection Error: \(error)", category: "Network", type: .error)
                 connection.cancel()
             } else {
                 // Continue reading
@@ -309,7 +309,7 @@ class WiFiServer: ObservableObject {
                 connection.send(content: response.data(using: .utf8), completion: .contentProcessed({ _ in connection.cancel() }))
                 
             } else {
-                Logger.shared.log("Auth Failed: Incorrect PIN", category: "Network")
+                Logger.shared.log("Auth Failed: Incorrect PIN", category: "Network", type: .error)
                 let html = generateLoginPage(error: "Invalid PIN")
                 sendResponse(connection, 401, html, contentType: "text/html")
             }
@@ -371,7 +371,7 @@ class WiFiServer: ObservableObject {
                 self.startBackgroundTask()
             }
         } catch {
-            Logger.shared.log("WiFi Transfer Failed to open file for writing: \(error.localizedDescription)", category: "Network")
+            Logger.shared.log("WiFi Transfer Failed to open file for writing: \(error.localizedDescription)", category: "Network", type: .error)
             print("Failed to open file for writing: \(error)")
         }
     }
@@ -454,7 +454,7 @@ class WiFiServer: ObservableObject {
                     let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
                      sendResponse(connection, 200, data: data, contentType: contentType, filename: downloadFilename)
                 } catch {
-                    Logger.shared.log("WiFi Transfer Internal Mapping Error: \(error.localizedDescription)", category: "Network")
+                    Logger.shared.log("WiFi Transfer Internal Mapping Error: \(error.localizedDescription)", category: "Network", type: .error)
                     sendResponse(connection, 500, "Internal Server Error")
                 }
             } else {
