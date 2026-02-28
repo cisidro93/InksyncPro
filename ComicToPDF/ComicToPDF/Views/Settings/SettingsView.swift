@@ -310,6 +310,16 @@ struct SettingsView: View {
                     }
                 }
             } header: { Text("System") }
+            
+            // MARK: - LEGAL & PRIVACY
+            Section {
+                Link(destination: URL(string: "https://yourwebsite.com/privacy-policy")!) {
+                    HStack {
+                        settingsIcon("hand.raised.fill", color: .blue)
+                        Text("Privacy Policy")
+                    }
+                }
+            } header: { Text("Legal") }
         }
         .navigationTitle("Preferences")
         .onChange(of: conversionManager.conversionSettings) { _ in
