@@ -102,6 +102,7 @@ This is the most critical file. All metadata flags must be present.
     <meta name="book-type" content="comic"/>
     <meta name="RegionMagnification" content="true"/>
     <meta name="cover" content="cover-image"/>
+    <meta name="cdetype" content="pdoc"/>
 
     <!-- EPUB3 rendition properties -->
     <meta property="rendition:layout">pre-paginated</meta>

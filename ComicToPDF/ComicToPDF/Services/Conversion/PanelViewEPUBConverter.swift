@@ -312,6 +312,7 @@ class PanelViewEPUBConverter {
             <meta name="cover" content="img-001"/>
             <meta name="zero-gutter" content="true"/>
             <meta name="zero-margin" content="true"/>
+            <meta name="cdetype" content="pdoc"/>
 
             <!-- Directional — CRITICAL: horizontal-rl reverses Kindle tap zones for manga -->
             <meta name="primary-writing-mode" content="\(writingMode)"/>
