@@ -387,6 +387,9 @@ struct PageManagerView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingMetadataEditor) {
+            MetadataSearchSheet(pdf: pdf)
+        }
         } // End NavigationStack
     }
     

@@ -440,7 +440,7 @@ class PanelViewEPUBConverter {
                   <!-- Panel \(ordinal) magnified view (150% crop, background-image clip) -->
                   <div id="\(magID)" class="target-mag-parent" style="position:absolute; top:\(my)px; left:\(mx)px; width:\(mw)px; height:\(mh)px; z-index:5; overflow:hidden; display:none;">
                     <div class="target-mag-lb"></div>
-                    <div id="\(innerID)" class="target-mag" style="position:absolute; top:0; left:0; width:\(mw)px; height:\(mh)px; background-image:url(../images/\(imageName)); background-size:\(W)px \(H)px; background-position:-\(bgX)px -\(bgY)px; background-repeat:no-repeat;"></div>
+                    <div id="\(innerID)" class="target-mag" style="position:absolute; top:0; left:0; width:\(mw)px; height:\(mh)px; background-image:url(../images/\(imageName)); background-size:\(W)px \(H)px; background-position:\(-bgX)px \(-bgY)px; background-repeat:no-repeat;"></div>
                   </div>\n
             """
         }

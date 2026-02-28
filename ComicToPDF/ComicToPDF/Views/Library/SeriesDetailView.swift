@@ -13,6 +13,14 @@ struct SeriesDetailView: View {
     @State private var selection = Set<UUID>()
     @State private var isSelectionMode: Bool = false
     @State private var showingMergeConfig: Bool = false
+    
+    // Context Menu State
+    @State private var pdfToRename: ConvertedPDF?
+    @State private var renameText = ""
+    @State private var pdfToExport: ConvertedPDF?
+    @State private var pdfToSearchMetadata: ConvertedPDF?
+    @State private var pdfToAssignSeries: ConvertedPDF?
+    @State private var assignSeriesText = ""
 
     enum SortOrder { case ascending, descending }
 
@@ -47,13 +55,9 @@ struct SeriesDetailView: View {
                         NavigationLink(value: pdf) {
                             LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
                         }
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                conversionManager.deletePDF(pdf)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
+                        .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
+                        .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
+                        .contextMenu { contextMenuContent(pdf) }
                     } else {
                         Button {
                             selectedPDF = pdf
@@ -62,14 +66,9 @@ struct SeriesDetailView: View {
                         }
                         .buttonStyle(PlainButtonStyle())
                         .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                conversionManager.deletePDF(pdf)
-                                if selectedPDF?.id == pdf.id { selectedPDF = nil }
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
+                        .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
+                        .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
+                        .contextMenu { contextMenuContent(pdf) }
                     }
                     }
             }
@@ -124,6 +123,42 @@ struct SeriesDetailView: View {
             let filesToMerge = series.issues.filter { selection.contains($0.id) }
             SeriesMergeConfigurationView(sourceFiles: filesToMerge)
         }
+        .sheet(item: $pdfToExport) { pdf in
+            DualExportView(pdf: pdf)
+        }
+        .sheet(item: $pdfToSearchMetadata) { pdf in
+            MetadataSearchSheet(pdf: pdf)
+        }
+        .alert("Rename File", isPresented: Binding(
+            get: { pdfToRename != nil },
+            set: { if !$0 { pdfToRename = nil } }
+        )) {
+            TextField("New Name", text: $renameText)
+            Button("Cancel", role: .cancel) { }
+            Button("Rename") {
+                if let pdf = pdfToRename {
+                    conversionManager.renamePDF(pdf, to: renameText)
+                }
+            }
+        }
+        .alert("Add to Series", isPresented: Binding(
+            get: { pdfToAssignSeries != nil },
+            set: { if !$0 { pdfToAssignSeries = nil } }
+        )) {
+            TextField("Series Name", text: $assignSeriesText)
+            Button("Cancel", role: .cancel) { pdfToAssignSeries = nil }
+            Button("Assign") {
+                if let pdf = pdfToAssignSeries {
+                    let name = assignSeriesText.trimmingCharacters(in: .whitespaces)
+                    if !name.isEmpty {
+                        conversionManager.assignToSeries(pdf, seriesName: name)
+                    }
+                }
+                pdfToAssignSeries = nil
+            }
+        } message: {
+            Text("Enter the series name to group this file into a collection.")
+        }
         .task(id: series.id) { await loadHeaderCover() }
     }
 
@@ -163,6 +198,68 @@ struct SeriesDetailView: View {
             Spacer()
         }
         .padding(.vertical)
+    }
+
+    @ViewBuilder
+    private func swipeActionsLeading(_ pdf: ConvertedPDF) -> some View {
+        Button {
+            pdfToExport = pdf
+        } label: { Label("Export", systemImage: "square.and.arrow.up") }
+        .tint(.green)
+    
+        Button {
+            pdfToSearchMetadata = pdf
+        } label: { Label("Metadata", systemImage: "info.circle") }
+        .tint(.blue)
+        
+        Button {
+            renameText = pdf.name
+            pdfToRename = pdf
+        } label: { Label("Rename", systemImage: "pencil") }
+        .tint(.orange)
+        
+        Button {
+            Task { await conversionManager.embedPanels(for: pdf) }
+        } label: { Label("Embed", systemImage: "flame") }
+        .tint(.purple)
+    }
+    
+    @ViewBuilder
+    private func swipeActionsTrailing(_ pdf: ConvertedPDF) -> some View {
+        Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+    }
+    
+    @ViewBuilder
+    private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
+        Button {
+            pdfToExport = pdf
+        } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
+        
+        Button {
+            renameText = pdf.name
+            pdfToRename = pdf
+        } label: { Label("Rename", systemImage: "pencil") }
+        
+        Button {
+            assignSeriesText = pdf.metadata.series ?? ""
+            pdfToAssignSeries = pdf
+        } label: { Label("Add to Series...", systemImage: "books.vertical") }
+        
+        if (pdf.metadata.series != nil && !pdf.metadata.series!.isEmpty) || pdf.collectionId != nil {
+            Button {
+                conversionManager.setExplicitSeriesCover(for: pdf)
+            } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }
+        }
+        
+        Button {
+            Task { await conversionManager.embedPanels(for: pdf) }
+        } label: { Label("Embed Panels", systemImage: "flame") }
+        
+        Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+        Divider()
+        Button {
+            pdfToSearchMetadata = pdf
+        } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
     }
 
     private func loadHeaderCover() async {
