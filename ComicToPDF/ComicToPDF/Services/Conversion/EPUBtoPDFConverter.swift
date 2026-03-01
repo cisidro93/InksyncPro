@@ -7,23 +7,23 @@ class EPUBtoPDFConverter {
     func convertEPUBtoPDF(_ epubURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                print("📚 Converting EPUB to PDF...")
+                Logger.shared.log("Converting EPUB to PDF...", category: "EPUB2PDF")
                 
                 // 1. Extract EPUB
                 let tempDir = FileManager.default.temporaryDirectory
                     .appendingPathComponent(UUID().uuidString)
                 try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
                 
-                print("📦 Extracting EPUB...")
+                Logger.shared.log("Extracting EPUB...", category: "EPUB2PDF")
                 try FileManager.default.unzipItem(at: epubURL, to: tempDir)
                 
                 // 2. Extract all images from EPUB
                 let images = try self.extractImagesFromEPUB(at: tempDir)
-                print("🖼️ Found \(images.count) images in EPUB")
+                Logger.shared.log("Found \(images.count) images in EPUB", category: "EPUB2PDF")
                 
                 // 3. Check if images are strips and reconstruct if needed
                 let finalPages = images
-                print("📄 Final page count: \(finalPages.count)")
+                Logger.shared.log("Final page count: \(finalPages.count)", category: "EPUB2PDF")
                 
                 if finalPages.isEmpty {
                     throw EPUBConversionError.noPages
@@ -31,14 +31,14 @@ class EPUBtoPDFConverter {
                 
                 // 4. Create PDF from pages
                 let pdfURL = try self.createPDF(from: finalPages, basedOn: epubURL, in: tempDir)
-                print("✅ PDF created: \(pdfURL.lastPathComponent)")
+                Logger.shared.log("PDF created: \(pdfURL.lastPathComponent)", category: "EPUB2PDF", type: .success)
                 
                 DispatchQueue.main.async {
                     completion(.success(pdfURL))
                 }
                 
             } catch {
-                print("❌ EPUB conversion failed: \(error)")
+                Logger.shared.log("EPUB to PDF conversion failed: \(error)", category: "EPUB2PDF", type: .error)
                 DispatchQueue.main.async {
                     completion(.failure(error))
                 }

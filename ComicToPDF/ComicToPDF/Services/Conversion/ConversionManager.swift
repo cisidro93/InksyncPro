@@ -456,7 +456,7 @@ class ConversionManager: ObservableObject {
             try FileManager.default.removeItem(at: pdf.url)
             Logger.shared.log("Deleted File: \(pdf.name)", category: "Library")
         } catch {
-            Logger.shared.log("Failed to delete file: \(error)", category: "Library")
+            Logger.shared.log("Failed to delete file: \(error)", category: "Library", type: .error)
         }
         
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
@@ -554,7 +554,7 @@ class ConversionManager: ObservableObject {
                         let _ = try await ConversionEngine.shared.performPDFImport(url: url, destFolder: documentsDir)
                         // Engine emits 'completed' which triggers scanLibrary()
                     } catch {
-                        Logger.shared.log("Engine Import Failed: \(error)", category: "Import")
+                        Logger.shared.log("Engine Import Failed: \(error)", category: "Import", type: .error)
                         await MainActor.run {
                             self.appAlert = AppAlert(title: "Import Failed", message: error.localizedDescription)
                         }
@@ -589,7 +589,7 @@ class ConversionManager: ObservableObject {
                              self.appAlert = AppAlert(title: "Import Success", message: "Imported EPUB as Comic.")
                          }
                      } catch {
-                         Logger.shared.log("EPUB Import Failed: \(error.localizedDescription)", category: "Import")
+                         Logger.shared.log("EPUB Import Failed: \(error.localizedDescription)", category: "Import", type: .error)
                          await MainActor.run {
                              self.appAlert = AppAlert(title: "EPUB Import Failed", message: error.localizedDescription)
                          }
@@ -613,7 +613,7 @@ class ConversionManager: ObservableObject {
                 }
                 try FileManager.default.copyItem(at: url, to: destURL)
             } catch { 
-                Logger.shared.log("Failed to copy imported file \(url.lastPathComponent): \(error.localizedDescription)", category: "Import")
+                Logger.shared.log("Failed to copy imported file \(url.lastPathComponent): \(error.localizedDescription)", category: "Import", type: .error)
             }
         }
         scanLibrary()
@@ -709,7 +709,7 @@ class ConversionManager: ObservableObject {
                     )
                     newlyImported.append(pdf)
                 } catch {
-                    Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import")
+                    Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import", type: .error)
                 }
             }
             return newlyImported
@@ -794,7 +794,7 @@ class ConversionManager: ObservableObject {
                 )
                 importedPDFs.append(pdf)
             } catch {
-                Logger.shared.log("importFilesAsSeries: Failed to copy \(fileName): \(error.localizedDescription)", category: "Import")
+                Logger.shared.log("importFilesAsSeries: Failed to copy \(fileName): \(error.localizedDescription)", category: "Import", type: .error)
             }
         }
         
@@ -969,7 +969,7 @@ class ConversionManager: ObservableObject {
                             )
                             newlyImported.append(pdf)
                         } catch {
-                            Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import")
+                            Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import", type: .error)
                         }
                     }
                     
@@ -1322,7 +1322,7 @@ class ConversionManager: ObservableObject {
             Logger.shared.log("Merge Successful: \(outputName)", category: "Converter")
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
         } catch { 
-            Logger.shared.log("Merge Failed: \(error)", category: "Converter")
+            Logger.shared.log("Merge Failed: \(error)", category: "Converter", type: .error)
             isConverting = false; statusMessage = "Merge Error: \(error.localizedDescription)" 
         }
     }
@@ -1417,7 +1417,7 @@ class ConversionManager: ObservableObject {
             }
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
         } catch {
-            Logger.shared.log("Conversion Failed: \(error)", category: "Converter")
+            Logger.shared.log("Conversion Failed: \(error)", category: "Converter", type: .error)
             isConverting = false; statusMessage = "Error: \(error.localizedDescription)"
         }
     }
@@ -1898,7 +1898,7 @@ class ConversionManager: ObservableObject {
                     return decoded // panels.json was stored normalized
                 }
             } catch {
-                Logger.shared.log("Failed to parse legacy panels.json: \(error)", category: "SmartPanels")
+                Logger.shared.log("Failed to parse legacy panels.json: \(error)", category: "SmartPanels", type: .error)
             }
         }
         

@@ -23,7 +23,7 @@ struct ComicInfoParser {
     /// Returns `nil` if the archive has no ComicInfo.xml or if parsing fails.
     static func parse(from archiveURL: URL) -> ComicInfo? {
         guard let archive = try? Archive(url: archiveURL, accessMode: .read) else {
-            Logger.shared.log("ComicInfoParser: Could not open archive \(archiveURL.lastPathComponent)", category: "Import")
+            Logger.shared.log("ComicInfoParser: Could not open archive \(archiveURL.lastPathComponent)", category: "Import", type: .error)
             return nil
         }
 
@@ -38,7 +38,7 @@ struct ComicInfoParser {
                 xmlData.append(chunk)
             }
         } catch {
-            Logger.shared.log("ComicInfoParser: Failed to extract ComicInfo.xml: \(error.localizedDescription)", category: "Import")
+            Logger.shared.log("ComicInfoParser: Failed to extract ComicInfo.xml: \(error.localizedDescription)", category: "Import", type: .error)
             return nil
         }
 

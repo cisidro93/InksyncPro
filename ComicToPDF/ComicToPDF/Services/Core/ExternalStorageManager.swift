@@ -196,7 +196,7 @@ extension ExternalStorageManager: UIDocumentPickerDelegate {
                 let localURL = try copyToAppStorage(url)
                 completion(localURL)
             } catch {
-                Logger.shared.log("Failed to copy file from external storage: \(error.localizedDescription)", category: "Import")
+                Logger.shared.log("Failed to copy file from external storage: \(error.localizedDescription)", category: "Import", type: .error)
                 completion(nil)
             }
             importCompletion = nil
@@ -210,7 +210,7 @@ extension ExternalStorageManager: UIDocumentPickerDelegate {
                     let localURL = try copyToAppStorage(url)
                     copiedURLs.append(localURL)
                 } catch {
-                    Logger.shared.log("Failed to copy \(url.lastPathComponent) from external storage: \(error.localizedDescription)", category: "Import")
+                    Logger.shared.log("Failed to copy \(url.lastPathComponent) from external storage: \(error.localizedDescription)", category: "Import", type: .error)
                 }
             }
             
