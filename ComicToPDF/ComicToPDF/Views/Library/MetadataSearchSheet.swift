@@ -99,6 +99,7 @@ struct MetadataSearchSheet: View {
                 results = try await ComicVineService.shared.searchVolumes(query: query, apiKey: key)
                 isLoading = false
             } catch {
+                Logger.shared.log("Search Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
                 await MainActor.run {
                     isLoading = false
                     errorMessage = error.localizedDescription
@@ -127,6 +128,7 @@ struct MetadataSearchSheet: View {
                 // Fallback: Just apply Series info
                 await applySeriesMetadata(volume)
             } catch {
+                Logger.shared.log("Metadata Fetch Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
                 await MainActor.run {
                     isLoading = false
                     errorMessage = error.localizedDescription
