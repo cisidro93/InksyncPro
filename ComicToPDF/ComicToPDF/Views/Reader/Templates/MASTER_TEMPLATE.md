@@ -99,7 +99,6 @@ This is the most critical file. All metadata flags must be present.
     <meta name="fixed-layout" content="true"/>
     <meta name="original-resolution" content="{{PAGE_WIDTH}}x{{PAGE_HEIGHT}}"/>
     <meta name="orientation-lock" content="{{ORIENTATION}}"/>
-    <meta name="book-type" content="comic"/>
     <meta name="RegionMagnification" content="true"/>
     <meta name="cover" content="cover-image"/>
 

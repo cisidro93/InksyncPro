@@ -304,7 +304,6 @@ class PanelViewEPUBConverter {
             <meta name="fixed-layout" content="true"/>
             <meta name="original-resolution" content="\(pageWidth)x\(pageHeight)"/>
             <meta name="orientation-lock" content="\(orientation)"/>
-            <meta name="book-type" content="comic"/>
             <meta name="RegionMagnification" content="true"/>
             <meta name="region-all-mag-adp" content="1"/>
             <meta name="cover" content="img-001"/>
