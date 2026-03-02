@@ -139,7 +139,11 @@ struct ContentView: View {
     var iPadLayout: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
-                List(selection: $selectedTab) {
+                let tabBinding = Binding<Int?>(
+                    get: { selectedTab },
+                    set: { selectedTab = $0 ?? 0 }
+                )
+                List(selection: tabBinding) {
                     NavigationLink(value: 0) {
                         Label("Library", systemImage: "books.vertical.fill")
                     }
