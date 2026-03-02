@@ -202,7 +202,7 @@ struct ContentView: View {
                         .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
-                            ToolbarItem(placement: .navigationBarTrailing) {
+                            ToolbarItem(placement: .primaryAction) {
                                 Button("Done") { showingSettingsInspector = false }
                             }
                         }
