@@ -313,7 +313,7 @@ struct SettingsView: View {
             
             // MARK: - LEGAL & PRIVACY
             Section {
-                Link(destination: URL(string: "https://yourwebsite.com/privacy-policy")!) {
+                Link(destination: URL(string: "https://inksyncpro.app/privacy.html")!) {
                     HStack {
                         settingsIcon("hand.raised.fill", color: .blue)
                         Text("Privacy Policy")
