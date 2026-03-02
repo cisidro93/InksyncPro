@@ -1,4 +1,6 @@
 import SwiftUI
+import MessageUI
+import UIKit
 
 struct LogsView: View {
     @ObservedObject var logger = Logger.shared
@@ -7,6 +9,11 @@ struct LogsView: View {
     @State private var showingCopiedAlert = false
     @State private var isSharing = false
     @State private var showErrorsOnly = false
+    
+    // ✅ NEW: Mail State
+    @State private var showingMailErrorAlert = false
+    @State private var isShowingMailView = false
+    @State private var mailResult: Result<MFMailComposeResult, Error>? = nil
     
     var errorCount: Int {
         logger.parsedLogs.filter { $0.type == .error }.count
@@ -90,6 +97,14 @@ struct LogsView: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+                    Button {
+                        if MFMailComposeViewController.canSendMail() {
+                            isShowingMailView = true
+                        } else {
+                            showingMailErrorAlert = true
+                        }
+                    } label: { Label("Email Support", systemImage: "envelope") }
+                    
                     Button(action: { isSharing = true }) {
                         Label("Share Log File", systemImage: "square.and.arrow.up")
                     }
@@ -122,6 +137,45 @@ struct LogsView: View {
         .sheet(isPresented: $isSharing) {
              ShareSheet(activityItems: [logger.logFileURL])
         }
+        .sheet(isPresented: $isShowingMailView) {
+            if let errorLogURL = logger.generateErrorLogFile(),
+               let fullLogData = try? Data(contentsOf: logger.logFileURL),
+               let errorLogData = try? Data(contentsOf: errorLogURL) {
+                MailView(
+                    subject: "Inksync Pro Support Request",
+                    recipients: ["support@inksyncpro.app"],
+                    messageBody: getDeviceInfo(),
+                    isHTML: false,
+                    attachments: [
+                        (fullLogData, "text/plain", "debug.log"),
+                        (errorLogData, "text/plain", "inksync_error_log.txt")
+                    ],
+                    isShowing: $isShowingMailView,
+                    result: $mailResult
+                )
+                .ignoresSafeArea()
+            } else {
+                VStack(spacing: 20) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.red)
+                    Text("Error generating logs for email.").font(.headline)
+                    Button("Dismiss") { isShowingMailView = false }
+                }
+            }
+        }
+        .alert("Cannot Send Email", isPresented: $showingMailErrorAlert) {
+             Button("OK", role: .cancel) { }
+        } message: {
+             Text("Please ensure the Apple Mail app is configured on this device, or email us directly with your logs at support@inksyncpro.app")
+        }
+    }
+    
+    private func getDeviceInfo() -> String {
+        let systemName = UIDevice.current.systemName
+        let version = UIDevice.current.systemVersion
+        let model = UIDevice.current.model
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+        
+        return "Device: \(model)\nOS: \(systemName) \(version)\nApp Version: \(appVersion)\n\nPlease describe the issue you are experiencing below:\n\n"
     }
     
     private func copyToClipboard() {

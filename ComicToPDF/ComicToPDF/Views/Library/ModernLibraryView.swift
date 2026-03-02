@@ -26,6 +26,13 @@ struct ModernLibraryView: View {
     // ✅ Root-level folder picker callback (avoids iOS 16/17 delegate swallowing bug)
     var onFolderImport: (() -> Void)? = nil
     
+    // ✅ NEW: View Style State
+    enum LibraryViewStyle: String {
+        case list = "List"
+        case grid = "Grid"
+    }
+    @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
+    
     // Local State
     @State private var searchText = ""
     
@@ -151,11 +158,18 @@ struct ModernLibraryView: View {
             // MARK: - Toolbar & Filter Header
             liquidGlassHeader
 
-
-            
             // ... (Content Area) ...
-            // ... (Content Area) ...
-            pdfListLayout
+            if viewStyle == .list {
+                pdfListLayout
+            } else {
+                pdfGridLayout
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if isBatchMode {
+                batchBottomToolbar
+                    .transition(.move(edge: .bottom))
+            }
         }
         .background(Color.black.ignoresSafeArea())
         .sheet(item: $activeSheet) { item in
@@ -327,6 +341,79 @@ struct ModernLibraryView: View {
             .background(Color.black)
         }
     }
+    
+    // ✅ NEW: Responsive Grid Layout
+    @ViewBuilder private var pdfGridLayout: some View {
+        if conversionManager.visiblePDFs.isEmpty {
+            ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: nil)
+        } else {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 16)], spacing: 20) {
+                    ForEach(libraryItems) { item in
+                        switch item {
+                        case .series(let group):
+                            if isBatchMode {
+                                Button {
+                                    let allSelected = group.issues.allSatisfy { multiSelection.contains($0.id) }
+                                    if allSelected {
+                                        for issue in group.issues { multiSelection.remove(issue.id) }
+                                    } else {
+                                        for issue in group.issues { multiSelection.insert(issue.id) }
+                                    }
+                                } label: {
+                                    ModernGridSeriesCell(group: group, isSelected: group.issues.allSatisfy { multiSelection.contains($0.id) }, isBatch: true)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            } else {
+                                NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
+                                    ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        for issue in group.issues { conversionManager.deletePDF(issue) }
+                                    } label: { Label("Delete Series", systemImage: "trash") }
+                                }
+                            }
+                        case .single(let pdf):
+                            if isBatchMode {
+                                Button {
+                                    if multiSelection.contains(pdf.id) {
+                                        multiSelection.remove(pdf.id)
+                                    } else {
+                                        multiSelection.insert(pdf.id)
+                                    }
+                                } label: {
+                                    ModernGridFileCell(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            } else {
+                                if useNavigationStack {
+                                    NavigationLink(value: pdf) {
+                                        ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    .contextMenu { contextMenuContent(pdf) }
+                                } else {
+                                    Button {
+                                        selectedPDF = pdf
+                                    } label: {
+                                        ModernGridFileCell(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    .contextMenu { contextMenuContent(pdf) }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 100)
+            }
+            .background(Color.black)
+        }
+    }
 
     // MARK: - Row Actions
     
@@ -440,6 +527,21 @@ struct ModernLibraryView: View {
                         .stroke(.white.opacity(0.1), lineWidth: 1)
                 )
                 .frame(maxWidth: 400) // Constrain width on large screens
+                
+                // ✅ NEW: Grid / List Toggle
+                Button {
+                    withAnimation {
+                        viewStyle = viewStyle == .grid ? .list : .grid
+                    }
+                } label: {
+                    Image(systemName: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.1), lineWidth: 1))
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
@@ -521,11 +623,55 @@ struct ModernLibraryView: View {
             }
             .padding(.bottom, 16)
         }
-        .background(.regularMaterial) // Glass Header Background
         .overlay(
             Rectangle().frame(height: 1).foregroundColor(.white.opacity(0.05)),
             alignment: .bottom
         )
+    }
+    
+    // MARK: - Batch Bottom Toolbar
+    @ViewBuilder private var batchBottomToolbar: some View {
+        VStack(spacing: 0) {
+            Divider().background(Color.white.opacity(0.1))
+            HStack {
+                Button(role: .destructive) {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    for item in items { conversionManager.deletePDF(item) }
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                } label: {
+                    VStack(spacing: 4) { Image(systemName: "trash").font(.title3); Text("Delete").font(.caption) }
+                }
+                .disabled(multiSelection.isEmpty)
+                
+                Spacer()
+                
+                Button {
+                    batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    showingBatchMergeReorder = true
+                } label: {
+                    VStack(spacing: 4) { Image(systemName: "doc.on.doc.fill").font(.title3); Text("Merge").font(.caption) }
+                }
+                .disabled(multiSelection.count < 2)
+                
+                Spacer()
+                
+                Button {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    Task { await conversionManager.convertQueue(items) }
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                } label: {
+                    VStack(spacing: 4) { Image(systemName: "arrow.triangle.2.circlepath").font(.title3); Text("Convert").font(.caption) }
+                }
+                .disabled(multiSelection.isEmpty)
+            }
+            .padding(.horizontal, 30)
+            .padding(.vertical, 12)
+            .background(.ultraThinMaterial)
+            .foregroundColor(.white)
+            .environment(\.colorScheme, .dark)
+        }
     }
     
     // MARK: - Handlers
@@ -773,6 +919,173 @@ struct ModernSeriesRow: View {
             }
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Grid Components
+
+struct ModernGridFileCell: View {
+    let pdf: ConvertedPDF
+    let isSelected: Bool
+    let isBatch: Bool
+    @EnvironmentObject var conversionManager: ConversionManager
+    @State private var coverImage: UIImage?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Cover Image Setup
+            ZStack(alignment: .topTrailing) {
+                if let img = coverImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Rectangle().fill(Theme.surfaceElevated)
+                    Image(systemName: "doc.text.fill")
+                        .font(.largeTitle)
+                        .foregroundColor(Theme.textSecondary)
+                }
+                
+                // Batch Selection Overlay
+                if isBatch {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundColor(isSelected ? Theme.blue : .white)
+                        .padding(8)
+                        .shadow(radius: 2)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .aspectRatio(0.7, contentMode: .fill) // Standard comic aspect ratio
+            .cornerRadius(8)
+            .clipped()
+            .task {
+                if coverImage == nil {
+                    coverImage = await conversionManager.loadCoverThumbnail(for: pdf)
+                }
+            }
+            
+            // Text Details
+            VStack(alignment: .leading, spacing: 4) {
+                Text(pdf.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Theme.text)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(height: 38, alignment: .topLeading) // Fixed height to align rows
+                
+                HStack(spacing: 6) {
+                    // Content Type Badge
+                    HStack(spacing: 3) {
+                        Image(systemName: pdf.contentType.icon).font(.system(size: 8))
+                        Text(pdf.contentType.rawValue.uppercased()).font(.system(size: 10, weight: .bold))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(pdf.contentType.badgeColor.opacity(0.2))
+                    .foregroundColor(pdf.contentType.badgeColor)
+                    .cornerRadius(4)
+                    
+                    Spacer()
+                    
+                    Text(pdf.formattedSize)
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(8)
+        .background(isSelected && !isBatch ? Theme.surfaceElevated : Color.clear)
+        .cornerRadius(12)
+        .contentShape(Rectangle())
+    }
+}
+
+struct ModernGridSeriesCell: View {
+    let group: SeriesGroup
+    let isSelected: Bool
+    let isBatch: Bool
+    @State private var coverImage: UIImage?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            
+            // Cover Image with Stack Effect
+            ZStack(alignment: .topTrailing) {
+                ZStack {
+                    if group.count > 1 { // Stack Effect Backgrounds
+                        RoundedRectangle(cornerRadius: 12).fill(Theme.surfaceElevated).padding(4).offset(y: -8)
+                        RoundedRectangle(cornerRadius: 12).fill(Theme.surfaceElevated).padding(2).offset(y: -4)
+                    }
+                    if let img = coverImage {
+                        Image(uiImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        Rectangle().fill(Theme.surfaceElevated)
+                        Image(systemName: "books.vertical.fill")
+                            .font(.largeTitle)
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                }
+                .cornerRadius(8)
+                .clipped()
+                
+                // Batch Selection Overlay
+                if isBatch {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundColor(isSelected ? Theme.blue : .white)
+                        .padding(8)
+                        .shadow(radius: 2)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .aspectRatio(0.7, contentMode: .fit) // Standard comic aspect ratio
+            .task {
+                if let url = group.coverURL, coverImage == nil {
+                    let img = await Task.detached(priority: .userInitiated) {
+                        guard let data = try? Data(contentsOf: url) else { return UIImage?.none }
+                        return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 140, height: 200))
+                    }.value
+                    await MainActor.run { coverImage = img }
+                }
+            }
+            
+            // Text Details
+            VStack(alignment: .leading, spacing: 4) {
+                Text(group.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Theme.text)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(height: 38, alignment: .topLeading)
+                
+                HStack(spacing: 6) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "books.vertical.fill").font(.system(size: 8))
+                        Text("SERIES").font(.system(size: 10, weight: .bold))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Theme.blue.opacity(0.2))
+                    .foregroundColor(Theme.blue)
+                    .cornerRadius(4)
+                    
+                    Spacer()
+                    
+                    Text("\(group.count) Issues")
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(8)
+        .background(isSelected && !isBatch ? Theme.surfaceElevated : Color.clear)
+        .cornerRadius(12)
         .contentShape(Rectangle())
     }
 }

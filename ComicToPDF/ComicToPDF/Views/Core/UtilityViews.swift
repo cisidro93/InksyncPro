@@ -17,9 +17,9 @@ struct DocumentPicker: UIViewControllerRepresentable {
         let zip = UTType.zip
         let epub = UTType(filenameExtension: "epub")
         let cbz = UTType(filenameExtension: "cbz")
-        let cbr = UTType(filenameExtension: "cbr")
+
         
-        let types = [pdf, zip, epub, cbz, cbr].compactMap { $0 }
+        let types = [pdf, zip, epub, cbz].compactMap { $0 }
         
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
         picker.allowsMultipleSelection = true

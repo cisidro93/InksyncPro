@@ -81,10 +81,8 @@ class PanelViewEPUBConverter {
 
     // MARK: Public Interface
 
-    /// Convert a CBZ/CBR source file to a Panel View EPUB.
-    ///
-    /// - Parameters:
-    ///   - sourceURL:  URL of the source CBZ/CBR/ZIP file.
+    /// Convert a CBZ source file to a Panel View EPUB.
+    ///   - sourceURL:  URL of the source CBZ/ZIP file.
     ///   - settings:   User conversion settings (manga flag, device, quality, split mode).
     ///   - panels:     Dictionary mapping page index (0-based) → array of Vision-space panels.
     ///                 Pages absent from the dictionary are treated as panel-free splash pages.

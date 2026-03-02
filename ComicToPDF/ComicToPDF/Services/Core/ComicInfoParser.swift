@@ -1,7 +1,7 @@
 import Foundation
 import ZIPFoundation
 
-/// Parses ComicInfo.xml embedded inside a CBZ/CBR archive.
+/// Parses ComicInfo.xml embedded inside a CBZ archive.
 /// ComicInfo.xml is the industry-standard metadata format for comic archives,
 /// defined by the ComicRack schema.
 struct ComicInfoParser {
@@ -19,7 +19,7 @@ struct ComicInfoParser {
         var languageISO: String?
     }
 
-    /// Attempt to read and parse ComicInfo.xml from a CBZ/CBR archive.
+    /// Attempt to read and parse ComicInfo.xml from a CBZ archive.
     /// Returns `nil` if the archive has no ComicInfo.xml or if parsing fails.
     static func parse(from archiveURL: URL) -> ComicInfo? {
         guard let archive = try? Archive(url: archiveURL, accessMode: .read) else {

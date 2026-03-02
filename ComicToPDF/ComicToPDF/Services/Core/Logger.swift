@@ -131,6 +131,30 @@ class Logger: ObservableObject {
         log("Logs Cleared", category: "SYSTEM", type: .system)
     }
     
+    // ✅ NEW: Generate a condensed error log for email support
+    func generateErrorLogFile() -> URL? {
+        let errorEntries = parsedLogs.filter { $0.type == .error || $0.type == .warning }
+        var errorString = "--- Inksync Pro Condensed Error Log ---\n"
+        let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .medium)
+        errorString += "Generated: \(timestamp)\n\n"
+        
+        for entry in errorEntries.reversed() { // Newest first
+            let time = DateFormatter.localizedString(from: entry.timestamp, dateStyle: .none, timeStyle: .medium)
+            errorString += "[\(time)] [\(entry.type.rawValue)] [\(entry.category)] \(entry.message)\n"
+        }
+        
+        let tempDir = FileManager.default.temporaryDirectory
+        let errorLogURL = tempDir.appendingPathComponent("inksync_error_log.txt")
+        
+        do {
+            try errorString.write(to: errorLogURL, atomically: true, encoding: .utf8)
+            return errorLogURL
+        } catch {
+            log("Failed to write condensed error log", category: "System", type: .error)
+            return nil
+        }
+    }
+    
     // Helper to backfill from file
     private func parseLogFile(content: String) -> [LogEntry] {
         var entries: [LogEntry] = []

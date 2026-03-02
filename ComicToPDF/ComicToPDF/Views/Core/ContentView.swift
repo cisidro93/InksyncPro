@@ -31,10 +31,14 @@ struct ContentView: View {
     // ✅ Onboarding State
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
+    
+    // ✅ iPad Layout Toggles
+    @AppStorage("useSidebar") private var useSidebar = true
+    @State private var showingSettingsInspector = false
 
     var body: some View {
         ZStack {
-            if sizeClass == .compact {
+            if sizeClass == .compact || !useSidebar {
                 liquidGlassLayout
             } else {
                 iPadLayout
@@ -134,14 +138,33 @@ struct ContentView: View {
     var iPadLayout: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
-                Picker("Section", selection: $selectedTab) {
-                    Text("Library").tag(0)
-                    Text("Work Area").tag(1)
-                    Text("Settings").tag(2)
+                List(selection: $selectedTab) {
+                    NavigationLink(value: 0) {
+                        Label("Library", systemImage: "books.vertical.fill")
+                    }
+                    NavigationLink(value: 1) {
+                        Label("Work Area", systemImage: "pencil.and.outline")
+                    }
                 }
-                .pickerStyle(.segmented)
-                .padding()
+                .navigationTitle("Inksync")
                 
+                Spacer()
+                
+                // Settings button at the bottom of the sidebar
+                Button(action: {
+                    showingSettingsInspector.toggle()
+                }) {
+                    HStack {
+                        Image(systemName: "gear")
+                        Text("Settings")
+                        Spacer()
+                    }
+                    .padding()
+                    .foregroundColor(.white)
+                }
+                
+        } detail: {
+            NavigationStack {
                 if selectedTab == 0 {
                     ModernLibraryView(
                         selectedPDF: $selectedPDF,
@@ -149,7 +172,7 @@ struct ContentView: View {
                         multiSelection: $multiSelection,
                         showingBatchMergeReorder: $showingBatchMergeReorder,
                         batchMergeItems: $batchMergeItems,
-                        useNavigationStack: false,
+                        useNavigationStack: false, // Handle selection manually in detail if needed, but since we are the detail, maybe we DO want navigation stack inside it for reader? Actually, ModernLibraryView already handles `useNavigationStack: false` by setting `selectedPDF`.
                         onFolderImport: {
                             FolderImportCoordinator.present { urls in
                                 guard !urls.isEmpty else { return }
@@ -157,98 +180,37 @@ struct ContentView: View {
                             }
                         }
                     )
-                    .toolbar(.hidden, for: .navigationBar)
+                    // If a PDF is selected, we want to push the ConvertView. 
+                    // To do this cleanly without breaking the grid, we use a navigationDestination bounded to selectedPDF
+                    .navigationDestination(isPresented: Binding(
+                        get: { selectedPDF != nil },
+                        set: { if !$0 { selectedPDF = nil } }
+                    )) {
+                        if let pdf = selectedPDF {
+                            ConvertView(pdf: pdf)
+                        }
+                    }
                 } else if selectedTab == 1 {
                     EditorDashboardView()
-                } else {
-                    SettingsView()
                 }
             }
-            // Title removed to allow children to define their own or hide it
-            // .navigationTitle("Inksync Pro") 
-            // .navigationBarTitleDisplayMode(.inline)
-            
-        } detail: {
-            NavigationStack {
-                if isBatchMode {
-                    BatchSelectionDetailView(
-                        selectionCount: multiSelection.count,
-                        onConvert: {
-                            let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                            Task { await conversionManager.convertQueue(items) }
-                            isBatchMode = false
-                            multiSelection.removeAll()
-                        },
-                        onMerge: {
-                            batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                            showingBatchMergeReorder = true
-                        },
-                        onDelete: {
-                            let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                            Task {
-                                for item in items {
-                                    conversionManager.deletePDF(item)
-                                }
-                            }
-                            isBatchMode = false
-                            multiSelection.removeAll()
-                        },
-                        onCancel: {
-                            isBatchMode = false
-                            multiSelection.removeAll()
-                        }
-                    )
-                } else if let pdf = selectedPDF {
-                    ConvertView(pdf: pdf)
+            // ✅ iPad Settings Inspector
+            .inspector(isPresented: $showingSettingsInspector) {
+                NavigationStack {
+                    SettingsView()
+                        .navigationTitle("Settings")
+                        .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
-                            ToolbarItem(placement: .topBarLeading) {
-                                Button(action: { selectedPDF = nil }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.secondary)
-                                        .font(.title3)
-                                }
-                            }
                             ToolbarItem(placement: .topBarTrailing) {
-                                Menu {
-                                    Button {
-                                        Task {
-                                            if pdf.fileSize > 50 * 1024 * 1024 {
-                                                largeFilePDF = pdf
-                                                showingLargeFileAlert = true
-                                            } else {
-                                                // Generate Metadata-Embedded File before sharing
-                                                if let exportURL = await conversionManager.exportForCloudSync(pdf) {
-                                                    await MainActor.run {
-                                                        let wrapper = ConvertedPDF(id: pdf.id, name: pdf.name, url: exportURL, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata)
-                                                        pdfToShare = wrapper
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } label: { Label("Export / Share", systemImage: "square.and.arrow.up") }
-                                    Button { pdfToEdit = pdf } label: { Label("Edit Pages", systemImage: "doc.on.doc") }
-                                    Divider()
-                                    Button(role: .destructive) {
-                                        conversionManager.deletePDF(pdf)
-                                        selectedPDF = nil
-                                    } label: { Label("Delete", systemImage: "trash") }
-                                } label: {
-                                    Image(systemName: "ellipsis.circle").font(.title3)
-                                }
+                                Button("Done") { showingSettingsInspector = false }
                             }
                         }
-                        .id(pdf.id)
-                } else {
-                    VStack(spacing: 20) {
-                        Image(systemName: "book.closed").font(.system(size: 80)).foregroundColor(.gray.opacity(0.3))
-                        Text("Select a Comic").font(.title).foregroundColor(.secondary)
-                        Text("Select a file from the sidebar or use the buttons below.").font(.caption).foregroundColor(.secondary)
-                    }
                 }
+                .presentationDetents([.medium, .large])
+                .inspectorColumnWidth(min: 300, ideal: 350, max: 400)
             }
         }
         .navigationSplitViewStyle(.balanced)
-
     }
 }
 

@@ -388,7 +388,7 @@ class ConversionManager: ObservableObject {
             if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
                  for case let fileURL as URL in enumerator {
                      let ext = fileURL.pathExtension.lowercased()
-                     if ["pdf", "cbz", "cbr", "zip", "epub"].contains(ext) {
+                    if ["pdf", "cbz", "zip", "epub"].contains(ext) {
                          // Check if already exists (Standardized Path Check)
                          if !convertedPDFs.contains(where: { $0.url.standardizedFileURL.path == fileURL.standardizedFileURL.path }) {
                              let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
@@ -598,7 +598,7 @@ class ConversionManager: ObservableObject {
                  continue
             }
             
-            // Existing CBZ/CBR/ZIP handling
+            // Existing CBZ/ZIP handling
             do {
                 let fileName = url.lastPathComponent
                 let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -674,7 +674,7 @@ class ConversionManager: ObservableObject {
                       let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
                 
                 let ext = fileURL.pathExtension.lowercased()
-                guard ["cbz", "cbr", "zip", "epub"].contains(ext) else { continue }
+                guard ["cbz", "zip", "epub"].contains(ext) else { continue }
                 
                 let fileName = fileURL.lastPathComponent
                 let destURL = documentsDir.appendingPathComponent(fileName)
@@ -751,7 +751,7 @@ class ConversionManager: ObservableObject {
                 // --- Layer 1: ComicInfo.xml ---
                 var metadata = PDFMetadata(title: fileName)
                 let ext = fileName.lowercased()
-                let isArchive = ext.hasSuffix(".cbz") || ext.hasSuffix(".cbr") || ext.hasSuffix(".zip")
+                let isArchive = ext.hasSuffix(".cbz") || ext.hasSuffix(".zip")
                 
                 if isArchive, let comicInfo = ComicInfoParser.parse(from: destURL) {
                     metadata.series = comicInfo.series
@@ -932,7 +932,7 @@ class ConversionManager: ObservableObject {
                               let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
                         
                         let ext = fileURL.pathExtension.lowercased()
-                        guard ["cbz", "cbr", "zip", "epub"].contains(ext) else { continue }
+                        guard ["cbz", "zip", "epub"].contains(ext) else { continue }
                         
                         let fileName = fileURL.lastPathComponent
                         let destURL = documentsDir.appendingPathComponent(fileName)
@@ -1034,7 +1034,7 @@ class ConversionManager: ObservableObject {
         }
         
         switch ext {
-        case "cbz", "cbr", "zip":
+        case "cbz", "zip":
             // Check if manga mode is enabled globally
             return conversionSettings.mangaMode ? .manga : .comic
             
@@ -1343,7 +1343,7 @@ class ConversionManager: ObservableObject {
             if jobSettings.outputFormat == .pdf {
                 // PDF export (always Standard, no panel metadata)
                 let fileManager = FileManager.default
-                let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                 let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
                 let imageURLs = try await extractImageURLs(from: pdf.url)
                 try PDFGenerator.generate(from: imageURLs, to: outputURL) { progress in
@@ -1354,7 +1354,7 @@ class ConversionManager: ObservableObject {
             } else if jobSettings.outputFormat == .cbz {
                 // CBZ export
                 let fileManager = FileManager.default
-                let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
+                let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
                 let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
                 
                 await MainActor.run { processingStatus = "Extracting Images..." }
@@ -1451,7 +1451,6 @@ class ConversionManager: ObservableObject {
                     let fileManager = FileManager.default
                     let pName = pdf.name
                         .replacingOccurrences(of: ".cbz", with: "")
-                        .replacingOccurrences(of: ".cbr", with: "")
                         .replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                     let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
                     let imageURLs = try await extractImageURLs(from: pdf.url)
@@ -1465,7 +1464,7 @@ class ConversionManager: ObservableObject {
                     Logger.shared.log("Batch Conversion successful: \(pdf.name) -> PDF", category: "Converter")
                 } else if jobSettings.outputFormat == .cbz {
                     let fileManager = FileManager.default
-                    let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".cbr", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
+                    let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
                     let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
                     let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -1740,7 +1739,7 @@ class ConversionManager: ObservableObject {
             return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
         }
 
-        if ["cbz", "cbr", "zip", "epub"].contains(ext) {
+        if ["cbz", "zip", "epub"].contains(ext) {
             // ✅ Security Scope Safety (Paranoid Check)
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
@@ -1812,7 +1811,7 @@ class ConversionManager: ObservableObject {
             return PDFDocument(url: url)?.pageCount ?? 0
         }
 
-        if ["cbz", "cbr", "zip", "epub"].contains(ext) {
+        if ["cbz", "zip", "epub"].contains(ext) {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
@@ -2155,7 +2154,7 @@ class ConversionManager: ObservableObject {
     func trimPages(from pdf: ConvertedPDF, pageIndices: Set<Int>, trim: (top: Double, bottom: Double, left: Double, right: Double)) async throws {
         // Validate type: Must be an archive
         let ext = pdf.url.pathExtension.lowercased()
-        guard ["cbz", "cbr", "zip", "epub"].contains(ext) else {
+        guard ["cbz", "zip", "epub"].contains(ext) else {
             throw NSError(domain: "TrimError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Trimming is only supported for CBZ, ZIP, or EPUB files."])
         }
         

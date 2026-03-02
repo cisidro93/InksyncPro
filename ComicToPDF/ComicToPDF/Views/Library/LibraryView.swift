@@ -319,7 +319,7 @@ struct LibraryView: View {
             Text("Your Library is Empty")
             .font(.title2)
             .bold()
-            Text("Import a CBZ, CBR, or PDF file to get started.")
+            Text("Import a CBZ, EPUB, or PDF file to get started.")
             .foregroundColor(.secondary)
             .multilineTextAlignment(.center)
             .padding(.horizontal)
@@ -564,7 +564,7 @@ extension View {
                     guard let ext = webExportPDF.wrappedValue?.url.pathExtension.lowercased() else { return .pdf }
                     if ext == "epub" { return .epub }
                     if ext == "cbz" { return UTType("com.macitbetter.cbz-archive") ?? .zip }
-                    if ext == "cbr" { return UTType("com.macitbetter.cbr-archive") ?? .zip }
+
                     if ext == "zip" { return .zip }
                     return .pdf
                 }(),

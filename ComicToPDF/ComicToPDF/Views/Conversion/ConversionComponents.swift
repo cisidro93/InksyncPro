@@ -92,7 +92,7 @@ struct FileRowViewWithRename: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: url.pathExtension.lowercased() == "cbr" ? "doc.zipper.fill" : "doc.zipper")
+            Image(systemName: "doc.zipper")
                 .font(.title2).foregroundColor(.orange).frame(width: 40)
             
             VStack(alignment: .leading, spacing: 2) {

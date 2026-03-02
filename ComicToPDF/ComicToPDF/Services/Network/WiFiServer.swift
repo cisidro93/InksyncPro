@@ -517,7 +517,7 @@ class WiFiServer: ObservableObject {
                 let fileURL = rawFileURL.resolvingSymlinksInPath()
                 let ext = fileURL.pathExtension.lowercased()
                 
-                if ["pdf", "epub", "cbz", "cbr"].contains(ext) {
+                if ["pdf", "epub", "cbz"].contains(ext) {
                     // Calculate Relative Path for Link
                     var relativePath = fileURL.path.replacingOccurrences(of: docDir.path, with: "")
                     
@@ -584,7 +584,7 @@ class WiFiServer: ObservableObject {
                 
                 <div class="upload-area" onclick="document.getElementById('fileInput').click()">
                     <h3>Tap to Upload</h3>
-                    <p style="color:#888; font-size: 14px;">Select CBZ, PDF, CBR, or EPUB files</p>
+                    <p style="color:#888; font-size: 14px;">Select CBZ, PDF, or EPUB files</p>
                     <input type="file" id="fileInput" style="display:none" onchange="handleFileSelect()">
                 </div>
                 

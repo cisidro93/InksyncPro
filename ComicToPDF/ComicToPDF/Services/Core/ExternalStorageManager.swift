@@ -25,7 +25,7 @@ class ExternalStorageManager: NSObject {
     ) {
         let types: [UTType] = [
             UTType(filenameExtension: "cbz") ?? .data,
-            UTType(filenameExtension: "cbr") ?? .data,
+
             UTType(filenameExtension: "cb7") ?? .data,
             UTType(filenameExtension: "epub") ?? .epub,
             .pdf
@@ -47,7 +47,7 @@ class ExternalStorageManager: NSObject {
     ) {
         let types: [UTType] = [
             UTType(filenameExtension: "cbz") ?? .data,
-            UTType(filenameExtension: "cbr") ?? .data,
+
             UTType(filenameExtension: "cb7") ?? .data,
             UTType(filenameExtension: "epub") ?? .epub,
             .pdf

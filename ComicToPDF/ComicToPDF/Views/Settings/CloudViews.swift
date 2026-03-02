@@ -40,7 +40,7 @@ struct CloudImportView: View {
                 } header: { Text("Import Source") } footer: { Text("The Files app automatically provides access to iCloud Drive and any third-party cloud storage apps you have installed and authenticated.") }
                 
                 Section {
-                    ForEach(["CBZ", "CBR", "ZIP"], id: \.self) { format in
+                    ForEach(["CBZ", "EPUB", "ZIP"], id: \.self) { format in
                         HStack {
                             settingsIcon("doc.zipper", color: .orange)
                             Text(format)
@@ -84,13 +84,13 @@ struct CloudImportView: View {
 struct CloudDocumentPicker: UIViewControllerRepresentable {
     @Binding var selectedFiles: [URL]
     @Environment(\.dismiss) private var dismiss
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController { let supportedTypes: [UTType] = [.zip, .archive, UTType(filenameExtension: "cbz") ?? .zip, UTType(filenameExtension: "cbr") ?? .archive]; let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true); picker.allowsMultipleSelection = true; picker.shouldShowFileExtensions = true; picker.delegate = context.coordinator; return picker }
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController { let supportedTypes: [UTType] = [.zip, .archive, UTType(filenameExtension: "cbz") ?? .zip]; let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true); picker.allowsMultipleSelection = true; picker.shouldShowFileExtensions = true; picker.delegate = context.coordinator; return picker }
     func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     class Coordinator: NSObject, UIDocumentPickerDelegate {
         let parent: CloudDocumentPicker
         init(_ parent: CloudDocumentPicker) { self.parent = parent }
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { let validExtensions = ["cbz", "cbr", "zip", "rar"]; for url in urls { let ext = url.pathExtension.lowercased(); if validExtensions.contains(ext) { if !parent.selectedFiles.contains(where: { $0.lastPathComponent == url.lastPathComponent }) { parent.selectedFiles.append(url) } } } }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { let validExtensions = ["cbz", "zip", "epub"]; for url in urls { let ext = url.pathExtension.lowercased(); if validExtensions.contains(ext) { if !parent.selectedFiles.contains(where: { $0.lastPathComponent == url.lastPathComponent }) { parent.selectedFiles.append(url) } } } }
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {}
     }
 }

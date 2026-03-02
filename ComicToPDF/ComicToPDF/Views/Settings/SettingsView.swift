@@ -2,6 +2,9 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    // ✅ Observe Global Layout Setting
+    @AppStorage("useSidebar") private var useSidebar = true
+    
     // ✅ NEW: Observe the Brain
     @StateObject private var aiManager = AdaptiveLearningManager.shared
     
@@ -92,6 +95,11 @@ struct SettingsView: View {
                 HStack {
                     settingsIcon("book.fill", color: .purple)
                     Toggle("Default Manga Mode (RTL)", isOn: $conversionManager.conversionSettings.mangaMode)
+                }
+                
+                HStack {
+                    settingsIcon("sidebar.left", color: .indigo)
+                    Toggle("Use Sidebar Navigation (iPad)", isOn: $useSidebar)
                 }
             } header: { Text("General UI") }
             

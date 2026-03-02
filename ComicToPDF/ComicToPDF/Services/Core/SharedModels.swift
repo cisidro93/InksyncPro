@@ -98,7 +98,7 @@ struct GenericFileDocument: FileDocument {
     }
     
     static var readableContentTypes: [UTType] {
-        return [.pdf, .epub, .zip, UTType(filenameExtension: "cbz")!, UTType(filenameExtension: "cbr")!].compactMap { $0 }
+        return [.pdf, .epub, .zip, UTType(filenameExtension: "cbz")!].compactMap { $0 }
     }
     
     init(configuration: ReadConfiguration) throws {

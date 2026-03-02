@@ -1,7 +1,7 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// Presents a multi-file picker that lets the user select CBZ/CBR/EPUB files from
+/// Presents a multi-file picker that lets the user select CBZ/EPUB files from
 /// ANY location — including third-party app sandboxes like Aidoku — and returns them
 /// as copies that InksyncPro owns.
 ///
@@ -35,7 +35,7 @@ final class FolderImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
         let supportedTypes: [UTType] = [
             UTType(filenameExtension: "cbz") ?? .zip,
-            UTType(filenameExtension: "cbr") ?? .archive,
+
             UTType(filenameExtension: "cb7") ?? .archive,
             .epub,
             .zip,
