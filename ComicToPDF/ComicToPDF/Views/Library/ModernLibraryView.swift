@@ -774,12 +774,11 @@ struct ModernFileRow: View {
     let isSelected: Bool
     let isBatch: Bool
     @EnvironmentObject var conversionManager: ConversionManager
-    @State private var coverImage: UIImage?
     
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                if let img = coverImage {
+                if let img = conversionManager.getThumbnail(for: pdf) {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -792,12 +791,6 @@ struct ModernFileRow: View {
             .frame(width: 40, height: 56)
             .cornerRadius(4)
             .clipped()
-            .task {
-                // ✅ Lazy Load Cover
-                if coverImage == nil {
-                    coverImage = await conversionManager.loadCoverThumbnail(for: pdf)
-                }
-            }
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(pdf.name)
@@ -875,7 +868,7 @@ struct ModernSeriesRow: View {
     let group: SeriesGroup
     let isSelected: Bool
     let isBatch: Bool
-    @State private var coverImage: UIImage?
+    @EnvironmentObject var conversionManager: ConversionManager
     
     var body: some View {
         HStack(spacing: 12) {
@@ -884,7 +877,8 @@ struct ModernSeriesRow: View {
                 if group.count > 1 {
                     RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated).frame(width: 40, height: 56).offset(x: 3, y: -3)
                 }
-                if let img = coverImage {
+                
+                if let issueID = group.coverIssueID, let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }), let img = conversionManager.getThumbnail(for: pdf) {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -897,15 +891,6 @@ struct ModernSeriesRow: View {
             .frame(width: 40, height: 56)
             .cornerRadius(4)
             .clipped()
-            .task {
-                if let url = group.coverURL, coverImage == nil {
-                    let img = await Task.detached(priority: .userInitiated) {
-                        guard let data = try? Data(contentsOf: url) else { return UIImage?.none }
-                        return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 80, height: 112))
-                    }.value
-                    await MainActor.run { coverImage = img }
-                }
-            }
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(group.title)
@@ -956,13 +941,12 @@ struct ModernGridFileCell: View {
     let isSelected: Bool
     let isBatch: Bool
     @EnvironmentObject var conversionManager: ConversionManager
-    @State private var coverImage: UIImage?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Cover Image Setup
             ZStack(alignment: .topTrailing) {
-                if let img = coverImage {
+                if let img = conversionManager.getThumbnail(for: pdf) {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -986,11 +970,6 @@ struct ModernGridFileCell: View {
             .aspectRatio(0.7, contentMode: .fill) // Standard comic aspect ratio
             .cornerRadius(8)
             .clipped()
-            .task {
-                if coverImage == nil {
-                    coverImage = await conversionManager.loadCoverThumbnail(for: pdf)
-                }
-            }
             
             // Text Details
             VStack(alignment: .leading, spacing: 4) {
@@ -1033,7 +1012,7 @@ struct ModernGridSeriesCell: View {
     let group: SeriesGroup
     let isSelected: Bool
     let isBatch: Bool
-    @State private var coverImage: UIImage?
+    @EnvironmentObject var conversionManager: ConversionManager
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1045,7 +1024,7 @@ struct ModernGridSeriesCell: View {
                         RoundedRectangle(cornerRadius: 12).fill(Theme.surfaceElevated).padding(4).offset(y: -8)
                         RoundedRectangle(cornerRadius: 12).fill(Theme.surfaceElevated).padding(2).offset(y: -4)
                     }
-                    if let img = coverImage {
+                    if let issueID = group.coverIssueID, let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }), let img = conversionManager.getThumbnail(for: pdf) {
                         Image(uiImage: img)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
@@ -1070,15 +1049,6 @@ struct ModernGridSeriesCell: View {
             }
             .frame(maxWidth: .infinity)
             .aspectRatio(0.7, contentMode: .fit) // Standard comic aspect ratio
-            .task {
-                if let url = group.coverURL, coverImage == nil {
-                    let img = await Task.detached(priority: .userInitiated) {
-                        guard let data = try? Data(contentsOf: url) else { return UIImage?.none }
-                        return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 140, height: 200))
-                    }.value
-                    await MainActor.run { coverImage = img }
-                }
-            }
             
             // Text Details
             VStack(alignment: .leading, spacing: 4) {

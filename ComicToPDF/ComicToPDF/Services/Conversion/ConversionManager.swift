@@ -325,7 +325,7 @@ class ConversionManager: ObservableObject {
                FileManager.default.fileExists(atPath: url.path) {
                 
                 if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
-                    let thumbnail = image.preparingThumbnail(of: CGSize(width: 80, height: 120)) ?? image
+                    let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
                     await MainActor.run {
                         self.thumbnailCache.setObject(thumbnail, forKey: key)
                     }
@@ -352,7 +352,7 @@ class ConversionManager: ObservableObject {
         
         // Update Cache
         if let image = UIImage(data: data) {
-            let thumbnail = image.preparingThumbnail(of: CGSize(width: 80, height: 120)) ?? image
+            let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
             let key = pdf.id.uuidString as NSString
             thumbnailCache.setObject(thumbnail, forKey: key)
         }
@@ -1733,7 +1733,7 @@ class ConversionManager: ObservableObject {
     }
     
     func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
-        if let cached = thumbnailCache.object(forKey: pdf.url.path as NSString) { return cached }
+        if let cached = thumbnailCache.object(forKey: pdf.id.uuidString as NSString) { return cached }
         
         Task.detached(priority: .userInitiated) {
             // Check disk cache first to avoid extracting the archive again
@@ -1742,7 +1742,7 @@ class ConversionManager: ObservableObject {
                let image = UIImage(data: data) {
                 
                 await MainActor.run {
-                    self.thumbnailCache.setObject(image, forKey: pdf.url.path as NSString)
+                    self.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
                     self.objectWillChange.send()
                 }
             } else {
