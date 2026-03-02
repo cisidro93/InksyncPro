@@ -136,7 +136,7 @@ class ConversionManager: ObservableObject {
     private var progressSubscription: AnyCancellable?
     
     // ✅ Export Profiles Mode
-    @Published var conversionPresets: [ConversionPreset] = []
+    // (conversionPresets state is managed at the top of the file)
     
     init() {
         loadLibrary()

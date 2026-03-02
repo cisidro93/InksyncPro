@@ -9,7 +9,7 @@ struct ContentView: View {
     @StateObject private var wifiServer = WiFiServer()
     
     @State private var selectedTab = 0
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var selectedPDF: ConvertedPDF?
     
     // Global Sheets
@@ -35,7 +35,7 @@ struct ContentView: View {
     // ✅ iPad Layout Toggles
     @AppStorage("useSidebar") private var useSidebar = true
     @State private var showingSettingsInspector = false
-    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    // (columnVisibility managed above)
 
     var body: some View {
         ZStack {
@@ -202,7 +202,7 @@ struct ContentView: View {
                         .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
+                            ToolbarItem(placement: .navigationBarTrailing) {
                                 Button("Done") { showingSettingsInspector = false }
                             }
                         }
