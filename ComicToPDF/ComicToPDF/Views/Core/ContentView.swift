@@ -201,11 +201,11 @@ struct ContentView: View {
                     SettingsView()
                         .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .primaryAction) {
-                                Button("Done") { showingSettingsInspector = false }
-                            }
-                        }
+                        .navigationBarItems(trailing: Button(action: {
+                            showingSettingsInspector = false
+                        }) {
+                            Text("Done").bold()
+                        })
                 }
                 .presentationDetents([.medium, .large])
                 .inspectorColumnWidth(min: 300, ideal: 350, max: 400)
