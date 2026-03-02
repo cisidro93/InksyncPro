@@ -805,7 +805,7 @@ class ConversionManager: ObservableObject {
                 }
                 
                 let contentType = detectContentType(from: destURL)
-                let pdf = ConvertedPDF(
+                var pdf = ConvertedPDF(
                     name: fileName,
                     url: destURL,
                     pageCount: 0,
@@ -813,6 +813,7 @@ class ConversionManager: ObservableObject {
                     metadata: metadata,
                     contentType: contentType
                 )
+                pdf.isPrivate = self.isVaultUnlocked
                 importedPDFs.append(pdf)
             } catch {
                 Logger.shared.log("importFilesAsSeries: Failed to copy \(fileName): \(error.localizedDescription)", category: "Import", type: .error)

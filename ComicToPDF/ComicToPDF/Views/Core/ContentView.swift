@@ -185,6 +185,7 @@ struct ContentView: View {
                             }
                         }
                     )
+                    .toolbar(.hidden, for: .navigationBar)
                     // If a PDF is selected, we want to push the ConvertView. 
                     // To do this cleanly without breaking the grid, we use a navigationDestination bounded to selectedPDF
                     .navigationDestination(isPresented: Binding(
@@ -205,11 +206,11 @@ struct ContentView: View {
                     SettingsView()
                         .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.inline)
-                        .navigationBarItems(trailing: Button(action: {
-                            showingSettingsInspector = false
-                        }) {
-                            Text("Done").bold()
-                        })
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showingSettingsInspector = false }.bold()
+                            }
+                        }
                 }
                 .presentationDetents([.medium, .large])
                 .inspectorColumnWidth(min: 300, ideal: 350, max: 400)
