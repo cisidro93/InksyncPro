@@ -46,7 +46,15 @@ struct ModernLibraryView: View {
     
     @State private var activeSheet: SidebarSheet?
     // UI State
-    @State private var sortOption: LibraryView.SortOption = .dateAdded
+    enum SortOption: String, CaseIterable, Identifiable {
+        case dateAdded = "Most Recent"
+        case name = "Name"
+        case size = "Size"
+        case favorites = "Favorites First"
+        case type = "Single / Series"
+        var id: String { rawValue }
+    }
+    @State private var sortOption: SortOption = .dateAdded
     @State private var showingSortMenu = false
     
     // ✅ NEW: Rename Logic
@@ -57,9 +65,13 @@ struct ModernLibraryView: View {
     @State private var pdfToExport: ConvertedPDF?
     @State private var pdfToSearchMetadata: ConvertedPDF?
     
-    // ✅ Layer 4: Manual Series Assignment
+    // ✅ Layer 4: Manual Series Assignment (Single)
     @State private var pdfToAssignSeries: ConvertedPDF?
     @State private var assignSeriesText = ""
+    
+    // ✅ NEW: Batch Series Assignment
+    @State private var showingBatchGroupAlert = false
+    @State private var batchGroupText = ""
     
     // ✅ NEW: Unified Library Item
     enum LibraryListItem: Identifiable, Hashable {
@@ -150,9 +162,27 @@ struct ModernLibraryView: View {
     
     func sortPDFs(_ pdfs: [ConvertedPDF]) -> [ConvertedPDF] {
         switch sortOption {
-        case .dateAdded: return pdfs.reversed()
-        case .name: return pdfs.sorted { $0.name < $1.name }
+        case .dateAdded: return pdfs.reversed() // Returns newest imported first, which places it natively at index 0 and top-left.
+        case .name: return pdfs.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         case .size: return pdfs.sorted { $0.fileSize > $1.fileSize }
+        case .favorites:
+            return pdfs.sorted {
+                if $0.isFavorite == $1.isFavorite { return false }
+                return $0.isFavorite && !$1.isFavorite
+            }
+        case .type:
+            return pdfs.sorted {
+                let s1 = ($0.metadata.series ?? "").isEmpty
+                let s2 = ($1.metadata.series ?? "").isEmpty
+                if s1 != s2 { return s2 } // Place series first
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+        }
+    }
+
+    private func toggleFavorite(for pdf: ConvertedPDF) {
+        if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            conversionManager.convertedPDFs[index].isFavorite.toggle()
         }
     }
 
@@ -230,6 +260,21 @@ struct ModernLibraryView: View {
         } message: {
             Text("Enter the series name to group this file into a collection.")
         }
+        .alert("Group Selected into Series", isPresented: $showingBatchGroupAlert) {
+            TextField("Series Name", text: $batchGroupText)
+            Button("Cancel", role: .cancel) { }
+            Button("Group") {
+                let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                let name = batchGroupText.trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty && !items.isEmpty {
+                    for item in items {
+                        conversionManager.assignToSeries(item, seriesName: name)
+                    }
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                }
+            }
+        } message: { Text("Enter a series name to pack all selected files into.") }
         .alert(item: $conversionManager.appAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
@@ -437,6 +482,11 @@ struct ModernLibraryView: View {
         .tint(.blue)
         
         Button {
+            toggleFavorite(for: pdf)
+        } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash.fill" : "star.fill") }
+        .tint(.yellow)
+        
+        Button {
             renameText = pdf.name
             pdfToRename = pdf
         } label: { Label("Rename", systemImage: "pencil") }
@@ -455,6 +505,10 @@ struct ModernLibraryView: View {
     
     @ViewBuilder
     private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
+        Button {
+            toggleFavorite(for: pdf)
+        } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star") }
+        
         Button {
             pdfToExport = pdf
         } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
@@ -539,6 +593,21 @@ struct ModernLibraryView: View {
                         .stroke(.white.opacity(0.1), lineWidth: 1)
                 )
                 .frame(maxWidth: 400) // Constrain width on large screens
+                
+                // ✅ NEW: Sort Menu
+                Menu {
+                    Picker("Sort By", selection: $sortOption) {
+                        ForEach(SortOption.allCases) { option in Text(option.rawValue).tag(option) }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.1), lineWidth: 1))
+                }
                 
                 // ✅ NEW: Grid / List Toggle
                 Button {
@@ -679,6 +748,16 @@ struct ModernLibraryView: View {
                     VStack(spacing: 4) { Image(systemName: "doc.on.doc.fill").font(.title3); Text("Merge").font(.caption) }
                 }
                 .disabled(multiSelection.count < 2)
+                
+                Spacer()
+                
+                Button {
+                    batchGroupText = ""
+                    showingBatchGroupAlert = true
+                } label: {
+                    VStack(spacing: 4) { Image(systemName: "rectangle.stack.badge.plus").font(.title3); Text("Group").font(.caption) }
+                }
+                .disabled(multiSelection.isEmpty)
                 
                 Spacer()
                 

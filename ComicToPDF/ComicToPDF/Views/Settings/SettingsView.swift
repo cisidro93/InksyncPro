@@ -12,6 +12,11 @@ struct SettingsView: View {
     @State private var showingDeleteAlert = false
     @State private var deviceToDelete: KindleDevice?
     
+    // ✅ NEW: Preset Alert State
+    @State private var showingPresetAlert = false
+    @State private var customPresetName = "Custom Base"
+    @Environment(\.dismiss) var dismiss
+    
     // ✅ NEW: API Key Verification State
     @State private var isVerifying = false
     @State private var verificationStatus: KeyStatus = .none
@@ -296,8 +301,7 @@ struct SettingsView: View {
             // MARK: - SYSTEM
             Section {
                 Button(action: {
-                    let newPreset = ConversionPreset(name: "Custom Base", settings: conversionManager.conversionSettings)
-                    conversionManager.savePreset(newPreset)
+                    showingPresetAlert = true
                 }) {
                     HStack {
                         settingsIcon("square.and.arrow.down.fill", color: .blue)
@@ -338,8 +342,21 @@ struct SettingsView: View {
             } header: { Text("Legal") }
         }
         .navigationTitle("Preferences")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: { dismiss() }) { Text("Done").bold() }
+            }
+        }
         .onChange(of: conversionManager.conversionSettings) { _ in
             conversionManager.saveSettings()
         }
+        .alert("Save Custom Preset", isPresented: $showingPresetAlert) {
+            TextField("Preset Name", text: $customPresetName)
+            Button("Cancel", role: .cancel) { }
+            Button("Save") {
+                let newPreset = ConversionPreset(name: customPresetName.isEmpty ? "Custom Mode" : customPresetName, settings: conversionManager.conversionSettings)
+                conversionManager.savePreset(newPreset)
+            }
+        } message: { Text("Enter a name for your custom export configuration.") }
     }
 }
