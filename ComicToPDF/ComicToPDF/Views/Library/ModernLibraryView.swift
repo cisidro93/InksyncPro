@@ -23,6 +23,9 @@ struct ModernLibraryView: View {
     
     // ✅ Navigation Mode
     var useNavigationStack: Bool = false
+    
+    // ✅ Editor State
+    @State private var pdfToEditMetadata: ConvertedPDF?
     // ✅ Root-level folder picker callback (avoids iOS 16/17 delegate swallowing bug)
     var onFolderImport: (() -> Void)? = nil
     
@@ -190,6 +193,10 @@ struct ModernLibraryView: View {
         }
         .sheet(item: $pdfToSearchMetadata) { pdf in
             MetadataSearchSheet(pdf: pdf)
+        }
+        // ✅ NEW: Advanced Metadata & Cover Editor
+        .sheet(item: $pdfToEditMetadata) { pdf in
+            AdvancedMetadataEditorView(pdf: pdf)
         }
         // ✅ Rename Alert
         .alert("Rename File", isPresented: Binding(
@@ -476,6 +483,11 @@ struct ModernLibraryView: View {
         
         Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
         Divider()
+        
+        Button {
+            pdfToEditMetadata = pdf
+        } label: { Label("Edit Metadata & Cover", systemImage: "pencil.and.list.clipboard") }
+        
         Button {
             pdfToSearchMetadata = pdf
         } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
@@ -552,9 +564,23 @@ struct ModernLibraryView: View {
                     
                     // 1. Target Selector Pill (Fixed & Prominent)
                     Menu {
-                        Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
-                            ForEach(OutputFormat.allCases) { format in
-                                Label(format.rawValue, systemImage: format.icon).tag(format)
+                        Section("Standard Formats") {
+                            Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                                ForEach(OutputFormat.allCases) { format in
+                                    Label(format.rawValue, systemImage: format.icon).tag(format)
+                                }
+                            }
+                        }
+                        
+                        if !conversionManager.conversionPresets.isEmpty {
+                            Section("Custom Profiles") {
+                                ForEach(conversionManager.conversionPresets) { preset in
+                                    Button {
+                                        conversionManager.conversionSettings = preset.settings
+                                    } label: {
+                                        Label(preset.name, systemImage: "list.clipboard.fill")
+                                    }
+                                }
                             }
                         }
                     } label: {

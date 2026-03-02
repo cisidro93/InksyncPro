@@ -116,6 +116,14 @@ struct SettingsView: View {
                     }
                 }
                 
+                // ✅ NEW: Custom Export Profiles
+                NavigationLink(destination: ExportProfilesView()) {
+                    HStack {
+                        settingsIcon("list.clipboard.fill", color: .orange)
+                        Text("Custom Export Profiles")
+                    }
+                }
+                
                 if conversionManager.conversionSettings.outputFormat == .epub {
                     HStack {
                         settingsIcon("rectangle.grid.1x2.fill", color: .indigo)

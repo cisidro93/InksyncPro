@@ -35,6 +35,7 @@ struct ContentView: View {
     // ✅ iPad Layout Toggles
     @AppStorage("useSidebar") private var useSidebar = true
     @State private var showingSettingsInspector = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 
     var body: some View {
         ZStack {
@@ -162,7 +163,7 @@ struct ContentView: View {
                     .padding()
                     .foregroundColor(.white)
                 }
-                
+            }
         } detail: {
             NavigationStack {
                 if selectedTab == 0 {

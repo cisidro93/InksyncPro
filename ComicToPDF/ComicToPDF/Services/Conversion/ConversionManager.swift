@@ -135,6 +135,9 @@ class ConversionManager: ObservableObject {
     // ✅ Secure Processing Core Integration
     private var progressSubscription: AnyCancellable?
     
+    // ✅ Export Profiles Mode
+    @Published var conversionPresets: [ConversionPreset] = []
+    
     init() {
         loadLibrary()
         scanLibrary()
@@ -221,8 +224,9 @@ class ConversionManager: ObservableObject {
             let devices: [KindleDevice]
             var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil // ✅ NEW: Persistence
             var watchedFolders: [WatchedFolder]? = nil // ✅ NEW: Watched Folders
+            var presets: [ConversionPreset]? = nil // ✅ NEW: Presets
         }
-        let index = LibraryIndex(files: convertedPDFs, collections: collections, settings: conversionSettings, history: sendHistory, devices: kindleDevices, panelOverrides: panelOverrides, watchedFolders: watchedFolders)
+        let index = LibraryIndex(files: convertedPDFs, collections: collections, settings: conversionSettings, history: sendHistory, devices: kindleDevices, panelOverrides: panelOverrides, watchedFolders: watchedFolders, presets: conversionPresets)
         if let url = fileURL(for: libraryFileName), let encoded = try? JSONEncoder().encode(index) {
             try? encoded.write(to: url)
         }
@@ -239,6 +243,7 @@ class ConversionManager: ObservableObject {
             let devices: [KindleDevice]
             var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil // ✅ NEW
             var watchedFolders: [WatchedFolder]? = nil // ✅ NEW
+            var presets: [ConversionPreset]? = nil // ✅ NEW
         }
         guard let url = fileURL(for: libraryFileName), let data = try? Data(contentsOf: url), let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) else { return }
         self.convertedPDFs = index.files
@@ -248,6 +253,7 @@ class ConversionManager: ObservableObject {
         self.kindleDevices = index.devices
         self.panelOverrides = index.panelOverrides ?? [:] // ✅ Restore overrides
         self.watchedFolders = index.watchedFolders ?? [] // ✅ Restore Watched Folders
+        self.conversionPresets = index.presets ?? [] // ✅ Restore Presets
     }
     
     private func fileURL(for name: String) -> URL? {
@@ -354,6 +360,21 @@ class ConversionManager: ObservableObject {
         // Ensure memory property is nil (if we are updating an existing object that might have it)
         if let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
             convertedPDFs[index].coverImageData = nil
+        }
+    }
+    
+    // ✅ NEW: Advanced Metadata Update
+    func updateMetadata(for pdf: ConvertedPDF, with newMetadata: PDFMetadata, newCover: UIImage?) {
+        if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            convertedPDFs[idx].metadata = newMetadata
+            convertedPDFs[idx].name = newMetadata.title // Sync filename for display
+            
+            if let img = newCover, let data = img.jpegData(compressionQuality: 0.85) {
+                saveCoverImage(data, for: pdf)
+            }
+            
+            saveLibrary()
+            Logger.shared.log("Updated metadata for \(pdf.name)", category: "Metadata")
         }
     }
     
