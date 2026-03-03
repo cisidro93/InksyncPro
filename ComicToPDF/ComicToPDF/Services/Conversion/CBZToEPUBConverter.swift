@@ -391,6 +391,8 @@ class CBZToEPUBConverter {
                     <meta name="fixed-layout" content="true"/>
                     <meta name="RegionMagnification" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
+                    <meta name="book-type" content="comic"/>
+                    <meta name="cdetype" content="pdoc"/>
                     <meta name="primary-writing-mode" content="\(writingMode)"/>
                     <meta name="zero-gutter" content="true"/>
                     <meta name="zero-margin" content="true"/>

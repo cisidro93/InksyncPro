@@ -17,6 +17,8 @@
     <meta name="fixed-layout" content="true"/>
     <meta name="original-resolution" content="1920x1200"/>
     <meta name="orientation-lock" content="landscape"/>
+    <meta name="book-type" content="comic"/>
+    <meta name="cdetype" content="pdoc"/>
     <meta name="RegionMagnification" content="true"/>
     <meta name="cover" content="cover-image"/>
 
