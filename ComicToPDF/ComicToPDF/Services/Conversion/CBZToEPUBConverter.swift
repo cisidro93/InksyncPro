@@ -306,7 +306,7 @@ class CBZToEPUBConverter {
                     // 2. Write Cover XHTML
                     // We use standard full-page cover layout
                     let coverHeight = Int(contentSize.height)
-                    let coverXHTML = CBZToEPUBConverter.generateXHTML(imageName: coverName, title: "Cover", width: coverWidth, height: coverHeight, pageIndex: 0)
+                    let coverXHTML = CBZToEPUBConverter.generateXHTML(imageName: coverName, title: "Cover", width: Int(contentSize.width), height: coverHeight, pageIndex: 0)
                     let coverXHTMLName = "cover_reused.xhtml"
                     try? coverXHTML.write(to: textDir.appendingPathComponent(coverXHTMLName), atomically: true, encoding: .utf8)
                     
