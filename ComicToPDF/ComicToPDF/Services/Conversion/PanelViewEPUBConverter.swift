@@ -260,8 +260,8 @@ class PanelViewEPUBConverter {
         needsBlank: Bool,
         comicInfo: ComicInfoParser.ComicInfo?
     ) -> String {
-        let isPortrait   = pageHeight > pageWidth
-        let orientation  = isPortrait ? "portrait" : "landscape"
+        let orientation  = "auto"
+        let orientationLock = "none"
         let writingMode  = isManga ? "horizontal-rl" : "horizontal-lr"
         let spreadMode   = "landscape"
         let author       = comicInfo?.writer ?? "Unknown"
@@ -303,7 +303,7 @@ class PanelViewEPUBConverter {
             <!-- Fixed Layout — ALL required for Kindle Panel View -->
             <meta name="fixed-layout" content="true"/>
             <meta name="original-resolution" content="\(pageWidth)x\(pageHeight)"/>
-            <meta name="orientation-lock" content="\(orientation)"/>
+            <meta name="orientation-lock" content="\(orientationLock)"/>
             <meta name="book-type" content="comic"/>
             <meta name="cdetype" content="pdoc"/>
             <meta name="RegionMagnification" content="true"/>

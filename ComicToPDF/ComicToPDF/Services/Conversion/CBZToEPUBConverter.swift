@@ -362,11 +362,8 @@ class CBZToEPUBConverter {
             let kindleWidth = 1860
             let kindleHeight = 2480
             
-            // ✅ DYNAMIC ORIENTATION (Fixes "Locked Landscape" on Portrait Comics)
-            // If the content is taller than it is wide, we must tell Kindle it's a Portrait book.
-            // Otherwise, it forces landscape mode and letterboxes the portrait pages.
-            let isPortrait = heightID > widthID
-            let orientation = isPortrait ? "portrait" : "landscape"
+            let orientation = "auto"
+            let orientationLock = "none"
             
             // "landscape" spread mode allows 2-page spreads when the device is in landscape,
             // but doesn't force the device INTO landscape if the book is portrait.
@@ -387,10 +384,10 @@ class CBZToEPUBConverter {
                     <meta name="zero-margin" content="true"/>
                     <meta name="ke-border-color" content="#FFFFFF"/>
                     <meta name="ke-border-width" content="0"/>
-                    <meta name="orientation-lock" content="\(orientation)"/>
+                    <meta name="orientation-lock" content="\(orientationLock)"/>
 """
             
-            var opfContent = """
+            let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -409,21 +406,6 @@ class CBZToEPUBConverter {
                 </spine>
             </package>
             """
-            
-                        let base64 = data.base64EncodedString()
-                        // Insert generic meta name tag (safest for Kindle)
-                        // We avoid 'property' and custom namespaces to prevent E013 errors
-                        if let range = opfContent.range(of: "</metadata>") {
-                            let metaTag = "\n    <meta name=\"inksync-comicinfo\" content=\"\(base64)\"/>"
-                            opfContent.insert(contentsOf: metaTag, at: range.lowerBound)
-                        }
-                    }
-                } else {
-                     Logger.shared.log("Skipping ComicInfo injection (Standard Mode)", category: "Converter")
-                }
-            } else {
-                Logger.shared.log("Batch \(batchIndex): No panels to write", category: "Converter")
-            }
             
             try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: String.Encoding.utf8)
 
