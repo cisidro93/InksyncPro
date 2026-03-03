@@ -284,22 +284,13 @@ class CBZToEPUBConverter {
                     }
                 }
                 
-                // Detect Panels (Global Index Lookup)
-                var pagePanels = manualManifest?[item.index] ?? []
-                // ✅ FIX: Ensure panels are detected for Guided View even if "Panel Split" (Physical Split) is off
-                if pagePanels.isEmpty && (settings.enablePanelSplit || settings.isGuidedView) {
-                    if let image = UIImage(data: item.data) {
-                        pagePanels = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: settings.mangaMode)
-                    }
-                }
-                
                 // Get Dimensions for Viewport
                 let imageSize = UIImage(data: item.data)?.size ?? CGSize(width: 1000, height: 1500)
 
                 // Create XHTML
                 // ✅ FIX: Use Global Index (item.index) for Page ID to ensure uniqueness across batches
                 let globalPageNum = item.index + 1
-                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(globalPageNum)", width: Int(imageSize.width), height: Int(imageSize.height), panels: pagePanels, pageIndex: globalPageNum)
+                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(globalPageNum)", width: Int(imageSize.width), height: Int(imageSize.height), pageIndex: globalPageNum)
                 let xhtmlName = String(format: "page_%04d.xhtml", globalPageNum)
                 try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
                 
@@ -314,9 +305,8 @@ class CBZToEPUBConverter {
                     
                     // 2. Write Cover XHTML
                     // We use standard full-page cover layout
-                    let coverWidth = Int(contentSize.width)
                     let coverHeight = Int(contentSize.height)
-                    let coverXHTML = CBZToEPUBConverter.generateXHTML(imageName: coverName, title: "Cover", width: coverWidth, height: coverHeight, panels: [], pageIndex: 0)
+                    let coverXHTML = CBZToEPUBConverter.generateXHTML(imageName: coverName, title: "Cover", width: coverWidth, height: coverHeight, pageIndex: 0)
                     let coverXHTMLName = "cover_reused.xhtml"
                     try? coverXHTML.write(to: textDir.appendingPathComponent(coverXHTMLName), atomically: true, encoding: .utf8)
                     
@@ -389,7 +379,6 @@ class CBZToEPUBConverter {
                     <meta property="rendition:orientation">\(orientation)</meta>
                     <meta property="rendition:spread">\(spreadMode)</meta>
                     <meta name="fixed-layout" content="true"/>
-                    <meta name="RegionMagnification" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
                     <meta name="book-type" content="comic"/>
                     <meta name="cdetype" content="pdoc"/>
@@ -410,7 +399,7 @@ class CBZToEPUBConverter {
                     <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
                     \(fixedLayoutMetadata)
-                    <meta name="cover" content="img_1"/>
+                    <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
@@ -421,45 +410,6 @@ class CBZToEPUBConverter {
             </package>
             """
             
-            // ✅ Inject ComicInfo.xml...
-            // (Only injected if panels exist)
-            
-            // ... (Rest of OPF writing)
-
-            var batchPanels: [Int: [PanelExtractor.Panel]] = [:]
-            for (localIndex, item) in batch.enumerated() {
-                let pagePanels = manualManifest?[item.index] ?? [] 
-                if !pagePanels.isEmpty {
-                    batchPanels[localIndex] = pagePanels
-                }
-            }
-            
-            if !batchPanels.isEmpty {
-                Logger.shared.log("Batch \(batchIndex): Writing ComicInfo.xml with \(batchPanels.count) pages", category: "Converter")
-                var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ComicInfo>\n  <Pages>\n"
-                let sortedKeys = batchPanels.keys.sorted()
-                for key in sortedKeys {
-                    if let panels = batchPanels[key] {
-                        xml += "    <Page Image=\"\(key)\">\n"
-                        for panel in panels {
-                            xml += "      <Panel x=\"\(panel.boundingBox.minX)\" y=\"\(panel.boundingBox.minY)\" width=\"\(panel.boundingBox.width)\" height=\"\(panel.boundingBox.height)\" />\n"
-                        }
-                        xml += "    </Page>\n"
-                    }
-                }
-                xml += "  </Pages>\n</ComicInfo>"
-                
-                // ✅ FIX: Embed ComicInfo as Base64 in OPF Metadata (Zero Footprint)
-                // Kindle E013 rejects unmanifested files in META-INF or OEBPS.
-                // We cannot manifest it because it's not a valid EPUB core media type.
-                // Solution: Store the XML raw string as Base64 inside a <meta> tag in the OPF.
-                // This is standard-compliant (custom metadata) and stays with the file.
-                
-                // 🕵️‍♂️ CONDITIONAL INJECTION (E013 FIX)
-                // Only inject this massive blob if the user actually wants Guided View.
-                // Standard conversions should be clean EPUBs.
-                if settings.isGuidedView {
-                    if let data = xml.data(using: .utf8) {
                         let base64 = data.base64EncodedString()
                         // Insert generic meta name tag (safest for Kindle)
                         // We avoid 'property' and custom namespaces to prevent E013 errors
@@ -539,77 +489,7 @@ class CBZToEPUBConverter {
         return generatedFiles
     }
     
-    static func generateXHTML(imageName: String, title: String, width: Int, height: Int, panels: [PanelExtractor.Panel], pageIndex: Int) -> String {
-        // ✅ STRATEGY: KCC-Style Non-Destructive Full Screen Zoom
-        // 1. Target Div is FULL SCREEN (covers page).
-        // 2. Content is the FULL IMAGE.
-        // 3. We calculate CSS to Scale and Position the image so the PANEL centers on screen.
-        //    (Strict "Aspect Fit" logic).
-        
-        var panelOverlays = ""
-        
-        if !panels.isEmpty {
-            for (index, panel) in panels.enumerated() {
-                // 1. Geometry - Flip Y (Vision Origin Bottom-Left -> Top-Left)
-                let normY = 1.0 - panel.boundingBox.maxY
-                
-                // Panel Source Geometry (For the Tappable Region - Same as before)
-                // Scale to Image Size (No Offset) & CLAMP
-                let rawPX = (panel.boundingBox.minX * Double(width))
-                let rawPY = (normY * Double(height))
-                let rawPW = (panel.boundingBox.width * Double(width))
-                let rawPH = (panel.boundingBox.height * Double(height))
-                
-                let pX = max(0, min(Double(width), rawPX))
-                let pY = max(0, min(Double(height), rawPY))
-                let pW = min(Double(width) - pX, rawPW)
-                let pH = min(Double(height) - pY, rawPH)
-                
-                if pW < 5 || pH < 5 { continue }
-                
-                // Source Percentages (Tappable Area)
-                let srcLeft = String(format: "%.3f%%", (pX / Double(width)) * 100.0)
-                let srcTop = String(format: "%.3f%%", (pY / Double(height)) * 100.0)
-                let srcWidth = String(format: "%.3f%%", (pW / Double(width)) * 100.0)
-                let srcHeight = String(format: "%.3f%%", (pH / Double(height)) * 100.0)
-                
-                // 2. Target Geometry (The Zoom Math)
-                // New Approach (Based on Amazon Guidelines / Perplexity Research)
-                // We don't manually stretch the inner image or offset it.
-                // We just create a target div that perfectly frames the original panel on the page.
-                // Kindle's Region Magnification engine will AUTOMATICALLY scale this target div
-                // up to ~150% and center it on the screen when tapped.
-                
-                // 3. Metadata
-                let targetId = "p\(pageIndex)-panel\(index + 1)-t"
-                let sourceId = "p\(pageIndex)-panel\(index + 1)-s"
-                let magnifyData = "{\"targetId\":\"\(targetId)\",\"sourceId\":\"\(sourceId)\",\"ordinal\":\(index + 1)}"
-
-                // 4. Output HTML
-                // Source: Transparent Overlay on original page (Tap Target)
-                // Target: Hidden div holding the same image, but cropped to the panel area via CSS.
-                // We use clipping (overflow hidden) and negative margins on the inner image to show *just* the panel.
-                
-                // Calculate the negative margins to align the image inside the panel target
-                let imgCssLeft = String(format: "%.3f%%", -(pX / pW) * 100.0)
-                let imgCssTop = String(format: "%.3f%%", -(pY / pH) * 100.0)
-                let imgCssWidth = String(format: "%.3f%%", (Double(width) / pW) * 100.0)
-                let imgCssHeight = String(format: "%.3f%%", (Double(height) / pH) * 100.0)
-                
-                panelOverlays += """
-                <a class="app-amzn-magnify" data-app-amzn-magnify='\(magnifyData)' style="display:block; position:absolute; top:\(srcTop); left:\(srcLeft); width:\(srcWidth); height:\(srcHeight); z-index:10;">
-                    <div id="\(sourceId)" class="panel-source" style="width:100%; height:100%;"></div>
-                </a>
-                
-                <!-- Target: Hidden Container (Kindle toggles display and scales it up) -->
-                <!-- It sits exactly where the source panel is on the page, but clips the image to just the panel contents -->
-                <div id="\(targetId)" class="panel-target" style="display:none; overflow:hidden; position:absolute; top:\(srcTop); left:\(srcLeft); width:\(srcWidth); height:\(srcHeight); z-index:20; background-color:black;">
-                    <img src="../images/\(imageName)" style="position:absolute; width:\(imgCssWidth); height:\(imgCssHeight); top:\(imgCssTop); left:\(imgCssLeft); max-width:none; max-height:none;" alt="zoomed panel" />
-                </div>
-"""
-            }
-        }
-        
+    static func generateXHTML(imageName: String, title: String, width: Int, height: Int, pageIndex: Int) -> String {
         return """
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
@@ -617,7 +497,6 @@ class CBZToEPUBConverter {
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=\(width), height=\(height)"/>
-    <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
     <style>
         body { margin: 0; padding: 0; background-color: black; }
         .page-container { position: relative; width: \(width)px; height: \(height)px; margin: 0 auto; overflow: hidden; }
@@ -627,16 +506,12 @@ class CBZToEPUBConverter {
             object-fit: contain;
             display: block;
         }
-        .app-amzn-magnify { border: 0; background-color: transparent; -webkit-tap-highlight-color: rgba(0,0,0,0); }
     </style>
 </head>
 <body>
     <div class="page-container">
         <!-- Background Image -->
         <img src="../images/\(imageName)" class="bg" alt="comic page"/>
-             
-        <!-- Guided View Overlays (KCC-Style Full Screen Zoom) -->
-        \(panelOverlays)
     </div>
 </body>
 </html>
