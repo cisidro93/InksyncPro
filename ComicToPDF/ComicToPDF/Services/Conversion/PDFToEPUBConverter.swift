@@ -224,12 +224,33 @@ class PDFToEPUBConverter {
             phase: .packaging
         ))
         
+        let pageLimit = 20
+        var xhtmlFiles: [String] = []
+        
+        // Group images into chunks to prevent single massive HTML files while still allowing dynamic spreads
+        let chunks = stride(from: 0, to: imageFiles.count, by: pageLimit).map {
+            Array(imageFiles[$0..<min($0 + pageLimit, imageFiles.count)])
+        }
+        
+        for (chunkIndex, chunkImages) in chunks.enumerated() {
+            let chunkFileName = String(format: "chunk_%04d.xhtml", chunkIndex + 1)
+            let chunkXHTML = generateChunkXHTML(
+                chunkIndex: chunkIndex + 1,
+                images: chunkImages,
+                title: title,
+                startIndex: (chunkIndex * pageLimit) + 1
+            )
+            try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: .utf8)
+            xhtmlFiles.append(chunkFileName)
+        }
+        
         // Generate content.opf
         let contentOPF = generateContentOPF(
             title: title,
             author: author,
             bookID: bookID,
-            imageFiles: imageFiles
+            imageFiles: imageFiles,
+            xhtmlFiles: xhtmlFiles
         )
         try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
@@ -237,24 +258,13 @@ class PDFToEPUBConverter {
         let tocNCX = generateTocNCX(
             title: title,
             bookID: bookID,
-            pageCount: pageCount
+            xhtmlFiles: xhtmlFiles
         )
         try tocNCX.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
         
         // Generate nav.xhtml (EPUB3)
-        let navXHTML = generateNavXHTML(title: title, pageCount: pageCount)
+        let navXHTML = generateNavXHTML(title: title, xhtmlFiles: xhtmlFiles)
         try navXHTML.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
-        
-        // Generate page XHTML files
-        for (index, imageName) in imageFiles.enumerated() {
-            let pageXHTML = generatePageXHTML(
-                pageNumber: index + 1,
-                imageName: imageName,
-                title: title
-            )
-            let pageFileName = String(format: "page_%04d.xhtml", index + 1)
-            try pageXHTML.write(to: oebpsDir.appendingPathComponent(pageFileName), atomically: true, encoding: .utf8)
-        }
         
         // Generate CSS
         let css = generateCSS()
@@ -274,19 +284,22 @@ class PDFToEPUBConverter {
     
     // MARK: - Private Methods
     
-    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String]) -> String {
-        let manifestItems = imageFiles.enumerated().map { index, imageName in
-            let pageFileName = String(format: "page_%04d.xhtml", index + 1)
-            return """
-                <item id="page\(index + 1)" href="\(pageFileName)" media-type="application/xhtml+xml"/>
-                <item id="img\(index + 1)" href="images/\(imageName)" media-type="image/jpeg"/>
-            """
-        }.joined(separator: "\n        ")
+    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String]) -> String {
+        var manifestItems = ""
         
-        let spineItems = imageFiles.enumerated().map { index, _ in
-            let isOdd = (index % 2 != 0)
-            let spreadProp = isOdd ? "page-spread-left" : "page-spread-right"
-            return "<itemref idref=\"page\(index + 1)\" properties=\"\(spreadProp)\"/>"
+        // Add XHTML HTML files
+        for (index, xhtmlFile) in xhtmlFiles.enumerated() {
+            manifestItems += "<item id=\"chunk\(index + 1)\" href=\"\(xhtmlFile)\" media-type=\"application/xhtml+xml\"/>\n        "
+        }
+        
+        // Add Image files
+        for (index, imageName) in imageFiles.enumerated() {
+            let properties = (index == 0) ? " properties=\"cover-image\"" : ""
+            manifestItems += "<item id=\"img\(index + 1)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"\(properties)/>\n        "
+        }
+        
+        let spineItems = xhtmlFiles.enumerated().map { index, _ in
+            return "<itemref idref=\"chunk\(index + 1)\"/>"
         }.joined(separator: "\n        ")
         
         return """
@@ -314,12 +327,13 @@ class PDFToEPUBConverter {
         """
     }
     
-    private func generateTocNCX(title: String, bookID: String, pageCount: Int) -> String {
-        let navPoints = (1...pageCount).map { page in
+    private func generateTocNCX(title: String, bookID: String, xhtmlFiles: [String]) -> String {
+        // For a single content.xhtml, we'll just have one navPoint
+        let navPoints = xhtmlFiles.enumerated().map { index, xhtmlFile in
             """
-                <navPoint id="navpoint\(page)" playOrder="\(page)">
-                    <navLabel><text>Page \(page)</text></navLabel>
-                    <content src="\(String(format: "page_%04d.xhtml", page))"/>
+                <navPoint id="navpoint\(index + 1)" playOrder="\(index + 1)">
+                    <navLabel><text>Start</text></navLabel>
+                    <content src="\(xhtmlFile)"/>
                 </navPoint>
             """
         }.joined(separator: "\n        ")
@@ -330,8 +344,8 @@ class PDFToEPUBConverter {
             <head>
                 <meta name="dtb:uid" content="\(bookID)"/>
                 <meta name="dtb:depth" content="1"/>
-                <meta name="dtb:totalPageCount" content="\(pageCount)"/>
-                <meta name="dtb:maxPageNumber" content="\(pageCount)"/>
+                <meta name="dtb:totalPageCount" content="0"/>
+                <meta name="dtb:maxPageNumber" content="0"/>
             </head>
             <docTitle><text>\(escapeXML(title))</text></docTitle>
             <navMap>
@@ -341,9 +355,10 @@ class PDFToEPUBConverter {
         """
     }
     
-    private func generateNavXHTML(title: String, pageCount: Int) -> String {
-        let navItems = (1...pageCount).map { page in
-            "<li><a href=\"\(String(format: "page_%04d.xhtml", page))\">Page \(page)</a></li>"
+    private func generateNavXHTML(title: String, xhtmlFiles: [String]) -> String {
+        // For a single content.xhtml, we'll just have one nav item
+        let navItems = xhtmlFiles.enumerated().map { index, xhtmlFile in
+            "<li><a href=\"\(xhtmlFile)\">Start</a></li>"
         }.joined(separator: "\n                ")
         
         return """
@@ -366,19 +381,27 @@ class PDFToEPUBConverter {
         """
     }
     
-    private func generatePageXHTML(pageNumber: Int, imageName: String, title: String) -> String {
+    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
+        let imageElements = images.enumerated().map { i, imageName in
+            """
+                <div class="page">
+                    <img src="images/\(imageName)" class="page-image" alt="Page \(startIndex + i)"/>
+                </div>
+            """
+        }.joined(separator: "\n")
+        
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
-            <title>\(escapeXML(title)) - Page \(pageNumber)</title>
+            <title>\(escapeXML(title))</title>
             <link rel="stylesheet" type="text/css" href="style.css"/>
             <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         </head>
         <body>
-            <div class="page">
-                <img src="images/\(imageName)" alt="Page \(pageNumber)"/>
+            <div class="chunk-container">
+            \(imageElements)
             </div>
         </body>
         </html>
@@ -387,18 +410,17 @@ class PDFToEPUBConverter {
     
     private func generateCSS() -> String {
         return """
-        /* Comic EPUB Styles */
+        /* Native Reflowable Layout for Columns */
         html, body { 
-            width: 100%; 
-            height: 100%; 
             margin: 0; 
             padding: 0; 
             background-color: #000000; 
         }
+        .chunk-container {
+            width: 100%;
+        }
         .page { 
             text-align: center;
-            height: 100%; 
-            margin: 0; 
             padding: 0; 
         }
         .page img {

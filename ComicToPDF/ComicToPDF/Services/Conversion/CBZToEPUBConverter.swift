@@ -262,6 +262,20 @@ class CBZToEPUBConverter {
             Logger.shared.log("✅ Wrote toc.ncx", category: "Converter")
             
             // Process Items in this Batch
+            let chunkSize = 20
+            var currentChunkImages: [String] = []
+            var chunkIndex = 0
+            
+            // Phase 4: Split Volume Cover Retention
+            if batchIndex > 0, let coverData = firstBatchCoverData {
+                let coverName = "cover_reused.jpg"
+                let coverURL = imagesDir.appendingPathComponent(coverName)
+                try? coverData.write(to: coverURL)
+                
+                manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+                currentChunkImages.append(coverName)
+            }
+            
             for (localIndex, item) in batch.enumerated() {
                 let trueExt = (item.url.pathExtension.lowercased() == "png") ? "png" : "jpg"
                 let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
@@ -271,85 +285,41 @@ class CBZToEPUBConverter {
                 let destURL = imagesDir.appendingPathComponent(newImageName)
                 try item.data.write(to: destURL)
                 
-                // ✅ CAPTURE RESOLUTION & COVER (Once)
                 if !hasCapturedResolution {
                     if let image = UIImage(data: item.data) {
                         contentSize = image.size
                         hasCapturedResolution = true
-                        
-                        // Capture Cover Data for Split Volumes
                         if batchIndex == 0 && localIndex == 0 {
                             firstBatchCoverData = item.data
                         }
                     }
                 }
                 
-                // Get Dimensions for Viewport
-                let imageSize = UIImage(data: item.data)?.size ?? CGSize(width: 1000, height: 1500)
-
-                // Create XHTML
-                // ✅ FIX: Use Global Index (item.index) for Page ID to ensure uniqueness across batches
-                let globalPageNum = item.index + 1
-                let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: newImageName, title: "Page \(globalPageNum)", width: Int(imageSize.width), height: Int(imageSize.height), pageIndex: globalPageNum)
-                let xhtmlName = String(format: "page_%04d.xhtml", globalPageNum)
-                try xhtmlContent.write(to: textDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
-                
-                // ✅ Phase 4: Split Volume Cover Retention
-                // If this is Batch > 0 (Split Part) AND it's the first item, 
-                // we want to inject the captured cover image as the TRUE first page.
-                if batchIndex > 0 && localIndex == 0, let coverData = firstBatchCoverData {
-                    // 1. Write Cover Image
-                    let coverName = "cover_reused.jpg"
-                    let coverURL = imagesDir.appendingPathComponent(coverName)
-                    try? coverData.write(to: coverURL)
-                    
-                    // 2. Write Cover XHTML
-                    // We use standard full-page cover layout
-                    let coverHeight = Int(contentSize.height)
-                    let coverXHTML = CBZToEPUBConverter.generateXHTML(imageName: coverName, title: "Cover", width: Int(contentSize.width), height: coverHeight, pageIndex: 0)
-                    let coverXHTMLName = "cover_reused.xhtml"
-                    try? coverXHTML.write(to: textDir.appendingPathComponent(coverXHTMLName), atomically: true, encoding: .utf8)
-                    
-                    // 3. Add to Manifest (Top of list)
-                    manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-                    manifestItems.append("<item id=\"cover_reused_page\" href=\"text/\(coverXHTMLName)\" media-type=\"application/xhtml+xml\"/>")
-                    
-                    // 4. Add to Spine (First item)
-                    // No spread properties for cover usually, or center
-                    spineItems.append("<itemref idref=\"cover_reused_page\" properties=\"page-spread-center\"/>")
-                }
-
-                // Manifest
-                // If valid split cover was injected above, this page is no longer the "cover-image" property holder
-                // But generally, the first item of a split file is just "Page 1 of Part 2".
                 let properties = (localIndex == 0 && batchIndex == 0) ? "properties=\"cover-image\"" : ""
                 manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
-                manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>")
                 
-                // ✅ Page Spread Property for Reflowable
-                // Even without fixed-layout, `rendition:spread` allows dual-page viewing natively.
-                var spreadProp = ""
-                if !settings.isGuidedView {
-                     if item.index == 0 {
-                         spreadProp = "page-spread-center"
-                     } else {
-                         let isOdd = (item.index % 2 != 0)
-                          if settings.mangaMode {
-                              spreadProp = isOdd ? "page-spread-right" : "page-spread-left"
-                          } else {
-                              spreadProp = isOdd ? "page-spread-left" : "page-spread-right"
-                          }
-                     }
+                currentChunkImages.append(newImageName)
+                
+                // If chunk is full or this is the last item, write the chunk XHTML
+                if currentChunkImages.count >= chunkSize || localIndex == batch.count - 1 {
+                    chunkIndex += 1
+                    let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
+                        chunkIndex: chunkIndex,
+                        images: currentChunkImages,
+                        title: "Part \(chunkIndex)"
+                    )
+                    let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
+                    try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
+                    
+                    manifestItems.append("<item id=\"chunk_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
+                    spineItems.append("<itemref idref=\"chunk_\(chunkIndex)\"/>")
+                    
+                    currentChunkImages.removeAll()
                 }
-                
-                let spreadAttr = spreadProp.isEmpty ? "" : " properties=\"\(spreadProp)\""
-                spineItems.append("<itemref idref=\"page_\(localIndex+1)\"\(spreadAttr)/>")
-                
             }
             
             // OPF Generation
-            // We use standard Reflowable Layout (no fixed-layout tags)
-            // This bypasses STK E013 errors and re-enables the manual Orientation/Margins menus.
+            // We use standard Reflowable Layout
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
@@ -434,39 +404,48 @@ class CBZToEPUBConverter {
         return generatedFiles
     }
     
-    static func generateXHTML(imageName: String, title: String, width: Int, height: Int, pageIndex: Int) -> String {
+    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
+        let imageElements = images.enumerated().map { i, imageName in
+            """
+                <div class="page">
+                    <img src="../images/\(imageName)" class="page-image" alt="Page Image"/>
+                </div>
+            """
+        }.joined(separator: "\n")
+        
         return """
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
     <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=\(width), height=\(height)"/>
+    <title>\(title)</title>
     <style>
+        /* Native Reflowable Layout for Columns */
         html, body { 
-            width: 100%; 
-            height: 100%; 
             margin: 0; 
             padding: 0; 
             background-color: #000000; 
         }
+        .chunk-container {
+            width: 100%;
+        }
         .page { 
             text-align: center;
-            height: 100%; 
+            page-break-inside: avoid;
             margin: 0; 
             padding: 0; 
         }
         .page-image {
             max-width: 100%;
-            max-height: 100%;
+            height: auto;
             object-fit: contain;
         }
     </style>
 </head>
 <body>
-    <div class="page">
-        <!-- Background Image -->
-        <img src="../images/\(imageName)" class="page-image" alt="comic page"/>
+    <div class="chunk-container">
+    \(imageElements)
     </div>
 </body>
 </html>
