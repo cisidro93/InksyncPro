@@ -120,6 +120,83 @@ struct ImageProcessor {
         return UIImage(cgImage: result.takeRetainedValue())
     }
     
+    /// High-performance padding using CoreGraphics to force exact Kindle Aspect Ratio.
+    /// This mimics KCC's "Full Bleed" trick to prevent the Kindle Reflowable engine from injecting white borders.
+    private static func pad(image: UIImage, toFitAspectOf targetSize: CGSize, isManga: Bool) -> UIImage? {
+        guard let cgImage = image.cgImage else { return image }
+        
+        let targetAspect = targetSize.width / targetSize.height
+        let imageAspect = CGFloat(cgImage.width) / CGFloat(cgImage.height)
+        
+        // If it's already a perfect match, skip.
+        if abs(targetAspect - imageAspect) < 0.01 { return image }
+        
+        let canvasWidth: CGFloat
+        let canvasHeight: CGFloat
+        let drawRect: CGRect
+        
+        if imageAspect > targetAspect {
+            // Image is wider than screen -> Letterbox (Pad Top/Bottom)
+            canvasWidth = CGFloat(cgImage.width)
+            canvasHeight = canvasWidth / targetAspect
+            let yOffset = (canvasHeight - CGFloat(cgImage.height)) / 2.0
+            drawRect = CGRect(x: 0, y: yOffset, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
+        } else {
+            // Image is taller than screen -> Pillarbox (Pad Left/Right)
+            canvasHeight = CGFloat(cgImage.height)
+            canvasWidth = canvasHeight * targetAspect
+            let xOffset = (canvasWidth - CGFloat(cgImage.width)) / 2.0
+            drawRect = CGRect(x: xOffset, y: 0, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
+        }
+        
+        // Use vImage to avoid memory spikes with UIGraphicsImageRenderer
+        var format = vImage_CGImageFormat(
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            colorSpace: nil,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue), // Faster for opaque
+            version: 0, decode: nil, renderingIntent: .defaultIntent
+        )
+        
+        var canvasBuffer = vImage_Buffer()
+        var error = vImageBuffer_Init(&canvasBuffer, vImagePixelCount(canvasHeight), vImagePixelCount(canvasWidth), 32, vImage_Flags(kvImageNoFlags))
+        guard error == kvImageNoError else { return image }
+        defer { free(canvasBuffer.data) }
+        
+        // Fill Canvas with Black (ARGB: 255, 0, 0, 0)
+        let blackPixel: [UInt8] = [0, 0, 0, 0] // Actually XRGB where X is ignored but commonly 0 or 255
+        // Using vImageBufferFill_ARGB8888 is deprecated, so we just clear it (which is black)
+        // memset(canvasBuffer.data, 0, canvasBuffer.rowBytes * Int(canvasHeight)) is already black!
+        memset(canvasBuffer.data, 0, canvasBuffer.rowBytes * Int(canvasHeight))
+        
+        // Create CGContext over the vImage buffer to draw the original image
+        guard let context = CGContext(
+            data: canvasBuffer.data,
+            width: Int(canvasWidth),
+            height: Int(canvasHeight),
+            bitsPerComponent: 8,
+            bytesPerRow: canvasBuffer.rowBytes,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return image }
+        
+        // Context is flipped vertically relative to UIImage
+        context.translateBy(x: 0, y: canvasHeight)
+        context.scaleBy(x: 1.0, y: -1.0)
+        
+        // Fill black explicitly just to be safe
+        context.setFillColor(UIColor.black.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: canvasWidth, height: canvasHeight))
+        
+        // Draw Image into the calculated rect
+        context.draw(cgImage, in: drawRect)
+        
+        let paddedCGImage = vImageCreateCGImageFromBuffer(&canvasBuffer, &format, nil, nil, vImage_Flags(kvImageNoFlags), &error)
+        guard error == kvImageNoError, let result = paddedCGImage else { return image }
+        
+        return UIImage(cgImage: result.takeRetainedValue())
+    }
+    
     /// High-performance grayscale conversion using vImage Matrix Multiply
     private static func convertToGrayscale(image: UIImage) -> UIImage? {
         guard let cgImage = image.cgImage else { return image }
