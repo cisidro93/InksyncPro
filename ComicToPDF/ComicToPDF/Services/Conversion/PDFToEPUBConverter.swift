@@ -296,6 +296,7 @@ class PDFToEPUBConverter {
                 <dc:creator>\(escapeXML(author))</dc:creator>
                 <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
+                <meta name="book-type" content="comic"/>
                 <meta name="cdetype" content="pdoc"/>
                 <meta name="cover" content="img1"/>
             </metadata>

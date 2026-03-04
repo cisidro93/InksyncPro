@@ -377,6 +377,7 @@ class CBZToEPUBConverter {
                     <meta property="rendition:spread">\(spreadMode)</meta>
                     <meta name="fixed-layout" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
+                    <meta name="book-type" content="comic"/>
                     <meta name="cdetype" content="pdoc"/>
                     <meta name="primary-writing-mode" content="\(writingMode)"/>
                     <meta name="zero-gutter" content="true"/>
@@ -480,28 +481,33 @@ class CBZToEPUBConverter {
     <meta name="viewport" content="width=\(width), height=\(height)"/>
     <style>
         html, body { 
+            width: 100%; 
+            height: 100%; 
             margin: 0; 
             padding: 0; 
-            width: 100vw; 
-            height: 100vh; 
-            background-color: black; 
             overflow: hidden;
+            background-color: #000000; 
         }
-        .page-container { position: relative; width: 100%; height: 100%; margin: 0 auto; overflow: hidden; }
-        img.bg {
-            width: auto;
+        .page { 
+            position: absolute; 
+            width: 100%; 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+        }
+        .page-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
             height: 100%;
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-            display: block;
         }
     </style>
 </head>
 <body>
-    <div class="page-container">
+    <div class="page">
         <!-- Background Image -->
-        <img src="../images/\(imageName)" class="bg" alt="comic page"/>
+        <img src="../images/\(imageName)" class="page-image" alt="comic page"/>
     </div>
 </body>
 </html>
