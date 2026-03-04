@@ -411,6 +411,13 @@ class PDFToEPUBConverter {
     private func generateCSS() -> String {
         return """
         /* Native Reflowable Layout for Columns */
+        @page {
+            margin: 0;
+            padding: 0;
+        }
+        @media amzn-kf8 {
+            body { margin: 0 !important; padding: 0 !important; }
+        }
         html, body { 
             margin: 0; 
             padding: 0; 
@@ -418,14 +425,19 @@ class PDFToEPUBConverter {
         }
         .chunk-container {
             width: 100%;
+            column-gap: 0;
+            -webkit-column-gap: 0;
         }
         .page { 
             text-align: center;
+            page-break-inside: avoid;
+            margin: 0; 
             padding: 0; 
         }
         .page img {
             max-width: 100%;
-            max-height: 100%;
+            max-height: 100vh;
+            height: auto;
             object-fit: contain;
         }
         """

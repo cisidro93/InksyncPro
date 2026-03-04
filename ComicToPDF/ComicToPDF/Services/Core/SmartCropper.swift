@@ -36,14 +36,13 @@ struct SmartCropper {
         let rowBytes = Int(sourceBuffer.rowBytes)
         let data = sourceBuffer.data.assumingMemoryBound(to: UInt8.self)
         
-        // 2. Sample Edges to Determine "Background Color"
-        // We verify if top-left, top-right, bottom-left, bottom-right match.
-        // If they assume different colors (e.g. black vs white), we abort safe crop.
-        
-        let tl = getPixelLuma(data: data, x: 0, y: 0, rowBytes: rowBytes)
-        let tr = getPixelLuma(data: data, x: width-1, y: 0, rowBytes: rowBytes)
-        let bl = getPixelLuma(data: data, x: 0, y: height-1, rowBytes: rowBytes)
-        let br = getPixelLuma(data: data, x: width-1, y: height-1, rowBytes: rowBytes)
+        // 2. Sample Edges to Determine "Background Color" (Inset by 10 pixels to avoid scanner artifacts)
+        let insetX = min(10, width/10)
+        let insetY = min(10, height/10)
+        let tl = getPixelLuma(data: data, x: insetX, y: insetY, rowBytes: rowBytes)
+        let tr = getPixelLuma(data: data, x: width-1-insetX, y: insetY, rowBytes: rowBytes)
+        let bl = getPixelLuma(data: data, x: insetX, y: height-1-insetY, rowBytes: rowBytes)
+        let br = getPixelLuma(data: data, x: width-1-insetX, y: height-1-insetY, rowBytes: rowBytes)
         
         // Check consistency (allow small variance)
         let threshold = Int(sensitivity * 255)
@@ -140,22 +139,32 @@ struct SmartCropper {
     }
     
     private static func rowHasContent(data: UnsafePointer<UInt8>, y: Int, width: Int, rowBytes: Int, refLuma: Int, threshold: Int) -> Bool {
-        // Sample every 4 pixel for speed
-        for x in stride(from: 0, to: width, by: 4) {
+        var noiseCount = 0
+        let allowedNoise = Int(Float(width) * 0.01) // 1% tolerance
+        // Sample every pixel for accurate thin border detection
+        for x in 0..<width {
             let luma = getPixelLuma(data: data, x: x, y: y, rowBytes: rowBytes)
             if abs(luma - refLuma) > threshold {
-               return true
+               noiseCount += 1
+               if noiseCount > allowedNoise {
+                   return true
+               }
             }
         }
         return false
     }
     
     private static func colHasContent(data: UnsafePointer<UInt8>, x: Int, height: Int, rowBytes: Int, refLuma: Int, threshold: Int) -> Bool {
-        // Sample every 4 pixel for speed
-        for y in stride(from: 0, to: height, by: 4) {
+        var noiseCount = 0
+        let allowedNoise = Int(Float(height) * 0.01) // 1% tolerance
+        // Sample every pixel
+        for y in 0..<height {
             let luma = getPixelLuma(data: data, x: x, y: y, rowBytes: rowBytes)
             if abs(luma - refLuma) > threshold {
-               return true
+               noiseCount += 1
+               if noiseCount > allowedNoise {
+                   return true
+               }
             }
         }
         return false

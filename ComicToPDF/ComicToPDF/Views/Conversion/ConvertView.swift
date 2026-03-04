@@ -120,7 +120,7 @@ struct ConvertView: View {
         }
         .navigationTitle("Convert Comic")
         .onAppear {
-            isMangaMode = conversionManager.conversionSettings.mangaMode
+            isMangaMode = pdf.metadata.isManga ?? conversionManager.conversionSettings.mangaMode
             selectedPipeline = conversionManager.conversionSettings.outputPipeline
         }
         .sheet(isPresented: $showingPreview) {

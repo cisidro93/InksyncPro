@@ -787,6 +787,13 @@ class ConversionManager: ObservableObject {
                         components.year = year
                         metadata.publicationDate = cal.date(from: components)
                     }
+                    
+                    // ✅ Map Auto-Manga Detection
+                    metadata.isManga = comicInfo.manga
+                    if comicInfo.manga {
+                        Logger.shared.log("Manga reading direction (RTL) detected from metadata", category: "Import")
+                    }
+                    
                     if let series = comicInfo.series, !series.isEmpty {
                         detectedSeriesNames[series, default: 0] += 1
                         Logger.shared.log("Layer 1 (ComicInfo.xml): Series='\(series)' for \(fileName)", category: "Import")
@@ -1349,10 +1356,11 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool) async {
+    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil) async {
         isConverting = true; conversionProgress = 0.0; processingStatus = "Converting..."; statusMessage = "Starting..."
+        let isMangaMode = mangaMode ?? pdf.metadata.isManga ?? conversionSettings.mangaMode
         var jobSettings = conversionSettings
-        jobSettings.mangaMode = mangaMode
+        jobSettings.mangaMode = isMangaMode
         
         // Smart Content Type Handling: books are always Standard pipeline
         if pdf.contentType == .book {
