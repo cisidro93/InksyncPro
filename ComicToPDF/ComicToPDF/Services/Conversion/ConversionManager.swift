@@ -2777,7 +2777,11 @@ class ConversionManager: ObservableObject {
                          _ = try sourceArchive.extract(entry) { imgData.append($0) }
                          
                          let size = UIImage(data: imgData)?.size ?? CGSize(width: 1000, height: 1500)
-                         let xhtmlContent = CBZToEPUBConverter.generateXHTML(imageName: img, title: "Page \(pageNum)", width: Int(size.width), height: Int(size.height), pageIndex: pageNum)
+                         let xhtmlContent = CBZToEPUBConverter.generateChunkXHTML(
+                            chunkIndex: pageNum,
+                            images: [img],
+                            title: "Page \(pageNum)"
+                         )
                          
                          if let data = xhtmlContent.data(using: .utf8) {
                              let savePath = String(format: "OEBPS/text/page_%04d.xhtml", pageNum)
