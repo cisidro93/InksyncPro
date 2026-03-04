@@ -284,18 +284,21 @@ class PDFToEPUBConverter {
         }.joined(separator: "\n        ")
         
         let spineItems = imageFiles.enumerated().map { index, _ in
-            "<itemref idref=\"page\(index + 1)\"/>"
+            let isOdd = (index % 2 != 0)
+            let spreadProp = isOdd ? "page-spread-left" : "page-spread-right"
+            return "<itemref idref=\"page\(index + 1)\" properties=\"\(spreadProp)\"/>"
         }.joined(separator: "\n        ")
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="bookid">\(bookID)</dc:identifier>
                 <dc:title>\(escapeXML(title))</dc:title>
                 <dc:creator>\(escapeXML(author))</dc:creator>
                 <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
+                <meta property="rendition:spread">landscape</meta>
                 <meta name="cover" content="img1"/>
             </metadata>
             <manifest>

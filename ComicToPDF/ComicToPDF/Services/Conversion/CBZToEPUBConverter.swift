@@ -326,7 +326,24 @@ class CBZToEPUBConverter {
                 manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
                 manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>")
                 
-                spineItems.append("<itemref idref=\"page_\(localIndex+1)\"/>")
+                // ✅ Page Spread Property for Reflowable
+                // Even without fixed-layout, `rendition:spread` allows dual-page viewing natively.
+                var spreadProp = ""
+                if !settings.isGuidedView {
+                     if item.index == 0 {
+                         spreadProp = "page-spread-center"
+                     } else {
+                         let isOdd = (item.index % 2 != 0)
+                          if settings.mangaMode {
+                              spreadProp = isOdd ? "page-spread-right" : "page-spread-left"
+                          } else {
+                              spreadProp = isOdd ? "page-spread-left" : "page-spread-right"
+                          }
+                     }
+                }
+                
+                let spreadAttr = spreadProp.isEmpty ? "" : " properties=\"\(spreadProp)\""
+                spineItems.append("<itemref idref=\"page_\(localIndex+1)\"\(spreadAttr)/>")
                 
             }
             
@@ -335,12 +352,13 @@ class CBZToEPUBConverter {
             // This bypasses STK E013 errors and re-enables the manual Orientation/Margins menus.
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0">
+            <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
+                    <meta property="rendition:spread">landscape</meta>
                     <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                 </metadata>
                 <manifest>
