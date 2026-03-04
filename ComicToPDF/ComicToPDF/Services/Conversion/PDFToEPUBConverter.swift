@@ -296,8 +296,6 @@ class PDFToEPUBConverter {
                 <dc:creator>\(escapeXML(author))</dc:creator>
                 <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-                <meta name="book-type" content="comic"/>
-                <meta name="cdetype" content="pdoc"/>
                 <meta name="cover" content="img1"/>
             </metadata>
             <manifest>
@@ -387,46 +385,23 @@ class PDFToEPUBConverter {
     private func generateCSS() -> String {
         return """
         /* Comic EPUB Styles */
-        * {
-            margin: 0;
-            padding: 0;
+        html, body { 
+            width: 100%; 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #000000; 
         }
-        
-        body {
-            background-color: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
+        .page { 
+            text-align: center;
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
         }
-        
-        .page {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        
         .page img {
             max-width: 100%;
-            max-height: 100vh;
+            max-height: 100%;
             object-fit: contain;
-        }
-        
-        /* Kindle-specific optimizations */
-        @media amzn-kf8 {
-            .page img {
-                width: 100%;
-                height: auto;
-            }
-        }
-        
-        @media amzn-mobi {
-            .page img {
-                width: 100%;
-                height: auto;
-            }
         }
         """
     }

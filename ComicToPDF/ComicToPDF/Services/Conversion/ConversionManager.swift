@@ -2441,31 +2441,32 @@ class ConversionManager: ObservableObject {
             // Copy Source -> Temp
             try fileManager.copyItem(at: pdf.url, to: exportURL)
             
-            // 2. Prepare Panels Data (Retrieving from overrides or auto-detection if needed)
-            var panelsToInject = await getCombinedManifest(for: pdf)
-            
-            // We need to resolve the full panel set. 
-            // Existing logic checked overrides first, then auto-detection.
-            // We'll mimic that to build the dictionary for our helper.
-            
-            let files = try await extractImageURLs(from: pdf.url)
-            
-            for (index, fileURL) in files.enumerated() {
-                if panelsToInject[index] == nil && conversionSettings.enablePanelSplit {
-                     // Only run detection if we DON'T have a panel set yet
-                     if let image = UIImage(contentsOfFile: fileURL.path) {
-                        let detected = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: conversionSettings.mangaMode)
-                        if !detected.isEmpty {
-                            panelsToInject[index] = detected
+            // 2. Prepare Panels Data (CONDITIONAL)
+            // We ONLY do panel detection and injection for Guided View exports.
+            // Standard/Reflowable exports just need to be passed directly to the cloud without modification.
+            if conversionSettings.isGuidedView {
+                var panelsToInject = await getCombinedManifest(for: pdf)
+                
+                let files = try await extractImageURLs(from: pdf.url)
+                
+                for (index, fileURL) in files.enumerated() {
+                    if panelsToInject[index] == nil && conversionSettings.enablePanelSplit {
+                         if let image = UIImage(contentsOfFile: fileURL.path) {
+                            let detected = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: conversionSettings.mangaMode)
+                            if !detected.isEmpty {
+                                panelsToInject[index] = detected
+                            }
                         }
                     }
+                    let progress = Double(index) / Double(files.count)
+                    Task { @MainActor in self.conversionProgress = progress }
                 }
-                let progress = Double(index) / Double(files.count)
-                Task { @MainActor in self.conversionProgress = progress }
+                
+                // 3. Inject using Helper
+                try? await injectMetadata(into: exportURL, panels: panelsToInject, metadata: pdf.metadata)
+            } else {
+                Logger.shared.log("Standard Export: Skipping metadata injection pass-through", category: "Export")
             }
-            
-            // 3. Inject using Helper
-            try? await injectMetadata(into: exportURL, panels: panelsToInject, metadata: pdf.metadata)
             
             return exportURL
             

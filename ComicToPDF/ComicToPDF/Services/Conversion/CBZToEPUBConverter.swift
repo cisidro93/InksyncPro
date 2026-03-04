@@ -326,76 +326,21 @@ class CBZToEPUBConverter {
                 manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
                 manifestItems.append("<item id=\"page_\(localIndex+1)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>")
                 
-                // ✅ Page Spread Property
-                // FIX: "isGuidedView" implies we want the device to handle panel zooming on a SINGLE canvas.
-                // Forcing page-spread-* properties causes the Kindle to group pages into 2-page spreads, 
-                // breaking the flow and panel-to-panel navigation.
-                // We REMOVE spread properties for GuidedView to ensure a linear, single-page flow.
-                var spreadProp = ""
-                if !settings.isGuidedView {
-                     // Only apply spread logic if NOT in Guided View mode
-                     // (or if user explicitly wanted spreads, but current issue is 2x2 forcing)
-                     if item.index == 0 {
-                         spreadProp = "page-spread-center"
-                     } else {
-                         let isOdd = (item.index % 2 != 0)
-                          if settings.mangaMode {
-                              spreadProp = isOdd ? "page-spread-right" : "page-spread-left"
-                          } else {
-                              spreadProp = isOdd ? "page-spread-left" : "page-spread-right"
-                          }
-                     }
-                }
+                spineItems.append("<itemref idref=\"page_\(localIndex+1)\"/>")
                 
-                let spreadAttr = spreadProp.isEmpty ? "" : " properties=\"\(spreadProp)\""
-                spineItems.append("<itemref idref=\"page_\(localIndex+1)\"\(spreadAttr)/>")
-
             }
             
             // OPF Generation
-            // (Identifiers are already defined at top of scope)
-            
-            // ✅ SURGICAL FIX: Proper Viewport for Kindle
-            // Set viewport to Kindle Scribe/Colorsoft dimensions (1860x2480 at 300ppi)
-            // This ensures the EPUB canvas matches Kindle's actual screen, eliminating gray bars
-            // while preserving full image content (no cropping)
-            let kindleWidth = 1860
-            let kindleHeight = 2480
-            
-            let orientation = "auto"
-            let orientationLock = "none"
-            
-            // "landscape" spread mode allows 2-page spreads when the device is in landscape,
-            // but doesn't force the device INTO landscape if the book is portrait.
-            let spreadMode = "landscape" 
-            
-            let writingMode = settings.mangaMode ? "horizontal-rl" : "horizontal-lr"
-            
-            let fixedLayoutMetadata = """
-                    <meta property="rendition:layout">pre-paginated</meta>
-                    <meta property="rendition:orientation">\(orientation)</meta>
-                    <meta property="rendition:spread">\(spreadMode)</meta>
-                    <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
-                    <meta name="book-type" content="comic"/>
-                    <meta name="cdetype" content="pdoc"/>
-                    <meta name="primary-writing-mode" content="\(writingMode)"/>
-                    <meta name="zero-gutter" content="true"/>
-                    <meta name="zero-margin" content="true"/>
-                    <meta name="ke-border-color" content="#000000"/>
-                    <meta name="ke-border-width" content="0"/>
-                    <meta name="orientation-lock" content="\(orientationLock)"/>
-"""
-            
+            // We use standard Reflowable Layout (no fixed-layout tags)
+            // This bypasses STK E013 errors and re-enables the manual Orientation/Margins menus.
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
+            <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-                    \(fixedLayoutMetadata)
                     <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                 </metadata>
                 <manifest>
@@ -485,22 +430,18 @@ class CBZToEPUBConverter {
             height: 100%; 
             margin: 0; 
             padding: 0; 
-            overflow: hidden;
             background-color: #000000; 
         }
         .page { 
-            position: absolute; 
-            width: 100%; 
+            text-align: center;
             height: 100%; 
             margin: 0; 
             padding: 0; 
         }
         .page-image {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
         }
     </style>
 </head>
