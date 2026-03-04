@@ -311,6 +311,8 @@ class PanelViewEPUBConverter {
             <meta name="cover" content="img-001"/>
             <meta name="zero-gutter" content="true"/>
             <meta name="zero-margin" content="true"/>
+            <meta name="ke-border-color" content="#000000"/>
+            <meta name="ke-border-width" content="0"/>
 
             <!-- Directional — CRITICAL: horizontal-rl reverses Kindle tap zones for manga -->
             <meta name="primary-writing-mode" content="\(writingMode)"/>
@@ -551,9 +553,15 @@ class PanelViewEPUBConverter {
         """
         /* PanelView EPUB Stylesheet — fixed-layout Kindle comic */
         * { margin: 0; padding: 0; border: 0; }
-        html, body { width: 100%; height: 100%; overflow: hidden; background-color: #000000; }
+        html, body { width: 100vw; height: 100vh; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
         div { position: absolute; width: 100%; height: 100%; }
-        .singlePage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .singlePage { 
+            position: absolute; 
+            top: 0; left: 0; 
+            width: auto; height: 100%; 
+            max-width: 100%; max-height: 100%; 
+            object-fit: contain; display: block; 
+        }
 
         /* Tap target container: invisible overlay, absolute pixel positioned */
         .tap-target-container { position: absolute; }

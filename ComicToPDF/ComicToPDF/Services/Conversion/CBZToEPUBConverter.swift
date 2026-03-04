@@ -382,7 +382,7 @@ class CBZToEPUBConverter {
                     <meta name="primary-writing-mode" content="\(writingMode)"/>
                     <meta name="zero-gutter" content="true"/>
                     <meta name="zero-margin" content="true"/>
-                    <meta name="ke-border-color" content="#FFFFFF"/>
+                    <meta name="ke-border-color" content="#000000"/>
                     <meta name="ke-border-width" content="0"/>
                     <meta name="orientation-lock" content="\(orientationLock)"/>
 """
@@ -480,11 +480,20 @@ class CBZToEPUBConverter {
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=\(width), height=\(height)"/>
     <style>
-        body { margin: 0; padding: 0; background-color: black; }
-        .page-container { position: relative; width: \(width)px; height: \(height)px; margin: 0 auto; overflow: hidden; }
+        html, body { 
+            margin: 0; 
+            padding: 0; 
+            width: 100vw; 
+            height: 100vh; 
+            background-color: black; 
+            overflow: hidden;
+        }
+        .page-container { position: relative; width: 100%; height: 100%; margin: 0 auto; overflow: hidden; }
         img.bg {
-            width: 100%;
+            width: auto;
             height: 100%;
+            max-width: 100%;
+            max-height: 100%;
             object-fit: contain;
             display: block;
         }
