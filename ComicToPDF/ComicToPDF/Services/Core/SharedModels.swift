@@ -430,6 +430,7 @@ struct ImageEnhancementSettings: Codable, Equatable {
     var invertColors: Bool = false
     var brightness: Double = 0.0
     var sharpness: Double = 0.0
+    var vibrance: Double = 0.0
     // ✅ KCC: Gamma Correction (Crucial for E-Ink to prevent black crush)
     var gamma: Double = 1.0 
 }

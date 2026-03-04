@@ -29,17 +29,21 @@ struct ImageProcessor {
             }
         }
         
-        // 2. Apply Image Enhancements
-        if settings.imageEnhancement.grayscale {
-             if let gray = convertToGrayscale(image: finalImage) {
-                 finalImage = gray
-             }
+        if settings.imageEnhancement.autoContrast {
+            // Intelligent Histogram Stretching (Auto-Levels) for deeper blacks and purer whites
+            if let stretched = applyHistogramStretch(image: finalImage) {
+                 finalImage = stretched
+            }
         }
         
-        if settings.imageEnhancement.autoContrast {
-            // For now, fall back to CoreImage for complex tone mapping as vImage histogram equalization 
-            // is complex to implement robustly without visual artifacts for comics.
-             finalImage = applyAutoContrast(image: finalImage)
+        // 3. E-Ink Unsharp Masking (Crisp Line Art & Text)
+        if settings.imageEnhancement.sharpness > 0 {
+            finalImage = applyUnsharpMask(image: finalImage, intensity: settings.imageEnhancement.sharpness)
+        }
+        
+        // 4. Brightness & Color Vibrance (Combats Kaleido/Colorsoft washed out look)
+        if settings.imageEnhancement.brightness != 0.0 || settings.imageEnhancement.vibrance != 0.0 {
+            finalImage = applyBrightnessAndVibrance(image: finalImage, brightness: settings.imageEnhancement.brightness, vibrance: settings.imageEnhancement.vibrance)
         }
         
         // 3. Gamma Correction (KCC Feature for E-Ink)
@@ -174,19 +178,66 @@ struct ImageProcessor {
         return UIImage(cgImage: result.takeRetainedValue())
     }
     
-    // Keep CoreImage for AutoContrast as vImage Histogram Equalization is complex for non-planar buffers
-    private static func applyAutoContrast(image: UIImage) -> UIImage {
+    // MARK: - E-Ink Intelligent Enhancements
+    
+    /// True Histogram Stretching using vImage for deep blacks and pure whites without crushing midtones.
+    private static func applyHistogramStretch(image: UIImage) -> UIImage? {
+        guard let cgImage = image.cgImage else { return nil }
+        
+        var format = vImage_CGImageFormat(
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            colorSpace: nil,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.first.rawValue), // ARGB
+            version: 0, decode: nil, renderingIntent: .defaultIntent
+        )
+        
+        var sourceBuffer = vImage_Buffer()
+        var error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, cgImage, vImage_Flags(kvImageNoFlags))
+        guard error == kvImageNoError else { return nil }
+        defer { free(sourceBuffer.data) }
+        
+        var destBuffer = vImage_Buffer()
+        error = vImageBuffer_Init(&destBuffer, sourceBuffer.height, sourceBuffer.width, 32, vImage_Flags(kvImageNoFlags))
+        guard error == kvImageNoError else { return nil }
+        defer { free(destBuffer.data) }
+        
+        // Contrast Stretch maps the darkest pixels to 0 and the lightest to 255
+        error = vImageContrastStretch_ARGB8888(&sourceBuffer, &destBuffer, vImage_Flags(kvImageNoFlags))
+        guard error == kvImageNoError else { return nil }
+        
+        let resultCGImage = vImageCreateCGImageFromBuffer(&destBuffer, &format, nil, nil, vImage_Flags(kvImageNoFlags), &error)
+        guard error == kvImageNoError, let result = resultCGImage else { return nil }
+        
+        return UIImage(cgImage: result.takeRetainedValue())
+    }
+    
+    /// Compensates for physical E-Ink blur by crisping up line art and dialogue text.
+    private static func applyUnsharpMask(image: UIImage, intensity: Double) -> UIImage {
+        guard let ciImage = CIImage(image: image) else { return image }
+        let filter = CIFilter(name: "CIUnsharpMask")
+        filter?.setValue(ciImage, forKey: kCIInputImageKey)
+        // Map 0.0 - 1.0 to reasonable Unsharp params (Radius 2.5 is good for comics)
+        filter?.setValue(2.5, forKey: kCIInputRadiusKey)
+        filter?.setValue(intensity * 2.0, forKey: kCIInputIntensityKey) 
+        
+        guard let output = filter?.outputImage,
+              let cgImage = CIContext().createCGImage(output, from: output.extent) else { return image }
+        return UIImage(cgImage: cgImage)
+    }
+    
+    /// Adjusts Brightness and pushes Vibrance (Saturation) to counteract Color E-Ink washed out panels.
+    private static func applyBrightnessAndVibrance(image: UIImage, brightness: Double, vibrance: Double) -> UIImage {
         guard let ciImage = CIImage(image: image) else { return image }
         let filter = CIFilter(name: "CIColorControls")
         filter?.setValue(ciImage, forKey: kCIInputImageKey)
-        filter?.setValue(1.1, forKey: kCIInputContrastKey) // Boost contrast slightly
-        filter?.setValue(0.1, forKey: kCIInputBrightnessKey)
+        filter?.setValue(brightness, forKey: kCIInputBrightnessKey)
+        // Map 0.0 - 1.0 vibrance slider to a 1.0 (normal) to 2.0 (super saturated) multiplier
+        filter?.setValue(1.0 + vibrance, forKey: kCIInputSaturationKey)
         
-        if let output = filter?.outputImage,
-           let cgImage = CIContext().createCGImage(output, from: output.extent) {
-            return UIImage(cgImage: cgImage)
-        }
-        return image
+        guard let output = filter?.outputImage,
+              let cgImage = CIContext().createCGImage(output, from: output.extent) else { return image }
+        return UIImage(cgImage: cgImage)
     }
     
     private static func applyGamma(image: UIImage, gamma: Double) -> UIImage {

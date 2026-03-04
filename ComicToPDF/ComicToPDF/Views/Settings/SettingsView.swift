@@ -209,7 +209,7 @@ struct SettingsView: View {
                 }
                 HStack {
                     settingsIcon("circle.lefthalf.filled", color: .teal)
-                    Toggle("Auto Contrast", isOn: $conversionManager.conversionSettings.imageEnhancement.autoContrast)
+                    Toggle("Auto-Levels (Histogram Stretch)", isOn: $conversionManager.conversionSettings.imageEnhancement.autoContrast)
                 }
                 HStack {
                     settingsIcon("moon.stars.fill", color: .teal)
@@ -222,8 +222,12 @@ struct SettingsView: View {
                         Slider(value: $conversionManager.conversionSettings.imageEnhancement.brightness, in: -0.5...0.5)
                     }
                     VStack(alignment: .leading) {
-                        Text("Sharpness").font(.caption)
+                        HStack { Text("Sharpness (E-Ink Clarity)").font(.caption); Spacer(); Text(String(format: "%.1f", conversionManager.conversionSettings.imageEnhancement.sharpness)).font(.caption).monospacedDigit() }
                         Slider(value: $conversionManager.conversionSettings.imageEnhancement.sharpness, in: 0.0...1.0)
+                    }
+                    VStack(alignment: .leading) {
+                        HStack { Text("Color Vibrance (Colorsoft/Kaleido)").font(.caption); Spacer(); Text(String(format: "%.2f", conversionManager.conversionSettings.imageEnhancement.vibrance)).font(.caption).monospacedDigit() }
+                        Slider(value: $conversionManager.conversionSettings.imageEnhancement.vibrance, in: 0.0...1.0)
                     }
                     VStack(alignment: .leading) {
                         HStack { Text("Gamma").font(.caption); Spacer(); Text(String(format: "%.1f", conversionManager.conversionSettings.imageEnhancement.gamma)).font(.caption).monospacedDigit() }
