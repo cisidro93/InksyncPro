@@ -51,7 +51,7 @@ class CBZToEPUBConverter {
             if needsProcessing {
                 // Route image through our professional E-Ink enhancement pipeline!
                 if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
-                    let quality = settings.compressionQuality == .custom ? settings.customJpegQuality : settings.compressionQuality.values.quality
+                    let quality = settings.compressionQuality.value
                     finalData = processedImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
                 } else {
                     finalData = (try? Data(contentsOf: srcURL)) ?? Data() // Fallback
