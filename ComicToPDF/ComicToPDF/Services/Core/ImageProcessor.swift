@@ -46,6 +46,18 @@ struct ImageProcessor {
             }
         }
         
+        if settings.imageEnhancement.grayscale {
+            if let grayscaled = convertToGrayscale(image: finalImage) {
+                finalImage = grayscaled
+            }
+        }
+        
+        if settings.imageEnhancement.invertColors {
+            if let inverted = applyInvertColors(image: finalImage) {
+                finalImage = inverted
+            }
+        }
+        
         if settings.imageEnhancement.autoContrast {
             // Intelligent Histogram Stretching (Auto-Levels) for deeper blacks and purer whites
             if let stretched = applyHistogramStretch(image: finalImage) {
@@ -277,6 +289,19 @@ struct ImageProcessor {
         
         guard error == kvImageNoError, let result = resultCGImage else { return image }
         return UIImage(cgImage: result.takeRetainedValue())
+    }
+    
+    private static func applyInvertColors(image: UIImage) -> UIImage? {
+        guard let customCIImage = CIImage(image: image) else { return image }
+        let filter = CIFilter(name: "CIColorInvert")
+        filter?.setValue(customCIImage, forKey: kCIInputImageKey)
+        
+        guard let output = filter?.outputImage else { return image }
+        
+        let context = CIContext(options: nil)
+        guard let cgImg = context.createCGImage(output, from: output.extent) else { return image }
+        
+        return UIImage(cgImage: cgImg)
     }
     
     // MARK: - E-Ink Intelligent Enhancements
