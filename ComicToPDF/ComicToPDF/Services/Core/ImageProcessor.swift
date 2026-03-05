@@ -23,18 +23,24 @@ struct ImageProcessor {
             }
         }
         
-        // 1. Resize if needed (Optimize for Device)
-        if settings.optimizeForDevice {
-            // Get target resolution (Default to Scribe if not found)
-            let targetSize = settings.targetDevice.resolution
+        // 1. Resize if needed (Optimize for Device or Compact Mode)
+        let needsResize = settings.optimizeForDevice || settings.compressionQuality == .compact
+        
+        if needsResize {
+            // Get target resolution (Default to a 1440x1920 HD equivalent for 'Compact' if no device selected)
+            let targetSize = settings.optimizeForDevice ? settings.targetDevice.resolution : CGSize(width: 1440, height: 1920)
+            
             // Use vImage for high-performance resizing
             if let resized = resize(image: finalImage, toFit: targetSize) {
                 finalImage = resized
             }
             
             // 1.5. Force Full-Bleed (KCC Aspect Ratio Padding Trick)
-            if let padded = pad(image: finalImage, toFitAspectOf: targetSize, isManga: settings.mangaMode) {
-                finalImage = padded
+            // We only do this trick if they explicitly want to optimize for an E-Reader screen
+            if settings.optimizeForDevice {
+                if let padded = pad(image: finalImage, toFitAspectOf: targetSize, isManga: settings.mangaMode) {
+                    finalImage = padded
+                }
             }
         }
         
