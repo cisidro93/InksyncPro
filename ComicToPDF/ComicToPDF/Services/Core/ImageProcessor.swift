@@ -3,10 +3,14 @@ import Accelerate
 
 struct ImageProcessor {
     
-    // Process a single image based on settings
+    // Process a single image from disk based on settings
     static func process(imageURL: URL, settings: ConversionSettings) -> UIImage? {
         guard let image = UIImage(contentsOfFile: imageURL.path) else { return nil }
-        
+        return process(image: image, settings: settings)
+    }
+
+    // Process a single in-memory image based on settings
+    static func process(image: UIImage, settings: ConversionSettings) -> UIImage? {
         var finalImage = image
         
         // 0. Smart Margin Removal (Full-Bleed) - ✅ NEW
@@ -26,6 +30,11 @@ struct ImageProcessor {
             // Use vImage for high-performance resizing
             if let resized = resize(image: finalImage, toFit: targetSize) {
                 finalImage = resized
+            }
+            
+            // 1.5. Force Full-Bleed (KCC Aspect Ratio Padding Trick)
+            if let padded = pad(image: finalImage, toFitAspectOf: targetSize, isManga: settings.mangaMode) {
+                finalImage = padded
             }
         }
         

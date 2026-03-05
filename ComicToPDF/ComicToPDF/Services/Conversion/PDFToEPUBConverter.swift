@@ -38,6 +38,7 @@ class PDFToEPUBConverter {
         var maxImageHeight: CGFloat = 2400
         var title: String?
         var author: String?
+        var settings: ConversionSettings? = nil
         
         static let `default` = ConversionOptions()
         static let highQuality = ConversionOptions(imageQuality: 0.95, maxImageWidth: 2048, maxImageHeight: 3072)
@@ -193,8 +194,14 @@ class PDFToEPUBConverter {
                 page.draw(with: .mediaBox, to: context)
                 
                 // Create Image from Context
-                guard let cgImage = context.makeImage() else {
+                guard let rawCGImage = context.makeImage() else {
                      throw ConversionError.pageRenderFailed(pageIndex + 1)
+                }
+                
+                var cgImageToSave = rawCGImage
+                
+                if let settings = options.settings, let processed = ImageProcessor.process(image: UIImage(cgImage: rawCGImage), settings: settings), let processedCG = processed.cgImage {
+                    cgImageToSave = processedCG
                 }
                 
                 // Save as JPEG using ImageIO (Direct Transcode)
@@ -209,7 +216,7 @@ class PDFToEPUBConverter {
                     kCGImageDestinationLossyCompressionQuality as String: options.imageQuality
                 ]
                 
-                CGImageDestinationAddImage(destination, cgImage, imageOptions as CFDictionary)
+                CGImageDestinationAddImage(destination, cgImageToSave, imageOptions as CFDictionary)
                 if !CGImageDestinationFinalize(destination) {
                      throw ConversionError.fileWriteFailed
                 }

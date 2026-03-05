@@ -40,42 +40,25 @@ class CBZToEPUBConverter {
             // A. Compress/Load Image Data
             var finalData: Data
             
-            // Only re-compress if we are NOT in High quality (preserve originals)
-            // OR if the user wants splitting (to account for strict sizing)
-            // But user specifically said "Compact" didn't work. So for Compact/Balanced we MUST re-compress.
+            // Evaluate if we need to process the image: true if ANY enhancements are on, or resizing is needed, or format isn't JPEG/PNG
             let needsCompression = settings.compressionQuality != .high
+            let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
             
-            var targetSize: CGSize? = nil
-            if settings.optimizeForDevice {
-                targetSize = settings.targetDevice.resolution
-            } else if settings.compressionQuality == .compact {
-                // If Compact is chosen but no specific device, default to a reasonable max (e.g. HD 1080p equivalent)
-                targetSize = CGSize(width: 1440, height: 1920) 
-            }
+            let ext = srcURL.pathExtension.lowercased()
+            let isUnsafeFormat = !["jpg", "jpeg", "png"].contains(ext)
+            let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat
             
-            if needsCompression, let image = UIImage(contentsOfFile: srcURL.path) {
-                // 1. Resize (Downscale Only)
-                let resizedImage = resizeImage(image, targetSize: targetSize)
-                
-                // 2. Re-encode
-                finalData = resizedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? (try? Data(contentsOf: srcURL)) ?? Data()
-            } else {
-                // Check if format is safe for Kindle (JPEG/PNG only)
-                // If it's WEBP, HEIC, etc., we MUST re-encode even if "Original Quality" is selected.
-                let ext = srcURL.pathExtension.lowercased()
-                if ["jpg", "jpeg", "png"].contains(ext) {
-                     // Safe to copy original
-                     finalData = (try? Data(contentsOf: srcURL)) ?? Data()
+            if needsProcessing {
+                // Route image through our professional E-Ink enhancement pipeline!
+                if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
+                    let quality = settings.compressionQuality == .custom ? settings.customJpegQuality : settings.compressionQuality.values.quality
+                    finalData = processedImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
                 } else {
-                     // Unsafe format (e.g. WebP), force convert to JPEG
-                     if let image = UIImage(contentsOfFile: srcURL.path),
-                        let jpegData = image.jpegData(compressionQuality: 0.9) {
-                         finalData = jpegData
-                     } else {
-                         // Fallback (risk of failure, but better than crash)
-                         finalData = (try? Data(contentsOf: srcURL)) ?? Data()
-                     }
+                    finalData = (try? Data(contentsOf: srcURL)) ?? Data() // Fallback
                 }
+            } else {
+                 // Safe to copy exact original bytes
+                 finalData = (try? Data(contentsOf: srcURL)) ?? Data()
             }
             
             let itemSize = Int64(finalData.count)
