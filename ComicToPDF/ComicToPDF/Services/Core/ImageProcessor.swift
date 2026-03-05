@@ -11,9 +11,11 @@ struct ImageProcessor {
 
     // Process a single in-memory image based on settings
     static func process(image: UIImage, settings: ConversionSettings) -> UIImage? {
-        var finalImage = image
+        // 0. Ensure Upright Orientation Before GPU/Math processing
+        // vImage and CoreImage strip UI orientation metadata, so we must bake the pixels upright first
+        var finalImage = fixOrientation(of: image) ?? image
         
-        // 0. Smart Margin Removal (Full-Bleed) - ✅ NEW
+        // 0.5. Smart Margin Removal (Full-Bleed) - ✅ NEW
         if settings.trimMargins {
             if let cropRect = SmartCropper.suggestCrop(for: finalImage) {
                 // Apply the crop
@@ -71,6 +73,17 @@ struct ImageProcessor {
     }
     
     // MARK: - Helper Functions
+    
+    /// Bakes the UIImage orientation into the raw pixel data so downstream CGImage/vImage 
+    /// functions don't invert or rotate the image unexpectedly.
+    static func fixOrientation(of image: UIImage) -> UIImage? {
+        if image.imageOrientation == .up { return image }
+        UIGraphicsBeginImageContextWithOptions(image.size, false, image.scale)
+        image.draw(in: CGRect(origin: .zero, size: image.size))
+        let normalizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return normalizedImage
+    }
     
     static func crop(image: UIImage, to rect: CGRect) -> UIImage? {
         guard let cgImage = image.cgImage else { return nil }
@@ -194,10 +207,6 @@ struct ImageProcessor {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
         ) else { return image }
-        
-        // Context is flipped vertically relative to UIImage
-        context.translateBy(x: 0, y: canvasHeight)
-        context.scaleBy(x: 1.0, y: -1.0)
         
         // Fill black explicitly just to be safe
         context.setFillColor(UIColor.black.cgColor)
