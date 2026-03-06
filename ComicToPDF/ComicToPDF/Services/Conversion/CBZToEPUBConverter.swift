@@ -133,6 +133,27 @@ class CBZToEPUBConverter {
             if batchIndex == 0, let firstImage = batch.first {
                 firstBatchCoverData = firstImage.data
             }
+            
+            // Write Global CSS
+            let cssContent = """
+            @page {
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                margin: 0;
+                padding: 0;
+                background-color: #000000;
+            }
+            .content-container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                width: 100vw;
+                height: 100vh;
+                margin: 0;
+                padding: 0;
+            }
             .page {
                 position: absolute;
                 width: 100%;
@@ -140,37 +161,8 @@ class CBZToEPUBConverter {
                 margin: 0;
                 padding: 0;
             }
-            var manifestItems = ""
-            var spineItems = ""
-            var navPoints = ""
-            var playOrder = 1
-            
-            // ✅ Dynamic Cover Generation for Split Volumes
-            if let coverData = firstBatchCoverData, batches.count > 1 {
-                print("🎨 Dynamically Generating Cover Badge for Part \(batchIndex + 1) of \(batches.count)")
-                let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batches.count)
-                
-                let coverFilename = "badged_cover.jpg"
-                try badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
-                
-                // Add cover to manifest
-                manifestItems += "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>\n"
-                manifestItems += "<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
-                spineItems += "<itemref idref=\"cover-page\"/>\n"
-                
-                // Write cover.xhtml
-                let coverXHTML = """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <html xmlns="http://www.w3.org/1999/xhtml">
-                <head><title>Cover</title><style type="text/css">
-                body { margin: 0; padding: 0; text-align: center; background-color: #000; }
-                img { max-width: 100%; max-height: 100%; height: auto; }
-                </style></head>
-                <body><img src="../images/\(coverFilename)" alt="Cover"/></body>
-                </html>
-                """
-                try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
-            }
+            img.comic-page {
+                position: absolute;
                 top: 0;
                 left: 0;
                 width: 100%;
@@ -396,7 +388,7 @@ class CBZToEPUBConverter {
             
             // ✅ FIX: Manual Zipping to ensure mimetype is UNCOMPRESSED and FIRST
             // Wrapped in DO block to ensure Archive deinit (and close) before we try to read it
-            try {
+            do {
                 guard let archive = Archive(url: outputURL, accessMode: .create) else {
                     throw NSError(domain: "Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create EPUB archive"])
                 }
@@ -423,7 +415,9 @@ class CBZToEPUBConverter {
                         try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
                     }
                 }
-            }() // End scope to close file
+            } catch {
+                throw error
+            }
             
             generatedFiles.append(outputURL)
             

@@ -85,7 +85,7 @@ struct GoConvertView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Target Device").font(.headline)
                     Picker("Target Device", selection: $conversionManager.conversionSettings.targetDevice) {
-                        ForEach(KindleDevice.allCases) { device in
+                        ForEach(KindleDeviceType.allCases, id: \.self) { device in
                             Text(device.rawValue).tag(device)
                         }
                     }
