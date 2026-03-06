@@ -118,6 +118,7 @@ struct GoConvertView: View {
             Spacer()
             
             // Queue Status Hub OR Convert Action
+            Group {
             if queueManager.isProcessing || queueManager.activeItem != nil {
                 VStack(spacing: 8) {
                     // Active Item HUD
@@ -173,6 +174,7 @@ struct GoConvertView: View {
                 }
                 .disabled(selectedFiles.isEmpty)
             }
+            } // Close Group
             .padding(.bottom, 40)
         }
         .sheet(isPresented: $showingShareSheet) {

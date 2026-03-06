@@ -132,6 +132,7 @@ struct OnboardingView: View {
                 .padding(.horizontal, 40)
                 .padding(.bottom, 40)
             }
+            }
         }
         .onAppear {
             withAnimation(.easeIn(duration: 0.3).delay(0.2)) {

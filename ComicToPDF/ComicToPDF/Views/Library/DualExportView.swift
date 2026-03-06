@@ -14,6 +14,7 @@ struct DualExportView: View {
     @State private var exportURL: URL?
     @State private var navigateToSync = false
     @State private var isProcessing = false
+    @State private var mailResult: Result<MFMailComposeResult, Error>? = nil
     
     var body: some View {
         NavigationView {
@@ -55,8 +56,12 @@ struct DualExportView: View {
                 .padding()
                 .background(Color(.secondarySystemBackground))
                 .cornerRadius(8)
+                .cornerRadius(8)
                 .padding(.horizontal)
                 
+                // Option A: Cloud Sync
+                Button {
+                    handleCloudExport()
                 } label: {
                     HStack(spacing: 16) {
                         Image(systemName: "icloud.and.arrow.up")
@@ -169,11 +174,13 @@ struct DualExportView: View {
                 if let url = exportURL {
                     MailView(
                         subject: "Sent to Kindle: \(pdf.name)",
-                        toRecipients: [kindleEmail],
-                        attachments: [url]
-                    ) { result in
-                        // Handle result if needed
-                    }
+                        recipients: [kindleEmail],
+                        messageBody: "Find your exported comic/manga attached.",
+                        isHTML: false,
+                        attachments: [((try? Data(contentsOf: url)) ?? Data(), url.pathExtension == "pdf" ? "application/pdf" : "application/epub+zip", url.lastPathComponent)],
+                        isShowing: $showingMailView,
+                        result: $mailResult
+                    )
                 }
             }
         }

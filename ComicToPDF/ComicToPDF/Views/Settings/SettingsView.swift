@@ -82,6 +82,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Group {
             // MARK: - GENERAL UI
             Section {
                 HStack {
@@ -222,7 +223,9 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                 }
             } header: { Text("Processing Engine") }
+            } // Close first group
             
+            Group {
             Section {
                 HStack {
                     settingsIcon("swatchpalette.fill", color: .teal)
@@ -365,6 +368,7 @@ struct SettingsView: View {
                     }
                 }
             } header: { Text("Legal") }
+            } // Close second group
         }
         .navigationTitle("Preferences")
         .toolbar {

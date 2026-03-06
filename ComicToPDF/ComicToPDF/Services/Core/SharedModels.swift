@@ -219,7 +219,7 @@ enum FileSizeSplitMode: String, CaseIterable, Codable, Identifiable {
     case none = "No Limit (One File)"
     case email = "Email Safe (23 MB)"
     case app = "App Share Safe (47 MB)"
-    case web = "Web Safe (190 MB)"
+    case web = "Web Safe (195 MB)"
     
     var id: String { rawValue }
     
