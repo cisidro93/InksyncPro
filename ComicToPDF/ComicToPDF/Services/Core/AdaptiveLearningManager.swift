@@ -101,6 +101,10 @@ class AdaptiveLearningManager: ObservableObject {
     
     // MARK: - Current State Access
     
+    var currentSettings: (minConfidence: Double, minSize: Double) {
+        return (minConfidence: currentBaseConfidence, minSize: currentMinimumSize)
+    }
+    
     var diagnosticString: String {
         return "Confidence: \(String(format: "%.2f", currentBaseConfidence)) | Min Size: \(String(format: "%.0f", currentMinimumSize * 100))%"
     }

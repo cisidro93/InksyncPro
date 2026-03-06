@@ -333,7 +333,7 @@ struct SettingsView: View {
             }
             .font(.subheadline)
             
-            Button(action: { AdaptiveLearningManager.shared.resetToDefaults() }) {
+            Button(action: { AdaptiveLearningManager.shared.resetToFactorySettings() }) {
                 Text("Reset Neural Tracking History").foregroundColor(.red).font(.subheadline)
             }
             
