@@ -89,12 +89,13 @@ class ConversionQueueManager: ObservableObject {
             } catch {
                 if Task.isCancelled {
                     await MainActor.run {
+                        Logger.shared.log("Task Cancelled: \(item.sourceURL.lastPathComponent)", category: "Queue", type: .warning)
                         self.statusMessage = "Conversion Cancelled"
                         self.isProcessing = false
                     }
                 } else {
                     await MainActor.run {
-                        print("Queue Error: \(error.localizedDescription)")
+                        Logger.shared.log("Pipeline Error processing \(item.sourceURL.lastPathComponent): \(error.localizedDescription)", category: "Queue", type: .error)
                         self.processNext() // Skip failed item and move to next
                     }
                 }

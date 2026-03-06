@@ -11,6 +11,7 @@ class CoverGenerator {
     /// - Returns: A new JPEG `Data` object containing the composited image, or the original if blending fails.
     static func generateCover(from originalData: Data, partNumber: Int, totalParts: Int) -> Data {
         guard let originalImage = UIImage(data: originalData) else {
+            Logger.shared.log("Failed to parse Cover Data into UIImage for badging.", category: "CoverGen", type: .error)
             return originalData
         }
         
