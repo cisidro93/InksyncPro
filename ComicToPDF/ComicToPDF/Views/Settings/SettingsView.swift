@@ -88,36 +88,6 @@ struct SettingsView: View {
             processingEngineSection
             
             imageFiltersSection
-                HStack {
-                    settingsIcon("swatchpalette.fill", color: .teal)
-                    Toggle("Convert to Grayscale", isOn: $conversionManager.conversionSettings.imageEnhancement.grayscale)
-                }
-                HStack {
-                    settingsIcon("circle.lefthalf.filled", color: .teal)
-                    Toggle("Auto-Levels (Histogram Stretch)", isOn: $conversionManager.conversionSettings.imageEnhancement.autoContrast)
-                }
-                HStack {
-                    settingsIcon("moon.stars.fill", color: .teal)
-                    Toggle("Invert Colors (Dark Mode)", isOn: $conversionManager.conversionSettings.imageEnhancement.invertColors)
-                }
-                
-                if !conversionManager.conversionSettings.imageEnhancement.grayscale {
-                    VStack(alignment: .leading) {
-                        Text("Brightness").font(.caption)
-                        Slider(value: $conversionManager.conversionSettings.imageEnhancement.brightness, in: -0.5...0.5)
-                    }
-                    VStack(alignment: .leading) {
-                        HStack { Text("Sharpness (E-Ink Clarity)").font(.caption); Spacer(); Text(String(format: "%.1f", conversionManager.conversionSettings.imageEnhancement.sharpness)).font(.caption).monospacedDigit() }
-                        Slider(value: $conversionManager.conversionSettings.imageEnhancement.sharpness, in: 0.0...1.0)
-                    }
-                    VStack(alignment: .leading) {
-                        HStack { Text("Color Vibrance (Colorsoft/Kaleido)").font(.caption); Spacer(); Text(String(format: "%.2f", conversionManager.conversionSettings.imageEnhancement.vibrance)).font(.caption).monospacedDigit() }
-                        Slider(value: $conversionManager.conversionSettings.imageEnhancement.vibrance, in: 0.0...1.0)
-                    }
-                    VStack(alignment: .leading) {
-                        HStack { Text("Gamma").font(.caption); Spacer(); Text(String(format: "%.1f", conversionManager.conversionSettings.imageEnhancement.gamma)).font(.caption).monospacedDigit() }
-                        Slider(value: $conversionManager.conversionSettings.imageEnhancement.gamma, in: 0.5...2.5)
-                    }
             aiSection
             integrationsSection
             systemSection
