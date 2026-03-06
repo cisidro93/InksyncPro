@@ -209,6 +209,10 @@ class PDFToEPUBConverter {
                     cgImageToSave = processedCG
                 }
                 
+                let finalImage = UIImage(cgImage: cgImageToSave)
+                let quality = options.settings?.compressionQuality.value ?? 0.8
+                let finalData = finalImage.jpegData(compressionQuality: quality) ?? Data()
+                
                 let imageName = String(format: "page_%04d.jpg", pageIndex + 1)
                 
                 // Track for auto-splitting
@@ -546,7 +550,9 @@ class PDFToEPUBConverter {
             try FileManager.default.removeItem(at: outputURL)
         }
         
-        let archive = try Archive(url: outputURL, accessMode: .create)
+        guard let archive = Archive(url: outputURL, accessMode: .create) else {
+            throw NSError(domain: "Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create EPUB archive"])
+        }
         
         // 1. Mimetype (MUST be first and uncompressed)
         let mimetypeURL = tempDir.appendingPathComponent("mimetype")
