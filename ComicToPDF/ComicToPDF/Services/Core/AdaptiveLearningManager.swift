@@ -1,124 +1,107 @@
 import Foundation
 import CoreGraphics
+import SwiftUI
 
-struct AdaptiveParameters: Codable, Equatable {
-    var minConfidence: Float
-    var minSize: CGFloat
-    var tolerance: Int
-    var expandRatio: CGFloat
-    var saliencyThreshold: Float // NEW: For Neural Saliency
-    
-    // Default "Factory" Settings
-    static let defaults = AdaptiveParameters(
-        minConfidence: 0.85,
-        minSize: 0.15,
-        tolerance: 30, // Vision Quadrature Tolerance
-        expandRatio: 0.0, // No expansion by default
-        saliencyThreshold: 0.5 // Default moderate saliency
-    )
-}
+// MARK: - Adaptive Intelligence Storage
 
+/// A lightweight, privacy-focused metric engine that learns from how a user corrects the AI.
+/// It dynamically shifts the Ensemble Confidence & Size thresholds based on historic corrections.
 class AdaptiveLearningManager: ObservableObject {
     static let shared = AdaptiveLearningManager()
     
-    private let key = "AdaptivePanelSettings"
-    @Published var currentSettings: AdaptiveParameters
+    @AppStorage("ai_metric_deletedPanels") private var deletedPanelsCount: Int = 0
+    @AppStorage("ai_metric_addedPanels") private var addedPanelsCount: Int = 0
+    @AppStorage("ai_metric_resizedPanels") private var resizedPanelsCount: Int = 0
     
-    init() {
-        if let data = UserDefaults.standard.data(forKey: key),
-           let decoded = try? JSONDecoder().decode(AdaptiveParameters.self, from: data) {
-            self.currentSettings = decoded
-        } else {
-            self.currentSettings = AdaptiveParameters.defaults
+    // Core parameters we will mutate
+    @AppStorage("ai_param_baseConfidence") var currentBaseConfidence: Double = 0.6 // Apple Vision Default
+    @AppStorage("ai_param_minimumSize") var currentMinimumSize: Double = 0.1 // 10% of screen Default
+    
+    // MARK: - Event Hooks
+    
+    func recordUserDeletedPanel(size: CGSize) {
+        DispatchQueue.main.async {
+            self.deletedPanelsCount += 1
+            self.evaluateHeuristics()
         }
     }
     
-    func getParameters() -> AdaptiveParameters {
-        return currentSettings
-    }
-    
-    func resetToDefaults() {
-        currentSettings = AdaptiveParameters.defaults
-        save()
-    }
-    
-    private func save() {
-        if let encoded = try? JSONEncoder().encode(currentSettings) {
-            UserDefaults.standard.set(encoded, forKey: key)
+    func recordUserAddedPanel(size: CGSize) {
+        DispatchQueue.main.async {
+            self.addedPanelsCount += 1
+            self.evaluateHeuristics()
         }
     }
     
-    // MARK: - Learning Logic
+    func recordUserResizedPanel() {
+        DispatchQueue.main.async {
+            self.resizedPanelsCount += 1
+            // Resizing is common; we only shift heuristics if adding/deleting is completely out of balance.
+        }
+    }
     
-    /// Learns from the difference between what the AI "would have seen" vs what the user approved.
-    /// - Parameters:
-    ///   - initialPanels: The panels the AI detected (or would detect with current settings).
-    ///   - userFinalPanels: The panels the user saved.
-    func learn(from initialPanels: [CGRect], userFinalPanels: [CGRect]) {
-        var newSettings = currentSettings
-        var didChange = false
-        
-        print("🧠 [Brain] Learning Triggered.")
-        print("🧠 [Brain] AI Found: \(initialPanels.count), User Final: \(userFinalPanels.count)")
-        print("🧠 [Brain] Current Conf: \(newSettings.minConfidence), MinSize: \(newSettings.minSize)")
-        
-        // 1. Check for Missed Small Panels
-        // If user added a panel that is smaller than our minSize, we need to lower the threshold.
-        let smallestUserPanel = userFinalPanels.map { min($0.width * $0.height, 0.0) }.min() ?? 1.0 // Area
-        // Easier: Just check min dimension
-        let minUserDim = userFinalPanels.flatMap { [$0.width, $0.height] }.min() ?? 1.0
-        
-        if minUserDim < newSettings.minSize {
-            // Learn: Lower the minSize slightly (not all the way to avoid noise)
-            // Decay factor 0.9 ensures we approach it gradually
-            let target = max(0.05, minUserDim * 0.95) // 5% buffer
-            if target < newSettings.minSize {
-                newSettings.minSize = target
-                print("🧠 [Brain] Learned: Lowered minSize to \(target)")
-                didChange = true
+    // MARK: - The AI Brain
+    
+    /// Called every time the user corrects the AI to slowly mutate the Vision configuration
+    private func evaluateHeuristics() {
+        // SCENARIO 1: The user keeps DELETING panels.
+        // Diagnosis: The AI is being too aggressive. It's grabbing gutters or noise.
+        // Action: Raise the confidence threshold required to pass, and raise the minimum size limit.
+        if deletedPanelsCount > 20 && deletedPanelsCount > (addedPanelsCount * 2) {
+            print("🧠 [Adaptive Intelligence] User is deleting a lot. Increasing strictness.")
+            
+            // Push confidence up slightly, maxing at 0.8
+            if currentBaseConfidence < 0.8 {
+                currentBaseConfidence += 0.05
             }
-        }
-        
-        // 2. Check for "Wobbly" (Non-Rectangular) shapes implies we might need higher tolerance.
-        // This is hard to detect just from Rects.
-        // Heuristic: If user edited a LOT of panels (moved them slightly), maybe our tolerance was too strict or loose.
-        // Better Heuristic: Check for count mismatch.
-        
-        // 3. False Positives (AI found garbage)
-        // If AI found MORE panels than User, and User deleted them.
-        if initialPanels.count > userFinalPanels.count {
-            // We might be too aggressive. Increase confidence or minSize.
-            // Only increase if we are currently very low.
-            if newSettings.minConfidence < 0.8 {
-                newSettings.minConfidence += 0.05
-                print("🧠 [Brain] Learned: Increased confidence to \(newSettings.minConfidence) (User deleted panels)")
-                didChange = true
+            
+            // Push minimum size up slightly, maxing at 0.15 (15% of screen)
+            if currentMinimumSize < 0.15 {
+                currentMinimumSize += 0.01
             }
+            
+            // Reset the counters to prevent endless scalar growth, we learn in "epochs" of 20
+            resetEpoch()
         }
         
-        // 4. False Negatives (AI missed panels)
-        // If User has MORE panels than AI.
-        // ✅ BUG FIX: Check if we are already at the minimum confidence (0.4 in old code vs possibly lower here?)
-        // Also, maybe 0.05 step is too small if we missed A LOT.
-        // Or maybe initialPanels is empty because we didn't save the initial state properly?
-        
-        if userFinalPanels.count > initialPanels.count {
-            // We missed some.
-            // Decrease confidence slightly to catch edge cases
-             if newSettings.minConfidence > 0.15 { // Lowered floor to 0.15
-                newSettings.minConfidence -= 0.05
-                print("🧠 [Brain] Learned: Decreased confidence to \(newSettings.minConfidence) (User added panels)")
-                didChange = true
-            } else {
-                 print("🧠 [Brain] Cannot lower confidence further. Reached floor.")
+        // SCENARIO 2: The user keeps ADDING panels manually.
+        // Diagnosis: The AI is being too blind. It's missing small or faded panels.
+        // Action: Lower the confidence threshold, and lower the minimum size.
+        else if addedPanelsCount > 20 && addedPanelsCount > (deletedPanelsCount * 2) {
+            print("🧠 [Adaptive Intelligence] User is adding a lot. Lowering strictness.")
+            
+            // Push confidence down, bottoming out at 0.3 (Very aggressive)
+            if currentBaseConfidence > 0.3 {
+                currentBaseConfidence -= 0.05
             }
+            
+            // Push minimum size down, bottoming out at 0.04 (4% of screen)
+            if currentMinimumSize > 0.04 {
+                currentMinimumSize -= 0.01
+            }
+            
+            resetEpoch()
         }
-        
-        if didChange {
-            currentSettings = newSettings
-            save()
-        } else {
-            print("🧠 [Brain] No changes learned.")
+    }
+    
+    func resetToFactorySettings() {
+        DispatchQueue.main.async {
+            self.currentBaseConfidence = 0.6
+            self.currentMinimumSize = 0.1
+            self.resetEpoch()
+            print("🧠 [Adaptive Intelligence] Factory Reset. Memory wiped.")
         }
+    }
+    
+    private func resetEpoch() {
+        deletedPanelsCount = 0
+        addedPanelsCount = 0
+        resizedPanelsCount = 0
+    }
+    
+    // MARK: - Current State Access
+    
+    var diagnosticString: String {
+        return "Confidence: \(String(format: "%.2f", currentBaseConfidence)) | Min Size: \(String(format: "%.0f", currentMinimumSize * 100))%"
     }
 }

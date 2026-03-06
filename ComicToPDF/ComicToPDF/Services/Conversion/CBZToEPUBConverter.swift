@@ -95,7 +95,7 @@ class CBZToEPUBConverter {
         // Track resolution from the first image of the first batch for consistency
         var contentSize = CGSize(width: 1080, height: 1920) // Default fallback
         var hasCapturedResolution = false
-        var firstBatchCoverData: Data? = nil // ✅ Phase 4: Store cover for splits
+        var firstBatchCoverData: Data? = nil // ✅ Store original cover for dynamic chunk badges
         
         for (batchIndex, batch) in batches.enumerated() {
             let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
@@ -129,15 +129,9 @@ class CBZToEPUBConverter {
             """
             try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
             
-            // ✅ CSS GENERATION (Critical for Kindle Panel View)
-            // This ensures the .app-amzn-magnify class has absolute positioning and z-index.
-            let cssContent = """
-            * { margin: 0; padding: 0; border: 0; }
-            html, body {
-                width: 100%;
-                height: 100%;
-                overflow: hidden;
-                background-color: #000000;
+            // If this is the FIRST batch and FIRST image, capture the raw cover so we can stamp it on future parts
+            if batchIndex == 0, let firstImage = batch.first {
+                firstBatchCoverData = firstImage.data
             }
             .page {
                 position: absolute;
@@ -146,8 +140,37 @@ class CBZToEPUBConverter {
                 margin: 0;
                 padding: 0;
             }
-            .page-image {
-                position: absolute;
+            var manifestItems = ""
+            var spineItems = ""
+            var navPoints = ""
+            var playOrder = 1
+            
+            // ✅ Dynamic Cover Generation for Split Volumes
+            if let coverData = firstBatchCoverData, batches.count > 1 {
+                print("🎨 Dynamically Generating Cover Badge for Part \(batchIndex + 1) of \(batches.count)")
+                let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batches.count)
+                
+                let coverFilename = "badged_cover.jpg"
+                try badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
+                
+                // Add cover to manifest
+                manifestItems += "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>\n"
+                manifestItems += "<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
+                spineItems += "<itemref idref=\"cover-page\"/>\n"
+                
+                // Write cover.xhtml
+                let coverXHTML = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                <head><title>Cover</title><style type="text/css">
+                body { margin: 0; padding: 0; text-align: center; background-color: #000; }
+                img { max-width: 100%; max-height: 100%; height: auto; }
+                </style></head>
+                <body><img src="../images/\(coverFilename)" alt="Cover"/></body>
+                </html>
+                """
+                try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
+            }
                 top: 0;
                 left: 0;
                 width: 100%;
@@ -189,6 +212,34 @@ class CBZToEPUBConverter {
                     // Also capture cover if this is the very first batch
                     if batchIndex == 0 { firstBatchCoverData = firstItem.data }
                 }
+            }
+            
+            // ✅ Dynamic Cover Generation for Split Volumes
+            if let coverData = firstBatchCoverData, batches.count > 1 {
+                print("🎨 Dynamically Generating Cover Badge for Part \(batchIndex + 1) of \(batches.count)")
+                
+                // Let CoverGenerator CoreGraphics handle blending the badge
+                let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batches.count)
+                let coverFilename = "badged_cover.jpg"
+                try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
+                
+                // Add cover to manifest
+                manifestItems.append("<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+                manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
+                spineItems.append("<itemref idref=\"cover-page\"/>")
+                
+                // Write cover.xhtml
+                let coverXHTML = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                <head><title>Cover</title><style type="text/css">
+                body { margin: 0; padding: 0; text-align: center; background-color: #000; }
+                img { max-width: 100%; max-height: 100%; height: auto; }
+                </style></head>
+                <body><img src="../images/\(coverFilename)" alt="Cover"/></body>
+                </html>
+                """
+                try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
             }
             
             // ✅ Prepare Metadata Identifiers (Now with valid dimensions)

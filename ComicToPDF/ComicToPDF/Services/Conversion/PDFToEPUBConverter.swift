@@ -126,9 +126,14 @@ class PDFToEPUBConverter {
         """
         try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
-        // Extract pages as images
-        var imageFiles: [String] = []
+        // 1. Prepare Batches for Splitting
+        var batches: [[(name: String, data: Data)]] = []
+        var currentBatch: [(name: String, data: Data)] = []
+        var currentBatchSize: Int64 = 0
+        let limit = options.settings?.splitMode.limit ?? FileSizeSplitMode.none.limit
+        var firstBatchCoverData: Data? = nil
         
+        // Extract pages as images
         for pageIndex in 0..<pageCount {
             progressHandler?(ConversionProgress(
                 currentPage: pageIndex + 1,
@@ -204,26 +209,100 @@ class PDFToEPUBConverter {
                     cgImageToSave = processedCG
                 }
                 
-                // Save as JPEG using ImageIO (Direct Transcode)
                 let imageName = String(format: "page_%04d.jpg", pageIndex + 1)
-                let imageURL = imagesDir.appendingPathComponent(imageName)
                 
-                guard let destination = CGImageDestinationCreateWithURL(imageURL as CFURL, "public.jpeg" as CFString, 1, nil) else {
-                     throw ConversionError.fileWriteFailed
+                // Track for auto-splitting
+                let itemSize = Int64(finalData.count)
+                let overheadBuffer: Int64 = 500 * 1024
+                
+                if limit != Int64.max && (currentBatchSize + itemSize + overheadBuffer) > limit && !currentBatch.isEmpty {
+                    batches.append(currentBatch)
+                    currentBatch = []
+                    currentBatchSize = 0
                 }
                 
-                let imageOptions: [String: Any] = [
-                    kCGImageDestinationLossyCompressionQuality as String: options.imageQuality
-                ]
-                
-                CGImageDestinationAddImage(destination, cgImageToSave, imageOptions as CFDictionary)
-                if !CGImageDestinationFinalize(destination) {
-                     throw ConversionError.fileWriteFailed
+                if pageIndex == 0 {
+                    firstBatchCoverData = finalData
                 }
                 
-                imageFiles.append(imageName)
+                currentBatch.append((name: imageName, data: finalData))
+                currentBatchSize += itemSize
             }
         }
+        
+        if !currentBatch.isEmpty {
+            batches.append(currentBatch)
+        }
+        
+        var generatedFiles: [URL] = []
+        
+        // 2. Build EPUBs for each Batch
+        for (batchIndex, batch) in batches.enumerated() {
+            let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
+            let baseName = title + partSuffix
+            
+            let batchDir = tempDir.appendingPathComponent("EPUB_Part_\(batchIndex)")
+            let oebpsDir = batchDir.appendingPathComponent("OEBPS")
+            let metaInfDir = batchDir.appendingPathComponent("META-INF")
+            let imagesDir = oebpsDir.appendingPathComponent("images")
+            
+            try? FileManager.default.removeItem(at: batchDir)
+            try FileManager.default.createDirectory(at: oebpsDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+            
+            // Write mimetype
+            try "application/epub+zip".write(to: batchDir.appendingPathComponent("mimetype"), atomically: true, encoding: .utf8)
+            
+            // Write container.xml
+            let containerXML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                <rootfiles>
+                    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+                </rootfiles>
+            </container>
+            """
+            try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+            
+            var imageFiles: [String] = []
+            
+            // Write chunk images
+            for item in batch {
+                let imageURL = imagesDir.appendingPathComponent(item.name)
+                try item.data.write(to: imageURL)
+                imageFiles.append(item.name)
+            }
+            
+            var coverHtmlRef = ""
+            var coverManifestItem = ""
+            var coverSpineItem = ""
+            
+            // ✅ Dynamic Cover Generation for Split Volumes
+            if let coverData = firstBatchCoverData, batches.count > 1 {
+                print("🎨 PDF dynamically generating Cover Badge for Part \(batchIndex + 1) of \(batches.count)")
+                
+                let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batches.count)
+                let coverFilename = "badged_cover.jpg"
+                try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
+                
+                coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
+                coverSpineItem = "<itemref idref=\"cover-page\"/>\n"
+                coverHtmlRef = "cover.xhtml"
+                
+                // Write cover.xhtml
+                let coverXHTML = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                <head><title>Cover</title><style type="text/css">
+                body { margin: 0; padding: 0; text-align: center; background-color: #000; }
+                img { max-width: 100%; max-height: 100%; height: auto; }
+                </style></head>
+                <body><img src="images/\(coverFilename)" alt="Cover"/></body>
+                </html>
+                """
+                try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
+            }
         
         progressHandler?(ConversionProgress(
             currentPage: pageCount,
@@ -251,15 +330,17 @@ class PDFToEPUBConverter {
             xhtmlFiles.append(chunkFileName)
         }
         
-        // Generate content.opf
-        let contentOPF = generateContentOPF(
-            title: title,
-            author: author,
-            bookID: bookID,
-            imageFiles: imageFiles,
-            xhtmlFiles: xhtmlFiles
-        )
-        try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+            // Generate content.opf
+            let contentOPF = generateContentOPF(
+                title: baseName,
+                author: author,
+                bookID: bookID,
+                imageFiles: imageFiles,
+                xhtmlFiles: xhtmlFiles,
+                coverManifest: coverManifestItem,
+                coverSpine: coverSpineItem
+            )
+            try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
         // Generate toc.ncx
         let tocNCX = generateTocNCX(
@@ -277,8 +358,11 @@ class PDFToEPUBConverter {
         let css = generateCSS()
         try css.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
         
-        // Create EPUB (ZIP) file
-        try createEPUB(from: tempDir, to: outputURL)
+            // Create EPUB (ZIP) file
+            let batchOutputURL = outputURL.deletingPathExtension().appendingPathExtension("pt\(batchIndex+1).epub")
+            try createEPUB(from: batchDir, to: batchOutputURL)
+            generatedFiles.append(batchOutputURL)
+        }
         
         progressHandler?(ConversionProgress(
             currentPage: pageCount,
@@ -286,28 +370,35 @@ class PDFToEPUBConverter {
             phase: .complete
         ))
         
-        return (outputURL, pageCount)
+        return (generatedFiles.first ?? outputURL, pageCount)
     }
     
     // MARK: - Private Methods
     
-    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String]) -> String {
-        var manifestItems = ""
+    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String], coverManifest: String = "", coverSpine: String = "") -> String {
+        var manifestItems = coverManifest
         
         // Add XHTML HTML files
         for (index, xhtmlFile) in xhtmlFiles.enumerated() {
             manifestItems += "<item id=\"chunk\(index + 1)\" href=\"\(xhtmlFile)\" media-type=\"application/xhtml+xml\"/>\n        "
         }
         
-        // Add Image files
-        for (index, imageName) in imageFiles.enumerated() {
-            let properties = (index == 0) ? " properties=\"cover-image\"" : ""
-            manifestItems += "<item id=\"img\(index + 1)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"\(properties)/>\n        "
+        // Add Images
+        for (index, imageFile) in imageFiles.enumerated() {
+            manifestItems += "<item id=\"img\(index + 1)\" href=\"images/\(imageFile)\" media-type=\"image/jpeg\"/>\n        "
         }
         
-        let spineItems = xhtmlFiles.enumerated().map { index, _ in
-            return "<itemref idref=\"chunk\(index + 1)\"/>"
-        }.joined(separator: "\n        ")
+        // Add standard files
+        manifestItems += """
+<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>
+        <item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>
+        <item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>
+"""
+        
+        var spineItems = coverSpine
+        for (index, _) in xhtmlFiles.enumerated() {
+            spineItems += "<itemref idref=\"chunk\(index + 1)\"/>\n        "
+        }
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>

@@ -39,16 +39,17 @@ class EnsemblePanelDetector {
     func detect(in image: UIImage) async -> [PanelCandidate] {
         let context = CIContext()
         
-        // 1. Run Vision Baseline (Fast, Accurate for standard panels)
+        // 1. Run Vision Baseline (Fast, Saliency-Aware, and creates Virtual Text bounds)
         var candidates = await visionProvider.detectPanels(in: image, context: context)
         
         // 2. Analyze Coverage
-        // If we found very few panels or specific "Text Anchors" are missing a container, run Deep Scan.
+        // If we found very few panels or specific "Text Anchors" are missing a container, run Deep Scan Contours.
         let textAnchors = candidates.filter { $0.method == .textAnchor }
-        let structuralPanels = candidates.filter { $0.method == .visionRectangle }
+        var structuralPanels = candidates.filter { $0.method == .visionRectangle || $0.method == .deepScanContour }
         
         var requiresDeepScan = false
         
+        // If vision totally failed, or the user's Adaptive Learning parameters made it too strict, try contours
         if structuralPanels.isEmpty {
             requiresDeepScan = true
         } else {
@@ -62,21 +63,22 @@ class EnsemblePanelDetector {
             }
         }
         
-        // 3. Deep Scan Fallback (Slower, but catches weird shapes)
+        // 3. Deep Scan Fallback (Topological Contour Detection)
         if requiresDeepScan {
-            print("🧠 [Ensemble] Triggering Deep Scan Fallback...")
-            let deepScanResults = await deepScanProvider.detectPanels(in: image, context: context)
+            print("🧠 [Ensemble] Triggering Contour Deep Scan Fallback...")
+            let contourResults = await deepScanProvider.detectPanels(in: image, context: context)
             
             // Merge Strategies
-            // A. Add Deep Scan results that don't overlap existing structural panels
-            for ds in deepScanResults {
+            // A. Add Contour results that don't overlap existing structural panels by more than 50%
+            for contour in contourResults {
                 let isCovered = structuralPanels.contains { 
-                    let intersection = $0.boundingBox.intersection(ds.boundingBox)
-                    return (intersection.width * intersection.height) > (ds.boundingBox.width * ds.boundingBox.height * 0.5)
+                    let intersection = $0.boundingBox.intersection(contour.boundingBox)
+                    return (intersection.width * intersection.height) > (contour.boundingBox.width * contour.boundingBox.height * 0.5)
                 }
                 
                 if !isCovered {
-                    candidates.append(ds)
+                    candidates.append(contour)
+                    structuralPanels.append(contour) // Update structural list so we don't duplicate
                 }
             }
         }
@@ -84,6 +86,9 @@ class EnsemblePanelDetector {
         // 4. Final Cleanup
         // Filter out raw Text Anchors that served their purpose or are explicitly covered now
         let finalPanels = candidates.filter { $0.method != .textAnchor }
+        
+        // Adaptive Logging (Debugging)
+        print("🧠 [Ensemble] Final Output: \(finalPanels.count) Panels. \(AdaptiveLearningManager.shared.diagnosticString)")
         
         return finalPanels
     }

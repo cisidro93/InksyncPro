@@ -15,10 +15,12 @@ enum PageCommand {
         switch self {
         case .addPanel(let rect):
             model.panels.append(rect)
+            AdaptiveLearningManager.shared.recordUserAddedPanel(size: CGSize(width: rect.width, height: rect.height))
             
-        case .removePanel(let index, _):
+        case .removePanel(let index, let rect):
             guard index >= 0 && index < model.panels.count else { return }
             model.panels.remove(at: index)
+            AdaptiveLearningManager.shared.recordUserDeletedPanel(size: CGSize(width: rect.width, height: rect.height))
             
         case .movePanel(let index, _, let newRect):
             guard index >= 0 && index < model.panels.count else { return }
@@ -36,19 +38,19 @@ enum PageCommand {
     
     func undo(to model: inout PageModel) {
         switch self {
-        case .addPanel:
+        case .addPanel(let rect):
             model.panels.removeLast()
+            // Undoing an add is effectively a delete
+            AdaptiveLearningManager.shared.recordUserDeletedPanel(size: CGSize(width: rect.width, height: rect.height))
             
         case .removePanel(let index, let rect):
-            // We need to insert it back. 
-            // If index is out of bounds (which it might be if subsequent commands added stuff),
-            // simplistic undo might be tricky.
-            // But PageCommand stack assumes sequential integrity.
             if index <= model.panels.count {
                 model.panels.insert(rect, at: index)
             } else {
                  model.panels.append(rect)
             }
+            // Undoing a delete is effectively an add
+            AdaptiveLearningManager.shared.recordUserAddedPanel(size: CGSize(width: rect.width, height: rect.height))
             
         case .movePanel(let index, let oldRect, _):
             guard index >= 0 && index < model.panels.count else { return }

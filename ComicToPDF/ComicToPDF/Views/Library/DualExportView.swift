@@ -1,11 +1,16 @@
 import SwiftUI
+import MessageUI
 
 struct DualExportView: View {
     let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.presentationMode) var presentationMode
     
+    @AppStorage("kindleEmail") private var kindleEmail: String = ""
+    
     @State private var showingShareSheet = false
+    @State private var showingMailView = false
+    @State private var showingMailAlert = false
     @State private var exportURL: URL?
     @State private var navigateToSync = false
     @State private var isProcessing = false
@@ -23,9 +28,35 @@ struct DualExportView: View {
                 }
                 .padding(.top)
                 
-                // Option A: Cloud Sync
-                Button {
-                    handleCloudExport()
+                // Export Summary
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Export Settings Summary")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.secondary)
+                    
+                    HStack {
+                        Text("Format: \(conversionManager.conversionSettings.outputFormat.rawValue)")
+                        Spacer()
+                        Text("Quality: \(conversionManager.conversionSettings.compressionQuality.rawValue)")
+                    }
+                    .font(.caption2)
+                    
+                    if conversionManager.conversionSettings.optimizeForDevice {
+                        Text("Target Device: \(conversionManager.conversionSettings.targetDevice.rawValue)")
+                            .font(.caption2)
+                    }
+                    if conversionManager.conversionSettings.imageEnhancement.grayscale || conversionManager.conversionSettings.imageEnhancement.autoContrast {
+                        Text("Filters: E-Ink Optimized")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                    }
+                }
+                .padding()
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(8)
+                .padding(.horizontal)
+                
                 } label: {
                     HStack(spacing: 16) {
                         Image(systemName: "icloud.and.arrow.up")
@@ -77,6 +108,40 @@ struct DualExportView: View {
                     .cornerRadius(12)
                 }
                 
+                // Option C: Email to Kindle
+                if !kindleEmail.isEmpty {
+                    Button {
+                        if MFMailComposeViewController.canSendMail() {
+                            handleEmailExport()
+                        } else {
+                            showingMailAlert = true
+                        }
+                    } label: {
+                        HStack(spacing: 16) {
+                            Image(systemName: "envelope.fill")
+                                .font(.system(size: 30))
+                                .foregroundStyle(.black)
+                                .frame(width: 40)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Email to Kindle")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+                                Text("Send directly to \(kindleEmail)")
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(12)
+                    }
+                }
+                
                 if isProcessing {
                     ProgressView("Preparing file...")
                         .padding()
@@ -98,6 +163,17 @@ struct DualExportView: View {
             .sheet(isPresented: $showingShareSheet) {
                 if let url = exportURL {
                     ShareSheet(activityItems: [url])
+                }
+            }
+            .sheet(isPresented: $showingMailView) {
+                if let url = exportURL {
+                    MailView(
+                        subject: "Sent to Kindle: \(pdf.name)",
+                        toRecipients: [kindleEmail],
+                        attachments: [url]
+                    ) { result in
+                        // Handle result if needed
+                    }
                 }
             }
         }
@@ -128,6 +204,18 @@ struct DualExportView: View {
                 await MainActor.run {
                     self.isProcessing = false
                 }
+            }
+        }
+    }
+    
+    private func handleEmailExport() {
+        isProcessing = true
+        Task {
+            let url = await conversionManager.exportForCloudSync(pdf)
+            await MainActor.run {
+                self.exportURL = url
+                self.isProcessing = false
+                self.showingMailView = true
             }
         }
     }

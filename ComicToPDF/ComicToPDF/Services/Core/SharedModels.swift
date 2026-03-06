@@ -7,6 +7,12 @@ import UniformTypeIdentifiers
 
 // MARK: - Core Data Models
 
+// ✅ NEW: Unified App UI Mode
+enum AppUIMode: String, Codable, CaseIterable {
+    case go = "Go"
+    case pro = "Pro"
+}
+
 // ✅ NEW: Content Type Classification
 enum ContentType: String, Codable, CaseIterable {
     case comic = "Comic"
@@ -223,7 +229,7 @@ enum FileSizeSplitMode: String, CaseIterable, Codable, Identifiable {
         case .none: return Int64.max
         case .email: return 23 * 1024 * 1024
         case .app: return 47 * 1024 * 1024
-        case .web: return 190 * 1024 * 1024
+        case .web: return 195 * 1024 * 1024
         }
     }
     
@@ -232,7 +238,7 @@ enum FileSizeSplitMode: String, CaseIterable, Codable, Identifiable {
         case .none: return "Keep as one large file."
         case .email: return "Splits for 'Send-to-Kindle' Email."
         case .app: return "Splits for Kindle App sharing."
-        case .web: return "Splits for 'Send-to-Kindle' Web."
+        case .web: return "Splits for 'Send-to-Kindle' Web (195MB)."
         }
     }
 }
@@ -298,6 +304,7 @@ struct ConversionSettings: Codable, Equatable {
     var enablePanelSplit: Bool = false
     var trimMargins: Bool = false
     var splitMode: FileSizeSplitMode = .none
+    var enableBackgroundQueue: Bool = true // ✅ NEW: Pro Mode Queue Toggle
     var textSize: AppTextSize = .medium
     var panelEditorMode: PanelEditorPresentationMode = .sheet
     var ocrLanguage: OCRLanguage = .english
@@ -341,7 +348,7 @@ struct ConversionSettings: Codable, Equatable {
     // Custom Codable implementation to handle migration
                             
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, trimMargins, splitMode, epubSettings, imageEnhancement, textSize, panelEditorMode, showEditorDebug
+        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, showEditorDebug
         case outputPipeline   // New canonical export mode
         case isGuidedView     // Legacy — read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
@@ -359,6 +366,7 @@ struct ConversionSettings: Codable, Equatable {
         enablePanelSplit = try container.decode(Bool.self, forKey: .enablePanelSplit)
         trimMargins = try container.decodeIfPresent(Bool.self, forKey: .trimMargins) ?? false
         splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
+        enableBackgroundQueue = try container.decodeIfPresent(Bool.self, forKey: .enableBackgroundQueue) ?? true
         epubSettings = try container.decode(EPUBSettings.self, forKey: .epubSettings)
         imageEnhancement = try container.decode(ImageEnhancementSettings.self, forKey: .imageEnhancement)
         textSize = try container.decodeIfPresent(AppTextSize.self, forKey: .textSize) ?? .medium
@@ -397,6 +405,7 @@ struct ConversionSettings: Codable, Equatable {
         try container.encode(enablePanelSplit, forKey: .enablePanelSplit)
         try container.encode(trimMargins, forKey: .trimMargins)
         try container.encode(splitMode, forKey: .splitMode)
+        try container.encode(enableBackgroundQueue, forKey: .enableBackgroundQueue)
         try container.encode(epubSettings, forKey: .epubSettings)
         try container.encode(imageEnhancement, forKey: .imageEnhancement)
         try container.encode(textSize, forKey: .textSize)

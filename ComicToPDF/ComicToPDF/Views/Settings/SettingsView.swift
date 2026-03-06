@@ -5,6 +5,9 @@ struct SettingsView: View {
     // ✅ Observe Global Layout Setting
     @AppStorage("useSidebar") private var useSidebar = true
     
+    // ✅ NEW: Kindle Email Storage
+    @AppStorage("kindleEmail") private var kindleEmail: String = ""
+    
     // ✅ NEW: Observe the Brain
     @StateObject private var aiManager = AdaptiveLearningManager.shared
     
@@ -106,7 +109,25 @@ struct SettingsView: View {
                     settingsIcon("sidebar.left", color: .indigo)
                     Toggle("Use Sidebar Navigation (iPad)", isOn: $useSidebar)
                 }
+
+                VStack(alignment: .leading) {
+                    Toggle("Async Background Conversions", isOn: $conversionManager.conversionSettings.enableBackgroundQueue)
+                    Text("When enabled, exporting files will enter a background queue instead of blocking the screen, allowing you to continue using the app.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             } header: { Text("General UI") }
+            
+            // MARK: - SEND TO KINDLE
+            Section(header: Text("Send to Kindle").font(.footnote).foregroundColor(.secondary)) {
+                HStack {
+                    settingsIcon("envelope.fill", color: .black)
+                    TextField("Your @kindle.com Email", text: $kindleEmail)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                }
+            }
             
             // MARK: - EXPORT DEFAULTS
             Section {

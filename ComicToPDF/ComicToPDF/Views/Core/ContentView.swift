@@ -32,18 +32,46 @@ struct ContentView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
     
+    // ✅ UI Mode State
+    @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
+    
     // ✅ iPad Layout Toggles
     @AppStorage("useSidebar") private var useSidebar = true
     @State private var showingSettingsInspector = false
     // (columnVisibility managed above)
 
     var body: some View {
-        ZStack {
-            if sizeClass == .compact || !useSidebar {
-                liquidGlassLayout
-            } else {
-                iPadLayout
+        VStack(spacing: 0) {
+            // ✅ Global "Go vs Pro" Mode Switcher
+            HStack {
+                Spacer()
+                Picker("UI Mode", selection: $appUIMode) {
+                    Text("Go Mode").tag(AppUIMode.go)
+                    Text("Pro Mode").tag(AppUIMode.pro)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 300)
+                Spacer()
             }
+            .padding(.vertical, 8)
+            .background(Color(.systemBackground).ignoresSafeArea(edges: .top))
+            .zIndex(1)
+            
+            ZStack {
+                if appUIMode == .go {
+                    GoConvertView()
+                        .transition(.opacity)
+                } else {
+                    if sizeClass == .compact || !useSidebar {
+                        liquidGlassLayout
+                            .transition(.opacity)
+                    } else {
+                        iPadLayout
+                            .transition(.opacity)
+                    }
+                }
+            }
+            .animation(.easeInOut, value: appUIMode)
         }
         .secureVaultPrivacy()
         .environmentObject(conversionManager)

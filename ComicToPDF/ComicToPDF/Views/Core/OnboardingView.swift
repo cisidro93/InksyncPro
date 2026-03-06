@@ -14,6 +14,7 @@ struct OnboardingView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var currentPage = 0
     @State private var isAnimating = false
+    @State private var showingModeSelection = false
     @Binding var showOnboarding: Bool
     
     let pages: [OnboardingPage] = [
@@ -51,14 +52,18 @@ struct OnboardingView: View {
     
     var body: some View {
         ZStack {
-            // Background Gradient
-            LinearGradient(
-                colors: pages[currentPage].gradient,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-            .animation(.easeInOut(duration: 0.5), value: currentPage)
+            if showingModeSelection {
+                UIModeSelectionView(showOnboarding: $showOnboarding)
+                    .transition(.move(edge: .trailing))
+            } else {
+                // Background Gradient
+                LinearGradient(
+                    colors: pages[currentPage].gradient,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 0.5), value: currentPage)
             
             VStack(spacing: 0) {
                 // Skip Button
@@ -137,8 +142,7 @@ struct OnboardingView: View {
     
     private func skipOnboarding() {
         withAnimation(.easeOut(duration: 0.3)) {
-            hasCompletedOnboarding = true
-            showOnboarding = false
+            showingModeSelection = true
         }
     }
 }
