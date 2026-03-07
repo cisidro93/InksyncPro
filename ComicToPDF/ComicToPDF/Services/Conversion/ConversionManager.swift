@@ -132,6 +132,11 @@ class ConversionManager: ObservableObject {
         convertedPDFs.filter { $0.isPrivate == isVaultUnlocked }
     }
     
+    /// Only Pro-mode files — used by the Pro Library to exclude Go conversions.
+    var proLibraryPDFs: [ConvertedPDF] {
+        convertedPDFs.filter { $0.isPrivate == isVaultUnlocked && $0.addedByMode == .pro }
+    }
+    
     // ✅ Secure Processing Core Integration
     private var progressSubscription: AnyCancellable?
     
@@ -151,6 +156,13 @@ class ConversionManager: ObservableObject {
             .sink { [weak self] event in
                 self?.handleEngineEvent(event)
             }
+        
+        // ✅ Subscribe to Go-mode queue completion so files are correctly tagged
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("LibraryNeedsRescan"), object: nil, queue: .main) { [weak self] notification in
+            let modeRaw = notification.userInfo?["mode"] as? String
+            let mode: AppUIMode = (modeRaw == AppUIMode.go.rawValue) ? .go : .pro
+            self?.scanLibrary(addedByMode: mode)
+        }
     }
     
     private func handleEngineEvent(_ event: ConversionProgressEvent) {
@@ -408,7 +420,7 @@ class ConversionManager: ObservableObject {
     }
     
     // MARK: - File Management
-    func scanLibrary() {
+    func scanLibrary(addedByMode: AppUIMode? = nil) {
         let fileManager = FileManager.default
         let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         
@@ -425,7 +437,10 @@ class ConversionManager: ObservableObject {
                          // Check if already exists (Standardized Path Check)
                          if !convertedPDFs.contains(where: { $0.url.standardizedFileURL.path == fileURL.standardizedFileURL.path }) {
                              let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-                             let newPDF = ConvertedPDF(name: fileURL.lastPathComponent, url: fileURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: fileURL.lastPathComponent))
+                             // ✅ Tag new files with the mode that triggered this scan
+                             let sourceMode = addedByMode ?? .pro
+                             var newPDF = ConvertedPDF(name: fileURL.lastPathComponent, url: fileURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: fileURL.lastPathComponent))
+                             newPDF.addedByMode = sourceMode
                              newPDFs.append(newPDF)
                          }
                      }
@@ -435,7 +450,7 @@ class ConversionManager: ObservableObject {
             // Add new ones
             if !newPDFs.isEmpty {
                 convertedPDFs.append(contentsOf: newPDFs)
-                Logger.shared.log("Library Scanned: Found \(newPDFs.count) new files", category: "Library")
+                Logger.shared.log("Library Scanned: Found \(newPDFs.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
                 saveLibrary()
             }
             

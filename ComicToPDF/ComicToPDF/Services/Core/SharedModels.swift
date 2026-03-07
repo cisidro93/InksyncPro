@@ -60,13 +60,14 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
     var coverImageData: Data?
     var contentType: ContentType = .comic  // ✅ NEW: Track content type
     var chapters: [Chapter] = [] // ✅ NEW: Detected Chapters
+    var addedByMode: AppUIMode = .pro // ✅ NEW: Track source UI mode
     
     var formattedSize: String {
         let mb = Double(fileSize) / 1024 / 1024
         return String(format: "%.1f MB", mb)
     }
     
-    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = []) {
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro) {
         self.id = id
         self.name = name
         self.url = url
@@ -79,6 +80,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
         self.coverImageData = coverImageData
         self.contentType = contentType
         self.chapters = chapters
+        self.addedByMode = addedByMode
     }
     
     func toPDFDocument() -> PDFDocument {

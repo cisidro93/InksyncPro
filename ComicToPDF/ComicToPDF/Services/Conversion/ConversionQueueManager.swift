@@ -81,9 +81,13 @@ class ConversionQueueManager: ObservableObject {
             statusMessage = "Queue complete."
             stopTimer()
             
-            // Tell the main manager to rescan the library when the queue finishes
+            // Tell the main manager to rescan the library when the queue finishes, passing the last item's mode.
             Task { @MainActor in
-                NotificationCenter.default.post(name: NSNotification.Name("LibraryNeedsRescan"), object: nil)
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("LibraryNeedsRescan"),
+                    object: nil,
+                    userInfo: ["mode": item.mode == .go ? AppUIMode.go.rawValue : AppUIMode.pro.rawValue]
+                )
             }
             return
         }
