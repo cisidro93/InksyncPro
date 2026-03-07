@@ -138,7 +138,7 @@ class EPUBContentEditorViewModel: ObservableObject {
                     let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                     _ = try sourceArchive.extract(entry, to: tempFile)
                     
-                    try destArchive.addEntry(with: entry.path, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: entry.fileAttributes.modificationDate, permissions: entry.fileAttributes[.posixPermissions] as? UInt16 ?? 0o644, compressionMethod: entry.fileAttributes.compressionMethod == .none ? .none : .deflate, bufferSize: 8192, progress: nil) { position, size in
+                    try destArchive.addEntry(with: entry.path, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: entry.fileAttributes[.posixPermissions] as? UInt16 ?? 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
                         let fileHandle = try? FileHandle(forReadingFrom: tempFile)
                         try? fileHandle?.seek(toOffset: UInt64(position))
                         return fileHandle?.readData(ofLength: size) ?? Data()

@@ -292,7 +292,7 @@ class PDFToEPUBConverter {
                 
                 coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
                 coverSpineItem = "<itemref idref=\"cover-page\"/>\n"
-                coverHtmlRef = "cover.xhtml"
+                // coverHtmlRef = "cover.xhtml" removed
                 
                 // Write cover.xhtml
                 let coverXHTML = """

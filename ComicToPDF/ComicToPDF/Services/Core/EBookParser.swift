@@ -69,7 +69,7 @@ actor EBookParser {
         
         let fileManager = FileManager.default
         let tempDirectory = fileManager.temporaryDirectory
-        let tempFileURL = tempDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(href.pathExtension)
+        let tempFileURL = tempDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension((href as NSString).pathExtension)
         
         do {
             guard let entry = archive[href] else {

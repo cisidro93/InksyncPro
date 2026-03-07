@@ -2862,7 +2862,7 @@ class ConversionManager: ObservableObject {
             
             // B. Prepare XHTML Updates (EPUB Only)
             if archiveURL.pathExtension.lowercased() == "epub" {
-                for (_, pagePanels) in panels {
+                for (index, _) in panels {
                      let pageNum = index + 1
                      
                      // Try to find image
