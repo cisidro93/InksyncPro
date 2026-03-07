@@ -120,7 +120,7 @@ class CBZToEPUBConverter {
         var generatedFiles: [URL] = []
         
         // Track resolution from the first image of the first batch for consistency
-        var contentSize = CGSize(width: 1080, height: 1920) // Default fallback
+        // let contentSize = CGSize(width: 1080, height: 1920) removed.
         var hasCapturedResolution = false
         var firstBatchCoverData: Data? = nil // ✅ Store original cover for dynamic chunk badges
         
@@ -226,7 +226,7 @@ class CBZToEPUBConverter {
             // If we wait until the loop, 'widthID' and 'heightID' will be 0, causing Kindle to break.
             if !batch.isEmpty {
                 if let firstItem = batch.first, let image = UIImage(data: firstItem.data) {
-                    contentSize = image.size
+                    _ = image.size // Size tracking removed
                     hasCapturedResolution = true
                     // Also capture cover if this is the very first batch
                     if batchIndex == 0 { firstBatchCoverData = firstItem.data }

@@ -76,8 +76,12 @@ class EPUBContentEditorViewModel: ObservableObject {
         isSaving = true
         
         let targetURL = pdf.url
+        let cDeletedIds = deletedIds
+        let cOpfPath = opfPath
+        let cSpineItems = spineItems
+        let cOpfData = opfData
         
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task.detached(priority: .userInitiated) { [weak self, cDeletedIds, cOpfPath, cSpineItems, cOpfData] in
             guard let self = self else { return }
             
             do {
@@ -85,13 +89,13 @@ class EPUBContentEditorViewModel: ObservableObject {
                 // ZIPFoundation's .update mode can corrupt complex EPUBs if not careful.
                 // Safest approach: Copy to a new temp archive, skipping deleted files.
                 
-                let sourceArchive = Archive(url: targetURL, accessMode: .read)!
+                guard let sourceArchive = try? Archive(url: targetURL, accessMode: .read, pathEncoding: .utf8) else { throw NSError(domain: "Archive", code: 1, userInfo: nil) }
                 let tempZipPath = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
-                let destArchive = Archive(url: tempZipPath, accessMode: .create)!
+                guard let destArchive = try? Archive(url: tempZipPath, accessMode: .create, pathEncoding: .utf8) else { throw NSError(domain: "Archive", code: 2, userInfo: nil) }
                 
-                let opfDir = (self.opfPath as NSString).deletingLastPathComponent
-                let pathsToDelete = self.spineItems
-                    .filter { self.deletedIds.contains($0.id) }
+                let opfDir = (cOpfPath as NSString).deletingLastPathComponent
+                let pathsToDelete = cSpineItems
+                    .filter { cDeletedIds.contains($0.id) }
                     .map { item -> String in
                         return opfDir.isEmpty ? item.href : "\(opfDir)/\(item.href)"
                     }
@@ -104,15 +108,15 @@ class EPUBContentEditorViewModel: ObservableObject {
                     }
                     
                     // 2. If it's the OPF file, inject modifications
-                    if entry.path == self.opfPath {
-                        if let originalOPFString = String(data: self.opfData, encoding: .utf8) {
+                    if entry.path == cOpfPath {
+                        if let originalOPFString = String(data: cOpfData, encoding: .utf8) {
                             var modifiedOPF = originalOPFString
                             
                             // Simple string replacements to strip out itemrefs and items with exact matches
-                            for delId in self.deletedIds {
+                            for delId in cDeletedIds {
                                 // Strip <itemref idref="X" /> or similar
                                 // Using regex to safely capture the entire tag
-                                let refPattern = "<itemref[^>]*idref\\s*=\\s*['\"]\(delId)['\"][^>]*\\/?>"
+                                let refPattern = "<itemref[^>]*idref\\s*=\\s*['\"]\\(delId)['\"][^>]*\\/?>"
                                 if let regexRef = try? NSRegularExpression(pattern: refPattern, options: .caseInsensitive) {
                                     modifiedOPF = regexRef.stringByReplacingMatches(in: modifiedOPF, range: NSRange(modifiedOPF.startIndex..., in: modifiedOPF), withTemplate: "")
                                 }
