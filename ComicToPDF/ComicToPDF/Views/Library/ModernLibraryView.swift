@@ -249,40 +249,44 @@ struct ModernLibraryView: View {
                 }
             }
         }
-        // Layer 4: Manual series assignment alert
-        .alert("Add to Series", isPresented: Binding(
-            get: { pdfToAssignSeries != nil },
-            set: { if !$0 { pdfToAssignSeries = nil } }
+        // Layer 4: Custom Series Sheet
+        .sheet(isPresented: Binding(
+            get: { pdfToAssignSeries != nil || showingBatchGroupAlert },
+            set: { isPresented in
+                if !isPresented {
+                    pdfToAssignSeries = nil
+                    showingBatchGroupAlert = false
+                }
+            }
         )) {
-            TextField("Series Name", text: $assignSeriesText)
-            Button("Cancel", role: .cancel) { pdfToAssignSeries = nil }
-            Button("Assign") {
-                if let pdf = pdfToAssignSeries {
-                    let name = assignSeriesText.trimmingCharacters(in: .whitespaces)
-                    if !name.isEmpty {
-                        conversionManager.assignToSeries(pdf, seriesName: name)
+            CollectionEditorSheet { name, icon, color in
+                if let singlePDF = pdfToAssignSeries {
+                    // Single Assignment
+                    if !name.trimmingCharacters(in: .whitespaces).isEmpty {
+                        conversionManager.assignToSeries(singlePDF, seriesName: name)
+                        // Also create the metadata collection record
+                        conversionManager.createCollection(name: name, icon: icon, color: color)
+                    }
+                } else if showingBatchGroupAlert {
+                    // Batch group assignment
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    let cleanName = name.trimmingCharacters(in: .whitespaces)
+                    if !cleanName.isEmpty && !items.isEmpty {
+                        for item in items {
+                            conversionManager.assignToSeries(item, seriesName: cleanName)
+                        }
+                        // Create the metadata collection record
+                        conversionManager.createCollection(name: cleanName, icon: icon, color: color)
+                        
+                        isBatchMode = false
+                        multiSelection.removeAll()
                     }
                 }
+                
                 pdfToAssignSeries = nil
+                showingBatchGroupAlert = false
             }
-        } message: {
-            Text("Enter the series name to group this file into a collection.")
         }
-        .alert("Group Selected into Series", isPresented: $showingBatchGroupAlert) {
-            TextField("Series Name", text: $batchGroupText)
-            Button("Cancel", role: .cancel) { }
-            Button("Group") {
-                let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                let name = batchGroupText.trimmingCharacters(in: .whitespaces)
-                if !name.isEmpty && !items.isEmpty {
-                    for item in items {
-                        conversionManager.assignToSeries(item, seriesName: name)
-                    }
-                    isBatchMode = false
-                    multiSelection.removeAll()
-                }
-            }
-        } message: { Text("Enter a series name to pack all selected files into.") }
         .alert(item: $conversionManager.appAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
@@ -769,13 +773,37 @@ struct ModernLibraryView: View {
                 
                 Spacer()
                 
-                Button {
-                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    Task { await conversionManager.convertQueue(items) }
-                    isBatchMode = false
-                    multiSelection.removeAll()
+                // ✅ Advanced Actions Menu 
+                Menu {
+                    Button {
+                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        Task { await conversionManager.convertQueue(items) }
+                        isBatchMode = false
+                        multiSelection.removeAll()
+                    } label: {
+                        Label("Fast Convert", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    
+                    Button {
+                        batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        showingBatchMergeReorder = true
+                    } label: {
+                        Label("Merge", systemImage: "doc.on.doc.fill")
+                    }
+                    
+                    Divider()
+                    
+                    Button {
+                        showBatchMetadataEditor = true
+                    } label: {
+                        Label("Fetch Metadata", systemImage: "tag")
+                    }
                 } label: {
-                    VStack(spacing: 4) { Image(systemName: "arrow.triangle.2.circlepath").font(.title3); Text("Convert").font(.caption) }
+                    VStack(spacing: 4) { 
+                        Image(systemName: "ellipsis.circle.fill").font(.title3)
+                        Text("Actions").font(.caption) 
+                    }
+                    .foregroundColor(Theme.orange)
                 }
                 .disabled(multiSelection.isEmpty)
             }
