@@ -191,6 +191,9 @@ struct LibraryView: View {
     @State private var showingBatchMergeReorder = false
     @State private var batchMergeItems: [ConvertedPDF] = []
     
+    @State private var showingBatchMetadata = false
+    @State private var batchMetadataItems: [ConvertedPDF] = []
+    
     @ViewBuilder
     var bottomToolbarItems: some View {
         if editMode == .active {
@@ -234,6 +237,15 @@ struct LibraryView: View {
              
              Spacer()
              
+             // ✅ Batch Metadata Button
+             Button {
+                 prepareBatchMetadata()
+             } label: {
+                 Label("Metadata", systemImage: "tag")
+             }
+             
+             Spacer()
+             
              Button {
                  showingMergeSheet = true
              } label: {
@@ -245,6 +257,11 @@ struct LibraryView: View {
     func prepareBatchMerge() {
         batchMergeItems = conversionManager.convertedPDFs.filter { selection.contains($0.id) }
         showingBatchMergeReorder = true
+    }
+    
+    func prepareBatchMetadata() {
+        batchMetadataItems = conversionManager.convertedPDFs.filter { selection.contains($0.id) }
+        showingBatchMetadata = true
     }
     
     var mainContent: some View {
@@ -492,6 +509,9 @@ struct LibraryView: View {
         }
         .sheet(isPresented: $showingBatchMergeReorder) {
             BatchMergeReorderView(selectedFiles: $batchMergeItems)
+        }
+        .sheet(isPresented: $showingBatchMetadata) {
+            BatchMetadataFetchView(pdfs: batchMetadataItems, conversionManager: conversionManager)
         }
     }
 }

@@ -158,7 +158,7 @@ struct MetadataEditorSheet: View {
         
         // Use filename or title
         // Heuristic: Try to extract Series Name from filename if Title is generic
-        let query = cleanFilename(pdf.name)
+        let query = MetadataHeuristics.cleanFilename(pdf.name)
         
         Task {
             do {
@@ -189,7 +189,7 @@ struct MetadataEditorSheet: View {
         
         // Now fetch specific issue
         // We need to guess the issue number from the filename
-        guard let issueNumStr = extractIssueNumber(from: pdf.name), let issueNum = Int(issueNumStr) else {
+        guard let issueNumStr = MetadataHeuristics.extractIssueNumber(from: pdf.name), let issueNum = Int(issueNumStr) else {
             // Apply partial volume data if issue number logic fails
              Task {
                  await MainActor.run {
@@ -259,32 +259,6 @@ struct MetadataEditorSheet: View {
         }
     }
     
-    // MARK: - Helpers
-    
-    func cleanFilename(_ name: String) -> String {
-        // Remove file extension
-        var clean = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
-        // Remove (2023), #01, etc for basic search
-        clean = clean.replacingOccurrences(of: "_", with: " ")
-        // Remove paranthesis content roughly
-        if let range = clean.range(of: "\\(.*?\\)", options: .regularExpression) {
-             clean.removeSubrange(range)
-        }
-        return clean.trimmingCharacters(in: .whitespaces)
-    }
-    
-    func extractIssueNumber(from name: String) -> String? {
-        // Look for #123 or 123 at end
-        // Simple Regex for now
-        let pattern = "#?(\\d+)"
-        if let regex = try? NSRegularExpression(pattern: pattern),
-           let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) {
-            if let range = Range(match.range(at: 1), in: name) {
-                return String(name[range])
-            }
-        }
-        return nil
-    }
 }
 
 // Subview for Results
