@@ -107,14 +107,26 @@ struct SeriesDetailView: View {
                 VStack(spacing: 0) {
                     Divider().background(Color.white.opacity(0.1))
                     
-                    HStack(spacing: 0) {
+                    HStack(spacing: 16) {
                         Button(action: {
+                            let generator = UIImpactFeedbackGenerator(style: .medium)
+                            generator.impactOccurred()
                             showBatchMetadataEditor = true
                         }) {
-                            VStack(spacing: 4) { 
-                                Image(systemName: "tag").font(.title3)
-                                Text("Metadata").font(.caption) 
+                            HStack {
+                                Image(systemName: "sparkles")
+                                Text("Intelligent Metadata")
                             }
+                            .font(.subheadline.bold())
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(
+                                selection.isEmpty ? Color.gray.opacity(0.3) :
+                                LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .clipShape(Capsule())
+                            .shadow(color: selection.isEmpty ? .clear : Theme.blue.opacity(0.3), radius: 5, y: 3)
                         }
                         .disabled(selection.isEmpty)
                         
@@ -122,24 +134,41 @@ struct SeriesDetailView: View {
                         
                         Text("\(selection.count) Selected")
                             .font(.subheadline)
-                            .fontWeight(.semibold)
+                            .fontWeight(.bold)
                             .foregroundColor(.secondary)
                         
                         Spacer()
                         
                         Button(action: {
+                            let generator = UIImpactFeedbackGenerator(style: .medium)
+                            generator.impactOccurred()
                             showingMergeConfig = true
                         }) {
-                            VStack(spacing: 4) { 
-                                Image(systemName: "doc.on.doc.fill").font(.title3)
-                                Text("Merge").font(.caption) 
+                            HStack {
+                                Text("Merge")
+                                Image(systemName: "doc.on.doc.fill")
                             }
+                            .font(.subheadline.bold())
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(
+                                selection.count < 2 ? Color.gray.opacity(0.3) :
+                                LinearGradient(colors: [Color.purple, Color.purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .clipShape(Capsule())
+                            .shadow(color: selection.count < 2 ? .clear : Color.purple.opacity(0.3), radius: 5, y: 3)
                         }
                         .disabled(selection.count < 2)
                     }
-                    .padding(.horizontal, 30)
-                    .padding(.vertical, 12)
-                    .foregroundColor(Theme.blue) // Adjust to match theme
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                    .background(
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .ignoresSafeArea(edges: .bottom)
+                            .shadow(color: .black.opacity(0.2), radius: 10, y: -5)
+                    )
                 }
                 .transition(.move(edge: .bottom))
             }

@@ -49,15 +49,21 @@ struct BatchSelectionDetailView: View {
                 .disabled(selectionCount == 0)
                 
                 Button {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
                     onFetchMetadata()
                 } label: {
-                    Label("Fetch Metadata", systemImage: "tag.fill")
+                    Label("Intelligent Metadata", systemImage: "sparkles")
                         .font(.headline)
                         .frame(maxWidth: 300)
                         .padding()
-                        .background(Theme.blue) // Use app theme color or primary blue
+                        .background(
+                            selectionCount == 0 ? Color.gray.opacity(0.3) :
+                            LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
                         .foregroundColor(.white)
                         .cornerRadius(12)
+                        .shadow(color: selectionCount == 0 ? .clear : Theme.blue.opacity(0.4), radius: 5, y: 2)
                 }
                 .disabled(selectionCount == 0)
                 

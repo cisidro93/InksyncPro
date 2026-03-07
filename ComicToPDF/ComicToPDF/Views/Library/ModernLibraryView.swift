@@ -796,7 +796,7 @@ struct ModernLibraryView: View {
                     Button {
                         showBatchMetadataEditor = true
                     } label: {
-                        Label("Fetch Metadata", systemImage: "tag")
+                        Label("Intelligent Metadata", systemImage: "sparkles")
                     }
                 } label: {
                     VStack(spacing: 4) { 
