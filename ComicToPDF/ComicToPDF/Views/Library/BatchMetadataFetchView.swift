@@ -2,7 +2,7 @@ import SwiftUI
 
 struct BatchMetadataItem: Identifiable {
     let id: UUID
-    let pdf: ConvertedPDF
+    var pdf: ConvertedPDF
     var status: Status = .waiting
     var message: String = ""
     
