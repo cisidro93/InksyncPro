@@ -13,6 +13,8 @@ struct MetadataEditorView: View {
     @State private var isManga: Bool
     @State private var isWebtoon: Bool
     
+    @State private var showingContentEditor = false
+    
     init(pdf: ConvertedPDF) {
         self.pdf = pdf
         // Initialize state from existing metadata
@@ -62,6 +64,19 @@ struct MetadataEditorView: View {
                     TextEditor(text: $summary)
                         .frame(height: 100)
                 }
+                
+                Section(header: Text("Advanced")) {
+                    Button(action: {
+                        showingContentEditor = true
+                    }) {
+                        HStack {
+                            Image(systemName: "scissors")
+                                .foregroundColor(.red)
+                            Text("Remove Pages / Chapters")
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
             }
             .navigationTitle("Metadata & Options")
             .navigationBarTitleDisplayMode(.inline)
@@ -75,6 +90,9 @@ struct MetadataEditorView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingContentEditor) {
+            BookContentEditorView(pdf: pdf)
         }
     }
     
