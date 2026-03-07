@@ -211,45 +211,41 @@ struct LibraryView: View {
              
              Spacer()
              
-             // ✅ Batch Convert Button
-             Button {
-                 performBatchConversion()
+             Menu {
+                 Button {
+                     performBatchConversion()
+                 } label: {
+                     Label("Convert", systemImage: "arrow.triangle.2.circlepath")
+                 }
+                 
+                 Button {
+                     prepareBatchMerge()
+                 } label: {
+                     Label("Merge & Convert", systemImage: "doc.on.doc.fill")
+                 }
+                 
+                 Button {
+                     showingMergeSheet = true
+                 } label: {
+                     Label("Legacy Merge", systemImage: "arrow.triangle.merge")
+                 }
+                 
+                 Divider()
+                 
+                 // ✅ Batch Metadata Button
+                 Button {
+                     prepareBatchMetadata()
+                 } label: {
+                     Label("Fetch Metadata", systemImage: "tag")
+                 }
+                 
+                 Button {
+                     exportSelection()
+                 } label: {
+                     Label("Export", systemImage: "square.and.arrow.up")
+                 }
              } label: {
-                 Label("Convert", systemImage: "arrow.triangle.2.circlepath")
-             }
-             
-             Spacer()
-             
-             // ✅ Convert & Merge Button
-             Button {
-                 prepareBatchMerge()
-             } label: {
-                 Label("Merge & Convert", systemImage: "doc.on.doc.fill")
-             }
-             
-             Spacer()
-             
-             Button {
-                 exportSelection()
-             } label: {
-                 Label("Export", systemImage: "square.and.arrow.up")
-             }
-             
-             Spacer()
-             
-             // ✅ Batch Metadata Button
-             Button {
-                 prepareBatchMetadata()
-             } label: {
-                 Label("Metadata", systemImage: "tag")
-             }
-             
-             Spacer()
-             
-             Button {
-                 showingMergeSheet = true
-             } label: {
-                 Label("Merge", systemImage: "arrow.triangle.merge")
+                 Label("Actions", systemImage: "ellipsis.circle")
              }
         }
     }
