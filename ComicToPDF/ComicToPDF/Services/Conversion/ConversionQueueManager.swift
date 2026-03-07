@@ -24,6 +24,9 @@ class ConversionQueueManager: ObservableObject {
     @Published var currentProgress: Double = 0.0
     @Published var statusMessage: String = ""
     
+    // ✅ Tracks the mode of the most recently completed job for library tagging
+    private var lastCompletedMode: QueueItem.UIMode = .pro
+    
     // ✅ NEW: Queue Timer State
     @Published var queueStartTime: Date? = nil
     @Published var elapsedTime: TimeInterval = 0.0
@@ -86,7 +89,7 @@ class ConversionQueueManager: ObservableObject {
                 NotificationCenter.default.post(
                     name: NSNotification.Name("LibraryNeedsRescan"),
                     object: nil,
-                    userInfo: ["mode": item.mode == .go ? AppUIMode.go.rawValue : AppUIMode.pro.rawValue]
+                    userInfo: ["mode": self.lastCompletedMode == .go ? AppUIMode.go.rawValue : AppUIMode.pro.rawValue]
                 )
             }
             return
@@ -94,6 +97,8 @@ class ConversionQueueManager: ObservableObject {
         
         isProcessing = true
         let item = queue.removeFirst()
+        // ✅ Track this item's mode so we can tag the library after the queue empties
+        lastCompletedMode = item.mode
         activeItem = item
         currentProgress = 0.0
         statusMessage = "Preparing \(item.sourceURL.lastPathComponent)..."

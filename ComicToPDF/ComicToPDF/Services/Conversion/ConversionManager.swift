@@ -161,7 +161,9 @@ class ConversionManager: ObservableObject {
         NotificationCenter.default.addObserver(forName: NSNotification.Name("LibraryNeedsRescan"), object: nil, queue: .main) { [weak self] notification in
             let modeRaw = notification.userInfo?["mode"] as? String
             let mode: AppUIMode = (modeRaw == AppUIMode.go.rawValue) ? .go : .pro
-            self?.scanLibrary(addedByMode: mode)
+            Task { @MainActor [weak self] in
+                self?.scanLibrary(addedByMode: mode)
+            }
         }
     }
     
