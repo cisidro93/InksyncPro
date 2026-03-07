@@ -375,6 +375,18 @@ class ConversionManager: ObservableObject {
             
             saveLibrary()
             Logger.shared.log("Updated metadata for \(pdf.name)", category: "Metadata")
+            
+            // ✅ Pro Feature: Write back to ComicInfo.xml
+            if pdf.url.pathExtension.lowercased() == "cbz" || pdf.url.pathExtension.lowercased() == "zip" {
+                Task {
+                    do {
+                        try await ComicInfoWriter.write(metadata: newMetadata, to: pdf.url)
+                        Logger.shared.log("Wrote metadata changes back to archive: \(pdf.name)", category: "Metadata")
+                    } catch {
+                        Logger.shared.log("Failed to write to archive: \(error.localizedDescription)", category: "Metadata", type: .error)
+                    }
+                }
+            }
         }
     }
     
@@ -792,6 +804,11 @@ class ConversionManager: ObservableObject {
                     metadata.isManga = comicInfo.manga
                     if comicInfo.manga {
                         Logger.shared.log("Manga reading direction (RTL) detected from metadata", category: "Import")
+                    }
+                    
+                    // ✅ Map Tags
+                    if !comicInfo.tags.isEmpty {
+                        metadata.tags = comicInfo.tags
                     }
                     
                     if let series = comicInfo.series, !series.isEmpty {
@@ -1367,6 +1384,14 @@ class ConversionManager: ObservableObject {
             jobSettings.mangaMode = false
             jobSettings.enablePanelSplit = false
             jobSettings.outputPipeline = .standard
+            jobSettings.splitWebtoon = false
+        }
+        
+        // Webtoon Handling
+        if let isWebtoon = pdf.metadata.isWebtoon, isWebtoon {
+            jobSettings.splitWebtoon = true
+            jobSettings.enablePanelSplit = false
+            jobSettings.outputPipeline = .standard
         }
         
         do {
@@ -1472,6 +1497,13 @@ class ConversionManager: ObservableObject {
             var jobSettings = conversionSettings
             if pdf.contentType == .book {
                 jobSettings.mangaMode = false
+                jobSettings.enablePanelSplit = false
+                jobSettings.outputPipeline = .standard
+                jobSettings.splitWebtoon = false
+            }
+            
+            if let isWebtoon = pdf.metadata.isWebtoon, isWebtoon {
+                jobSettings.splitWebtoon = true
                 jobSettings.enablePanelSplit = false
                 jobSettings.outputPipeline = .standard
             }

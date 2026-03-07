@@ -14,6 +14,7 @@ struct AdvancedMetadataEditorView: View {
     @State private var series: String = ""
     @State private var volume: String = ""
     @State private var issueNumber: String = ""
+    @State private var tags: [String] = []
     
     // Custom Cover State
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
@@ -80,6 +81,11 @@ struct AdvancedMetadataEditorView: View {
                     TextField("Issue Number", text: $issueNumber)
                         .keyboardType(.numbersAndPunctuation)
                 }
+                
+                // MARK: - Tags Section
+                Section(header: Text("Tags")) {
+                    TagEditorView(tags: $tags)
+                }
             }
             .navigationTitle("Edit Metadata")
             .navigationBarTitleDisplayMode(.inline)
@@ -112,6 +118,7 @@ struct AdvancedMetadataEditorView: View {
         self.series = pdf.metadata.series ?? ""
         self.volume = pdf.metadata.volume ?? ""
         self.issueNumber = pdf.metadata.issueNumber ?? ""
+        self.tags = pdf.metadata.tags
         
         Task {
             if let image = await conversionManager.loadCoverThumbnail(for: pdf) {
@@ -129,6 +136,7 @@ struct AdvancedMetadataEditorView: View {
         updatedMeta.series = series.isEmpty ? nil : series
         updatedMeta.volume = volume.isEmpty ? nil : volume
         updatedMeta.issueNumber = issueNumber.isEmpty ? nil : issueNumber
+        updatedMeta.tags = tags
         
         conversionManager.updateMetadata(for: pdf, with: updatedMeta, newCover: customCoverImage)
         dismiss()

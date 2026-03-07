@@ -87,6 +87,11 @@ struct MetadataEditorSheet: View {
                     ))
                 }
                 
+                // MARK: - Tags
+                Section(header: Text("Tags")) {
+                    TagEditorView(tags: $editedMetadata.tags)
+                }
+                
                 // MARK: - Summary
                 Section(header: Text("Summary")) {
                     TextEditor(text: Binding(get: { editedMetadata.summary ?? "" }, set: { editedMetadata.summary = $0.isEmpty ? nil : $0 }))

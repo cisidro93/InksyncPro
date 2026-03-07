@@ -302,6 +302,7 @@ struct ConversionSettings: Codable, Equatable {
     var targetDevice: KindleDeviceType = .scribeColorsoft
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
+    var splitWebtoon: Bool = false // ✅ Added for Smart Slicing
     var trimMargins: Bool = false
     var splitMode: FileSizeSplitMode = .none
     var enableBackgroundQueue: Bool = true // ✅ NEW: Pro Mode Queue Toggle
@@ -348,7 +349,7 @@ struct ConversionSettings: Codable, Equatable {
     // Custom Codable implementation to handle migration
                             
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, showEditorDebug
+        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitWebtoon, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, showEditorDebug
         case outputPipeline   // New canonical export mode
         case isGuidedView     // Legacy — read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
@@ -364,6 +365,7 @@ struct ConversionSettings: Codable, Equatable {
         targetDevice = try container.decode(KindleDeviceType.self, forKey: .targetDevice)
         mangaMode = try container.decode(Bool.self, forKey: .mangaMode)
         enablePanelSplit = try container.decode(Bool.self, forKey: .enablePanelSplit)
+        splitWebtoon = try container.decodeIfPresent(Bool.self, forKey: .splitWebtoon) ?? false
         trimMargins = try container.decodeIfPresent(Bool.self, forKey: .trimMargins) ?? false
         splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
         enableBackgroundQueue = try container.decodeIfPresent(Bool.self, forKey: .enableBackgroundQueue) ?? true
@@ -403,6 +405,7 @@ struct ConversionSettings: Codable, Equatable {
         try container.encode(targetDevice, forKey: .targetDevice)
         try container.encode(mangaMode, forKey: .mangaMode)
         try container.encode(enablePanelSplit, forKey: .enablePanelSplit)
+        try container.encode(splitWebtoon, forKey: .splitWebtoon)
         try container.encode(trimMargins, forKey: .trimMargins)
         try container.encode(splitMode, forKey: .splitMode)
         try container.encode(enableBackgroundQueue, forKey: .enableBackgroundQueue)

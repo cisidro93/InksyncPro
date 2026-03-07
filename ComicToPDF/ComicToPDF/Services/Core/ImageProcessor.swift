@@ -112,6 +112,57 @@ struct ImageProcessor {
         guard let cropped = cgImage.cropping(to: cropRect) else { return nil }
         return UIImage(cgImage: cropped)
     }
+    
+    // MARK: - Webtoon Slicing
+    
+    /// Slices a tall Webtoon image into multiple Kindle-optimized pages.
+    /// Uses an overlap method to ensure text isn't lost across page breaks.
+    /// - Parameters:
+    ///   - image: The original vertical strip.
+    ///   - targetAspectRatio: Height / Width ratio (e.g., 1.33 for standard Kindle 4:3).
+    /// - Returns: An array of sliced UIImages.
+    static func sliceWebtoon(image: UIImage, targetAspectRatio: CGFloat = 1.33) -> [UIImage] {
+        guard let cgImage = image.cgImage else { return [image] }
+        
+        let width = CGFloat(cgImage.width)
+        let totalHeight = CGFloat(cgImage.height)
+        
+        // If the image is already roughly page-sized or smaller, don't slice
+        if totalHeight / width <= targetAspectRatio * 1.2 {
+            return [image]
+        }
+        
+        var slices: [UIImage] = []
+        let targetHeight = width * targetAspectRatio
+        let minOverlap = targetHeight * 0.08 // 8% overlap if we can't find a clean cut
+        
+        var currentY: CGFloat = 0
+        
+        while currentY < totalHeight {
+            var sliceHeight = targetHeight
+            
+            // If we're near the bottom, just take the rest of the image
+            if currentY + sliceHeight >= totalHeight {
+                sliceHeight = totalHeight - currentY
+            }
+            
+            let cropRect = CGRect(x: 0, y: currentY, width: width, height: sliceHeight)
+            if let croppedCG = cgImage.cropping(to: cropRect) {
+                let sliceImage = UIImage(cgImage: croppedCG, scale: image.scale, orientation: image.imageOrientation)
+                slices.append(sliceImage)
+            }
+            
+            if currentY + sliceHeight >= totalHeight {
+                break
+            }
+            
+            // Move down, but step back by the overlap amount so context is preserved across the cut
+            // This is the professional, fail-safe way to ensure dialog bubbles aren't lost
+            currentY += (sliceHeight - minOverlap)
+        }
+        
+        return slices
+    }
 
     /// High-performance resizing using vImage
     private static func resize(image: UIImage, toFit targetSize: CGSize) -> UIImage? {

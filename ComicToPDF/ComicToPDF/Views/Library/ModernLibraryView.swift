@@ -61,6 +61,9 @@ struct ModernLibraryView: View {
     @State private var pdfToRename: ConvertedPDF?
     @State private var renameText = ""
     
+    // ✅ NEW: Batch Editor State
+    @State private var showBatchMetadataEditor = false
+    
     // ✅ NEW: Export State
     @State private var pdfToExport: ConvertedPDF?
     @State private var pdfToSearchMetadata: ConvertedPDF?
@@ -227,6 +230,11 @@ struct ModernLibraryView: View {
         // ✅ NEW: Advanced Metadata & Cover Editor
         .sheet(item: $pdfToEditMetadata) { pdf in
             AdvancedMetadataEditorView(pdf: pdf)
+        }
+        // ✅ NEW: Batch Metadata Editor
+        .sheet(isPresented: $showBatchMetadataEditor) {
+            let selectedFiles = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+            BatchMetadataEditorView(selectedPDFs: selectedFiles)
         }
         // ✅ Rename Alert
         .alert("Rename File", isPresented: Binding(

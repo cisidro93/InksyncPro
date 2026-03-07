@@ -36,52 +36,79 @@ class CBZToEPUBConverter {
         // Pre-calculation: 10% progress for analysis/compression
         let totalCount = Double(originalImageURLs.count)
         
-        for (index, srcURL) in originalImageURLs.enumerated() {
-            // A. Compress/Load Image Data
-            var finalData: Data
+        var globalImageIndex = 0
+        
+        for (originalIndex, srcURL) in originalImageURLs.enumerated() {
+            // A. Check for Webtoon Slicing
+            var imagesToProcess: [UIImage] = []
+            var isSliced = false
             
-            // Evaluate if we need to process the image: true if ANY enhancements are on, or resizing is needed, or format isn't JPEG/PNG
+            if settings.splitWebtoon, let rawImage = UIImage(contentsOfFile: srcURL.path) {
+                // Webtoons are usually very tall. Only slice if it's explicitly a Webtoon.
+                let slices = ImageProcessor.sliceWebtoon(image: rawImage, targetAspectRatio: 1.33)
+                if slices.count > 1 {
+                    imagesToProcess = slices
+                    isSliced = true
+                }
+            }
+            
+            // B. Evaluate Processing Needs
+            let ext = srcURL.pathExtension.lowercased()
+            let isUnsafeFormat = !["jpg", "jpeg", "png"].contains(ext)
             let needsCompression = settings.compressionQuality != .high
             let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
             
-            let ext = srcURL.pathExtension.lowercased()
-            let isUnsafeFormat = !["jpg", "jpeg", "png"].contains(ext)
             let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat
             
-            if needsProcessing {
-                // Route image through our professional E-Ink enhancement pipeline!
-                if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
-                    let quality = settings.compressionQuality.value
-                    finalData = processedImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
-                } else {
-                    finalData = (try? Data(contentsOf: srcURL)) ?? Data() // Fallback
+            let appendToBatch = { (data: Data, indexToUse: Int) in
+                let itemSize = Int64(data.count)
+                let overheadBuffer: Int64 = 500 * 1024 
+                
+                let isNoLimit = limit == Int64.max
+                let exceedsLimit = (currentBatchSize + itemSize + overheadBuffer) > limit
+                
+                if !isNoLimit && exceedsLimit && !currentBatch.isEmpty {
+                    Logger.shared.log("⚠️ Auto-Splitting at \(currentBatchSize) bytes (Image: \(indexToUse))", category: "Converter")
+                    batches.append(currentBatch)
+                    currentBatch = []
+                    currentBatchSize = 0
+                }
+                
+                currentBatch.append((url: srcURL, index: indexToUse, data: data))
+                currentBatchSize += itemSize
+                globalImageIndex += 1
+            }
+            
+            // C. Process and Append
+            if isSliced {
+                for slice in imagesToProcess {
+                    var finalData: Data
+                    if needsProcessing {
+                        let processedImage = ImageProcessor.process(image: slice, settings: settings) ?? slice
+                        finalData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
+                    } else {
+                        // Even if no processing is needed, we must compress the new slice to JPEG
+                        finalData = slice.jpegData(compressionQuality: 1.0) ?? Data()
+                    }
+                    appendToBatch(finalData, globalImageIndex)
                 }
             } else {
-                 // Safe to copy exact original bytes
-                 finalData = (try? Data(contentsOf: srcURL)) ?? Data()
+                var finalData: Data
+                if needsProcessing {
+                    if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
+                        let quality = settings.compressionQuality.value
+                        finalData = processedImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
+                    } else {
+                        finalData = (try? Data(contentsOf: srcURL)) ?? Data() // Fallback
+                    }
+                } else {
+                     // Safe to copy exact original bytes
+                     finalData = (try? Data(contentsOf: srcURL)) ?? Data()
+                }
+                appendToBatch(finalData, globalImageIndex)
             }
             
-            let itemSize = Int64(finalData.count)
-            
-            // B. Check Split Limit
-            // If adding this image exceeds limit AND we have at least one image in batch, split.
-            let overheadBuffer: Int64 = 500 * 1024 
-            
-            // ✅ DEBUG: Trace Splitting Logic
-            let isNoLimit = limit == Int64.max
-            let exceedsLimit = (currentBatchSize + itemSize + overheadBuffer) > limit
-            
-            if !isNoLimit && exceedsLimit && !currentBatch.isEmpty {
-                Logger.shared.log("⚠️ Auto-Splitting at \(currentBatchSize) bytes (Image: \(index))", category: "Converter")
-                batches.append(currentBatch)
-                currentBatch = []
-                currentBatchSize = 0
-            }
-            
-            currentBatch.append((url: srcURL, index: index, data: finalData))
-            currentBatchSize += itemSize
-            
-            progress(0.1 + (0.4 * Double(index) / totalCount))
+            progress(0.1 + (0.4 * Double(originalIndex) / totalCount))
         }
         
         // Append last batch

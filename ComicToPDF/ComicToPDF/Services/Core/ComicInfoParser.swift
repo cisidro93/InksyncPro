@@ -17,6 +17,7 @@ struct ComicInfoParser {
         var summary: String?
         var manga: Bool = false
         var languageISO: String?
+        var tags: [String] = []
     }
 
     /// Attempt to read and parse ComicInfo.xml from a CBZ archive.
@@ -98,6 +99,7 @@ private class ComicInfoXMLParser: NSObject, XMLParserDelegate {
         case "Year":         result.year = Int(value)
         case "Summary":      result.summary = value
         case "LanguageISO":  result.languageISO = value
+        case "Tags":         result.tags = value.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         case "Manga":        result.manga = value.lowercased() == "yes" || value.lowercased() == "true"
         default: break
         }
