@@ -144,9 +144,9 @@ struct PrecisionCanvasView: View {
                                     
                                     let textString = "\(Int(rect.width)) x \(Int(rect.height))"
                                     let text = Text(textString).font(.caption).foregroundColor(.white)
-                                    let resolvedText = context.resolve(text)
-                                    
-                                    let textRect = CGRect(x: rect.midX - 25, y: rect.maxY + 10, width: 50, height: 20) // Simplified
+                                    _ = context.resolve(text)
+                                    // Simplified for compiler check
+                                    _ = CGRect(x: rect.midX - 25, y: rect.maxY + 10, width: 50, height: 20)
                                     // context.draw(resolvedText, at: ...)
                                 }
                             }
@@ -154,7 +154,7 @@ struct PrecisionCanvasView: View {
                         .gesture(canvasGesture(in: displayedRect))
                     }
                     .onAppear { viewSize = geo.size }
-                    .onChange(of: geo.size) { newSize in viewSize = newSize }
+                    .onChange(of: geo.size) { _, newSize in viewSize = newSize }
                     
                     // MARK: - PencilKit Overlay
                     // Overlay PencilKit specifically over the image geometry
@@ -285,7 +285,7 @@ struct PrecisionCanvasView: View {
         .task {
             loadPage()
         }
-        .onChange(of: pageIndex) { newIndex in
+        .onChange(of: pageIndex) { _, newIndex in
             // When page traversing, instantly load new page without destroying view
             let newModel = conversionManager.getPageModel(for: pdf.id, pageIndex: newIndex)
             editorState.pageModel = newModel
@@ -333,7 +333,7 @@ struct PrecisionCanvasView: View {
                   }
                   
                   // 🧠 Run Magnetic Engine (Gutter Detection)
-                  let guides = await SnapEngine.shared.detectGutters(in: image)
+                  _ = await SnapEngine.shared.detectGutters(in: image)
                   await MainActor.run {
                       self.pageImage = image
                       
@@ -595,7 +595,7 @@ struct PreviewMaskShape: Shape {
                                  currentDragRect = nil
                                  activeHandle = nil
                              }
-                         } else if let index = editorState.selectedPanelIndex, let start = dragStart, var currentRect = currentDragRect {
+                         } else if let index = editorState.selectedPanelIndex, let start = dragStart, let currentRect = currentDragRect {
                          
                          
                          // Determine mode: Resize or Move

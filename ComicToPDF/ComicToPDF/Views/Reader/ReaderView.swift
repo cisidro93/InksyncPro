@@ -115,7 +115,6 @@ struct ReaderView: View {
                 // Cleanup Temp Files
                 if let dir = unzippedDir {
                     try? FileManager.default.removeItem(at: dir)
-                }
             }
         }
     }

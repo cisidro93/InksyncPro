@@ -154,8 +154,10 @@ struct DualExportView: View {
                 
                 Spacer()
                 
-                // Hidden Navigation
-                NavigationLink(destination: WiFiView(), isActive: $navigateToSync) { EmptyView() }
+                // Hidden Navigation handled by navigationDestination
+            }
+            .navigationDestination(isPresented: $navigateToSync) {
+                WiFiView()
             }
             .padding()
             .navigationTitle("Export Options")

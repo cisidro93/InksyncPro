@@ -110,7 +110,7 @@ class Logger: ObservableObject {
                 let fileURL = self.logFileURL
                 if FileManager.default.fileExists(atPath: fileURL.path) {
                     if let fileHandle = try? FileHandle(forWritingTo: fileURL) {
-                        try? fileHandle.seekToEnd()
+                        _ = try? fileHandle.seekToEnd()
                         try? fileHandle.write(contentsOf: data)
                         try? fileHandle.close()
                     }
@@ -171,7 +171,7 @@ class Logger: ObservableObject {
     func logEPUBStructure(at url: URL) {
         log("🔍 [Flight Recorder] Analyzing EPUB Structure: \(url.lastPathComponent)", category: "Debug", type: .info)
         
-        guard let archive = try? Archive(url: url, accessMode: .read) else {
+        guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else {
             log("Could not open archive for analysis", category: "Debug", type: .error)
             return
         }

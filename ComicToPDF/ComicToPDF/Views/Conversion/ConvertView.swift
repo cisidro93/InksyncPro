@@ -28,9 +28,8 @@ struct ConvertView: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .onChange(of: conversionManager.conversionSettings.outputFormat) { newFormat in
-                    if newFormat != .epub {
-                        selectedPipeline = .standard
+                .onChange(of: conversionManager.conversionSettings.outputFormat) { _, newFormat in
+                    if newFormat == .pdf && conversionManager.conversionSettings.processType == .webtoon {
                         applyPipeline(.standard)
                     }
                 }

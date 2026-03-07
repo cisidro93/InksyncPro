@@ -30,7 +30,7 @@ class EPUBContentEditorViewModel: ObservableObject {
             
             // 2. We also need to extract the raw OPF to easily modify it on save
             do {
-                guard let archive = Archive(url: pdf.url, accessMode: .read) else {
+                guard let archive = try? Archive(url: pdf.url, accessMode: .read, pathEncoding: .utf8) else {
                     throw NSError(domain: "EPUBEditor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Archive corrupted"])
                 }
                 if let containerEntry = archive["META-INF/container.xml"] {
@@ -125,7 +125,7 @@ class EPUBContentEditorViewModel: ObservableObject {
                             
                             let newOPFData = modifiedOPF.data(using: .utf8)!
                             
-                            try destArchive.addEntry(with: entry.path, type: .file, uncompressedSize: Int64(newOPFData.count), modificationDate: Date(), permissions: entry.fileAttributes.permissions, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                            try destArchive.addEntry(with: entry.path, type: .file, uncompressedSize: Int64(newOPFData.count), modificationDate: Date(), permissions: entry.fileAttributes[.posixPermissions] as? UInt16 ?? 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
                                 let start = Int(position)
                                 let end = min(start + size, newOPFData.count)
                                 return newOPFData.subdata(in: start..<end)
@@ -138,7 +138,7 @@ class EPUBContentEditorViewModel: ObservableObject {
                     let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                     _ = try sourceArchive.extract(entry, to: tempFile)
                     
-                    try destArchive.addEntry(with: entry.path, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: entry.fileAttributes.modificationDate, permissions: entry.fileAttributes.permissions, compressionMethod: entry.fileAttributes.compressionMethod == .none ? .none : .deflate, bufferSize: 8192, progress: nil) { position, size in
+                    try destArchive.addEntry(with: entry.path, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: entry.fileAttributes.modificationDate, permissions: entry.fileAttributes[.posixPermissions] as? UInt16 ?? 0o644, compressionMethod: entry.fileAttributes.compressionMethod == .none ? .none : .deflate, bufferSize: 8192, progress: nil) { position, size in
                         let fileHandle = try? FileHandle(forReadingFrom: tempFile)
                         try? fileHandle?.seek(toOffset: UInt64(position))
                         return fileHandle?.readData(ofLength: size) ?? Data()
@@ -184,9 +184,9 @@ struct EPUBContentEditorView: View {
     @StateObject private var viewModel: EPUBContentEditorViewModel
     @State private var showingHeaderCheck = false
     
-    init(pdf: ConvertedPDF) {
+    init(pdf: ConvertedPDF, manager: ConversionManager) {
         self.pdf = pdf
-        _viewModel = StateObject(wrappedValue: EPUBContentEditorViewModel(pdf: pdf, manager: ConversionManager.shared))
+        _viewModel = StateObject(wrappedValue: EPUBContentEditorViewModel(pdf: pdf, manager: manager))
     }
     
     var body: some View {

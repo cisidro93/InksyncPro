@@ -39,9 +39,10 @@ class PDFContentEditorViewModel: ObservableObject {
                     initialItems.append(PDFPageItem(index: i, thumbnail: nil))
                 }
                 
+                let itemsToAssign = initialItems
                 await MainActor.run {
                     self.document = doc
-                    self.pages = initialItems
+                    self.pages = itemsToAssign
                     self.isLoading = false
                 }
                 
@@ -142,12 +143,9 @@ struct PDFContentEditorView: View {
     
     @StateObject private var viewModel: PDFContentEditorViewModel
     
-    init(pdf: ConvertedPDF) {
+    init(pdf: ConvertedPDF, manager: ConversionManager) {
         self.pdf = pdf
-        // View requires EnvironmentObject which is injected after init, 
-        // so we must wait to init ViewModel. We'll use a trick or let the view instantiate it.
-        // Swift allows this if we inject in an inner view.
-        _viewModel = StateObject(wrappedValue: PDFContentEditorViewModel(pdf: pdf, manager: ConversionManager.shared))
+        _viewModel = StateObject(wrappedValue: PDFContentEditorViewModel(pdf: pdf, manager: manager))
     }
     
     let columns = [GridItem(.adaptive(minimum: 120), spacing: 16)]

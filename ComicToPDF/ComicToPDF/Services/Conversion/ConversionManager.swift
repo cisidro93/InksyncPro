@@ -531,7 +531,7 @@ class ConversionManager: ObservableObject {
         // 1. Extract CBZ to Temp Directory
         let result = try await ZipUtilities.extractComic(from: pdf.url)
         let tempDir = result.workingDir
-        var imageFiles = result.imageURLs
+        let imageFiles = result.imageURLs
         
         // Ensure cleanup even on error
         defer { 
@@ -625,7 +625,7 @@ class ConversionManager: ObservableObject {
                          let tempExtractDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                          try FileManager.default.createDirectory(at: tempExtractDir, withIntermediateDirectories: true)
                          
-                         let imageURLs = try EPUBImporter.extractImages(from: url, to: tempExtractDir)
+                         _ = try EPUBImporter.extractImages(from: url, to: tempExtractDir)
                          
                          // 3. Zip to CBZ
                          try await ZipUtilities.zipDirectory(tempExtractDir, to: cbzURL)
@@ -1110,7 +1110,7 @@ class ConversionManager: ObservableObject {
         case "epub":
             // Smart Sniffing: Check if it is a pre-paginated comic or a text book
             do {
-                guard let archive = Archive(url: url, accessMode: .read) else { return .book }
+                guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return .book }
                 if let containerEntry = archive["META-INF/container.xml"] {
                     var containerData = Data()
                     _ = try archive.extract(containerEntry) { data in containerData.append(data) }
@@ -1478,7 +1478,7 @@ class ConversionManager: ObservableObject {
                 // Primary panel path: PanelViewEPUBConverter (Amazon-compliant, px tap-targets, 150% magnify)
                 await MainActor.run { processingStatus = "Loading Panel Data..." }
                 let combinedManifest = await getCombinedManifest(for: pdf)
-                let panelsByPage: [Int: [PanelExtractor.Panel]] = combinedManifest ?? [:]
+                let panelsByPage: [Int: [PanelExtractor.Panel]] = combinedManifest
                 let pvConverter = PanelViewEPUBConverter()
                 let newURLs = try await pvConverter.convert(
                     sourceURL: pdf.url,
@@ -1919,7 +1919,7 @@ class ConversionManager: ObservableObject {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            guard let archive = try? Archive(url: url, accessMode: .read) else { return 0 }
+            guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return 0 }
             
             var count = 0
             for entry in archive {
@@ -1942,7 +1942,7 @@ class ConversionManager: ObservableObject {
         
         Logger.shared.log("Inspection Started: \(url.lastPathComponent)", category: "SmartPanels")
         // Create Archive Accessor
-        guard let archive = try? Archive(url: url, accessMode: .read) else {
+        guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else {
             throw ConversionError.invalidFormat
         }
         
@@ -2197,8 +2197,8 @@ class ConversionManager: ObservableObject {
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: tempDir); try? fileManager.removeItem(at: tempArchiveURL) }
         
-        guard let sourceArchive = try? Archive(url: url, accessMode: .read),
-              let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create) else {
+        guard let sourceArchive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8),
+              let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create, pathEncoding: .utf8) else {
             throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
         }
         
@@ -2273,13 +2273,13 @@ class ConversionManager: ObservableObject {
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
             defer { try? fileManager.removeItem(at: tempDir); try? fileManager.removeItem(at: tempArchiveURL) }
             
-            guard let sourceArchive = try? Archive(url: sourceURL, accessMode: .read),
-                  let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create) else {
+            guard let sourceArchive = try? Archive(url: sourceURL, accessMode: .read, pathEncoding: .utf8),
+                  let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create, pathEncoding: .utf8) else {
                 throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
             }
             
             let sortedEntries = sourceArchive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-            let imageEntries = sortedEntries.filter { entry in
+            _ = sortedEntries.filter { entry in
                 let ext = (entry.path as NSString).pathExtension.lowercased()
                 return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
             }
@@ -2413,8 +2413,8 @@ class ConversionManager: ObservableObject {
         
         // Scope the Archive creation so it releases the file lock immediately
         try {
-            guard let sourceArchive = try? Archive(url: pdf.url, accessMode: .read),
-                  let destArchive = try? Archive(url: outputURL, accessMode: .create) else {
+            guard let sourceArchive = try? Archive(url: pdf.url, accessMode: .read, pathEncoding: .utf8),
+                  let destArchive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) else {
                 throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
             }
             
@@ -2726,7 +2726,7 @@ class ConversionManager: ObservableObject {
         // We need to read the OLD archive first to prepare these updates
         // We scope this so we close the file handle before writing the new one (Windows safe)
         try {
-            guard let sourceArchive = try? Archive(url: archiveURL, accessMode: .read) else { return }
+            guard let sourceArchive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) else { return }
             
             // A. Prepare OPF Update
             if let entry = sourceArchive.makeIterator().first(where: { $0.path.hasSuffix(".opf") }) {
@@ -2862,7 +2862,7 @@ class ConversionManager: ObservableObject {
             
             // B. Prepare XHTML Updates (EPUB Only)
             if archiveURL.pathExtension.lowercased() == "epub" {
-                for (index, pagePanels) in panels {
+                for (_, pagePanels) in panels {
                      let pageNum = index + 1
                      
                      // Try to find image
@@ -2883,7 +2883,7 @@ class ConversionManager: ObservableObject {
                          var imgData = Data()
                          _ = try sourceArchive.extract(entry) { imgData.append($0) }
                          
-                         let size = UIImage(data: imgData)?.size ?? CGSize(width: 1000, height: 1500)
+                         _ = UIImage(data: imgData)?.size ?? CGSize(width: 1000, height: 1500)
                          let xhtmlContent = CBZToEPUBConverter.generateChunkXHTML(
                             chunkIndex: pageNum,
                             images: [img],
@@ -2912,7 +2912,7 @@ class ConversionManager: ObservableObject {
         
         // Scope to ensure archive closes (deinit) before move
         do {
-            guard let newArchive = try? Archive(url: newArchiveURL, accessMode: .create) else {
+            guard let newArchive = try? Archive(url: newArchiveURL, accessMode: .create, pathEncoding: .utf8) else {
                 Logger.shared.log("Failed to create temporary archive", category: "Injection")
                 return 
             }
@@ -2929,7 +2929,7 @@ class ConversionManager: ObservableObject {
             // 2. META-INF/container.xml (Must be Second for strict compliance)
             var processedPaths: Set<String> = ["mimetype"]
             
-            if let oldArchive = try? Archive(url: archiveURL, accessMode: .read) {
+            if let oldArchive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) {
                 if let containerEntry = oldArchive["META-INF/container.xml"] {
                     let tempContainer = tempDir.appendingPathComponent("container.xml")
                     _ = try oldArchive.extract(containerEntry, to: tempContainer)
@@ -2988,7 +2988,7 @@ class ConversionManager: ObservableObject {
             // OPF
             if let data = opfData, let path = opfPath {
                 // Log OPF for debugging
-                if let opfStr = String(data: data, encoding: .utf8) {
+                if String(data: data, encoding: .utf8) != nil {
 
                 }
                 
@@ -3032,13 +3032,13 @@ class ConversionManager: ObservableObject {
         // This is critical for activating Guided View on Kindle devices.
         
         let fileManager = FileManager.default
-        let tempExtractDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        _ = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         
         // Optimize: We don't need to unzip everything, just the OPF. 
         // But ZIPFoundation update requires re-archiving or careful manipulation.
         // Simplest consistent way: Read Entry -> Modify -> Remove -> Add.
         
-        guard let archive = try? Archive(url: url, accessMode: .update) else { return }
+        guard let archive = try? Archive(url: url, accessMode: .update, pathEncoding: .utf8) else { return }
         
         // Find OPF
         guard let opfEntry = archive.makeIterator().first(where: { $0.path.hasSuffix(".opf") }) else { return }

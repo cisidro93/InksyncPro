@@ -66,7 +66,7 @@ struct ComicInfoWriter {
             }
             
             // Read-Write Archive
-            guard let archive = try? Archive(url: archiveURL, accessMode: .update) else {
+            guard let archive = try? Archive(url: archiveURL, accessMode: .update, pathEncoding: .utf8) else {
                 throw NSError(domain: "ComicInfoWriter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not open archive for updating."])
             }
             

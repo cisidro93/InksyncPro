@@ -262,8 +262,8 @@ class CBZToEPUBConverter {
             }
             
             // ✅ Prepare Metadata Identifiers (Now with valid dimensions)
-            let widthID = Int(contentSize.width)
-            let heightID = Int(contentSize.height)
+            // let widthID = Int(contentSize.width)
+            // let heightID = Int(contentSize.height)
             let bookUUID = UUID().uuidString
             // Note: writingMode and spreadMode are defined later near OPF generation for strict compliance
             
@@ -416,7 +416,7 @@ class CBZToEPUBConverter {
             // ✅ FIX: Manual Zipping to ensure mimetype is UNCOMPRESSED and FIRST
             // Wrapped in DO block to ensure Archive deinit (and close) before we try to read it
             do {
-                guard let archive = Archive(url: outputURL, accessMode: .create) else {
+                guard let archive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) else {
                     throw NSError(domain: "Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create EPUB archive"])
                 }
                 

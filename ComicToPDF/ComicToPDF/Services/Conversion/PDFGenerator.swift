@@ -31,7 +31,7 @@ class PDFGenerator {
         var current = 0.0
         
         try renderer.writePDF(to: outputURL) { context in
-            for (index, imageURL) in images.enumerated() {
+            for (_, imageURL) in images.enumerated() {
                 autoreleasepool {
                     guard let image = UIImage(contentsOfFile: imageURL.path) else {
                         Logger.shared.log("Skipping bad image: \(imageURL.lastPathComponent)", category: "PDF", type: .warning)

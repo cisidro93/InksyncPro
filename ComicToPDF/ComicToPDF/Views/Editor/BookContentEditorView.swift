@@ -11,9 +11,9 @@ struct BookContentEditorView: View {
     var body: some View {
         NavigationStack {
             if pdf.url.pathExtension.lowercased() == "pdf" {
-                PDFContentEditorView(pdf: pdf)
+                PDFContentEditorView(pdf: pdf, manager: conversionManager)
             } else if pdf.url.pathExtension.lowercased() == "epub" {
-                EPUBContentEditorView(pdf: pdf)
+                EPUBContentEditorView(pdf: pdf, manager: conversionManager)
             } else {
                 VStack(spacing: 20) {
                     Image(systemName: "exclamationmark.triangle")

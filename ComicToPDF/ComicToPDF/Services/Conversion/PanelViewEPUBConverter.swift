@@ -161,7 +161,7 @@ class PanelViewEPUBConverter {
                 let paddedNum   = String(format: "%03d", pageNum)
                 let imageName   = "page\(paddedNum).jpg"
                 let xhtmlName   = "page\(paddedNum).xhtml"
-                var pagePanels  = panels[globalIdx] ?? []
+                let pagePanels  = panels[globalIdx] ?? []
 
                 // Process image → JPEG
                 let imgData = processImage(srcURL: item.url, settings: settings)
@@ -636,7 +636,7 @@ class PanelViewEPUBConverter {
     // MARK: - ZIP Assembly (strict entry order per EPUB spec)
 
     private func assembleEPUB(buildDir: URL, outputURL: URL, oebpsDir: URL, metaDir: URL, mimetypePath: URL) throws {
-        guard let archive = Archive(url: outputURL, accessMode: .create) else {
+        guard let archive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) else {
             throw PanelViewError.archiveCreationFailed
         }
         let fm = FileManager.default
@@ -703,7 +703,7 @@ class PanelViewEPUBConverter {
                 current = []; currentSize = 0
             }
             current.append((url: url, index: idx))
-            currentSize += sz ?? 0
+            currentSize += sz
         }
         if !current.isEmpty { batches.append(current) }
         return batches

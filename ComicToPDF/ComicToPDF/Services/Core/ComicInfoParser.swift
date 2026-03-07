@@ -23,7 +23,7 @@ struct ComicInfoParser {
     /// Attempt to read and parse ComicInfo.xml from a CBZ archive.
     /// Returns `nil` if the archive has no ComicInfo.xml or if parsing fails.
     static func parse(from archiveURL: URL) -> ComicInfo? {
-        guard let archive = try? Archive(url: archiveURL, accessMode: .read) else {
+        guard let archive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) else {
             Logger.shared.log("ComicInfoParser: Could not open archive \(archiveURL.lastPathComponent)", category: "Import", type: .error)
             return nil
         }

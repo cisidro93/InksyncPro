@@ -278,7 +278,7 @@ class PDFToEPUBConverter {
                 imageFiles.append(item.name)
             }
             
-            var coverHtmlRef = ""
+            // coverHtmlRef removed
             var coverManifestItem = ""
             var coverSpineItem = ""
             
@@ -550,7 +550,7 @@ class PDFToEPUBConverter {
             try FileManager.default.removeItem(at: outputURL)
         }
         
-        guard let archive = Archive(url: outputURL, accessMode: .create) else {
+        guard let archive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) else {
             throw NSError(domain: "Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create EPUB archive"])
         }
         

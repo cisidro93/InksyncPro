@@ -179,7 +179,7 @@ struct PanelExtractor {
     // MARK: - Helpers
     
     static func cropPanels(from image: UIImage, panels: [Panel]) async throws -> [UIImage] {
-        guard let cgImage = image.cgImage else { return [image] }
+        guard image.cgImage != nil else { return [image] }
         
         return panels.compactMap { panel in
             cropImage(image, to: panel.boundingBox)

@@ -261,7 +261,7 @@ struct ImageProcessor {
         defer { free(canvasBuffer.data) }
         
         // Fill Canvas with Black (ARGB: 255, 0, 0, 0)
-        let blackPixel: [UInt8] = [0, 0, 0, 0] // Actually XRGB where X is ignored but commonly 0 or 255
+        _ = [UInt8]([0, 0, 0, 0]) // Actually XRGB where X is ignored but commonly 0 or 255
         // Using vImageBufferFill_ARGB8888 is deprecated, so we just clear it (which is black)
         // memset(canvasBuffer.data, 0, canvasBuffer.rowBytes * Int(canvasHeight)) is already black!
         memset(canvasBuffer.data, 0, canvasBuffer.rowBytes * Int(canvasHeight))

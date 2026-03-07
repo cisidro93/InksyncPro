@@ -139,7 +139,7 @@ actor ConversionEngine {
             if Task.isCancelled { throw CancellationError() }
             
             // Report Progress
-            let progress = Int((Double(i) / Double(pageCount)) * 100)
+            _ = Int((Double(i) / Double(pageCount)) * 100)
             progressSubject.send(.progress(file: url, current: i, total: pageCount, message: "Extracting Page \(i+1)/\(pageCount)"))
             
             // Extract

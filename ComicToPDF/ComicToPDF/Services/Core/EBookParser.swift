@@ -34,7 +34,7 @@ actor EBookParser {
     /// Returns nil gracefully on any error; all errors are logged.
     func parse(epub url: URL) async -> EBookMetadata? {
         do {
-            guard let archive = Archive(url: url, accessMode: .read) else {
+            guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else {
                 Logger.shared.log("EBookParser: cannot open archive at \(url.lastPathComponent)", category: "EBook", type: .error)
                 return nil
             }
@@ -64,15 +64,25 @@ actor EBookParser {
     }
     
     /// Extracts only the cover image entry into a UIImage. Memory-safe streaming.
-    func extractCover(from url: URL) async -> UIImage? {
-        guard let archive = Archive(url: url, accessMode: .read) else { return nil }
-        guard let opfPath = try? readOPFPath(from: archive),
-              let opfData = try? readEntry(at: opfPath, in: archive),
-              let metadata = try? parseOPF(data: opfData, opfDir: (opfPath as NSString).deletingLastPathComponent),
-              !metadata.coverItem.isEmpty else { return nil }
+    static func extractCover(from url: URL, href: String) async -> URL? {
+        guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return nil }
         
-        guard let coverData = try? readEntry(at: metadata.coverItem, in: archive) else { return nil }
-        return UIImage(data: coverData)
+        let fileManager = FileManager.default
+        let tempDirectory = fileManager.temporaryDirectory
+        let tempFileURL = tempDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(href.pathExtension)
+        
+        do {
+            guard let entry = archive[href] else {
+                Logger.shared.log("EBookParser: Cover entry not found at \(href) in \(url.lastPathComponent)", category: "EBook", type: .error)
+                return nil
+            }
+            
+            _ = try archive.extract(entry, to: tempFileURL)
+            return tempFileURL
+        } catch {
+            Logger.shared.log("EBookParser: Failed to extract cover image from \(url.lastPathComponent) at \(href): \(error.localizedDescription)", category: "EBook", type: .error)
+            return nil
+        }
     }
     
     // MARK: - Private Helpers
