@@ -239,8 +239,9 @@ struct MetadataSearchSheet: View {
                 }
                 
                 // Apply update on MainActor immediately so UI reflects it
+                let finalMeta = newMeta
                 await MainActor.run {
-                    managerInfo.updatePDFMetadata(relatedPdf, metadata: newMeta)
+                    managerInfo.updatePDFMetadata(relatedPdf, metadata: finalMeta)
                 }
             }
         }

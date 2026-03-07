@@ -121,10 +121,13 @@ struct SeriesDetailView: View {
                             .foregroundColor(.white)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
-                            .background(
-                                selection.isEmpty ? Color.gray.opacity(0.3) :
-                                LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
+                            .background(alignment: .center) {
+                                if selection.isEmpty {
+                                    Color.gray.opacity(0.3)
+                                } else {
+                                    LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                }
+                            }
                             .clipShape(Capsule())
                             .shadow(color: selection.isEmpty ? .clear : Theme.blue.opacity(0.3), radius: 5, y: 3)
                         }
@@ -152,10 +155,13 @@ struct SeriesDetailView: View {
                             .foregroundColor(.white)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
-                            .background(
-                                selection.count < 2 ? Color.gray.opacity(0.3) :
-                                LinearGradient(colors: [Color.purple, Color.purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
+                            .background(alignment: .center) {
+                                if selection.count < 2 {
+                                    Color.gray.opacity(0.3)
+                                } else {
+                                    LinearGradient(colors: [Color.purple, Color.purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                }
+                            }
                             .clipShape(Capsule())
                             .shadow(color: selection.count < 2 ? .clear : Color.purple.opacity(0.3), radius: 5, y: 3)
                         }

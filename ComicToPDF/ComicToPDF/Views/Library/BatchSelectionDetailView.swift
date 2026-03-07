@@ -57,10 +57,13 @@ struct BatchSelectionDetailView: View {
                         .font(.headline)
                         .frame(maxWidth: 300)
                         .padding()
-                        .background(
-                            selectionCount == 0 ? Color.gray.opacity(0.3) :
-                            LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
+                        .background(alignment: .center) {
+                            if selectionCount == 0 {
+                                Color.gray.opacity(0.3)
+                            } else {
+                                LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            }
+                        }
                         .foregroundColor(.white)
                         .cornerRadius(12)
                         .shadow(color: selectionCount == 0 ? .clear : Theme.blue.opacity(0.4), radius: 5, y: 2)
