@@ -30,8 +30,8 @@ struct ComicInfoWriter {
         appendNode("Penciller", metadata.penciller)
         appendNode("Publisher", metadata.publisher)
         
-        if let tags = metadata.tags, !tags.isEmpty {
-            appendNode("Tags", tags.joined(separator: ", "))
+        if !metadata.tags.isEmpty {
+            appendNode("Tags", metadata.tags.joined(separator: ", "))
         }
         
         if let pubDate = metadata.publicationDate {
@@ -45,7 +45,7 @@ struct ComicInfoWriter {
             appendNode("Day", "\(day)")
         }
         
-        if metadata.isManga {
+        if let isManga = metadata.isManga, isManga {
             xml += "  <Manga>Yes</Manga>\n"
         }
         
