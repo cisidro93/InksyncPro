@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import CoreImage
 
-// MARK: - Quick Merge Sheet (reorderable, embedded, Go-native)
+// MARK: - Quick Merge Sheet (reorderable, Go-native)
 private struct GoQuickMergeSheet: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
@@ -21,19 +21,14 @@ private struct GoQuickMergeSheet: View {
                 Section {
                     ForEach(mergeOrder) { pdf in
                         HStack(spacing: 12) {
-                            Image(systemName: "line.3.horizontal")
-                                .foregroundColor(.secondary)
+                            Image(systemName: "line.3.horizontal").foregroundColor(.secondary)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(pdf.name)
-                                    .font(.subheadline).lineLimit(1)
-                                Text(pdf.formattedSize)
-                                    .font(.caption).foregroundColor(.secondary)
+                                Text(pdf.name).font(.subheadline).lineLimit(1)
+                                Text(pdf.formattedSize).font(.caption).foregroundColor(.secondary)
                             }
                         }
                     }
-                    .onMove { indices, offset in
-                        mergeOrder.move(fromOffsets: indices, toOffset: offset)
-                    }
+                    .onMove { indices, offset in mergeOrder.move(fromOffsets: indices, toOffset: offset) }
                 } header: {
                     HStack {
                         Text("Merge Order")
@@ -41,25 +36,20 @@ private struct GoQuickMergeSheet: View {
                         EditButton().font(.caption)
                     }
                 } footer: {
-                    Text("Drag ≡ to reorder. The top file becomes Chapter 1.")
+                    Text("Drag ≡ to reorder. Top file becomes Chapter 1.")
                         .font(.caption2).foregroundColor(.secondary)
                 }
-
                 Section(header: Text("Output Name")) {
-                    TextField("e.g. My Comic Omnibus", text: $outputName)
-                        .autocorrectionDisabled()
+                    TextField("e.g. My Comic Omnibus", text: $outputName).autocorrectionDisabled()
                 }
             }
             .navigationTitle("Quick Merge")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Merge & Send") { runMerge() }
-                        .fontWeight(.bold)
-                        .disabled(isMerging || mergeOrder.count < 2)
+                        .fontWeight(.bold).disabled(isMerging || mergeOrder.count < 2)
                 }
             }
             .overlay {
@@ -67,16 +57,10 @@ private struct GoQuickMergeSheet: View {
                     ZStack {
                         Color.black.opacity(0.3).ignoresSafeArea()
                         VStack(spacing: 16) {
-                            ProgressView()
-                                .scaleEffect(1.5)
-                                .tint(.white)
-                            Text("Merging…")
-                                .font(.headline)
-                                .foregroundColor(.white)
+                            ProgressView().scaleEffect(1.5).tint(.white)
+                            Text("Merging…").font(.headline).foregroundColor(.white)
                         }
-                        .padding(32)
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(16)
+                        .padding(32).background(.ultraThinMaterial).cornerRadius(16)
                     }
                 }
             }
@@ -93,30 +77,23 @@ private struct GoQuickMergeSheet: View {
     
     private func runMerge() {
         isMerging = true
-        let name = outputName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "Go Merge" : outputName
+        let name = outputName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Go Merge" : outputName
         let files = mergeOrder
-        
         Task {
-            do {
-                Logger.shared.log("Quick Merge started: \(files.count) files → \"\(name)\"", category: "GoUI")
-                await conversionManager.mergePDFs(files, outputName: name, mangaMode: mangaMode)
-                
-                await MainActor.run {
-                    isMerging = false
-                    // Find the merged output
-                    let merged = conversionManager.convertedPDFs
-                        .filter { $0.name.contains(name) }
-                        .compactMap { FileManager.default.fileExists(atPath: $0.url.path) ? $0.url : nil }
-                    
-                    if merged.isEmpty {
-                        Logger.shared.log("Quick Merge: output file not found after merge", category: "GoUI", type: .warning)
-                        errorMessage = "Merge completed but the output file could not be located. Check Settings → Logs."
-                    } else {
-                        Logger.shared.log("Quick Merge complete: \(merged.map { $0.lastPathComponent }.joined(separator: ", "))", category: "GoUI")
-                        onMergeComplete(merged)
-                        dismiss()
-                    }
+            Logger.shared.log("Quick Merge started: \(files.count) files → \"\(name)\"", category: "GoUI")
+            await conversionManager.mergePDFs(files, outputName: name, mangaMode: mangaMode)
+            await MainActor.run {
+                isMerging = false
+                let merged = conversionManager.convertedPDFs
+                    .filter { $0.name.contains(name) }
+                    .compactMap { FileManager.default.fileExists(atPath: $0.url.path) ? $0.url : nil }
+                if merged.isEmpty {
+                    Logger.shared.log("Quick Merge: output not found after merge", category: "GoUI", type: .warning)
+                    errorMessage = "Merge completed but output could not be located. Check Settings → Logs."
+                } else {
+                    Logger.shared.log("Quick Merge complete", category: "GoUI")
+                    onMergeComplete(merged)
+                    dismiss()
                 }
             }
         }
@@ -134,20 +111,23 @@ struct GoConvertView: View {
     @State private var showingFilePicker = false
     @State private var shareItems: [URL] = []
     @State private var showingShareSheet = false
-    
-    // Rename state
     @State private var pdfToRename: ConvertedPDF? = nil
     @State private var renameText: String = ""
     @State private var renameError: String? = nil
-    
-    // Merge state
     @State private var showingMergeSheet = false
     
-    // Only Go-mode converted files, newest first
+    // ✅ RELIABLE: Match completed Go conversions by source file stem against library
+    // This bypasses the addedByMode race condition entirely.
     private var goConvertedFiles: [ConvertedPDF] {
-        conversionManager.convertedPDFs
-            .filter { $0.addedByMode == .go }
-            .reversed()
+        let stems = queueManager.completedGoSourceStems
+        guard !stems.isEmpty else { return [] }
+        return conversionManager.convertedPDFs.filter { pdf in
+            let pdfStem = pdf.url.deletingPathExtension().lastPathComponent
+            return stems.contains { stem in
+                pdfStem.localizedCaseInsensitiveContains(stem) ||
+                stem.localizedCaseInsensitiveContains(pdfStem)
+            }
+        }
     }
     
     var body: some View {
@@ -162,17 +142,23 @@ struct GoConvertView: View {
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
                             .strokeBorder(Color.blue.opacity(0.5), style: StrokeStyle(lineWidth: 3, dash: [10]))
                             .background(Color.blue.opacity(0.05).cornerRadius(24))
-                        
                         VStack(spacing: 12) {
-                            Image(systemName: "plus.square.dashed")
-                                .font(.system(size: 60)).foregroundStyle(.blue)
+                            Image(systemName: "plus.square.dashed").font(.system(size: 60)).foregroundStyle(.blue)
                             if selectedFiles.isEmpty {
                                 Text("Tap to Select Files").font(.title3).bold().foregroundStyle(.primary)
                                 Text("or Drag & Drop CBZ/PDF here").font(.subheadline).foregroundStyle(.secondary)
                             } else {
                                 Text("\(selectedFiles.count) File(s) Selected")
                                     .font(.title3).bold().foregroundStyle(.blue)
-                                Text("Ready for processing").font(.subheadline).foregroundStyle(.secondary)
+                                // ✅ Show actual filenames, not just a count
+                                ForEach(selectedFiles.prefix(3), id: \.self) { url in
+                                    Text(url.lastPathComponent)
+                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                if selectedFiles.count > 3 {
+                                    Text("+ \(selectedFiles.count - 3) more…")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
@@ -190,26 +176,22 @@ struct GoConvertView: View {
                         Picker("Content Type", selection: $isTargetingManga) {
                             Text("Manga (Right-to-Left)").tag(true)
                             Text("Western Comic (L-to-R)").tag(false)
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    .padding(.horizontal, 32)
+                        }.pickerStyle(.segmented)
+                    }.padding(.horizontal, 32)
                     
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Target Device").font(.headline)
                         Picker("Target Device", selection: $conversionManager.conversionSettings.targetDevice) {
                             ForEach(KindleDeviceType.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
                         .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
-                    }
-                    .padding(.horizontal, 32)
+                    }.padding(.horizontal, 32)
                     
                     Toggle(isOn: $useLiquidEInk) {
                         VStack(alignment: .leading) {
                             Text("✨ Liquid E-Ink Optimization").font(.headline)
-                            Text("Applies auto-levels, unsharp masking, and gamma correction for perfect contrast.")
+                            Text("Auto-levels, unsharp masking & gamma for perfect E-Ink contrast.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -220,10 +202,16 @@ struct GoConvertView: View {
                 // MARK: Queue Hub / Convert Button
                 Group {
                     if queueManager.isProcessing || queueManager.activeItem != nil {
-                        VStack(spacing: 8) {
-                            if let _ = queueManager.activeItem {
+                        VStack(spacing: 12) {
+                            if let active = queueManager.activeItem {
                                 VStack(spacing: 6) {
-                                    Text(queueManager.statusMessage).font(.subheadline).bold().lineLimit(1)
+                                    HStack {
+                                        Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(.blue)
+                                        Text(active.sourceURL.lastPathComponent)
+                                            .font(.subheadline).bold().lineLimit(1)
+                                    }
+                                    Text(queueManager.statusMessage)
+                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                     ProgressView(value: queueManager.currentProgress).tint(.blue)
                                     HStack {
                                         Text("\(formatTime(queueManager.elapsedTime)) elapsed")
@@ -232,19 +220,31 @@ struct GoConvertView: View {
                                             Text("ETR: \(formatTime(etr))")
                                         } else { Text("Estimating...") }
                                     }
-                                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary).padding(.top, 4)
+                                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                                 }
                                 .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
                             }
-                            if !queueManager.queue.isEmpty {
-                                Text("Up Next: \(queueManager.queue.count) items...").font(.caption).foregroundStyle(.secondary)
+                            
+                            // ✅ Show names of queued files
+                            if !queueManager.pendingGoDisplayNames.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Up Next:").font(.caption).fontWeight(.semibold).foregroundStyle(.secondary)
+                                    ForEach(queueManager.pendingGoDisplayNames.prefix(5), id: \.self) { name in
+                                        Label(name, systemImage: "clock").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    if queueManager.pendingGoDisplayNames.count > 5 {
+                                        Text("+ \(queueManager.pendingGoDisplayNames.count - 5) more").font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
                             }
+                            
                             Button(role: .destructive) { queueManager.cancelAll() } label: {
                                 Text("Cancel Queue").bold()
                                     .frame(maxWidth: 200).padding(.vertical, 8)
                                     .background(Color.red.opacity(0.15)).foregroundColor(.red).cornerRadius(10)
                             }
-                            .padding(.top, 4)
                         }
                         .padding(.horizontal, 32)
                     } else {
@@ -263,7 +263,7 @@ struct GoConvertView: View {
                 if !goConvertedFiles.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Label("Recently Converted", systemImage: "checkmark.circle.fill")
+                            Label("Ready to Send", systemImage: "checkmark.circle.fill")
                                 .font(.headline).foregroundColor(.green)
                             Spacer()
                             Text("\(goConvertedFiles.count) file\(goConvertedFiles.count == 1 ? "" : "s")")
@@ -279,17 +279,14 @@ struct GoConvertView: View {
                                     Text(pdf.formattedSize).font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                // Rename
                                 Button {
                                     pdfToRename = pdf
                                     renameText = pdf.url.deletingPathExtension().lastPathComponent
                                 } label: {
-                                    Image(systemName: "pencil")
-                                        .foregroundColor(.secondary).padding(8)
-                                        .background(Color(.tertiarySystemBackground)).cornerRadius(8)
+                                    Image(systemName: "pencil").foregroundColor(.secondary)
+                                        .padding(8).background(Color(.tertiarySystemBackground)).cornerRadius(8)
                                 }
                                 .buttonStyle(.plain)
-                                // Send
                                 Button {
                                     shareItems = [pdf.url]; showingShareSheet = true
                                 } label: {
@@ -305,7 +302,6 @@ struct GoConvertView: View {
                             .padding(.horizontal, 32)
                         }
                         
-                        // Batch actions (2+ files)
                         if goConvertedFiles.count > 1 {
                             VStack(spacing: 10) {
                                 Button {
@@ -317,8 +313,6 @@ struct GoConvertView: View {
                                         .frame(maxWidth: .infinity).padding(.vertical, 12)
                                         .background(Color.blue.opacity(0.12)).foregroundColor(.blue).cornerRadius(12)
                                 }
-                                
-                                // Merge & Send — opens reorderable sheet
                                 Button { showingMergeSheet = true } label: {
                                     Label("Merge & Send to Kindle", systemImage: "arrow.triangle.merge")
                                         .font(.subheadline).fontWeight(.semibold)
@@ -335,10 +329,7 @@ struct GoConvertView: View {
                 Spacer(minLength: 40)
             }
         }
-        // MARK: Sheets & Alerts
-        .sheet(isPresented: $showingShareSheet) {
-            ShareSheet(activityItems: shareItems)
-        }
+        .sheet(isPresented: $showingShareSheet) { ShareSheet(activityItems: shareItems) }
         .sheet(isPresented: $showingMergeSheet) {
             GoQuickMergeSheet(
                 mergeOrder: Array(goConvertedFiles),
@@ -350,7 +341,6 @@ struct GoConvertView: View {
             }
             .environmentObject(conversionManager)
         }
-        // Rename alert
         .alert("Rename File", isPresented: Binding<Bool>(
             get: { pdfToRename != nil },
             set: { if !$0 { pdfToRename = nil } }
@@ -358,43 +348,37 @@ struct GoConvertView: View {
             TextField("File name", text: $renameText).autocorrectionDisabled()
             Button("Rename") { applyRename() }
             Button("Cancel", role: .cancel) { pdfToRename = nil }
-        } message: {
-            Text("The file extension will be preserved automatically.")
-        }
-        // Rename error alert
+        } message: { Text("File extension will be preserved automatically.") }
         .alert("Rename Failed", isPresented: Binding<Bool>(
             get: { renameError != nil },
             set: { if !$0 { renameError = nil } }
         )) {
             Button("OK", role: .cancel) { renameError = nil }
-        } message: {
-            Text(renameError ?? "An unknown error occurred.")
-        }
+        } message: { Text(renameError ?? "An unknown error occurred.") }
     }
     
     // MARK: - Actions
-    
     private func applyRename() {
         guard let pdf = pdfToRename else { return }
         let ext = pdf.url.pathExtension
         let safeName = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !safeName.isEmpty else {
-            Logger.shared.log("Rename cancelled: empty name provided", category: "GoUI", type: .warning)
-            pdfToRename = nil; return
-        }
-        
+        guard !safeName.isEmpty else { pdfToRename = nil; return }
         let newFilename = "\(safeName).\(ext)"
         let newURL = pdf.url.deletingLastPathComponent().appendingPathComponent(newFilename)
-        
         do {
             try FileManager.default.moveItem(at: pdf.url, to: newURL)
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 conversionManager.convertedPDFs[idx].name = newFilename
                 conversionManager.saveLibrary()
             }
+            // Update any matching stem in queueManager
+            let oldStem = pdf.url.deletingPathExtension().lastPathComponent
+            if let stemIdx = queueManager.completedGoSourceStems.firstIndex(of: oldStem) {
+                queueManager.completedGoSourceStems[stemIdx] = safeName
+            }
             Logger.shared.log("Renamed \"\(pdf.name)\" → \"\(newFilename)\"", category: "GoUI")
         } catch {
-            let msg = "Rename failed for \"\(pdf.name)\": \(error.localizedDescription)"
+            let msg = "Rename failed: \(error.localizedDescription)"
             Logger.shared.log(msg, category: "GoUI", type: .error)
             renameError = msg
         }
@@ -403,7 +387,6 @@ struct GoConvertView: View {
     
     private func startGoConversion() {
         guard !selectedFiles.isEmpty else { return }
-        
         var settingsForGo = conversionManager.conversionSettings
         settingsForGo.mangaMode = isTargetingManga
         settingsForGo.optimizeForDevice = true
@@ -411,7 +394,6 @@ struct GoConvertView: View {
         settingsForGo.outputFormat = .epub
         settingsForGo.outputPipeline = .standard
         settingsForGo.splitMode = .web
-        
         if useLiquidEInk {
             settingsForGo.imageEnhancement.autoContrast = true
             settingsForGo.imageEnhancement.sharpness = 0.5
@@ -419,11 +401,8 @@ struct GoConvertView: View {
         } else {
             settingsForGo.imageEnhancement = .init()
         }
-        
         Logger.shared.log("Go conversion queued: \(selectedFiles.count) file(s)", category: "GoUI")
-        for file in selectedFiles {
-            queueManager.enqueue(url: file, settings: settingsForGo, mode: .go)
-        }
+        for file in selectedFiles { queueManager.enqueue(url: file, settings: settingsForGo, mode: .go) }
         selectedFiles.removeAll()
     }
     

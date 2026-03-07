@@ -24,6 +24,14 @@ class ConversionQueueManager: ObservableObject {
     @Published var currentProgress: Double = 0.0
     @Published var statusMessage: String = ""
     
+    // ✅ Source file stems of successfully completed Go-mode conversions.
+    // GoConvertView uses this to find matching outputs in the library without
+    // relying on addedByMode tagging (which has a race with scanLibrary).
+    @Published var completedGoSourceStems: [String] = []
+    
+    // ✅ Display names (filenames) of all items currently queued in Go mode
+    @Published var pendingGoDisplayNames: [String] = []
+    
     // ✅ Tracks the mode of the most recently completed job for library tagging
     private var lastCompletedMode: QueueItem.UIMode = .pro
     
@@ -53,6 +61,11 @@ class ConversionQueueManager: ObservableObject {
     func enqueue(url: URL, settings: ConversionSettings, mode: QueueItem.UIMode) {
         let item = QueueItem(sourceURL: url, settings: settings, mode: mode)
         queue.append(item)
+        
+        // ✅ Track display name for the Go UI file list
+        if mode == .go {
+            pendingGoDisplayNames.append(url.lastPathComponent)
+        }
         
         if !isProcessing {
             // New Batch starting
@@ -109,6 +122,18 @@ class ConversionQueueManager: ObservableObject {
             
             do {
                 _ = try await ConversionEngine.shared.process(url: item.sourceURL, settings: item.settings)
+                
+                // ✅ Record successful Go-mode completion by source stem for UI matching
+                if item.mode == .go {
+                    let stem = item.sourceURL.deletingPathExtension().lastPathComponent
+                    await MainActor.run {
+                        if !self.completedGoSourceStems.contains(stem) {
+                            self.completedGoSourceStems.append(stem)
+                        }
+                        // Remove from pending display names
+                        self.pendingGoDisplayNames.removeAll { $0 == item.sourceURL.lastPathComponent }
+                    }
+                }
                 
                 await MainActor.run {
                     self.processNext()
