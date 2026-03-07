@@ -8,7 +8,7 @@ struct InksyncProApp: App {
     init() {
         // Register Background Task for Auto-Sync
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.antigravity.InksyncPro.autosync", using: nil) { task in
-            self.handleAppRefresh(task: task as! BGAppRefreshTask)
+            InksyncProApp.handleAppRefresh(task: task as! BGAppRefreshTask)
         }
     }
     
@@ -21,7 +21,7 @@ struct InksyncProApp: App {
                     case .background, .inactive:
                          SecurityManager.shared.handleAppBackgrounding()
                          // Whenever the app goes to the background, we schedule the next sync
-                         scheduleAppRefresh()
+                         InksyncProApp.scheduleAppRefresh()
                     case .active:
                          SecurityManager.shared.handleAppForegrounding()
                     @unknown default: break
@@ -32,9 +32,9 @@ struct InksyncProApp: App {
     
     // MARK: - Background Sync Logic
     
-    private func handleAppRefresh(task: BGAppRefreshTask) {
+    static func handleAppRefresh(task: BGAppRefreshTask) {
         // As per Apple Guidelines, immediately schedule the NEXT occurrence
-        scheduleAppRefresh()
+        InksyncProApp.scheduleAppRefresh()
         
         let operation = Task {
             await CloudSyncManager.shared.performSync()
@@ -50,7 +50,7 @@ struct InksyncProApp: App {
         }
     }
     
-    private func scheduleAppRefresh() {
+    static func scheduleAppRefresh() {
         guard UserDefaults.standard.bool(forKey: "enableBackgroundSync") else { return }
         
         let request = BGAppRefreshTaskRequest(identifier: "com.antigravity.InksyncPro.autosync")
