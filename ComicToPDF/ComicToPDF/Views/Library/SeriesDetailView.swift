@@ -13,6 +13,7 @@ struct SeriesDetailView: View {
     @State private var selection = Set<UUID>()
     @State private var isSelectionMode: Bool = false
     @State private var showingMergeConfig: Bool = false
+    @State private var showBatchMetadataEditor: Bool = false
     
     // Context Menu State
     @State private var pdfToRename: ConvertedPDF?
@@ -113,6 +114,16 @@ struct SeriesDetailView: View {
                     
                     Spacer()
                     
+                    Button(action: {
+                        showBatchMetadataEditor = true
+                    }) {
+                        Text("Metadata")
+                            .bold()
+                    }
+                    .disabled(selection.isEmpty)
+                    
+                    Spacer()
+                    
                     Text("\(selection.count) Selected")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -122,6 +133,10 @@ struct SeriesDetailView: View {
         .sheet(isPresented: $showingMergeConfig) {
             let filesToMerge = series.issues.filter { selection.contains($0.id) }
             SeriesMergeConfigurationView(sourceFiles: filesToMerge)
+        }
+        .sheet(isPresented: $showBatchMetadataEditor) {
+            let selectedFiles = series.issues.filter { selection.contains($0.id) }
+            BatchMetadataEditorView(selectedPDFs: selectedFiles)
         }
         .sheet(item: $pdfToExport) { pdf in
             DualExportView(pdf: pdf)
