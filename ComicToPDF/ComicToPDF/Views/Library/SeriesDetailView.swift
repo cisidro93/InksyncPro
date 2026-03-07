@@ -101,35 +101,49 @@ struct SeriesDetailView: View {
                     }
                 }
             }
-            
-            ToolbarItemGroup(placement: .bottomBar) {
-                if isSelectionMode {
-                    Button(action: {
-                        showingMergeConfig = true
-                    }) {
-                        Text("Convert & Merge")
-                            .bold()
-                    }
-                    .disabled(selection.count < 2)
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        showBatchMetadataEditor = true
-                    }) {
-                        Text("Metadata")
-                            .bold()
-                    }
-                    .disabled(selection.isEmpty)
-                    
-                    Spacer()
-                    
-                    Text("\(selection.count) Selected")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
         }
+        .safeAreaInset(edge: .bottom) {
+            if isSelectionMode {
+                VStack(spacing: 0) {
+                    Divider().background(Color.white.opacity(0.1))
+                    
+                    HStack(spacing: 0) {
+                        Button(action: {
+                            showBatchMetadataEditor = true
+                        }) {
+                            VStack(spacing: 4) { 
+                                Image(systemName: "tag").font(.title3)
+                                Text("Metadata").font(.caption) 
+                            }
+                        }
+                        .disabled(selection.isEmpty)
+                        
+                        Spacer()
+                        
+                        Text("\(selection.count) Selected")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            showingMergeConfig = true
+                        }) {
+                            VStack(spacing: 4) { 
+                                Image(systemName: "doc.on.doc.fill").font(.title3)
+                                Text("Merge").font(.caption) 
+                            }
+                        }
+                        .disabled(selection.count < 2)
+                    }
+                    .padding(.horizontal, 30)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial)
+                    .foregroundColor(Theme.blue) // Adjust to match theme
+                }
+                .transition(.move(edge: .bottom))
+            }
         .sheet(isPresented: $showingMergeConfig) {
             let filesToMerge = series.issues.filter { selection.contains($0.id) }
             SeriesMergeConfigurationView(sourceFiles: filesToMerge)
