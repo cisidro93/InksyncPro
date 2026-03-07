@@ -57,16 +57,10 @@ struct GoConvertView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: 300)
             .padding(.horizontal, 32)
-            .fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.pdf, UTType("com.macitbetter.cbz-archive") ?? .zip], allowsMultipleSelection: true) { result in
-                switch result {
-                case .success(let urls):
-                    for url in urls {
-                        _ = url.startAccessingSecurityScopedResource()
-                    }
+            .sheet(isPresented: $showingFilePicker) {
+                DocumentPicker(onDocumentsPicked: { urls in
                     self.selectedFiles = urls
-                case .failure(let error):
-                    Logger.shared.log("Error selecting files: \(error)", category: "GoConverter", type: .error)
-                }
+                })
             }
             
             VStack(spacing: 16) {
