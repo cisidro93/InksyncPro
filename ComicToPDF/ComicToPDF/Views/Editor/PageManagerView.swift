@@ -107,9 +107,7 @@ struct PageManagerView: View {
     @State private var draggedItem: GridPageItem? // ✅ Drag for Reordering
     @State private var showingMetadataEditor = false
     @State private var showingTrimSheet = false
-    @State private var extractedText: String = ""
-    @State private var showingTextResult = false
-    @State private var showingChapters = false // ✅ NEW
+    @State private var showingChapters = false
     
     // ✅ Live PDF Reference (Replaces local copy to reflect updates)
     var livePDF: ConvertedPDF {
@@ -225,25 +223,6 @@ struct PageManagerView: View {
                                 .foregroundColor(.orange)
                                 .cornerRadius(8)
                             }
-                        } else {
-                            // ✅ Book Specific: Extract Text
-                             if selectedPages.count == 1 {
-                                 Button {
-                                     Task { await extractTextFromSelected() }
-                                 } label: {
-                                     VStack(spacing: 4) {
-                                         Image(systemName: "text.viewfinder")
-                                             .font(.title2)
-                                         Text("OCR")
-                                             .font(.caption)
-                                     }
-                                     .frame(maxWidth: .infinity)
-                                     .padding()
-                                     .background(Color.purple.opacity(0.1))
-                                     .foregroundColor(.purple)
-                                     .cornerRadius(8)
-                                 }
-                             }
                         }
                         
                         // Delete Button
@@ -365,28 +344,6 @@ struct PageManagerView: View {
                  .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showingChapters = false } } }
              }
         }
-        .sheet(isPresented: $showingTextResult) {
-            NavigationView {
-                ScrollView {
-                    Text(extractedText)
-                        .padding()
-                        .textSelection(.enabled)
-                }
-                .navigationTitle("Extracted Text")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Done") { showingTextResult = false }
-                    }
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button(action: {
-                            UIPasteboard.general.string = extractedText
-                        }) {
-                            Label("Copy", systemImage: "doc.on.doc")
-                        }
-                    }
-                }
-            }
-        }
         .sheet(isPresented: $showingMetadataEditor) {
             MetadataSearchSheet(pdf: pdf)
         }
@@ -422,25 +379,7 @@ struct PageManagerView: View {
         selectedPages = Set(viewModel.items.map { $0.index })
     }
     
-    func extractTextFromSelected() async {
-        guard let index = selectedPages.first, let item = viewModel.items.first(where: { $0.index == index }) else { return }
-        
-        viewModel.isLoading = true
-        viewModel.statusText = "Scanning Text..."
-        
-        do {
-            if let image = UIImage(contentsOfFile: item.url.path) {
-                let text = try await OCREngine.shared.recognizeText(from: image, languages: [conversionManager.conversionSettings.ocrLanguage.rawValue])
-                extractedText = text
-                showingTextResult = true
-            }
-            viewModel.isLoading = false
-        } catch {
-            viewModel.errorMessage = "OCR Failed: \(error.localizedDescription)"
-            viewModel.isLoading = false
-        }
-    }
-    
+
     func splitSelected() async {
         guard !selectedPages.isEmpty else { return }
         viewModel.isLoading = true

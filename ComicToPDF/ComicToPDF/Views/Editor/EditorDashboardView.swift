@@ -4,6 +4,7 @@ struct EditorDashboardView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var searchText = ""
     @State private var selectedPDF: ConvertedPDF?
+    @State private var selectedBookForMetadata: ConvertedPDF?
     
     var filteredPDFs: [ConvertedPDF] {
         if searchText.isEmpty {
@@ -33,7 +34,12 @@ struct EditorDashboardView: View {
                     LazyVStack(spacing: 16) {
                         ForEach(filteredPDFs) { pdf in
                             EditorRowView(pdf: pdf) {
-                                selectedPDF = pdf
+                                if pdf.contentType == .book {
+                                    // Books skip image extraction and go straight to Metadata editing
+                                    selectedBookForMetadata = pdf
+                                } else {
+                                    selectedPDF = pdf
+                                }
                             }
                         }
                     }
@@ -42,9 +48,12 @@ struct EditorDashboardView: View {
             }
         }
         .navigationTitle("Work Area")
-        .searchable(text: $searchText, prompt: "Search comics...")
+        .searchable(text: $searchText, prompt: "Search library...")
         .fullScreenCover(item: $selectedPDF) { pdf in
             PageManagerView(pdf: pdf)
+        }
+        .sheet(item: $selectedBookForMetadata) { pdf in
+            MetadataEditorView(pdf: pdf)
         }
     }
 }

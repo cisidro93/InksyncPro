@@ -256,13 +256,6 @@ struct SettingsView: View {
                 Toggle("Smart Border Trimming", isOn: $conversionManager.conversionSettings.trimMargins)
             }
             
-            HStack {
-                settingsIcon("character.book.closed.fill", color: .green)
-                Picker("OCR Language Engine", selection: $conversionManager.conversionSettings.ocrLanguage) {
-                    ForEach(OCRLanguage.allCases) { lang in Text(lang.displayName).tag(lang) }
-                }
-                .pickerStyle(.menu)
-            }
         } header: { Text("Processing Engine") }
     }
     

@@ -65,7 +65,7 @@ class EnsemblePanelDetector {
         
         // 3. Deep Scan Fallback (Topological Contour Detection)
         if requiresDeepScan {
-            print("🧠 [Ensemble] Triggering Contour Deep Scan Fallback...")
+            Logger.shared.log("AI Ensemble: Vision coverage insufficient — triggering contour deep scan", category: "AI")
             let contourResults = await deepScanProvider.detectPanels(in: image, context: context)
             
             // Merge Strategies
@@ -88,7 +88,7 @@ class EnsemblePanelDetector {
         let finalPanels = candidates.filter { $0.method != .textAnchor }
         
         // Adaptive Logging (Debugging)
-        print("🧠 [Ensemble] Final Output: \(finalPanels.count) Panels. \(AdaptiveLearningManager.shared.diagnosticString)")
+        Logger.shared.log("AI Ensemble: \(finalPanels.count) panels detected. \(AdaptiveLearningManager.shared.diagnosticString)", category: "AI")
         
         return finalPanels
     }

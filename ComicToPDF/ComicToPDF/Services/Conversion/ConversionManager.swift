@@ -1108,7 +1108,32 @@ class ConversionManager: ObservableObject {
             return hasText ? .book : .hybrid
             
         case "epub":
-            // Future: Parse EPUB metadata
+            // Smart Sniffing: Check if it is a pre-paginated comic or a text book
+            do {
+                guard let archive = Archive(url: url, accessMode: .read) else { return .book }
+                if let containerEntry = archive["META-INF/container.xml"] {
+                    var containerData = Data()
+                    _ = try archive.extract(containerEntry) { data in containerData.append(data) }
+                    
+                    if let containerStr = String(data: containerData, encoding: .utf8),
+                       let opfPath = containerStr.components(separatedBy: "full-path=\"").last?.components(separatedBy: "\"").first,
+                       let opfEntry = archive[opfPath] {
+                        
+                        var opfData = Data()
+                        _ = try archive.extract(opfEntry) { data in opfData.append(data) }
+                        
+                        if let opfStr = String(data: opfData, encoding: .utf8) {
+                            let lowerOPF = opfStr.lowercased()
+                            if lowerOPF.contains("pre-paginated") || lowerOPF.contains("comic-book") || lowerOPF.contains("manga") {
+                                return .hybrid // It's an image-based comic EPUB
+                            }
+                        }
+                    }
+                }
+            } catch {
+                Logger.shared.log("EPUB Content Type Sniffing failed for \(filename): \(error.localizedDescription)", category: "Import", type: .warning)
+                return .book
+            }
             return .book
             
         default:
@@ -2346,8 +2371,7 @@ class ConversionManager: ObservableObject {
         defer { isConverting = false; statusMessage = nil; processingStatus = "" }
         
         do {
-            let languages = [conversionSettings.ocrLanguage.rawValue]
-            let chapters = try await ChapterDetector.shared.detectChapters(in: pdf, languages: languages) { progress in
+            let chapters = try await ChapterDetector.shared.detectChapters(in: pdf, languages: ["en-US"]) { progress in
                 Task { @MainActor in
                     self.statusMessage = String(format: "%.0f%%", progress * 100)
                 }
@@ -2363,7 +2387,7 @@ class ConversionManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             
         } catch {
-             Logger.shared.log("Chapter detection failed: \(error)", category: "OCR")
+             Logger.shared.log("Chapter detection failed: \(error)", category: "Editor", type: .error)
              await MainActor.run {
                  processingStatus = "Scan Failed"
              }
@@ -2449,7 +2473,21 @@ class ConversionManager: ObservableObject {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
         
-        // \u2705 NEW: PDF Branch
+        // ✅ NEW: Book Branch (Text EPUBs Pass-Through)
+        if pdf.contentType == .book {
+            let exportURL = tempDir.appendingPathComponent(pdf.name)
+            try? fileManager.removeItem(at: exportURL)
+            do {
+                try fileManager.copyItem(at: pdf.url, to: exportURL)
+                Logger.shared.log("Book Export: Safe pass-through for \(pdf.name)", category: "Export")
+                return exportURL
+            } catch {
+                Logger.shared.log("❌ Book Export Failed: \(error.localizedDescription)", category: "Export", type: .error)
+                return nil
+            }
+        }
+        
+        // ✅ NEW: PDF Branch
         if conversionSettings.outputFormat == .pdf {
             let exportName = pdf.name.replacingOccurrences(of: ".cbz", with: ".pdf")
             let exportURL = tempDir.appendingPathComponent(exportName)
@@ -2546,6 +2584,18 @@ class ConversionManager: ObservableObject {
         
         // Remove existing
         try? fileManager.removeItem(at: targetURL)
+        
+        // ✅ NEW: Book Branch (Text EPUBs Pass-Through)
+        if pdf.contentType == .book {
+            do {
+                try fileManager.copyItem(at: pdf.url, to: targetURL)
+                Logger.shared.log("Book Export: Safe pass-through HQ for \(pdf.name)", category: "Export")
+                return targetURL
+            } catch {
+                Logger.shared.log("❌ Book Export Failed: \(error.localizedDescription)", category: "Export", type: .error)
+                return nil
+            }
+        }
         
         // ✅ NEW: PDF Branch
         if conversionSettings.outputFormat == .pdf {

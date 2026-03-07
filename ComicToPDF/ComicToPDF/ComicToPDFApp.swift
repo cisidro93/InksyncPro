@@ -59,9 +59,9 @@ struct InksyncProApp: App {
         
         do {
             try BGTaskScheduler.shared.submit(request)
-            print("🧠 [BGTaskScheduler] AutoSync scheduled successfully.")
+            Logger.shared.log("BGTaskScheduler: AutoSync scheduled successfully.", category: "Cloud")
         } catch {
-            print("🧠 [BGTaskScheduler] Could not schedule app refresh: \(error)")
+            Logger.shared.log("BGTaskScheduler: Could not schedule app refresh — \(error.localizedDescription)", category: "Cloud", type: .warning)
         }
     }
 }

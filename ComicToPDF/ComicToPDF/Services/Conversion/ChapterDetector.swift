@@ -2,85 +2,79 @@ import Foundation
 import UIKit
 import Vision
 
+/// Detects chapter boundaries by scanning the top of each page using Apple Vision directly.
+/// No OCR dependency — uses VNRecognizeTextRequest inline for zero-overhead detection.
 class ChapterDetector {
     
     static let shared = ChapterDetector()
     
-    private let ocrEngine = OCREngine.shared
-    
-    /// Detects chapters by scanning the top portion of each page for headings.
-    /// This is an expensive operation, so it should be run in a background task.
+    /// Detects chapters by scanning the top 30% of each page for heading patterns.
+    /// Runs on a background task — never call from the main thread.
     func detectChapters(in pdf: ConvertedPDF, languages: [String] = ["en-US"], onProgress: ((Double) -> Void)? = nil) async throws -> [Chapter] {
         guard pdf.contentType == .book || pdf.contentType == .hybrid else { return [] }
         
-        // 1. Extract Images (This might be slow for large books)
-        // Ideally we would stream, but for now we extract to temp.
         let result = try await ZipUtilities.extractComic(from: pdf.url)
         let tempDir = result.workingDir
         let imageURLs = result.imageURLs
-        
         defer { try? FileManager.default.removeItem(at: tempDir) }
         
         var detectedChapters: [Chapter] = []
         let total = Double(imageURLs.count)
         
-        // Regex Patterns for Chapters
-        // "Chapter 1", "CHAPTER ONE", "1.", "Prologue", "Epilogue"
-        // We look for these at the START of the recognized text.
+        // Chapter heading patterns
         let patterns = [
-            #"^(?i)chapter\s+\d+"#,             // Chapter 1
-            #"^(?i)chapter\s+[IVXLCDM]+"#,      // Chapter IV
-            #"^(?i)chapter\s+(one|two|three|four|five|six|seven|eight|nine|ten)"#, // Chapter One
+            #"^(?i)chapter\s+\d+"#,
+            #"^(?i)chapter\s+[IVXLCDM]+"#,
+            #"^(?i)chapter\s+(one|two|three|four|five|six|seven|eight|nine|ten)"#,
             #"^(?i)prologue"#,
             #"^(?i)epilogue"#,
-            #"^\d+\.$"#                        // 1. (on its own line)
+            #"^\d+\.$"#
         ]
         
         for (index, url) in imageURLs.enumerated() {
-            // Check cancellation? (Using Task.checkCancellation in loop)
             try Task.checkCancellation()
-            
-            // Progress Update
             onProgress?(Double(index) / total)
             
-            // Optimization: Only check the top 30% of the image to save memory/time
-            guard let image = UIImage(contentsOfFile: url.path) else { continue }
+            guard let image = UIImage(contentsOfFile: url.path),
+                  let cgImage = image.cgImage else { continue }
             
-            // Crop detailed? No, just OCR the whole image but with Region of Interest?
-            // Vision allows setting ROI.
-            // Let's use a helper in OCREngine or just crop the UIImage.
-            // Cropping UIImage is safer.
+            // Crop to top 30% for speed
+            let cropRect = CGRect(x: 0, y: 0,
+                                  width: CGFloat(cgImage.width),
+                                  height: CGFloat(cgImage.height) * 0.3)
+            guard let croppedCG = cgImage.cropping(to: cropRect) else { continue }
             
-            let topHeight = image.size.height * 0.3
-            let cropRect = CGRect(x: 0, y: 0, width: image.size.width, height: topHeight)
-            
-            guard let cgImage = image.cgImage?.cropping(to: cropRect) else { continue }
-            let croppedImage = UIImage(cgImage: cgImage)
-            
-            // Fast OCR
-            let text = try await ocrEngine.recognizeText(from: croppedImage, level: .fast, languages: languages)
-            let lines = text.components(separatedBy: .newlines)
-            
-            // Check first few lines for match
-            for line in lines.prefix(3) {
-                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.isEmpty { continue }
+            // Run Vision text recognition inline — no external dependency
+            let text = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+                let request = VNRecognizeTextRequest { request, error in
+                    if let error = error { continuation.resume(throwing: error); return }
+                    let observations = request.results as? [VNRecognizedTextObservation] ?? []
+                    let joined = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+                    continuation.resume(returning: joined)
+                }
+                request.recognitionLevel = .fast
+                request.usesLanguageCorrection = false
+                request.recognitionLanguages = languages
                 
-                var found = false
+                let handler = VNImageRequestHandler(cgImage: croppedCG, options: [:])
+                do { try handler.perform([request]) } catch { continuation.resume(throwing: error) }
+            }
+            
+            let lines = text.components(separatedBy: .newlines)
+            outerLoop: for line in lines.prefix(3) {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
                 for pattern in patterns {
                     if trimmed.range(of: pattern, options: .regularExpression) != nil {
-                        // Found a chapter!
-                        let chapter = Chapter(title: trimmed, pageIndex: index)
-                        detectedChapters.append(chapter)
-                        found = true
-                        break
+                        detectedChapters.append(Chapter(title: trimmed, pageIndex: index))
+                        break outerLoop
                     }
                 }
-                if found { break }
             }
         }
         
         onProgress?(1.0)
+        Logger.shared.log("ChapterDetector: found \(detectedChapters.count) chapters in \(pdf.name)", category: "Editor")
         return detectedChapters
     }
 }

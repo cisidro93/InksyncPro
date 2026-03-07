@@ -264,30 +264,6 @@ enum AppTextSize: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-// ✅ NEW: OCR Language Preference
-enum OCRLanguage: String, CaseIterable, Codable, Identifiable {
-    case english = "en-US"
-    case french = "fr-FR"
-    case german = "de-DE"
-    case spanish = "es-ES"
-    case italian = "it-IT"
-    case chineseSimplified = "zh-Hans"
-    case japanese = "ja-JP"
-    
-     var id: String { rawValue }
-     
-     var displayName: String {
-         switch self {
-         case .english: return "English"
-         case .french: return "French"
-         case .german: return "German"
-         case .spanish: return "Spanish"
-         case .italian: return "Italian"
-         case .chineseSimplified: return "Chinese (Simplified)"
-         case .japanese: return "Japanese"
-         }
-     }
-}
 
 // ✅ NEW: Panel Editor Presentation Mode
 enum PanelEditorPresentationMode: String, CaseIterable, Codable, Identifiable {
@@ -307,10 +283,9 @@ struct ConversionSettings: Codable, Equatable {
     var splitWebtoon: Bool = false // ✅ Added for Smart Slicing
     var trimMargins: Bool = false
     var splitMode: FileSizeSplitMode = .none
-    var enableBackgroundQueue: Bool = true // ✅ NEW: Pro Mode Queue Toggle
+    var enableBackgroundQueue: Bool = true
     var textSize: AppTextSize = .medium
     var panelEditorMode: PanelEditorPresentationMode = .sheet
-    var ocrLanguage: OCRLanguage = .english
     
     // Debugger Visibility
     var showEditorDebug: Bool = false

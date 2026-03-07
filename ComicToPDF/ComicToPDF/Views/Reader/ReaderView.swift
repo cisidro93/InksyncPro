@@ -6,6 +6,7 @@ import ZIPFoundation
 
 struct ReaderView: View {
     let fileURL: URL
+    let contentType: ContentType
     @Environment(\.dismiss) var dismiss
     @State private var isPanelViewEnabled = true
     @State private var isVerticalScroll = false
@@ -18,7 +19,19 @@ struct ReaderView: View {
     @State private var errorMessage: String?
     
     var body: some View {
-        NavigationView {
+        // ✅ Route: text-based EPUB → EBookReaderView, everything else → image reader
+        if fileURL.pathExtension.lowercased() == "epub" && contentType == .book {
+            EBookReaderView(
+                fileURL: fileURL,
+                title: fileURL.deletingPathExtension().lastPathComponent
+            )
+        } else {
+            comicReaderBody
+        }
+    }
+    
+    // MARK: - Comic / Manga Reader
+    private var comicReaderBody: some View {
             ZStack {
                 if isLoading {
                     ProgressView("Opening Book...").scaleEffect(1.2)

@@ -55,7 +55,7 @@ struct SmartCropper {
                     return finalBox
                 }
             } catch {
-                print("🧠 [SmartCropper] Vision Document Scan failed: \(error)")
+                Logger.shared.log("SmartCropper: Vision document scan failed — \(error.localizedDescription)", category: "AI", type: .warning)
             }
         }
         return nil

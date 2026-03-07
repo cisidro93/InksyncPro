@@ -27,7 +27,11 @@ class ConversionQueueManager: ObservableObject {
     // ✅ Source file stems of successfully completed Go-mode conversions.
     // GoConvertView uses this to find matching outputs in the library without
     // relying on addedByMode tagging (which has a race with scanLibrary).
-    @Published var completedGoSourceStems: [String] = []
+    @Published var completedGoSourceStems: [String] = [] {
+        didSet {
+            UserDefaults.standard.set(completedGoSourceStems, forKey: "completedGoSourceStems")
+        }
+    }
     
     // ✅ Display names (filenames) of all items currently queued in Go mode
     @Published var pendingGoDisplayNames: [String] = []
@@ -49,7 +53,11 @@ class ConversionQueueManager: ObservableObject {
     private var timerCancellable: AnyCancellable?
     
     private init() {
-        // Listen to the shared raw engine to extract real-time progress
+        // Restore persisted Go stems so history survives app restarts
+        if let savedStems = UserDefaults.standard.stringArray(forKey: "completedGoSourceStems") {
+            self.completedGoSourceStems = savedStems
+        }
+        
         progressSubscription = ConversionEngine.shared.progressSubject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] event in

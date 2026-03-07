@@ -51,7 +51,7 @@ class CloudSyncManager: ObservableObject {
                     ["cbz", "zip", "pdf"].contains(file.pathExtension.lowercased())
                 }
             } catch {
-                print("🧠 [CloudSync] Error reading inbox: \(error)")
+                Logger.shared.log("CloudSync: error reading inbox — \(error.localizedDescription)", category: "Cloud", type: .error)
             }
         }
         
@@ -74,7 +74,7 @@ class CloudSyncManager: ObservableObject {
         let finalSettings = autoSettings
         
         // 3. Queue the files
-        print("🧠 [CloudSync] Found \(filesToProcess.count) files in Inbox. Queuing...")
+        Logger.shared.log("CloudSync: \(filesToProcess.count) file(s) found in inbox — queuing", category: "Cloud")
         for file in filesToProcess {
             // Check if we've already converted this exact URL (or move it to an "Archive" folder)
             // For safety, let's just queue it. 

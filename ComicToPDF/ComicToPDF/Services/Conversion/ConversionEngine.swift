@@ -43,6 +43,14 @@ actor ConversionEngine {
                 
                 resultURL = try await convertPDF(url: url, settings: settings)
                 
+            } else if url.pathExtension.lowercased() == "epub" {
+                // ✅ FAST PATH: If the input is already an EPUB (Book or Manga), just pass it through.
+                progressSubject.send(.progress(file: url, current: 50, total: 100, message: "Validating EPUB..."))
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_" + url.lastPathComponent)
+                try FileManager.default.copyItem(at: url, to: tempURL)
+                progressSubject.send(.progress(file: url, current: 100, total: 100, message: "Done"))
+                resultURL = tempURL
+                
             } else {
                 // Default CBZ flow
                 resultURL = try await convertArchive(url: url, settings: settings)

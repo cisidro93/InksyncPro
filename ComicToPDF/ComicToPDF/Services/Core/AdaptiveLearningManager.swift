@@ -48,19 +48,9 @@ class AdaptiveLearningManager: ObservableObject {
         // Diagnosis: The AI is being too aggressive. It's grabbing gutters or noise.
         // Action: Raise the confidence threshold required to pass, and raise the minimum size limit.
         if deletedPanelsCount > 20 && deletedPanelsCount > (addedPanelsCount * 2) {
-            print("🧠 [Adaptive Intelligence] User is deleting a lot. Increasing strictness.")
-            
-            // Push confidence up slightly, maxing at 0.8
-            if currentBaseConfidence < 0.8 {
-                currentBaseConfidence += 0.05
-            }
-            
-            // Push minimum size up slightly, maxing at 0.15 (15% of screen)
-            if currentMinimumSize < 0.15 {
-                currentMinimumSize += 0.01
-            }
-            
-            // Reset the counters to prevent endless scalar growth, we learn in "epochs" of 20
+            Logger.shared.log("AI: User is over-deleting. Raising confidence to \(String(format: "%.2f", min(currentBaseConfidence + 0.05, 0.8)))", category: "AI")
+            if currentBaseConfidence < 0.8 { currentBaseConfidence += 0.05 }
+            if currentMinimumSize  < 0.15  { currentMinimumSize  += 0.01 }
             resetEpoch()
         }
         
@@ -68,18 +58,9 @@ class AdaptiveLearningManager: ObservableObject {
         // Diagnosis: The AI is being too blind. It's missing small or faded panels.
         // Action: Lower the confidence threshold, and lower the minimum size.
         else if addedPanelsCount > 20 && addedPanelsCount > (deletedPanelsCount * 2) {
-            print("🧠 [Adaptive Intelligence] User is adding a lot. Lowering strictness.")
-            
-            // Push confidence down, bottoming out at 0.3 (Very aggressive)
-            if currentBaseConfidence > 0.3 {
-                currentBaseConfidence -= 0.05
-            }
-            
-            // Push minimum size down, bottoming out at 0.04 (4% of screen)
-            if currentMinimumSize > 0.04 {
-                currentMinimumSize -= 0.01
-            }
-            
+            Logger.shared.log("AI: User is under-detecting. Lowering confidence to \(String(format: "%.2f", max(currentBaseConfidence - 0.05, 0.3)))", category: "AI")
+            if currentBaseConfidence > 0.3 { currentBaseConfidence -= 0.05 }
+            if currentMinimumSize  > 0.04  { currentMinimumSize  -= 0.01 }
             resetEpoch()
         }
     }
@@ -89,7 +70,7 @@ class AdaptiveLearningManager: ObservableObject {
             self.currentBaseConfidence = 0.6
             self.currentMinimumSize = 0.1
             self.resetEpoch()
-            print("🧠 [Adaptive Intelligence] Factory Reset. Memory wiped.")
+            Logger.shared.log("AI: Factory reset — confidence 0.60, minSize 10%", category: "AI", type: .warning)
         }
     }
     
