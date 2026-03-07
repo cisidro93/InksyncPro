@@ -599,14 +599,10 @@ extension View {
                     break // Validate or log to analytics only
                 }
             }
-            .alert("New Collection", isPresented: showingAddCollection) {
-                TextField("Collection Name", text: newCollectionName)
-                Button("Cancel", role: .cancel) { newCollectionName.wrappedValue = "" }
-                Button("Create") {
-                    if !newCollectionName.wrappedValue.isEmpty {
-                        conversionManager.createCollection(name: newCollectionName.wrappedValue, icon: "folder", color: "Blue")
-                        newCollectionName.wrappedValue = ""
-                    }
+            .sheet(isPresented: showingAddCollection) {
+                CollectionEditorSheet { name, icon, color in
+                    conversionManager.createCollection(name: name, icon: icon, color: color)
+                    newCollectionName.wrappedValue = ""
                 }
             }
             .confirmationDialog("Large File Detected", isPresented: showingLargeFileAlert, titleVisibility: .visible) {
