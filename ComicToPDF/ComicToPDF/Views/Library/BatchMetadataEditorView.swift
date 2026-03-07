@@ -74,6 +74,30 @@ struct BatchMetadataEditorView: View {
                     .disabled(!applySeries && !applyPublisher && !applyAuthor && !applyTags)
                 }
             }
+            .onAppear { prefillSharedValues() }
+        }
+    }
+    
+    // MARK: - Pre-fill Logic
+    private func prefillSharedValues() {
+        guard !selectedPDFs.isEmpty else { return }
+        
+        // Check if all selected files share the same series
+        let firstSeries = selectedPDFs.first?.metadata.series
+        if let s = firstSeries, !s.isEmpty, selectedPDFs.allSatisfy({ $0.metadata.series == s }) {
+            self.series = s
+        }
+        
+        // Check if all selected files share the same publisher
+        let firstPublisher = selectedPDFs.first?.metadata.publisher
+        if let p = firstPublisher, !p.isEmpty, selectedPDFs.allSatisfy({ $0.metadata.publisher == p }) {
+            self.publisher = p
+        }
+        
+        // Check if all selected files share the same author
+        let firstAuthor = selectedPDFs.first?.metadata.writer
+        if let a = firstAuthor, !a.isEmpty, selectedPDFs.allSatisfy({ $0.metadata.writer == a }) {
+            self.author = a
         }
     }
     

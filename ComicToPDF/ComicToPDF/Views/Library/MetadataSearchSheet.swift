@@ -110,10 +110,8 @@ struct MetadataSearchSheet: View {
     }
     
     func selectVolume(_ volume: ComicVineVolume) {
-        // In the new flow, selecting a volume implies we want to apply its series data
-        // and try to find the issue number from the filename.
-        
         isLoading = true
+        let originalSeries = pdf.metadata.series // Capture original to identify siblings
         Task {
             let key = conversionManager.conversionSettings.comicVineAPIKey
             do {
@@ -121,12 +119,16 @@ struct MetadataSearchSheet: View {
                 if let issueNum = extractIssueNumber(from: pdf.name) {
                      if let issue = try await ComicVineService.shared.getIssue(volumeID: volume.id, issueNumber: issueNum, apiKey: key) {
                          await applyIssueMetadata(issue, volume: volume)
+                         // Trigger intelligent background fetch
+                         intelligentFetchRelatedIssues(for: volume, originalSeries: originalSeries)
                          return
                      }
                 }
                 
                 // Fallback: Just apply Series info
                 await applySeriesMetadata(volume)
+                // Trigger intelligent background fetch
+                intelligentFetchRelatedIssues(for: volume, originalSeries: originalSeries)
             } catch {
                 Logger.shared.log("Metadata Fetch Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
                 await MainActor.run {
@@ -185,6 +187,62 @@ struct MetadataSearchSheet: View {
                  conversionManager.saveCoverImage(data, for: pdf)
                  conversionManager.saveLibrary()
              }
+        }
+    }
+    
+    // MARK: - Intelligent Series Fetch
+    // Silently updates metadata for all other files that shared the same original series grouping.
+    private func intelligentFetchRelatedIssues(for volume: ComicVineVolume, originalSeries: String?) {
+        guard let oldSeriesName = originalSeries, !oldSeriesName.isEmpty else { return }
+        
+        let relatedFiles = conversionManager.convertedPDFs.filter {
+            $0.metadata.series == oldSeriesName && $0.id != pdf.id
+        }
+        guard !relatedFiles.isEmpty else { return }
+        
+        let apiKey = conversionManager.conversionSettings.comicVineAPIKey
+        let managerInfo = conversionManager // Explicit capture for the Task
+        
+        Task.detached(priority: .background) {
+            for relatedPdf in relatedFiles {
+                var newMeta = relatedPdf.metadata
+                
+                // Always inherit the series data
+                newMeta.series = volume.name
+                newMeta.publisher = volume.publisher?.name
+                if !newMeta.tags.contains("ComicVine") {
+                    newMeta.tags.append("ComicVine")
+                }
+                
+                // Try to fetch specific issue data
+                if let issueString = MetadataHeuristics.extractIssueNumber(from: relatedPdf.name),
+                   let issue = try? await ComicVineService.shared.getIssue(volumeID: volume.id, issueNumber: issueString, apiKey: apiKey) {
+                    
+                    newMeta.title = issue.name ?? newMeta.title
+                    newMeta.volume = issue.issue_number ?? newMeta.volume
+                    newMeta.issueNumber = issue.issue_number
+                    
+                    if let dateString = issue.cover_date {
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "yyyy-MM-dd"
+                        newMeta.publicationDate = formatter.date(from: dateString)
+                    }
+                    if let desc = issue.description {
+                        newMeta.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
+                    }
+                    if let credits = issue.person_credits {
+                        let writers = credits.filter { $0.role.contains("Writer") }.map { $0.name }.joined(separator: ", ")
+                        let pencillers = credits.filter { $0.role.contains("Penciller") || $0.role.contains("Artist") }.map { $0.name }.joined(separator: ", ")
+                        newMeta.writer = writers.isEmpty ? nil : writers
+                        newMeta.penciller = pencillers.isEmpty ? nil : pencillers
+                    }
+                }
+                
+                // Apply update on MainActor immediately so UI reflects it
+                await MainActor.run {
+                    managerInfo.updatePDFMetadata(relatedPdf, metadata: newMeta)
+                }
+            }
         }
     }
     
