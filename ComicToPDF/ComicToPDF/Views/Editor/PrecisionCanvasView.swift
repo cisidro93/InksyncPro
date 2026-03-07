@@ -1,6 +1,7 @@
 import SwiftUI
 import Vision
 import AVFoundation
+import PencilKit
 
 struct PrecisionCanvasView: View {
     @EnvironmentObject var conversionManager: ConversionManager
@@ -15,6 +16,10 @@ struct PrecisionCanvasView: View {
     @State private var selectedTool: WorkAreaToolbar.ToolType = .edit
     @State private var zoomScale: CGFloat = 1.0
     @State private var viewSize: CGSize = .zero
+    
+    // PencilKit State
+    @State private var drawing: PKDrawing = PKDrawing()
+    @State private var canvasView = PKCanvasView()
     
     // Geometry State
     @State private var dragStart:  NormalizedCoordinate?
@@ -150,6 +155,14 @@ struct PrecisionCanvasView: View {
                     }
                     .onAppear { viewSize = geo.size }
                     .onChange(of: geo.size) { newSize in viewSize = newSize }
+                    
+                    // MARK: - PencilKit Overlay
+                    // Overlay PencilKit specifically over the image geometry
+                    if selectedTool == .draw {
+                        PencilKitDrawView(canvas: $canvasView)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
+                    }
                 }
                 .edgesIgnoringSafeArea(.top) // Allow canvas to go behind status bar
             } else {
@@ -252,6 +265,13 @@ struct PrecisionCanvasView: View {
                     VStack(spacing: 4) { Image(systemName: "plus.square.dashed"); Text("Add").font(.caption2) }
                 }
                 .foregroundColor(selectedTool == .anchor ? .blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .draw }) {
+                    VStack(spacing: 4) { Image(systemName: "pencil.tip"); Text("Draw").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .draw ? .blue : .primary)
                 
                 Spacer()
                 

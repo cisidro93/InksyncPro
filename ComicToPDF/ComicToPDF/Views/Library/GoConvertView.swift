@@ -125,6 +125,20 @@ struct GoConvertView: View {
                             
                             ProgressView(value: queueManager.currentProgress)
                                 .tint(.blue)
+                            
+                            // ✅ NEW: Queue Timer Display
+                            HStack {
+                                Text("\(formatTime(queueManager.elapsedTime)) elapsed")
+                                Spacer()
+                                if let etr = queueManager.estimatedTimeRemaining {
+                                    Text("ETR: \(formatTime(etr))")
+                                } else {
+                                    Text("Estimating...")
+                                }
+                            }
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
                         }
                         .padding()
                         .background(Color(.secondarySystemBackground))
@@ -205,5 +219,15 @@ struct GoConvertView: View {
         
         // Immediately clear the selection area so they can drop more files
         selectedFiles.removeAll()
+    }
+    
+    // MARK: - Helpers
+    
+    private func formatTime(_ interval: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.minute, .second]
+        formatter.unitsStyle = .positional
+        formatter.zeroFormattingBehavior = .pad
+        return formatter.string(from: interval) ?? "00:00"
     }
 }

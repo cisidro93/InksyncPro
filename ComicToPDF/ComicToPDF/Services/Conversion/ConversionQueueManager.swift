@@ -24,8 +24,18 @@ class ConversionQueueManager: ObservableObject {
     @Published var currentProgress: Double = 0.0
     @Published var statusMessage: String = ""
     
+    // ✅ NEW: Queue Timer State
+    @Published var queueStartTime: Date? = nil
+    @Published var elapsedTime: TimeInterval = 0.0
+    @Published var estimatedTimeRemaining: TimeInterval? = nil
+    
+    // Internal Timer tracked variables
+    private var initialQueueCount: Int = 0
+    private var completedItemsCount: Int = 0
+    
     private var processingTask: Task<Void, Never>?
     private var progressSubscription: AnyCancellable?
+    private var timerCancellable: AnyCancellable?
     
     private init() {
         // Listen to the shared raw engine to extract real-time progress
@@ -42,7 +52,14 @@ class ConversionQueueManager: ObservableObject {
         queue.append(item)
         
         if !isProcessing {
+            // New Batch starting
+            initialQueueCount = queue.count
+            completedItemsCount = 0
+            startTimer()
             processNext()
+        } else {
+            // Append to existing batch (re-calculate total)
+            initialQueueCount += 1
         }
     }
     
@@ -54,6 +71,7 @@ class ConversionQueueManager: ObservableObject {
         isProcessing = false
         currentProgress = 0.0
         statusMessage = "Cancelled"
+        stopTimer()
     }
     
     private func processNext() {
@@ -61,6 +79,7 @@ class ConversionQueueManager: ObservableObject {
             isProcessing = false
             activeItem = nil
             statusMessage = "Queue complete."
+            stopTimer()
             
             // Tell the main manager to rescan the library when the queue finishes
             Task { @MainActor in
@@ -112,8 +131,47 @@ class ConversionQueueManager: ObservableObject {
             self.statusMessage = message
         case .completed(_, _):
             self.statusMessage = "Finishing up..."
+            self.completedItemsCount += 1
         case .failed(_, let error):
             self.statusMessage = "Error: \(error.localizedDescription)"
+            self.completedItemsCount += 1 // Count as completed to prevent ETR from stalling
         }
+    }
+    
+    // MARK: - Queue Timer Methods
+    
+    private func startTimer() {
+        queueStartTime = Date()
+        elapsedTime = 0.0
+        estimatedTimeRemaining = nil
+        
+        timerCancellable = Timer.publish(every: 1.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self = self, let startTime = self.queueStartTime else { return }
+                
+                // 1. Update Elapsed Time
+                self.elapsedTime = Date().timeIntervalSince(startTime)
+                
+                // 2. Calculate ETR
+                let totalJobs = Double(self.initialQueueCount)
+                let completedJobs = Double(self.completedItemsCount)
+                let currentItemProgress = max(0.0, min(1.0, self.currentProgress))
+                
+                let totalProgress = completedJobs + currentItemProgress
+                
+                // Wait until at least one item has made 5% progress or 3 seconds have passed to avoid chaotic early estimations
+                if totalProgress > 0.05 {
+                    let timePerJob = self.elapsedTime / totalProgress
+                    let remainingJobs = totalJobs - totalProgress
+                    self.estimatedTimeRemaining = timePerJob * remainingJobs
+                }
+            }
+    }
+    
+    private func stopTimer() {
+        timerCancellable?.cancel()
+        timerCancellable = nil
+        queueStartTime = nil
     }
 }

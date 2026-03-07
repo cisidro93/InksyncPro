@@ -12,6 +12,7 @@ struct WorkAreaToolbar: View {
         case edit = "Edit" // Standard selection/move
         case knife = "Knife"
         case anchor = "Anchor"
+        case draw = "Draw"
         case preview = "Preview"
         
         var id: String { rawValue }
@@ -22,6 +23,7 @@ struct WorkAreaToolbar: View {
             case .edit: return "cursorarrow.rays"
             case .knife: return "scissors"
             case .anchor: return "number.square"
+            case .draw: return "pencil.tip" // Native Apple Pencil icon
             case .preview: return "eye"
             }
         }

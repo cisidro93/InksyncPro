@@ -8,6 +8,9 @@ struct SettingsView: View {
     // ✅ NEW: Kindle Email Storage
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
     
+    // ✅ NEW: Background Auto-Sync
+    @AppStorage("enableBackgroundSync") private var enableBackgroundSync = false
+    
     // ✅ NEW: Observe the Brain
     @StateObject private var aiManager = AdaptiveLearningManager.shared
     
@@ -379,6 +382,18 @@ struct SettingsView: View {
                 HStack {
                     settingsIcon("square.and.arrow.down.fill", color: .blue)
                     Text("Save Settings as Preset").foregroundColor(.primary)
+                }
+            }
+            
+            Toggle(isOn: $enableBackgroundSync) {
+                HStack {
+                    settingsIcon("icloud.and.arrow.up.fill", color: .cyan)
+                    VStack(alignment: .leading) {
+                        Text("iCloud Auto-Sync")
+                        Text("Automatically convert new CBZ files dropped in the Inbox folder.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             

@@ -912,6 +912,7 @@ struct ModernFileRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+        .hoverEffect(.lift)
     }
 }
 
@@ -1010,6 +1011,7 @@ struct ModernSeriesRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+        .hoverEffect(.lift)
     }
 }
 
@@ -1084,6 +1086,7 @@ struct ModernGridFileCell: View {
         .background(isSelected && !isBatch ? Theme.surfaceElevated : Color.clear)
         .cornerRadius(12)
         .contentShape(Rectangle())
+        .hoverEffect(.lift)
     }
 }
 
@@ -1162,5 +1165,6 @@ struct ModernGridSeriesCell: View {
         .background(isSelected && !isBatch ? Theme.surfaceElevated : Color.clear)
         .cornerRadius(12)
         .contentShape(Rectangle())
+        .hoverEffect(.lift)
     }
 }

@@ -22,6 +22,17 @@ struct BatchSelectionDetailView: View {
                 .foregroundColor(.secondary)
             
             VStack(spacing: 16) {
+                // ✅ NEW: Expose Smart Cropping directly in the Batch UI
+                Toggle(isOn: $conversionManager.conversionSettings.trimMargins) {
+                    Label("Smart Border Trimming", systemImage: "crop")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                }
+                .padding()
+                .background(Color(uiColor: .secondarySystemBackground))
+                .cornerRadius(12)
+                .frame(maxWidth: 300)
+                
                 Button {
                     onConvert()
                 } label: {
