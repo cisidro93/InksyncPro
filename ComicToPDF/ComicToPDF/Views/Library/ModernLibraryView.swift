@@ -90,7 +90,7 @@ struct ModernLibraryView: View {
     }
     
     var libraryItems: [LibraryListItem] {
-        let allPDFs = sortPDFs(conversionManager.proLibraryPDFs)
+        let allPDFs = sortPDFs(conversionManager.visiblePDFs)
         var items: [(Int, LibraryListItem)] = []
         var seriesDict: [String: [ConvertedPDF]] = [:]
         var singles: [ConvertedPDF] = []
