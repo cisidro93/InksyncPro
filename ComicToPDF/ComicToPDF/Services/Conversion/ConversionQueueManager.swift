@@ -87,6 +87,7 @@ class ConversionQueueManager: ObservableObject {
         isProcessing = false
         currentProgress = 0.0
         statusMessage = "Cancelled"
+        pendingGoDisplayNames.removeAll()   // ✅ Clear pending Go file list
         stopTimer()
     }
     

@@ -7,10 +7,9 @@ struct FileMergeView: View {
     @State private var outputName: String = ""
     @State private var mangaMode: Bool = false
     
-    // ✅ Available files not yet added to the merge list
     private var availableFiles: [ConvertedPDF] {
         let mergeIDs = Set(mergeOrder.map { $0.id })
-        return conversionManager.proLibraryPDFs
+        return conversionManager.visiblePDFs   // ✅ All non-private files, including Go conversions
             .filter { !mergeIDs.contains($0.id) }
             .sorted { $0.name < $1.name }
     }
