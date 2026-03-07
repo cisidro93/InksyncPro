@@ -134,14 +134,18 @@ class ConversionQueueManager: ObservableObject {
     private func handleEngineEvent(_ event: ConversionProgressEvent) {
         switch event {
         case .started(let file):
+            Logger.shared.log("Queue: started \(file.lastPathComponent)", category: "Queue")
             self.statusMessage = "Processing \(file.lastPathComponent)..."
         case .progress(_, let current, let total, let message):
             self.currentProgress = Double(current) / Double(total)
             self.statusMessage = message
-        case .completed(_, _):
+        case .completed(let file, _):
+            Logger.shared.log("Queue: completed \(file.lastPathComponent)", category: "Queue")
             self.statusMessage = "Finishing up..."
             self.completedItemsCount += 1
-        case .failed(_, let error):
+        case .failed(let file, let error):
+            let msg = "Queue: FAILED \(file.lastPathComponent) — \(error.localizedDescription)"
+            Logger.shared.log(msg, category: "Queue", type: .error)
             self.statusMessage = "Error: \(error.localizedDescription)"
             self.completedItemsCount += 1 // Count as completed to prevent ETR from stalling
         }

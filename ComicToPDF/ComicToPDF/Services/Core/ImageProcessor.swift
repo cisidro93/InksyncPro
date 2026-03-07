@@ -122,7 +122,10 @@ struct ImageProcessor {
     ///   - targetAspectRatio: Height / Width ratio (e.g., 1.33 for standard Kindle 4:3).
     /// - Returns: An array of sliced UIImages.
     static func sliceWebtoon(image: UIImage, targetAspectRatio: CGFloat = 1.33) -> [UIImage] {
-        guard let cgImage = image.cgImage else { return [image] }
+        guard let cgImage = image.cgImage else {
+            Logger.shared.log("sliceWebtoon: cgImage unavailable, returning original image", category: "Webtoon", type: .warning)
+            return [image]
+        }
         
         let width = CGFloat(cgImage.width)
         let totalHeight = CGFloat(cgImage.height)
@@ -150,6 +153,8 @@ struct ImageProcessor {
             if let croppedCG = cgImage.cropping(to: cropRect) {
                 let sliceImage = UIImage(cgImage: croppedCG, scale: image.scale, orientation: image.imageOrientation)
                 slices.append(sliceImage)
+            } else {
+                Logger.shared.log("sliceWebtoon: crop failed at y=\(Int(currentY)), h=\(Int(sliceHeight)) — skipping slice", category: "Webtoon", type: .error)
             }
             
             if currentY + sliceHeight >= totalHeight {
@@ -161,6 +166,7 @@ struct ImageProcessor {
             currentY += (sliceHeight - minOverlap)
         }
         
+        Logger.shared.log("sliceWebtoon: \(slices.count) slices produced from \(Int(totalHeight))px tall image", category: "Webtoon")
         return slices
     }
 
