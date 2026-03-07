@@ -71,6 +71,8 @@ class CloudSyncManager: ObservableObject {
         autoSettings.outputFormat = .epub
         autoSettings.outputPipeline = .standard
         
+        let finalSettings = autoSettings
+        
         // 3. Queue the files
         print("🧠 [CloudSync] Found \(filesToProcess.count) files in Inbox. Queuing...")
         for file in filesToProcess {
@@ -79,7 +81,7 @@ class CloudSyncManager: ObservableObject {
             // In a pro app, we would move it to "processed" after.
             
             await MainActor.run {
-                ConversionQueueManager.shared.enqueue(url: file, settings: autoSettings, mode: .go)
+                ConversionQueueManager.shared.enqueue(url: file, settings: finalSettings, mode: .go)
             }
         }
         

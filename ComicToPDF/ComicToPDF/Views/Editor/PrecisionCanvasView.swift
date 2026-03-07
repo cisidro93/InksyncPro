@@ -539,8 +539,8 @@ struct PreviewMaskShape: Shape {
                 let point = CoordinateConverter.normalize(point: value.location, in: rect)
                 
                 switch selectedTool {
-                case .scan, .preview:
-                    break // No interaction
+                case .scan, .preview, .draw:
+                    break // No interaction (draw is handled by PencilKit wrapper)
                     
                 case .knife:
                     // Visual feedback for knife cut?
