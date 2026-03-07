@@ -4,6 +4,7 @@ struct BatchSelectionDetailView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     var selectionCount: Int
     var onBatchEdit: () -> Void
+    var onFetchMetadata: () -> Void
     var onConvert: () -> Void
     var onMerge: () -> Void
     var onDelete: () -> Void
@@ -42,6 +43,19 @@ struct BatchSelectionDetailView: View {
                         .frame(maxWidth: 300)
                         .padding()
                         .background(Color.orange)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+                .disabled(selectionCount == 0)
+                
+                Button {
+                    onFetchMetadata()
+                } label: {
+                    Label("Fetch Metadata", systemImage: "tag.fill")
+                        .font(.headline)
+                        .frame(maxWidth: 300)
+                        .padding()
+                        .background(Theme.blue) // Use app theme color or primary blue
                         .foregroundColor(.white)
                         .cornerRadius(12)
                 }

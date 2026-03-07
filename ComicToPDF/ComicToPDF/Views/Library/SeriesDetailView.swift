@@ -139,11 +139,11 @@ struct SeriesDetailView: View {
                     }
                     .padding(.horizontal, 30)
                     .padding(.vertical, 12)
-                    .background(.ultraThinMaterial)
                     .foregroundColor(Theme.blue) // Adjust to match theme
                 }
                 .transition(.move(edge: .bottom))
             }
+        }
         .sheet(isPresented: $showingMergeConfig) {
             let filesToMerge = series.issues.filter { selection.contains($0.id) }
             SeriesMergeConfigurationView(sourceFiles: filesToMerge)
