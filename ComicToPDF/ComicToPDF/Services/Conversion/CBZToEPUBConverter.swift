@@ -340,7 +340,7 @@ class CBZToEPUBConverter {
                 
                 if !hasCapturedResolution {
                     if let image = UIImage(data: item.data) {
-                        contentSize = image.size
+                        _ = image.size
                         hasCapturedResolution = true
                         if batchIndex == 0 && localIndex == 0 {
                             firstBatchCoverData = item.data
