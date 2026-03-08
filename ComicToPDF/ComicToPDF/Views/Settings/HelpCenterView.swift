@@ -143,7 +143,7 @@ struct HelpCenterView: View {
         }
         .navigationTitle("Help Center")
         .fullScreenCover(isPresented: $showingOnboarding) {
-            OnboardingReplayView(isPresented: $showingOnboarding)
+            OnboardingView()
         }
     }
 }
@@ -176,77 +176,6 @@ struct HelpRow: View {
     }
 }
 
-// MARK: - Onboarding Replay (without dismissing to main app)
-struct OnboardingReplayView: View {
-    @Binding var isPresented: Bool
-    @State private var currentPage = 0
-    
-    let pages: [OnboardingPage] = [
-        OnboardingPage(
-            icon: "book.pages",
-            title: "Welcome to InkSync Pro",
-            description: "Transform your CBZ comics into beautiful, Kindle-optimized EPUBs with industry-leading conversion quality.",
-            gradient: [Color(red: 249/255, green: 115/255, blue: 22/255), Color(red: 194/255, green: 65/255, blue: 12/255)]
-        ),
-        OnboardingPage(
-            icon: "rectangle.split.3x1",
-            title: "Guided View for Kindle",
-            description: "Enable panel-by-panel reading on your Kindle device. Perfect for enjoying comics with precise navigation through each frame.",
-            gradient: [Color.blue, Color.cyan]
-        ),
-        OnboardingPage(
-            icon: "arrow.left.arrow.right",
-            title: "Manga Mode Support",
-            description: "Full Right-to-Left reading support for manga. Page progression and panel order automatically optimized for authentic manga experience.",
-            gradient: [Color.purple, Color.pink]
-        ),
-        OnboardingPage(
-            icon: "icloud.and.arrow.up",
-            title: "Quick Send to Kindle",
-            description: "Easy delivery to your Kindle library via Send to Kindle. Share your converted files and they'll appear in your library within minutes.",
-            gradient: [Color.green, Color.mint]
-        )
-    ]
-    
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: pages[currentPage].gradient,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-            .animation(.easeInOut(duration: 0.5), value: currentPage)
-            
-            VStack(spacing: 0) {
-                HStack {
-                    Spacer()
-                    Button("Done") {
-                        isPresented = false
-                    }
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
-                    .padding(.top, 60)
-                    .padding(.trailing, 20)
-                }
-                
-                TabView(selection: $currentPage) {
-                    ForEach(0..<pages.count, id: \.self) { index in
-                        OnboardingPageView(page: pages[index], isAnimating: .constant(true))
-                            .tag(index)
-                    }
-                }
-                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .always))
-                .indexViewStyle(PageIndexViewStyle(backgroundDisplayMode: .always))
-            }
-        }
-    }
-}
 
 // MARK: - Quick Start Guide
 struct QuickStartGuideView: View {
