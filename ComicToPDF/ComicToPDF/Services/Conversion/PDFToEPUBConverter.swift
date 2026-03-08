@@ -419,22 +419,19 @@ class PDFToEPUBConverter {
                 <dc:language>en</dc:language>
                 <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
                 <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-                
-                <meta name="fixed-layout" content="true"/>
-                <meta name="original-resolution" content="\(width)x\(height)"/>
+
                 <meta name="book-type" content="comic"/>
                 <meta name="cdetype" content="pdoc"/>
-                <meta name="orientation-lock" content="none"/>
-                <meta name="RegionMagnification" content="true"/>
-                <meta name="region-all-mag-adp" content="1"/>
+                <meta name="cover" content="img1"/>
                 <meta name="zero-gutter" content="true"/>
                 <meta name="zero-margin" content="true"/>
                 <meta name="ke-border-color" content="#000000"/>
                 <meta name="ke-border-width" content="0"/>
+                
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
-                <meta name="cover" content="img1"/>
+                <meta name="orientation-lock" content="none"/>
             </metadata>
             <manifest>
                 <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>

@@ -400,22 +400,19 @@ class CBZToEPUBConverter {
                     <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
                     
-                    <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
-                    <meta name="orientation-lock" content="none"/>
                     <meta name="book-type" content="comic"/>
                     <meta name="cdetype" content="pdoc"/>
-                    <meta name="RegionMagnification" content="true"/>
-                    <meta name="region-all-mag-adp" content="1"/>
+                    <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                     <meta name="zero-gutter" content="true"/>
                     <meta name="zero-margin" content="true"/>
                     <meta name="ke-border-color" content="#000000"/>
                     <meta name="ke-border-width" content="0"/>
-                    <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                     
+                    <!-- EPUB 3 rendition properties -->
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">auto</meta>
                     <meta property="rendition:spread">auto</meta>
+                    <meta name="orientation-lock" content="none"/>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
