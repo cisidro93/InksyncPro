@@ -2885,11 +2885,19 @@ class ConversionManager: ObservableObject {
                          var imgData = Data()
                          _ = try sourceArchive.extract(entry) { imgData.append($0) }
                          
-                         _ = UIImage(data: imgData)?.size ?? CGSize(width: 1000, height: 1500)
+                         var w = 1000
+                         var h = 1500
+                         if let sz = UIImage(data: imgData)?.size {
+                             w = Int(sz.width)
+                             h = Int(sz.height)
+                         }
+                         
                          let xhtmlContent = CBZToEPUBConverter.generateChunkXHTML(
                             chunkIndex: pageNum,
                             images: [img],
-                            title: "Page \(pageNum)"
+                            title: "Page \(pageNum)",
+                            width: w,
+                            height: h
                          )
                          
                          if let data = xhtmlContent.data(using: .utf8) {
