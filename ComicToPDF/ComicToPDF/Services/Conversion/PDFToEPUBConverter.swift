@@ -526,30 +526,27 @@ class PDFToEPUBConverter {
             margin: 0;
             padding: 0;
         }
-        @media amzn-kf8 {
-            body { margin: 0 !important; padding: 0 !important; }
-        }
         html, body { 
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
             margin: 0; 
             padding: 0; 
             background-color: #000000; 
         }
-        .chunk-container {
-            width: 100%;
-            column-gap: 0;
-            -webkit-column-gap: 0;
-        }
         .page { 
-            text-align: center;
-            page-break-inside: avoid;
+            position: absolute;
+            width: 100%;
+            height: 100%;
             margin: 0; 
             padding: 0; 
         }
-        .page img {
-            max-width: 100%;
-            max-height: 100vh;
-            height: auto;
-            object-fit: contain;
+        .page-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
         }
         """
     }

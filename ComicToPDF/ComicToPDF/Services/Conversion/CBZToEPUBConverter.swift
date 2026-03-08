@@ -167,19 +167,13 @@ class CBZToEPUBConverter {
                 margin: 0;
                 padding: 0;
             }
-            body {
+            html, body {
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
                 margin: 0;
                 padding: 0;
                 background-color: #000000;
-            }
-            .content-container {
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                width: 100vw;
-                height: 100vh;
-                margin: 0;
-                padding: 0;
             }
             .page {
                 position: absolute;
@@ -188,7 +182,7 @@ class CBZToEPUBConverter {
                 margin: 0;
                 padding: 0;
             }
-            img.comic-page {
+            img.page-image {
                 position: absolute;
                 top: 0;
                 left: 0;
