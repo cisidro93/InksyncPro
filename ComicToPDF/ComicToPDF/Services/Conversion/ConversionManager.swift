@@ -2784,14 +2784,15 @@ class ConversionManager: ObservableObject {
                         }
                     }
                     
-                    // 2. Fixed Layout Metadata (Always applied for Comics/Manga)
+                    // 2. Fixed Layout Metadata (Applied contextually depending on Guided View)
                     if !opfString.contains("rendition:layout") {
                          if let range = opfString.range(of: "</metadata>") {
+                             let isReflowable = !conversionSettings.isGuidedView
                              
                              // ✅ RESOLUTION EXTRACTION: Find first image to set correct original-resolution
                              // This is required for Kindle to scale the Fixed Layout correctly without letterboxing
                              var resolutionTag = ""
-                             if let imageEntry = sourceArchive.makeIterator().first(where: { 
+                             if conversionSettings.isGuidedView, let imageEntry = sourceArchive.makeIterator().first(where: { 
                                  $0.path.contains("images") && 
                                  ($0.path.hasSuffix(".jpg") || $0.path.hasSuffix(".jpeg") || $0.path.hasSuffix(".png")) 
                              }) {
@@ -2805,25 +2806,34 @@ class ConversionManager: ObservableObject {
                                  }
                              }
                              
-                             let tag = """
+                             // Standard metadata applied to ALL formats
+                             var tag = """
     <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
     <meta property="rendition:layout">pre-paginated</meta>
     <meta property="rendition:orientation">auto</meta>
     <meta property="rendition:spread">auto</meta>
-    <meta name="fixed-layout" content="true"/>
-    <meta name="RegionMagnification" content="true"/>
     <meta name="orientation-lock" content="none"/>
     <meta name="cdetype" content="pdoc"/>
     <meta name="book-type" content="comic"/>
-    <meta name="region-all-mag-adp" content="1"/>
     <meta name="zero-gutter" content="true"/>
     <meta name="zero-margin" content="true"/>
     <meta name="ke-border-color" content="#000000"/>
-    <meta name="ke-border-width" content="0"/>\(resolutionTag)
+    <meta name="ke-border-width" content="0"/>
 """
-                             opfString.insert(contentsOf: tag, at: range.lowerBound)
+                             // Extra strict formatting needed specifically for Panel Zoom (RegionMagnification)
+                             if conversionSettings.isGuidedView {
+                                 tag += """
+\n    <meta name="fixed-layout" content="true"/>
+    <meta name="RegionMagnification" content="true"/>
+    <meta name="region-all-mag-adp" content="1"/>\(resolutionTag)
+"""
+                                 Logger.shared.log("Injected Full Kindle Metadata Suite (Layout, Region-Mag, Book-Type, Resolution)", category: "Injection")
+                             } else {
+                                  Logger.shared.log("Injected Reflowable Fluid Metadata Suite", category: "Injection")
+                             }
+
+                             opfString.insert(contentsOf: "\n" + tag + "\n", at: range.lowerBound)
                              modified = true
-                             Logger.shared.log("Injected Full Kindle Metadata Suite (Layout, Region-Mag, Book-Type, Resolution)", category: "Injection")
                          }
                     }
                     

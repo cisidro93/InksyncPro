@@ -299,10 +299,10 @@ class PDFToEPUBConverter {
                 <?xml version="1.0" encoding="UTF-8"?>
                 <html xmlns="http://www.w3.org/1999/xhtml">
                 <head><title>Cover</title><style type="text/css">
-                body { margin: 0; padding: 0; text-align: center; background-color: #000; }
-                img { max-width: 100%; max-height: 100%; height: auto; }
+                body { margin: 0; padding: 0; text-align: center; background-color: #000; overflow: hidden; }
+                img { max-width: 100%; max-height: 100%; height: auto; object-fit: contain; }
                 </style></head>
-                <body><img src="images/\(coverFilename)" alt="Cover"/></body>
+                <body><div class="svg-wrapper"><img src="images/\(coverFilename)" alt="Cover"/></div></body>
                 </html>
                 """
                 try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
@@ -329,9 +329,7 @@ class PDFToEPUBConverter {
                 chunkIndex: chunkIndex + 1,
                 images: chunkImages,
                 title: title,
-                startIndex: (chunkIndex * pageLimit) + 1,
-                width: Int(options.maxImageWidth),
-                height: Int(options.maxImageHeight)
+                startIndex: (chunkIndex * pageLimit) + 1
             )
             try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: .utf8)
             xhtmlFiles.append(chunkFileName)
@@ -412,7 +410,7 @@ class PDFToEPUBConverter {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
-            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="bookid">\(bookID)</dc:identifier>
                 <dc:title>\(escapeXML(title))</dc:title>
                 <dc:creator>\(escapeXML(author))</dc:creator>
@@ -527,32 +525,30 @@ class PDFToEPUBConverter {
     
     private func generateCSS() -> String {
         return """
-        /* Native Reflowable Layout for Columns */
         @page {
             margin: 0;
             padding: 0;
         }
-        html, body { 
-            width: 100%;
-            height: 100%;
+        html, body {
+            width: 100vw;
+            height: 100vh;
             overflow: hidden;
-            margin: 0; 
-            padding: 0; 
-            background-color: #000000; 
+            margin: 0;
+            padding: 0;
+            background-color: #000000;
         }
-        .page { 
-            position: absolute;
+        div.svg-wrapper {
             width: 100%;
             height: 100%;
-            margin: 0; 
-            padding: 0; 
+            margin: 0;
+            padding: 0;
+            text-align: center;
         }
-        .page-image {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
+        img {
             height: 100%;
+            width: auto;
+            max-width: 100%;
+            object-fit: contain;
         }
         """
     }

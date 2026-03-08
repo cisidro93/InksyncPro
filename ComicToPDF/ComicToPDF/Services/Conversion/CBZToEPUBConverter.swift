@@ -168,47 +168,27 @@ class CBZToEPUBConverter {
                 padding: 0;
             }
             html, body {
-                width: 100%;
-                height: 100%;
+                width: 100vw;
+                height: 100vh;
                 overflow: hidden;
                 margin: 0;
                 padding: 0;
                 background-color: #000000;
             }
-            .page {
-                position: absolute;
+            div.svg-wrapper {
                 width: 100%;
                 height: 100%;
                 margin: 0;
                 padding: 0;
+                text-align: center;
             }
-            img.page-image {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
+            img {
                 height: 100%;
+                width: auto;
+                max-width: 100%;
+                object-fit: contain;
             }
-            /* Kindle Panel View Overlays */
-            a.app-amzn-magnify {
-                display: block;
-                position: absolute;
-                z-index: 10;
-                text-decoration: none;
-                background: transparent;
-            }
-            .panel-source {
-                position: absolute;
-                width: 100%;
-                height: 100%;
-                background: transparent;
-            }
-            .panel-target {
-                position: absolute;
-                z-index: 5;
-                pointer-events: none;
-                background: transparent;
-            }
+
             """
             try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
             
@@ -492,7 +472,7 @@ class CBZToEPUBConverter {
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int, height: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                  <img src="../images/\(imageName)" class="page-image" alt="Page Image"/>
+                  <div class="svg-wrapper"><img src="../images/\(imageName)" alt=""/></div>
             """
         }.joined(separator: "\n")
         
@@ -502,14 +482,12 @@ class CBZToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <meta charset="UTF-8"/>
-            <meta name="viewport" content="width=\(width), height=\(height)"/>
+            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
             <title>\(title)</title>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
         </head>
         <body>
-            <div class="page">
         \(imageElements)
-            </div>
         </body>
         </html>
         """
