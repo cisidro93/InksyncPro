@@ -201,7 +201,7 @@ struct AdvancedMetadataEditorView: View {
     
     @ViewBuilder
     private var contentEditorHook: some View {
-        if pdf.contentType == .pdf || pdf.contentType == .book {
+        if pdf.url.pathExtension.lowercased() == "pdf" || pdf.contentType == .book {
             CustomGlassCard(title: "Advanced Editing", icon: "scissors") {
                 NavigationLink(destination: getEditorView(for: pdf)) {
                     HStack {
@@ -223,9 +223,9 @@ struct AdvancedMetadataEditorView: View {
     @ViewBuilder
     private func getEditorView(for pdf: ConvertedPDF) -> some View {
         if pdf.contentType == .book {
-            EPUBContentEditorView(pdf: pdf)
+            EPUBContentEditorView(pdf: pdf, manager: conversionManager)
         } else {
-            PDFContentEditorView(pdf: pdf)
+            PDFContentEditorView(pdf: pdf, manager: conversionManager)
         }
     }
     
