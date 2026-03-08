@@ -2806,11 +2806,14 @@ class ConversionManager: ObservableObject {
                              }
                              
                              let tag = """
+    <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
     <meta property="rendition:layout">pre-paginated</meta>
     <meta property="rendition:orientation">auto</meta>
     <meta property="rendition:spread">auto</meta>
     <meta name="fixed-layout" content="true"/>
     <meta name="RegionMagnification" content="true"/>
+    <meta name="orientation-lock" content="none"/>
+    <meta name="cdetype" content="pdoc"/>
     <meta name="book-type" content="comic"/>\(resolutionTag)
 """
                              opfString.insert(contentsOf: tag, at: range.lowerBound)

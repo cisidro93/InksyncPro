@@ -381,18 +381,23 @@ class CBZToEPUBConverter {
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
+                    <dc:creator>Inksync Pro</dc:creator>
                     <dc:language>en</dc:language>
+                    <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
                     
                     <meta name="fixed-layout" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
+                    <meta name="orientation-lock" content="\(settings.mangaMode ? "portrait" : "landscape")"/>
                     <meta name="book-type" content="comic"/>
+                    <meta name="cdetype" content="pdoc"/>
                     <meta name="RegionMagnification" content="true"/>
                     <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                     
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">\(settings.mangaMode ? "portrait" : "landscape")</meta>
                     <meta property="rendition:spread">landscape</meta>
+                    <meta name="primary-writing-mode" content="\(settings.mangaMode ? "horizontal-rl" : "horizontal-lr")"/>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))

@@ -414,11 +414,14 @@ class PDFToEPUBConverter {
                 <dc:title>\(escapeXML(title))</dc:title>
                 <dc:creator>\(escapeXML(author))</dc:creator>
                 <dc:language>en</dc:language>
+                <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
                 <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
                 
                 <meta name="fixed-layout" content="true"/>
                 <meta name="original-resolution" content="1000x1500"/>
                 <meta name="book-type" content="comic"/>
+                <meta name="cdetype" content="pdoc"/>
+                <meta name="orientation-lock" content="none"/>
                 <meta name="RegionMagnification" content="true"/>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:spread">landscape</meta>
