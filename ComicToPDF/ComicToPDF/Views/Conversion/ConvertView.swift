@@ -7,6 +7,7 @@ struct ConvertView: View {
     @State private var isMangaMode = false
     @State private var selectedPipeline: OutputPipeline = .standard
     @State private var showingPreview = false
+    @State private var showingCalibreGuide = false
 
     var body: some View {
         Form {
@@ -62,11 +63,19 @@ struct ConvertView: View {
                     }
                     .padding(.vertical, 4)
 
-                    // Preview button — show for either panel pipeline
+                    // Preview & Guide buttons
                     if selectedPipeline == .proPanel {
-                        Button(action: { showingPreview = true }) {
-                            Label("Preview Panel Detection (Page 4)", systemImage: "eye")
-                                .frame(maxWidth: .infinity)
+                        VStack(spacing: 8) {
+                            Button(action: { showingPreview = true }) {
+                                Label("Preview Panel Detection (Page 4)", systemImage: "eye")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            
+                            Button(action: { showingCalibreGuide = true }) {
+                                Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
                         }
                         .padding(.top, 4)
                     }
@@ -120,6 +129,9 @@ struct ConvertView: View {
         }
         .sheet(isPresented: $showingPreview) {
             PrecisionCanvasView(pdf: pdf, pageIndex: .constant(3), totalCount: pdf.pageCount, conversionManager: conversionManager)
+        }
+        .sheet(isPresented: $showingCalibreGuide) {
+            CalibreGuideView()
         }
     }
 
@@ -225,5 +237,81 @@ struct ConvertView: View {
             conversionManager.conversionSettings.enablePanelSplit = true
             conversionManager.conversionSettings.epubSettings.includeFullPage = true
         }
+    }
+}
+
+// MARK: - Calibre Sideload Guide View
+struct CalibreGuideView: View {
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Sideloading Panel View to Kindle")
+                            .font(.title2.bold())
+                        Text("Due to recent Kindle firmware updates (5.19.2+), standard USB transfers no longer process advanced EPUB features directly on the device. Follow these steps to ensure Panel View works flawlessly.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.bottom, 10)
+                    
+                    guideStep(number: 1, title: "Install Calibre & KFX Plugin", description: "Download the free library manager 'Calibre' on your computer. Inside Calibre, go to Preferences -> Plugins -> Get new plugins, and install the 'KFX Output' plugin.", icon: "gearshape.2.fill")
+                    
+                    guideStep(number: 2, title: "Export to Computer", description: "Use the 'Export' button in Inksync Pro to save your translated EPUB to iCloud Drive, or Share it directly to your Mac.", icon: "macbook.and.iphone")
+                    
+                    guideStep(number: 3, title: "Convert to KFX", description: "Drag the EPUB into Calibre. Select the book, click 'Convert books', and set the top-right Output Format to 'KFX'. Click OK.", icon: "arrow.triangle.2.circlepath")
+                    
+                    guideStep(number: 4, title: "Send via USB", description: "Connect your Kindle via USB. In Calibre, click 'Send to device'. The KFX file will carry all Panel View metadata and render natively on your Kindle.", icon: "cable.connector")
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                            Text("Send-to-Kindle Warning").font(.headline)
+                        }
+                        Text("Do not use Amazon's 'Send-to-Kindle' email or web service for Panel View books. Amazon's cloud strictly strips out RegionMagnification (Panel View) metadata from personal documents.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.orange.opacity(0.3), lineWidth: 1))
+                }
+                .padding()
+            }
+            .navigationTitle("Kindle Delivery Guide")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func guideStep(number: Int, title: String, description: String, icon: String) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            ZStack {
+                Circle().fill(Color.blue.opacity(0.1)).frame(width: 36, height: 36)
+                Text("\(number)").font(.headline).foregroundColor(.blue)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(title).font(.headline)
+                    Spacer()
+                    Image(systemName: icon).foregroundColor(.secondary)
+                }
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .cornerRadius(12)
     }
 }
