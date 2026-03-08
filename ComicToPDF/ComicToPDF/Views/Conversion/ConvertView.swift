@@ -88,28 +88,15 @@ struct ConvertView: View {
 
             // MARK: - Convert Button
             Section {
-                if conversionManager.isConverting {
-                    VStack(spacing: 8) {
-                        HStack {
-                            Text("Processing...").font(.headline).foregroundColor(.blue)
-                            Spacer()
-                            Text("\(Int(conversionManager.conversionProgress * 100))%")
-                                .font(.subheadline).foregroundColor(.secondary).monospacedDigit()
-                        }
-                        ProgressView(value: conversionManager.conversionProgress, total: 1.0)
-                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                Button(action: {
+                    Task {
+                        applyPipeline(selectedPipeline)
+                        await conversionManager.convertComic(pdf, mangaMode: isMangaMode)
                     }
-                    .padding(.vertical, 10)
-                } else {
-                    Button(action: {
-                        Task {
-                            applyPipeline(selectedPipeline)
-                            await conversionManager.convertComic(pdf, mangaMode: isMangaMode)
-                        }
-                    }) {
-                        Text("Start Conversion").frame(maxWidth: .infinity).foregroundColor(.blue).bold()
-                    }
+                }) {
+                    Text("Start Conversion").frame(maxWidth: .infinity).foregroundColor(.blue).bold()
                 }
+                .disabled(conversionManager.isConverting)
             }
 
             if let status = conversionManager.statusMessage {
@@ -117,7 +104,16 @@ struct ConvertView: View {
                     Text(status).font(.caption).foregroundColor(status.contains("Error") ? .red : .secondary)
                 }
             }
+            }
         }
+        .overlay(
+            Group {
+                if conversionManager.isConverting {
+                    ImmersiveConversionOverlay(pdfName: pdf.name)
+                        .transition(.opacity.animation(.easeInOut))
+                }
+            }
+        )
         .navigationTitle("Convert Comic")
         .onAppear {
             isMangaMode = pdf.metadata.isManga ?? conversionManager.conversionSettings.mangaMode

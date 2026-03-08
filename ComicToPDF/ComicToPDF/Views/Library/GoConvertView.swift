@@ -202,43 +202,11 @@ struct GoConvertView: View {
                 // MARK: Queue Hub / Convert Button
                 Group {
                     if queueManager.isProcessing || queueManager.activeItem != nil {
+                        // The UI is now handled by the Immersive Overlay on top, 
+                        // but we leave this block here so the view structure is maintained and buttons are disabled.
                         VStack(spacing: 12) {
-                            if let active = queueManager.activeItem {
-                                VStack(spacing: 6) {
-                                    HStack {
-                                        Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(.blue)
-                                        Text(active.sourceURL.lastPathComponent)
-                                            .font(.subheadline).bold().lineLimit(1)
-                                    }
-                                    Text(queueManager.statusMessage)
-                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                    ProgressView(value: queueManager.currentProgress).tint(.blue)
-                                    HStack {
-                                        Text("\(formatTime(queueManager.elapsedTime)) elapsed")
-                                        Spacer()
-                                        if let etr = queueManager.estimatedTimeRemaining {
-                                            Text("ETR: \(formatTime(etr))")
-                                        } else { Text("Estimating...") }
-                                    }
-                                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                }
-                                .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
-                            }
-                            
-                            // ✅ Show names of queued files
-                            if !queueManager.pendingGoDisplayNames.isEmpty {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Up Next:").font(.caption).fontWeight(.semibold).foregroundStyle(.secondary)
-                                    ForEach(queueManager.pendingGoDisplayNames.prefix(5), id: \.self) { name in
-                                        Label(name, systemImage: "clock").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                    }
-                                    if queueManager.pendingGoDisplayNames.count > 5 {
-                                        Text("+ \(queueManager.pendingGoDisplayNames.count - 5) more").font(.caption2).foregroundStyle(.secondary)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
-                            }
+                            Text("Queue Processing...")
+                                .font(.headline).foregroundStyle(.secondary)
                             
                             Button(role: .destructive) { queueManager.cancelAll() } label: {
                                 Text("Cancel Queue").bold()
@@ -329,6 +297,19 @@ struct GoConvertView: View {
                 Spacer(minLength: 40)
             }
         }
+        .disabled(queueManager.isProcessing)
+        .overlay(
+            Group {
+                if queueManager.isProcessing, let activeItem = queueManager.activeItem {
+                    ImmersiveConversionOverlay(
+                        pdfName: activeItem.sourceURL.lastPathComponent,
+                        customProgress: queueManager.currentProgress,
+                        customMessage: queueManager.statusMessage
+                    )
+                    .transition(.opacity.animation(.easeInOut))
+                }
+            }
+        )
         .sheet(isPresented: $showingShareSheet) { ShareSheet(activityItems: shareItems) }
         .sheet(isPresented: $showingMergeSheet) {
             GoQuickMergeSheet(

@@ -201,6 +201,14 @@ struct ModernLibraryView: View {
                 pdfGridLayout
             }
         }
+        .overlay(
+            Group {
+                if conversionManager.isConverting {
+                    ImmersiveConversionOverlay(pdfName: "Processing Library Item...")
+                        .transition(.opacity.animation(.easeInOut))
+                }
+            }
+        )
         .safeAreaInset(edge: .bottom) {
             if isBatchMode {
                 batchBottomToolbar
