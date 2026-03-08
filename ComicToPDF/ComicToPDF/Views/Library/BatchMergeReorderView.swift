@@ -21,16 +21,10 @@ struct BatchMergeReorderView: View {
         NavigationView {
             VStack(spacing: 0) {
                 if isProcessing {
-                    VStack(spacing: 20) {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                        Text(conversionManager.statusMessage ?? "Processing...")
-                            .font(.headline)
-                        Text(conversionManager.processingStatus)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ImmersiveConversionOverlay(
+                        pdfName: mergedName,
+                        customMessage: conversionManager.statusMessage ?? "Merging Files..."
+                    )
                 } else {
                     // Header Form
                     Form {
@@ -58,7 +52,7 @@ struct BatchMergeReorderView: View {
                         ScrollView {
                             LazyVGrid(columns: columns, spacing: 20) {
                                 ForEach(selectedFiles) { file in
-                                    GridThumbnail(file: file)
+                                    GridThumbnail(file: file, conversionManager: conversionManager)
                                         .onDrag {
                                             self.draggedItem = file
                                             return NSItemProvider(object: file.id.uuidString as NSString)
@@ -129,20 +123,34 @@ struct BatchMergeReorderView: View {
 
 struct GridThumbnail: View {
     let file: ConvertedPDF
+    let conversionManager: ConversionManager
+    
+    @State private var coverImage: UIImage? = nil
     
     var body: some View {
         VStack {
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(uiColor: .systemBackground))
-                    .frame(height: 140)
-                    .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 2)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(uiColor: .systemGroupedBackground))
+                    .frame(height: 160)
+                    .shadow(color: .black.opacity(0.15), radius: 5, x: 0, y: 3)
                 
-                Image(systemName: "doc.text.image")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(height: 50)
-                    .foregroundColor(.blue)
+                if let uiImage = coverImage {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 160)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                } else {
+                    Image(systemName: "photo.on.rectangle")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 40)
+                        .foregroundColor(.gray.opacity(0.5))
+                }
+                
+                // Visual numbered badge if we can access the index 
+                // We'll leave index out for now since drag-and-drop order visually conveys it
             }
             
             Text(file.name)
@@ -150,6 +158,11 @@ struct GridThumbnail: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .frame(height: 32)
+        }
+        .task {
+            if let img = await conversionManager.loadCoverThumbnail(for: file) {
+                await MainActor.run { self.coverImage = img }
+            }
         }
     }
 }
