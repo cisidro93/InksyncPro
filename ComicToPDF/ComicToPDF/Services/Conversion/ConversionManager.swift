@@ -290,7 +290,7 @@ class ConversionManager: ObservableObject {
             pageCount: 1,
             fileSize: 500,
             metadata: meta,
-            contentType: .pdf,
+            contentType: .comic,
             addedByMode: .pro
         )
         
