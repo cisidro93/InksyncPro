@@ -9,9 +9,9 @@ import SwiftUI
 class AdaptiveLearningManager: ObservableObject {
     static let shared = AdaptiveLearningManager()
     
-    @AppStorage("ai_metric_deletedPanels") private var deletedPanelsCount: Int = 0
-    @AppStorage("ai_metric_addedPanels") private var addedPanelsCount: Int = 0
-    @AppStorage("ai_metric_resizedPanels") private var resizedPanelsCount: Int = 0
+    @AppStorage("ai_metric_deletedPanels") var deletedPanelsCount: Int = 0
+    @AppStorage("ai_metric_addedPanels") var addedPanelsCount: Int = 0
+    @AppStorage("ai_metric_resizedPanels") var resizedPanelsCount: Int = 0
     
     // Core parameters we will mutate
     @AppStorage("ai_param_baseConfidence") var currentBaseConfidence: Double = 0.6 // Apple Vision Default

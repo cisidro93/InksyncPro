@@ -302,9 +302,9 @@ struct SettingsView: View {
             if conversionManager.conversionSettings.outputFormat == .epub && conversionManager.conversionSettings.outputPipeline == .proPanel {
                 HStack {
                     settingsIcon("viewfinder", color: .cyan)
-                    Picker("Vision Node Sensitivity", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
+                    Picker("Vision Sensitivity", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
                         Text("Standard Flow").tag(PanelExtractor.ExtractionMode.automatic)
-                        Text("Aggressive (Deep Scan)").tag(PanelExtractor.ExtractionMode.aggressive)
+                        Text("Deep Scan").tag(PanelExtractor.ExtractionMode.aggressive)
                         Text("Conservative").tag(PanelExtractor.ExtractionMode.conservative)
                         Text("Fixed Grid (2x2)").tag(PanelExtractor.ExtractionMode.grid)
                     }
@@ -312,30 +312,105 @@ struct SettingsView: View {
                 }
             }
             
-            let params = AdaptiveLearningManager.shared.currentSettings
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    settingsIcon("network.badge.shield.half.filled", color: .cyan)
-                    Text("AI Confidence Threshold")
+            // Dashboard Header
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Core Neural Engine State")
+                    .font(.caption).bold()
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                Text("Your localized CoreML model adapts based on your corrections in the Panel Editor.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 8)
+            }
+            .padding(.vertical, 4)
+            
+            let params = aiManager.currentSettings
+            
+            // Visual Gauges
+            VStack(spacing: 16) {
+                HStack(spacing: 20) {
+                    Gauge(value: params.minConfidence, in: 0...1.0) {
+                        Image(systemName: "network.badge.shield.half.filled").foregroundColor(.cyan)
+                    } currentValueLabel: {
+                        Text("\(Int(params.minConfidence * 100))%").font(.caption.bold())
+                    }
+                    .gaugeStyle(.accessoryCircularCapacity)
+                    .tint(Gradient(colors: [.blue, .cyan]))
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Confidence Threshold").font(.subheadline.bold())
+                        Text("Lower value = more sensitive").font(.caption2).foregroundColor(.secondary)
+                    }
                     Spacer()
-                    Text("\(Int(params.minConfidence * 100))%")
                 }
-                HStack {
-                    settingsIcon("perspective", color: .cyan)
-                    Text("AI Size Relevancy")
+                
+                HStack(spacing: 20) {
+                    Gauge(value: params.minSize, in: 0...0.5) {
+                        Image(systemName: "perspective").foregroundColor(.purple)
+                    } currentValueLabel: {
+                        Text("\(Int(params.minSize * 100))%").font(.caption.bold())
+                    }
+                    .gaugeStyle(.accessoryCircularCapacity)
+                    .tint(Gradient(colors: [.purple, .pink]))
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Size Relevancy").font(.subheadline.bold())
+                        Text("Ignores panels smaller than this").font(.caption2).foregroundColor(.secondary)
+                    }
                     Spacer()
-                    Text("\(String(format: "%.1f", params.minSize * 100))%")
                 }
             }
-            .font(.subheadline)
+            .padding(.vertical, 8)
             
-            Button(action: { AdaptiveLearningManager.shared.resetToFactorySettings() }) {
-                Text("Reset Neural Tracking History").foregroundColor(.red).font(.subheadline)
+            // Analytics Block
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Historical Corrections")
+                    .font(.caption).bold()
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Manually Added")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(aiManager.addedPanelsCount)")
+                            .font(.title3.bold())
+                            .foregroundColor(.green)
+                    }
+                    Spacer()
+                    VStack(alignment: .center) {
+                        Text("Manually Deleted")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(aiManager.deletedPanelsCount)")
+                            .font(.title3.bold())
+                            .foregroundColor(.red)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing) {
+                        Text("Resized Box")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(aiManager.resizedPanelsCount)")
+                            .font(.title3.bold())
+                            .foregroundColor(.orange)
+                    }
+                }
+                .padding()
+                .background(Color(UIColor.secondarySystemGroupedBackground))
+                .cornerRadius(10)
+            }
+            .padding(.vertical, 4)
+            
+            Button(action: { aiManager.resetToFactorySettings() }) {
+                Text("Reset Learning History")
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
             
-        } header: { Text("AI Intelligence") } footer: {
-            Text("Inksync Pro learns from the changes you make in the Panel Editor, dynamically tuning its vision nodes over time to match your aesthetic preferences.")
-        }
+        } header: { Text("AI Dashboard") }
     }
     
     @ViewBuilder
