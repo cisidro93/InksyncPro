@@ -98,20 +98,24 @@ This is the most critical file. All metadata flags must be present.
     <!-- Fixed Layout — ALL of these are required -->
     <meta name="fixed-layout" content="true"/>
     <meta name="original-resolution" content="{{PAGE_WIDTH}}x{{PAGE_HEIGHT}}"/>
-    <meta name="orientation-lock" content="{{ORIENTATION}}"/>
+    <meta name="orientation-lock" content="none"/>
     <meta name="book-type" content="comic"/>
     <meta name="cdetype" content="pdoc"/>
     <meta name="RegionMagnification" content="true"/>
+    <meta name="region-all-mag-adp" content="1"/>
+    <meta name="zero-gutter" content="true"/>
+    <meta name="zero-margin" content="true"/>
+    <meta name="ke-border-color" content="#000000"/>
+    <meta name="ke-border-width" content="0"/>
     <meta name="cover" content="cover-image"/>
 
     <!-- EPUB3 rendition properties -->
     <meta property="rendition:layout">pre-paginated</meta>
-    <meta property="rendition:orientation">{{ORIENTATION}}</meta>
-    <meta property="rendition:spread">landscape</meta>
+    <meta property="rendition:orientation">auto</meta>
+    <meta property="rendition:spread">auto</meta>
 
-    <!-- Primary writing mode: use horizontal-lr for western comics,
-         horizontal-rl for manga -->
-    <meta name="primary-writing-mode" content="{{WRITING_MODE}}"/>
+    <!-- WRITING MODE NOTE: Do NOT use primary-writing-mode. It causes E013 errors on FW 5.19.2. -->
+    <!-- Reading direction is handled entirely by <spine page-progression-direction="..."> -->
 
   </metadata>
 

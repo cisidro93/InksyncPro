@@ -352,13 +352,7 @@ class CBZToEPUBConverter {
                 let destURL = imagesDir.appendingPathComponent(newImageName)
                 try item.data.write(to: destURL)
                 
-                // ✅ Fetch local image size for strict XHTML Viewport enforcement
-                var pageW = widthID
-                var pageH = heightID
-                
                 if let img = UIImage(data: item.data) {
-                    pageW = Int(img.size.width)
-                    pageH = Int(img.size.height)
                     if !hasCapturedResolution {
                         contentSize = img.size
                         hasCapturedResolution = true
@@ -380,8 +374,8 @@ class CBZToEPUBConverter {
                         chunkIndex: chunkIndex,
                         images: currentChunkImages,
                         title: "Page \(chunkIndex)",
-                        width: pageW,
-                        height: pageH
+                        width: widthID,
+                        height: heightID
                     )
                     let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
                     try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)

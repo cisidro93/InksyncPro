@@ -2814,7 +2814,12 @@ class ConversionManager: ObservableObject {
     <meta name="RegionMagnification" content="true"/>
     <meta name="orientation-lock" content="none"/>
     <meta name="cdetype" content="pdoc"/>
-    <meta name="book-type" content="comic"/>\(resolutionTag)
+    <meta name="book-type" content="comic"/>
+    <meta name="region-all-mag-adp" content="1"/>
+    <meta name="zero-gutter" content="true"/>
+    <meta name="zero-margin" content="true"/>
+    <meta name="ke-border-color" content="#000000"/>
+    <meta name="ke-border-width" content="0"/>\(resolutionTag)
 """
                              opfString.insert(contentsOf: tag, at: range.lowerBound)
                              modified = true

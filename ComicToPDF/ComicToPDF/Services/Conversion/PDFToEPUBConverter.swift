@@ -325,24 +325,13 @@ class PDFToEPUBConverter {
         for (chunkIndex, chunkImages) in chunks.enumerated() {
             let chunkFileName = String(format: "chunk_%04d.xhtml", chunkIndex + 1)
             
-            // ✅ Fetch local image size for strict XHTML Viewport enforcement
-            var pageW = Int(options.maxImageWidth)
-            var pageH = Int(options.maxImageHeight)
-            if let firstImgName = chunkImages.first {
-                let imgURL = oebpsDir.appendingPathComponent("images/\(firstImgName)")
-                if let img = UIImage(contentsOfFile: imgURL.path) {
-                    pageW = Int(img.size.width)
-                    pageH = Int(img.size.height)
-                }
-            }
-            
             let chunkXHTML = generateChunkXHTML(
                 chunkIndex: chunkIndex + 1,
                 images: chunkImages,
                 title: title,
                 startIndex: (chunkIndex * pageLimit) + 1,
-                width: pageW,
-                height: pageH
+                width: Int(options.maxImageWidth),
+                height: Int(options.maxImageHeight)
             )
             try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: .utf8)
             xhtmlFiles.append(chunkFileName)
