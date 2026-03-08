@@ -29,7 +29,7 @@ struct ContentView: View {
     @State private var webExportPDF: ConvertedPDF?
     
     // ✅ Onboarding State
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @State private var showOnboarding = false
     
     // ✅ UI Mode State
@@ -83,10 +83,10 @@ struct ContentView: View {
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
         .fullScreenCover(isPresented: $showOnboarding) {
-            OnboardingView(showOnboarding: $showOnboarding)
+            OnboardingView()
         }
         .onAppear {
-            if !hasCompletedOnboarding {
+            if !hasSeenOnboarding {
                 showOnboarding = true
             }
         }
