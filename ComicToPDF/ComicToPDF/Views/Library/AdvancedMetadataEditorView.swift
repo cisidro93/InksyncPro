@@ -1,6 +1,67 @@
 import SwiftUI
 import PhotosUI
 
+// MARK: - Reusable Glass Card
+struct CustomGlassCard<Content: View>: View {
+    let title: String
+    let icon: String
+    @ViewBuilder let content: Content
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(Theme.blue)
+                Text(title)
+                    .font(.headline)
+                    .foregroundColor(.white)
+            }
+            .padding(.bottom, 4)
+            
+            content
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+}
+
+// MARK: - Reusable Glass TextField
+struct GlassTextField: View {
+    let title: String
+    let placeholder: String
+    @Binding var text: String
+    var keyboardType: UIKeyboardType = .default
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(Theme.textSecondary)
+                .textCase(.uppercase)
+            
+            TextField(placeholder, text: $text)
+                .keyboardType(keyboardType)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color.black.opacity(0.3))
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                )
+                .foregroundColor(.white)
+        }
+    }
+}
+
 struct AdvancedMetadataEditorView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
@@ -23,84 +84,116 @@ struct AdvancedMetadataEditorView: View {
     
     var body: some View {
         NavigationStack {
-            Form {
-                // MARK: - Cover Image Section
-                Section {
-                    HStack {
-                        Spacer()
-                        ZStack(alignment: .bottomTrailing) {
-                            if let customCover = customCoverImage {
-                                Image(uiImage: customCover)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 140, height: 200)
-                                    .cornerRadius(8)
-                                    .clipped()
-                            } else if let currentCover = currentCoverImage {
-                                Image(uiImage: currentCover)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 140, height: 200)
-                                    .cornerRadius(8)
-                                    .clipped()
-                            } else {
-                                Rectangle()
-                                    .fill(Color.secondary.opacity(0.2))
-                                    .frame(width: 140, height: 200)
-                                    .cornerRadius(8)
-                                    .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(.secondary))
+            ScrollView {
+                VStack(spacing: 24) {
+                    // MARK: - Cover Image Section
+                    CustomGlassCard(title: "Cover Image", icon: "photo.artframe") {
+                        HStack {
+                            Spacer()
+                            ZStack(alignment: .bottomTrailing) {
+                                Group {
+                                    if let customCover = customCoverImage {
+                                        Image(uiImage: customCover)
+                                            .resizable()
+                                            .scaledToFill()
+                                    } else if let currentCover = currentCoverImage {
+                                        Image(uiImage: currentCover)
+                                            .resizable()
+                                            .scaledToFill()
+                                    } else {
+                                        Rectangle()
+                                            .fill(Color.black.opacity(0.3))
+                                            .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(Theme.textSecondary))
+                                    }
+                                }
+                                .frame(width: 160, height: 230)
+                                .cornerRadius(12)
+                                .clipped()
+                                .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                )
+                                
+                                PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
+                                    Image(systemName: "camera.circle.fill")
+                                        .font(.system(size: 34))
+                                        .foregroundStyle(.white, Theme.blue)
+                                        .shadow(radius: 4)
+                                        .offset(x: 12, y: 12)
+                                }
                             }
+                            Spacer()
+                        }
+                    }
+                    
+                    // MARK: - Core Metadata Section
+                    CustomGlassCard(title: "Core Data", icon: "info.circle.fill") {
+                        VStack(spacing: 16) {
+                            GlassTextField(title: "Title", placeholder: "e.g. Batman: Year One", text: $title)
+                            GlassTextField(title: "Author / Writer", placeholder: "e.g. Frank Miller", text: $author)
+                            GlassTextField(title: "Publisher", placeholder: "e.g. DC Comics", text: $publisher)
+                        }
+                    }
+                    
+                    // MARK: - Series & Organization Section
+                    CustomGlassCard(title: "Organization", icon: "books.vertical.fill") {
+                        VStack(spacing: 16) {
+                            GlassTextField(title: "Series Name", placeholder: "e.g. Batman", text: $series)
                             
-                            PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
-                                Image(systemName: "pencil.circle.fill")
-                                    .font(.system(size: 30))
-                                    .foregroundColor(.blue)
-                                    .background(Circle().fill(Color.white))
-                                    .offset(x: 10, y: 10)
+                            HStack(spacing: 16) {
+                                GlassTextField(title: "Volume", placeholder: "e.g. 1", text: $volume, keyboardType: .numbersAndPunctuation)
+                                GlassTextField(title: "Issue", placeholder: "e.g. 404", text: $issueNumber, keyboardType: .numbersAndPunctuation)
                             }
                         }
-                        Spacer()
                     }
-                    .padding(.vertical, 10)
-                } header: {
-                    Text("Cover Image")
+                    
+                    // MARK: - Tags Section
+                    CustomGlassCard(title: "Tags", icon: "tag.fill") {
+                        TagEditorView(tags: $tags)
+                            .padding()
+                            .background(Color.black.opacity(0.3))
+                            .cornerRadius(10)
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.05), lineWidth: 1))
+                    }
+                    
+                    // MARK: - Content Editor Hook (If valid)
+                    if pdf.contentType == .pdf || pdf.contentType == .ebook {
+                        CustomGlassCard(title: "Advanced Editing", icon: "scissors") {
+                            NavigationLink(destination: getEditorView(for: pdf)) {
+                                HStack {
+                                    Image(systemName: "slider.horizontal.3")
+                                    Text("Edit Content (Modify Source Data)")
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption)
+                                }
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .padding()
+                                .background(Theme.blue.opacity(0.8))
+                                .cornerRadius(10)
+                            }
+                        }
+                    }
                 }
-                
-                // MARK: - Core Metadata Section
-                Section(header: Text("Core Data")) {
-                    TextField("Title", text: $title)
-                    TextField("Author / Writer", text: $author)
-                    TextField("Publisher", text: $publisher)
-                }
-                
-                // MARK: - Series & Organization Section
-                Section(header: Text("Organization")) {
-                    TextField("Series Name", text: $series)
-                    TextField("Volume Number", text: $volume)
-                        .keyboardType(.numbersAndPunctuation)
-                    TextField("Issue Number", text: $issueNumber)
-                        .keyboardType(.numbersAndPunctuation)
-                }
-                
-                // MARK: - Tags Section
-                Section(header: Text("Tags")) {
-                    TagEditorView(tags: $tags)
-                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 24)
             }
+            .background(Color.black.ignoresSafeArea())
             .navigationTitle("Edit Metadata")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
+                        .foregroundColor(Theme.textSecondary)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") { saveMetadata() }
                         .fontWeight(.bold)
+                        .foregroundColor(Theme.blue)
                 }
             }
-            .onAppear {
-                loadInitialData()
-            }
+            .onAppear { loadInitialData() }
             .onChange(of: selectedPhotoItem) { _, newItem in
                 Task {
                     if let data = try? await newItem?.loadTransferable(type: Data.self), let uiImage = UIImage(data: data) {
@@ -108,6 +201,15 @@ struct AdvancedMetadataEditorView: View {
                     }
                 }
             }
+        }
+    }
+    
+    @ViewBuilder
+    private func getEditorView(for pdf: ConvertedPDF) -> some View {
+        if pdf.contentType == .ebook {
+            EPUBContentEditorView(pdf: pdf)
+        } else {
+            PDFContentEditorView(pdf: pdf)
         }
     }
     
@@ -130,7 +232,6 @@ struct AdvancedMetadataEditorView: View {
     private func saveMetadata() {
         var updatedMeta = pdf.metadata
         updatedMeta.title = title.isEmpty ? pdf.name : title
-        // Don't overwrite if not user changed and was null, but let's just save
         updatedMeta.author = author.isEmpty ? nil : author
         updatedMeta.publisher = publisher.isEmpty ? nil : publisher
         updatedMeta.series = series.isEmpty ? nil : series
