@@ -73,6 +73,9 @@ struct ModernLibraryView: View {
     @State private var pdfToAssignSeries: ConvertedPDF?
     @State private var assignSeriesText = ""
     
+    // ✅ NEW: Native Reader State
+    @State private var pdfToRead: ConvertedPDF?
+    
     // ✅ NEW: Batch Series Assignment
     @State private var showingBatchGroupAlert = false
     @State private var batchGroupText = ""
@@ -217,6 +220,10 @@ struct ModernLibraryView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
+        // ✅ Native Reader
+        .fullScreenCover(item: $pdfToRead) { pdf in
+            ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
+        }
         .sheet(item: $activeSheet) { item in
             switch item {
             case .importer, .cloud:
@@ -526,6 +533,10 @@ struct ModernLibraryView: View {
     
     @ViewBuilder
     private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
+        Button {
+            pdfToRead = pdf
+        } label: { Label("Read / Preview", systemImage: "book.pages") }
+        
         Button {
             toggleFavorite(for: pdf)
         } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star") }

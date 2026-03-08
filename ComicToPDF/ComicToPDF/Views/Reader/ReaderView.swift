@@ -7,7 +7,11 @@ import ZIPFoundation
 struct ReaderView: View {
     let fileURL: URL
     let contentType: ContentType
+    var pdf: ConvertedPDF? // Added to support Bookmarking
+    
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
+    
     @State private var isPanelViewEnabled = true
     @State private var isVerticalScroll = false
     
@@ -104,11 +108,20 @@ struct ReaderView: View {
                     Button("Done") { dismiss() }.fontWeight(.bold)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Toggle("Vertical Scroll", isOn: $isVerticalScroll)
-                        Toggle("Panel View", isOn: $isPanelViewEnabled)
-                    } label: {
-                        Image(systemName: "gear")
+                    HStack(spacing: 16) {
+                        if let pdf = pdf {
+                            Button(action: toggleBookmark) {
+                                Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                                    .foregroundColor(isBookmarked ? Theme.orange : Theme.blue)
+                            }
+                        }
+                        
+                        Menu {
+                            Toggle("Vertical Scroll", isOn: $isVerticalScroll)
+                            Toggle("Panel View", isOn: $isPanelViewEnabled)
+                        } label: {
+                            Image(systemName: "gear")
+                        }
                     }
                 }
             }
@@ -170,6 +183,30 @@ struct ReaderView: View {
     
     func prevPage() {
         if currentPageIndex > 0 { currentPageIndex -= 1 }
+    }
+    
+    // MARK: - Bookmarks
+    private var isBookmarked: Bool {
+        guard let pdf = pdf else { return false }
+        return pdf.metadata.bookmarkedPages.contains(currentPageIndex)
+    }
+    
+    private func toggleBookmark() {
+        guard let p = pdf, let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == p.id }) else { return }
+        
+        var updated = conversionManager.convertedPDFs[idx]
+        if isBookmarked {
+            updated.metadata.bookmarkedPages.removeAll(where: { $0 == currentPageIndex })
+        } else {
+            updated.metadata.bookmarkedPages.append(currentPageIndex)
+        }
+        
+        conversionManager.convertedPDFs[idx] = updated
+        conversionManager.saveLibrary()
+        
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
     }
 }
 

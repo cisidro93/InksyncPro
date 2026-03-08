@@ -137,6 +137,7 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     // ✅ Calibre-style Reading Options
     var isManga: Bool? // Overrides global setting if present
     var isWebtoon: Bool? // For vertical scroll support
+    var bookmarkedPages: [Int] = [] // Stores indices of dog-eared pages
 }
 
 // ✅ NEW: Chapter Structure

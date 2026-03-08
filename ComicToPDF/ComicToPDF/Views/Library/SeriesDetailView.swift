@@ -22,11 +22,17 @@ struct SeriesDetailView: View {
     @State private var pdfToSearchMetadata: ConvertedPDF?
     @State private var pdfToAssignSeries: ConvertedPDF?
     @State private var assignSeriesText = ""
+    @State private var pdfToRead: ConvertedPDF? // Added for Reader
 
     enum SortOrder { case ascending, descending }
+    @State private var showBookmarksOnly = false // Added for filtering
 
     var sortedIssues: [ConvertedPDF] {
-        sortOrder == .ascending ? series.issues : series.issues.reversed()
+        let sorted = sortOrder == .ascending ? series.issues : series.issues.reversed()
+        if showBookmarksOnly {
+            return sorted.filter { !$0.metadata.bookmarkedPages.isEmpty }
+        }
+        return sorted
     }
 
     var body: some View {
@@ -90,6 +96,13 @@ struct SeriesDetailView: View {
                     }
                     
                     if !isSelectionMode {
+                        Button {
+                            withAnimation { showBookmarksOnly.toggle() }
+                        } label: {
+                            Image(systemName: showBookmarksOnly ? "bookmark.fill" : "bookmark")
+                                .foregroundColor(showBookmarksOnly ? Theme.orange : .blue)
+                        }
+
                         Menu {
                             Picker("Sort", selection: $sortOrder) {
                                 Text("Oldest First").tag(SortOrder.ascending)
@@ -101,6 +114,9 @@ struct SeriesDetailView: View {
                     }
                 }
             }
+        }
+        .fullScreenCover(item: $pdfToRead) { pdf in
+            ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
         }
         .safeAreaInset(edge: .bottom) {
             if isSelectionMode {
@@ -295,6 +311,10 @@ struct SeriesDetailView: View {
     
     @ViewBuilder
     private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
+        Button {
+            pdfToRead = pdf
+        } label: { Label("Read / Preview", systemImage: "book.pages") }
+        
         Button {
             pdfToExport = pdf
         } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
