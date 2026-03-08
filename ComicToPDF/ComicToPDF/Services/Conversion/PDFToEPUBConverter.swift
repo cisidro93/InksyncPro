@@ -355,6 +355,8 @@ class PDFToEPUBConverter {
                 bookID: bookID,
                 imageFiles: imageFiles,
                 xhtmlFiles: xhtmlFiles,
+                width: Int(options.maxImageWidth),
+                height: Int(options.maxImageHeight),
                 coverManifest: coverManifestItem,
                 coverSpine: coverSpineItem
             )
@@ -393,7 +395,7 @@ class PDFToEPUBConverter {
     
     // MARK: - Private Methods
     
-    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String], coverManifest: String = "", coverSpine: String = "") -> String {
+    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String], width: Int, height: Int, coverManifest: String = "", coverSpine: String = "") -> String {
         var manifestItems = coverManifest
         
         // Add XHTML HTML files
@@ -430,7 +432,7 @@ class PDFToEPUBConverter {
                 <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
                 
                 <meta name="fixed-layout" content="true"/>
-                <meta name="original-resolution" content="\(Int(options.maxImageWidth))x\(Int(options.maxImageHeight))"/>
+                <meta name="original-resolution" content="\(width)x\(height)"/>
                 <meta name="book-type" content="comic"/>
                 <meta name="cdetype" content="pdoc"/>
                 <meta name="orientation-lock" content="none"/>
