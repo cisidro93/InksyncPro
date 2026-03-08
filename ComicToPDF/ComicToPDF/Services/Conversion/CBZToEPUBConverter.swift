@@ -391,7 +391,6 @@ class CBZToEPUBConverter {
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">\(settings.mangaMode ? "portrait" : "landscape")</meta>
                     <meta property="rendition:spread">landscape</meta>
-                    <meta name="primary-writing-mode" content="\(settings.mangaMode ? "horizontal-rl" : "horizontal-lr")"/>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))

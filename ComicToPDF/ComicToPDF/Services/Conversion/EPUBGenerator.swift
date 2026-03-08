@@ -331,7 +331,6 @@ class EPUBGenerator {
                 <meta name="RegionMagnification" content="true"/>
                 <meta name="cover" content="image1"/>
                 <meta name="original-resolution" content="1024x1536"/>
-                <meta name="primary-writing-mode" content="horizontal-rl"/>
                 <meta name="zero-gutter" content="true"/>
                 <meta name="zero-margin" content="true"/>
             </metadata>

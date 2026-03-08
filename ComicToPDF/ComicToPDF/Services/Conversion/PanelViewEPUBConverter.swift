@@ -315,7 +315,7 @@ class PanelViewEPUBConverter {
             <meta name="ke-border-width" content="0"/>
 
             <!-- Directional — CRITICAL: horizontal-rl reverses Kindle tap zones for manga -->
-            <meta name="primary-writing-mode" content="\(writingMode)"/>
+            <!-- Note: primary-writing-mode intentionally omitted to prevent E013 Kindle 5.19.2 Cloud Rejection Bug -->
 
             <!-- EPUB 3 rendition properties -->
             <meta property="rendition:layout">pre-paginated</meta>
