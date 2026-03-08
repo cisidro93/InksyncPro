@@ -226,6 +226,43 @@ class ConversionManager: ObservableObject {
         }
     }
     
+    // ✅ NEW: Demo Comic Injection for FTUE
+    func injectDemoComic() async {
+        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let demoFileName = "Batman_Preview.cbz"
+        let destURL = docsDir.appendingPathComponent(demoFileName)
+        
+        if !FileManager.default.fileExists(atPath: destURL.path) {
+            try? "Demo content".write(to: destURL, atomically: true, encoding: .utf8)
+        }
+        
+        var meta = PDFMetadata(title: "Batman: Year One (Preview)")
+        meta.author = "Frank Miller"
+        meta.publisher = "DC Comics"
+        meta.series = "Batman"
+        meta.issueNumber = "404"
+        meta.tags = ["Demo", "Superhero"]
+        
+        let demoPDF = ConvertedPDF(
+            id: UUID(),
+            name: demoFileName,
+            url: destURL,
+            pageCount: 32,
+            fileSize: 1048576 * 12,
+            metadata: meta,
+            contentType: .comic,
+            addedByMode: .pro
+        )
+        
+        await MainActor.run {
+            if !self.convertedPDFs.contains(where: { $0.name == demoFileName }) {
+                self.convertedPDFs.insert(demoPDF, at: 0)
+                self.saveLibrary()
+                print("🪄 FTUE Demo Comic Injected")
+            }
+        }
+    }
+    
     func cleanupMemory() { thumbnailCache.removeAllObjects() }
     
     // MARK: - Persistence

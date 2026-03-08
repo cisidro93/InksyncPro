@@ -35,6 +35,7 @@ struct ModernLibraryView: View {
         case grid = "Grid"
     }
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
     
     // Local State
     @State private var searchText = ""
