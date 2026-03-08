@@ -229,28 +229,68 @@ class ConversionManager: ObservableObject {
     // ✅ NEW: Demo Comic Injection for FTUE
     func injectDemoComic() async {
         let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let demoFileName = "Batman_Preview.cbz"
+        let demoFileName = "Inksync_Quickstart.pdf"
         let destURL = docsDir.appendingPathComponent(demoFileName)
         
         if !FileManager.default.fileExists(atPath: destURL.path) {
-            try? "Demo content".write(to: destURL, atomically: true, encoding: .utf8)
+            let minimalPDF = """
+            %PDF-1.1
+            %¥±ë
+            1 0 obj
+            << /Type /Catalog /Pages 2 0 R >>
+            endobj
+            2 0 obj
+            << /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 500 200] >>
+            endobj
+            3 0 obj
+            << /Type /Page /Parent 2 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /Contents 4 0 R >>
+            endobj
+            4 0 obj
+            << /Length 100 >>
+            stream
+            BT
+            /F1 24 Tf
+            50 120 Td
+            (Welcome to Inksync Pro!) Tj
+            ET
+            BT
+            /F1 14 Tf
+            50 80 Td
+            (Tap the + button to import your first comic.) Tj
+            ET
+            endstream
+            endobj
+            xref
+            0 5
+            0000000000 65535 f 
+            0000000018 00000 n 
+            0000000073 00000 n 
+            0000000166 00000 n 
+            0000000346 00000 n 
+            trailer
+            << /Root 1 0 R /Size 5 >>
+            startxref
+            498
+            %%EOF
+            """
+            try? minimalPDF.data(using: .utf8)?.write(to: destURL)
         }
         
-        var meta = PDFMetadata(title: "Batman: Year One (Preview)")
-        meta.author = "Frank Miller"
-        meta.publisher = "DC Comics"
-        meta.series = "Batman"
-        meta.issueNumber = "404"
-        meta.tags = ["Demo", "Superhero"]
+        var meta = PDFMetadata(title: "Inksync Pro: Quickstart Guide")
+        meta.author = "Inksync Team"
+        meta.publisher = "Inksync"
+        meta.series = "Tutorials"
+        meta.issueNumber = "1"
+        meta.tags = ["Demo", "Guide"]
         
         let demoPDF = ConvertedPDF(
             id: UUID(),
             name: demoFileName,
             url: destURL,
-            pageCount: 32,
-            fileSize: 1048576 * 12,
+            pageCount: 1,
+            fileSize: 500,
             metadata: meta,
-            contentType: .comic,
+            contentType: .pdf,
             addedByMode: .pro
         )
         
