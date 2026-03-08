@@ -44,7 +44,7 @@ public struct ImmersiveConversionOverlay: View {
             
             // Pulsing background glow
             Circle()
-                .fill(LinearGradient(colors: [Theme.blue.opacity(0.4), Theme.purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .fill(LinearGradient(colors: [Theme.blue.opacity(0.4), Color.purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(width: 300, height: 300)
                 .blur(radius: 80)
                 .scaleEffect(pulseIntensity)
@@ -61,7 +61,7 @@ public struct ImmersiveConversionOverlay: View {
                     Circle()
                         .trim(from: 0.0, to: customProgress ?? conversionManager.conversionProgress)
                         .stroke(
-                            LinearGradient(colors: [Theme.blue, Theme.purple], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing),
                             style: StrokeStyle(lineWidth: 8, lineCap: .round)
                         )
                         .frame(width: 120, height: 120)

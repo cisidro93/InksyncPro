@@ -86,95 +86,11 @@ struct AdvancedMetadataEditorView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    // MARK: - Cover Image Section
-                    CustomGlassCard(title: "Cover Image", icon: "photo.artframe") {
-                        HStack {
-                            Spacer()
-                            ZStack(alignment: .bottomTrailing) {
-                                Group {
-                                    if let customCover = customCoverImage {
-                                        Image(uiImage: customCover)
-                                            .resizable()
-                                            .scaledToFill()
-                                    } else if let currentCover = currentCoverImage {
-                                        Image(uiImage: currentCover)
-                                            .resizable()
-                                            .scaledToFill()
-                                    } else {
-                                        Rectangle()
-                                            .fill(Color.black.opacity(0.3))
-                                            .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(Theme.textSecondary))
-                                    }
-                                }
-                                .frame(width: 160, height: 230)
-                                .cornerRadius(12)
-                                .clipped()
-                                .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                                )
-                                
-                                PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
-                                    Image(systemName: "camera.circle.fill")
-                                        .font(.system(size: 34))
-                                        .foregroundStyle(.white, Theme.blue)
-                                        .shadow(radius: 4)
-                                        .offset(x: 12, y: 12)
-                                }
-                            }
-                            Spacer()
-                        }
-                    }
-                    
-                    // MARK: - Core Metadata Section
-                    CustomGlassCard(title: "Core Data", icon: "info.circle.fill") {
-                        VStack(spacing: 16) {
-                            GlassTextField(title: "Title", placeholder: "e.g. Batman: Year One", text: $title)
-                            GlassTextField(title: "Author / Writer", placeholder: "e.g. Frank Miller", text: $author)
-                            GlassTextField(title: "Publisher", placeholder: "e.g. DC Comics", text: $publisher)
-                        }
-                    }
-                    
-                    // MARK: - Series & Organization Section
-                    CustomGlassCard(title: "Organization", icon: "books.vertical.fill") {
-                        VStack(spacing: 16) {
-                            GlassTextField(title: "Series Name", placeholder: "e.g. Batman", text: $series)
-                            
-                            HStack(spacing: 16) {
-                                GlassTextField(title: "Volume", placeholder: "e.g. 1", text: $volume, keyboardType: .numbersAndPunctuation)
-                                GlassTextField(title: "Issue", placeholder: "e.g. 404", text: $issueNumber, keyboardType: .numbersAndPunctuation)
-                            }
-                        }
-                    }
-                    
-                    // MARK: - Tags Section
-                    CustomGlassCard(title: "Tags", icon: "tag.fill") {
-                        TagEditorView(tags: $tags)
-                            .padding()
-                            .background(Color.black.opacity(0.3))
-                            .cornerRadius(10)
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.05), lineWidth: 1))
-                    }
-                    
-                    // MARK: - Content Editor Hook (If valid)
-                    if pdf.contentType == .pdf || pdf.contentType == .ebook {
-                        CustomGlassCard(title: "Advanced Editing", icon: "scissors") {
-                            NavigationLink(destination: getEditorView(for: pdf)) {
-                                HStack {
-                                    Image(systemName: "slider.horizontal.3")
-                                    Text("Edit Content (Modify Source Data)")
-                                    Spacer()
-                                    Image(systemName: "chevron.right").font(.caption)
-                                }
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Theme.blue.opacity(0.8))
-                                .cornerRadius(10)
-                            }
-                        }
-                    }
+                    coverImageSection
+                    coreMetadataSection
+                    organizationSection
+                    tagsSection
+                    contentEditorHook
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
@@ -202,11 +118,109 @@ struct AdvancedMetadataEditorView: View {
                 }
             }
         }
+    @ViewBuilder
+    private var coverImageSection: some View {
+        CustomGlassCard(title: "Cover Image", icon: "photo.artframe") {
+            HStack {
+                Spacer()
+                ZStack(alignment: .bottomTrailing) {
+                    Group {
+                        if let customCover = customCoverImage {
+                            Image(uiImage: customCover)
+                                .resizable()
+                                .scaledToFill()
+                        } else if let currentCover = currentCoverImage {
+                            Image(uiImage: currentCover)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            Rectangle()
+                                .fill(Color.black.opacity(0.3))
+                                .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(Theme.textSecondary))
+                        }
+                    }
+                    .frame(width: 160, height: 230)
+                    .cornerRadius(12)
+                    .clipped()
+                    .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+                    
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
+                        Image(systemName: "camera.circle.fill")
+                            .font(.system(size: 34))
+                            .foregroundStyle(.white, Theme.blue)
+                            .shadow(radius: 4)
+                            .offset(x: 12, y: 12)
+                    }
+                }
+                Spacer()
+            }
+        }
     }
     
     @ViewBuilder
+    private var coreMetadataSection: some View {
+        CustomGlassCard(title: "Core Data", icon: "info.circle.fill") {
+            VStack(spacing: 16) {
+                GlassTextField(title: "Title", placeholder: "e.g. Batman: Year One", text: $title)
+                GlassTextField(title: "Author / Writer", placeholder: "e.g. Frank Miller", text: $author)
+                GlassTextField(title: "Publisher", placeholder: "e.g. DC Comics", text: $publisher)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var organizationSection: some View {
+        CustomGlassCard(title: "Organization", icon: "books.vertical.fill") {
+            VStack(spacing: 16) {
+                GlassTextField(title: "Series Name", placeholder: "e.g. Batman", text: $series)
+                
+                HStack(spacing: 16) {
+                    GlassTextField(title: "Volume", placeholder: "e.g. 1", text: $volume, keyboardType: .numbersAndPunctuation)
+                    GlassTextField(title: "Issue", placeholder: "e.g. 404", text: $issueNumber, keyboardType: .numbersAndPunctuation)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var tagsSection: some View {
+        CustomGlassCard(title: "Tags", icon: "tag.fill") {
+            TagEditorView(tags: $tags)
+                .padding()
+                .background(Color.black.opacity(0.3))
+                .cornerRadius(10)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.05), lineWidth: 1))
+        }
+    }
+    
+    @ViewBuilder
+    private var contentEditorHook: some View {
+        if pdf.contentType == .pdf || pdf.contentType == .book {
+            CustomGlassCard(title: "Advanced Editing", icon: "scissors") {
+                NavigationLink(destination: getEditorView(for: pdf)) {
+                    HStack {
+                        Image(systemName: "slider.horizontal.3")
+                        Text("Edit Content (Modify Source Data)")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption)
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Theme.blue.opacity(0.8))
+                    .cornerRadius(10)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private func getEditorView(for pdf: ConvertedPDF) -> some View {
-        if pdf.contentType == .ebook {
+        if pdf.contentType == .book {
             EPUBContentEditorView(pdf: pdf)
         } else {
             PDFContentEditorView(pdf: pdf)

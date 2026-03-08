@@ -104,7 +104,6 @@ struct ConvertView: View {
                     Text(status).font(.caption).foregroundColor(status.contains("Error") ? .red : .secondary)
                 }
             }
-            }
         }
         .overlay(
             Group {
