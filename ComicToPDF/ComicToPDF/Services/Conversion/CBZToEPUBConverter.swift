@@ -120,7 +120,7 @@ class CBZToEPUBConverter {
         var generatedFiles: [URL] = []
         
         // Track resolution from the first image of the first batch for consistency
-        // let contentSize = CGSize(width: 1080, height: 1920) removed.
+        var contentSize = CGSize(width: 1080, height: 1920) // Default if tracking fails
         var hasCapturedResolution = false
         var firstBatchCoverData: Data? = nil // ✅ Store original cover for dynamic chunk badges
         
@@ -226,7 +226,7 @@ class CBZToEPUBConverter {
             // If we wait until the loop, 'widthID' and 'heightID' will be 0, causing Kindle to break.
             if !batch.isEmpty {
                 if let firstItem = batch.first, let image = UIImage(data: firstItem.data) {
-                    _ = image.size // Size tracking removed
+                    contentSize = image.size // ✅ Track resolution for Fixed-Layout
                     hasCapturedResolution = true
                     // Also capture cover if this is the very first batch
                     if batchIndex == 0 { firstBatchCoverData = firstItem.data }
@@ -262,8 +262,8 @@ class CBZToEPUBConverter {
             }
             
             // ✅ Prepare Metadata Identifiers (Now with valid dimensions)
-            // let widthID = Int(contentSize.width)
-            // let heightID = Int(contentSize.height)
+            let widthID = Int(contentSize.width)
+            let heightID = Int(contentSize.height)
             let bookUUID = UUID().uuidString
             // Note: writingMode and spreadMode are defined later near OPF generation for strict compliance
             
@@ -315,7 +315,7 @@ class CBZToEPUBConverter {
             Logger.shared.log("✅ Wrote toc.ncx", category: "Converter")
             
             // Process Items in this Batch
-            let chunkSize = 20
+            let chunkSize = 1 // ✅ REQUIRED: 1 image per file for Fixed-Layout EPUBs
             var currentChunkImages: [String] = []
             var chunkIndex = 0
             
@@ -340,7 +340,7 @@ class CBZToEPUBConverter {
                 
                 if !hasCapturedResolution {
                     if let image = UIImage(data: item.data) {
-                        _ = image.size
+                        contentSize = image.size
                         hasCapturedResolution = true
                         if batchIndex == 0 && localIndex == 0 {
                             firstBatchCoverData = item.data
@@ -359,7 +359,9 @@ class CBZToEPUBConverter {
                     let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
                         chunkIndex: chunkIndex,
                         images: currentChunkImages,
-                        title: "Part \(chunkIndex)"
+                        title: "Page \(chunkIndex)",
+                        width: widthID,
+                        height: heightID
                     )
                     let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
                     try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
@@ -372,7 +374,7 @@ class CBZToEPUBConverter {
             }
             
             // OPF Generation
-            // We use standard Reflowable Layout
+            // ✅ We use standard Fixed-Layout format required by Amazon Publishing limits
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
@@ -381,8 +383,16 @@ class CBZToEPUBConverter {
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-                    <meta property="rendition:spread">landscape</meta>
+                    
+                    <meta name="fixed-layout" content="true"/>
+                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
+                    <meta name="book-type" content="comic"/>
+                    <meta name="RegionMagnification" content="true"/>
                     <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
+                    
+                    <meta property="rendition:layout">pre-paginated</meta>
+                    <meta property="rendition:orientation">\(settings.mangaMode ? "portrait" : "landscape")</meta>
+                    <meta property="rendition:spread">landscape</meta>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
@@ -459,12 +469,10 @@ class CBZToEPUBConverter {
         return generatedFiles
     }
     
-    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
+    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int, height: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                <div class="page">
-                    <img src="../images/\(imageName)" class="page-image" alt="Page Image"/>
-                </div>
+                  <img src="../images/\(imageName)" class="page-image" alt="Page Image"/>
             """
         }.joined(separator: "\n")
         
@@ -474,43 +482,13 @@ class CBZToEPUBConverter {
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
     <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=\(width), height=\(height)"/>
     <title>\(title)</title>
-    <style>
-        /* Native Reflowable Layout for Columns */
-        @page {
-            margin: 0;
-            padding: 0;
-        }
-        @media amzn-kf8 {
-            body { margin: 0 !important; padding: 0 !important; }
-        }
-        html, body { 
-            margin: 0; 
-            padding: 0; 
-            background-color: #000000; 
-        }
-        .chunk-container {
-            width: 100%;
-            column-gap: 0;
-            -webkit-column-gap: 0;
-        }
-        .page { 
-            text-align: center;
-            page-break-inside: avoid;
-            margin: 0; 
-            padding: 0; 
-        }
-        .page-image {
-            max-width: 100%;
-            max-height: 100vh;
-            height: auto;
-            object-fit: contain;
-        }
-    </style>
+    <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
 </head>
 <body>
-    <div class="chunk-container">
-    \(imageElements)
+    <div class="page">
+\(imageElements)
     </div>
 </body>
 </html>

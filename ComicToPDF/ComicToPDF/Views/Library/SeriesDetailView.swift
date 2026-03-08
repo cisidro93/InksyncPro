@@ -164,7 +164,7 @@ struct SeriesDetailView: View {
                             showingMergeConfig = true
                         }) {
                             HStack {
-                                Text("Merge")
+                                Text("Convert & Merge")
                                 Image(systemName: "doc.on.doc.fill")
                             }
                             .font(.subheadline.bold())
