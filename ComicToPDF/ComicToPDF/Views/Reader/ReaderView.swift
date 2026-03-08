@@ -58,16 +58,24 @@ struct ReaderView: View {
                             }
                         }
                     } else {
-                        // PAGED MODE (Existing Logic)
+                        // PAGED MODE (Premium 3D Page Curl)
                         if fileURL.pathExtension.lowercased() == "epub" {
-                            if !pages.isEmpty && currentPageIndex < pages.count {
-                                EPUBSmartReader(
-                                    pageURL: pages[currentPageIndex],
-                                    panelMode: $isPanelViewEnabled,
-                                    onNextPage: nextPage,
-                                    onPrevPage: prevPage
+                            if !pages.isEmpty {
+                                PageCurlReaderView(
+                                    pages: pages.enumerated().map { index, pageURL in
+                                        EPUBSmartReader(
+                                            pageURL: pageURL,
+                                            panelMode: $isPanelViewEnabled,
+                                            onNextPage: nextPage,
+                                            onPrevPage: prevPage
+                                        )
+                                        .id(pageURL)
+                                    },
+                                    currentPageIndex: $currentPageIndex,
+                                    transitionStyle: .pageCurl, // 3D Curl effect
+                                    navigationOrientation: .horizontal
                                 )
-                                .id(pages[currentPageIndex])
+                                .ignoresSafeArea(edges: [.bottom, .horizontal])
                             }
                         } else {
                             PDFKitView(url: fileURL)
