@@ -503,7 +503,7 @@ class PDFToEPUBConverter {
         </head>
         <body>
             <div class="page">
-\(imageElements)
+        \(imageElements)
             </div>
         </body>
         </html>
