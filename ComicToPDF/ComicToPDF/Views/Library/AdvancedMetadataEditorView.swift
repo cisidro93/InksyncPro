@@ -118,6 +118,8 @@ struct AdvancedMetadataEditorView: View {
                 }
             }
         }
+    }
+    
     @ViewBuilder
     private var coverImageSection: some View {
         CustomGlassCard(title: "Cover Image", icon: "photo.artframe") {
