@@ -721,6 +721,8 @@ struct ModernLibraryView: View {
                         }
                         ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
                         ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { activeSheet = .cloud }
+                    }
+                    Group {
                         ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { activeSheet = .merge }
                         ActionPill(title: "Convert & Merge", icon: "doc.on.doc.fill", color: Theme.purple, action: {
                             if multiSelection.count >= 2 {
