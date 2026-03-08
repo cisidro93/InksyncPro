@@ -408,7 +408,7 @@ class CBZToEPUBConverter {
                     
                     <meta name="fixed-layout" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
-                    <meta name="orientation-lock" content="\(settings.mangaMode ? "portrait" : "landscape")"/>
+                    <meta name="orientation-lock" content="none"/>
                     <meta name="book-type" content="comic"/>
                     <meta name="cdetype" content="pdoc"/>
                     <meta name="RegionMagnification" content="true"/>
@@ -420,8 +420,8 @@ class CBZToEPUBConverter {
                     <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                     
                     <meta property="rendition:layout">pre-paginated</meta>
-                    <meta property="rendition:orientation">\(settings.mangaMode ? "portrait" : "landscape")</meta>
-                    <meta property="rendition:spread">landscape</meta>
+                    <meta property="rendition:orientation">auto</meta>
+                    <meta property="rendition:spread">auto</meta>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))

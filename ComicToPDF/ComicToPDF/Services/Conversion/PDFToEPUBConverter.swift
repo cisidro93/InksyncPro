@@ -441,7 +441,8 @@ class PDFToEPUBConverter {
                 <meta name="ke-border-color" content="#000000"/>
                 <meta name="ke-border-width" content="0"/>
                 <meta property="rendition:layout">pre-paginated</meta>
-                <meta property="rendition:spread">landscape</meta>
+                <meta property="rendition:orientation">auto</meta>
+                <meta property="rendition:spread">auto</meta>
                 <meta name="cover" content="img1"/>
             </metadata>
             <manifest>

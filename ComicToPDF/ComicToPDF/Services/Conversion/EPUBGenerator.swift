@@ -331,8 +331,13 @@ class EPUBGenerator {
                 <meta name="RegionMagnification" content="true"/>
                 <meta name="cover" content="image1"/>
                 <meta name="original-resolution" content="1024x1536"/>
+                <meta name="orientation-lock" content="none"/>
+                <meta name="cdetype" content="pdoc"/>
+                <meta name="region-all-mag-adp" content="1"/>
                 <meta name="zero-gutter" content="true"/>
                 <meta name="zero-margin" content="true"/>
+                <meta name="ke-border-color" content="#000000"/>
+                <meta name="ke-border-width" content="0"/>
             </metadata>
             <manifest>
                 <item id="toc" href="text/toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>
