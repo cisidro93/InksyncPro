@@ -34,3 +34,5 @@ targets:
         CFBundleShortVersionString: "1.0.0"
         UILaunchStoryboardName: LaunchScreen
         UIRequiresFullScreen: true
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
