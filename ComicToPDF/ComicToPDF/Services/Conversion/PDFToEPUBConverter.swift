@@ -331,7 +331,7 @@ class PDFToEPUBConverter {
                 title: title,
                 startIndex: (chunkIndex * pageLimit) + 1
             )
-            try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: .utf8)
+            try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: String.Encoding.utf8)
             xhtmlFiles.append(chunkFileName)
         }
         
@@ -498,10 +498,10 @@ class PDFToEPUBConverter {
         """
     }
     
-    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int, width: Int, height: Int) -> String {
+    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                  <img src="images/\(imageName)" class="page-image" alt="Page \(startIndex + i)"/>
+                  <div class="svg-wrapper"><img src="images/\(imageName)" alt="Page \(startIndex + i)"/></div>
             """
         }.joined(separator: "\n")
         
@@ -510,14 +510,13 @@ class PDFToEPUBConverter {
         <!DOCTYPE html>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
+            <meta charset="UTF-8"/>
+            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
             <title>\(escapeXML(title))</title>
             <link rel="stylesheet" type="text/css" href="style.css"/>
-            <meta name="viewport" content="width=\(width), height=\(height)"/>
         </head>
         <body>
-            <div class="page">
         \(imageElements)
-            </div>
         </body>
         </html>
         """
