@@ -148,12 +148,6 @@ struct OnboardingView: View {
             hasSeenOnboarding = true
         }
         
-        // 2. Pre-load a dummy tutorial file to ensure the Library isn't completely empty!
-        Task {
-            // We'll call a dedicated setup method in ConversionManager
-            await conversionManager.injectDemoComic()
-        }
-        
         dismiss()
     }
 }
