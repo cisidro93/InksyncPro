@@ -722,6 +722,15 @@ struct ModernLibraryView: View {
                         ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
                         ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { activeSheet = .cloud }
                         ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { activeSheet = .merge }
+                        ActionPill(title: "Convert & Merge", icon: "doc.on.doc.fill", color: Theme.purple) {
+                            if multiSelection.count >= 2 {
+                                batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                                showingBatchMergeReorder = true
+                            } else {
+                                withAnimation { isBatchMode = true }
+                                conversionManager.appAlert = AlertInfo(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.")
+                            }
+                        }
                         ActionPill(title: "Vault", icon: conversionManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: conversionManager.isVaultUnlocked ? Theme.orange : Theme.blue) { 
                             handleVaultToggle() 
                         }
@@ -777,7 +786,7 @@ struct ModernLibraryView: View {
                     batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                     showingBatchMergeReorder = true
                 } label: {
-                    VStack(spacing: 4) { Image(systemName: "doc.on.doc.fill").font(.title3); Text("Merge").font(.caption) }
+                    VStack(spacing: 4) { Image(systemName: "doc.on.doc.fill").font(.title3); Text("Convert & Merge").font(.caption) }
                 }
                 .disabled(multiSelection.count < 2)
                 
@@ -808,7 +817,13 @@ struct ModernLibraryView: View {
                         batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                         showingBatchMergeReorder = true
                     } label: {
-                        Label("Merge", systemImage: "doc.on.doc.fill")
+                        Label("Convert & Merge", systemImage: "doc.on.doc.fill")
+                    }
+                    
+                    Button {
+                        activeSheet = .merge
+                    } label: {
+                        Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge")
                     }
                     
                     Divider()
