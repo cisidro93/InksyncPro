@@ -320,7 +320,27 @@ class CBZToEPUBConverter {
                 try? coverData.write(to: coverURL)
                 
                 manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-                currentChunkImages.append(coverName)
+                
+                // Write cover as its own isolated page to comply with Fixed Layout 1 image/page rule
+                chunkIndex += 1
+                var coverW = widthID
+                var coverH = heightID
+                if let cImg = UIImage(data: coverData) {
+                    coverW = Int(cImg.size.width)
+                    coverH = Int(cImg.size.height)
+                }
+                let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
+                    chunkIndex: chunkIndex,
+                    images: [coverName],
+                    title: "Cover",
+                    width: coverW,
+                    height: coverH
+                )
+                let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
+                try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
+                
+                manifestItems.append("<item id=\"chunk_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
+                spineItems.append("<itemref idref=\"chunk_\(chunkIndex)\"/>")
             }
             
             for (localIndex, item) in batch.enumerated() {
@@ -332,9 +352,15 @@ class CBZToEPUBConverter {
                 let destURL = imagesDir.appendingPathComponent(newImageName)
                 try item.data.write(to: destURL)
                 
-                if !hasCapturedResolution {
-                    if let image = UIImage(data: item.data) {
-                        contentSize = image.size
+                // ✅ Fetch local image size for strict XHTML Viewport enforcement
+                var pageW = widthID
+                var pageH = heightID
+                
+                if let img = UIImage(data: item.data) {
+                    pageW = Int(img.size.width)
+                    pageH = Int(img.size.height)
+                    if !hasCapturedResolution {
+                        contentSize = img.size
                         hasCapturedResolution = true
                         if batchIndex == 0 && localIndex == 0 {
                             firstBatchCoverData = item.data
@@ -354,8 +380,8 @@ class CBZToEPUBConverter {
                         chunkIndex: chunkIndex,
                         images: currentChunkImages,
                         title: "Page \(chunkIndex)",
-                        width: widthID,
-                        height: heightID
+                        width: pageW,
+                        height: pageH
                     )
                     let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
                     try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
@@ -386,6 +412,11 @@ class CBZToEPUBConverter {
                     <meta name="book-type" content="comic"/>
                     <meta name="cdetype" content="pdoc"/>
                     <meta name="RegionMagnification" content="true"/>
+                    <meta name="region-all-mag-adp" content="1"/>
+                    <meta name="zero-gutter" content="true"/>
+                    <meta name="zero-margin" content="true"/>
+                    <meta name="ke-border-color" content="#000000"/>
+                    <meta name="ke-border-width" content="0"/>
                     <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                     
                     <meta property="rendition:layout">pre-paginated</meta>

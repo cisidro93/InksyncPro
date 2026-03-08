@@ -314,7 +314,7 @@ class PDFToEPUBConverter {
             phase: .packaging
         ))
         
-        let pageLimit = 20
+        let pageLimit = 1 // ✅ REQUIRED: 1 image per file for Fixed-Layout EPUBs
         var xhtmlFiles: [String] = []
         
         // Group images into chunks to prevent single massive HTML files while still allowing dynamic spreads
@@ -324,13 +324,25 @@ class PDFToEPUBConverter {
         
         for (chunkIndex, chunkImages) in chunks.enumerated() {
             let chunkFileName = String(format: "chunk_%04d.xhtml", chunkIndex + 1)
+            
+            // ✅ Fetch local image size for strict XHTML Viewport enforcement
+            var pageW = Int(options.maxImageWidth)
+            var pageH = Int(options.maxImageHeight)
+            if let firstImgName = chunkImages.first {
+                let imgURL = oebpsDir.appendingPathComponent("images/\(firstImgName)")
+                if let img = UIImage(contentsOfFile: imgURL.path) {
+                    pageW = Int(img.size.width)
+                    pageH = Int(img.size.height)
+                }
+            }
+            
             let chunkXHTML = generateChunkXHTML(
                 chunkIndex: chunkIndex + 1,
                 images: chunkImages,
                 title: title,
                 startIndex: (chunkIndex * pageLimit) + 1,
-                width: Int(options.maxImageWidth),
-                height: Int(options.maxImageHeight)
+                width: pageW,
+                height: pageH
             )
             try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: .utf8)
             xhtmlFiles.append(chunkFileName)
@@ -418,11 +430,16 @@ class PDFToEPUBConverter {
                 <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
                 
                 <meta name="fixed-layout" content="true"/>
-                <meta name="original-resolution" content="1000x1500"/>
+                <meta name="original-resolution" content="\(Int(options.maxImageWidth))x\(Int(options.maxImageHeight))"/>
                 <meta name="book-type" content="comic"/>
                 <meta name="cdetype" content="pdoc"/>
                 <meta name="orientation-lock" content="none"/>
                 <meta name="RegionMagnification" content="true"/>
+                <meta name="region-all-mag-adp" content="1"/>
+                <meta name="zero-gutter" content="true"/>
+                <meta name="zero-margin" content="true"/>
+                <meta name="ke-border-color" content="#000000"/>
+                <meta name="ke-border-width" content="0"/>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:spread">landscape</meta>
                 <meta name="cover" content="img1"/>
