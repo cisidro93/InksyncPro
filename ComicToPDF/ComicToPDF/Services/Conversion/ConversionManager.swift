@@ -240,22 +240,22 @@ class ConversionManager: ObservableObject {
             << /Type /Catalog /Pages 2 0 R >>
             endobj
             2 0 obj
-            << /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 500 200] >>
+            << /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 600 900] >>
             endobj
             3 0 obj
             << /Type /Page /Parent 2 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /Contents 4 0 R >>
             endobj
             4 0 obj
-            << /Length 100 >>
+            << /Length 150 >>
             stream
             BT
             /F1 24 Tf
-            50 120 Td
+            40 800 Td
             (Welcome to Inksync Pro!) Tj
             ET
             BT
-            /F1 14 Tf
-            50 80 Td
+            /F1 16 Tf
+            40 760 Td
             (Tap the + button to import your first comic.) Tj
             ET
             endstream
