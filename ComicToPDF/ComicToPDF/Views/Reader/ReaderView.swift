@@ -36,6 +36,7 @@ struct ReaderView: View {
     
     // MARK: - Comic / Manga Reader
     private var comicReaderBody: some View {
+        NavigationStack {
             ZStack {
                 if isLoading {
                     ProgressView("Opening Book...").scaleEffect(1.2)
@@ -63,16 +64,28 @@ struct ReaderView: View {
                         }
                     } else {
                         // PAGED MODE (Premium 3D Page Curl)
-                        if fileURL.pathExtension.lowercased() == "epub" {
+                        if fileURL.pathExtension.lowercased() != "pdf" {
                             if !pages.isEmpty {
                                 PageCurlReaderView(
                                     pages: pages.enumerated().map { index, pageURL in
-                                        EPUBSmartReader(
-                                            pageURL: pageURL,
-                                            panelMode: $isPanelViewEnabled,
-                                            onNextPage: nextPage,
-                                            onPrevPage: prevPage
-                                        )
+                                        Group {
+                                            if fileURL.pathExtension.lowercased() == "epub" {
+                                                EPUBSmartReader(
+                                                    pageURL: pageURL,
+                                                    panelMode: $isPanelViewEnabled,
+                                                    onNextPage: nextPage,
+                                                    onPrevPage: prevPage
+                                                )
+                                            } else {
+                                                AsyncImage(url: pageURL) { phase in
+                                                    if let image = phase.image {
+                                                        image.resizable().aspectRatio(contentMode: .fit)
+                                                    } else {
+                                                        ProgressView()
+                                                    }
+                                                }
+                                            }
+                                        }
                                         .id(pageURL)
                                     },
                                     currentPageIndex: $currentPageIndex,
@@ -126,51 +139,66 @@ struct ReaderView: View {
                 }
             }
             .task {
-                if fileURL.pathExtension.lowercased() == "epub" {
-                    await prepareEPUB()
-                } else {
-                    isLoading = false
-                }
+                await prepareArchive()
             }
             .onDisappear {
                 // Cleanup Temp Files
                 if let dir = unzippedDir {
                     try? FileManager.default.removeItem(at: dir)
+                }
             }
-        }
+        } // End NavigationStack
     }
     
-    // MARK: - EPUB Preparation
-    private func prepareEPUB() async {
-        let fileManager = FileManager.default
-        let tempID = UUID().uuidString
-        let dest = fileManager.temporaryDirectory.appendingPathComponent("Reader_\(tempID)")
+    // MARK: - Archive Preparation
+    private func prepareArchive() async {
+        let ext = fileURL.pathExtension.lowercased()
+        
+        // PDFs are handled directly by PDFKitView without extraction
+        if ext == "pdf" {
+            await MainActor.run { isLoading = false }
+            return
+        }
         
         do {
-            try fileManager.createDirectory(at: dest, withIntermediateDirectories: true)
-            try fileManager.unzipItem(at: fileURL, to: dest)
-            self.unzippedDir = dest
-            
-            // Find all XHTML files recursively
-            if let enumerator = fileManager.enumerator(at: dest, includingPropertiesForKeys: nil) {
-                var foundPages: [URL] = []
-                while let file = enumerator.nextObject() as? URL {
-                    if ["xhtml", "html"].contains(file.pathExtension.lowercased()) {
-                        foundPages.append(file)
+            if ext == "epub" {
+                let fileManager = FileManager.default
+                let tempID = UUID().uuidString
+                let dest = fileManager.temporaryDirectory.appendingPathComponent("Reader_\(tempID)")
+                
+                try fileManager.createDirectory(at: dest, withIntermediateDirectories: true)
+                try fileManager.unzipItem(at: fileURL, to: dest)
+                await MainActor.run { self.unzippedDir = dest }
+                
+                if let enumerator = fileManager.enumerator(at: dest, includingPropertiesForKeys: nil) {
+                    var foundPages: [URL] = []
+                    while let file = enumerator.nextObject() as? URL {
+                        if ["xhtml", "html"].contains(file.pathExtension.lowercased()) {
+                            foundPages.append(file)
+                        }
+                    }
+                    foundPages.sort { $0.lastPathComponent < $1.lastPathComponent }
+                    
+                    await MainActor.run {
+                        self.pages = foundPages
+                        self.isLoading = false
+                        if foundPages.isEmpty { self.errorMessage = "No pages found in EPUB." }
                     }
                 }
-                // Sort strictly by filename (page0001, page0002)
-                foundPages.sort { $0.lastPathComponent < $1.lastPathComponent }
-                
+            } else {
+                // CBZ / ZIP
+                let result = try await ZipUtilities.extractComic(from: fileURL)
                 await MainActor.run {
-                    self.pages = foundPages
+                    self.unzippedDir = result.workingDir
+                    self.pages = result.imageURLs
                     self.isLoading = false
-                    if foundPages.isEmpty { self.errorMessage = "No pages found in EPUB." }
+                    if result.imageURLs.isEmpty { self.errorMessage = "No images found in comic archive." }
                 }
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = "Failed to unzip: \(error.localizedDescription)"
+                Logger.shared.log("Reader extraction failed: \(error.localizedDescription)", category: "ReaderView")
+                self.errorMessage = "Failed to open comic: \(error.localizedDescription)"
                 self.isLoading = false
             }
         }
