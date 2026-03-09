@@ -245,7 +245,7 @@ class CBZToEPUBConverter {
                 let coverName = "cover_reused.jpg"
                 let coverURL = imagesDir.appendingPathComponent(coverName)
                 try? coverData.write(to: coverURL)
-                manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\"/>")
+                manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
                 
                 // Write cover as its own isolated page to comply with Fixed Layout 1 image/page rule
                 chunkIndex += 1
@@ -286,7 +286,8 @@ class CBZToEPUBConverter {
                     }
                 }
                 
-                manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"/>")
+                let propertiesAttr = (batchIndex == 0 && localIndex == 0) ? " properties=\"cover-image\"" : ""
+                manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propertiesAttr)/>")
                 
                 currentChunkImages.append(newImageName)
                 
@@ -308,8 +309,8 @@ class CBZToEPUBConverter {
                 }
             }
             
-            // OPF Generation
             // ✅ We rigidly use standard Fixed-Layout format required by Amazon Publishing limits to bypass E013 Reading Margins
+            let coverMetaContent = (batchIndex > 0 && firstBatchCoverData != nil) ? "cover_reused_img" : "img_1"
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
@@ -331,7 +332,7 @@ class CBZToEPUBConverter {
                     <meta name="zero-margin" content="true"/>
                     <meta name="ke-border-color" content="#000000"/>
                     <meta name="ke-border-width" content="0"/>
-                    <meta name="cover" content="cover_reused_img"/>
+                    <meta name="cover" content="\(coverMetaContent)"/>
                     
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:spread">auto</meta>

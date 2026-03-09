@@ -334,6 +334,8 @@ class PDFToEPUBConverter {
             xhtmlFiles.append(chunkFileName)
         }
         
+            let coverMetaContent = (firstBatchCoverData != nil && batches.count > 1) ? "cover-image" : "img1"
+
             // Generate content.opf
             let contentOPF = generateContentOPF(
                 title: baseName,
@@ -345,6 +347,7 @@ class PDFToEPUBConverter {
                 height: Int(options.maxImageHeight),
                 coverManifest: coverManifestItem,
                 coverSpine: coverSpineItem,
+                coverMetaID: coverMetaContent,
                 mangaMode: options.mangaMode
             )
             try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: String.Encoding.utf8)
@@ -374,7 +377,7 @@ class PDFToEPUBConverter {
     
     // MARK: - Private Methods
     
-    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String], width: Int, height: Int, coverManifest: String = "", coverSpine: String = "", mangaMode: Bool = false) -> String {
+    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String], width: Int, height: Int, coverManifest: String = "", coverSpine: String = "", coverMetaID: String = "img1", mangaMode: Bool = false) -> String {
         var manifestItems = coverManifest
         
         // Add XHTML HTML files
@@ -384,7 +387,8 @@ class PDFToEPUBConverter {
         
         // Add Images
         for (index, imageFile) in imageFiles.enumerated() {
-            manifestItems += "<item id=\"img\(index + 1)\" href=\"images/\(imageFile)\" media-type=\"image/jpeg\"/>\n        "
+            let propertiesAttr = (index == 0 && coverManifest.isEmpty) ? " properties=\"cover-image\"" : ""
+            manifestItems += "<item id=\"img\(index + 1)\" href=\"images/\(imageFile)\" media-type=\"image/jpeg\"\(propertiesAttr)/>\n        "
         }
         
         // Add standard files
@@ -418,7 +422,7 @@ class PDFToEPUBConverter {
                     <meta name="zero-margin" content="true"/>
                     <meta name="ke-border-color" content="#000000"/>
                     <meta name="ke-border-width" content="0"/>
-                    <meta name="cover" content="cover-image"/>
+                    <meta name="cover" content="\(coverMetaID)"/>
                 
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:spread">auto</meta>
