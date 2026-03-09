@@ -374,7 +374,6 @@ class CBZToEPUBConverter {
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:creator>Inksync Pro</dc:creator>
                     <dc:language>en</dc:language>
-                    <meta property="rendition:spread">landscape</meta>
                     <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                 </metadata>
                 <manifest>

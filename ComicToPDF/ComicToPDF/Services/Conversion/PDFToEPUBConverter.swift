@@ -412,18 +412,12 @@ class PDFToEPUBConverter {
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
-                <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                <dc:identifier id="bookid">\(bookID)</dc:identifier>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookId" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
+            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
                 <dc:title>\(escapeXML(title))</dc:title>
                 <dc:creator>\(escapeXML(author))</dc:creator>
                 <dc:language>en</dc:language>
-                <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
-                <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-
-                <meta name="fixed-layout" content="true"/>
-                <meta name="original-resolution" content="\(width)x\(height)"/>
-                <meta property="rendition:spread">landscape</meta>
+                <dc:identifier id="BookId">urn:uuid:\(bookID)</dc:identifier>
                 <meta name="cover" content="img1"/>
             </metadata>
             <manifest>
