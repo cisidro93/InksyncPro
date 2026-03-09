@@ -418,6 +418,7 @@ class PDFToEPUBConverter {
                 <dc:creator>\(escapeXML(author))</dc:creator>
                 <dc:language>en</dc:language>
                 <dc:identifier id="BookId">urn:uuid:\(bookID)</dc:identifier>
+                <meta name="comic-panel-view" content="guided"/>
                 <meta name="cover" content="img1"/>
             </metadata>
             <manifest>
