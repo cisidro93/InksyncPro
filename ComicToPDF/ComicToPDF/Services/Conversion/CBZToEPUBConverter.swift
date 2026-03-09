@@ -290,9 +290,7 @@ class CBZToEPUBConverter {
             Logger.shared.log("✅ Wrote toc.ncx", category: "Converter")
             
             // Process Items in this Batch
-            // ✅ REQUIRED: 1 image per file. If we pack multiple images into a single XHTML file
-            // while using the 100vh fluid CSS, the Kindle will attempt to shrink all images to fit on one screen.
-            let chunkSize = 1
+            let chunkSize = 1 // ✅ REQUIRED: 1 image per file for Fixed-Layout EPUBs
             var currentChunkImages: [String] = []
             var chunkIndex = 0
             
@@ -324,11 +322,6 @@ class CBZToEPUBConverter {
                 spineItems.append("<itemref idref=\"chunk_\(chunkIndex)\"/>")
             }
             
-            // Helper to determine if an image is portrait
-            func isPortrait(_ uiImage: UIImage) -> Bool {
-                return uiImage.size.height > uiImage.size.width
-            }
-            
             for (localIndex, item) in batch.enumerated() {
                 let trueExt = (item.url.pathExtension.lowercased() == "png") ? "png" : "jpg"
                 let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
@@ -338,9 +331,7 @@ class CBZToEPUBConverter {
                 let destURL = imagesDir.appendingPathComponent(newImageName)
                 try item.data.write(to: destURL)
                 
-                var isCurrentPortrait = true
                 if let img = UIImage(data: item.data) {
-                    isCurrentPortrait = isPortrait(img)
                     if !hasCapturedResolution {
                         contentSize = img.size
                         hasCapturedResolution = true
@@ -353,30 +344,10 @@ class CBZToEPUBConverter {
                 let properties = (localIndex == 0 && batchIndex == 0) ? "properties=\"cover-image\"" : ""
                 manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
                 
-                // Logic for Synthetic Spreads
-                let allowSpreads = false // Default to false for Standard conversions without spread settings explicitly enabled, wait for user confirmation or override if Settings requires it. Actually, wait, native Kindle handles spreads automatically for Fixed-Layout, but we are using fluid. Let's force it to 1 and wait for explicit settings.
-                
-                // For now, to guarantee we do NOT break Evangelion perfect scaling and to safely build the synthetic logic, we dynamically allow 2 ONLY if it naturally flows.
                 currentChunkImages.append(newImageName)
                 
-                // Determine if we should flush the chunk
-                // Flush if:
-                // 1. We already have 2 images (the absolute synthetic spread limit)
-                // 2. We only have 1 image, BUT it's a wide landscape image (can't be part of a spread)
-                // 3. We only have 1 image, BUT the *next* image doesn't exist (end of batch)
-                var shouldFlush = false
-                
-                if currentChunkImages.count >= 2 {
-                    shouldFlush = true
-                } else if currentChunkImages.count == 1 {
-                    if !isCurrentPortrait {
-                        shouldFlush = true // Landscape images get their own page
-                    } else if localIndex == batch.count - 1 {
-                        shouldFlush = true // Last item
-                    }
-                }
-                
-                if shouldFlush {
+                // If chunk is full or this is the last item, write the chunk XHTML
+                if currentChunkImages.count >= chunkSize || localIndex == batch.count - 1 {
                     chunkIndex += 1
                     let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
                         chunkIndex: chunkIndex,
@@ -482,28 +453,13 @@ class CBZToEPUBConverter {
     }
     
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
-        let isSpread = images.count == 2
-        let imageElements: String
-        
-        if isSpread {
-            // Synthetic Dual-Page Spread: Flexbox side-by-side
-            let leftImage = images[0]
-            let rightImage = images[1]
-            imageElements = """
-                <div class="svg-wrapper spread-wrapper">
-                    <img src="../images/\(leftImage)" class="spread-image" alt="Left Page"/>
-                    <img src="../images/\(rightImage)" class="spread-image" alt="Right Page"/>
-                </div>
+        let imageElements = images.enumerated().map { i, imageName in
             """
-        } else {
-            // Standard Single Page
-            let imageName = images.first ?? ""
-            imageElements = """
                 <div class="svg-wrapper">
                     <img src="../images/\(imageName)" alt="Page Image"/>
                 </div>
             """
-        }
+        }.joined(separator: "\n")
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -514,21 +470,6 @@ class CBZToEPUBConverter {
             <title>\(title)</title>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
             <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-            <style>
-                .spread-wrapper {
-                    display: flex;
-                    flex-direction: \(settings.mangaMode ? "row-reverse" : "row");
-                    justify-content: center;
-                    align-items: center;
-                    width: 100vw;
-                    height: 100vh;
-                }
-                .spread-image {
-                    width: 50%;
-                    height: 100%;
-                    object-fit: contain;
-                }
-            </style>
         </head>
         <body>
         \(imageElements)
