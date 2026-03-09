@@ -300,12 +300,10 @@ class PDFToEPUBConverter {
                 <head><title>Cover</title>
                 <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
                 <style type="text/css">
-                @page { margin: 0; padding: 0; }
-                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-                div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; overflow: hidden; }
                 img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
                 </style></head>
-                <body><div class="svg-wrapper"><img src="images/\(coverFilename)" alt="Cover"/></div></body>
+                <body><img src="images/\(coverFilename)" alt="Cover"/></body>
                 </html>
                 """
                 try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
@@ -452,9 +450,7 @@ class PDFToEPUBConverter {
     private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                <div class="svg-wrapper">
-                    <img src="images/\(imageName)" alt="Page \(startIndex + i)"/>
-                </div>
+                <img src="images/\(imageName)" alt="Page \(startIndex + i)"/>
             """
         }.joined(separator: "\n")
         
@@ -466,16 +462,12 @@ class PDFToEPUBConverter {
             <title>\(escapeXML(title))</title>
             <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
             <style type="text/css">
-                @page { margin: 0; padding: 0; }
-                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-                div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; overflow: hidden; }
                 img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
             </style>
         </head>
         <body>
-        <div class="svg-wrapper">
         \(imageElements)
-        </div>
         </body>
         </html>
         """
