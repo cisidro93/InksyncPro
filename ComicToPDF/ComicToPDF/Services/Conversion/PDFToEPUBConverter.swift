@@ -317,25 +317,54 @@ class PDFToEPUBConverter {
             phase: .packaging
         ))
         
-        let pageLimit = 1 // ✅ REQUIRED: 1 image per file for Fixed-Layout EPUBs
+        let pageLimit = 2 // Synthetic Spread absolute max
         var xhtmlFiles: [String] = []
         
-        // Group images into chunks to prevent single massive HTML files while still allowing dynamic spreads
-        let chunks = stride(from: 0, to: imageFiles.count, by: pageLimit).map {
-            Array(imageFiles[$0..<min($0 + pageLimit, imageFiles.count)])
+        // Helper to determine if an image is portrait
+        func isPortrait(_ imageFile: String, dir: URL) -> Bool {
+            let fileURL = dir.appendingPathComponent(imageFile)
+            guard let data = try? Data(contentsOf: fileURL), let img = UIImage(data: data) else { return true }
+            return img.size.height > img.size.width
         }
         
-        for (chunkIndex, chunkImages) in chunks.enumerated() {
-            let chunkFileName = String(format: "chunk_%04d.xhtml", chunkIndex + 1)
+        var currentChunkImages: [String] = []
+        var chunkIndex = 0
+        var logicalStartIndex = 0
+        
+        for (i, imageFile) in imageFiles.enumerated() {
+            let isCurrentPortrait = isPortrait(imageFile, dir: imagesDir)
             
-            let chunkXHTML = generateChunkXHTML(
-                chunkIndex: chunkIndex + 1,
-                images: chunkImages,
-                title: title,
-                startIndex: (chunkIndex * pageLimit) + 1
-            )
-            try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: String.Encoding.utf8)
-            xhtmlFiles.append(chunkFileName)
+            // Logic for Synthetic Spreads
+            let allowSpreads = false // Wait for user settings tie-in
+            
+            currentChunkImages.append(imageFile)
+            
+            var shouldFlush = false
+            if currentChunkImages.count >= 2 {
+                shouldFlush = true
+            } else if currentChunkImages.count == 1 {
+                if !isCurrentPortrait {
+                    shouldFlush = true // Landscape images get their own page
+                } else if i == imageFiles.count - 1 {
+                    shouldFlush = true // Last item
+                }
+            }
+            
+            if shouldFlush {
+                let chunkFileName = String(format: "chunk_%04d.xhtml", chunkIndex + 1)
+                let chunkXHTML = generateChunkXHTML(
+                    chunkIndex: chunkIndex + 1,
+                    images: currentChunkImages,
+                    title: title,
+                    startIndex: logicalStartIndex + 1
+                )
+                try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: String.Encoding.utf8)
+                xhtmlFiles.append(chunkFileName)
+                
+                chunkIndex += 1
+                logicalStartIndex += currentChunkImages.count
+                currentChunkImages.removeAll()
+            }
         }
         
             // Generate content.opf
@@ -494,13 +523,26 @@ class PDFToEPUBConverter {
     }
     
     private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
-        let imageElements = images.enumerated().map { i, imageName in
-            """
-                <div class="svg-wrapper">
-                    <img src="images/\(imageName)" alt="Page \(startIndex + i)"/>
+        let isSpread = images.count == 2
+        let imageElements: String
+        
+        if isSpread {
+            let leftImage = images[0]
+            let rightImage = images[1]
+            imageElements = """
+                <div class="svg-wrapper spread-wrapper">
+                    <img src="images/\(leftImage)" class="spread-image" alt="Left Page"/>
+                    <img src="images/\(rightImage)" class="spread-image" alt="Right Page"/>
                 </div>
             """
-        }.joined(separator: "\n")
+        } else {
+            let imageName = images.first ?? ""
+            imageElements = """
+                <div class="svg-wrapper">
+                    <img src="images/\(imageName)" alt="Page \(startIndex)"/>
+                </div>
+            """
+        }
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -510,6 +552,21 @@ class PDFToEPUBConverter {
             <title>\(escapeXML(title))</title>
             <link rel="stylesheet" type="text/css" href="style.css"/>
             <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
+            <style>
+                .spread-wrapper {
+                    display: flex;
+                    flex-direction: row; /* Usually RTL is handled outside unless specific MangaMode passed */
+                    justify-content: center;
+                    align-items: center;
+                    width: 100vw;
+                    height: 100vh;
+                }
+                .spread-image {
+                    width: 50%;
+                    height: 100%;
+                    object-fit: contain;
+                }
+            </style>
         </head>
         <body>
         \(imageElements)
