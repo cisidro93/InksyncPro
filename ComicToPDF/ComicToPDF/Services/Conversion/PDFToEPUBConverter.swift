@@ -301,7 +301,7 @@ class PDFToEPUBConverter {
                 <head><title>Cover</title>
                 <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
                 <style type="text/css">
-                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; overflow: hidden; }
+                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
                 div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
                 img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
                 </style></head>
@@ -348,7 +348,8 @@ class PDFToEPUBConverter {
                 width: Int(options.maxImageWidth),
                 height: Int(options.maxImageHeight),
                 coverManifest: coverManifestItem,
-                coverSpine: coverSpineItem
+                coverSpine: coverSpineItem,
+                mangaMode: options.mangaMode
             )
             try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
@@ -385,7 +386,7 @@ class PDFToEPUBConverter {
     
     // MARK: - Private Methods
     
-    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String], width: Int, height: Int, coverManifest: String = "", coverSpine: String = "") -> String {
+    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String], width: Int, height: Int, coverManifest: String = "", coverSpine: String = "", mangaMode: Bool = false) -> String {
         var manifestItems = coverManifest
         
         // Add XHTML HTML files
@@ -412,22 +413,19 @@ class PDFToEPUBConverter {
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookId" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookId">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
                 <dc:title>\(escapeXML(title))</dc:title>
                 <dc:creator>\(escapeXML(author))</dc:creator>
                 <dc:language>en</dc:language>
                 <dc:identifier id="BookId">urn:uuid:\(bookID)</dc:identifier>
-                
-                <meta name="fixed-layout" content="true"/>
-                <meta name="original-resolution" content="\(width)x\(height)"/>
                 <meta name="comic-panel-view" content="guided"/>
                 <meta name="cover" content="img1"/>
             </metadata>
             <manifest>
                 \(manifestItems)
             </manifest>
-            <spine toc="ncx">
+            <spine page-progression-direction="\(mangaMode ? "rtl" : "ltr")">
                 \(spineItems)
             </spine>
         </package>
@@ -500,11 +498,11 @@ class PDFToEPUBConverter {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <html xmlns="http://www.w3.org/1999/xhtml">
         <head>
             <title>\(escapeXML(title))</title>
-            <link rel="stylesheet" type="text/css" href="style.css"/>
             <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
+            <link rel="stylesheet" type="text/css" href="style.css"/>
         </head>
         <body>
         \(imageElements)
@@ -515,31 +513,10 @@ class PDFToEPUBConverter {
     
     private func generateCSS() -> String {
         return """
-        @page {
-            margin: 0;
-            padding: 0;
-        }
-        body { 
-            margin: 0; 
-            padding: 0; 
-            width: 100vw; 
-            height: 100vh; 
-            background-color: #000000; 
-            overflow: hidden;
-        }
-        div.svg-wrapper { 
-            width: 100%; 
-            height: 100%; 
-            margin: 0; 
-            padding: 0; 
-            text-align: center; 
-        }
-        img { 
-            height: 100%; 
-            width: auto; 
-            max-width: 100%; 
-            object-fit: contain; 
-        }
+        @page { margin: 0; padding: 0; }
+        body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
+        div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+        img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
         """
     }
     
