@@ -168,30 +168,26 @@ class CBZToEPUBConverter {
                 margin: 0;
                 padding: 0;
             }
-            @media amzn-kf8 {
-                body { margin: 0 !important; padding: 0 !important; }
-            }
-            html, body { 
+            body { 
                 margin: 0; 
                 padding: 0; 
+                width: 100vw; 
+                height: 100vh; 
                 background-color: #000000; 
+                overflow: hidden;
             }
-            .chunk-container {
-                width: 100%;
-                column-gap: 0;
-                -webkit-column-gap: 0;
-            }
-            .page { 
-                text-align: center;
-                page-break-inside: avoid;
+            div.svg-wrapper { 
+                width: 100%; 
+                height: 100%; 
                 margin: 0; 
                 padding: 0; 
+                text-align: center; 
             }
-            .page-image {
-                max-width: 100%;
-                max-height: 100vh;
-                height: auto;
-                object-fit: contain;
+            img { 
+                height: 100%; 
+                width: auto; 
+                max-width: 100%; 
+                object-fit: contain; 
             }
 
             """
@@ -459,8 +455,8 @@ class CBZToEPUBConverter {
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                <div class="page">
-                    <img src="../images/\(imageName)" class="page-image" alt="Page Image"/>
+                <div class="svg-wrapper">
+                    <img src="../images/\(imageName)" alt="Page Image"/>
                 </div>
             """
         }.joined(separator: "\n")
@@ -473,12 +469,10 @@ class CBZToEPUBConverter {
             <meta charset="UTF-8"/>
             <title>\(title)</title>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
         </head>
         <body>
-            <div class="chunk-container">
         \(imageElements)
-            </div>
         </body>
         </html>
         """

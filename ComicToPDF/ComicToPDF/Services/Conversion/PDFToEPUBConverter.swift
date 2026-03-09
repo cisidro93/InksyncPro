@@ -299,13 +299,13 @@ class PDFToEPUBConverter {
                 <?xml version="1.0" encoding="UTF-8"?>
                 <html xmlns="http://www.w3.org/1999/xhtml">
                 <head><title>Cover</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+                <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
                 <style type="text/css">
-                body { margin: 0; padding: 0; background-color: #000000; text-align: center; }
-                .page { page-break-inside: avoid; margin: 0; padding: 0; }
-                img.page-image { max-width: 100%; max-height: 100vh; height: auto; object-fit: contain; }
+                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; overflow: hidden; }
+                div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+                img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
                 </style></head>
-                <body><div class="page"><img src="images/\(coverFilename)" class="page-image" alt="Cover"/></div></body>
+                <body><div class="svg-wrapper"><img src="images/\(coverFilename)" alt="Cover"/></div></body>
                 </html>
                 """
                 try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
@@ -496,8 +496,8 @@ class PDFToEPUBConverter {
     private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                <div class="page">
-                    <img src="images/\(imageName)" class="page-image" alt="Page \(startIndex + i)"/>
+                <div class="svg-wrapper">
+                    <img src="images/\(imageName)" alt="Page \(startIndex + i)"/>
                 </div>
             """
         }.joined(separator: "\n")
@@ -509,12 +509,10 @@ class PDFToEPUBConverter {
         <head>
             <title>\(escapeXML(title))</title>
             <link rel="stylesheet" type="text/css" href="style.css"/>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
         </head>
         <body>
-            <div class="chunk-container">
-            \(imageElements)
-            </div>
+        \(imageElements)
         </body>
         </html>
         """
@@ -526,35 +524,30 @@ class PDFToEPUBConverter {
             margin: 0;
             padding: 0;
         }
-        /* Native Reflowable Layout for Columns */
         @page {
             margin: 0;
             padding: 0;
         }
-        @media amzn-kf8 {
-            body { margin: 0 !important; padding: 0 !important; }
-        }
-        html, body { 
+        body { 
             margin: 0; 
             padding: 0; 
+            width: 100vw; 
+            height: 100vh; 
             background-color: #000000; 
+            overflow: hidden;
         }
-        .chunk-container {
-            width: 100%;
-            column-gap: 0;
-            -webkit-column-gap: 0;
-        }
-        .page { 
-            text-align: center;
-            page-break-inside: avoid;
+        div.svg-wrapper { 
+            width: 100%; 
+            height: 100%; 
             margin: 0; 
             padding: 0; 
+            text-align: center; 
         }
-        .page-image {
-            max-width: 100%;
-            max-height: 100vh;
-            height: auto;
-            object-fit: contain;
+        img { 
+            height: 100%; 
+            width: auto; 
+            max-width: 100%; 
+            object-fit: contain; 
         }
         """
     }
