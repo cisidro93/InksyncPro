@@ -317,12 +317,10 @@ class CBZToEPUBConverter {
                 let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
                     chunkIndex: chunkIndex,
                     images: [coverName],
-                    title: "Cover",
-                    width: coverW,
-                    height: coverH
+                    title: "Cover"
                 )
                 let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
-                try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
+                try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: String.Encoding.utf8)
                 
                 manifestItems.append("<item id=\"chunk_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
                 spineItems.append("<itemref idref=\"chunk_\(chunkIndex)\"/>")
