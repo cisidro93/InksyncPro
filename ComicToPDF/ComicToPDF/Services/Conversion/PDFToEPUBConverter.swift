@@ -299,11 +299,11 @@ class PDFToEPUBConverter {
                 <?xml version="1.0" encoding="UTF-8"?>
                 <html xmlns="http://www.w3.org/1999/xhtml">
                 <head><title>Cover</title>
-                <meta name="viewport" content="width=\(Int(options.maxImageWidth)), height=\(Int(options.maxImageHeight))"/>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
                 <style type="text/css">
-                body { margin: 0; padding: 0; background-color: #000000; }
-                .page { position: absolute; width: 100%; height: 100%; margin: 0; padding: 0; }
-                img.page-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+                body { margin: 0; padding: 0; background-color: #000000; text-align: center; }
+                .page { page-break-inside: avoid; margin: 0; padding: 0; }
+                img.page-image { max-width: 100%; max-height: 100vh; height: auto; object-fit: contain; }
                 </style></head>
                 <body><div class="page"><img src="images/\(coverFilename)" class="page-image" alt="Cover"/></div></body>
                 </html>
@@ -332,9 +332,7 @@ class PDFToEPUBConverter {
                 chunkIndex: chunkIndex + 1,
                 images: chunkImages,
                 title: title,
-                startIndex: (chunkIndex * pageLimit) + 1,
-                width: Int(options.maxImageWidth),
-                height: Int(options.maxImageHeight)
+                startIndex: (chunkIndex * pageLimit) + 1
             )
             try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: String.Encoding.utf8)
             xhtmlFiles.append(chunkFileName)
@@ -425,18 +423,8 @@ class PDFToEPUBConverter {
 
                 <meta name="fixed-layout" content="true"/>
                 <meta name="original-resolution" content="\(width)x\(height)"/>
-                <meta name="book-type" content="comic"/>
-                <meta name="cdetype" content="pdoc"/>
+                <meta property="rendition:spread">landscape</meta>
                 <meta name="cover" content="img1"/>
-                <meta name="zero-gutter" content="true"/>
-                <meta name="zero-margin" content="true"/>
-                <meta name="ke-border-color" content="#000000"/>
-                <meta name="ke-border-width" content="0"/>
-                
-                <meta property="rendition:layout">pre-paginated</meta>
-                <meta property="rendition:orientation">auto</meta>
-                <meta property="rendition:spread">auto</meta>
-                <meta name="orientation-lock" content="none"/>
             </metadata>
             <manifest>
                 <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
@@ -505,10 +493,12 @@ class PDFToEPUBConverter {
         """
     }
     
-    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int, width: Int, height: Int) -> String {
+    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                  <img src="images/\(imageName)" class="page-image" alt="Page \(startIndex + i)"/>
+                <div class="page">
+                    <img src="images/\(imageName)" class="page-image" alt="Page \(startIndex + i)"/>
+                </div>
             """
         }.joined(separator: "\n")
         
@@ -517,14 +507,13 @@ class PDFToEPUBConverter {
         <!DOCTYPE html>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
-            <meta charset="UTF-8"/>
-            <meta name="viewport" content="width=\(width), height=\(height)"/>
             <title>\(escapeXML(title))</title>
             <link rel="stylesheet" type="text/css" href="style.css"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         </head>
         <body>
-            <div class="page">
-        \(imageElements)
+            <div class="chunk-container">
+            \(imageElements)
             </div>
         </body>
         </html>
@@ -537,24 +526,35 @@ class PDFToEPUBConverter {
             margin: 0;
             padding: 0;
         }
-        body {
+        /* Native Reflowable Layout for Columns */
+        @page {
             margin: 0;
             padding: 0;
-            background-color: #000000;
+        }
+        @media amzn-kf8 {
+            body { margin: 0 !important; padding: 0 !important; }
+        }
+        html, body { 
+            margin: 0; 
+            padding: 0; 
+            background-color: #000000; 
+        }
+        .chunk-container {
+            width: 100%;
+            column-gap: 0;
+            -webkit-column-gap: 0;
         }
         .page { 
-            position: absolute;
-            width: 100%;
-            height: 100%;
+            text-align: center;
+            page-break-inside: avoid;
             margin: 0; 
             padding: 0; 
         }
         .page-image {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            max-width: 100%;
+            max-height: 100vh;
+            height: auto;
+            object-fit: contain;
         }
         """
     }

@@ -2784,57 +2784,44 @@ class ConversionManager: ObservableObject {
                         }
                     }
                     
-                    // 2. Fixed Layout Metadata (Applied contextually depending on Guided View)
-                    if !opfString.contains("rendition:layout") {
-                         if let range = opfString.range(of: "</metadata>") {
-                             let isReflowable = !conversionSettings.isGuidedView
-                             
-                             // ✅ RESOLUTION EXTRACTION: Find first image to set correct original-resolution
-                             // This is required for Kindle to scale the Fixed Layout correctly without letterboxing
-                             var resolutionTag = ""
-                             if conversionSettings.isGuidedView, let imageEntry = sourceArchive.makeIterator().first(where: { 
-                                 $0.path.contains("images") && 
-                                 ($0.path.hasSuffix(".jpg") || $0.path.hasSuffix(".jpeg") || $0.path.hasSuffix(".png")) 
-                             }) {
-                                 var imageData = Data()
-                                 _ = try? sourceArchive.extract(imageEntry) { imageData.append($0) }
-                                 if let image = UIImage(data: imageData) {
-                                     let w = Int(image.size.width)
-                                     let h = Int(image.size.height)
-                                     resolutionTag = "\n    <meta name=\"original-resolution\" content=\"\(w)x\(h)\"/>"
-                                     Logger.shared.log("Detected Key Resolution: \(w)x\(h)", category: "Injection")
+                    // 2. Fixed Layout Metadata (CONDITIONAL - Only for Guided View)
+                    if conversionSettings.isGuidedView {
+                        if !opfString.contains("rendition:layout") {
+                             if let range = opfString.range(of: "</metadata>") {
+                                 
+                                 // ✅ RESOLUTION EXTRACTION: Find first image to set correct original-resolution
+                                 // This is required for Kindle to scale the Fixed Layout correctly without letterboxing
+                                 var resolutionTag = ""
+                                 if let imageEntry = sourceArchive.makeIterator().first(where: { 
+                                     $0.path.contains("images") && 
+                                     ($0.path.hasSuffix(".jpg") || $0.path.hasSuffix(".jpeg") || $0.path.hasSuffix(".png")) 
+                                 }) {
+                                     var imageData = Data()
+                                     _ = try? sourceArchive.extract(imageEntry) { imageData.append($0) }
+                                     if let image = UIImage(data: imageData) {
+                                         let w = Int(image.size.width)
+                                         let h = Int(image.size.height)
+                                         resolutionTag = "\n    <meta name=\"original-resolution\" content=\"\(w)x\(h)\"/>"
+                                         Logger.shared.log("Detected Key Resolution: \(w)x\(h)", category: "Injection")
+                                     }
                                  }
-                             }
-                             
-                             // Standard metadata applied to ALL formats
-                             var tag = """
-    <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
+                                 
+                                 let tag = """
     <meta property="rendition:layout">pre-paginated</meta>
     <meta property="rendition:orientation">auto</meta>
     <meta property="rendition:spread">auto</meta>
-    <meta name="orientation-lock" content="none"/>
-    <meta name="cdetype" content="pdoc"/>
-    <meta name="book-type" content="comic"/>
-    <meta name="zero-gutter" content="true"/>
-    <meta name="zero-margin" content="true"/>
-    <meta name="ke-border-color" content="#000000"/>
-    <meta name="ke-border-width" content="0"/>
-"""
-                             // Extra strict formatting needed specifically for Panel Zoom (RegionMagnification)
-                             if conversionSettings.isGuidedView {
-                                 tag += """
-\n    <meta name="fixed-layout" content="true"/>
+    <meta name="fixed-layout" content="true"/>
     <meta name="RegionMagnification" content="true"/>
-    <meta name="region-all-mag-adp" content="1"/>\(resolutionTag)
+    <meta name="region-all-mag-adp" content="1"/>
+    <meta name="book-type" content="comic"/>\(resolutionTag)
 """
+                                 opfString.insert(contentsOf: tag, at: range.lowerBound)
+                                 modified = true
                                  Logger.shared.log("Injected Full Kindle Metadata Suite (Layout, Region-Mag, Book-Type, Resolution)", category: "Injection")
-                             } else {
-                                  Logger.shared.log("Injected Reflowable Fluid Metadata Suite", category: "Injection")
                              }
-
-                             opfString.insert(contentsOf: "\n" + tag + "\n", at: range.lowerBound)
-                             modified = true
-                         }
+                        }
+                    } else {
+                        Logger.shared.log("Skipping Fixed-Layout metadata (Standard Mode)", category: "Injection")
                     }
                     
                     // 3. Embed ComicInfo as Base64 (Zero Footprint)

@@ -163,28 +163,35 @@ class CBZToEPUBConverter {
             
             // Write Global CSS
             let cssContent = """
+            /* Native Reflowable Layout for Columns */
             @page {
                 margin: 0;
                 padding: 0;
             }
-            body {
-                margin: 0;
-                padding: 0;
-                background-color: #000000;
+            @media amzn-kf8 {
+                body { margin: 0 !important; padding: 0 !important; }
             }
-            .page {
-                position: absolute;
-                width: 100%;
-                height: 100%;
-                margin: 0;
-                padding: 0;
+            html, body { 
+                margin: 0; 
+                padding: 0; 
+                background-color: #000000; 
             }
-            img.comic-page {
-                position: absolute;
-                top: 0;
-                left: 0;
+            .chunk-container {
                 width: 100%;
-                height: 100%;
+                column-gap: 0;
+                -webkit-column-gap: 0;
+            }
+            .page { 
+                text-align: center;
+                page-break-inside: avoid;
+                margin: 0; 
+                padding: 0; 
+            }
+            .page-image {
+                max-width: 100%;
+                max-height: 100vh;
+                height: auto;
+                object-fit: contain;
             }
 
             """
@@ -351,9 +358,7 @@ class CBZToEPUBConverter {
                     let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
                         chunkIndex: chunkIndex,
                         images: currentChunkImages,
-                        title: "Page \(chunkIndex)",
-                        width: widthID,
-                        height: heightID
+                        title: "Part \(chunkIndex)"
                     )
                     let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
                     try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
@@ -375,24 +380,8 @@ class CBZToEPUBConverter {
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:creator>Inksync Pro</dc:creator>
                     <dc:language>en</dc:language>
-                    <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
-                    <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-                    
-                    <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
-                    <meta name="book-type" content="comic"/>
-                    <meta name="cdetype" content="pdoc"/>
+                    <meta property="rendition:spread">landscape</meta>
                     <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
-                    <meta name="zero-gutter" content="true"/>
-                    <meta name="zero-margin" content="true"/>
-                    <meta name="ke-border-color" content="#000000"/>
-                    <meta name="ke-border-width" content="0"/>
-                    
-                    <!-- EPUB 3 rendition properties -->
-                    <meta property="rendition:layout">pre-paginated</meta>
-                    <meta property="rendition:orientation">auto</meta>
-                    <meta property="rendition:spread">auto</meta>
-                    <meta name="orientation-lock" content="none"/>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
@@ -469,10 +458,12 @@ class CBZToEPUBConverter {
         return generatedFiles
     }
     
-    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int, height: Int) -> String {
+    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                  <img src="../images/\(imageName)" class="comic-page" alt="Page Image"/>
+                <div class="page">
+                    <img src="../images/\(imageName)" class="page-image" alt="Page Image"/>
+                </div>
             """
         }.joined(separator: "\n")
         
@@ -482,12 +473,12 @@ class CBZToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <meta charset="UTF-8"/>
-            <meta name="viewport" content="width=\(width), height=\(height)"/>
             <title>\(title)</title>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         </head>
         <body>
-            <div class="page">
+            <div class="chunk-container">
         \(imageElements)
             </div>
         </body>
