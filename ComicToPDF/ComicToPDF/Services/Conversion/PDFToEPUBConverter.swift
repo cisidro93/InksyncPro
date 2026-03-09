@@ -39,6 +39,7 @@ class PDFToEPUBConverter {
         var title: String?
         var author: String?
         var settings: ConversionSettings? = nil
+        var mangaMode: Bool = false
         
         static let `default` = ConversionOptions()
         static let highQuality = ConversionOptions(imageQuality: 0.95, maxImageWidth: 2048, maxImageHeight: 3072)
@@ -256,7 +257,7 @@ class PDFToEPUBConverter {
             try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
             
             // Write mimetype
-            try "application/epub+zip".write(to: batchDir.appendingPathComponent("mimetype"), atomically: true, encoding: .utf8)
+            try "application/epub+zip".write(to: batchDir.appendingPathComponent("mimetype"), atomically: true, encoding: String.Encoding.utf8)
             
             // Write container.xml
             let containerXML = """
@@ -267,7 +268,7 @@ class PDFToEPUBConverter {
                 </rootfiles>
             </container>
             """
-            try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+            try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: String.Encoding.utf8)
             
             var imageFiles: [String] = []
             
@@ -305,10 +306,10 @@ class PDFToEPUBConverter {
                 div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
                 img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
                 </style></head>
-                <body><div class="svg-wrapper"><img src="images/\(coverFilename)" alt="Cover"/></div></body>
+                </body><div class="svg-wrapper"><img src="images/\(coverFilename)" alt="Cover"/></div></body>
                 </html>
                 """
-                try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
+                try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
             }
         
         progressHandler?(ConversionProgress(
@@ -351,7 +352,7 @@ class PDFToEPUBConverter {
                 coverSpine: coverSpineItem,
                 mangaMode: options.mangaMode
             )
-            try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+            try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: String.Encoding.utf8)
         
         // Generate toc.ncx
         let tocNCX = generateTocNCX(
@@ -359,15 +360,15 @@ class PDFToEPUBConverter {
             bookID: bookID,
             xhtmlFiles: xhtmlFiles
         )
-        try tocNCX.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
+        try tocNCX.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
         
         // Generate nav.xhtml (EPUB3)
         let navXHTML = generateNavXHTML(title: title, xhtmlFiles: xhtmlFiles)
-        try navXHTML.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+        try navXHTML.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: String.Encoding.utf8)
         
         // Generate CSS
         let css = generateCSS()
-        try css.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
+        try css.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: String.Encoding.utf8)
         
             // Create EPUB (ZIP) file
             let batchOutputURL = outputURL.deletingPathExtension().appendingPathExtension("pt\(batchIndex+1).epub")
