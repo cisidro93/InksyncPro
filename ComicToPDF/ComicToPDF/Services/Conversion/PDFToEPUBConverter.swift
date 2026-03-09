@@ -298,11 +298,14 @@ class PDFToEPUBConverter {
                 let coverXHTML = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <html xmlns="http://www.w3.org/1999/xhtml">
-                <head><title>Cover</title><style type="text/css">
-                body { margin: 0; padding: 0; text-align: center; background-color: #000; overflow: hidden; }
-                img { max-width: 100%; max-height: 100%; height: auto; object-fit: contain; }
+                <head><title>Cover</title>
+                <meta name="viewport" content="width=\(Int(options.maxImageWidth)), height=\(Int(options.maxImageHeight))"/>
+                <style type="text/css">
+                body { margin: 0; padding: 0; background-color: #000000; }
+                .page { position: absolute; width: 100%; height: 100%; margin: 0; padding: 0; }
+                img.page-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
                 </style></head>
-                <body><div class="svg-wrapper"><img src="images/\(coverFilename)" alt="Cover"/></div></body>
+                <body><div class="page"><img src="images/\(coverFilename)" class="page-image" alt="Cover"/></div></body>
                 </html>
                 """
                 try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
@@ -329,7 +332,9 @@ class PDFToEPUBConverter {
                 chunkIndex: chunkIndex + 1,
                 images: chunkImages,
                 title: title,
-                startIndex: (chunkIndex * pageLimit) + 1
+                startIndex: (chunkIndex * pageLimit) + 1,
+                width: Int(options.maxImageWidth),
+                height: Int(options.maxImageHeight)
             )
             try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: String.Encoding.utf8)
             xhtmlFiles.append(chunkFileName)
@@ -418,6 +423,8 @@ class PDFToEPUBConverter {
                 <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
                 <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
 
+                <meta name="fixed-layout" content="true"/>
+                <meta name="original-resolution" content="\(width)x\(height)"/>
                 <meta name="book-type" content="comic"/>
                 <meta name="cdetype" content="pdoc"/>
                 <meta name="cover" content="img1"/>
@@ -498,10 +505,10 @@ class PDFToEPUBConverter {
         """
     }
     
-    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
+    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int, width: Int, height: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                  <div class="svg-wrapper"><img src="images/\(imageName)" alt="Page \(startIndex + i)"/></div>
+                  <img src="images/\(imageName)" class="page-image" alt="Page \(startIndex + i)"/>
             """
         }.joined(separator: "\n")
         
@@ -511,12 +518,14 @@ class PDFToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <meta charset="UTF-8"/>
-            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
+            <meta name="viewport" content="width=\(width), height=\(height)"/>
             <title>\(escapeXML(title))</title>
             <link rel="stylesheet" type="text/css" href="style.css"/>
         </head>
         <body>
+            <div class="page">
         \(imageElements)
+            </div>
         </body>
         </html>
         """
@@ -528,26 +537,24 @@ class PDFToEPUBConverter {
             margin: 0;
             padding: 0;
         }
-        html, body {
-            width: 100vw;
-            height: 100vh;
-            overflow: hidden;
+        body {
             margin: 0;
             padding: 0;
             background-color: #000000;
         }
-        div.svg-wrapper {
+        .page { 
+            position: absolute;
             width: 100%;
             height: 100%;
-            margin: 0;
-            padding: 0;
-            text-align: center;
+            margin: 0; 
+            padding: 0; 
         }
-        img {
+        .page-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
             height: 100%;
-            width: auto;
-            max-width: 100%;
-            object-fit: contain;
         }
         """
     }
