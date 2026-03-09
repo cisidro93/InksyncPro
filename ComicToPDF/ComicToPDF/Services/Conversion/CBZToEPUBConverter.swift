@@ -245,8 +245,7 @@ class CBZToEPUBConverter {
                 let coverName = "cover_reused.jpg"
                 let coverURL = imagesDir.appendingPathComponent(coverName)
                 try? coverData.write(to: coverURL)
-                
-                manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+                manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\"/>")
                 
                 // Write cover as its own isolated page to comply with Fixed Layout 1 image/page rule
                 chunkIndex += 1
@@ -287,8 +286,7 @@ class CBZToEPUBConverter {
                     }
                 }
                 
-                let properties = (localIndex == 0 && batchIndex == 0) ? "properties=\"cover-image\"" : ""
-                manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
+                manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"/>")
                 
                 currentChunkImages.append(newImageName)
                 
@@ -311,7 +309,7 @@ class CBZToEPUBConverter {
             }
             
             // OPF Generation
-            // ✅ We use standard Fixed-Layout format required by Amazon Publishing limits
+            // ✅ We rigidly use standard Fixed-Layout format required by Amazon Publishing limits to bypass E013 Reading Margins
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
@@ -320,8 +318,20 @@ class CBZToEPUBConverter {
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:creator>Inksync Pro</dc:creator>
                     <dc:language>en</dc:language>
-                    <meta name="comic-panel-view" content="guided"/>
-                    <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
+                    
+                    <!-- Strict Fixed-Layout Flags -->
+                    <meta name="fixed-layout" content="true"/>
+                    <meta name="original-resolution" content="1000x1500"/>
+                    <meta name="orientation-lock" content="none"/>
+                    <meta name="book-type" content="comic"/>
+                    <meta name="zero-gutter" content="true"/>
+                    <meta name="zero-margin" content="true"/>
+                    <meta name="ke-border-color" content="#000000"/>
+                    <meta name="ke-border-width" content="0"/>
+                    
+                    <meta property="rendition:layout">pre-paginated</meta>
+                    <meta property="rendition:spread">auto</meta>
+                    <meta property="rendition:orientation">auto</meta>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
@@ -401,7 +411,7 @@ class CBZToEPUBConverter {
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                <img src="../images/\(imageName)" alt="Page Image"/>
+            <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="../images/\(imageName)" alt="Page Image"/>
             """
         }.joined(separator: "\n")
         
@@ -411,14 +421,10 @@ class CBZToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml">
         <head>
             <title>\(title)</title>
-            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-            <style type="text/css">
-                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; overflow: hidden; }
-                img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
-            </style>
+            <meta name="viewport" content="width=1000, height=1500"/>
         </head>
-        <body>
-        \(imageElements)
+        <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden; position: absolute; width: 100%; height: 100%;">
+            \(imageElements)
         </body>
         </html>
         """

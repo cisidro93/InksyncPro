@@ -290,20 +290,18 @@ class PDFToEPUBConverter {
                 let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batches.count)
                 let coverFilename = "badged_cover.jpg"
                 try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
-                
-                coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
+                coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
                 coverSpineItem = "<itemref idref=\"cover-page\"/>\n"
                 // Write cover.xhtml
                 let coverXHTML = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <html xmlns="http://www.w3.org/1999/xhtml">
                 <head><title>Cover</title>
-                <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-                <style type="text/css">
-                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; overflow: hidden; }
-                img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
-                </style></head>
-                <body><img src="images/\(coverFilename)" alt="Cover"/></body>
+                <meta name="viewport" content="width=1000, height=1500"/>
+                </head>
+                <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden; position: absolute; width: 100%; height: 100%;">
+                    <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="images/\(coverFilename)" alt="Cover"/>
+                </body>
                 </html>
                 """
                 try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
@@ -407,8 +405,20 @@ class PDFToEPUBConverter {
                 <dc:creator>\(escapeXML(author))</dc:creator>
                 <dc:language>en</dc:language>
                 <dc:identifier id="BookId">urn:uuid:\(bookID)</dc:identifier>
-                <meta name="comic-panel-view" content="guided"/>
-                <meta name="cover" content="img1"/>
+                
+                <!-- Strict Fixed-Layout Flags -->
+                <meta name="fixed-layout" content="true"/>
+                <meta name="original-resolution" content="1000x1500"/>
+                <meta name="orientation-lock" content="none"/>
+                <meta name="book-type" content="comic"/>
+                <meta name="zero-gutter" content="true"/>
+                <meta name="zero-margin" content="true"/>
+                <meta name="ke-border-color" content="#000000"/>
+                <meta name="ke-border-width" content="0"/>
+                
+                <meta property="rendition:layout">pre-paginated</meta>
+                <meta property="rendition:spread">auto</meta>
+                <meta property="rendition:orientation">auto</meta>
             </metadata>
             <manifest>
                 \(manifestItems)
@@ -450,7 +460,7 @@ class PDFToEPUBConverter {
     private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-                <img src="images/\(imageName)" alt="Page \(startIndex + i)"/>
+            <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="images/\(imageName)" alt="Page \(startIndex + i)"/>
             """
         }.joined(separator: "\n")
         
@@ -460,14 +470,10 @@ class PDFToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml">
         <head>
             <title>\(escapeXML(title))</title>
-            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-            <style type="text/css">
-                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; overflow: hidden; }
-                img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
-            </style>
+            <meta name="viewport" content="width=1000, height=1500"/>
         </head>
-        <body>
-        \(imageElements)
+        <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden; position: absolute; width: 100%; height: 100%;">
+            \(imageElements)
         </body>
         </html>
         """
