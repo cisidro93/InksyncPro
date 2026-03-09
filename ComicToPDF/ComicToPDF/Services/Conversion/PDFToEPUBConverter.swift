@@ -504,7 +504,6 @@ class PDFToEPUBConverter {
         <head>
             <title>\(escapeXML(title))</title>
             <link rel="stylesheet" type="text/css" href="style.css"/>
-            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
         </head>
         <body>
         \(imageElements)
@@ -519,30 +518,21 @@ class PDFToEPUBConverter {
             margin: 0;
             padding: 0;
         }
-        @page {
-            margin: 0;
-            padding: 0;
-        }
         body { 
             margin: 0; 
             padding: 0; 
-            width: 100vw; 
-            height: 100vh; 
+            text-align: center; 
             background-color: #000000; 
-            overflow: hidden;
         }
         div.svg-wrapper { 
-            width: 100%; 
-            height: 100%; 
             margin: 0; 
             padding: 0; 
             text-align: center; 
         }
         img { 
-            height: 100%; 
-            width: auto; 
             max-width: 100%; 
-            object-fit: contain; 
+            max-height: 100%; 
+            height: auto; 
         }
         """
     }
