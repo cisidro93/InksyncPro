@@ -156,19 +156,8 @@ class CBZToEPUBConverter {
             """
             try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
             
-            // If this is the FIRST batch and FIRST image, capture the raw cover so we can stamp it on future parts
-            if batchIndex == 0, let firstImage = batch.first {
-                firstBatchCoverData = firstImage.data
-            }
-            
-            // Write Global CSS
-            let cssContent = """
-            @page { margin: 0; padding: 0; }
-            body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-            div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-            img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
-            """
-            try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
+            // Global CSS is now injected inline into every chunk to ensure absolute render consistency.
+            // Skipping external comic.css generation.
             
             var spineItems: [String] = []
             var manifestItems: [String] = []
@@ -217,18 +206,14 @@ class CBZToEPUBConverter {
             let widthID = Int(contentSize.width)
             let heightID = Int(contentSize.height)
             let bookUUID = UUID().uuidString
-            // Note: writingMode and spreadMode are defined later near OPF generation for strict compliance
-            
-            // Add CSS to Manifest
-            manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
+            // Add empty metadata array for explicit validation
             
             // ✅ VALIDATION FIX: Restore Navigation Documents (Required for EPUB 3 / Kindle Back-Compat)
             // Even if the user doesn't want a VISIBLE TOC, these files are mandatory for the book structure.
             // We use linear="no" in the spine to hide the HTML TOC.
-            manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
             manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
             
-            // Generate NAV and NCX immediately to ensure they exist for Zipping
+            // Generate NAV immediately to ensure they exist for Zipping
             let navContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE html>
@@ -248,23 +233,7 @@ class CBZToEPUBConverter {
             </html>
             """
             try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: String.Encoding.utf8)
-            Logger.shared.log("✅ Wrote nav.xhtml", category: "Converter")
-            
-            let ncxContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-                <head><meta name="dtb:uid" content="urn:uuid:\(bookUUID)"/></head>
-                <docTitle><text>\(epubName)</text></docTitle>
-                <navMap>
-                    <navPoint id="navPoint-1" playOrder="1">
-                        <navLabel><text>Start</text></navLabel>
-                        <content src="text/page_0001.xhtml"/>
-                    </navPoint>
-                </navMap>
-            </ncx>
-            """
-            try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
-            Logger.shared.log("✅ Wrote toc.ncx", category: "Converter")
+            // Completely removed toc.ncx from execution to bypass legacy engine formatting
             
             // Process Items in this Batch
             let chunkSize = 1 // ✅ REQUIRED: 1 image per file for Fixed-Layout EPUBs
@@ -445,7 +414,12 @@ class CBZToEPUBConverter {
         <head>
             <title>\(title)</title>
             <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-            <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
+            <style type="text/css">
+                @page { margin: 0; padding: 0; }
+                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
+                div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+                img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+            </style>
         </head>
         <body>
         \(imageElements)

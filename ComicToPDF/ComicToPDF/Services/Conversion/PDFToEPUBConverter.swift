@@ -293,8 +293,6 @@ class PDFToEPUBConverter {
                 
                 coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
                 coverSpineItem = "<itemref idref=\"cover-page\"/>\n"
-                // coverHtmlRef = "cover.xhtml" removed
-                
                 // Write cover.xhtml
                 let coverXHTML = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -302,11 +300,12 @@ class PDFToEPUBConverter {
                 <head><title>Cover</title>
                 <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
                 <style type="text/css">
+                @page { margin: 0; padding: 0; }
                 body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
                 div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
                 img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
                 </style></head>
-                </body><div class="svg-wrapper"><img src="images/\(coverFilename)" alt="Cover"/></div></body>
+                <body><div class="svg-wrapper"><img src="images/\(coverFilename)" alt="Cover"/></div></body>
                 </html>
                 """
                 try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
@@ -354,21 +353,13 @@ class PDFToEPUBConverter {
             )
             try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: String.Encoding.utf8)
         
-        // Generate toc.ncx
-        let tocNCX = generateTocNCX(
-            title: title,
-            bookID: bookID,
-            xhtmlFiles: xhtmlFiles
-        )
-        try tocNCX.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
+        // Dropped toc.ncx explicitly because Amazon falls back to standard EPUB non-edge-to-edge when encountered
         
         // Generate nav.xhtml (EPUB3)
         let navXHTML = generateNavXHTML(title: title, xhtmlFiles: xhtmlFiles)
         try navXHTML.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: String.Encoding.utf8)
         
-        // Generate CSS
-        let css = generateCSS()
-        try css.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: String.Encoding.utf8)
+        // Dropped style.css generation to enforce inline chunk properties
         
             // Create EPUB (ZIP) file
             let batchOutputURL = outputURL.deletingPathExtension().appendingPathExtension("pt\(batchIndex+1).epub")
@@ -402,9 +393,7 @@ class PDFToEPUBConverter {
         
         // Add standard files
         manifestItems += """
-<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>
-        <item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>
-        <item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>
+<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>
 """
         
         var spineItems = coverSpine
@@ -433,33 +422,7 @@ class PDFToEPUBConverter {
         """
     }
     
-    private func generateTocNCX(title: String, bookID: String, xhtmlFiles: [String]) -> String {
-        // For a single content.xhtml, we'll just have one navPoint
-        let navPoints = xhtmlFiles.enumerated().map { index, xhtmlFile in
-            """
-                <navPoint id="navpoint\(index + 1)" playOrder="\(index + 1)">
-                    <navLabel><text>Start</text></navLabel>
-                    <content src="\(xhtmlFile)"/>
-                </navPoint>
-            """
-        }.joined(separator: "\n        ")
-        
-        return """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-            <head>
-                <meta name="dtb:uid" content="\(bookID)"/>
-                <meta name="dtb:depth" content="1"/>
-                <meta name="dtb:totalPageCount" content="0"/>
-                <meta name="dtb:maxPageNumber" content="0"/>
-            </head>
-            <docTitle><text>\(escapeXML(title))</text></docTitle>
-            <navMap>
-                \(navPoints)
-            </navMap>
-        </ncx>
-        """
-    }
+        // NCX content removed
     
     private func generateNavXHTML(title: String, xhtmlFiles: [String]) -> String {
         // For a single content.xhtml, we'll just have one nav item
@@ -473,7 +436,6 @@ class PDFToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <title>\(escapeXML(title))</title>
-            <link rel="stylesheet" type="text/css" href="style.css"/>
         </head>
         <body>
             <nav epub:type="toc" id="toc">
@@ -503,23 +465,23 @@ class PDFToEPUBConverter {
         <head>
             <title>\(escapeXML(title))</title>
             <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-            <link rel="stylesheet" type="text/css" href="style.css"/>
+            <style type="text/css">
+                @page { margin: 0; padding: 0; }
+                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
+                div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+                img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+            </style>
         </head>
         <body>
+        <div class="svg-wrapper">
         \(imageElements)
+        </div>
         </body>
         </html>
         """
     }
     
-    private func generateCSS() -> String {
-        return """
-        @page { margin: 0; padding: 0; }
-        body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-        div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-        img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
-        """
-    }
+    // Inline CSS replaced external generation method
     
     private func createEPUB(from tempDir: URL, to outputURL: URL) throws {
          if FileManager.default.fileExists(atPath: outputURL.path) {
