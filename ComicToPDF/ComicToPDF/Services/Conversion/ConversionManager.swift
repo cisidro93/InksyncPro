@@ -2539,10 +2539,9 @@ class ConversionManager: ObservableObject {
             try fileManager.copyItem(at: pdf.url, to: exportURL)
             
             // 2. Prepare Panels Data (CONDITIONAL)
-            // We ONLY do panel detection and injection for Guided View exports.
-            // Standard/Reflowable exports just need to be passed directly to the cloud without modification.
+            var panelsToInject = [Int: [PanelExtractor.Panel]]()
             if conversionSettings.isGuidedView {
-                var panelsToInject = await getCombinedManifest(for: pdf)
+                panelsToInject = await getCombinedManifest(for: pdf)
                 
                 let files = try await extractImageURLs(from: pdf.url)
                 
@@ -2558,12 +2557,10 @@ class ConversionManager: ObservableObject {
                     let progress = Double(index) / Double(files.count)
                     Task { @MainActor in self.conversionProgress = progress }
                 }
-                
-                // 3. Inject using Helper
-                try? await injectMetadata(into: exportURL, panels: panelsToInject, metadata: pdf.metadata)
-            } else {
-                Logger.shared.log("Standard Export: Skipping metadata injection pass-through", category: "Export")
             }
+            
+            // 3. Inject using Helper (ALWAYS REQUIRED FOR STRICT FIXED-LAYOUT)
+            try? await injectMetadata(into: exportURL, panels: panelsToInject, metadata: pdf.metadata)
             
             return exportURL
             
@@ -2784,29 +2781,28 @@ class ConversionManager: ObservableObject {
                         }
                     }
                     
-                    // 2. Fixed Layout Metadata (CONDITIONAL - Only for Guided View)
-                    if conversionSettings.isGuidedView {
-                        if !opfString.contains("rendition:layout") {
-                             if let range = opfString.range(of: "</metadata>") {
-                                 
-                                 // ✅ RESOLUTION EXTRACTION: Find first image to set correct original-resolution
-                                 // This is required for Kindle to scale the Fixed Layout correctly without letterboxing
-                                 var resolutionTag = ""
-                                 if let imageEntry = sourceArchive.makeIterator().first(where: { 
-                                     $0.path.contains("images") && 
-                                     ($0.path.hasSuffix(".jpg") || $0.path.hasSuffix(".jpeg") || $0.path.hasSuffix(".png")) 
-                                 }) {
-                                     var imageData = Data()
-                                     _ = try? sourceArchive.extract(imageEntry) { imageData.append($0) }
-                                     if let image = UIImage(data: imageData) {
-                                         let w = Int(image.size.width)
-                                         let h = Int(image.size.height)
-                                         resolutionTag = "\n    <meta name=\"original-resolution\" content=\"\(w)x\(h)\"/>"
-                                         Logger.shared.log("Detected Key Resolution: \(w)x\(h)", category: "Injection")
-                                     }
+                    // 2. Fixed Layout Metadata (ALWAYS REQUIRED for FW 5.19.2 Edge-to-Edge)
+                    if !opfString.contains("rendition:layout") {
+                         if let range = opfString.range(of: "</metadata>") {
+                             
+                             // ✅ RESOLUTION EXTRACTION: Find first image to set correct original-resolution
+                             // This is required for Kindle to scale the Fixed Layout correctly without letterboxing
+                             var resolutionTag = ""
+                             if let imageEntry = sourceArchive.makeIterator().first(where: { 
+                                 $0.path.contains("images") && 
+                                 ($0.path.hasSuffix(".jpg") || $0.path.hasSuffix(".jpeg") || $0.path.hasSuffix(".png")) 
+                             }) {
+                                 var imageData = Data()
+                                 _ = try? sourceArchive.extract(imageEntry) { imageData.append($0) }
+                                 if let image = UIImage(data: imageData) {
+                                     let w = Int(image.size.width)
+                                     let h = Int(image.size.height)
+                                     resolutionTag = "\n    <meta name=\"original-resolution\" content=\"\(w)x\(h)\"/>"
+                                     Logger.shared.log("Detected Key Resolution: \(w)x\(h)", category: "Injection")
                                  }
-                                 
-                                 let tag = """
+                             }
+                             
+                             let tag = """
     <meta property="rendition:layout">pre-paginated</meta>
     <meta property="rendition:orientation">auto</meta>
     <meta property="rendition:spread">auto</meta>
@@ -2815,13 +2811,10 @@ class ConversionManager: ObservableObject {
     <meta name="region-all-mag-adp" content="1"/>
     <meta name="book-type" content="comic"/>\(resolutionTag)
 """
-                                 opfString.insert(contentsOf: tag, at: range.lowerBound)
-                                 modified = true
-                                 Logger.shared.log("Injected Full Kindle Metadata Suite (Layout, Region-Mag, Book-Type, Resolution)", category: "Injection")
-                             }
-                        }
-                    } else {
-                        Logger.shared.log("Skipping Fixed-Layout metadata (Standard Mode)", category: "Injection")
+                             opfString.insert(contentsOf: tag, at: range.lowerBound)
+                             modified = true
+                             Logger.shared.log("Injected Full Kindle Metadata Suite (Layout, Region-Mag, Book-Type, Resolution)", category: "Injection")
+                         }
                     }
                     
                     // 3. Embed ComicInfo as Base64 (Zero Footprint)

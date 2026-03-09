@@ -324,10 +324,14 @@ class CBZToEPUBConverter {
                     <meta name="original-resolution" content="1000x1500"/>
                     <meta name="orientation-lock" content="none"/>
                     <meta name="book-type" content="comic"/>
+                    <meta name="cdetype" content="pdoc"/>
+                    <meta name="RegionMagnification" content="true"/>
+                    <meta name="region-all-mag-adp" content="1"/>
                     <meta name="zero-gutter" content="true"/>
                     <meta name="zero-margin" content="true"/>
                     <meta name="ke-border-color" content="#000000"/>
                     <meta name="ke-border-width" content="0"/>
+                    <meta name="cover" content="cover_reused_img"/>
                     
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:spread">auto</meta>
@@ -423,8 +427,10 @@ class CBZToEPUBConverter {
             <title>\(title)</title>
             <meta name="viewport" content="width=1000, height=1500"/>
         </head>
-        <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden; position: absolute; width: 100%; height: 100%;">
-            \(imageElements)
+        <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
+            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0;">
+                \(imageElements)
+            </div>
         </body>
         </html>
         """
