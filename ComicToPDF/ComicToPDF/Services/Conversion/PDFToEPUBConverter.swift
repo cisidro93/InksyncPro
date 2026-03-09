@@ -418,13 +418,13 @@ class PDFToEPUBConverter {
                 <dc:creator>\(escapeXML(author))</dc:creator>
                 <dc:language>en</dc:language>
                 <dc:identifier id="BookId">urn:uuid:\(bookID)</dc:identifier>
+                
+                <meta name="fixed-layout" content="true"/>
+                <meta name="original-resolution" content="\(width)x\(height)"/>
                 <meta name="comic-panel-view" content="guided"/>
                 <meta name="cover" content="img1"/>
             </metadata>
             <manifest>
-                <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-                <item id="css" href="style.css" media-type="text/css"/>
                 \(manifestItems)
             </manifest>
             <spine toc="ncx">
@@ -504,6 +504,7 @@ class PDFToEPUBConverter {
         <head>
             <title>\(escapeXML(title))</title>
             <link rel="stylesheet" type="text/css" href="style.css"/>
+            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
         </head>
         <body>
         \(imageElements)
@@ -521,18 +522,23 @@ class PDFToEPUBConverter {
         body { 
             margin: 0; 
             padding: 0; 
-            text-align: center; 
+            width: 100vw; 
+            height: 100vh; 
             background-color: #000000; 
+            overflow: hidden;
         }
         div.svg-wrapper { 
+            width: 100%; 
+            height: 100%; 
             margin: 0; 
             padding: 0; 
             text-align: center; 
         }
         img { 
+            height: 100%; 
+            width: auto; 
             max-width: 100%; 
-            max-height: 100%; 
-            height: auto; 
+            object-fit: contain; 
         }
         """
     }

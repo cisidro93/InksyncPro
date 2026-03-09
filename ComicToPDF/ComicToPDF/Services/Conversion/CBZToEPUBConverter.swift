@@ -163,7 +163,7 @@ class CBZToEPUBConverter {
             
             // Write Global CSS
             let cssContent = """
-            /* Simple Fluid Layout that allows Native Spreads */
+            /* Hardware Native Edge-to-Edge Spreads */
             @page {
                 margin: 0;
                 padding: 0;
@@ -171,18 +171,23 @@ class CBZToEPUBConverter {
             body { 
                 margin: 0; 
                 padding: 0; 
-                text-align: center; 
+                width: 100vw; 
+                height: 100vh; 
                 background-color: #000000; 
+                overflow: hidden;
             }
             div.svg-wrapper { 
+                width: 100%; 
+                height: 100%; 
                 margin: 0; 
                 padding: 0; 
                 text-align: center; 
             }
             img { 
+                height: 100%; 
+                width: auto; 
                 max-width: 100%; 
-                max-height: 100%; 
-                height: auto; 
+                object-fit: contain; 
             }
 
             """
@@ -336,7 +341,16 @@ class CBZToEPUBConverter {
                     }
                 }
                 
-                let properties = (localIndex == 0 && batchIndex == 0) ? "properties=\"cover-image\"" : ""
+                // Assign Kindle Page Spreads dynamically (Right then Left for Manga, Left then Right for Comics)
+                var spreadProperty = ""
+                if localIndex == 0 {
+                    spreadProperty = "properties=\"rendition:page-spread-center\"" // Cover
+                } else {
+                    let isRightPage = settings.mangaMode ? (localIndex % 2 != 0) : (localIndex % 2 == 0)
+                    spreadProperty = isRightPage ? "properties=\"rendition:page-spread-right\"" : "properties=\"rendition:page-spread-left\""
+                }
+                
+                let properties = (localIndex == 0 && batchIndex == 0) ? "properties=\"cover-image\"" : spreadProperty
                 manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
                 
                 currentChunkImages.append(newImageName)
@@ -369,13 +383,16 @@ class CBZToEPUBConverter {
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:creator>Inksync Pro</dc:creator>
                     <dc:language>en</dc:language>
+                    
+                    <meta name="fixed-layout" content="true"/>
+                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
                     <meta name="comic-panel-view" content="guided"/>
                     <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
                 </manifest>
-                <spine toc="ncx" page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
+                <spine toc="ncx">
                     \(spineItems.joined(separator: "\n        "))
                 </spine>
             </package>
@@ -464,6 +481,7 @@ class CBZToEPUBConverter {
             <meta charset="UTF-8"/>
             <title>\(title)</title>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
+            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
         </head>
         <body>
         \(imageElements)
