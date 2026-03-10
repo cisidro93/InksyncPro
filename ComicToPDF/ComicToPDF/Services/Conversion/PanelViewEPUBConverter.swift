@@ -528,10 +528,6 @@ class PanelViewEPUBConverter {
         Logger.shared.log("PanelViewEPUBConverter: Validation passed (\(pageCatalog.count) pages, \(seenIDs.count) unique IDs)", category: "PVConverter")
     }
 
-    // MARK: - Ancillary File Builders
-
-    private func buildCSS() -> String {
-        """
     private func buildCSS() -> String {
         """
         /* PanelView EPUB Stylesheet — fixed-layout Kindle comic */
