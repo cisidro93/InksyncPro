@@ -175,6 +175,8 @@ class CBZToEPUBConverter {
             }
             
             // ✅ Dynamic Cover Generation for Split Volumes
+            let widthID = Int(contentSize.width)
+            let heightID = Int(contentSize.height)
             if let coverData = firstBatchCoverData, batches.count > 1 {
                 print("🎨 Dynamically Generating Cover Badge for Part \(batchIndex + 1) of \(batches.count)")
                 
@@ -204,12 +206,9 @@ class CBZToEPUBConverter {
                 </body>
                 </html>
                 """
-                try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
+                try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
             }
             
-            // ✅ Prepare Metadata Identifiers (Now with valid dimensions)
-            let widthID = Int(contentSize.width)
-            let heightID = Int(contentSize.height)
             let bookUUID = UUID().uuidString
             // Add empty metadata array for explicit validation
             

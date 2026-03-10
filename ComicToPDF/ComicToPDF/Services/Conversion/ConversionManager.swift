@@ -2889,7 +2889,9 @@ class ConversionManager: ObservableObject {
                          let xhtmlContent = CBZToEPUBConverter.generateChunkXHTML(
                             chunkIndex: pageNum,
                             images: [img],
-                            title: "Page \(pageNum)"
+                            title: "Page \(pageNum)",
+                            width: w,
+                            height: h
                          )
                          
                          if let data = xhtmlContent.data(using: .utf8) {
