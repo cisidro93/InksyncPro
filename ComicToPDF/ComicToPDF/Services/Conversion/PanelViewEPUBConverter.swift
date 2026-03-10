@@ -545,7 +545,7 @@ class PanelViewEPUBConverter {
         .target-mag-parent { position: absolute; overflow: hidden; }
         .target-mag-lb { position: absolute; width: 100%; height: 100%; background: transparent; }
         .target-mag { position: absolute; background-repeat: no-repeat; }
-        """
+    """
     }
 
     private func buildContainerXML() -> String {
@@ -556,7 +556,7 @@ class PanelViewEPUBConverter {
             <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
           </rootfiles>
         </container>
-        """
+    """
     }
 
     private func buildNavXHTML(title: String, firstPage: String) -> String {
@@ -574,7 +574,7 @@ class PanelViewEPUBConverter {
             </nav>
           </body>
         </html>
-        """
+    """
     }
 
     private func buildTocNCX(title: String, uuid: String, firstPage: String) -> String {
@@ -596,7 +596,7 @@ class PanelViewEPUBConverter {
             </navPoint>
           </navMap>
         </ncx>
-        """
+    """
     }
 
     private func buildBlankXHTML(pageWidth: CGFloat, pageHeight: CGFloat) -> String {
@@ -610,7 +610,7 @@ class PanelViewEPUBConverter {
           </head>
           <body style="background-color:#000000;"></body>
         </html>
-        """
+    """
     }
 
     // MARK: - ZIP Assembly (strict entry order per EPUB spec)
