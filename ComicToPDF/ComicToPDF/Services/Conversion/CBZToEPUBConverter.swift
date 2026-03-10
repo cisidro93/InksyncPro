@@ -191,12 +191,17 @@ class CBZToEPUBConverter {
                 // Write cover.xhtml
                 let coverXHTML = """
                 <?xml version="1.0" encoding="UTF-8"?>
-                <html xmlns="http://www.w3.org/1999/xhtml">
-                <head><title>Cover</title><style type="text/css">
-                body { margin: 0; padding: 0; text-align: center; background-color: #000; }
-                img { max-width: 100%; max-height: 100%; height: auto; }
-                </style></head>
-                <body><img src="../images/\(coverFilename)" alt="Cover"/></body>
+                <!DOCTYPE html>
+                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+                <head>
+                    <title>Cover</title>
+                    <meta name="viewport" content="width=1000, height=1500"/>
+                </head>
+                <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
+                    <div style="position: relative; width: 1000px; height: 1500px; margin: 0; padding: 0; overflow: hidden;">
+                        <img style="position: absolute; top: 0; left: 0; width: 1000px; height: 1500px;" src="../images/\(coverFilename)" alt="Cover"/>
+                    </div>
+                </body>
                 </html>
                 """
                 try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
@@ -226,7 +231,7 @@ class CBZToEPUBConverter {
                 <nav epub:type="toc" id="toc">
                     <h1>Table of Contents</h1>
                     <ol>
-                        <li><a href="text/page_0001.xhtml">Start Reading</a></li>
+                        <li><a href="text/chunk_0001.xhtml">Start Reading</a></li>
                     </ol>
                 </nav>
             </body>
@@ -416,20 +421,20 @@ class CBZToEPUBConverter {
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-            <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="../images/\(imageName)" alt="Page Image"/>
+            <img style="position: absolute; top: 0; left: 0; width: 1000px; height: 1500px;" src="../images/\(imageName)" alt="Page Image"/>
             """
         }.joined(separator: "\n")
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <title>\(title)</title>
             <meta name="viewport" content="width=1000, height=1500"/>
         </head>
         <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
-            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0;">
+            <div style="position: relative; width: 1000px; height: 1500px; margin: 0; padding: 0; overflow: hidden;">
                 \(imageElements)
             </div>
         </body>

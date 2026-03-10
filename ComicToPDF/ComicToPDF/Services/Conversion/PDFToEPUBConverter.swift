@@ -295,12 +295,16 @@ class PDFToEPUBConverter {
                 // Write cover.xhtml
                 let coverXHTML = """
                 <?xml version="1.0" encoding="UTF-8"?>
-                <html xmlns="http://www.w3.org/1999/xhtml">
-                <head><title>Cover</title>
-                <meta name="viewport" content="width=1000, height=1500"/>
+                <!DOCTYPE html>
+                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+                <head>
+                    <title>Cover</title>
+                    <meta name="viewport" content="width=1000, height=1500"/>
                 </head>
-                <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden; position: absolute; width: 100%; height: 100%;">
-                    <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="images/\(coverFilename)" alt="Cover"/>
+                <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
+                    <div style="position: relative; width: 1000px; height: 1500px; margin: 0; padding: 0; overflow: hidden;">
+                        <img style="position: absolute; top: 0; left: 0; width: 1000px; height: 1500px;" src="images/\(coverFilename)" alt="Cover"/>
+                    </div>
                 </body>
                 </html>
                 """
@@ -468,20 +472,20 @@ class PDFToEPUBConverter {
     private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-            <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="images/\(imageName)" alt="Page \(startIndex + i)"/>
+            <img style="position: absolute; top: 0; left: 0; width: 1000px; height: 1500px;" src="images/\(imageName)" alt="Page \(startIndex + i)"/>
             """
         }.joined(separator: "\n")
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <title>\(escapeXML(title))</title>
             <meta name="viewport" content="width=1000, height=1500"/>
         </head>
         <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
-            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0;">
+            <div style="position: relative; width: 1000px; height: 1500px; margin: 0; padding: 0; overflow: hidden;">
                 \(imageElements)
             </div>
         </body>
