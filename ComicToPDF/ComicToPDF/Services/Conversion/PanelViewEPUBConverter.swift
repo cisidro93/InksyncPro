@@ -333,7 +333,7 @@ class PanelViewEPUBConverter {
 
           <guide>
             <reference type="cover" title="Cover" href="pages/\(pageCatalog.first?.xhtmlName ?? "page001.xhtml")"/>
-            <reference type="start"  title="Start"  href="pages/\(pageCatalog.first?.xhtmlName ?? "page001.xhtml")"/>
+            <reference type="text" title="Start" href="pages/\(pageCatalog.first?.xhtmlName ?? "page001.xhtml")"/>
           </guide>
 
         </package>
@@ -552,10 +552,11 @@ class PanelViewEPUBConverter {
     private func buildCSS() -> String {
         """
         /* PanelView EPUB Stylesheet — fixed-layout Kindle comic */
+        @page { margin: 0; padding: 0; }
         * { margin: 0; padding: 0; border: 0; }
-        html, body { width: 100%; height: 100%; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
-        div { position: absolute; width: 100%; height: 100%; }
-        .singlePage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        html, body { width: 100vw; height: 100vh; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
+        div { position: absolute; width: 100vw; height: 100vh; text-align: center; }
+        .singlePage { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; }
 
         /* Tap target container: invisible overlay, absolute pixel positioned */
         .tap-target-container { position: absolute; }

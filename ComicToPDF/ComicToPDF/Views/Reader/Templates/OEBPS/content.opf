@@ -16,19 +16,21 @@
     <!-- Fixed layout flags — ALL required for panel view to work -->
     <meta name="fixed-layout" content="true"/>
     <meta name="original-resolution" content="1920x1200"/>
-    <meta name="orientation-lock" content="landscape"/>
+    <meta name="orientation-lock" content="none"/>
     <meta name="book-type" content="comic"/>
     <meta name="cdetype" content="pdoc"/>
     <meta name="RegionMagnification" content="true"/>
+    <meta name="region-all-mag-adp" content="1"/>
+    <meta name="zero-gutter" content="true"/>
+    <meta name="zero-margin" content="true"/>
+    <meta name="ke-border-color" content="#000000"/>
+    <meta name="ke-border-width" content="0"/>
     <meta name="cover" content="cover-image"/>
 
     <!-- EPUB3 rendition properties -->
     <meta property="rendition:layout">pre-paginated</meta>
-    <meta property="rendition:orientation">landscape</meta>
-    <meta property="rendition:spread">landscape</meta>
-
-    <!-- Writing direction: horizontal-lr = western, horizontal-rl = manga -->
-    <meta name="primary-writing-mode" content="horizontal-lr"/>
+    <meta property="rendition:orientation">auto</meta>
+    <meta property="rendition:spread">auto</meta>
 
   </metadata>
 
@@ -55,7 +57,7 @@
 
   <guide>
     <reference type="cover" title="Cover" href="pages/cover.xhtml"/>
-    <reference type="start" title="Start" href="pages/page001.xhtml"/>
+    <reference type="text" title="Start" href="pages/page001.xhtml"/>
   </guide>
 
 </package>

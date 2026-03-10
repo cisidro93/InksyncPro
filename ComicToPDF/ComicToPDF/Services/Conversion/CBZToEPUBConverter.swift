@@ -195,7 +195,7 @@ class CBZToEPUBConverter {
                 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
                 <head>
                     <title>Cover</title>
-                    <meta name="viewport" content="width=1000, height=1500"/>
+                    <meta name="viewport" content="width=\(widthID), height=\(heightID)"/>
                 </head>
                 <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
                     <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;">
@@ -250,32 +250,7 @@ class CBZToEPUBConverter {
             var currentChunkImages: [String] = []
             var chunkIndex = 0
             
-            // Phase 4: Split Volume Cover Retention
-            if batchIndex > 0, let coverData = firstBatchCoverData {
-                let coverName = "cover_reused.jpg"
-                let coverURL = imagesDir.appendingPathComponent(coverName)
-                try? coverData.write(to: coverURL)
-                manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-                
-                // Write cover as its own isolated page to comply with Fixed Layout 1 image/page rule
-                chunkIndex += 1
-                var coverW = widthID
-                var coverH = heightID
-                if let cImg = UIImage(data: coverData) {
-                    coverW = Int(cImg.size.width)
-                    coverH = Int(cImg.size.height)
-                }
-                let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
-                    chunkIndex: chunkIndex,
-                    images: [coverName],
-                    title: "Cover"
-                )
-                let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
-                try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: String.Encoding.utf8)
-                
-                manifestItems.append("<item id=\"chunk_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
-                spineItems.append("<itemref idref=\"chunk_\(chunkIndex)\"/>")
-            }
+            // (Phase 4 Split Volume Cover Retention removed to avoid duplicate covers)
             
             for (localIndex, item) in batch.enumerated() {
                 let trueExt = (item.url.pathExtension.lowercased() == "png") ? "png" : "jpg"
@@ -307,7 +282,9 @@ class CBZToEPUBConverter {
                     let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
                         chunkIndex: chunkIndex,
                         images: currentChunkImages,
-                        title: "Part \(chunkIndex)"
+                        title: "Part \(chunkIndex)",
+                        width: widthID,
+                        height: heightID
                     )
                     let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
                     try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
@@ -320,7 +297,8 @@ class CBZToEPUBConverter {
             }
             
             // ✅ We rigidly use standard Fixed-Layout format required by Amazon Publishing limits to bypass E013 Reading Margins
-            let coverMetaContent = (batchIndex > 0 && firstBatchCoverData != nil) ? "cover_reused_img" : "img_1"
+            let coverMetaContent = (batches.count > 1 && firstBatchCoverData != nil) ? "cover-image" : "img_1"
+            let firstPageHref = (batches.count > 1 && firstBatchCoverData != nil) ? "text/cover.xhtml" : "text/chunk_0001.xhtml"
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
@@ -332,7 +310,7 @@ class CBZToEPUBConverter {
                     
                     <!-- Strict Fixed-Layout Flags -->
                     <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="1000x1500"/>
+                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
                     <meta name="orientation-lock" content="none"/>
                     <meta name="book-type" content="comic"/>
                     <meta name="cdetype" content="pdoc"/>
@@ -354,6 +332,10 @@ class CBZToEPUBConverter {
                 <spine page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
                     \(spineItems.joined(separator: "\n        "))
                 </spine>
+                <guide>
+                    <reference type="cover" title="Cover" href="\(firstPageHref)"/>
+                    <reference type="text" title="Start" href="\(firstPageHref)"/>
+                </guide>
             </package>
             """
             
@@ -423,7 +405,7 @@ class CBZToEPUBConverter {
         return generatedFiles
     }
     
-    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
+    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int, height: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
             <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="../images/\(imageName)" alt="Page Image"/>
@@ -436,10 +418,15 @@ class CBZToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <title>\(title)</title>
-            <meta name="viewport" content="width=1000, height=1500"/>
+            <meta name="viewport" content="width=\(width), height=\(height)"/>
+            <style>
+                @page { margin: 0; padding: 0; }
+                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; overflow: hidden; }
+                img { max-width: 100%; object-fit: contain; }
+            </style>
         </head>
-        <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
-            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;">
+        <body>
+            <div style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; margin: 0; padding: 0; overflow: hidden; text-align: center;">
                 \(imageElements)
             </div>
         </body>

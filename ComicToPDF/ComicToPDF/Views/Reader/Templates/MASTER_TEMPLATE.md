@@ -170,7 +170,7 @@ This is the most critical file. All metadata flags must be present.
 
   <guide>
     <reference type="cover" title="Cover" href="pages/cover.xhtml"/>
-    <reference type="start" title="Start" href="pages/page001.xhtml"/>
+    <reference type="text" title="Start" href="pages/page001.xhtml"/>
   </guide>
 
 </package>
@@ -249,6 +249,7 @@ This is the most critical file. All metadata flags must be present.
 
 ```css
 /* CSS Reset — required for consistent Kindle rendering */
+@page { margin: 0; padding: 0; }
 * {
   margin: 0;
   padding: 0;
@@ -257,19 +258,22 @@ This is the most critical file. All metadata flags must be present.
 
 /* Fixed layout page body */
 html, body {
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
   background-color: #000000;
+  margin: 0;
+  padding: 0;
 }
 
 /* Full-bleed page container */
 .page {
   position: absolute;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   margin: 0;
   padding: 0;
+  text-align: center;
 }
 
 /* Full page comic image */
@@ -277,8 +281,9 @@ html, body {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
+  object-fit: contain;
 }
 
 /* Panel tap target anchor — invisible overlay */
@@ -456,9 +461,11 @@ For right-to-left manga, change these values:
 **OPF metadata:**
 ```xml
 <meta name="orientation-lock" content="portrait"/>
-<meta name="primary-writing-mode" content="horizontal-rl"/>
 <meta property="rendition:orientation">portrait</meta>
 ```
+
+**Spine Element:**
+Use `page-progression-direction="rtl"` on the `<spine>`. Do NOT use `primary-writing-mode` as it triggers Kindle FW 5.19.2 validation bugs (E013).
 
 **Panel reading order:** ordinal values go right-to-left, top-to-bottom.
 Panel 1 = top-right, Panel 2 = top-left, Panel 3 = mid-right, etc.
