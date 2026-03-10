@@ -299,28 +299,9 @@ class PanelViewEPUBConverter {
             <dc:language>\(isManga ? "ja" : "en")</dc:language>
             <dc:date>\(pubDate)</dc:date>
             <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
-
-            <!-- Fixed Layout — ALL required for Kindle Panel View -->
-            <meta name="fixed-layout" content="true"/>
-            <meta name="original-resolution" content="\(pageWidth)x\(pageHeight)"/>
-            <meta name="orientation-lock" content="\(orientationLock)"/>
-            <meta name="book-type" content="comic"/>
-            <meta name="cdetype" content="pdoc"/>
-            <meta name="RegionMagnification" content="true"/>
-            <meta name="region-all-mag-adp" content="1"/>
+            
             <meta name="cover" content="img-001"/>
-            <meta name="zero-gutter" content="true"/>
-            <meta name="zero-margin" content="true"/>
-            <meta name="ke-border-color" content="#000000"/>
-            <meta name="ke-border-width" content="0"/>
-
-            <!-- Directional — CRITICAL: horizontal-rl reverses Kindle tap zones for manga -->
-            <!-- Note: primary-writing-mode intentionally omitted to prevent E013 Kindle 5.19.2 Cloud Rejection Bug -->
-
-            <!-- EPUB 3 rendition properties -->
-            <meta property="rendition:layout">pre-paginated</meta>
-            <meta property="rendition:orientation">\(orientation)</meta>
-            <meta property="rendition:spread">\(spreadMode)</meta>
+            <meta name="comic-panel-view" content="guided"/>
           </metadata>
 
           <manifest>
@@ -455,7 +436,7 @@ class PanelViewEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml">
           <head>
             <title>Page \(pageNum)</title>
-            <meta name="viewport" content="width=\(W), height=\(H)"/>
+            <meta name="viewport" content="width=\(W), height=\(H), initial-scale=1.0"/>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
           </head>
           <body>
@@ -551,12 +532,14 @@ class PanelViewEPUBConverter {
 
     private func buildCSS() -> String {
         """
+    private func buildCSS() -> String {
+        """
         /* PanelView EPUB Stylesheet — fixed-layout Kindle comic */
         @page { margin: 0; padding: 0; }
         * { margin: 0; padding: 0; border: 0; }
-        html, body { width: 100vw; height: 100vh; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
-        div { position: absolute; width: 100vw; height: 100vh; text-align: center; }
-        .singlePage { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; }
+        body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
+        div { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+        .singlePage { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
 
         /* Tap target container: invisible overlay, absolute pixel positioned */
         .tap-target-container { position: absolute; }
@@ -627,7 +610,7 @@ class PanelViewEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml">
           <head>
             <title>Blank</title>
-            <meta name="viewport" content="width=\(Int(pageWidth)), height=\(Int(pageHeight))"/>
+            <meta name="viewport" content="width=\(Int(pageWidth)), height=\(Int(pageHeight)), initial-scale=1.0"/>
           </head>
           <body style="background-color:#000000;"></body>
         </html>

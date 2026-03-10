@@ -194,15 +194,19 @@ class CBZToEPUBConverter {
                 let coverXHTML = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <!DOCTYPE html>
-                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+                <html xmlns="http://www.w3.org/1999/xhtml">
                 <head>
                     <title>Cover</title>
-                    <meta name="viewport" content="width=\(widthID), height=\(heightID)"/>
+                    <meta name="viewport" content="width=\(widthID), height=\(heightID), initial-scale=1.0"/>
+                    <style>
+                        @page { margin: 0; padding: 0; }
+                        body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
+                        div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+                        img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+                    </style>
                 </head>
-                <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
-                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;">
-                        <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="../images/\(coverFilename)" alt="Cover"/>
-                    </div>
+                <body>
+                    <div class="svg-wrapper"><img src="../images/\(coverFilename)" alt="Cover"/></div>
                 </body>
                 </html>
                 """
@@ -307,23 +311,9 @@ class CBZToEPUBConverter {
                     <dc:creator>Inksync Pro</dc:creator>
                     <dc:language>en</dc:language>
                     
-                    <!-- Strict Fixed-Layout Flags -->
-                    <meta name="fixed-layout" content="true"/>
-                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
-                    <meta name="orientation-lock" content="none"/>
-                    <meta name="book-type" content="comic"/>
-                    <meta name="cdetype" content="pdoc"/>
-                    <meta name="RegionMagnification" content="true"/>
-                    <meta name="region-all-mag-adp" content="1"/>
-                    <meta name="zero-gutter" content="true"/>
-                    <meta name="zero-margin" content="true"/>
-                    <meta name="ke-border-color" content="#000000"/>
-                    <meta name="ke-border-width" content="0"/>
+                    <!-- Remove Fixed Layout Metadata to bypass Kindle Firmware UI Bug -->
+                    <meta property="dcterms:modified">\(Date().ISO8601Format(.iso8601(timeZone: TimeZone(secondsFromGMT: 0)!)))</meta>
                     <meta name="cover" content="\(coverMetaContent)"/>
-                    
-                    <meta property="rendition:layout">pre-paginated</meta>
-                    <meta property="rendition:spread">auto</meta>
-                    <meta property="rendition:orientation">auto</meta>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
@@ -407,25 +397,26 @@ class CBZToEPUBConverter {
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int, height: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-            <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="../images/\(imageName)" alt="Page Image"/>
+            <img src="../images/\(imageName)" alt=""/>
             """
         }.joined(separator: "\n")
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <html xmlns="http://www.w3.org/1999/xhtml">
         <head>
             <title>\(title)</title>
-            <meta name="viewport" content="width=\(width), height=\(height)"/>
+            <meta name="viewport" content="width=\(width), height=\(height), initial-scale=1.0"/>
             <style>
                 @page { margin: 0; padding: 0; }
-                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; overflow: hidden; }
-                img { max-width: 100%; object-fit: contain; }
+                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
+                div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+                img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
             </style>
         </head>
         <body>
-            <div style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; margin: 0; padding: 0; overflow: hidden; text-align: center;">
+            <div class="svg-wrapper">
                 \(imageElements)
             </div>
         </body>

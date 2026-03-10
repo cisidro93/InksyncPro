@@ -2781,12 +2781,12 @@ class ConversionManager: ObservableObject {
                         }
                     }
                     
-                    // 2. Fixed Layout Metadata (ALWAYS REQUIRED for FW 5.19.2 Edge-to-Edge)
-                    if !opfString.contains("rendition:layout") {
+                    // 2. Original Resolution Check (Removed Fixed-Layout requirements)
+                    // We only inject the detected resolution to help kindle scale natively without letterbox framing.
+                    if !opfString.contains("<meta name=\"original-resolution\"") {
                          if let range = opfString.range(of: "</metadata>") {
                              
                              // ✅ RESOLUTION EXTRACTION: Find first image to set correct original-resolution
-                             // This is required for Kindle to scale the Fixed Layout correctly without letterboxing
                              var resolutionTag = ""
                              if let imageEntry = sourceArchive.makeIterator().first(where: { 
                                  $0.path.contains("images") && 
@@ -2803,17 +2803,11 @@ class ConversionManager: ObservableObject {
                              }
                              
                              let tag = """
-    <meta property="rendition:layout">pre-paginated</meta>
-    <meta property="rendition:orientation">auto</meta>
-    <meta property="rendition:spread">auto</meta>
-    <meta name="fixed-layout" content="true"/>
-    <meta name="RegionMagnification" content="true"/>
-    <meta name="region-all-mag-adp" content="1"/>
-    <meta name="book-type" content="comic"/>\(resolutionTag)
+\(resolutionTag)
 """
                              opfString.insert(contentsOf: tag, at: range.lowerBound)
                              modified = true
-                             Logger.shared.log("Injected Full Kindle Metadata Suite (Layout, Region-Mag, Book-Type, Resolution)", category: "Injection")
+                             Logger.shared.log("Injected Fallback Resolution", category: "Injection")
                          }
                     }
                     
