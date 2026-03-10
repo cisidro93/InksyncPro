@@ -198,8 +198,8 @@ class CBZToEPUBConverter {
                     <meta name="viewport" content="width=1000, height=1500"/>
                 </head>
                 <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
-                    <div style="position: relative; width: 1000px; height: 1500px; margin: 0; padding: 0; overflow: hidden;">
-                        <img style="position: absolute; top: 0; left: 0; width: 1000px; height: 1500px;" src="../images/\(coverFilename)" alt="Cover"/>
+                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;">
+                        <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="../images/\(coverFilename)" alt="Cover"/>
                     </div>
                 </body>
                 </html>
@@ -222,16 +222,21 @@ class CBZToEPUBConverter {
             let navContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE html>
-            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
             <head>
-                <title>Navigation</title>
                 <meta charset="utf-8" />
+                <title>Navigation</title>
             </head>
             <body>
                 <nav epub:type="toc" id="toc">
                     <h1>Table of Contents</h1>
                     <ol>
                         <li><a href="text/chunk_0001.xhtml">Start Reading</a></li>
+                    </ol>
+                </nav>
+                <nav epub:type="landmarks">
+                    <ol>
+                        <li><a epub:type="bodymatter" href="text/chunk_0001.xhtml">Start</a></li>
                     </ol>
                 </nav>
             </body>
@@ -421,7 +426,7 @@ class CBZToEPUBConverter {
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-            <img style="position: absolute; top: 0; left: 0; width: 1000px; height: 1500px;" src="../images/\(imageName)" alt="Page Image"/>
+            <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="../images/\(imageName)" alt="Page Image"/>
             """
         }.joined(separator: "\n")
         
@@ -434,7 +439,7 @@ class CBZToEPUBConverter {
             <meta name="viewport" content="width=1000, height=1500"/>
         </head>
         <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
-            <div style="position: relative; width: 1000px; height: 1500px; margin: 0; padding: 0; overflow: hidden;">
+            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;">
                 \(imageElements)
             </div>
         </body>
