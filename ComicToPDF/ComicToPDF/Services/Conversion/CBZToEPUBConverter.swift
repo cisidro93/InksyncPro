@@ -305,6 +305,7 @@ class CBZToEPUBConverter {
             }
             
             // ✅ We rigidly use standard Fixed-Layout format required by Amazon Publishing limits to bypass E013 Reading Margins
+            let coverMetaContent = (batches.count > 1 && firstBatchCoverData != nil) ? "cover-image" : "img_1"
             let firstPageHref = (batches.count > 1 && firstBatchCoverData != nil) ? "text/cover.xhtml" : "text/chunk_0001.xhtml"
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
