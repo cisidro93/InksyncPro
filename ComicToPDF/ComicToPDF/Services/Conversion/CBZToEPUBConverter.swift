@@ -197,6 +197,9 @@ class CBZToEPUBConverter {
                 manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
                 spineItems.append("<itemref idref=\"cover-page\"/>")
                 
+                let coverW = contentSize.width > 0 ? Int(contentSize.width) : 1000
+                let coverH = contentSize.height > 0 ? Int(contentSize.height) : 1500
+                
                 // Write cover.xhtml
                 let coverXHTML = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -204,11 +207,13 @@ class CBZToEPUBConverter {
                 <html xmlns="http://www.w3.org/1999/xhtml">
                 <head>
                     <title>Cover</title>
-                    <meta name="viewport" content="width=\(widthID), height=\(heightID), initial-scale=1.0"/>
+                    <meta name="viewport" content="width=\(coverW), height=\(coverH), initial-scale=1.0"/>
                     <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
                 </head>
                 <body>
-                    <div class="page"><img class="page-image" src="../images/\(coverFilename)" alt="Cover"/></div>
+                    <div class="svg-wrapper">
+                        <img src="../images/\(coverFilename)" alt="Cover"/>
+                    </div>
                 </body>
                 </html>
                 """
@@ -222,32 +227,6 @@ class CBZToEPUBConverter {
             // Even if the user doesn't want a VISIBLE TOC, these files are mandatory for the book structure.
             // We use linear="no" in the spine to hide the HTML TOC.
             manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
-            
-            // Generate NAV immediately to ensure they exist for Zipping
-             // Cover needs the EXACT same `svg-wrapper` logic as the chunk generator for KFX Bypass
-            let coverMetaContent = (batches.count > 1 && firstBatchCoverData != nil) ? "cover-image" : "img_1"
-            let coverFilename = (batches.count > 1 && firstBatchCoverData != nil) ? "badged_cover.jpg" : "image_0001.jpeg"
-            // Get proper dimensions or fallback
-            let coverW = contentSize.width > 0 ? Int(contentSize.width) : 1000
-            let coverH = contentSize.height > 0 ? Int(contentSize.height) : 1500
-            
-            let coverXHTML = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE html>
-            <html xmlns="http://www.w3.org/1999/xhtml">
-            <head>
-                <title>Cover</title>
-                <meta name="viewport" content="width=\(coverW), height=\(coverH), initial-scale=1.0"/>
-                <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
-            </head>
-            <body>
-                <div class="svg-wrapper">
-                    <img src="../images/\(coverFilename)" alt="Cover"/>
-                </div>
-            </body>
-            </html>
-            """
-            try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
             let navContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE html>
@@ -275,7 +254,7 @@ class CBZToEPUBConverter {
             // Completely removed toc.ncx from execution to bypass legacy engine formatting
             
             // Process Items in this Batch
-            let chunkSize = 20
+            let chunkSize = 1
             var currentChunkImages: [String] = []
             var chunkIndex = 0
             
