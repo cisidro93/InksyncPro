@@ -156,12 +156,13 @@ class CBZToEPUBConverter {
             """
             try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
             
-            // ✅ KF8 COMPLIANCE: Generate External CSS using absolute layout blocks
+            // ✅ Classic Reflowable KFX Bypass CSS from `977f470`
             let cssContent = """
             @page { margin: 0; padding: 0; }
-            body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-            div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-            img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+            * { margin: 0; padding: 0; border: 0; }
+            html, body { width: 100vw; height: 100vh; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
+            .page { position: absolute; width: 100vw; height: 100vh; margin: 0; padding: 0; text-align: center; }
+            .page-image { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; }
             """
             try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
             
@@ -401,14 +402,9 @@ class CBZToEPUBConverter {
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int, height: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-            <div class="svg-wrapper">
-                <img src="../images/\(imageName)" alt=""/>
-            </div>
+            <img class="page-image" src="../images/\(imageName)" alt=""/>
             """
         }.joined(separator: "\n")
-        
-        let chunkW = width > 0 ? width : 1000
-        let chunkH = height > 0 ? height : 1500
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -416,11 +412,13 @@ class CBZToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml">
         <head>
             <title>\(title)</title>
-            <meta name="viewport" content="width=\(chunkW), height=\(chunkH), initial-scale=1.0"/>
+            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
         </head>
         <body>
-            \(imageElements)
+            <div class="page">
+                \(imageElements)
+            </div>
         </body>
         </html>
         """
