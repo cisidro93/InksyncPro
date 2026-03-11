@@ -156,11 +156,20 @@ class CBZToEPUBConverter {
             """
             try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
             
-            // Global CSS is now injected inline into every chunk to ensure absolute render consistency.
-            // Skipping external comic.css generation.
+            // ✅ KF8 COMPLIANCE: Generate External CSS using absolute layout blocks
+            let cssContent = """
+            /* Fixed layout page body */
+            @page { margin: 0; padding: 0; }
+            * { margin: 0; padding: 0; border: 0; }
+            html, body { width: 100vw; height: 100vh; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
+            .page { position: absolute; width: 100vw; height: 100vh; margin: 0; padding: 0; text-align: center; }
+            .page-image { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; }
+            """
+            try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
             
             var spineItems: [String] = []
             var manifestItems: [String] = []
+            manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
             
             // ✅ CRITICAL FIX: Pre-Calculate Resolution for Metadata
             // We must know the content size BEFORE generating the OPF/NCX/NAV files.
@@ -198,15 +207,10 @@ class CBZToEPUBConverter {
                 <head>
                     <title>Cover</title>
                     <meta name="viewport" content="width=\(widthID), height=\(heightID), initial-scale=1.0"/>
-                    <style>
-                        @page { margin: 0; padding: 0; }
-                        body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-                        div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-                        img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
-                    </style>
+                    <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
                 </head>
                 <body>
-                    <div class="svg-wrapper"><img src="../images/\(coverFilename)" alt="Cover"/></div>
+                    <div class="page"><img class="page-image" src="../images/\(coverFilename)" alt="Cover"/></div>
                 </body>
                 </html>
                 """
@@ -413,7 +417,7 @@ class CBZToEPUBConverter {
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int, height: Int) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-            <img src="../images/\(imageName)" alt=""/>
+            <img class="page-image" src="../images/\(imageName)" alt=""/>
             """
         }.joined(separator: "\n")
         
@@ -424,15 +428,10 @@ class CBZToEPUBConverter {
         <head>
             <title>\(title)</title>
             <meta name="viewport" content="width=\(width), height=\(height), initial-scale=1.0"/>
-            <style>
-                @page { margin: 0; padding: 0; }
-                body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-                div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-                img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
-            </style>
+            <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
         </head>
         <body>
-            <div class="svg-wrapper">
+            <div class="page">
                 \(imageElements)
             </div>
         </body>

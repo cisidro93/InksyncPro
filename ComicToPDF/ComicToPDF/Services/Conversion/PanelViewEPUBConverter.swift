@@ -458,8 +458,8 @@ class PanelViewEPUBConverter {
           </head>
           <body>
             <!-- 1. BASE IMAGE -->
-            <div>
-              <img src="../images/\(imageName)" alt="Comic Page" class="singlePage"/>
+            <div class="page">
+              <img src="../images/\(imageName)" alt="Comic Page" class="page-image"/>
             </div>
 
         \(panelSection)
@@ -550,9 +550,9 @@ class PanelViewEPUBConverter {
         /* PanelView EPUB Stylesheet — fixed-layout Kindle comic */
         @page { margin: 0; padding: 0; }
         * { margin: 0; padding: 0; border: 0; }
-        body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-        div { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-        .singlePage { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+        html, body { width: 100vw; height: 100vh; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
+        .page { position: absolute; width: 100vw; height: 100vh; margin: 0; padding: 0; text-align: center; }
+        .page-image { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; }
 
         /* Tap target container: invisible overlay, absolute pixel positioned */
         .tap-target-container { position: absolute; }
