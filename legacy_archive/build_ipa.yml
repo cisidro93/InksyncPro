@@ -1,0 +1,77 @@
+name: Build iPadOS IPA
+
+on:
+  push:
+    branches:
+      - ios-port
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flet
+          pip install -r requirements_mobile.txt
+
+      - name: Build IPA (Unsigned)
+        run: |
+          echo "flet" > requirements.txt
+          yes | flet build ipa . --verbose
+          
+      - name: Debug Build Output
+        run: |
+          echo "Listing build directory..."
+          find build -maxdepth 4 || echo "Build dir not found"
+
+      - name: Package Unsigned IPA (Manual)
+        run: |
+          # If Flet made an xcarchive but no IPA (common for unsigned), we package it manually
+          mkdir -p dist
+          
+          # Try to find the .app inside the xcarchive
+          APP_PATH=$(find build -name "Runner.app" | head -n 1)
+          
+          if [ -n "$APP_PATH" ]; then
+            echo "Found app at: $APP_PATH"
+            
+            # DEBUG: Find all Plists
+            echo "Searching for all Info.plist files..."
+            find build -name "Info.plist"
+
+            PLIST="$APP_PATH/Info.plist"
+            
+            # --- MANUAL OVERRIDE: Force Inject Info.plist keys via Python ---
+            echo "Running inject_plist.py on $PLIST..."
+            python inject_plist.py "$PLIST"
+
+            # DEBUG: Print final plist
+            echo "--- FINAL INFO.PLIST START ---"
+            cat "$PLIST"
+            echo "--- FINAL INFO.PLIST END ---"
+            # -----------------------------------------------------
+            
+            mkdir -p Payload
+            cp -r "$APP_PATH" Payload/
+            zip -r dist/app.ipa Payload
+            echo "Successfully packaged dist/app.ipa"
+          else
+            echo "No Runner.app found. Build likely failed."
+            exit 1
+          fi
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: dist/*.ipa

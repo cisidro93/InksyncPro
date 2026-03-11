@@ -1,0 +1,28 @@
+[tool.flet]
+product_name = "CBZ Converter"
+org = "com.antigravity"
+url = "https://github.com/chisidro93/cbz_to_pdf"
+
+
+[tool.flet.android.permission]
+"android.permission.READ_EXTERNAL_STORAGE" = true
+"android.permission.WRITE_EXTERNAL_STORAGE" = true
+"android.permission.MANAGE_EXTERNAL_STORAGE" = true
+
+[tool.flet.ios.info_plist]
+UIFileSharingEnabled = true
+LSSupportsOpeningDocumentsInPlace = true
+
+[[tool.flet.ios.info_plist.CFBundleDocumentTypes]]
+CFBundleTypeName = "Comic Book Archive"
+CFBundleTypeRole = "Editor"
+LSHandlerRank = "Owner"
+LSItemContentTypes = [
+    "com.pkware.zip-archive", 
+    "public.zip-archive", 
+    "public.archive",
+    "public.data", 
+    "com.macitbetter.cbz-archive", 
+    "com.google.cbz", 
+    "application/x-cbz"
+]
