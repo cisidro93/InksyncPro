@@ -311,7 +311,23 @@ class CBZToEPUBConverter {
                     <dc:creator>Inksync Pro</dc:creator>
                     <dc:language>en</dc:language>
                     
-                    <!-- Remove Fixed Layout Metadata to bypass Kindle Firmware UI Bug -->
+                    <!-- Fixed Layout Metadata to enable full screen/edge-to-edge bypassing Margin injection -->
+                    <meta name="fixed-layout" content="true"/>
+                    <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
+                    <meta name="orientation-lock" content="none"/>
+                    <meta name="book-type" content="comic"/>
+                    <meta name="cdetype" content="pdoc"/>
+                    <meta name="RegionMagnification" content="true"/>
+                    <meta name="region-all-mag-adp" content="1"/>
+                    <meta name="zero-gutter" content="true"/>
+                    <meta name="zero-margin" content="true"/>
+                    <meta name="ke-border-color" content="#000000"/>
+                    <meta name="ke-border-width" content="0"/>
+                    
+                    <meta property="rendition:layout">pre-paginated</meta>
+                    <meta property="rendition:orientation">auto</meta>
+                    <meta property="rendition:spread">auto</meta>
+                    
                     <meta property="dcterms:modified">\(Date().ISO8601Format(.iso8601(timeZone: TimeZone(secondsFromGMT: 0)!)))</meta>
                     <meta name="cover" content="\(coverMetaContent)"/>
                 </metadata>
