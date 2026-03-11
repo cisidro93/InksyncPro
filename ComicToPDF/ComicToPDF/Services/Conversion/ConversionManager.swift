@@ -1498,12 +1498,11 @@ class ConversionManager: ObservableObject {
                 Logger.shared.log("PanelView Conversion Successful: \(pdf.name) -> \(newURLs.count) EPUB files", category: "Converter")
                 // Removed Legacy AZW3 & EPUB Paths
             } else {
-                // Standard EPUB (cloud-safe) — no panel metadata injected
-                let converter = CBZToEPUBConverter()
+                // SVG-Viewport EPUB (cloud-safe) — no panel metadata injected
+                let converter = InkSyncConverter()
                 let newURLs = try await converter.convert(
                     sourceURL: pdf.url,
-                    settings: jobSettings,
-                    manualManifest: nil
+                    settings: jobSettings
                 ) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
                 
                 for epubURL in newURLs {
@@ -1615,12 +1614,11 @@ class ConversionManager: ObservableObject {
                     await MainActor.run { self.scanLibrary() }
                     Logger.shared.log("Batch KF8 Conversion successful: \(pdf.name)", category: "Converter")
                 } else {
-                    // Standard EPUB — no panel metadata
-                    let converter = CBZToEPUBConverter()
+                    // SVG-Viewport EPUB — no panel metadata
+                    let converter = InkSyncConverter()
                     let newURLs = try await converter.convert(
                         sourceURL: pdf.url,
-                        settings: jobSettings,
-                        manualManifest: nil
+                        settings: jobSettings
                     ) { p in
                         Task { @MainActor in
                             self.conversionProgress = p
@@ -1734,8 +1732,8 @@ class ConversionManager: ObservableObject {
                         Task { @MainActor in self.conversionProgress = progress }
                     }
                 } else {
-                    let converter = CBZToEPUBConverter()
-                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: combinedManifest) { progress in
+                    let converter = InkSyncConverter()
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings) { progress in
                         Task { @MainActor in self.conversionProgress = progress }
                     }
                 }
