@@ -308,7 +308,7 @@ class CBZToEPUBConverter {
             let firstPageHref = (batches.count > 1 && firstBatchCoverData != nil) ? "text/cover.xhtml" : "text/chunk_0001.xhtml"
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
+            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
