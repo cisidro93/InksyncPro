@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 import ZIPFoundation
 
 class CBZToEPUBConverter {
@@ -68,7 +68,7 @@ class CBZToEPUBConverter {
                 let exceedsLimit = (currentBatchSize + itemSize + overheadBuffer) > limit
                 
                 if !isNoLimit && exceedsLimit && !currentBatch.isEmpty {
-                    Logger.shared.log("⚠️ Auto-Splitting at \(currentBatchSize) bytes (Image: \(indexToUse))", category: "Converter")
+                    Logger.shared.log("ΓÜá∩╕Å Auto-Splitting at \(currentBatchSize) bytes (Image: \(indexToUse))", category: "Converter")
                     batches.append(currentBatch)
                     currentBatch = []
                     currentBatchSize = 0
@@ -122,7 +122,7 @@ class CBZToEPUBConverter {
         // Track resolution from the first image of the first batch for consistency
         var contentSize = CGSize(width: 1080, height: 1920) // Default if tracking fails
         var hasCapturedResolution = false
-        var firstBatchCoverData: Data? = nil // ✅ Store original cover for dynamic chunk badges
+        var firstBatchCoverData: Data? = nil // Γ£à Store original cover for dynamic chunk badges
         
         for (batchIndex, batch) in batches.enumerated() {
             let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
@@ -135,13 +135,13 @@ class CBZToEPUBConverter {
             let oebpsDir = batchDir.appendingPathComponent("OEBPS")
             let imagesDir = oebpsDir.appendingPathComponent("images")
             let textDir = oebpsDir.appendingPathComponent("text")
-            let cssDir = oebpsDir.appendingPathComponent("css") // ✅ NEW: CSS Directory
+            let cssDir = oebpsDir.appendingPathComponent("css") // Γ£à NEW: CSS Directory
             let metaInfDir = batchDir.appendingPathComponent("META-INF")
             
             try? fileManager.removeItem(at: batchDir)
             try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
             try fileManager.createDirectory(at: textDir, withIntermediateDirectories: true)
-            try fileManager.createDirectory(at: cssDir, withIntermediateDirectories: true) // ✅ Create CSS Dir
+            try fileManager.createDirectory(at: cssDir, withIntermediateDirectories: true) // Γ£à Create CSS Dir
             try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
             
             // Standard EPUB Files
@@ -156,7 +156,12 @@ class CBZToEPUBConverter {
             """
             try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
             
-            // ✅ KF8 COMPLIANCE: Generate External CSS using absolute layout blocks
+            // If this is the FIRST batch and FIRST image, capture the raw cover so we can stamp it on future parts
+            if batchIndex == 0, let firstImage = batch.first {
+                firstBatchCoverData = firstImage.data
+            }
+            
+            // Write Global CSS
             let cssContent = """
             @page { margin: 0; padding: 0; }
             body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
@@ -167,25 +172,22 @@ class CBZToEPUBConverter {
             
             var spineItems: [String] = []
             var manifestItems: [String] = []
-            manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
             
-            // ✅ CRITICAL FIX: Pre-Calculate Resolution for Metadata
+            // Γ£à CRITICAL FIX: Pre-Calculate Resolution for Metadata
             // We must know the content size BEFORE generating the OPF/NCX/NAV files.
             // If we wait until the loop, 'widthID' and 'heightID' will be 0, causing Kindle to break.
             if !batch.isEmpty {
                 if let firstItem = batch.first, let image = UIImage(data: firstItem.data) {
-                    contentSize = image.size // ✅ Track resolution for Fixed-Layout
+                    contentSize = image.size // Γ£à Track resolution for Fixed-Layout
                     hasCapturedResolution = true
                     // Also capture cover if this is the very first batch
                     if batchIndex == 0 { firstBatchCoverData = firstItem.data }
                 }
             }
             
-            // ✅ Dynamic Cover Generation for Split Volumes
-            let widthID = Int(contentSize.width)
-            let heightID = Int(contentSize.height)
+            // Γ£à Dynamic Cover Generation for Split Volumes
             if let coverData = firstBatchCoverData, batches.count > 1 {
-                print("🎨 Dynamically Generating Cover Badge for Part \(batchIndex + 1) of \(batches.count)")
+                print("≡ƒÄ¿ Dynamically Generating Cover Badge for Part \(batchIndex + 1) of \(batches.count)")
                 
                 // Let CoverGenerator CoreGraphics handle blending the badge
                 let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batches.count)
@@ -200,86 +202,102 @@ class CBZToEPUBConverter {
                 // Write cover.xhtml
                 let coverXHTML = """
                 <?xml version="1.0" encoding="UTF-8"?>
-                <!DOCTYPE html>
                 <html xmlns="http://www.w3.org/1999/xhtml">
-                <head>
-                    <title>Cover</title>
-                    <meta name="viewport" content="width=\(widthID), height=\(heightID), initial-scale=1.0"/>
-                    <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
-                </head>
-                <body>
-                    <div class="page"><img class="page-image" src="../images/\(coverFilename)" alt="Cover"/></div>
-                </body>
+                <head><title>Cover</title><style type="text/css">
+                body { margin: 0; padding: 0; text-align: center; background-color: #000; }
+                img { max-width: 100%; max-height: 100%; height: auto; }
+                </style></head>
+                <body><img src="../images/\(coverFilename)" alt="Cover"/></body>
                 </html>
                 """
-                try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
+                try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
             }
             
+            // Γ£à Prepare Metadata Identifiers (Now with valid dimensions)
+            let widthID = Int(contentSize.width)
+            let heightID = Int(contentSize.height)
             let bookUUID = UUID().uuidString
-            // Add empty metadata array for explicit validation
+            // Note: writingMode and spreadMode are defined later near OPF generation for strict compliance
             
-            // ✅ VALIDATION FIX: Restore Navigation Documents (Required for EPUB 3 / Kindle Back-Compat)
+            // Add CSS to Manifest
+            manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
+            
+            // Γ£à VALIDATION FIX: Restore Navigation Documents (Required for EPUB 3 / Kindle Back-Compat)
             // Even if the user doesn't want a VISIBLE TOC, these files are mandatory for the book structure.
             // We use linear="no" in the spine to hide the HTML TOC.
+            manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
             manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
             
-            // Generate NAV immediately to ensure they exist for Zipping
-             // Cover needs the EXACT same `svg-wrapper` logic as the chunk generator for KFX Bypass
-            let coverMetaContent = (batches.count > 1 && firstBatchCoverData != nil) ? "cover-image" : "img_1"
-            let coverFilename = (batches.count > 1 && firstBatchCoverData != nil) ? "badged_cover.jpg" : "image_0001.jpeg"
-            // Get proper dimensions or fallback
-            let coverW = contentSize.width > 0 ? Int(contentSize.width) : 1000
-            let coverH = contentSize.height > 0 ? Int(contentSize.height) : 1500
-            
-            let coverXHTML = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE html>
-            <html xmlns="http://www.w3.org/1999/xhtml">
-            <head>
-                <title>Cover</title>
-                <meta name="viewport" content="width=\(coverW), height=\(coverH), initial-scale=1.0"/>
-                <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
-            </head>
-            <body>
-                <div class="svg-wrapper">
-                    <img src="../images/\(coverFilename)" alt="Cover"/>
-                </div>
-            </body>
-            </html>
-            """
-            try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
+            // Generate NAV and NCX immediately to ensure they exist for Zipping
             let navContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE html>
-            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
             <head>
-                <meta charset="utf-8" />
                 <title>Navigation</title>
+                <meta charset="utf-8" />
             </head>
             <body>
                 <nav epub:type="toc" id="toc">
                     <h1>Table of Contents</h1>
                     <ol>
-                        <li><a href="text/chunk_0001.xhtml">Start Reading</a></li>
-                    </ol>
-                </nav>
-                <nav epub:type="landmarks">
-                    <ol>
-                        <li><a epub:type="bodymatter" href="text/chunk_0001.xhtml">Start</a></li>
+                        <li><a href="text/page_0001.xhtml">Start Reading</a></li>
                     </ol>
                 </nav>
             </body>
             </html>
             """
             try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: String.Encoding.utf8)
-            // Completely removed toc.ncx from execution to bypass legacy engine formatting
+            Logger.shared.log("Γ£à Wrote nav.xhtml", category: "Converter")
+            
+            let ncxContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+                <head><meta name="dtb:uid" content="urn:uuid:\(bookUUID)"/></head>
+                <docTitle><text>\(epubName)</text></docTitle>
+                <navMap>
+                    <navPoint id="navPoint-1" playOrder="1">
+                        <navLabel><text>Start</text></navLabel>
+                        <content src="text/page_0001.xhtml"/>
+                    </navPoint>
+                </navMap>
+            </ncx>
+            """
+            try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
+            Logger.shared.log("Γ£à Wrote toc.ncx", category: "Converter")
             
             // Process Items in this Batch
-            let chunkSize = 20
+            let chunkSize = 1 // Γ£à REQUIRED: 1 image per file for Fixed-Layout EPUBs
             var currentChunkImages: [String] = []
             var chunkIndex = 0
             
-            // (Phase 4 Split Volume Cover Retention removed to avoid duplicate covers)
+            // Phase 4: Split Volume Cover Retention
+            if batchIndex > 0, let coverData = firstBatchCoverData {
+                let coverName = "cover_reused.jpg"
+                let coverURL = imagesDir.appendingPathComponent(coverName)
+                try? coverData.write(to: coverURL)
+                
+                manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+                
+                // Write cover as its own isolated page to comply with Fixed Layout 1 image/page rule
+                chunkIndex += 1
+                var coverW = widthID
+                var coverH = heightID
+                if let cImg = UIImage(data: coverData) {
+                    coverW = Int(cImg.size.width)
+                    coverH = Int(cImg.size.height)
+                }
+                let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
+                    chunkIndex: chunkIndex,
+                    images: [coverName],
+                    title: "Cover"
+                )
+                let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
+                try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: String.Encoding.utf8)
+                
+                manifestItems.append("<item id=\"chunk_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
+                spineItems.append("<itemref idref=\"chunk_\(chunkIndex)\"/>")
+            }
             
             for (localIndex, item) in batch.enumerated() {
                 let trueExt = (item.url.pathExtension.lowercased() == "png") ? "png" : "jpg"
@@ -300,8 +318,8 @@ class CBZToEPUBConverter {
                     }
                 }
                 
-                let propertiesAttr = (batchIndex == 0 && localIndex == 0) ? " properties=\"cover-image\"" : ""
-                manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propertiesAttr)/>")
+                let properties = (localIndex == 0 && batchIndex == 0) ? "properties=\"cover-image\"" : ""
+                manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\" \(properties)/>")
                 
                 currentChunkImages.append(newImageName)
                 
@@ -311,9 +329,7 @@ class CBZToEPUBConverter {
                     let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
                         chunkIndex: chunkIndex,
                         images: currentChunkImages,
-                        title: "Part \(chunkIndex)",
-                        width: widthID,
-                        height: heightID
+                        title: "Part \(chunkIndex)"
                     )
                     let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
                     try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
@@ -325,20 +341,18 @@ class CBZToEPUBConverter {
                 }
             }
             
-            // ✅ We rigidly use standard Fixed-Layout format required by Amazon Publishing limits to bypass E013 Reading Margins
-            let coverMetaContent = (batches.count > 1 && firstBatchCoverData != nil) ? "cover-image" : "img_1"
-            let firstPageHref = (batches.count > 1 && firstBatchCoverData != nil) ? "text/cover.xhtml" : "text/chunk_0001.xhtml"
+            // OPF Generation
+            // Γ£à We use standard Fixed-Layout format required by Amazon Publishing limits
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
+            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                     <dc:title>\(epubName.xmlEscaped())</dc:title>
                     <dc:creator>Inksync Pro</dc:creator>
                     <dc:language>en</dc:language>
-                    
                     <meta name="comic-panel-view" content="guided"/>
-                    <meta name="cover" content="\(coverMetaContent)"/>
+                    <meta name="cover" content="\(batchIndex > 0 && firstBatchCoverData != nil ? "cover_reused_img" : "img_1")"/>
                 </metadata>
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
@@ -346,10 +360,6 @@ class CBZToEPUBConverter {
                 <spine page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
                     \(spineItems.joined(separator: "\n        "))
                 </spine>
-                <guide>
-                    <reference type="cover" title="Cover" href="\(firstPageHref)"/>
-                    <reference type="text" title="Start" href="\(firstPageHref)"/>
-                </guide>
             </package>
             """
             
@@ -357,7 +367,7 @@ class CBZToEPUBConverter {
 
             
             // Zip
-            // ✅ Sanitize Filename (User Preference: Spaces over Underscores)
+            // Γ£à Sanitize Filename (User Preference: Spaces over Underscores)
             // Replace underscores with spaces, allow natural spaces, remove special chars.
             let safeName = epubName.map { char -> String in
                 if char.isLetter || char.isNumber || char == "-" {
@@ -373,7 +383,7 @@ class CBZToEPUBConverter {
             let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(outputFilename)
             if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
             
-            // ✅ FIX: Manual Zipping to ensure mimetype is UNCOMPRESSED and FIRST
+            // Γ£à FIX: Manual Zipping to ensure mimetype is UNCOMPRESSED and FIRST
             // Wrapped in DO block to ensure Archive deinit (and close) before we try to read it
             do {
                 guard let archive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) else {
@@ -408,7 +418,7 @@ class CBZToEPUBConverter {
             
             generatedFiles.append(outputURL)
             
-            // ✅ DEBUG: Log Structure immediately for verification
+            // Γ£à DEBUG: Log Structure immediately for verification
             Logger.shared.log("About to analyze EPUB structure for: \(outputURL.lastPathComponent)", category: "Debug")
             Logger.shared.logEPUBStructure(at: outputURL)
             
@@ -419,17 +429,14 @@ class CBZToEPUBConverter {
         return generatedFiles
     }
     
-    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int, height: Int) -> String {
+    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-            <div class="svg-wrapper">
-                <img src="../images/\(imageName)" alt=""/>
-            </div>
+                <div class="svg-wrapper">
+                    <img src="../images/\(imageName)" alt="Page Image"/>
+                </div>
             """
         }.joined(separator: "\n")
-        
-        let chunkW = width > 0 ? width : 1000
-        let chunkH = height > 0 ? height : 1500
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -437,11 +444,11 @@ class CBZToEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml">
         <head>
             <title>\(title)</title>
-            <meta name="viewport" content="width=\(chunkW), height=\(chunkH), initial-scale=1.0"/>
+            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
         </head>
         <body>
-            \(imageElements)
+        \(imageElements)
         </body>
         </html>
         """
