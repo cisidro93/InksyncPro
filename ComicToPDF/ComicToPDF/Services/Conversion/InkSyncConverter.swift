@@ -59,23 +59,14 @@ class InkSyncConverter {
         """
         try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
-        // Phase 1 Architecture Application: Strict Pixel Mapping CSS
+        // Phase 4 Reflowable Bypass CSS
         let cssContent = """
         @page { margin: 0; padding: 0; }
         * { margin: 0; padding: 0; border: 0; }
-        html, body {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: #000000;
-        }
-        /* SVG forces the inner image to completely fill the defined coordinate space */
-        svg {
+        body { margin: 0; padding: 0; background-color: #000000; }
+        .page-image {
             display: block;
             width: 100%;
-            height: 100%;
             margin: 0;
             padding: 0;
         }
@@ -161,20 +152,17 @@ class InkSyncConverter {
             let propertiesAttr = (index == 0) ? " properties=\"cover-image\"" : ""
             manifestItems.append("<item id=\"img_\(globalImageIndex)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propertiesAttr)/>")
             
-            // SVG-Viewport XML Generation
+            // Reflowable XML Generation (No Viewports, No SVGs)
             let chunkXHTML = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE html>
             <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
             <head>
                 <title>Page \(globalImageIndex)</title>
-                <meta name="viewport" content="width=\(width), height=\(height)"/>
                 <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
             </head>
             <body>
-                <svg viewBox="0 0 \(width) \(height)" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-                    <image width="\(width)" height="\(height)" xlink:href="../images/\(newImageName)"/>
-                </svg>
+                <img class="page-image" src="../images/\(newImageName)" alt="Page \(globalImageIndex)"/>
             </body>
             </html>
             """
@@ -188,23 +176,19 @@ class InkSyncConverter {
             progress(0.1 + (0.8 * Double(index) / totalCount))
         }
         
-        // 5. OPF Generation enforcing PDOC and strict fixed-layout rendering parameters
+        // 5. OPF Generation enforcing PDOC and completely stripping fixed-layout metadata
         let bookUUID = UUID().uuidString
         let epubName = baseFilename
         let opfContent = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
+        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                 <dc:title>\(epubName.xmlEscaped())</dc:title>
                 <dc:creator>Inksync Pro</dc:creator>
                 <dc:language>en</dc:language>
                 
-                <!-- Explicit Fixed Layout Enforcement for KFX Compilation -->
-                <meta property="rendition:layout">pre-paginated</meta>
-                <meta property="rendition:orientation">auto</meta>
-                <meta property="rendition:spread">none</meta>
-                <meta name="fixed-layout" content="true"/>
+                <!-- Explicitly omitting rendition:layout=pre-paginated and fixed-layout=true -->
                 
                 <!-- SVG/PDF Cloud bypass flag -->
                 <meta name="comic-panel-view" content="guided"/>
