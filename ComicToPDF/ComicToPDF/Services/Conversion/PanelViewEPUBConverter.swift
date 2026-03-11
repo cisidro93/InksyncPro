@@ -306,12 +306,13 @@ class PanelViewEPUBConverter {
             <!-- Fixed Layout Metadata -->
             <meta name="fixed-layout" content="true"/>
             <meta name="original-resolution" content="\(pageWidth)x\(pageHeight)"/>
+            <meta name="orientation-lock" content="none"/>
             <meta name="book-type" content="comic"/>
             <meta name="RegionMagnification" content="true"/>
-            
+            <meta name="primary-writing-mode" content="\(isManga ? "horizontal-rl" : "horizontal-lr")"/>
             <meta property="rendition:layout">pre-paginated</meta>
             <meta property="rendition:orientation">auto</meta>
-            <meta property="rendition:spread">auto</meta>
+            <meta property="rendition:spread">none</meta>
           </metadata>
 
           <manifest>

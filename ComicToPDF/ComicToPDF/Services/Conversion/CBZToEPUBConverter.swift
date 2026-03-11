@@ -161,9 +161,9 @@ class CBZToEPUBConverter {
             /* Fixed layout page body */
             @page { margin: 0; padding: 0; }
             * { margin: 0; padding: 0; border: 0; }
-            html, body { width: 100%; height: 100%; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
-            .page { position: absolute; width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-            .page-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+            html, body { width: 100vw; height: 100vh; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
+            .page { position: absolute; width: 100vw; height: 100vh; margin: 0; padding: 0; text-align: center; }
+            .page-image { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; }
             """
             try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
             
@@ -318,10 +318,13 @@ class CBZToEPUBConverter {
                     <!-- Fixed Layout Metadata -->
                     <meta name="fixed-layout" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
+                    <meta name="orientation-lock" content="none"/>
                     <meta name="book-type" content="comic"/>
+                    <meta name="RegionMagnification" content="true"/>
+                    <meta name="primary-writing-mode" content="\(settings.mangaMode ? "horizontal-rl" : "horizontal-lr")"/>
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">auto</meta>
-                    <meta property="rendition:spread">auto</meta>
+                    <meta property="rendition:spread">none</meta>
                     
                     <meta property="dcterms:modified">\(Date().ISO8601Format(.iso8601(timeZone: TimeZone(secondsFromGMT: 0)!)))</meta>
                     <meta name="cover" content="\(coverMetaContent)"/>
