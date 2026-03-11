@@ -161,9 +161,9 @@ class CBZToEPUBConverter {
             /* Fixed layout page body */
             @page { margin: 0; padding: 0; }
             * { margin: 0; padding: 0; border: 0; }
-            html, body { width: 100vw; height: 100vh; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
-            .page { position: absolute; width: 100vw; height: 100vh; margin: 0; padding: 0; text-align: center; }
-            .page-image { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; }
+            html, body { width: 100%; height: 100%; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
+            .page { position: absolute; width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+            .page-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
             """
             try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
             
@@ -315,19 +315,10 @@ class CBZToEPUBConverter {
                     <dc:creator>Inksync Pro</dc:creator>
                     <dc:language>en</dc:language>
                     
-                    <!-- Fixed Layout Metadata to enable full screen/edge-to-edge bypassing Margin injection -->
+                    <!-- Fixed Layout Metadata -->
                     <meta name="fixed-layout" content="true"/>
                     <meta name="original-resolution" content="\(widthID)x\(heightID)"/>
-                    <meta name="orientation-lock" content="none"/>
                     <meta name="book-type" content="comic"/>
-                    <meta name="cdetype" content="pdoc"/>
-                    <meta name="RegionMagnification" content="true"/>
-                    <meta name="region-all-mag-adp" content="1"/>
-                    <meta name="zero-gutter" content="true"/>
-                    <meta name="zero-margin" content="true"/>
-                    <meta name="ke-border-color" content="#000000"/>
-                    <meta name="ke-border-width" content="0"/>
-                    
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">auto</meta>
                     <meta property="rendition:spread">auto</meta>
