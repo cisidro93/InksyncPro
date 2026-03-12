@@ -59,13 +59,11 @@ class InkSyncConverter {
         """
         try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
-        // Phase 5 Absolute Fixed-Layout CSS
+        // Phase 6 KCC-Aligned Fixed-Layout CSS
         let cssContent = """
         @page { margin: 0; padding: 0; }
-        * { margin: 0; padding: 0; border: 0; }
-        html, body { width: 100%; height: 100%; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
-        .page { position: absolute; width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-        .page-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
+        svg { display: block; margin: 0; padding: 0; width: 100%; height: 100%; }
         """
         try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
         
@@ -125,13 +123,19 @@ class InkSyncConverter {
                 finalData = (try? Data(contentsOf: srcURL)) ?? Data()
             }
             
-            // Capture cover mapping and global dimensions
+            // Dimensions extraction PER PAGE
+            var imgWidth = 1000
+            var imgHeight = 1500
+            if let image = UIImage(data: finalData) {
+                imgWidth = Int(image.size.width)
+                imgHeight = Int(image.size.height)
+            }
+            
+            // Capture cover mapping and global dimensions (falling back to first image)
             if index == 0 {
                 firstBatchCoverData = finalData
-                if let image = UIImage(data: finalData) {
-                    globalWidth = Int(image.size.width)
-                    globalHeight = Int(image.size.height)
-                }
+                globalWidth = imgWidth
+                globalHeight = imgHeight
             }
             
             globalImageIndex += 1
@@ -146,20 +150,20 @@ class InkSyncConverter {
             let propertiesAttr = (index == 0) ? " properties=\"cover-image\"" : ""
             manifestItems.append("<item id=\"img_\(globalImageIndex)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propertiesAttr)/>")
             
-            // Absolute Fixed-Layout XML Generation
+            // KCC-Aligned True Fixed-Layout SVG Generation
             let chunkXHTML = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE html>
             <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
             <head>
                 <title>Page \(globalImageIndex)</title>
-                <meta name="viewport" content="width=\(globalWidth), height=\(globalHeight)"/>
+                <meta name="viewport" content="width=\(imgWidth), height=\(imgHeight)"/>
                 <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
             </head>
             <body>
-                <div class="page">
-                    <img class="page-image" src="../images/\(newImageName)" alt="Page \(globalImageIndex)"/>
-                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 \(imgWidth) \(imgHeight)" width="100%" height="100%">
+                    <image width="\(imgWidth)" height="\(imgHeight)" xlink:href="../images/\(newImageName)"/>
+                </svg>
             </body>
             </html>
             """
@@ -185,10 +189,11 @@ class InkSyncConverter {
                 <dc:creator>Inksync Pro</dc:creator>
                 <dc:language>en</dc:language>
                 
-                <!-- Fixed Layout Enforcement for KFX Compilation WITHOUT primary-writing-mode -->
+                <!-- KCC-Aligned Fixed Layout Enforcement -->
                 <meta name="fixed-layout" content="true"/>
                 <meta name="original-resolution" content="\(globalWidth)x\(globalHeight)"/>
                 <meta name="book-type" content="comic"/>
+                <meta name="primary-writing-mode" content="\(settings.mangaMode ? "horizontal-rl" : "horizontal-lr")"/>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">none</meta>
