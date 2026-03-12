@@ -59,17 +59,13 @@ class InkSyncConverter {
         """
         try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
-        // Phase 4 Reflowable Bypass CSS
+        // Phase 5 Absolute Fixed-Layout CSS
         let cssContent = """
         @page { margin: 0; padding: 0; }
         * { margin: 0; padding: 0; border: 0; }
-        body { margin: 0; padding: 0; background-color: #000000; }
-        .page-image {
-            display: block;
-            width: 100%;
-            margin: 0;
-            padding: 0;
-        }
+        html, body { width: 100%; height: 100%; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
+        .page { position: absolute; width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+        .page-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
         """
         try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
         
@@ -81,6 +77,8 @@ class InkSyncConverter {
         let totalCount = Double(originalImageURLs.count)
         var globalImageIndex = 0
         var firstBatchCoverData: Data? = nil
+        var globalWidth = 1000
+        var globalHeight = 1500
         
         // Nav document generation (Mandatory for Kindle EPUB layout even if unused)
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
@@ -127,17 +125,13 @@ class InkSyncConverter {
                 finalData = (try? Data(contentsOf: srcURL)) ?? Data()
             }
             
-            // Capture cover mapping
+            // Capture cover mapping and global dimensions
             if index == 0 {
                 firstBatchCoverData = finalData
-            }
-            
-            // Dimensions extraction
-            var width = 1000
-            var height = 1500
-            if let image = UIImage(data: finalData) {
-                width = Int(image.size.width)
-                height = Int(image.size.height)
+                if let image = UIImage(data: finalData) {
+                    globalWidth = Int(image.size.width)
+                    globalHeight = Int(image.size.height)
+                }
             }
             
             globalImageIndex += 1
@@ -152,17 +146,20 @@ class InkSyncConverter {
             let propertiesAttr = (index == 0) ? " properties=\"cover-image\"" : ""
             manifestItems.append("<item id=\"img_\(globalImageIndex)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propertiesAttr)/>")
             
-            // Reflowable XML Generation (No Viewports, No SVGs)
+            // Absolute Fixed-Layout XML Generation
             let chunkXHTML = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE html>
             <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
             <head>
                 <title>Page \(globalImageIndex)</title>
+                <meta name="viewport" content="width=\(globalWidth), height=\(globalHeight)"/>
                 <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
             </head>
             <body>
-                <img class="page-image" src="../images/\(newImageName)" alt="Page \(globalImageIndex)"/>
+                <div class="page">
+                    <img class="page-image" src="../images/\(newImageName)" alt="Page \(globalImageIndex)"/>
+                </div>
             </body>
             </html>
             """
@@ -176,19 +173,25 @@ class InkSyncConverter {
             progress(0.1 + (0.8 * Double(index) / totalCount))
         }
         
-        // 5. OPF Generation enforcing PDOC and completely stripping fixed-layout metadata
+        // 5. OPF Generation enforcing PDOC and Absolute Fixed-Layout (but avoiding E013 primary-writing-mode)
         let bookUUID = UUID().uuidString
         let epubName = baseFilename
         let opfContent = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
+        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                 <dc:title>\(epubName.xmlEscaped())</dc:title>
                 <dc:creator>Inksync Pro</dc:creator>
                 <dc:language>en</dc:language>
                 
-                <!-- Explicitly omitting rendition:layout=pre-paginated and fixed-layout=true -->
+                <!-- Fixed Layout Enforcement for KFX Compilation WITHOUT primary-writing-mode -->
+                <meta name="fixed-layout" content="true"/>
+                <meta name="original-resolution" content="\(globalWidth)x\(globalHeight)"/>
+                <meta name="book-type" content="comic"/>
+                <meta property="rendition:layout">pre-paginated</meta>
+                <meta property="rendition:orientation">auto</meta>
+                <meta property="rendition:spread">none</meta>
                 
                 <!-- SVG/PDF Cloud bypass flag -->
                 <meta name="comic-panel-view" content="guided"/>
