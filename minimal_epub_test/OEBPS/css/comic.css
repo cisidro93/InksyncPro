@@ -1,0 +1,4 @@
+@page { margin: 0; padding: 0; }
+body { margin: 0; padding: 0; background-color: #000000; }
+img.page-image { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; }
+svg { display: block; width: 100%; height: 100%; }

@@ -92,7 +92,6 @@ class EPUBMerger {
                 <dc:title>Merged Comic Collection</dc:title>
                 <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(Date().ISO8601Format())</meta>
-                \(settings.epubSettings.includeFullPage ? "<meta name=\"comic-panel-view\" content=\"guided\"/>" : "")
             </metadata>
             <manifest>
                 \(manifestItems.joined(separator: "\n"))

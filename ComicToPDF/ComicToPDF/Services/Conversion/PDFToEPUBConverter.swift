@@ -419,9 +419,6 @@ class PDFToEPUBConverter {
                 <meta name="original-resolution" content="1000x1500"/>
                 <meta name="orientation-lock" content="none"/>
                     <meta name="book-type" content="comic"/>
-                    <meta name="cdetype" content="pdoc"/>
-                    <meta name="RegionMagnification" content="true"/>
-                    <meta name="region-all-mag-adp" content="1"/>
                     <meta name="zero-gutter" content="true"/>
                     <meta name="zero-margin" content="true"/>
                     <meta name="ke-border-color" content="#000000"/>

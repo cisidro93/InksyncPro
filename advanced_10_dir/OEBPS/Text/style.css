@@ -1,0 +1,3 @@
+@page { margin: 0; }
+body { display: block; margin: 0; padding: 0; }
+.PV-text { position: absolute; bottom: 5px; right: 5px; font-size: 8px; color: black; z-index: 100; }

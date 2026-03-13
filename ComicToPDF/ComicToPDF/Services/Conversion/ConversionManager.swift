@@ -1499,10 +1499,11 @@ class ConversionManager: ObservableObject {
                 // Removed Legacy AZW3 & EPUB Paths
             } else {
                 // SVG-Viewport EPUB (cloud-safe) — no panel metadata injected
-                let converter = InkSyncConverter()
+                let converter = CBZToEPUBConverter()
                 let newURLs = try await converter.convert(
                     sourceURL: pdf.url,
-                    settings: jobSettings
+                    settings: jobSettings,
+                    manualManifest: nil
                 ) { progress in Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" } }
                 
                 for epubURL in newURLs {
@@ -1615,10 +1616,11 @@ class ConversionManager: ObservableObject {
                     Logger.shared.log("Batch KF8 Conversion successful: \(pdf.name)", category: "Converter")
                 } else {
                     // SVG-Viewport EPUB — no panel metadata
-                    let converter = InkSyncConverter()
+                    let converter = CBZToEPUBConverter()
                     let newURLs = try await converter.convert(
                         sourceURL: pdf.url,
-                        settings: jobSettings
+                        settings: jobSettings,
+                        manualManifest: nil
                     ) { p in
                         Task { @MainActor in
                             self.conversionProgress = p
@@ -1732,8 +1734,8 @@ class ConversionManager: ObservableObject {
                         Task { @MainActor in self.conversionProgress = progress }
                     }
                 } else {
-                    let converter = InkSyncConverter()
-                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings) { progress in
+                    let converter = CBZToEPUBConverter()
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: nil) { progress in
                         Task { @MainActor in self.conversionProgress = progress }
                     }
                 }

@@ -108,6 +108,7 @@ struct GoConvertView: View {
     @State private var selectedFiles: [URL] = []
     @State private var isTargetingManga = true
     @State private var useLiquidEInk = true
+    @State private var compressionQuality: CompressionPreset = .high
     @State private var showingFilePicker = false
     @State private var shareItems: [URL] = []
     @State private var showingShareSheet = false
@@ -188,6 +189,15 @@ struct GoConvertView: View {
                         .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
                     }.padding(.horizontal, 32)
                     
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Image Quality").font(.headline)
+                        Picker("Image Quality", selection: $compressionQuality) {
+                            ForEach(CompressionPreset.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
+                        .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
+                    }.padding(.horizontal, 32)
+                    
                     Toggle(isOn: $useLiquidEInk) {
                         VStack(alignment: .leading) {
                             Text("✨ Liquid E-Ink Optimization").font(.headline)
@@ -255,9 +265,7 @@ struct GoConvertView: View {
                                         .padding(8).background(Color(.tertiarySystemBackground)).cornerRadius(8)
                                 }
                                 .buttonStyle(.plain)
-                                Button {
-                                    shareItems = [pdf.url]; showingShareSheet = true
-                                } label: {
+                                ShareLink(item: pdf.url) {
                                     Label("Send", systemImage: "paperplane.fill")
                                         .font(.caption).fontWeight(.semibold)
                                         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -272,10 +280,7 @@ struct GoConvertView: View {
                         
                         if goConvertedFiles.count > 1 {
                             VStack(spacing: 10) {
-                                Button {
-                                    shareItems = goConvertedFiles.map { $0.url }
-                                    showingShareSheet = true
-                                } label: {
+                                ShareLink(items: goConvertedFiles.map { $0.url }) {
                                     Label("Share All \(goConvertedFiles.count) Files", systemImage: "square.and.arrow.up")
                                         .font(.subheadline).fontWeight(.semibold)
                                         .frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -371,7 +376,7 @@ struct GoConvertView: View {
         var settingsForGo = conversionManager.conversionSettings
         settingsForGo.mangaMode = isTargetingManga
         settingsForGo.optimizeForDevice = true
-        settingsForGo.compressionQuality = .high
+        settingsForGo.compressionQuality = compressionQuality
         settingsForGo.outputFormat = .epub
         settingsForGo.outputPipeline = .standard
         settingsForGo.splitMode = .web

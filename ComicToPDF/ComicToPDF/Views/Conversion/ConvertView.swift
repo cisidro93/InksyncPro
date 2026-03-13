@@ -35,6 +35,11 @@ struct ConvertView: View {
                         applyPipeline(.standard)
                     }
                 }
+                
+                Picker("Image Quality", selection: $conversionManager.conversionSettings.compressionQuality) {
+                    ForEach(CompressionPreset.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.menu)
             } header: { Text("Output Target") }
 
             // MARK: - Export Pipeline

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+<head>
+<meta name="dtb:uid" content="urn:uuid:6cee9d55-f156-46cc-9f10-afe2112ac3a8"/>
+</head>
+<docTitle><text>SAO Edge Test</text></docTitle>
+<navMap>
+<navPoint id="navPoint-1" playOrder="1">
+<navLabel><text>Image</text></navLabel>
+<content src="insert001.xhtml"/>
+</navPoint>
+</navMap>
+</ncx>

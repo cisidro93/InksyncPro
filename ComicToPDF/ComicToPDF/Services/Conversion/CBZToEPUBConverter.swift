@@ -156,13 +156,24 @@ class CBZToEPUBConverter {
             """
             try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
             
-            // ✅ Classic Reflowable KFX Bypass CSS from `977f470`
+            // ✅ Cloud-Compatible Reflowable CSS Overrides
             let cssContent = """
             @page { margin: 0; padding: 0; }
-            * { margin: 0; padding: 0; border: 0; }
-            html, body { width: 100vw; height: 100vh; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
-            .page { position: absolute; width: 100vw; height: 100vh; margin: 0; padding: 0; text-align: center; }
-            .page-image { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; }
+            html, body {
+                margin: 0;
+                padding: 0;
+                width: 100vw;
+                height: 100vh;
+                background-color: black;
+                overflow: hidden;
+            }
+            svg {
+                display: block;
+                margin: 0;
+                padding: 0;
+                width: 100vw;
+                height: 100vh;
+            }
             """
             try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
             
@@ -306,20 +317,13 @@ class CBZToEPUBConverter {
             }
             
             // ✅ We rigidly use standard Fixed-Layout format required by Amazon Publishing limits to bypass E013 Reading Margins
-            let coverMetaContent = (batches.count > 1 && firstBatchCoverData != nil) ? "cover-image" : "img_1"
             let firstPageHref = (batches.count > 1 && firstBatchCoverData != nil) ? "text/cover.xhtml" : "text/chunk_0001.xhtml"
+            let hardenedMetadata = OPFGenerator.generateHardenedMetadata(title: epubName, width: widthID, height: heightID)
+            
             let opfContent = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
-                <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                    <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
-                    <dc:title>\(epubName.xmlEscaped())</dc:title>
-                    <dc:creator>Inksync Pro</dc:creator>
-                    <dc:language>en</dc:language>
-                    
-                    <meta name="comic-panel-view" content="guided"/>
-                    <meta name="cover" content="\(coverMetaContent)"/>
-                </metadata>
+            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="pub-id" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
+            \(hardenedMetadata)
                 <manifest>
                     \(manifestItems.joined(separator: "\n        "))
                 </manifest>
@@ -400,28 +404,8 @@ class CBZToEPUBConverter {
     }
     
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int, height: Int) -> String {
-        let imageElements = images.enumerated().map { i, imageName in
-            """
-            <img class="page-image" src="../images/\(imageName)" alt=""/>
-            """
-        }.joined(separator: "\n")
-        
-        return """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml">
-        <head>
-            <title>\(title)</title>
-            <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-            <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
-        </head>
-        <body>
-            <div class="page">
-                \(imageElements)
-            </div>
-        </body>
-        </html>
-        """
+        guard let imageName = images.first else { return "" }
+        return XHTMLGenerator.generateSVGWrappedXHTML(imageName: imageName, width: width, height: height)
     }
     
     // MARK: - Helpers

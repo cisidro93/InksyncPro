@@ -243,13 +243,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var processingEngineSection: some View {
         Section {
-            HStack {
-                settingsIcon("photo.stack.fill", color: .green)
-                Picker("Image Compression", selection: $conversionManager.conversionSettings.compressionQuality) {
-                    ForEach(CompressionPreset.allCases, id: \.self) { preset in Text(preset.rawValue).tag(preset) }
-                }
-                .pickerStyle(.menu)
-            }
+
             
             HStack {
                 settingsIcon("crop", color: .green)
