@@ -54,6 +54,7 @@ struct ModernLibraryView: View {
         case size = "Size"
         case favorites = "Favorites First"
         case type = "Single / Series"
+        case extensionType = "Format (CBZ/PDF)" // ✅ NEW: Format Sorting
         var id: String { rawValue }
     }
     @State private var sortOption: SortOption = .dateAdded
@@ -184,6 +185,10 @@ struct ModernLibraryView: View {
                 let s2 = ($1.metadata.series ?? "").isEmpty
                 if s1 != s2 { return s2 } // Place series first
                 return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+        case .extensionType:
+            return pdfs.sorted {
+                $0.fileExtensionString.localizedStandardCompare($1.fileExtensionString) == .orderedAscending
             }
         }
     }
@@ -965,6 +970,17 @@ struct ModernFileRow: View {
                     .foregroundColor(pdf.contentType.badgeColor)
                     .cornerRadius(4)
                     
+                    // ✅ NEW: File Extension Badge
+                    if !pdf.fileExtensionString.isEmpty {
+                        Text(pdf.fileExtensionString)
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.gray.opacity(0.3))
+                            .foregroundColor(.white)
+                            .cornerRadius(4)
+                    }
+                    
                     Text(pdf.formattedSize)
                         .font(.caption)
                         .foregroundColor(Theme.textSecondary)
@@ -1148,6 +1164,17 @@ struct ModernGridFileCell: View {
                     .cornerRadius(4)
                     
                     Spacer()
+                    
+                    // ✅ NEW: File Extension Badge
+                    if !pdf.fileExtensionString.isEmpty {
+                        Text(pdf.fileExtensionString)
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.gray.opacity(0.3))
+                            .foregroundColor(.white)
+                            .cornerRadius(4)
+                    }
                     
                     Text(pdf.formattedSize)
                         .font(.system(size: 10))

@@ -62,6 +62,11 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
     var chapters: [Chapter] = [] // ✅ NEW: Detected Chapters
     var addedByMode: AppUIMode = .pro // ✅ NEW: Track source UI mode
     
+    // ✅ NEW: File Extension Tracker
+    var fileExtensionString: String {
+        return url.pathExtension.uppercased()
+    }
+    
     var formattedSize: String {
         let mb = Double(fileSize) / 1024 / 1024
         return String(format: "%.1f MB", mb)
