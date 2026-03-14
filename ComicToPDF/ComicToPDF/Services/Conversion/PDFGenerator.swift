@@ -23,7 +23,7 @@ class PDFGenerator {
     ///   - mangaMode: If true, reverses page order for RTL reading
     ///   - chapters: Optional list of chapters for Table of Contents generation
     ///   - progress: Progress callback
-    static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, targetProfile: TargetDeviceProfile = .original, applyEInkFilter: Bool = false, progress: ((Double) -> Void)? = nil) throws {
+    static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, settings: ConversionSettings, progress: ((Double) -> Void)? = nil) throws {
         let total = Double(images.count)
         var current = 0.0
         
@@ -47,7 +47,23 @@ class PDFGenerator {
                     }
                     
                     // Apply E-Ink Filtering and Scaling
-                    let optimizedImage = EInkOptimizer.shared.processImage(image, for: targetProfile, applyGrayscale: applyEInkFilter)
+                    let targetProfile = settings.targetDeviceProfile
+                    let applyEInkFilter = settings.optimizeForDevice
+                    let cropMargins = settings.trimMargins
+                    let reduceMoire = settings.imageEnhancement.reduceMoire
+                    let dither = settings.imageEnhancement.ditheringEnabled
+                    
+                    let optimizedImage = EInkOptimizer.shared.processImage(
+                        image,
+                        for: targetProfile,
+                        applyGrayscale: applyEInkFilter,
+                        cropMargins: cropMargins,
+                        reduceMoire: reduceMoire,
+                        dither: dither,
+                        marginOffset: settings.bindingMarginOffset,
+                        marginSide: settings.bindingMarginSide,
+                        isOddPage: index % 2 == 0
+                    )
                     
                     let targetSize = targetProfile.resolution ?? optimizedImage.size
                     fallbackTargetSize = targetSize

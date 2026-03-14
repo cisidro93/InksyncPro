@@ -90,12 +90,7 @@ actor ConversionEngine {
         // We'd need to modify CBZToEPUBConverter to accept a progress callback if we want real granular updates here.
         // For the "Architectural" prompt, I will demonstrate the pattern.
         
-        // Mocking granular updates for demonstration of the Engine's capability
-        for i in stride(from: 0, to: 100, by: 20) {
-            try await Task.sleep(nanoseconds: 200_000_000) // 0.2s simulation
-            progressSubject.send(.progress(file: url, current: i, total: 100, message: "Processing page \(i)..."))
-        }
-        
+
         let outputURLs = try await converter.convert(
             sourceURL: url,
             settings: settings,

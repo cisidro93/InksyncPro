@@ -360,6 +360,8 @@ struct ConversionSettings: Codable, Equatable {
     var enableBackgroundQueue: Bool = true
     var textSize: AppTextSize = .medium
     var panelEditorMode: PanelEditorPresentationMode = .sheet
+    var bindingMarginOffset: Int = 0             // ✅ NEW: Asymmetric Margin Padding
+    var bindingMarginSide: BindingMarginSide = .none // ✅ NEW: Asymmetric Margin Side
     
     // Debugger Visibility
     var showEditorDebug: Bool = false
@@ -400,7 +402,7 @@ struct ConversionSettings: Codable, Equatable {
     // Custom Codable implementation to handle migration
                             
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDeviceProfile, mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, showEditorDebug
+        case outputFormat, compressionQuality, optimizeForDevice, targetDeviceProfile, mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, bindingMarginOffset, bindingMarginSide, showEditorDebug
         case outputPipeline   // New canonical export mode
         case isGuidedView     // Legacy — read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
@@ -425,6 +427,8 @@ struct ConversionSettings: Codable, Equatable {
         imageEnhancement = try container.decode(ImageEnhancementSettings.self, forKey: .imageEnhancement)
         textSize = try container.decodeIfPresent(AppTextSize.self, forKey: .textSize) ?? .medium
         panelEditorMode = try container.decodeIfPresent(PanelEditorPresentationMode.self, forKey: .panelEditorMode) ?? .sheet
+        bindingMarginOffset = try container.decodeIfPresent(Int.self, forKey: .bindingMarginOffset) ?? 0
+        bindingMarginSide = try container.decodeIfPresent(BindingMarginSide.self, forKey: .bindingMarginSide) ?? .none
         showEditorDebug = try container.decodeIfPresent(Bool.self, forKey: .showEditorDebug) ?? false
         
         // Migration: if new outputPipeline key is present, decode it.
@@ -466,6 +470,8 @@ struct ConversionSettings: Codable, Equatable {
         try container.encode(imageEnhancement, forKey: .imageEnhancement)
         try container.encode(textSize, forKey: .textSize)
         try container.encode(panelEditorMode, forKey: .panelEditorMode)
+        try container.encode(bindingMarginOffset, forKey: .bindingMarginOffset)
+        try container.encode(bindingMarginSide, forKey: .bindingMarginSide)
         try container.encode(outputPipeline, forKey: .outputPipeline)
         try container.encode(showEditorDebug, forKey: .showEditorDebug)
         // comicVineAPIKey is intentionally not encoded (moved to Keychain)
@@ -498,6 +504,18 @@ struct ImageEnhancementSettings: Codable, Equatable {
     var vibrance: Double = 0.0
     // ✅ KCC: Gamma Correction (Crucial for E-Ink to prevent black crush)
     var gamma: Double = 1.0 
+    // ✅ Pro E-Ink Enhancements
+    var reduceMoire: Bool = false
+    var ditheringEnabled: Bool = false
+}
+
+enum BindingMarginSide: String, Codable, CaseIterable, Identifiable {
+    case none = "None"
+    case left = "Left"
+    case right = "Right"
+    case alternating = "Alternating (Odd/Even)"
+    
+    var id: String { rawValue }
 }
 
 // MARK: - Output Pipeline

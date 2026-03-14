@@ -1446,7 +1446,7 @@ class ConversionManager: ObservableObject {
                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                 let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
                 let imageURLs = try await extractImageURLs(from: pdf.url)
-                try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, targetProfile: jobSettings.targetDeviceProfile, applyEInkFilter: jobSettings.optimizeForDevice) { progress in
+                try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings) { progress in
                     Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete!"; scanLibrary()
@@ -1561,7 +1561,7 @@ class ConversionManager: ObservableObject {
                         .replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                     let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
                     let imageURLs = try await extractImageURLs(from: pdf.url)
-                    try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, targetProfile: jobSettings.targetDeviceProfile, applyEInkFilter: jobSettings.optimizeForDevice) { p in
+                    try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings) { p in
                         Task { @MainActor in
                             self.conversionProgress = p
                             self.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
@@ -1746,7 +1746,7 @@ class ConversionManager: ObservableObject {
                     }
                     
                     if jobSettings.outputFormat == .pdf {
-                        try PDFGenerator.generate(from: batchImages, to: finalOutputURL, mangaMode: jobSettings.mangaMode, chapters: mergedChapters, targetProfile: jobSettings.targetDeviceProfile, applyEInkFilter: jobSettings.optimizeForDevice) { progress in
+                        try PDFGenerator.generate(from: batchImages, to: finalOutputURL, mangaMode: jobSettings.mangaMode, chapters: mergedChapters, settings: jobSettings) { progress in
                             let baseProgress = Double(batchIndex) / Double(batches.count)
                             let currentPartProgress = progress / Double(batches.count)
                             Task { @MainActor in self.conversionProgress = 0.5 + (0.5 * (baseProgress + currentPartProgress)) }
@@ -2610,7 +2610,7 @@ class ConversionManager: ObservableObject {
                 let imageURLs = try await extractImageURLs(from: pdf.url)
                 
                 // 2. Generate PDF
-                try PDFGenerator.generate(from: imageURLs, to: exportURL, mangaMode: conversionSettings.mangaMode, chapters: pdf.chapters, targetProfile: conversionSettings.targetDeviceProfile, applyEInkFilter: conversionSettings.optimizeForDevice) { progress in
+                try PDFGenerator.generate(from: imageURLs, to: exportURL, mangaMode: conversionSettings.mangaMode, chapters: pdf.chapters, settings: conversionSettings) { progress in
                     Task { @MainActor in self.processingStatus = "Processing \(Int(progress * 100))%" }
                 }
                 
@@ -2715,7 +2715,7 @@ class ConversionManager: ObservableObject {
                 let imageURLs = try await extractImageURLs(from: pdf.url)
                 
                 // 2. Generate
-                try PDFGenerator.generate(from: imageURLs, to: pdfURL, mangaMode: conversionSettings.mangaMode, chapters: pdf.chapters, targetProfile: conversionSettings.targetDeviceProfile, applyEInkFilter: conversionSettings.optimizeForDevice) { progress in
+                try PDFGenerator.generate(from: imageURLs, to: pdfURL, mangaMode: conversionSettings.mangaMode, chapters: pdf.chapters, settings: conversionSettings) { progress in
                     Task { @MainActor in self.processingStatus = "Processing \(Int(progress * 100))%" }
                 }
                 

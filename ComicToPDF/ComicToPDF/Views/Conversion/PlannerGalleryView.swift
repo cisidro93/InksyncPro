@@ -155,6 +155,13 @@ struct PlannerGalleryView: View {
                 await MainActor.run {
                     self.isGenerating = false
                     Logger.shared.log("Successfully Exported to \(outputURL.path)", category: "Export", type: .success)
+                    
+                    // ✅ Add to Queue Manager so it displays in the Go Mode library UI
+                    let stem = outputURL.deletingPathExtension().lastPathComponent
+                    if !ConversionQueueManager.shared.completedGoSourceStems.contains(stem) {
+                        ConversionQueueManager.shared.completedGoSourceStems.append(stem)
+                    }
+                    
                     NotificationCenter.default.post(name: NSNotification.Name("LibraryNeedsRescan"), object: nil, userInfo: ["mode": "Go"])
                     self.dismiss()
                 }

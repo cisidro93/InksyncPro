@@ -165,7 +165,7 @@ class PanelViewEPUBConverter {
                     let pagePanels  = panels[globalIdx] ?? []
                     
                     // Process image → JPEG
-                    let imgData = processImage(srcURL: item.url, settings: settings)
+                    let imgData = processImage(srcURL: item.url, settings: settings, isOddPage: globalIdx % 2 == 0)
                     try? imgData.write(to: imagesDir.appendingPathComponent(imageName))
                     
                     // Resolve actual pixel dimensions per page (may differ from page 1)
@@ -702,10 +702,34 @@ class PanelViewEPUBConverter {
         return batches
     }
 
-    private func processImage(srcURL: URL, settings: ConversionSettings) -> Data {
+    private func processImage(srcURL: URL, settings: ConversionSettings, isOddPage: Bool) -> Data {
         let ext = srcURL.pathExtension.lowercased()
         let kindleSafe = ["jpg", "jpeg"] // PNG is NOT safe per KF8 spec
+        
         let needsCompression = settings.compressionQuality != .high
+        let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
+        let needsOptimization = settings.optimizeForDevice || settings.trimMargins || needsEnhancement
+
+        if needsOptimization, let rawImage = UIImage(contentsOfFile: srcURL.path) {
+            var workingImage = rawImage
+            if settings.optimizeForDevice {
+                workingImage = EInkOptimizer.shared.processImage(
+                    workingImage,
+                    for: settings.targetDeviceProfile,
+                    applyGrayscale: settings.imageEnhancement.grayscale,
+                    cropMargins: settings.trimMargins,
+                    reduceMoire: settings.imageEnhancement.reduceMoire,
+                    dither: settings.imageEnhancement.ditheringEnabled,
+                    marginOffset: settings.bindingMarginOffset,
+                    marginSide: settings.bindingMarginSide,
+                    isOddPage: isOddPage
+                )
+            }
+            // Traditional Filters
+            workingImage = ImageProcessor.process(image: workingImage, settings: settings) ?? workingImage
+            let quality = settings.compressionQuality.value
+            return workingImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
+        }
 
         if needsCompression, let image = UIImage(contentsOfFile: srcURL.path) {
             return image.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()

@@ -255,7 +255,19 @@ struct BatchRenameView: View {
     }
     
     func performRename() {
-        // Implementation stub for now
+        var currentNumber = startNumber
+        for id in selectedFiles {
+            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == id }) {
+                var name = pattern
+                name = name.replacingOccurrences(of: "{series}", with: pdf.metadata.series ?? "Series")
+                name = name.replacingOccurrences(of: "{issue}", with: pdf.metadata.issueNumber ?? "\(currentNumber)")
+                name = name.replacingOccurrences(of: "{title}", with: pdf.metadata.title)
+                name = name.replacingOccurrences(of: "{author}", with: pdf.metadata.author ?? "Unknown")
+                
+                conversionManager.renamePDF(pdf, to: name)
+                currentNumber += 1
+            }
+        }
         dismiss()
     }
 }

@@ -48,11 +48,22 @@ class PlannerPDFGenerator {
                         
                         switch element.type {
                         case .rectangle:
-                            break // TODO: Draw shape
+                            let path = UIBezierPath(rect: absoluteRect)
+                            path.lineWidth = element.strokeWidth ?? 2.0
+                            UIColor.black.setStroke()
+                            path.stroke()
                         case .circle:
-                            break // TODO: Draw shape
+                            let path = UIBezierPath(ovalIn: absoluteRect)
+                            path.lineWidth = element.strokeWidth ?? 2.0
+                            UIColor.black.setStroke()
+                            path.stroke()
                         case .line:
-                            break // TODO: Draw shape
+                            let path = UIBezierPath()
+                            path.move(to: CGPoint(x: absoluteRect.minX, y: absoluteRect.minY))
+                            path.addLine(to: CGPoint(x: absoluteRect.maxX, y: absoluteRect.maxY))
+                            path.lineWidth = element.strokeWidth ?? 2.0
+                            UIColor.black.setStroke()
+                            path.stroke()
                         case .image:
                             // Draw the embedded sticker/photo
                             if let imgData = element.imageData, let image = UIImage(data: imgData) {

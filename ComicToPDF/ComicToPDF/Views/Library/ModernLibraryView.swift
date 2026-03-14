@@ -71,6 +71,7 @@ struct ModernLibraryView: View {
     @State private var pdfToExport: ConvertedPDF?
     @State private var pdfToDirectShare: ConvertedPDF? // ✅ Competitor Hardening: Native Share
     @State private var pdfToSearchMetadata: ConvertedPDF?
+    @State private var pdfToCloudSync: ConvertedPDF? // ✅ NEW: WebDAV Sync
     
     // ✅ Layer 4: Manual Series Assignment (Single)
     @State private var pdfToAssignSeries: ConvertedPDF?
@@ -252,6 +253,9 @@ struct ModernLibraryView: View {
         }
         .sheet(item: $pdfToSearchMetadata) { pdf in
             MetadataSearchSheet(pdf: pdf)
+        }
+        .sheet(item: $pdfToCloudSync) { pdf in
+            CloudSyncView(targetPDF: pdf)
         }
         // ✅ NEW: Advanced Metadata & Cover Editor
         .sheet(item: $pdfToEditMetadata) { pdf in
@@ -563,6 +567,10 @@ struct ModernLibraryView: View {
         Button {
             pdfToDirectShare = pdf
         } label: { Label("Send to Kindle / Share", systemImage: "paperplane") }
+        
+        Button {
+            pdfToCloudSync = pdf
+        } label: { Label("Direct Cloud Sync", systemImage: "icloud.and.arrow.up") }
         
         Button {
             renameText = pdf.name
