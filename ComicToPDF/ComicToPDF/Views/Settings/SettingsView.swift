@@ -434,6 +434,19 @@ struct SettingsView: View {
             
             Link("Get Free API Key", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
                 .font(.caption).foregroundColor(.blue)
+                
+            Divider()
+            
+            HStack {
+                settingsIcon("brain", color: .purple)
+                SecureField("OpenRouter API Key (Pro Mode AI)", text: $conversionManager.conversionSettings.openRouterAPIKey)
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+            Link("Get OpenRouter Key", destination: URL(string: "https://openrouter.ai/keys")!)
+                .font(.caption).foregroundColor(.blue)
+                
         } header: { Text("Integrations") }
     }
     

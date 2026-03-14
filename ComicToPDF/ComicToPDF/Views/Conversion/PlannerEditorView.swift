@@ -2,6 +2,7 @@ import SwiftUI
 import PencilKit
 
 struct PlannerEditorView: View {
+    @EnvironmentObject var conversionManager: ConversionManager
     @Binding var project: PlannerProject
     @State private var selectedPageIndex: Int = 0
     @State private var canvasView = PKCanvasView()
@@ -283,66 +284,41 @@ struct PlannerEditorView: View {
     }
     
     private func generateAILayout(prompt: String) {
+        let apiKey = conversionManager.conversionSettings.openRouterAPIKey
+        guard !apiKey.isEmpty else {
+            self.exportErrorMessage = "Please add your OpenRouter API key in Settings -> Integrations first."
+            self.showingErrorAlert = true
+            return
+        }
+        
         isGeneratingAI = true
         
-        // Mock generation delay for effect
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            let width: CGFloat = 850
-            let height: CGFloat = 1100
-            
-            UIGraphicsBeginImageContextWithOptions(CGSize(width: width, height: height), true, 1.0)
-            guard let context = UIGraphicsGetCurrentContext() else {
-                self.isGeneratingAI = false
-                self.showingAIAssistant = false
-                return
-            }
-            
-            // Background
-            UIColor.white.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-            
-            // Draw grid or lines
-            UIColor.lightGray.withAlphaComponent(0.4).setStroke()
-            context.setLineWidth(1)
-            
-            if prompt.lowercased().contains("grid") || prompt.lowercased().contains("board") {
-                let spacing: CGFloat = 40
-                for x in stride(from: 0, to: width, by: spacing) {
-                    context.move(to: CGPoint(x: x, y: 0))
-                    context.addLine(to: CGPoint(x: x, y: height))
+        Task {
+            do {
+                // Use background thread so UI doesn't freeze during image rendering from JSON parsing
+                let canvasImage = try await AILayoutGenerator.generateLayout(prompt: prompt, apiKey: apiKey)
+                
+                guard let data = canvasImage.pngData() else {
+                    throw NSError(domain: "AILayoutGenerator", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to read layout image data."])
                 }
-                for y in stride(from: 0, to: height, by: spacing) {
-                    context.move(to: CGPoint(x: 0, y: y))
-                    context.addLine(to: CGPoint(x: width, y: y))
+                
+                await MainActor.run {
+                    if project.pages.indices.contains(selectedPageIndex) {
+                        project.pages[selectedPageIndex].backgroundImageData = data
+                    }
+                    self.isGeneratingAI = false
+                    self.showingAIAssistant = false
+                    self.aiPrompt = ""
+                    Logger.shared.log("AI Layout Generated successfully", category: "AI Pro Mode", type: .success)
                 }
-            } else {
-                // Default lines
-                let spacing: CGFloat = 50
-                for y in stride(from: 150, to: height, by: spacing) {
-                    context.move(to: CGPoint(x: 40, y: y))
-                    context.addLine(to: CGPoint(x: width - 40, y: y))
+            } catch {
+                await MainActor.run {
+                    self.isGeneratingAI = false
+                    self.showingAIAssistant = false
+                    self.exportErrorMessage = error.localizedDescription
+                    self.showingErrorAlert = true
                 }
             }
-            context.strokePath()
-            
-            // Header
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 36, weight: .bold),
-                .foregroundColor: UIColor.black.withAlphaComponent(0.8)
-            ]
-            let string = NSAttributedString(string: prompt.capitalized, attributes: attrs)
-            string.draw(at: CGPoint(x: 50, y: 60))
-            
-            let image = UIGraphicsGetImageFromCurrentImageContext()
-            UIGraphicsEndImageContext()
-            
-            if let data = image?.pngData(), project.pages.indices.contains(selectedPageIndex) {
-                project.pages[selectedPageIndex].backgroundImageData = data
-            }
-            
-            self.isGeneratingAI = false
-            self.showingAIAssistant = false
-            self.aiPrompt = ""
         }
     }
 }

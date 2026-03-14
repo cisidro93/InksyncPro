@@ -396,6 +396,24 @@ struct ConversionSettings: Codable, Equatable {
         }
     }
     
+    var openRouterAPIKey: String {
+        get {
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "openRouterAPIKey"),
+               let key = String(data: data, encoding: .utf8) {
+                return key
+            }
+            return ""
+        }
+        set {
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "openRouterAPIKey")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "openRouterAPIKey")
+            }
+        }
+    }
+    
     var epubSettings: EPUBSettings = EPUBSettings()
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
     
@@ -406,6 +424,7 @@ struct ConversionSettings: Codable, Equatable {
         case outputPipeline   // New canonical export mode
         case isGuidedView     // Legacy — read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
+        case openRouterAPIKey // Legacy migration only
     }
     
     init() {}
@@ -450,6 +469,11 @@ struct ConversionSettings: Codable, Equatable {
             print("🔐 Migrating Legacy API Key to Keychain...")
             let data = Data(legacyKey.utf8)
             KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
+        }
+        
+        if let legacyRouterKey = try? container.decodeIfPresent(String.self, forKey: .openRouterAPIKey), !legacyRouterKey.isEmpty {
+            let data = Data(legacyRouterKey.utf8)
+            KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "openRouterAPIKey")
         }
     }
     
