@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CloudSyncView: View {
     @Environment(\.dismiss) var dismiss
-    @StateObject private var cloudManager = CloudSyncManager.shared
+    @StateObject private var cloudManager = WebDAVSyncManager.shared
     
     let targetPDF: ConvertedPDF
     

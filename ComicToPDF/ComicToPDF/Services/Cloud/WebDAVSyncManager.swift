@@ -4,8 +4,8 @@ import Combine
 /// Handles uploading large converted EPUB/PDF files directly to WebDAV servers
 /// bypassing Amazon's 200MB Send-to-Kindle limit and allowing direct sync to E-Readers
 /// like BOOX, Supernote, and Kobo (via third-party integrations).
-class CloudSyncManager: ObservableObject {
-    static let shared = CloudSyncManager()
+class WebDAVSyncManager: ObservableObject {
+    static let shared = WebDAVSyncManager()
     
     @Published var isSyncing: Bool = false
     @Published var syncProgress: Double = 0.0
