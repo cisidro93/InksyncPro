@@ -1445,7 +1445,7 @@ class ConversionManager: ObservableObject {
                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                 let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
                 let imageURLs = try await extractImageURLs(from: pdf.url)
-                try PDFGenerator.generate(from: imageURLs, to: outputURL) { progress in
+                try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters) { progress in
                     Task { @MainActor in self.conversionProgress = progress; self.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 isConverting = false; conversionProgress = 1.0; statusMessage = "✅ Conversion Complete!"; scanLibrary()
@@ -1654,7 +1654,13 @@ class ConversionManager: ObservableObject {
         do {
             if jobSettings.outputFormat == .pdf || jobSettings.outputFormat == .cbz {
                 // Image-based Bulk Extraction & Merge
-                var allImages: [URL] = []
+                var batches: [[(url: URL, chapter: Chapter)]] = []
+                var currentBatch: [(url: URL, chapter: Chapter)] = []
+                var currentBatchSize: Int64 = 0
+                let sizeLimit = jobSettings.splitMode.limit
+                
+                var firstCoverImageData: Data? = nil
+                
                 for (index, file) in sourceFiles.enumerated() {
                     if Task.isCancelled { break }
                     await MainActor.run {
@@ -1662,39 +1668,99 @@ class ConversionManager: ObservableObject {
                         self.statusMessage = "Extracting \(file.name)..."
                         self.conversionProgress = Double(index) / Double(sourceFiles.count)
                     }
+                    
+                    let fileSize = file.fileSize
+                    // Split boundary trigger: We only split if the batch has items AND adding this new file exceeds limit.
+                    if sizeLimit != Int64.max && !currentBatch.isEmpty && (currentBatchSize + fileSize) > sizeLimit {
+                        batches.append(currentBatch)
+                        currentBatch = []
+                        currentBatchSize = 0
+                    }
+                    
                     let images = try await extractImageURLs(from: file.url)
-                    allImages.append(contentsOf: images)
+                    
+                    // The starting index for this chapter relative to the CURRENT batch
+                    let chapterStartIndex = currentBatch.count
+                    let chapterTitle = file.name.replacingOccurrences(of: ".cbz", with: "")
+                                                .replacingOccurrences(of: ".zip", with: "")
+                                                .replacingOccurrences(of: ".pdf", with: "")
+                                                .replacingOccurrences(of: ".epub", with: "")
+                    
+                    let chapter = Chapter(title: chapterTitle, pageIndex: chapterStartIndex)
+                    
+                    if firstCoverImageData == nil, let firstImageURL = images.first {
+                        firstCoverImageData = try? Data(contentsOf: firstImageURL)
+                    }
+                    
+                    for imageURL in images {
+                        currentBatch.append((url: imageURL, chapter: chapter))
+                    }
+                    currentBatchSize += fileSize
                 }
                 
-                guard !allImages.isEmpty else {
+                if !currentBatch.isEmpty {
+                    batches.append(currentBatch)
+                }
+                
+                guard !batches.isEmpty && !batches[0].isEmpty else {
                     isConverting = false; return
                 }
                 
                 await MainActor.run {
                     self.processingStatus = "Step 2/2: Merging..."
-                    self.statusMessage = "Merging \(allImages.count) pages..."
+                    self.statusMessage = "Merging \(batches.count) parts..."
                     self.conversionProgress = 0.5
                 }
                 
                 let ext = jobSettings.outputFormat == .cbz ? ".cbz" : ".pdf"
-                let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + ext
-                let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
-                if fileManager.fileExists(atPath: finalOutputURL.path) { try fileManager.removeItem(at: finalOutputURL) }
                 
-                if jobSettings.outputFormat == .pdf {
-                    try PDFGenerator.generate(from: allImages, to: finalOutputURL) { progress in
-                        Task { @MainActor in self.conversionProgress = 0.5 + (0.5 * progress) }
+                for (batchIndex, batch) in batches.enumerated() {
+                    let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
+                    let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + partSuffix + ext
+                    let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
+                    if fileManager.fileExists(atPath: finalOutputURL.path) { try fileManager.removeItem(at: finalOutputURL) }
+                    
+                    var batchImages = batch.map { $0.url }
+                    
+                    // Deduplicate chapters
+                    var mergedChapters: [Chapter] = []
+                    var seenChapters = Set<String>()
+                    for item in batch {
+                        if !seenChapters.contains(item.chapter.title) {
+                            mergedChapters.append(item.chapter)
+                            seenChapters.insert(item.chapter.title)
+                        }
                     }
-                } else {
-                    let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                    try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                    for (idx, url) in allImages.enumerated() {
-                        let pathExt = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-                        let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, pathExt))
-                        try fileManager.copyItem(at: url, to: dest)
+                    
+                    // Generate Badged Cover for split parts
+                    if let coverData = firstCoverImageData, batches.count > 1 {
+                        let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batches.count)
+                        let tempCoverURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+                        try? badgedCoverData.write(to: tempCoverURL)
+                        
+                        // Replace the first image in the batch with the branded cover
+                        if !batchImages.isEmpty {
+                            batchImages[0] = tempCoverURL
+                        }
                     }
-                    try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
-                    try fileManager.removeItem(at: tempDir)
+                    
+                    if jobSettings.outputFormat == .pdf {
+                        try PDFGenerator.generate(from: batchImages, to: finalOutputURL, mangaMode: jobSettings.mangaMode, chapters: mergedChapters) { progress in
+                            let baseProgress = Double(batchIndex) / Double(batches.count)
+                            let currentPartProgress = progress / Double(batches.count)
+                            Task { @MainActor in self.conversionProgress = 0.5 + (0.5 * (baseProgress + currentPartProgress)) }
+                        }
+                    } else {
+                        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                        for (idx, url) in batchImages.enumerated() {
+                            let pathExt = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+                            let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, pathExt))
+                            try fileManager.copyItem(at: url, to: dest)
+                        }
+                        try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
+                        try fileManager.removeItem(at: tempDir)
+                    }
                 }
                 
                 await MainActor.run {
@@ -1710,7 +1776,13 @@ class ConversionManager: ObservableObject {
             }
             
             // EPUB Bulk Merge (Existing Pipeline)
-            var generatedEPUBs: [URL] = []
+            // EPUB Bulk Merge (Existing Pipeline but with limits)
+            var generatedBatches: [[URL]] = []
+            var currentEPUBBatch: [URL] = []
+            var currentEPUBBatchSize: Int64 = 0
+            let epubSizeLimit = jobSettings.splitMode.limit
+            
+            var firstEPUBFileCoverData: Data? = nil
             
             for (index, file) in sourceFiles.enumerated() {
                 if Task.isCancelled { break }
@@ -1719,6 +1791,20 @@ class ConversionManager: ObservableObject {
                     self.processingStatus = "Step 1/2: Converting \(currentNum) of \(sourceFiles.count)"
                     self.statusMessage = "Converting \(file.name)..."
                     self.conversionProgress = 0.0
+                }
+                
+                let fileSize = file.fileSize
+                if epubSizeLimit != Int64.max && !currentEPUBBatch.isEmpty && (currentEPUBBatchSize + fileSize) > epubSizeLimit {
+                    generatedBatches.append(currentEPUBBatch)
+                    currentEPUBBatch = []
+                    currentEPUBBatchSize = 0
+                }
+                
+                if firstEPUBFileCoverData == nil {
+                    // Quick extract first image for cover badging later
+                    if let firstImage = try? await extractImageURLs(from: file.url).first {
+                        firstEPUBFileCoverData = try? Data(contentsOf: firstImage)
+                    }
                 }
                 
                 await MainActor.run { processingStatus = "Reading Source Panels..." }
@@ -1736,34 +1822,52 @@ class ConversionManager: ObservableObject {
                 } else {
                     let converter = CBZToEPUBConverter()
                     resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: nil) { progress in
+                        // We are doing N files, so this progress needs to be relative, but for now we just show it directly
                         Task { @MainActor in self.conversionProgress = progress }
                     }
                 }
-                generatedEPUBs.append(contentsOf: resultingURLs)
+                
+                currentEPUBBatch.append(contentsOf: resultingURLs)
+                currentEPUBBatchSize += fileSize
                 
                 for epubURL in resultingURLs {
                     try? await injectMetadata(into: epubURL, panels: combinedManifest, metadata: file.metadata)
                 }
             }
             
-            guard !generatedEPUBs.isEmpty else {
+            if !currentEPUBBatch.isEmpty {
+                generatedBatches.append(currentEPUBBatch)
+            }
+            
+            guard !generatedBatches.isEmpty && !generatedBatches[0].isEmpty else {
                 isConverting = false; return
             }
             
             await MainActor.run {
                 self.processingStatus = "Step 2/2: Merging..."
-                self.statusMessage = "Merging \(generatedEPUBs.count) files..."
+                self.statusMessage = "Merging \(generatedBatches.count) EPUB parts..."
                 self.conversionProgress = 0.5
             }
             
-            let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + ".epub"
-            let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
-            
             let merger = EPUBMerger()
-            try await merger.mergeEPUBs(sourceURLs: generatedEPUBs, outputURL: finalOutputURL, settings: jobSettings)
+            
+            for (batchIndex, batch) in generatedBatches.enumerated() {
+                let partSuffix = generatedBatches.count > 1 ? " (pt \(batchIndex + 1))" : ""
+                let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + partSuffix + ".epub"
+                let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
+                
+                var overrideCover: Data? = nil
+                if let baseCover = firstEPUBFileCoverData, generatedBatches.count > 1 {
+                    overrideCover = CoverGenerator.generateCover(from: baseCover, partNumber: batchIndex + 1, totalParts: generatedBatches.count)
+                }
+                
+                try await merger.mergeEPUBs(sourceURLs: batch, outputURL: finalOutputURL, settings: jobSettings, overrideCoverData: overrideCover)
+            }
 
             await MainActor.run { self.statusMessage = "Cleaning up..." }
-            for url in generatedEPUBs { try? fileManager.removeItem(at: url) }
+            for batch in generatedBatches {
+                for url in batch { try? fileManager.removeItem(at: url) }
+            }
             
             await MainActor.run {
                 self.scanLibrary()

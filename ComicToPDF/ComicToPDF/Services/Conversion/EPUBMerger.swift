@@ -5,7 +5,7 @@ import ZIPFoundation
 class EPUBMerger {
     
     // Merge multiple EPUBs into a single omnibus EPUB
-    func mergeEPUBs(sourceURLs: [URL], outputURL: URL, settings: ConversionSettings) async throws {
+    func mergeEPUBs(sourceURLs: [URL], outputURL: URL, settings: ConversionSettings, overrideCoverData: Data? = nil) async throws {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -34,6 +34,36 @@ class EPUBMerger {
         manifestItems.append("<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>")
         
         var globalPageIndex = 0
+        
+        // 2.5 Inject Override Cover if Present
+        if let coverData = overrideCoverData {
+            let coverName = "page_00000_cover.jpg"
+            let destURL = imagesDir.appendingPathComponent(coverName)
+            try? coverData.write(to: destURL)
+            
+            let htmlName = "page_00000_cover.xhtml"
+            let htmlContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE html>
+            <html xmlns="http://www.w3.org/1999/xhtml">
+            <head>
+                <title>Cover</title>
+                <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
+                <link rel="stylesheet" type="text/css" href="css/style.css"/>
+            </head>
+            <body>
+                <div class="svg-wrapper"><img src="images/\(coverName)" alt="Cover"/></div>
+            </body>
+            </html>
+            """
+            try? htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
+            
+            manifestItems.append("<item id=\"cover_page\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
+            manifestItems.append("<item id=\"cover_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+            spineItems.append("<itemref idref=\"cover_page\" linear=\"yes\"/>")
+            
+            globalPageIndex += 1
+        }
         
         // 3. Process Each EPUB
         for (index, url) in sourceURLs.enumerated() {
