@@ -24,112 +24,123 @@ class PDFGenerator {
     ///   - chapters: Optional list of chapters for Table of Contents generation
     ///   - progress: Progress callback
     static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, progress: ((Double) -> Void)? = nil) throws {
-        let pdfDocument = PDFDocument()
         let total = Double(images.count)
         var current = 0.0
         
         let sourceImages = mangaMode ? images.reversed() : images
         
-        for (index, imageURL) in sourceImages.enumerated() {
-            autoreleasepool {
-                guard let image = UIImage(contentsOfFile: imageURL.path),
-                      let pdfPage = PDFPage(image: image) else {
-                    Logger.shared.log("Skipping bad image: \(imageURL.lastPathComponent)", category: "PDF", type: .warning)
-                    return
-                }
-                
-                pdfDocument.insert(pdfPage, at: index)
-                
-                // Progress
-                current += 1
-                progress?(current / total)
-            }
-        }
+        // Crown Jewel: Target dimensions for Kindle Fixed Layout (1200x1800)
+        let targetSize = CGSize(width: 1200, height: 1800)
+        let format = UIGraphicsPDFRendererFormat()
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: targetSize), format: format)
         
-        // --- Table of Contents Generation ---
-        if let chapters = chapters, !chapters.isEmpty && pdfDocument.pageCount > 0 {
-            let outlineRoot = PDFOutline()
-            var tocText = "Table of Contents\n\n"
-            
-            for chapter in chapters {
-                // Calculate actual page index in the PDF
-                // If mangaMode is true, a chapter starting at original index 5 in a 100-page book 
-                // becomes page 94 (100 - 1 - 5)
-                let actualIndex = mangaMode ? (images.count - 1 - chapter.pageIndex) : chapter.pageIndex
-                
-                // Ensure index is within valid bounds
-                let safeIndex = max(0, min(actualIndex, pdfDocument.pageCount - 1))
-                
-                if let destinationPage = pdfDocument.page(at: safeIndex) {
-                    // 1. Add to PDF Metadata Outline (for Kindle ToC Menu)
-                    let outlineItem = PDFOutline(title: chapter.title)
-                    outlineItem.destination = PDFDestination(page: destinationPage, at: CGPoint(x: 0, y: destinationPage.bounds(for: .mediaBox).height))
-                    outlineRoot.insertChild(outlineItem, at: outlineRoot.numberOfChildren)
+        // Track generated ToC pages
+        var tocText = "Table of Contents\n\n"
+        var hasValidChapters = false
+        
+        try renderer.writePDF(to: outputURL) { context in
+            for (index, imageURL) in sourceImages.enumerated() {
+                autoreleasepool {
+                    guard let image = UIImage(contentsOfFile: imageURL.path) else {
+                        Logger.shared.log("Skipping bad image: \(imageURL.lastPathComponent)", category: "PDF", type: .warning)
+                        return
+                    }
                     
-                    // 2. Add to physical ToC text page
+                    context.beginPage()
+                    
+                    // Aspect Fit Calculation
+                    let imgSize = image.size
+                    let hRatio = targetSize.width / imgSize.width
+                    let vRatio = targetSize.height / imgSize.height
+                    let scale = min(hRatio, vRatio)
+                    
+                    let drawnSize = CGSize(width: imgSize.width * scale, height: imgSize.height * scale)
+                    let origin = CGPoint(
+                        x: (targetSize.width - drawnSize.width) / 2.0,
+                        y: (targetSize.height - drawnSize.height) / 2.0
+                    )
+                    
+                    // Draw white background
+                    UIColor.white.setFill()
+                    context.fill(context.pdfContextBounds)
+                    
+                    image.draw(in: CGRect(origin: origin, size: drawnSize))
+                    
+                    // Progress
+                    current += 1
+                    progress?(current / total)
+                }
+            }
+            
+            // --- Table of Contents Text Page Generation ---
+            if let chapterList = chapters, !chapterList.isEmpty, images.count > 0 {
+                hasValidChapters = true
+                for chapter in chapterList {
+                    let actualIndex = mangaMode ? (images.count - 1 - chapter.pageIndex) : chapter.pageIndex
+                    let safeIndex = max(0, min(actualIndex, images.count - 1))
                     let displayPageNum = safeIndex + 1
                     tocText += "\(chapter.title)........ Page \(displayPageNum)\n"
                 }
+                
+                context.beginPage()
+                
+                // Draw physical ToC text
+                UIColor.white.setFill()
+                context.fill(context.pdfContextBounds)
+                
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.alignment = .left
+                paragraphStyle.lineSpacing = 10
+                
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 24, weight: .medium),
+                    .foregroundColor: UIColor.black,
+                    .paragraphStyle: paragraphStyle
+                ]
+                
+                let attributedText = NSAttributedString(string: tocText, attributes: attributes)
+                let textRect = CGRect(x: 40, y: 60, width: targetSize.width - 80, height: targetSize.height - 120)
+                
+                if let firstLineBreak = tocText.firstIndex(of: "\n") {
+                    let titleEndIndex = tocText.distance(from: tocText.startIndex, to: firstLineBreak)
+                    let mutableAttr = NSMutableAttributedString(attributedString: attributedText)
+                    mutableAttr.addAttributes([.font: UIFont.systemFont(ofSize: 32, weight: .bold)], range: NSRange(location: 0, length: titleEndIndex))
+                    mutableAttr.draw(in: textRect)
+                } else {
+                    attributedText.draw(in: textRect)
+                }
+            }
+        }
+        
+        // --- Table of Contents Outline Injection ---
+        // Inject outline metadata AFTER the file is flushed to disk to prevent RAM bloat
+        // Loading an existing PDF via URL is heavily optimized by PDFKit vs manually building thousands of pages
+        if hasValidChapters, let chapterList = chapters, let pdfDocument = PDFDocument(url: outputURL) {
+            let outlineRoot = PDFOutline()
+            for chapter in chapterList {
+                let actualIndex = mangaMode ? (images.count - 1 - chapter.pageIndex) : chapter.pageIndex
+                let safeIndex = max(0, min(actualIndex, pdfDocument.pageCount - 1))
+                
+                if let destinationPage = pdfDocument.page(at: safeIndex) {
+                    let outlineItem = PDFOutline()
+                    outlineItem.label = chapter.title
+                    outlineItem.destination = PDFDestination(page: destinationPage, at: CGPoint(x: 0, y: destinationPage.bounds(for: .mediaBox).height))
+                    outlineRoot.insertChild(outlineItem, at: outlineRoot.numberOfChildren)
+                }
             }
             
-            pdfDocument.outlineRoot = outlineRoot
-            
-            // Generate Physical ToC Page and insert at the very end
-            if let tocPage = createTextPage(text: tocText, size: pdfDocument.page(at: 0)?.bounds(for: .mediaBox).size ?? CGSize(width: 800, height: 1200)) {
-                pdfDocument.insert(tocPage, at: pdfDocument.pageCount)
-                // Add ToC itself to the outline menu
-                let tocOutline = PDFOutline(title: "Table of Contents")
+            // Add Physical ToC to Outline
+            if let tocPage = pdfDocument.page(at: pdfDocument.pageCount - 1) {
+                let tocOutline = PDFOutline()
+                tocOutline.label = "Table of Contents"
                 tocOutline.destination = PDFDestination(page: tocPage, at: CGPoint(x: 0, y: tocPage.bounds(for: .mediaBox).height))
                 outlineRoot.insertChild(tocOutline, at: outlineRoot.numberOfChildren)
             }
+            
+            pdfDocument.outlineRoot = outlineRoot
+            pdfDocument.write(to: outputURL)
         }
         
-        
-        // Write the optimized PDF
-        guard pdfDocument.write(to: outputURL) else {
-            throw PDFError.outputCreationFailed
-        }
-        
-        Logger.shared.log("Generated Optimized PDF with \(pdfDocument.pageCount) pages at \(outputURL.path)", category: "PDF", type: .success)
-    }
-    
-    /// Helper to create a physical PDF page containing text
-    private static func createTextPage(text: String, size: CGSize) -> PDFPage? {
-        let format = UIGraphicsPDFRendererFormat()
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size), format: format)
-        
-        let data = renderer.pdfData { context in
-            context.beginPage()
-            
-            let paragraphStyle = NSMutableParagraphStyle()
-            paragraphStyle.alignment = .left
-            paragraphStyle.lineSpacing = 10
-            
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 24, weight: .medium),
-                .foregroundColor: UIColor.black,
-                .paragraphStyle: paragraphStyle
-            ]
-            
-            let attributedText = NSAttributedString(string: text, attributes: attributes)
-            
-            // Add padding
-            let textRect = CGRect(x: 40, y: 60, width: size.width - 80, height: size.height - 120)
-            
-            // Calculate title bounds to bold the first line differently
-            if let firstLineBreak = text.firstIndex(of: "\n") {
-                let titleEndIndex = text.distance(from: text.startIndex, to: firstLineBreak)
-                let mutableAttr = NSMutableAttributedString(attributedString: attributedText)
-                mutableAttr.addAttributes([.font: UIFont.systemFont(ofSize: 32, weight: .bold)], range: NSRange(location: 0, length: titleEndIndex))
-                mutableAttr.draw(in: textRect)
-            } else {
-                attributedText.draw(in: textRect)
-            }
-        }
-        
-        if let doc = PDFDocument(data: data), let page = doc.page(at: 0) {
-            return page
-        }
-        return nil
+        Logger.shared.log("Generated Optimized PDF at \(outputURL.path)", category: "PDF", type: .success)
     }
 }
