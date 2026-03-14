@@ -35,16 +35,17 @@ struct PlannerEditorView: View {
                         // Vector Overlay Elements (Links, Shapes)
                         ForEach(page.elements) { element in
                             if element.type == .linkZone {
+                                let rect = CoordinateConverter.denormalize(rect: element.rect, in: geo.size)
                                 Rectangle()
                                     .stroke(Color.blue.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [5]))
                                     .background(Color.blue.opacity(0.1))
-                                    .frame(width: element.rect.toCGRect(in: geo.size).width, height: element.rect.toCGRect(in: geo.size).height)
-                                    .position(x: element.rect.toCGRect(in: geo.size).midX, y: element.rect.toCGRect(in: geo.size).midY)
+                                    .frame(width: rect.width, height: rect.height)
+                                    .position(x: rect.midX, y: rect.midY)
                                     .overlay(
                                         Text("LINK")
                                             .font(.caption2)
                                             .foregroundColor(.blue)
-                                            .position(x: element.rect.toCGRect(in: geo.size).midX, y: element.rect.toCGRect(in: geo.size).midY)
+                                            .position(x: rect.midX, y: rect.midY)
                                     )
                             }
                         }
@@ -171,18 +172,23 @@ struct PlannerEditorView: View {
     
     private func exportPDF() {
         // Force save current strokes
-        project.pages[selectedPageIndex].drawingData = canvasView.drawing.dataRepresentation()
+        if project.pages.indices.contains(selectedPageIndex) {
+            project.pages[selectedPageIndex].drawingData = canvasView.drawing.dataRepresentation()
+        }
         
         isExporting = true
         exportProgress = 0.0
+        
+        let projectToExport = project
+        let titleSafe = project.title
         
         // Background thread generation to prevent main-thread UI lock (Competitor review fix)
         Task.detached {
             do {
                 let tempDir = FileManager.default.temporaryDirectory
-                let outputURL = tempDir.appendingPathComponent("\(project.title).pdf")
+                let outputURL = tempDir.appendingPathComponent("\(titleSafe).pdf")
                 
-                try PlannerPDFGenerator.generate(from: project, to: outputURL) { progress in
+                try PlannerPDFGenerator.generate(from: projectToExport, to: outputURL) { progress in
                     Task { @MainActor in
                         self.exportProgress = progress
                     }

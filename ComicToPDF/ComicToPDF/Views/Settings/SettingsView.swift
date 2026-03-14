@@ -225,9 +225,9 @@ struct SettingsView: View {
             if conversionManager.conversionSettings.optimizeForDevice {
                 HStack {
                     settingsIcon("display", color: .gray)
-                    Picker("Target Device", selection: $conversionManager.conversionSettings.targetDevice) {
-                        ForEach(KindleDeviceType.allCases, id: \.self) { device in
-                            HStack { Image(systemName: device.icon); Text(device.rawValue) }.tag(device)
+                    Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
+                        ForEach(TargetDeviceProfile.allCases) { device in
+                            Text(device.rawValue).tag(device)
                         }
                     }
                     .pickerStyle(.menu)

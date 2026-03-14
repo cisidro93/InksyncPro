@@ -88,7 +88,7 @@ class PDFGenerator {
                 hasValidChapters = true
                 
                 let tocPageRect = CGRect(origin: .zero, size: fallbackTargetSize)
-                context.beginPage(withBounds: tocPageRect)
+                context.beginPage(withBounds: tocPageRect, pageInfo: [:])
                 
                 // Draw physical ToC text
                 UIColor.white.setFill()

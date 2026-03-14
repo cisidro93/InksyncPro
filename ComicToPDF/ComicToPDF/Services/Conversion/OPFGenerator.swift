@@ -13,7 +13,7 @@ class OPFGenerator {
             <dc:identifier opf:scheme="AMAZON">\(UUID().uuidString.prefix(10).uppercased())</dc:identifier>
             <dc:title>\(title.xmlEscaped())</dc:title>
             <dc:language>en</dc:language>
-            <meta name="cdetype" content="pdoc"/>
+            <meta name="cdetype" content="pdoc"/>\(resolutionTag)
         </metadata>
         """
     }

@@ -28,9 +28,9 @@ struct PlannerGalleryView: View {
                         
                         Picker("Device", selection: $selectedDevice) {
                             Text("Amazon Kindle Scribe").tag(TargetDeviceProfile.scribe)
-                            Text("Amazon Paperwhite").tag(TargetDeviceProfile.kindlePaperwhite)
-                            Text("Onyx Boox Note Air 3").tag(TargetDeviceProfile.booxNoteAir)
-                            Text("Kobo Elipsa 2E").tag(TargetDeviceProfile.koboElipsa)
+                            Text("Amazon Paperwhite").tag(TargetDeviceProfile.paperwhite11)
+                            Text("Onyx Boox Note Air 3").tag(TargetDeviceProfile.booxNoteAir3C)
+                            Text("Kobo Elipsa 2E").tag(TargetDeviceProfile.koboElipsa2E)
                             Text("Apple iPad Pro 11\"").tag(TargetDeviceProfile.original)
                         }
                         .pickerStyle(MenuPickerStyle())

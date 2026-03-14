@@ -260,7 +260,7 @@ class PanelViewEPUBConverter {
         needsBlank: Bool,
         comicInfo: ComicInfoParser.ComicInfo?
     ) -> String {
-        let orientation  = "auto"
+        // let orientation  = "auto"
         // let orientationLock = "none"
         // let writingMode  = isManga ? "horizontal-rl" : "horizontal-lr"
         // let spreadMode   = "landscape"

@@ -34,7 +34,8 @@ struct ImageProcessor {
         
         if needsResize {
             // Get target resolution (Default to a 1440x1920 HD equivalent for 'Compact' if no device selected)
-            let targetSize = settings.optimizeForDevice ? settings.targetDeviceProfile.resolution : CGSize(width: 1440, height: 1920)
+            let defaultSize = CGSize(width: 1440, height: 1920)
+            let targetSize = (settings.optimizeForDevice ? settings.targetDeviceProfile.resolution : defaultSize) ?? defaultSize
             
             // Use vImage for high-performance resizing
             if let resized = resize(image: finalImage, toFit: targetSize) {

@@ -182,8 +182,8 @@ struct GoConvertView: View {
                     
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Target Device").font(.headline)
-                        Picker("Target Device", selection: $conversionManager.conversionSettings.targetDevice) {
-                            ForEach(KindleDeviceType.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
+                            ForEach(TargetDeviceProfile.allCases) { profile in Text(profile.rawValue).tag(profile) }
                         }
                         .pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
                         .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)

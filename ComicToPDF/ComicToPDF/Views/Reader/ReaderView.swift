@@ -122,7 +122,7 @@ struct ReaderView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 16) {
-                        if let pdf = pdf {
+                        if pdf != nil {
                             Button(action: toggleBookmark) {
                                 Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                                     .foregroundColor(isBookmarked ? Theme.orange : Theme.blue)

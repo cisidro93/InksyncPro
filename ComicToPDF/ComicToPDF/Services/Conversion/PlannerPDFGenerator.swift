@@ -44,7 +44,7 @@ class PlannerPDFGenerator {
                     
                     // 2. Draw Vector Elements
                     for element in page.elements {
-                        let absoluteRect = element.rect.toCGRect(in: targetSize)
+                        let absoluteRect = CoordinateConverter.denormalize(rect: element.rect, in: targetSize)
                         
                         switch element.type {
                         case .rectangle:

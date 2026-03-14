@@ -88,22 +88,13 @@ struct TemplateLibraryView: View {
             .sheet(isPresented: $showingGoModeGallery) {
                 PlannerGalleryView()
             }
-            // Simple NavigationLink trigger for new Pro Mode editor
-            .background(
-                NavigationLink(
-                    isActive: $showingProModeEditor,
-                    destination: {
-                        Group {
-                            if let proj = newProjectToEdit {
-                                PlannerEditorView(project: .constant(proj))
-                            } else {
-                                EmptyView()
-                            }
-                        }
-                    },
-                    label: { EmptyView() }
-                )
-            )
+            .navigationDestination(isPresented: $showingProModeEditor) {
+                if let proj = newProjectToEdit {
+                    PlannerEditorView(project: .constant(proj))
+                } else {
+                    EmptyView()
+                }
+            }
         }
     }
     
@@ -172,7 +163,7 @@ struct TemplateCardView: View {
                 .bold()
                 .lineLimit(1)
             
-            Text(project.targetDevice.brand)
+            Text(project.targetDeviceProfile.rawValue)
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
