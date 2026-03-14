@@ -14,7 +14,6 @@ struct TrimPagesView: View {
     @State private var rightTrim: Double = 0.0
     
     @State private var isProcessing = false
-    @State private var isProcessing = false
     @State private var progress: Double = 0.0
     
     @State private var showingError = false
@@ -72,8 +71,6 @@ struct TrimPagesView: View {
                         startTrimming()
                     }
                     .disabled(isProcessing || (topTrim == 0 && bottomTrim == 0 && leftTrim == 0 && rightTrim == 0))
-                }
-            }
                 }
             }
             .alert("Trim Failed", isPresented: $showingError) {

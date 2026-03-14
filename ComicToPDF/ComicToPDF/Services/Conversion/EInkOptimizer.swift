@@ -153,13 +153,8 @@ class EInkOptimizer {
             if let posterizedOut = posterizeFilter.outputImage {
                  // Add subtle noise before posterize to emulate Floyd-Steinberg error diffusion visually 
                  // (True FS is sequential CPU, but GPU posterize with a pre-noise pass looks incredibly similar)
-                 if let noiseFilter = CIFilter(name: "CIRandomGenerator"),
-                    let noiseImg = noiseFilter.outputImage,
-                    let blendFilter = CIFilter(name: "CISourceOverCompositing") {
-                     
-                     // We would blend noise here. Standard ColorPosterize 16 is sufficient for massive E-Ink improvements for now.
-                     outputImage = posterizedOut
-                 }
+                 // We would blend noise here. Standard ColorPosterize 16 is sufficient for massive E-Ink improvements for now.
+                 outputImage = posterizedOut
             }
         }
         

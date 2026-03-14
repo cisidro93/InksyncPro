@@ -273,9 +273,6 @@ class CBZToEPUBConverter {
                 </html>
                 """
                 try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
-            }
-            
-            let bookUUID = UUID().uuidString
             // Add empty metadata array for explicit validation
             
             // ✅ VALIDATION FIX: Restore Navigation Documents (Required for EPUB 3 / Kindle Back-Compat)
