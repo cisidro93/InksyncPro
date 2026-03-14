@@ -127,17 +127,45 @@ struct PlannerGalleryView: View {
     private func generateFromAI() {
         Logger.shared.log("AI Generation Triggered with prompt: \(promptText)", category: "AIGenerator", type: .info)
         isGenerating = true
-        // TODO: Wire up to BYOK API Key LLM Call -> AIPDFRenderer
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            isGenerating = false
-            Logger.shared.log("AI Generation Finished (Mock)", category: "AIGenerator", type: .success)
-            dismiss()
-        }
+        let safeName = promptText.prefix(20).replacingOccurrences(of: " ", with: "_").replacingOccurrences(of: "/", with: "-")
+        let fileName = "AI_\(safeName).pdf"
+        generateMockPlanner(title: String(promptText.prefix(20)), fileName: fileName)
     }
     
     private func generatePrebuilt(name: String) {
         Logger.shared.log("Prebuilt Template Selected: \(name)", category: "Gallery", type: .info)
-        // TODO: Pipe hardcoded JSON template into AIPDFRenderer
-        dismiss()
+        isGenerating = true
+        let safeName = name.replacingOccurrences(of: " ", with: "_").replacingOccurrences(of: "/", with: "-")
+        let fileName = "\(safeName).pdf"
+        generateMockPlanner(title: name, fileName: fileName)
+    }
+    
+    private func generateMockPlanner(title: String, fileName: String) {
+        Task.detached {
+            do {
+                var project = PlannerProject(title: title)
+                project.targetDeviceProfile = await MainActor.run { self.selectedDevice }
+                project.pages.append(PlannerPage()) // 1 blank page placeholder
+                
+                let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let outputURL = docsDir.appendingPathComponent(fileName)
+                
+                try PlannerPDFGenerator.generate(from: project, to: outputURL)
+                
+                await MainActor.run {
+                    self.isGenerating = false
+                    Logger.shared.log("Successfully Exported to \(outputURL.path)", category: "Export", type: .success)
+                    NotificationCenter.default.post(name: NSNotification.Name("LibraryNeedsRescan"), object: nil, userInfo: ["mode": "Go"])
+                    self.dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    self.isGenerating = false
+                    self.errorMessage = error.localizedDescription
+                    self.showingErrorAlert = true
+                    Logger.shared.log("Export Failed: \(error.localizedDescription)", category: "Export", type: .error)
+                }
+            }
+        }
     }
 }
