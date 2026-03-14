@@ -5,6 +5,8 @@ struct PlannerGalleryView: View {
     @State private var promptText: String = ""
     @State private var isGenerating = false
     @State private var selectedDevice: TargetDeviceProfile = .original
+    @State private var showingErrorAlert = false
+    @State private var errorMessage = ""
     
     // Hardcoded Templates for Demo
     let predefinedTemplates = [
@@ -113,6 +115,11 @@ struct PlannerGalleryView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+            .alert("Generation Failed", isPresented: $showingErrorAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
             }
         }
     }

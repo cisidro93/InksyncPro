@@ -9,8 +9,9 @@ struct PlannerEditorView: View {
     @State private var isShowingLinkOverlay = false
     @State private var isExporting = false
     @State private var exportProgress = 0.0
+    @State private var showingErrorAlert = false
+    @State private var exportErrorMessage = ""
     
-
     var body: some View {
         VStack(spacing: 0) {
             // Document Canvas Area
@@ -126,6 +127,11 @@ struct PlannerEditorView: View {
                 }
             }
         )
+        .alert("Export Failed", isPresented: $showingErrorAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(exportErrorMessage)
+        }
         .onAppear {
             toolPicker.setVisible(true, forFirstResponder: canvasView)
             toolPicker.addObserver(canvasView)
@@ -202,6 +208,8 @@ struct PlannerEditorView: View {
             } catch {
                 Task { @MainActor in
                     self.isExporting = false
+                    self.exportErrorMessage = error.localizedDescription
+                    self.showingErrorAlert = true
                     Logger.shared.log("Export Failed: \(error.localizedDescription)", category: "Export", type: .error)
                 }
             }
