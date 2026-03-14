@@ -45,30 +45,8 @@ struct ConvertView: View {
             // MARK: - Hardware Optimization
             Section {
                 Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
-                    Text(TargetDeviceProfile.original.rawValue).tag(TargetDeviceProfile.original)
-                    
-                    Section(header: Text("Amazon Kindle")) {
-                        Text(TargetDeviceProfile.scribeColorsoft.rawValue).tag(TargetDeviceProfile.scribeColorsoft)
-                        Text(TargetDeviceProfile.paperwhite2024.rawValue).tag(TargetDeviceProfile.paperwhite2024)
-                        Text(TargetDeviceProfile.scribe.rawValue).tag(TargetDeviceProfile.scribe)
-                        Text(TargetDeviceProfile.paperwhite11.rawValue).tag(TargetDeviceProfile.paperwhite11)
-                        Text(TargetDeviceProfile.oasis.rawValue).tag(TargetDeviceProfile.oasis)
-                        Text(TargetDeviceProfile.kindleBasic.rawValue).tag(TargetDeviceProfile.kindleBasic)
-                    }
-                    
-                    Section(header: Text("Rakuten Kobo")) {
-                        Text(TargetDeviceProfile.koboLibraColour.rawValue).tag(TargetDeviceProfile.koboLibraColour)
-                        Text(TargetDeviceProfile.koboClaraColour.rawValue).tag(TargetDeviceProfile.koboClaraColour)
-                        Text(TargetDeviceProfile.koboElipsa2E.rawValue).tag(TargetDeviceProfile.koboElipsa2E)
-                        Text(TargetDeviceProfile.koboSage.rawValue).tag(TargetDeviceProfile.koboSage)
-                        Text(TargetDeviceProfile.koboLibra2.rawValue).tag(TargetDeviceProfile.koboLibra2)
-                    }
-                    
-                    Section(header: Text("Onyx Boox")) {
-                        Text(TargetDeviceProfile.booxTabUltraCPro.rawValue).tag(TargetDeviceProfile.booxTabUltraCPro)
-                        Text(TargetDeviceProfile.booxNoteAir3C.rawValue).tag(TargetDeviceProfile.booxNoteAir3C)
-                        Text(TargetDeviceProfile.booxPage.rawValue).tag(TargetDeviceProfile.booxPage)
-                        Text(TargetDeviceProfile.booxPalma.rawValue).tag(TargetDeviceProfile.booxPalma)
+                    ForEach(TargetDeviceProfile.allCases) { device in
+                        Text(device.rawValue).tag(device)
                     }
                 }
                 .pickerStyle(.menu)
