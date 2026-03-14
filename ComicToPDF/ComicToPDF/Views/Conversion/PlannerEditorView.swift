@@ -191,8 +191,8 @@ struct PlannerEditorView: View {
         // Background thread generation to prevent main-thread UI lock (Competitor review fix)
         Task.detached {
             do {
-                let tempDir = FileManager.default.temporaryDirectory
-                let outputURL = tempDir.appendingPathComponent("\(titleSafe).pdf")
+                let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let outputURL = docsDir.appendingPathComponent("\(titleSafe).pdf")
                 
                 try PlannerPDFGenerator.generate(from: projectToExport, to: outputURL) { progress in
                     Task { @MainActor in
@@ -203,6 +203,7 @@ struct PlannerEditorView: View {
                 Task { @MainActor in
                     self.isExporting = false
                     Logger.shared.log("Successfully Exported to \(outputURL.path)", category: "Export", type: .success)
+                    NotificationCenter.default.post(name: NSNotification.Name("LibraryNeedsRescan"), object: nil, userInfo: ["mode": "Pro"])
                     // TODO: Trigger global ShareSheet here
                 }
             } catch {
