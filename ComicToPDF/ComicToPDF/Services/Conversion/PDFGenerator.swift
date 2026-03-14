@@ -35,7 +35,7 @@ class PDFGenerator {
         
         var tocText = "Table of Contents\n\n"
         var hasValidChapters = false
-        var fallbackTargetSize = targetProfile.resolution ?? CGSize(width: 1200, height: 1800)
+        var fallbackTargetSize = settings.targetDeviceProfile.resolution ?? CGSize(width: 1200, height: 1800)
         var tocLinks: [(rect: CGRect, targetPage: Int)] = []
         
         try renderer.writePDF(to: outputURL) { context in
