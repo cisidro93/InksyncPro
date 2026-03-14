@@ -77,6 +77,7 @@ struct BatchMergeReorderView: View {
                                     Text(mode.rawValue).tag(mode)
                                 }
                             }
+                        }
                     }
                     .frame(height: 300) // Constrain form height
                     
