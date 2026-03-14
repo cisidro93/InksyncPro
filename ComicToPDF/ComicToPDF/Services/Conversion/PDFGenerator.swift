@@ -47,9 +47,9 @@ class PDFGenerator {
                     }
                     
                     // Apply E-Ink Filtering and Scaling
-                    let image = EInkOptimizer.shared.processImage(image, for: targetProfile, applyGrayscale: applyEInkFilter)
+                    let optimizedImage = EInkOptimizer.shared.processImage(image, for: targetProfile, applyGrayscale: applyEInkFilter)
                     
-                    let targetSize = targetProfile.resolution ?? image.size
+                    let targetSize = targetProfile.resolution ?? optimizedImage.size
                     fallbackTargetSize = targetSize
                     let pageRect = CGRect(origin: .zero, size: targetSize)
                     
@@ -60,7 +60,7 @@ class PDFGenerator {
                     context.setURL(URL(string: "page://\(displayPageNum)")!, for: pageRect)
                     
                     // Aspect Fit Calculation
-                    let imgSize = image.size
+                    let imgSize = optimizedImage.size
                     let hRatio = targetSize.width / imgSize.width
                     let vRatio = targetSize.height / imgSize.height
                     let scale = min(hRatio, vRatio)
@@ -75,7 +75,7 @@ class PDFGenerator {
                     UIColor.white.setFill()
                     context.fill(pageRect)
                     
-                    image.draw(in: CGRect(origin: origin, size: drawnSize))
+                    optimizedImage.draw(in: CGRect(origin: origin, size: drawnSize))
                     
                     // Progress
                     current += 1

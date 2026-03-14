@@ -156,44 +156,46 @@ class PanelViewEPUBConverter {
             // Step 2 prep: build page catalog
             var pageCatalog: [PageEntry] = []
             for (localIdx, item) in batch.enumerated() {
-                let globalIdx   = item.index
-                let pageNum     = globalIdx + 1
-                let paddedNum   = String(format: "%03d", pageNum)
-                let imageName   = "page\(paddedNum).jpg"
-                let xhtmlName   = "page\(paddedNum).xhtml"
-                let pagePanels  = panels[globalIdx] ?? []
-
-                // Process image → JPEG
-                let imgData = processImage(srcURL: item.url, settings: settings)
-                try imgData.write(to: imagesDir.appendingPathComponent(imageName))
-
-                // Resolve actual pixel dimensions per page (may differ from page 1)
-                let pageSz = UIImage(data: imgData)?.size ?? pageSize
-
-
-                // Step 3: Build XHTML
-                let xhtml = buildXHTMLPage(
-                    pageNum: pageNum,
-                    imageName: imageName,
-                    panels: pagePanels,
-                    pageWidth: pageSz.width,
-                    pageHeight: pageSz.height,
-                    isManga: isManga
-                )
-                try xhtml.write(to: pagesDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
-
-                pageCatalog.append(PageEntry(
-                    localIndex: localIdx,
-                    globalIndex: globalIdx,
-                    paddedNum: paddedNum,
-                    imageName: imageName,
-                    xhtmlName: xhtmlName,
-                    panelCount: pagePanels.count
-                ))
-
-                let batchProgress = 0.1 + (0.55 * Double(localIdx) / Double(batch.count))
-                let globalProgress = (Double(batchIdx) + batchProgress) / batchCount
-                progress(globalProgress)
+                autoreleasepool {
+                    let globalIdx   = item.index
+                    let pageNum     = globalIdx + 1
+                    let paddedNum   = String(format: "%03d", pageNum)
+                    let imageName   = "page\(paddedNum).jpg"
+                    let xhtmlName   = "page\(paddedNum).xhtml"
+                    let pagePanels  = panels[globalIdx] ?? []
+                    
+                    // Process image → JPEG
+                    let imgData = processImage(srcURL: item.url, settings: settings)
+                    try? imgData.write(to: imagesDir.appendingPathComponent(imageName))
+                    
+                    // Resolve actual pixel dimensions per page (may differ from page 1)
+                    let pageSz = UIImage(data: imgData)?.size ?? pageSize
+                    
+                    
+                    // Step 3: Build XHTML
+                    let xhtml = buildXHTMLPage(
+                        pageNum: pageNum,
+                        imageName: imageName,
+                        panels: pagePanels,
+                        pageWidth: pageSz.width,
+                        pageHeight: pageSz.height,
+                        isManga: isManga
+                    )
+                    try? xhtml.write(to: pagesDir.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
+                    
+                    pageCatalog.append(PageEntry(
+                        localIndex: localIdx,
+                        globalIndex: globalIdx,
+                        paddedNum: paddedNum,
+                        imageName: imageName,
+                        xhtmlName: xhtmlName,
+                        panelCount: pagePanels.count
+                    ))
+                    
+                    let batchProgress = 0.1 + (0.55 * Double(localIdx) / Double(batch.count))
+                    let globalProgress = (Double(batchIdx) + batchProgress) / batchCount
+                    progress(globalProgress)
+                }
             }
 
             // Step 4: Validation

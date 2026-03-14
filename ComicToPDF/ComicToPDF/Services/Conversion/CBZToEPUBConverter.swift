@@ -282,46 +282,48 @@ class CBZToEPUBConverter {
             // (Phase 4 Split Volume Cover Retention removed to avoid duplicate covers)
             
             for (localIndex, item) in batch.enumerated() {
-                let trueExt = (item.url.pathExtension.lowercased() == "png") ? "png" : "jpg"
-                let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
-                
-                // Save Image
-                let newImageName = String(format: "image_%04d.%@", localIndex + 1, trueExt)
-                let destURL = imagesDir.appendingPathComponent(newImageName)
-                try item.data.write(to: destURL)
-                
-                if let img = UIImage(data: item.data) {
-                    if !hasCapturedResolution {
-                        contentSize = img.size
-                        hasCapturedResolution = true
-                        if batchIndex == 0 && localIndex == 0 {
-                            firstBatchCoverData = item.data
+                autoreleasepool {
+                    let trueExt = (item.url.pathExtension.lowercased() == "png") ? "png" : "jpg"
+                    let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
+                    
+                    // Save Image
+                    let newImageName = String(format: "image_%04d.%@", localIndex + 1, trueExt)
+                    let destURL = imagesDir.appendingPathComponent(newImageName)
+                    try? item.data.write(to: destURL)
+                    
+                    if let img = UIImage(data: item.data) {
+                        if !hasCapturedResolution {
+                            contentSize = img.size
+                            hasCapturedResolution = true
+                            if batchIndex == 0 && localIndex == 0 {
+                                firstBatchCoverData = item.data
+                            }
                         }
                     }
-                }
-                
-                let propertiesAttr = (batchIndex == 0 && localIndex == 0) ? " properties=\"cover-image\"" : ""
-                manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propertiesAttr)/>")
-                
-                currentChunkImages.append(newImageName)
-                
-                // If chunk is full or this is the last item, write the chunk XHTML
-                if currentChunkImages.count >= chunkSize || localIndex == batch.count - 1 {
-                    chunkIndex += 1
-                    let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
-                        chunkIndex: chunkIndex,
-                        images: currentChunkImages,
-                        title: "Part \(chunkIndex)",
-                        width: widthID,
-                        height: heightID
-                    )
-                    let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
-                    try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
                     
-                    manifestItems.append("<item id=\"chunk_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
-                    spineItems.append("<itemref idref=\"chunk_\(chunkIndex)\"/>")
+                    let propertiesAttr = (batchIndex == 0 && localIndex == 0) ? " properties=\"cover-image\"" : ""
+                    manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propertiesAttr)/>")
                     
-                    currentChunkImages.removeAll()
+                    currentChunkImages.append(newImageName)
+                    
+                    // If chunk is full or this is the last item, write the chunk XHTML
+                    if currentChunkImages.count >= chunkSize || localIndex == batch.count - 1 {
+                        chunkIndex += 1
+                        let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
+                            chunkIndex: chunkIndex,
+                            images: currentChunkImages,
+                            title: "Part \(chunkIndex)",
+                            width: widthID,
+                            height: heightID
+                        )
+                        let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
+                        try? chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
+                        
+                        manifestItems.append("<item id=\"chunk_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
+                        spineItems.append("<itemref idref=\"chunk_\(chunkIndex)\"/>")
+                        
+                        currentChunkImages.removeAll()
+                    }
                 }
             }
             
