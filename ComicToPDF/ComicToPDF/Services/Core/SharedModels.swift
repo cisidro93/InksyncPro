@@ -346,6 +346,15 @@ enum PanelEditorPresentationMode: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+enum AIVendor: String, CaseIterable, Codable, Identifiable {
+    case openRouter = "OpenRouter (All Models)"
+    case openAI = "OpenAI (GPT-4o)"
+    case anthropic = "Anthropic (Claude 3.5)"
+    case gemini = "Google (Gemini 2.5)"
+    
+    var id: String { rawValue }
+}
+
 struct ConversionSettings: Codable, Equatable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
@@ -365,6 +374,9 @@ struct ConversionSettings: Codable, Equatable {
     
     // Debugger Visibility
     var showEditorDebug: Bool = false
+    
+    // AI Integrations
+    var aiVendor: AIVendor = .openRouter
     
     // Export pipeline — the canonical source of truth for which converter to use.
     // .standard  → plain EPUB/PDF, no panel zoom metadata, cloud-safe
@@ -414,6 +426,60 @@ struct ConversionSettings: Codable, Equatable {
         }
     }
     
+    var anthropicAPIKey: String {
+        get {
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "anthropicAPIKey"),
+               let key = String(data: data, encoding: .utf8) {
+                return key
+            }
+            return ""
+        }
+        set {
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "anthropicAPIKey")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "anthropicAPIKey")
+            }
+        }
+    }
+    
+    var openAIAPIKey: String {
+        get {
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "openAIAPIKey"),
+               let key = String(data: data, encoding: .utf8) {
+                return key
+            }
+            return ""
+        }
+        set {
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "openAIAPIKey")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "openAIAPIKey")
+            }
+        }
+    }
+    
+    var geminiAPIKey: String {
+        get {
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "geminiAPIKey"),
+               let key = String(data: data, encoding: .utf8) {
+                return key
+            }
+            return ""
+        }
+        set {
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "geminiAPIKey")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "geminiAPIKey")
+            }
+        }
+    }
+    
     var epubSettings: EPUBSettings = EPUBSettings()
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
     
@@ -421,6 +487,7 @@ struct ConversionSettings: Codable, Equatable {
                             
     enum CodingKeys: String, CodingKey {
         case outputFormat, compressionQuality, optimizeForDevice, targetDeviceProfile, mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, bindingMarginOffset, bindingMarginSide, showEditorDebug
+        case aiVendor         // New AI Vendor choice
         case outputPipeline   // New canonical export mode
         case isGuidedView     // Legacy — read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
@@ -449,6 +516,7 @@ struct ConversionSettings: Codable, Equatable {
         bindingMarginOffset = try container.decodeIfPresent(Int.self, forKey: .bindingMarginOffset) ?? 0
         bindingMarginSide = try container.decodeIfPresent(BindingMarginSide.self, forKey: .bindingMarginSide) ?? .none
         showEditorDebug = try container.decodeIfPresent(Bool.self, forKey: .showEditorDebug) ?? false
+        aiVendor = try container.decodeIfPresent(AIVendor.self, forKey: .aiVendor) ?? .openRouter
         
         // Migration: if new outputPipeline key is present, decode it.
         // Otherwise fall back to the legacy isGuidedView bool to preserve user's previous setting.

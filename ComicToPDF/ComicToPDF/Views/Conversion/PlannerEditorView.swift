@@ -284,9 +284,17 @@ struct PlannerEditorView: View {
     }
     
     private func generateAILayout(prompt: String) {
-        let apiKey = conversionManager.conversionSettings.openRouterAPIKey
+        let vendor = conversionManager.conversionSettings.aiVendor
+        let apiKey: String
+        switch vendor {
+        case .openRouter: apiKey = conversionManager.conversionSettings.openRouterAPIKey
+        case .openAI: apiKey = conversionManager.conversionSettings.openAIAPIKey
+        case .anthropic: apiKey = conversionManager.conversionSettings.anthropicAPIKey
+        case .gemini: apiKey = conversionManager.conversionSettings.geminiAPIKey
+        }
+        
         guard !apiKey.isEmpty else {
-            self.exportErrorMessage = "Please add your OpenRouter API key in Settings -> Integrations first."
+            self.exportErrorMessage = "Please add your API key for \(vendor.rawValue) in Settings -> Integrations first."
             self.showingErrorAlert = true
             return
         }
@@ -296,7 +304,7 @@ struct PlannerEditorView: View {
         Task {
             do {
                 // Use background thread so UI doesn't freeze during image rendering from JSON parsing
-                let canvasImage = try await AILayoutGenerator.generateLayout(prompt: prompt, apiKey: apiKey)
+                let canvasImage = try await AILayoutGenerator.generateLayout(prompt: prompt, vendor: vendor, apiKey: apiKey)
                 
                 guard let data = canvasImage.pngData() else {
                     throw NSError(domain: "AILayoutGenerator", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to read layout image data."])

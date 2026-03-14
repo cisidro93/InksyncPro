@@ -27,12 +27,13 @@ class AILayoutGenerator {
     /// Calls OpenRouter to generate a layout and draws it onto a UIImage of `targetSize`
     static func generateLayout(
         prompt: String,
+        vendor: AIVendor,
         apiKey: String,
         targetSize: CGSize = CGSize(width: 850, height: 1100)
     ) async throws -> UIImage {
         
         guard !apiKey.isEmpty else {
-            throw NSError(domain: "AILayoutGenerator", code: 401, userInfo: [NSLocalizedDescriptionKey: "OpenRouter API Key is missing. Please add it in Settings -> Integrations."])
+            throw NSError(domain: "AILayoutGenerator", code: 401, userInfo: [NSLocalizedDescriptionKey: "API Key is missing."])
         }
         
         // 1. Ask the LLM to write JSON matching our DTO structures for lines and text.
@@ -44,48 +45,137 @@ class AILayoutGenerator {
         Return empty arrays if none are needed. Do not surround with ```json.
         """
         
-        let url = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // Optional OpenRouter headers
-        request.setValue("InksyncPro", forHTTPHeaderField: "HTTP-Referer")
-        request.setValue("InksyncPro E-Ink Tool", forHTTPHeaderField: "X-Title")
+        var request: URLRequest
         
-        let body: [String: Any] = [
-            "model": "google/gemini-2.5-flash", // Fast, highly reliable structured JSON output
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": prompt]
-            ],
-            "response_format": ["type": "json_object"]
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        switch vendor {
+        case .openRouter:
+            let url = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
+            request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("InksyncPro", forHTTPHeaderField: "HTTP-Referer")
+            request.setValue("InksyncPro E-Ink Tool", forHTTPHeaderField: "X-Title")
+            
+            let body: [String: Any] = [
+                "model": "google/gemini-2.5-flash",
+                "messages": [
+                    ["role": "system", "content": systemPrompt],
+                    ["role": "user", "content": prompt]
+                ],
+                "response_format": ["type": "json_object"]
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            
+        case .openAI:
+            let url = URL(string: "https://api.openai.com/v1/chat/completions")!
+            request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            let body: [String: Any] = [
+                "model": "gpt-4o",
+                "messages": [
+                    ["role": "system", "content": systemPrompt],
+                    ["role": "user", "content": prompt]
+                ],
+                "response_format": ["type": "json_object"]
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            
+        case .anthropic:
+            let url = URL(string: "https://api.anthropic.com/v1/messages")!
+            request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            let body: [String: Any] = [
+                "model": "claude-3-5-sonnet-20241022",
+                "system": systemPrompt,
+                "messages": [
+                    ["role": "user", "content": prompt]
+                ],
+                "max_tokens": 8192
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            
+        case .gemini:
+            let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=\(apiKey)")!
+            request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            let body: [String: Any] = [
+                "systemInstruction": ["parts": [["text": systemPrompt]]],
+                "contents": [["parts": [["text": prompt]]]],
+                "generationConfig": ["responseMimeType": "application/json"]
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            let _ = String(data: data, encoding: .utf8) ?? "Unknown HTTP Error"
+            let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown HTTP Error"
+            print("API Error: \(errorMsg)")
             throw NSError(domain: "AILayoutGenerator", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to generate AI layout. Check your API key or network connection."])
         }
         
-        // Parse OpenRouter Response
-        struct OpenRouterResponse: Decodable {
-            let choices: [Choice]
-            struct Choice: Decodable {
-                let message: Message
-                struct Message: Decodable {
-                    let content: String
+        // Parse appropriate vendor response
+        let jsonContent: String
+        
+        switch vendor {
+        case .openRouter, .openAI:
+            struct OpenAIResponse: Decodable {
+                let choices: [Choice]
+                struct Choice: Decodable {
+                    let message: Message
+                    struct Message: Decodable {
+                        let content: String
+                    }
                 }
             }
-        }
-        
-        let aiResponse = try JSONDecoder().decode(OpenRouterResponse.self, from: data)
-        guard let jsonContent = aiResponse.choices.first?.message.content else {
-            throw NSError(domain: "AILayoutGenerator", code: 500, userInfo: [NSLocalizedDescriptionKey: "AI response was empty."])
+            let aiResponse = try JSONDecoder().decode(OpenAIResponse.self, from: data)
+            guard let content = aiResponse.choices.first?.message.content else {
+                throw NSError(domain: "AILayoutGenerator", code: 500, userInfo: [NSLocalizedDescriptionKey: "AI response was empty."])
+            }
+            jsonContent = content
+            
+        case .anthropic:
+            struct AnthropicResponse: Decodable {
+                let content: [ContentBlock]
+                struct ContentBlock: Decodable {
+                    let text: String
+                }
+            }
+            let aiResponse = try JSONDecoder().decode(AnthropicResponse.self, from: data)
+            guard let content = aiResponse.content.first?.text else {
+                throw NSError(domain: "AILayoutGenerator", code: 500, userInfo: [NSLocalizedDescriptionKey: "Anthropic response was empty."])
+            }
+            jsonContent = content
+            
+        case .gemini:
+            struct GeminiResponse: Decodable {
+                let candidates: [Candidate]
+                struct Candidate: Decodable {
+                    let content: Content
+                    struct Content: Decodable {
+                        let parts: [Part]
+                        struct Part: Decodable {
+                            let text: String
+                        }
+                    }
+                }
+            }
+            let aiResponse = try JSONDecoder().decode(GeminiResponse.self, from: data)
+            guard let content = aiResponse.candidates.first?.content.parts.first?.text else {
+                throw NSError(domain: "AILayoutGenerator", code: 500, userInfo: [NSLocalizedDescriptionKey: "Gemini response was empty."])
+            }
+            jsonContent = content
         }
         
         // Clean markdown backticks just in case the model ignored "no markdown" rule
