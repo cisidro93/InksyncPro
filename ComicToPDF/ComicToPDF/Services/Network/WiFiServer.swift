@@ -60,14 +60,13 @@ class WiFiServer: ObservableObject {
                 case .ready:
                     let pin = self.securityCode
                     Logger.shared.log("WiFi Server Ready on port 8080. PIN: \(pin)", category: "Network")
-                    print("🚀 Server Ready on port 8080. PIN: \(pin)")
                     DispatchQueue.main.async {
                         self.isRunning = true
                         let ip = self.getIPAddress() ?? "localhost"
                         self.serverURL = "http://\(ip):8080"
                     }
                 case .failed(let error):
-                    print("Server failed: \(error)")
+                    Logger.shared.log("Server failed: \(error.localizedDescription)", category: "Network", type: .error)
                     DispatchQueue.main.async {
                         // Check for specific permission denied codes
                         if error.debugDescription.contains("-65555") || error.localizedDescription.contains("NoAuth") {
@@ -92,7 +91,6 @@ class WiFiServer: ObservableObject {
             
         } catch {
             Logger.shared.log("Failed to bind WiFi server to port 8080: \(error.localizedDescription)", category: "Network", type: .error)
-            print("Failed to start server: \(error)")
             DispatchQueue.main.async {
                 if error.localizedDescription.contains("NoAuth") || "\(error)".contains("-65555") {
                      self.errorMessage = "Local Network Permission Denied (Code: \(error)).\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and ensure 'Inksync Pro' is enabled."
@@ -372,7 +370,6 @@ class WiFiServer: ObservableObject {
             }
         } catch {
             Logger.shared.log("WiFi Transfer Failed to open file for writing: \(error.localizedDescription)", category: "Network", type: .error)
-            print("Failed to open file for writing: \(error)")
         }
     }
     
@@ -458,7 +455,7 @@ class WiFiServer: ObservableObject {
                     sendResponse(connection, 500, "Internal Server Error")
                 }
             } else {
-                print("⚠️ File not found: \(fileURL.path)")
+                Logger.shared.log("WiFi Transfer - File not found: \(fileURL.lastPathComponent)", category: "Network", type: .warning)
                 sendResponse(connection, 404, "Not Found")
             }
         }

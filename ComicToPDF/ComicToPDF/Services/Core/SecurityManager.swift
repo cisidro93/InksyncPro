@@ -44,7 +44,7 @@ class SecurityManager: ObservableObject {
             }
             return true
         } catch {
-            print("Authentication failed: \(error.localizedDescription)")
+            Logger.shared.log("Vault Authentication failed: \(error.localizedDescription)", category: "System", type: .error)
             return false
         }
     }

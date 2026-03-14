@@ -46,9 +46,9 @@ class PageEditorViewModel: ObservableObject {
             self.isLoading = false
             
         } catch {
-            print("Editor Error: \(error)")
             self.errorMessage = error.localizedDescription
             self.isLoading = false
+            Logger.shared.log("Editor failed to unpack: \(error.localizedDescription)", category: "Editor", type: .error)
         }
     }
     
@@ -441,8 +441,8 @@ struct PageManagerView: View {
             print("Reorder Saved to: \(newURL.lastPathComponent)")
             
         } catch {
-            print("Reorder Failed: \(error)")
             viewModel.errorMessage = "Failed to save order: \(error.localizedDescription)"
+            Logger.shared.log("Reorder Failed: \(error.localizedDescription)", category: "Editor", type: .error)
         }
     }
     

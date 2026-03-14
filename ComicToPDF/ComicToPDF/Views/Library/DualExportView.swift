@@ -197,6 +197,9 @@ struct DualExportView: View {
                 self.isProcessing = false
                 self.showingShareSheet = true
             }
+            if let safeURL = url {
+                Logger.shared.log("Exported for Cloud Sync: \(safeURL.lastPathComponent)", category: "Export", type: .success)
+            }
         }
     }
     
@@ -208,11 +211,12 @@ struct DualExportView: View {
                     self.isProcessing = false
                     self.navigateToSync = true
                 }
-                print("✅ Exported HQ to: \(hqURL.lastPathComponent)")
+                Logger.shared.log("Exported HQ to: \(hqURL.lastPathComponent)", category: "Export", type: .success)
             } else {
                 await MainActor.run {
                     self.isProcessing = false
                 }
+                Logger.shared.log("Failed to export Local HQ file.", category: "Export", type: .error)
             }
         }
     }
@@ -225,6 +229,9 @@ struct DualExportView: View {
                 self.exportURL = url
                 self.isProcessing = false
                 self.showingMailView = true
+            }
+            if let safeURL = url {
+                Logger.shared.log("Exported for Email: \(safeURL.lastPathComponent)", category: "Export", type: .success)
             }
         }
     }

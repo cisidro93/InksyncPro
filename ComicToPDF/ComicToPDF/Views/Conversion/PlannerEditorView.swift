@@ -11,6 +11,7 @@ struct PlannerEditorView: View {
     @State private var isExporting = false
     @State private var exportProgress = 0.0
     @State private var showingErrorAlert = false
+    @State private var errorAlertTitle: String = "Export Failed"
     @State private var exportErrorMessage = ""
     @State private var showingAIAssistant = false
     @State private var isGeneratingAI = false
@@ -187,7 +188,7 @@ struct PlannerEditorView: View {
                 }
             }
         )
-        .alert("Export Failed", isPresented: $showingErrorAlert) {
+        .alert(errorAlertTitle, isPresented: $showingErrorAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(exportErrorMessage)
@@ -294,6 +295,7 @@ struct PlannerEditorView: View {
         }
         
         guard !apiKey.isEmpty else {
+            self.errorAlertTitle = "Missing API Key"
             self.exportErrorMessage = "Please add your API key for \(vendor.rawValue) in Settings -> Integrations first."
             self.showingErrorAlert = true
             return
@@ -323,6 +325,7 @@ struct PlannerEditorView: View {
                 await MainActor.run {
                     self.isGeneratingAI = false
                     self.showingAIAssistant = false
+                    self.errorAlertTitle = "AI Layout Failed"
                     self.exportErrorMessage = error.localizedDescription
                     self.showingErrorAlert = true
                 }

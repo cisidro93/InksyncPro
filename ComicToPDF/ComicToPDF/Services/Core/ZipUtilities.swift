@@ -106,11 +106,11 @@ struct ZipUtilities {
                         $0.path.localizedStandardCompare($1.path) == .orderedAscending
                     }
                     
-                    print("✅ Successfully unpacked \(sortedURLs.count) files.")
+                    Logger.shared.log("Successfully unpacked \(sortedURLs.count) files", category: "System", type: .success)
                     continuation.resume(returning: (tempDir, sortedURLs))
                     
                 } catch {
-                    print("❌ Crash/Error in ZipUtilities: \(error)")
+                    Logger.shared.log("Crash/Error in ZipUtilities: \(error.localizedDescription)", category: "System", type: .error)
                     continuation.resume(throwing: error)
                 }
             }
@@ -148,11 +148,11 @@ struct ZipUtilities {
                         try archive.addEntry(with: fileName, relativeTo: sourceURL)
                     }
                     
-                    print("✅ Successfully zipped to \(destinationURL.lastPathComponent)")
+                    Logger.shared.log("Successfully zipped to \(destinationURL.lastPathComponent)", category: "System", type: .success)
                     continuation.resume()
                     
                 } catch {
-                    print("❌ Zipping failed: \(error)")
+                    Logger.shared.log("Zipping failed: \(error.localizedDescription)", category: "System", type: .error)
                     continuation.resume(throwing: error)
                 }
             }

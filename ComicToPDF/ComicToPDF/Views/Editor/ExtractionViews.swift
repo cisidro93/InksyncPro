@@ -11,6 +11,9 @@ struct PageExtractionView: View {
     @State private var exportAsImages = false
     @State private var isExporting = false
     
+    @State private var showingError = false
+    @State private var errorMessage = ""
+    
     var body: some View {
         NavigationView {
             Form {
@@ -46,6 +49,11 @@ struct PageExtractionView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .alert("Extraction Failed", isPresented: $showingError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
         }
     }
     
@@ -63,8 +71,12 @@ struct PageExtractionView: View {
                     dismiss()
                 }
             } catch {
-                print("Extraction failed: \(error)")
-                await MainActor.run { isExporting = false }
+                await MainActor.run { 
+                    isExporting = false
+                    errorMessage = error.localizedDescription
+                    showingError = true
+                    Logger.shared.log("Page Extraction failed: \(error.localizedDescription)", category: "Editor", type: .error)
+                }
             }
         }
     }
@@ -77,6 +89,8 @@ struct PanelExtractionView: View {
     @State private var extractedImages: [UIImage] = []
     @State private var isProcessing = false
     @State private var mode: PanelExtractor.ExtractionMode = .automatic
+    @State private var showingError = false
+    @State private var errorMessage = ""
     
     var body: some View {
         NavigationView {
@@ -104,17 +118,30 @@ struct PanelExtractionView: View {
                     .disabled(isProcessing)
                 }
             }
+            .alert("Panel Extraction Failed", isPresented: $showingError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
         }
     }
     
     func extract() {
         isProcessing = true
         Task {
-            // ✅ Fix: Use the method that returns UIImages
-            let images = try? await PanelExtractor.extractPanels(from: sourceImage, mode: mode)
-            await MainActor.run {
-                self.extractedImages = images ?? []
-                self.isProcessing = false
+            do {
+                let images = try await PanelExtractor.extractPanels(from: sourceImage, mode: mode)
+                await MainActor.run {
+                    self.extractedImages = images
+                    self.isProcessing = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.isProcessing = false
+                    self.errorMessage = error.localizedDescription
+                    self.showingError = true
+                    Logger.shared.log("Panel Extraction failed: \(error.localizedDescription)", category: "Editor", type: .error)
+                }
             }
         }
     }

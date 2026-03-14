@@ -14,7 +14,11 @@ struct TrimPagesView: View {
     @State private var rightTrim: Double = 0.0
     
     @State private var isProcessing = false
+    @State private var isProcessing = false
     @State private var progress: Double = 0.0
+    
+    @State private var showingError = false
+    @State private var errorMessage: String = ""
     
     var body: some View {
         NavigationView {
@@ -70,6 +74,13 @@ struct TrimPagesView: View {
                     .disabled(isProcessing || (topTrim == 0 && bottomTrim == 0 && leftTrim == 0 && rightTrim == 0))
                 }
             }
+                }
+            }
+            .alert("Trim Failed", isPresented: $showingError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
         }
     }
     
@@ -89,11 +100,11 @@ struct TrimPagesView: View {
                     dismiss()
                 }
             } catch {
-                print("Error trimming: \(error)")
                 await MainActor.run {
                     isProcessing = false
-                    // Ideally show an alert here, but for now we just log and maybe dismiss or stay
-                    // dismiss() 
+                    errorMessage = error.localizedDescription
+                    showingError = true
+                    Logger.shared.log("Trim failed: \(error.localizedDescription)", category: "Editor", type: .error)
                 }
             }
         }
