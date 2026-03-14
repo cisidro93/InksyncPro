@@ -1746,21 +1746,26 @@ class ConversionManager: ObservableObject {
                     }
                     
                     if jobSettings.outputFormat == .pdf {
-                        try PDFGenerator.generate(from: batchImages, to: finalOutputURL, mangaMode: jobSettings.mangaMode, chapters: mergedChapters, settings: jobSettings) { progress in
-                            let baseProgress = Double(batchIndex) / Double(batches.count)
-                            let currentPartProgress = progress / Double(batches.count)
-                            Task { @MainActor in self.conversionProgress = 0.5 + (0.5 * (baseProgress + currentPartProgress)) }
-                        }
+                        let totalBatches = batches.count
+                        try await Task.detached {
+                            try PDFGenerator.generate(from: batchImages, to: finalOutputURL, mangaMode: jobSettings.mangaMode, chapters: mergedChapters, settings: jobSettings) { progress in
+                                let baseProgress = Double(batchIndex) / Double(totalBatches)
+                                let currentPartProgress = progress / Double(totalBatches)
+                                Task { @MainActor [weak self] in self?.conversionProgress = 0.5 + (0.5 * (baseProgress + currentPartProgress)) }
+                            }
+                        }.value
                     } else {
-                        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                        for (idx, url) in batchImages.enumerated() {
-                            let pathExt = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-                            let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, pathExt))
-                            try fileManager.copyItem(at: url, to: dest)
-                        }
-                        try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
-                        try fileManager.removeItem(at: tempDir)
+                        try await Task.detached {
+                            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                            for (idx, url) in batchImages.enumerated() {
+                                let pathExt = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+                                let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, pathExt))
+                                try fileManager.copyItem(at: url, to: dest)
+                            }
+                            try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
+                            try fileManager.removeItem(at: tempDir)
+                        }.value
                     }
                 }
                 

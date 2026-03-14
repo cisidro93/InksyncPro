@@ -65,7 +65,18 @@ struct BatchMergeReorderView: View {
                             .pickerStyle(.menu)
                             
                             Toggle("E-Ink High Contrast Filter", isOn: $conversionManager.conversionSettings.optimizeForDevice)
-                        }
+                            
+                            Picker("Image Quality", selection: $conversionManager.conversionSettings.compressionQuality) {
+                                Text(CompressionPreset.compact.rawValue).tag(CompressionPreset.compact)
+                                Text(CompressionPreset.balanced.rawValue).tag(CompressionPreset.balanced)
+                                Text(CompressionPreset.highQuality.rawValue).tag(CompressionPreset.highQuality)
+                            }
+                            
+                            Picker("Smart File Splitting", selection: $conversionManager.conversionSettings.splitMode) {
+                                ForEach(FileSizeSplitMode.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
                     }
                     .frame(height: 300) // Constrain form height
                     
