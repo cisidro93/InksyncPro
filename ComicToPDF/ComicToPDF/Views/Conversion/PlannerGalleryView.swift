@@ -118,15 +118,18 @@ struct PlannerGalleryView: View {
     }
     
     private func generateFromAI() {
+        Logger.shared.log("AI Generation Triggered with prompt: \(promptText)", category: "AIGenerator", type: .info)
         isGenerating = true
         // TODO: Wire up to BYOK API Key LLM Call -> AIPDFRenderer
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             isGenerating = false
+            Logger.shared.log("AI Generation Finished (Mock)", category: "AIGenerator", type: .success)
             dismiss()
         }
     }
     
     private func generatePrebuilt(name: String) {
+        Logger.shared.log("Prebuilt Template Selected: \(name)", category: "Gallery", type: .info)
         // TODO: Pipe hardcoded JSON template into AIPDFRenderer
         dismiss()
     }

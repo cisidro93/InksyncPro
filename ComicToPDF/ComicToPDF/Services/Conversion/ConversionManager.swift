@@ -179,8 +179,9 @@ class ConversionManager: ObservableObject {
             self.isConverting = false
             self.processingStatus = ""
             self.scanLibrary() // Refresh
-        case .failed(_, let error):
+        case .failed(let url, let error):
             self.isConverting = false
+            Logger.shared.log("Conversion Failed [\(url.lastPathComponent)]: \(error.localizedDescription)", category: "Engine", type: .error)
             self.appAlert = AppAlert(title: "Conversion Failed", message: error.localizedDescription)
         }
     }

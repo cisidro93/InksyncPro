@@ -64,26 +64,41 @@ class EInkOptimizer {
     
     /// Uses CoreImage to strip the color channel and boost the contrast
     private func applyEInkFilter(to image: UIImage) -> UIImage {
-        guard let cgImage = image.cgImage else { return image }
+        guard let cgImage = image.cgImage else {
+            Logger.shared.log("EInkOptimizer: Failed to extract CGImage for grayscale", category: "EInk", type: .warning)
+            return image
+        }
         let ciImage = CIImage(cgImage: cgImage)
         
         // 1. Color Controls Filter (Contrast Boost, Saturation Strip)
-        guard let colorFilter = CIFilter(name: "CIColorControls") else { return image }
+        guard let colorFilter = CIFilter(name: "CIColorControls") else {
+            Logger.shared.log("EInkOptimizer: CIColorControls filter unavailable", category: "EInk", type: .error)
+            return image
+        }
         colorFilter.setValue(ciImage, forKey: kCIInputImageKey)
         colorFilter.setValue(0.0, forKey: kCIInputSaturationKey) // Grayscale
         colorFilter.setValue(1.15, forKey: kCIInputContrastKey)  // Boost contrast 15% to prevent washed out text
         
-        guard let outputImage = colorFilter.outputImage else { return image }
+        guard let outputImage = colorFilter.outputImage else {
+            Logger.shared.log("EInkOptimizer: Filter produced no output image", category: "EInk", type: .error)
+            return image
+        }
         
         // 2. Render back to UIImage via Context
-        guard let finalCGImage = context.createCGImage(outputImage, from: outputImage.extent) else { return image }
+        guard let finalCGImage = context.createCGImage(outputImage, from: outputImage.extent) else {
+            Logger.shared.log("EInkOptimizer: Failed to render CGImage from context", category: "EInk", type: .error)
+            return image
+        }
         
         return UIImage(cgImage: finalCGImage)
     }
     
     /// Auto-trims white/blank margins from the edges of a comic page
     private func autoCropImage(_ image: UIImage) -> UIImage {
-        guard let cgImage = image.cgImage else { return image }
+        guard let cgImage = image.cgImage else {
+            Logger.shared.log("EInkOptimizer: Failed to extract CGImage for auto-crop", category: "EInk", type: .warning)
+            return image
+        }
         let ciImage = CIImage(cgImage: cgImage)
         
         // Use CoreImage built-in crop to bounding box based on alpha/color
