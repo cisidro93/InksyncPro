@@ -200,7 +200,13 @@ class PDFGenerator {
             }
             
             pdfDocument.outlineRoot = outlineRoot
-            pdfDocument.write(to: outputURL)
+            let tempURL = outputURL.deletingPathExtension().appendingPathExtension("tmp.pdf")
+            if pdfDocument.write(to: tempURL) {
+                try? FileManager.default.removeItem(at: outputURL)
+                try? FileManager.default.moveItem(at: tempURL, to: outputURL)
+            } else {
+                Logger.shared.log("Failed to write PDF with outlines, file size might be 0 bytes.", category: "PDF", type: .error)
+            }
         }
         
         Logger.shared.log("Generated Optimized PDF at \(outputURL.path)", category: "PDF", type: .success)

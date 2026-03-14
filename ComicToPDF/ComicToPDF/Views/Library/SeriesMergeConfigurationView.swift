@@ -12,6 +12,7 @@ struct SeriesMergeConfigurationView: View {
     @State private var itemsToMerge: [ConvertedPDF]
     @State private var outputName: String = ""
     @State private var mangaMode: Bool = false
+    @State private var isProcessing: Bool = false
     
     init(sourceFiles: [ConvertedPDF]) {
         self.sourceFiles = sourceFiles
@@ -21,13 +22,32 @@ struct SeriesMergeConfigurationView: View {
     
     var body: some View {
         NavigationView {
-            Form {
-                Section(header: Text("Output Volume Configuration"), footer: Text("The merged file will automatically be assigned to the current series.")) {
-                    TextField("New Volume Name (e.g., Volume 1)", text: $outputName)
-                    Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
-                }
-                
-                Section(header: Text("Merge Order"), footer: Text("Drag to reorder. The top file will be the first issue in the merged volume.")) {
+            VStack {
+                if isProcessing {
+                    ImmersiveConversionOverlay(
+                        pdfName: outputName.isEmpty ? "Merged Collection" : outputName,
+                        customMessage: conversionManager.statusMessage ?? "Merging..."
+                    )
+                } else {
+                    Form {
+                        Section(header: Text("Output Volume Configuration"), footer: Text("The merged file will automatically be assigned to the current series.")) {
+                            TextField("New Volume Name (e.g., Volume 1)", text: $outputName)
+                            Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
+                            
+                            Picker("Image Quality", selection: $conversionManager.conversionSettings.compressionQuality) {
+                                ForEach(CompressionPreset.allCases, id: \.self) { preset in
+                                    Text(preset.rawValue).tag(preset)
+                                }
+                            }
+                            
+                            Picker("Smart File Splitting", selection: $conversionManager.conversionSettings.splitMode) {
+                                ForEach(FileSizeSplitMode.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
+                        }
+                        
+                        Section(header: Text("Merge Order"), footer: Text("Drag to reorder. The top file will be the first issue in the merged volume.")) {
                     List {
                         ForEach(itemsToMerge) { pdf in
                             pdfRow(for: pdf)
@@ -47,18 +67,24 @@ struct SeriesMergeConfigurationView: View {
                             Spacer()
                         }
                     }
-                    .disabled(isMergeDisabled)
+                        }
+                        .disabled(isMergeDisabled)
+                    }
                 }
             }
             .navigationTitle("Configure Merge")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    if !isProcessing {
+                        Button("Cancel") { dismiss() }
+                    }
                 }
                 // Requires EditButton to easily expose drag handles
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
+                    if !isProcessing {
+                        EditButton()
+                    }
                 }
             }
         }
@@ -106,6 +132,8 @@ struct SeriesMergeConfigurationView: View {
         let name = outputName.trimmingCharacters(in: .whitespaces)
         let mode = mangaMode
         
+        isProcessing = true
+        
         Task {
             // First we need to ensure the resulting PDF is correctly tagged to the series!
             // Wait, we need the series name!
@@ -118,7 +146,10 @@ struct SeriesMergeConfigurationView: View {
             // But if we want it to automatically appear in the series, we can try to explicitly set the series name on the newly generated output if it replaces something.
             // Actually, in ConversionManager, convertAndMerge creates EPUBs and relies on scanLibrary. To explicitly set metadata, we would need to edit metadata before scanning, but standard metadata extraction should catch it if the filename matches the series folder, or we can just leave it to user.
             
-            dismiss()
+            await MainActor.run {
+                isProcessing = false
+                dismiss()
+            }
         }
     }
 }
