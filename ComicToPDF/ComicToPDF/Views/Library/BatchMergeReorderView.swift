@@ -28,17 +28,17 @@ struct BatchMergeReorderView: View {
                 } else {
                     // Header Form
                     Form {
-                        Section(header: Text("Output Name")) {
+                        Section("Output Name") {
                             TextField("Collection Name", text: $mergedName)
                         }
                         
-                        Section(header: Text("Settings")) {
+                        Section("Settings") {
                             Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
                             
                             Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
                                 Text(TargetDeviceProfile.original.rawValue).tag(TargetDeviceProfile.original)
                                 
-                                Section(header: Text("Amazon Kindle")) {
+                                Section("Amazon Kindle") {
                                     Text(TargetDeviceProfile.scribeColorsoft.rawValue).tag(TargetDeviceProfile.scribeColorsoft)
                                     Text(TargetDeviceProfile.paperwhite2024.rawValue).tag(TargetDeviceProfile.paperwhite2024)
                                     Text(TargetDeviceProfile.scribe.rawValue).tag(TargetDeviceProfile.scribe)
@@ -47,7 +47,7 @@ struct BatchMergeReorderView: View {
                                     Text(TargetDeviceProfile.kindleBasic.rawValue).tag(TargetDeviceProfile.kindleBasic)
                                 }
                                 
-                                Section(header: Text("Rakuten Kobo")) {
+                                Section("Rakuten Kobo") {
                                     Text(TargetDeviceProfile.koboLibraColour.rawValue).tag(TargetDeviceProfile.koboLibraColour)
                                     Text(TargetDeviceProfile.koboClaraColour.rawValue).tag(TargetDeviceProfile.koboClaraColour)
                                     Text(TargetDeviceProfile.koboElipsa2E.rawValue).tag(TargetDeviceProfile.koboElipsa2E)
@@ -55,7 +55,7 @@ struct BatchMergeReorderView: View {
                                     Text(TargetDeviceProfile.koboLibra2.rawValue).tag(TargetDeviceProfile.koboLibra2)
                                 }
                                 
-                                Section(header: Text("Onyx Boox")) {
+                                Section("Onyx Boox") {
                                     Text(TargetDeviceProfile.booxTabUltraCPro.rawValue).tag(TargetDeviceProfile.booxTabUltraCPro)
                                     Text(TargetDeviceProfile.booxNoteAir3C.rawValue).tag(TargetDeviceProfile.booxNoteAir3C)
                                     Text(TargetDeviceProfile.booxPage.rawValue).tag(TargetDeviceProfile.booxPage)

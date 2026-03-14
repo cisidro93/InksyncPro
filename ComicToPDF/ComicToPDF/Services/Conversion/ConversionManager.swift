@@ -1678,7 +1678,14 @@ class ConversionManager: ObservableObject {
                         currentBatchSize = 0
                     }
                     
-                    let images = try await extractImageURLs(from: file.url)
+                    var images = try await extractImageURLs(from: file.url)
+                    
+                    // If the source file is ALREADY a Manga PDF resulting from a previous conversion, 
+                    // its physical pages are extracted backwards. We must revert them to logical LTR 
+                    // order here so the global batch merge doesn't scramble the books.
+                    if file.url.pathExtension.lowercased() == "pdf", let isManga = file.metadata.isManga, isManga {
+                        images.reverse()
+                    }
                     
                     // The starting index for this chapter relative to the CURRENT batch
                     let chapterStartIndex = currentBatch.count
@@ -1808,8 +1815,13 @@ class ConversionManager: ObservableObject {
                 
                 if firstEPUBFileCoverData == nil {
                     // Quick extract first image for cover badging later
-                    if let firstImage = try? await extractImageURLs(from: file.url).first {
-                        firstEPUBFileCoverData = try? Data(contentsOf: firstImage)
+                    if var images = try? await extractImageURLs(from: file.url) {
+                        if file.url.pathExtension.lowercased() == "pdf" && (file.metadata.isManga == true) {
+                            images.reverse()
+                        }
+                        if let firstImage = images.first {
+                            firstEPUBFileCoverData = try? Data(contentsOf: firstImage)
+                        }
                     }
                 }
                 
@@ -1819,15 +1831,16 @@ class ConversionManager: ObservableObject {
                 
                 Logger.shared.log("Starting Conversion for '\(file.name)'", category: "Converter")
                 
+                let isMangaPDF = file.url.pathExtension.lowercased() == "pdf" && (file.metadata.isManga == true)
                 let resultingURLs: [URL]
                 if jobSettings.outputPipeline == .proPanel {
                     let converter = PanelViewEPUBConverter()
-                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, panels: combinedManifest) { progress in
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: isMangaPDF) { progress in
                         Task { @MainActor in self.conversionProgress = progress }
                     }
                 } else {
                     let converter = CBZToEPUBConverter()
-                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: nil) { progress in
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: isMangaPDF) { progress in
                         // We are doing N files, so this progress needs to be relative, but for now we just show it directly
                         Task { @MainActor in self.conversionProgress = progress }
                     }
