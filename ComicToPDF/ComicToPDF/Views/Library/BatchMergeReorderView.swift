@@ -40,35 +40,26 @@ struct BatchMergeReorderView: View {
                             Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
                                 Text(TargetDeviceProfile.original.rawValue).tag(TargetDeviceProfile.original)
                                 
-                                Section {
-                                    Text(TargetDeviceProfile.scribeColorsoft.rawValue).tag(TargetDeviceProfile.scribeColorsoft)
-                                    Text(TargetDeviceProfile.paperwhite2024.rawValue).tag(TargetDeviceProfile.paperwhite2024)
-                                    Text(TargetDeviceProfile.scribe.rawValue).tag(TargetDeviceProfile.scribe)
-                                    Text(TargetDeviceProfile.paperwhite11.rawValue).tag(TargetDeviceProfile.paperwhite11)
-                                    Text(TargetDeviceProfile.oasis.rawValue).tag(TargetDeviceProfile.oasis)
-                                    Text(TargetDeviceProfile.kindleBasic.rawValue).tag(TargetDeviceProfile.kindleBasic)
-                                } header: {
-                                    Text("Amazon Kindle")
-                                }
+                                Divider()
+                                Text(TargetDeviceProfile.scribeColorsoft.rawValue).tag(TargetDeviceProfile.scribeColorsoft)
+                                Text(TargetDeviceProfile.paperwhite2024.rawValue).tag(TargetDeviceProfile.paperwhite2024)
+                                Text(TargetDeviceProfile.scribe.rawValue).tag(TargetDeviceProfile.scribe)
+                                Text(TargetDeviceProfile.paperwhite11.rawValue).tag(TargetDeviceProfile.paperwhite11)
+                                Text(TargetDeviceProfile.oasis.rawValue).tag(TargetDeviceProfile.oasis)
+                                Text(TargetDeviceProfile.kindleBasic.rawValue).tag(TargetDeviceProfile.kindleBasic)
                                 
-                                Section {
-                                    Text(TargetDeviceProfile.koboLibraColour.rawValue).tag(TargetDeviceProfile.koboLibraColour)
-                                    Text(TargetDeviceProfile.koboClaraColour.rawValue).tag(TargetDeviceProfile.koboClaraColour)
-                                    Text(TargetDeviceProfile.koboElipsa2E.rawValue).tag(TargetDeviceProfile.koboElipsa2E)
-                                    Text(TargetDeviceProfile.koboSage.rawValue).tag(TargetDeviceProfile.koboSage)
-                                    Text(TargetDeviceProfile.koboLibra2.rawValue).tag(TargetDeviceProfile.koboLibra2)
-                                } header: {
-                                    Text("Rakuten Kobo")
-                                }
+                                Divider()
+                                Text(TargetDeviceProfile.koboLibraColour.rawValue).tag(TargetDeviceProfile.koboLibraColour)
+                                Text(TargetDeviceProfile.koboClaraColour.rawValue).tag(TargetDeviceProfile.koboClaraColour)
+                                Text(TargetDeviceProfile.koboElipsa2E.rawValue).tag(TargetDeviceProfile.koboElipsa2E)
+                                Text(TargetDeviceProfile.koboSage.rawValue).tag(TargetDeviceProfile.koboSage)
+                                Text(TargetDeviceProfile.koboLibra2.rawValue).tag(TargetDeviceProfile.koboLibra2)
                                 
-                                Section {
-                                    Text(TargetDeviceProfile.booxTabUltraCPro.rawValue).tag(TargetDeviceProfile.booxTabUltraCPro)
-                                    Text(TargetDeviceProfile.booxNoteAir3C.rawValue).tag(TargetDeviceProfile.booxNoteAir3C)
-                                    Text(TargetDeviceProfile.booxPage.rawValue).tag(TargetDeviceProfile.booxPage)
-                                    Text(TargetDeviceProfile.booxPalma.rawValue).tag(TargetDeviceProfile.booxPalma)
-                                } header: {
-                                    Text("Onyx Boox")
-                                }
+                                Divider()
+                                Text(TargetDeviceProfile.booxTabUltraCPro.rawValue).tag(TargetDeviceProfile.booxTabUltraCPro)
+                                Text(TargetDeviceProfile.booxNoteAir3C.rawValue).tag(TargetDeviceProfile.booxNoteAir3C)
+                                Text(TargetDeviceProfile.booxPage.rawValue).tag(TargetDeviceProfile.booxPage)
+                                Text(TargetDeviceProfile.booxPalma.rawValue).tag(TargetDeviceProfile.booxPalma)
                             }
                             .pickerStyle(.menu)
                             
