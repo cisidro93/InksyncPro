@@ -11,6 +11,9 @@ struct PlannerEditorView: View {
     @State private var exportProgress = 0.0
     @State private var showingErrorAlert = false
     @State private var exportErrorMessage = ""
+    @State private var showingAIAssistant = false
+    @State private var isGeneratingAI = false
+    @State private var aiPrompt = ""
     
     var body: some View {
         VStack(spacing: 0) {
@@ -28,9 +31,65 @@ struct PlannerEditorView: View {
                                 .scaledToFit()
                                 .frame(width: geo.size.width, height: geo.size.height)
                         } else {
-                            Color.white
-                                .frame(width: geo.size.width, height: geo.size.height)
-                                .shadow(radius: 5)
+                            ZStack {
+                                Color.white
+                                    .frame(width: geo.size.width, height: geo.size.height)
+                                    .shadow(radius: 5)
+                                
+                                // AI Assistant Empty State Call-to-Action
+                                if !showingAIAssistant {
+                                    VStack(spacing: 16) {
+                                        Image(systemName: "wand.and.stars")
+                                            .font(.system(size: 48))
+                                            .foregroundColor(.gray.opacity(0.5))
+                                        Text("Blank Canvas Syndrome?")
+                                            .font(.title3).bold()
+                                            .foregroundColor(.gray)
+                                        Button(action: { showingAIAssistant = true }) {
+                                            Text("Generate AI Layout")
+                                                .font(.headline)
+                                                .padding(.horizontal, 24)
+                                                .padding(.vertical, 12)
+                                                .background(Color.accentColor.opacity(0.9))
+                                                .foregroundColor(.white)
+                                                .cornerRadius(12)
+                                        }
+                                    }
+                                }
+                                
+                                // AI Generation Sheet Overlay
+                                if showingAIAssistant {
+                                    VStack(spacing: 20) {
+                                        Text("AI Template Generator")
+                                            .font(.headline)
+                                        
+                                        TextField("e.g. Weekly workout grid, Storyboard, Meeting Notes...", text: $aiPrompt)
+                                            .textFieldStyle(.roundedBorder)
+                                        
+                                        HStack {
+                                            Button("Cancel") { showingAIAssistant = false }
+                                                .foregroundColor(.red)
+                                            Spacer()
+                                            Button(action: {
+                                                generateAILayout(prompt: aiPrompt.isEmpty ? "Grid Notes" : aiPrompt)
+                                            }) {
+                                                if isGeneratingAI {
+                                                    ProgressView()
+                                                } else {
+                                                    Text("Generate")
+                                                        .bold()
+                                                }
+                                            }
+                                            .disabled(isGeneratingAI)
+                                        }
+                                    }
+                                    .padding(24)
+                                    .frame(width: 350)
+                                    .background(Color(.systemBackground))
+                                    .cornerRadius(16)
+                                    .shadow(radius: 20)
+                                }
+                            }
                         }
                         
                         // Vector Overlay Elements (Links, Shapes)
@@ -220,6 +279,70 @@ struct PlannerEditorView: View {
                     Logger.shared.log("Export Failed: \(error.localizedDescription)", category: "Export", type: .error)
                 }
             }
+        }
+    }
+    
+    private func generateAILayout(prompt: String) {
+        isGeneratingAI = true
+        
+        // Mock generation delay for effect
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            let width: CGFloat = 850
+            let height: CGFloat = 1100
+            
+            UIGraphicsBeginImageContextWithOptions(CGSize(width: width, height: height), true, 1.0)
+            guard let context = UIGraphicsGetCurrentContext() else {
+                self.isGeneratingAI = false
+                self.showingAIAssistant = false
+                return
+            }
+            
+            // Background
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            
+            // Draw grid or lines
+            UIColor.lightGray.withAlphaComponent(0.4).setStroke()
+            context.setLineWidth(1)
+            
+            if prompt.lowercased().contains("grid") || prompt.lowercased().contains("board") {
+                let spacing: CGFloat = 40
+                for x in stride(from: 0, to: width, by: spacing) {
+                    context.move(to: CGPoint(x: x, y: 0))
+                    context.addLine(to: CGPoint(x: x, y: height))
+                }
+                for y in stride(from: 0, to: height, by: spacing) {
+                    context.move(to: CGPoint(x: 0, y: y))
+                    context.addLine(to: CGPoint(x: width, y: y))
+                }
+            } else {
+                // Default lines
+                let spacing: CGFloat = 50
+                for y in stride(from: 150, to: height, by: spacing) {
+                    context.move(to: CGPoint(x: 40, y: y))
+                    context.addLine(to: CGPoint(x: width - 40, y: y))
+                }
+            }
+            context.strokePath()
+            
+            // Header
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 36, weight: .bold),
+                .foregroundColor: UIColor.black.withAlphaComponent(0.8)
+            ]
+            let string = NSAttributedString(string: prompt.capitalized, attributes: attrs)
+            string.draw(at: CGPoint(x: 50, y: 60))
+            
+            let image = UIGraphicsGetImageFromCurrentImageContext()
+            UIGraphicsEndImageContext()
+            
+            if let data = image?.pngData(), project.pages.indices.contains(selectedPageIndex) {
+                project.pages[selectedPageIndex].backgroundImageData = data
+            }
+            
+            self.isGeneratingAI = false
+            self.showingAIAssistant = false
+            self.aiPrompt = ""
         }
     }
 }
