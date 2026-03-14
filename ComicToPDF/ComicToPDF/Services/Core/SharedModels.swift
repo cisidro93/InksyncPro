@@ -640,8 +640,48 @@ struct PageModel: Identifiable, Codable, Equatable, Hashable {
     // This allows us to trust "Known Good" panels (e.g. from Auto-Scan) and only run heuristics on Legacy/Unknown data.
     var coordinateSystem: PageCoordinateSystem = .unknown 
     
-    // We don't store UndoManager here because it's a class and not Codable.
-    // UndoManager will be managed by PageEditorState at runtime.
+    // Explicit Codable Synthesis & Initializers
+    init(id: UUID = UUID(), pageIndex: Int, panels: [NormalizedRect] = [], proposedPanels: [NormalizedRect] = [], coordinateSystem: PageCoordinateSystem = .unknown) {
+        self.id = id
+        self.pageIndex = pageIndex
+        self.panels = panels
+        self.proposedPanels = proposedPanels
+        self.coordinateSystem = coordinateSystem
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.pageIndex = try container.decode(Int.self, forKey: .pageIndex)
+        self.panels = try container.decode([NormalizedRect].self, forKey: .panels)
+        self.proposedPanels = try container.decode([NormalizedRect].self, forKey: .proposedPanels)
+        self.coordinateSystem = try container.decode(PageCoordinateSystem.self, forKey: .coordinateSystem)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(pageIndex, forKey: .pageIndex)
+        try container.encode(panels, forKey: .panels)
+        try container.encode(proposedPanels, forKey: .proposedPanels)
+        try container.encode(coordinateSystem, forKey: .coordinateSystem)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, pageIndex, panels, proposedPanels, coordinateSystem
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(pageIndex)
+        hasher.combine(panels)
+        hasher.combine(proposedPanels)
+        hasher.combine(coordinateSystem)
+    }
+    
+    static func == (lhs: PageModel, rhs: PageModel) -> Bool {
+        return lhs.id == rhs.id && lhs.pageIndex == rhs.pageIndex && lhs.panels == rhs.panels && lhs.proposedPanels == rhs.proposedPanels && lhs.coordinateSystem == rhs.coordinateSystem
+    }
 }
 
 // ✅ Coordinate System Helper

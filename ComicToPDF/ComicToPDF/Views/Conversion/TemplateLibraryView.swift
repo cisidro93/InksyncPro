@@ -91,14 +91,16 @@ struct TemplateLibraryView: View {
             // Simple NavigationLink trigger for new Pro Mode editor
             .background(
                 NavigationLink(
-                    destination: {
-                        if let proj = newProjectToEdit {
-                            PlannerEditorView(project: .constant(proj))
-                        } else {
-                            EmptyView()
-                        }
-                    }(),
                     isActive: $showingProModeEditor,
+                    destination: {
+                        Group {
+                            if let proj = newProjectToEdit {
+                                PlannerEditorView(project: .constant(proj))
+                            } else {
+                                EmptyView()
+                            }
+                        }
+                    },
                     label: { EmptyView() }
                 )
             )

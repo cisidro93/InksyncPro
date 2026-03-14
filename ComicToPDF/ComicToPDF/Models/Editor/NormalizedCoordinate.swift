@@ -14,6 +14,32 @@ struct NormalizedCoordinate: Codable, Equatable, Hashable {
         self.x = (x.isNaN || x.isInfinite) ? 0 : min(Swift.max(x, 0), 1000)
         self.y = (y.isNaN || y.isInfinite) ? 0 : min(Swift.max(y, 0), 1000)
     }
+    
+    // Explicit Codable Synthesis guarantees
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.x = try container.decode(Double.self, forKey: .x)
+        self.y = try container.decode(Double.self, forKey: .y)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(x, forKey: .x)
+        try container.encode(y, forKey: .y)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case x, y
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(x)
+        hasher.combine(y)
+    }
+    
+    static func == (lhs: NormalizedCoordinate, rhs: NormalizedCoordinate) -> Bool {
+        return lhs.x == rhs.x && lhs.y == rhs.y
+    }
 }
 
 /// A rectangle defined in normalized 0-1000 coordinates.
@@ -65,6 +91,32 @@ struct NormalizedRect: Codable, Equatable, Hashable {
         self.origin = NormalizedCoordinate(x: x, y: y)
         self.size = NormalizedSize(width: width, height: height)
     }
+    
+    // Explicit Codable Synthesis guarantees
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.origin = try container.decode(NormalizedCoordinate.self, forKey: .origin)
+        self.size = try container.decode(NormalizedSize.self, forKey: .size)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(origin, forKey: .origin)
+        try container.encode(size, forKey: .size)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case origin, size
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(origin)
+        hasher.combine(size)
+    }
+    
+    static func == (lhs: NormalizedRect, rhs: NormalizedRect) -> Bool {
+        return lhs.origin == rhs.origin && lhs.size == rhs.size
+    }
 }
 
 struct NormalizedSize: Codable, Equatable, Hashable {
@@ -76,6 +128,32 @@ struct NormalizedSize: Codable, Equatable, Hashable {
     init(width: Double, height: Double) {
         self.width = max(0, min(width, 1000))
         self.height = max(0, min(height, 1000))
+    }
+    
+    // Explicit Codable Synthesis guarantees
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.width = try container.decode(Double.self, forKey: .width)
+        self.height = try container.decode(Double.self, forKey: .height)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(width, forKey: .width)
+        try container.encode(height, forKey: .height)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case width, height
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(width)
+        hasher.combine(height)
+    }
+    
+    static func == (lhs: NormalizedSize, rhs: NormalizedSize) -> Bool {
+        return lhs.width == rhs.width && lhs.height == rhs.height
     }
 }
 

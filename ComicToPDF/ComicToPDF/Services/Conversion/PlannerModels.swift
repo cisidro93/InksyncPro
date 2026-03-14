@@ -8,7 +8,7 @@ struct PlannerProject: Identifiable, Codable, Hashable {
     var title: String
     var creationDate: Date = Date()
     var isFavorite: Bool = false
-    var targetDevice: TargetDeviceProfile = .original
+    var targetDeviceProfile: TargetDeviceProfile = .original
     var coverThumbnailData: Data? = nil // Compressed PNG for Vault Gallery
     
     var pages: [PlannerPage] = []
@@ -53,36 +53,59 @@ struct PlannerElement: Identifiable, Codable, Hashable {
         case image // Digital Sticker
         case linkZone // Invisible Touch Target
     }
+    
+    // Explicit Codable Synthesis guarantees
+    init(id: UUID = UUID(), type: ElementType, rect: NormalizedRect, colorHex: String? = nil, strokeWidth: CGFloat? = nil, text: String? = nil, targetPageID: UUID? = nil, targetURL: String? = nil, imageData: Data? = nil) {
+        self.id = id
+        self.type = type
+        self.rect = rect
+        self.colorHex = colorHex
+        self.strokeWidth = strokeWidth
+        self.text = text
+        self.targetPageID = targetPageID
+        self.targetURL = targetURL
+        self.imageData = imageData
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.type = try container.decode(ElementType.self, forKey: .type)
+        self.rect = try container.decode(NormalizedRect.self, forKey: .rect)
+        self.colorHex = try container.decodeIfPresent(String.self, forKey: .colorHex)
+        self.strokeWidth = try container.decodeIfPresent(CGFloat.self, forKey: .strokeWidth)
+        self.text = try container.decodeIfPresent(String.self, forKey: .text)
+        self.targetPageID = try container.decodeIfPresent(UUID.self, forKey: .targetPageID)
+        self.targetURL = try container.decodeIfPresent(String.self, forKey: .targetURL)
+        self.imageData = try container.decodeIfPresent(Data.self, forKey: .imageData)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(type, forKey: .type)
+        try container.encode(rect, forKey: .rect)
+        try container.encodeIfPresent(colorHex, forKey: .colorHex)
+        try container.encodeIfPresent(strokeWidth, forKey: .strokeWidth)
+        try container.encodeIfPresent(text, forKey: .text)
+        try container.encodeIfPresent(targetPageID, forKey: .targetPageID)
+        try container.encodeIfPresent(targetURL, forKey: .targetURL)
+        try container.encodeIfPresent(imageData, forKey: .imageData)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, type, rect, colorHex, strokeWidth, text, targetPageID, targetURL, imageData
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(type)
+        hasher.combine(rect)
+    }
+    
+    static func == (lhs: PlannerElement, rhs: PlannerElement) -> Bool {
+        return lhs.id == rhs.id && lhs.type == rhs.type && lhs.rect == rhs.rect
+    }
 }
 
-/// A bounding box defined by normalized percentages (0.0 - 1.0) rather than absolute points.
-/// This prevents elements from breaking if the underlying TargetDeviceProfile dimensions change.
-struct NormalizedRect: Codable, Hashable, Equatable {
-    var x: Double
-    var y: Double
-    var width: Double
-    var height: Double
-    
-    func toCGRect(in bounds: CGSize) -> CGRect {
-        return CGRect(
-            x: CGFloat(x) * bounds.width,
-            y: CGFloat(y) * bounds.height,
-            width: CGFloat(width) * bounds.width,
-            height: CGFloat(height) * bounds.height
-        )
-    }
-    
-    init(x: Double, y: Double, width: Double, height: Double) {
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
-    }
-    
-    init(from rect: CGRect, in bounds: CGSize) {
-        self.x = Double(rect.origin.x / bounds.width)
-        self.y = Double(rect.origin.y / bounds.height)
-        self.width = Double(rect.size.width / bounds.width)
-        self.height = Double(rect.size.height / bounds.height)
-    }
-}
+// Removed NormalizedRect to avoid collision with NormalizedCoordinate.swift

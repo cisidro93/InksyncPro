@@ -110,7 +110,7 @@ struct SeriesMergeConfigurationView: View {
             // First we need to ensure the resulting PDF is correctly tagged to the series!
             // Wait, we need the series name!
             // Let's get it from the first item
-            let seriesName = files.first?.metadata.series
+            _ = files.first?.metadata.series
             
             await conversionManager.convertAndMerge(sourceFiles: files, outputName: name, mangaMode: mode)
             

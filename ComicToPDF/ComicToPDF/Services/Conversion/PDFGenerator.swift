@@ -53,7 +53,7 @@ class PDFGenerator {
                     fallbackTargetSize = targetSize
                     let pageRect = CGRect(origin: .zero, size: targetSize)
                     
-                    context.beginPage(withBounds: pageRect)
+                    context.beginPage(withBounds: pageRect, pageInfo: [:])
                     
                     // Add Internal Anchor for Hyperlinking
                     let displayPageNum = index + 1

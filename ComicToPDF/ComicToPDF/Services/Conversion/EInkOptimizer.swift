@@ -92,7 +92,7 @@ class EInkOptimizer {
         
         // While CIMaskToAlpha is useful, usually manga borders are pure white.
         // A more robust CoreImage technique for trimming whitespace:
-        let originalExtent = ciImage.extent
+        _ = ciImage.extent
         
         // We will just use the standard image since CoreImage doesn't have a reliable automatic "trim white margin" filter out of the box without complex histogram analysis.
         // Instead, we will simulate it by querying CoreGraphics context bounding box.

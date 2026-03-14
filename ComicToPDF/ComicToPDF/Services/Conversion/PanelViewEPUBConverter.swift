@@ -261,9 +261,9 @@ class PanelViewEPUBConverter {
         comicInfo: ComicInfoParser.ComicInfo?
     ) -> String {
         let orientation  = "auto"
-        let orientationLock = "none"
-        let writingMode  = isManga ? "horizontal-rl" : "horizontal-lr"
-        let spreadMode   = "landscape"
+        // let orientationLock = "none"
+        // let writingMode  = isManga ? "horizontal-rl" : "horizontal-lr"
+        // let spreadMode   = "landscape"
         let author       = comicInfo?.writer ?? "Unknown"
         let pubDate      = ISO8601DateFormatter().string(from: Date()).prefix(10)
 

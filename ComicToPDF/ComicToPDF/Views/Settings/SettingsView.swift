@@ -102,7 +102,7 @@ struct SettingsView: View {
                 Button(action: { dismiss() }) { Text("Done").bold() }
             }
         }
-        .onChange(of: conversionManager.conversionSettings) { _ in
+        .onChange(of: conversionManager.conversionSettings) {
             conversionManager.saveSettings()
         }
         .alert("Save Custom Preset", isPresented: $showingPresetAlert) {
@@ -174,11 +174,13 @@ struct SettingsView: View {
             HStack {
                 settingsIcon("doc.zipper", color: .orange)
                 Picker("Default Output Format", selection: $conversionManager.conversionSettings.outputFormat) {
-                    ForEach(OutputFormat.allCases) { format in Label(format.rawValue, systemImage: format.icon).tag(format) }
+                    ForEach(OutputFormat.allCases) { format in 
+                        Text(format.rawValue).tag(format) 
+                    }
                 }
                 .pickerStyle(.menu)
-                .onChange(of: conversionManager.conversionSettings.outputFormat) { newFormat in
-                    if newFormat != .epub { conversionManager.conversionSettings.outputPipeline = .standard }
+                .onChange(of: conversionManager.conversionSettings.outputFormat) {
+                    if conversionManager.conversionSettings.outputFormat != .epub { conversionManager.conversionSettings.outputPipeline = .standard }
                 }
             }
             

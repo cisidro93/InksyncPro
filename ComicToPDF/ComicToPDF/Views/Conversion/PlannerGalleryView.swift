@@ -27,7 +27,7 @@ struct PlannerGalleryView: View {
                             .foregroundColor(.secondary)
                         
                         Picker("Device", selection: $selectedDevice) {
-                            Text("Amazon Kindle Scribe").tag(TargetDeviceProfile.kindleScribe)
+                            Text("Amazon Kindle Scribe").tag(TargetDeviceProfile.scribe)
                             Text("Amazon Paperwhite").tag(TargetDeviceProfile.kindlePaperwhite)
                             Text("Onyx Boox Note Air 3").tag(TargetDeviceProfile.booxNoteAir)
                             Text("Kobo Elipsa 2E").tag(TargetDeviceProfile.koboElipsa)

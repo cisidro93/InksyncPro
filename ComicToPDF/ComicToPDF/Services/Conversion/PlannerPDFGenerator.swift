@@ -15,7 +15,7 @@ class PlannerPDFGenerator {
         let totalPages = Double(project.pages.count)
         var current = 0.0
         
-        let targetSize = project.targetDevice.resolution ?? CGSize(width: 1200, height: 1800)
+        let targetSize = project.targetDeviceProfile.resolution ?? CGSize(width: 1200, height: 1800)
         let format = UIGraphicsPDFRendererFormat()
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: targetSize), format: format)
         
@@ -32,7 +32,7 @@ class PlannerPDFGenerator {
             for (index, page) in project.pages.enumerated() {
                 autoreleasepool {
                     let pageRect = CGRect(origin: .zero, size: targetSize)
-                    context.beginPage(withBounds: pageRect)
+                    context.beginPage(withBounds: pageRect, pageInfo: [:])
                     
                     // 1. Draw Background (White or Imported PDF raster)
                     if let bgData = page.backgroundImageData, let bgImage = UIImage(data: bgData) {

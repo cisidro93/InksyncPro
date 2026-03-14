@@ -89,7 +89,7 @@ struct SmartCropper {
         let tl = getPixelLuma(data: data, x: insetX, y: insetY, rowBytes: rowBytes)
         let tr = getPixelLuma(data: data, x: width-1-insetX, y: insetY, rowBytes: rowBytes)
         let bl = getPixelLuma(data: data, x: insetX, y: height-1-insetY, rowBytes: rowBytes)
-        let br = getPixelLuma(data: data, x: width-1-insetX, y: height-1-insetY, rowBytes: rowBytes)
+        _ = getPixelLuma(data: data, x: width-1-insetX, y: height-1-insetY, rowBytes: rowBytes)
         
         let threshold = Int(sensitivity * 255)
         var cropTop = 0

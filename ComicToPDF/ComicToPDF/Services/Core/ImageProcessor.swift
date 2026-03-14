@@ -3,6 +3,10 @@ import Accelerate
 
 struct ImageProcessor {
     
+    // ✅ Performance Optimization: Shared Hardware-Accelerated Context
+    // Prevents creating 1000+ GPU contexts during batch processing which kills battery
+    private static let sharedCIContext = CIContext(options: [.useSoftwareRenderer: false])
+    
     // Process a single image from disk based on settings
     static func process(imageURL: URL, settings: ConversionSettings) -> UIImage? {
         guard let image = UIImage(contentsOfFile: imageURL.path) else { return nil }
@@ -30,7 +34,7 @@ struct ImageProcessor {
         
         if needsResize {
             // Get target resolution (Default to a 1440x1920 HD equivalent for 'Compact' if no device selected)
-            let targetSize = settings.optimizeForDevice ? settings.targetDevice.resolution : CGSize(width: 1440, height: 1920)
+            let targetSize = settings.optimizeForDevice ? settings.targetDeviceProfile.resolution : CGSize(width: 1440, height: 1920)
             
             // Use vImage for high-performance resizing
             if let resized = resize(image: finalImage, toFit: targetSize) {
@@ -398,8 +402,7 @@ struct ImageProcessor {
         
         guard let output = filter?.outputImage else { return image }
         
-        let context = CIContext(options: nil)
-        guard let cgImg = context.createCGImage(output, from: output.extent) else { return image }
+        guard let cgImg = sharedCIContext.createCGImage(output, from: output.extent) else { return image }
         
         return UIImage(cgImage: cgImg)
     }
@@ -448,7 +451,7 @@ struct ImageProcessor {
         filter?.setValue(intensity * 2.0, forKey: kCIInputIntensityKey) 
         
         guard let output = filter?.outputImage,
-              let cgImage = CIContext().createCGImage(output, from: output.extent) else { return image }
+              let cgImage = sharedCIContext.createCGImage(output, from: output.extent) else { return image }
         return UIImage(cgImage: cgImage)
     }
     
@@ -462,7 +465,7 @@ struct ImageProcessor {
         filter?.setValue(1.0 + vibrance, forKey: kCIInputSaturationKey)
         
         guard let output = filter?.outputImage,
-              let cgImage = CIContext().createCGImage(output, from: output.extent) else { return image }
+              let cgImage = sharedCIContext.createCGImage(output, from: output.extent) else { return image }
         return UIImage(cgImage: cgImage)
     }
     
@@ -473,7 +476,7 @@ struct ImageProcessor {
         filter?.setValue(gamma, forKey: "inputPower")
         
         if let output = filter?.outputImage,
-           let cgImage = CIContext().createCGImage(output, from: output.extent) {
+           let cgImage = sharedCIContext.createCGImage(output, from: output.extent) {
             return UIImage(cgImage: cgImage)
         }
         return image

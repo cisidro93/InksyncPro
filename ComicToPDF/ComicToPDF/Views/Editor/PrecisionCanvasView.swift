@@ -546,8 +546,10 @@ struct PreviewMaskShape: Shape {
                     // Visual feedback for knife cut?
                     // Draw a vertical line logic
                     currentDragRect = NormalizedRect(
-                        origin: NormalizedCoordinate(x: point.x, y: 0),
-                        size: NormalizedSize(width: 0, height: 1000) // Vertical line visual
+                        x: point.x,
+                        y: 0,
+                        width: 0,
+                        height: 1000 // Vertical line visual
                     )
                     
                 case .edit:
