@@ -86,15 +86,15 @@ struct OnboardingView: View {
                         )
                         
                         OnboardingFeatureRow(
-                            icon: "network.badge.shield.half.filled",
-                            title: "Secure Wi-Fi Vault",
-                            description: "No cables needed. Transfer entire libraries instantly across your local network directly into the app using the built-in server."
+                            icon: "cpu",
+                            title: "E-Ink Hardware Optimization",
+                            description: "Automatically downsamples, strips color, and boosts contrast to perfectly match your Kobo, Boox, or Scribe resolution."
                         )
                         
                         OnboardingFeatureRow(
-                            icon: "rectangle.stack.badge.person.crop",
-                            title: "Smart Comic Library",
-                            description: "Automatically match and download metadata for your entire collection using our Batch ComicVine integration."
+                            icon: "sparkles",
+                            title: "AI & Interactive Planners",
+                            description: "Generate 90-day trackers, calendars, or journals with native hyperlinking using local AI templates."
                         )
                         
                         OnboardingFeatureRow(
