@@ -92,6 +92,7 @@ class PanelViewEPUBConverter {
         sourceURL: URL,
         settings: ConversionSettings,
         panels: [Int: [PanelExtractor.Panel]],
+        sourceIsMangaPDF: Bool = false,
         progress: @escaping (Double) -> Void
     ) async throws -> [URL] {
         Logger.shared.log("PanelViewEPUBConverter: Starting. Pages with panels: \(panels.count)", category: "PVConverter")
@@ -113,7 +114,12 @@ class PanelViewEPUBConverter {
         let tempDir    = extraction.workingDir
         defer { try? fileManager.removeItem(at: tempDir) }
 
-        let imageURLs = extraction.imageURLs
+        var imageURLs = extraction.imageURLs
+        
+        if sourceIsMangaPDF {
+            imageURLs.reverse()
+        }
+        
         guard !imageURLs.isEmpty else { throw PanelViewError.noImages }
 
         // ── Detect Manga ──────────────────────────────────────────────────────
