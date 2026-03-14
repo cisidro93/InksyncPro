@@ -44,7 +44,7 @@ struct DualExportView: View {
                     .font(.caption2)
                     
                     if conversionManager.conversionSettings.optimizeForDevice {
-                        Text("Target Device: \(conversionManager.conversionSettings.targetDevice.rawValue)")
+                        Text("Target Device: \(conversionManager.conversionSettings.targetDeviceProfile.rawValue)")
                             .font(.caption2)
                     }
                     if conversionManager.conversionSettings.imageEnhancement.grayscale || conversionManager.conversionSettings.imageEnhancement.autoContrast {

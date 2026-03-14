@@ -50,6 +50,13 @@ class CBZToEPUBConverter {
                     imagesToProcess = slices
                     isSliced = true
                 }
+            } else if settings.splitSpreads, let rawImage = UIImage(contentsOfFile: srcURL.path) {
+                // ✅ Competitor Hardening: Auto-Split Landscape Spreads
+                let slices = ImageProcessor.sliceSpread(image: rawImage, isManga: settings.mangaMode)
+                if slices.count > 1 {
+                    imagesToProcess = slices
+                    isSliced = true
+                }
             }
             
             // B. Evaluate Processing Needs

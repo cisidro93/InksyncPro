@@ -170,6 +170,49 @@ struct ImageProcessor {
         return slices
     }
 
+    /// Hard-slices a landscape double-page spread into two portrait pages.
+    /// Crucially respects manga reading direction.
+    /// - Parameters:
+    ///   - image: The landscape double-page spread.
+    ///   - isManga: If true (RTL), the RIGHT half becomes page 1.
+    /// - Returns: An array of sliced UIImages in the correct reading order.
+    static func sliceSpread(image: UIImage, isManga: Bool) -> [UIImage] {
+        guard let cgImage = image.cgImage else { return [image] }
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        
+        // Only split if it is genuinely a landscape spread (width significantly > height)
+        if width <= height * 1.1 {
+            return [image] // Not a spread, ignore
+        }
+        
+        // Find the middle. Some scanners add a gutter, we slice exactly down the middle
+        let halfWidth = width / 2.0
+        
+        // Left Half
+        let leftRect = CGRect(x: 0, y: 0, width: halfWidth, height: height)
+        // Right Half
+        let rightRect = CGRect(x: halfWidth, y: 0, width: halfWidth, height: height)
+        
+        var slices: [UIImage] = []
+        
+        let leftSlice = cgImage.cropping(to: leftRect).map { UIImage(cgImage: $0, scale: image.scale, orientation: image.imageOrientation) }
+        let rightSlice = cgImage.cropping(to: rightRect).map { UIImage(cgImage: $0, scale: image.scale, orientation: image.imageOrientation) }
+        
+        guard let left = leftSlice, let right = rightSlice else { return [image] }
+        
+        // The most critical part for competitors: Manga Mode determines the split order!
+        if isManga {
+            slices = [right, left] // RTL: Read right page first
+            Logger.shared.log("Sliced Double Spread (Manga Mode): Right half is Page 1", category: "Converter")
+        } else {
+            slices = [left, right] // LTR: Read left page first
+            Logger.shared.log("Sliced Double Spread (Standard): Left half is Page 1", category: "Converter")
+        }
+        
+        return slices
+    }
+
     /// High-performance resizing using vImage
     private static func resize(image: UIImage, toFit targetSize: CGSize) -> UIImage? {
         guard let cgImage = image.cgImage else { return image }

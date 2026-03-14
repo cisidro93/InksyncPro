@@ -21,7 +21,7 @@ struct ConvertView: View {
                 .pickerStyle(.menu)
             } header: { Text("Source Details") }
 
-            // MARK: - Target Format
+            // MARK: - Output Target
             Section {
                 Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
                     ForEach(OutputFormat.allCases) { format in
@@ -40,7 +40,43 @@ struct ConvertView: View {
                     ForEach(CompressionPreset.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.menu)
-            } header: { Text("Output Target") }
+            } header: { Text("Output Format") }
+            
+            // MARK: - Hardware Optimization
+            Section {
+                Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
+                    Text(TargetDeviceProfile.original.rawValue).tag(TargetDeviceProfile.original)
+                    
+                    Section(header: Text("Amazon Kindle")) {
+                        Text(TargetDeviceProfile.scribeColorsoft.rawValue).tag(TargetDeviceProfile.scribeColorsoft)
+                        Text(TargetDeviceProfile.paperwhite2024.rawValue).tag(TargetDeviceProfile.paperwhite2024)
+                        Text(TargetDeviceProfile.scribe.rawValue).tag(TargetDeviceProfile.scribe)
+                        Text(TargetDeviceProfile.paperwhite11.rawValue).tag(TargetDeviceProfile.paperwhite11)
+                        Text(TargetDeviceProfile.oasis.rawValue).tag(TargetDeviceProfile.oasis)
+                        Text(TargetDeviceProfile.kindleBasic.rawValue).tag(TargetDeviceProfile.kindleBasic)
+                    }
+                    
+                    Section(header: Text("Rakuten Kobo")) {
+                        Text(TargetDeviceProfile.koboLibraColour.rawValue).tag(TargetDeviceProfile.koboLibraColour)
+                        Text(TargetDeviceProfile.koboClaraColour.rawValue).tag(TargetDeviceProfile.koboClaraColour)
+                        Text(TargetDeviceProfile.koboElipsa2E.rawValue).tag(TargetDeviceProfile.koboElipsa2E)
+                        Text(TargetDeviceProfile.koboSage.rawValue).tag(TargetDeviceProfile.koboSage)
+                        Text(TargetDeviceProfile.koboLibra2.rawValue).tag(TargetDeviceProfile.koboLibra2)
+                    }
+                    
+                    Section(header: Text("Onyx Boox")) {
+                        Text(TargetDeviceProfile.booxTabUltraCPro.rawValue).tag(TargetDeviceProfile.booxTabUltraCPro)
+                        Text(TargetDeviceProfile.booxNoteAir3C.rawValue).tag(TargetDeviceProfile.booxNoteAir3C)
+                        Text(TargetDeviceProfile.booxPage.rawValue).tag(TargetDeviceProfile.booxPage)
+                        Text(TargetDeviceProfile.booxPalma.rawValue).tag(TargetDeviceProfile.booxPalma)
+                    }
+                }
+                .pickerStyle(.menu)
+                
+                Toggle("E-Ink High Contrast Filter", isOn: $conversionManager.conversionSettings.optimizeForDevice)
+            } header: { Text("Hardware Optimization") } footer: {
+                Text("Select your specific e-reader to perfectly scale images and prevent device lag. Enable the high contrast filter to maximize readability on grayscale e-ink displays.")
+            }
 
             // MARK: - Export Pipeline
             if conversionManager.conversionSettings.outputFormat == .epub {

@@ -23,20 +23,20 @@ class PDFGenerator {
     ///   - mangaMode: If true, reverses page order for RTL reading
     ///   - chapters: Optional list of chapters for Table of Contents generation
     ///   - progress: Progress callback
-    static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, progress: ((Double) -> Void)? = nil) throws {
+    static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, targetProfile: TargetDeviceProfile = .original, applyEInkFilter: Bool = false, progress: ((Double) -> Void)? = nil) throws {
         let total = Double(images.count)
         var current = 0.0
         
         let sourceImages = mangaMode ? images.reversed() : images
         
-        // Crown Jewel: Target dimensions for Kindle Fixed Layout (1200x1800)
-        let targetSize = CGSize(width: 1200, height: 1800)
+        // Format is initialized, but bounds will be set per-page dynamically
         let format = UIGraphicsPDFRendererFormat()
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: targetSize), format: format)
+        let renderer = UIGraphicsPDFRenderer(bounds: .zero, format: format)
         
-        // Track generated ToC pages
         var tocText = "Table of Contents\n\n"
         var hasValidChapters = false
+        var fallbackTargetSize = targetProfile.resolution ?? CGSize(width: 1200, height: 1800)
+        var tocLinks: [(rect: CGRect, targetPage: Int)] = []
         
         try renderer.writePDF(to: outputURL) { context in
             for (index, imageURL) in sourceImages.enumerated() {
@@ -46,7 +46,18 @@ class PDFGenerator {
                         return
                     }
                     
-                    context.beginPage()
+                    // Apply E-Ink Filtering and Scaling
+                    let image = EInkOptimizer.shared.processImage(image, for: targetProfile, applyGrayscale: applyEInkFilter)
+                    
+                    let targetSize = targetProfile.resolution ?? image.size
+                    fallbackTargetSize = targetSize
+                    let pageRect = CGRect(origin: .zero, size: targetSize)
+                    
+                    context.beginPage(withBounds: pageRect)
+                    
+                    // Add Internal Anchor for Hyperlinking
+                    let displayPageNum = index + 1
+                    context.setURL(URL(string: "page://\(displayPageNum)")!, for: pageRect)
                     
                     // Aspect Fit Calculation
                     let imgSize = image.size
@@ -62,7 +73,7 @@ class PDFGenerator {
                     
                     // Draw white background
                     UIColor.white.setFill()
-                    context.fill(context.pdfContextBounds)
+                    context.fill(pageRect)
                     
                     image.draw(in: CGRect(origin: origin, size: drawnSize))
                     
@@ -75,22 +86,17 @@ class PDFGenerator {
             // --- Table of Contents Text Page Generation ---
             if let chapterList = chapters, !chapterList.isEmpty, images.count > 0 {
                 hasValidChapters = true
-                for chapter in chapterList {
-                    let actualIndex = mangaMode ? (images.count - 1 - chapter.pageIndex) : chapter.pageIndex
-                    let safeIndex = max(0, min(actualIndex, images.count - 1))
-                    let displayPageNum = safeIndex + 1
-                    tocText += "\(chapter.title)........ Page \(displayPageNum)\n"
-                }
                 
-                context.beginPage()
+                let tocPageRect = CGRect(origin: .zero, size: fallbackTargetSize)
+                context.beginPage(withBounds: tocPageRect)
                 
                 // Draw physical ToC text
                 UIColor.white.setFill()
-                context.fill(context.pdfContextBounds)
+                context.fill(tocPageRect)
                 
                 let paragraphStyle = NSMutableParagraphStyle()
                 paragraphStyle.alignment = .left
-                paragraphStyle.lineSpacing = 10
+                paragraphStyle.lineSpacing = 16
                 
                 let attributes: [NSAttributedString.Key: Any] = [
                     .font: UIFont.systemFont(ofSize: 24, weight: .medium),
@@ -98,16 +104,40 @@ class PDFGenerator {
                     .paragraphStyle: paragraphStyle
                 ]
                 
-                let attributedText = NSAttributedString(string: tocText, attributes: attributes)
-                let textRect = CGRect(x: 40, y: 60, width: targetSize.width - 80, height: targetSize.height - 120)
+                let titleAttributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 40, weight: .bold),
+                    .foregroundColor: UIColor.black,
+                    .paragraphStyle: paragraphStyle
+                ]
                 
-                if let firstLineBreak = tocText.firstIndex(of: "\n") {
-                    let titleEndIndex = tocText.distance(from: tocText.startIndex, to: firstLineBreak)
-                    let mutableAttr = NSMutableAttributedString(attributedString: attributedText)
-                    mutableAttr.addAttributes([.font: UIFont.systemFont(ofSize: 32, weight: .bold)], range: NSRange(location: 0, length: titleEndIndex))
-                    mutableAttr.draw(in: textRect)
-                } else {
-                    attributedText.draw(in: textRect)
+                var currentY: CGFloat = 60
+                let marginX: CGFloat = 60
+                let textWidth = fallbackTargetSize.width - (marginX * 2)
+                
+                // Draw Header
+                let titleString = NSAttributedString(string: "Table of Contents\n\n", attributes: titleAttributes)
+                let titleRect = CGRect(x: marginX, y: currentY, width: textWidth, height: 100)
+                titleString.draw(in: titleRect)
+                currentY += 100
+                
+                // Draw Entries & Register Links
+                for chapter in chapterList {
+                    let actualIndex = mangaMode ? (images.count - 1 - chapter.pageIndex) : chapter.pageIndex
+                    let safeIndex = max(0, min(actualIndex, images.count - 1))
+                    let displayPageNum = safeIndex + 1
+                    
+                    let lineText = "\(chapter.title)........ Page \(displayPageNum)"
+                    let lineAttr = NSAttributedString(string: lineText, attributes: attributes)
+                    
+                    // Measure line height roughly
+                    let boundingBox = lineAttr.boundingRect(with: CGSize(width: textWidth, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, context: nil)
+                    let lineRect = CGRect(x: marginX, y: currentY, width: textWidth, height: boundingBox.height)
+                    
+                    lineAttr.draw(in: lineRect)
+                    
+                    // Register interactive bounding box
+                    tocLinks.append((rect: lineRect, targetPage: displayPageNum))
+                    currentY += boundingBox.height + paragraphStyle.lineSpacing
                 }
             }
         }
@@ -135,6 +165,23 @@ class PDFGenerator {
                 tocOutline.label = "Table of Contents"
                 tocOutline.destination = PDFDestination(page: tocPage, at: CGPoint(x: 0, y: tocPage.bounds(for: .mediaBox).height))
                 outlineRoot.insertChild(tocOutline, at: outlineRoot.numberOfChildren)
+                
+                // 🔗 Inject Tap Link Annotations into the ToC Page
+                for link in tocLinks {
+                    // PDF coordinates are flipped (Origin at bottom-left)
+                    let pdfY = tocPage.bounds(for: .mediaBox).height - link.rect.maxY
+                    let annotationRect = CGRect(x: link.rect.minX, y: pdfY, width: link.rect.width, height: link.rect.height)
+                    
+                    // Create an invisible hyperlink annotation
+                    let linkAnnotation = PDFAnnotation(bounds: annotationRect, forType: .link, withProperties: nil)
+                    
+                    // Point annotation to target page
+                    if let targetPDFPage = pdfDocument.page(at: link.targetPage - 1) {
+                        let destination = PDFDestination(page: targetPDFPage, at: CGPoint(x: 0, y: targetPDFPage.bounds(for: .mediaBox).height))
+                        linkAnnotation.action = PDFActionGoTo(destination: destination)
+                        tocPage.addAnnotation(linkAnnotation)
+                    }
+                }
             }
             
             pdfDocument.outlineRoot = outlineRoot

@@ -220,6 +220,73 @@ enum KindleDeviceType: String, CaseIterable, Codable, Hashable {
     }
 }
 
+// ✅ NEW: Target E-Ink Device Profiles for Downsampling
+enum TargetDeviceProfile: String, CaseIterable, Codable, Identifiable {
+    // Original Size (No Scaling)
+    case original = "Original Size (No Optimization)"
+    
+    // Amazon Kindle (Sorted by Release Year, Descending)
+    case scribeColorsoft = "Kindle Scribe Colorsoft (2024)"
+    case paperwhite2024 = "Kindle Paperwhite (2024)"
+    case scribe = "Kindle Scribe (2022)"
+    case paperwhite11 = "Kindle Paperwhite 11th Gen (2021)"
+    case oasis = "Kindle Oasis (2019)"
+    case kindleBasic = "Kindle Basic (2022)"
+
+    // Kobo
+    case koboLibraColour = "Kobo Libra Colour (2024)"
+    case koboClaraColour = "Kobo Clara Colour (2024)"
+    case koboElipsa2E = "Kobo Elipsa 2E (2023)"
+    case koboSage = "Kobo Sage (2021)"
+    case koboLibra2 = "Kobo Libra 2 (2021)"
+    
+    // Onyx Boox
+    case booxTabUltraCPro = "Boox Tab Ultra C Pro (2023)"
+    case booxNoteAir3C = "Boox Note Air3 C (2023)"
+    case booxPage = "Boox Page (2023)"
+    case booxPalma = "Boox Palma (2023)"
+    
+    var id: String { rawValue }
+    
+    var brand: String {
+        switch self {
+        case .original: return "General"
+        case .scribeColorsoft, .paperwhite2024, .scribe, .paperwhite11, .oasis, .kindleBasic: return "Amazon Kindle"
+        case .koboLibraColour, .koboClaraColour, .koboElipsa2E, .koboSage, .koboLibra2: return "Rakuten Kobo"
+        case .booxTabUltraCPro, .booxNoteAir3C, .booxPage, .booxPalma: return "Onyx Boox"
+        }
+    }
+    
+    var resolution: CGSize? {
+        // We define the max resolution constraints for these screens.
+        // The EInkOptimizer will aspect-fit into these bounds.
+        switch self {
+        case .original: return nil
+            
+        // Kindle
+        case .scribeColorsoft: return CGSize(width: 1980, height: 2640)
+        case .paperwhite2024: return CGSize(width: 1264, height: 1680)
+        case .scribe: return CGSize(width: 1860, height: 2480)
+        case .paperwhite11: return CGSize(width: 1236, height: 1648)
+        case .oasis: return CGSize(width: 1264, height: 1680)
+        case .kindleBasic: return CGSize(width: 1080, height: 1440)
+            
+        // Kobo
+        case .koboLibraColour: return CGSize(width: 1264, height: 1680)
+        case .koboClaraColour: return CGSize(width: 1072, height: 1448)
+        case .koboElipsa2E: return CGSize(width: 1404, height: 1872)
+        case .koboSage: return CGSize(width: 1440, height: 1920)
+        case .koboLibra2: return CGSize(width: 1264, height: 1680)
+            
+        // Boox
+        case .booxTabUltraCPro: return CGSize(width: 1860, height: 2480)
+        case .booxNoteAir3C: return CGSize(width: 1860, height: 2480)
+        case .booxPage: return CGSize(width: 1264, height: 1680)
+        case .booxPalma: return CGSize(width: 824, height: 1648)
+        }
+    }
+}
+
 // MARK: - Settings Models
 
 // ✅ NEW: File Split Modes
@@ -283,10 +350,11 @@ struct ConversionSettings: Codable, Equatable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
     var optimizeForDevice: Bool = true
-    var targetDevice: KindleDeviceType = .scribeColorsoft
+    var targetDeviceProfile: TargetDeviceProfile = .original // ✅ NEW: E-Ink Target
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
     var splitWebtoon: Bool = false // ✅ Added for Smart Slicing
+    var splitSpreads: Bool = false // ✅ NEW: Landscape Double-Page Split for E-Ink
     var trimMargins: Bool = false
     var splitMode: FileSizeSplitMode = .none
     var enableBackgroundQueue: Bool = true
@@ -332,7 +400,7 @@ struct ConversionSettings: Codable, Equatable {
     // Custom Codable implementation to handle migration
                             
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitWebtoon, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, showEditorDebug
+        case outputFormat, compressionQuality, optimizeForDevice, targetDeviceProfile, mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, showEditorDebug
         case outputPipeline   // New canonical export mode
         case isGuidedView     // Legacy — read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
@@ -345,10 +413,11 @@ struct ConversionSettings: Codable, Equatable {
         outputFormat = try container.decode(OutputFormat.self, forKey: .outputFormat)
         compressionQuality = try container.decode(CompressionPreset.self, forKey: .compressionQuality)
         optimizeForDevice = try container.decode(Bool.self, forKey: .optimizeForDevice)
-        targetDevice = try container.decode(KindleDeviceType.self, forKey: .targetDevice)
+        targetDeviceProfile = try container.decodeIfPresent(TargetDeviceProfile.self, forKey: .targetDeviceProfile) ?? .original
         mangaMode = try container.decode(Bool.self, forKey: .mangaMode)
         enablePanelSplit = try container.decode(Bool.self, forKey: .enablePanelSplit)
         splitWebtoon = try container.decodeIfPresent(Bool.self, forKey: .splitWebtoon) ?? false
+        splitSpreads = try container.decodeIfPresent(Bool.self, forKey: .splitSpreads) ?? false
         trimMargins = try container.decodeIfPresent(Bool.self, forKey: .trimMargins) ?? false
         splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
         enableBackgroundQueue = try container.decodeIfPresent(Bool.self, forKey: .enableBackgroundQueue) ?? true
@@ -385,10 +454,11 @@ struct ConversionSettings: Codable, Equatable {
         try container.encode(outputFormat, forKey: .outputFormat)
         try container.encode(compressionQuality, forKey: .compressionQuality)
         try container.encode(optimizeForDevice, forKey: .optimizeForDevice)
-        try container.encode(targetDevice, forKey: .targetDevice)
+        try container.encode(targetDeviceProfile, forKey: .targetDeviceProfile)
         try container.encode(mangaMode, forKey: .mangaMode)
         try container.encode(enablePanelSplit, forKey: .enablePanelSplit)
         try container.encode(splitWebtoon, forKey: .splitWebtoon)
+        try container.encode(splitSpreads, forKey: .splitSpreads)
         try container.encode(trimMargins, forKey: .trimMargins)
         try container.encode(splitMode, forKey: .splitMode)
         try container.encode(enableBackgroundQueue, forKey: .enableBackgroundQueue)

@@ -133,24 +133,31 @@ struct ContentView: View {
             .tabItem { Label("Library", systemImage: "books.vertical") }
             .tag(0)
             
-            // Tab 2: Search (New System Role)
+            // Tab 2: Template Vault (New AI Planners & Journals)
+            NavigationStack {
+                TemplateLibraryView()
+            }
+            .tabItem { Label("Templates", systemImage: "sparkles.rectangle.stack") }
+            .tag(2)
+            
+            // Tab 3: Search (New System Role)
             Text("Global Search")
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
                 .tag(3) // Search is typically 0 or specialized, putting securely at 3
             
-            // Tab 3: Work Area
+            // Tab 4: Work Area
             NavigationStack {
                 EditorDashboardView()
             }
             .tabItem { Label("Work Area", systemImage: "pencil.and.outline") }
-            .tag(1)
+            .tag(4)
             
-            // Tab 4: Settings
+            // Tab 5: Settings
             NavigationStack {
                 SettingsView()
             }
             .tabItem { Label("Settings", systemImage: "gear") }
-            .tag(2)
+            .tag(5)
         }
         // ✅ iOS 26 Enhancements
         .ios26_tabBarMinimizeBehavior(.onScrollDown)
@@ -176,6 +183,9 @@ struct ContentView: View {
                         Label("Library", systemImage: "books.vertical.fill")
                     }
                     NavigationLink(value: 1) {
+                        Label("Templates", systemImage: "sparkles.rectangle.stack")
+                    }
+                    NavigationLink(value: 2) {
                         Label("Work Area", systemImage: "pencil.and.outline")
                     }
                 }
@@ -225,6 +235,8 @@ struct ContentView: View {
                         }
                     }
                 } else if selectedTab == 1 {
+                    TemplateLibraryView()
+                } else if selectedTab == 2 {
                     EditorDashboardView()
                 }
             }

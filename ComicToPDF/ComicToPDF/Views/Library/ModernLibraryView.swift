@@ -69,6 +69,7 @@ struct ModernLibraryView: View {
     
     // ✅ NEW: Export State
     @State private var pdfToExport: ConvertedPDF?
+    @State private var pdfToDirectShare: ConvertedPDF? // ✅ Competitor Hardening: Native Share
     @State private var pdfToSearchMetadata: ConvertedPDF?
     
     // ✅ Layer 4: Manual Series Assignment (Single)
@@ -245,6 +246,9 @@ struct ModernLibraryView: View {
         }
         .sheet(item: $pdfToExport) { pdf in
             DualExportView(pdf: pdf)
+        }
+        .sheet(item: $pdfToDirectShare) { pdf in
+            ShareSheet(activityItems: [pdf.url])
         }
         .sheet(item: $pdfToSearchMetadata) { pdf in
             MetadataSearchSheet(pdf: pdf)
@@ -509,6 +513,11 @@ struct ModernLibraryView: View {
             pdfToExport = pdf
         } label: { Label("Export", systemImage: "square.and.arrow.up") }
         .tint(.green)
+        
+        Button {
+            pdfToDirectShare = pdf
+        } label: { Label("Send to App", systemImage: "paperplane") }
+        .tint(.blue)
     
         Button {
             pdfToSearchMetadata = pdf
@@ -550,6 +559,10 @@ struct ModernLibraryView: View {
         Button {
             pdfToExport = pdf
         } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
+        
+        Button {
+            pdfToDirectShare = pdf
+        } label: { Label("Send to Kindle / Share", systemImage: "paperplane") }
         
         Button {
             renameText = pdf.name
