@@ -47,7 +47,7 @@ class PDFGenerator {
                     
                     // Apply E-Ink Filtering and Scaling
                     let targetProfile = settings.targetDeviceProfile
-                    let applyEInkFilter = settings.optimizeForDevice
+                    let applyEInkFilter = settings.imageEnhancement.grayscale
                     let cropMargins = settings.trimMargins
                     let reduceMoire = settings.imageEnhancement.reduceMoire
                     let dither = settings.imageEnhancement.ditheringEnabled
