@@ -130,6 +130,7 @@ struct ModernLibraryView: View {
                 return lhs.name < rhs.name
             }
             
+            var coverID: UUID?
             if let matchingCollection = conversionManager.collections.first(where: { $0.name == seriesName }),
                let explicitID = matchingCollection.explicitCoverFileID,
                issues.contains(where: { $0.id == explicitID }) {

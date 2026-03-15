@@ -135,6 +135,7 @@ struct FileMergeView: View {
                         }
                     }
                 }
+                }
             }
             .navigationTitle("Merge Files")
             .toolbar {
