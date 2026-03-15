@@ -154,7 +154,6 @@ struct FileMergeView: View {
                         .disabled(mergeOrder.count < 2)
                     }
                 }
-                }
             }
             .overlay {
                 if isProcessing {
