@@ -22,13 +22,7 @@ struct FileMergeView: View {
     
     var body: some View {
         NavigationStack {
-            if isProcessing {
-                ImmersiveConversionOverlay(
-                    pdfName: outputName.isEmpty ? "Merged Collection" : outputName,
-                    customMessage: conversionManager.statusMessage ?? "Merging Files..."
-                )
-            } else {
-                List {
+            List {
                 // MARK: - Merge Order (Draggable)
                 Section {
                     if mergeOrder.isEmpty {
@@ -135,7 +129,6 @@ struct FileMergeView: View {
                         }
                     }
                 }
-                }
             }
             .navigationTitle("Merge Files")
             .toolbar {
@@ -160,6 +153,15 @@ struct FileMergeView: View {
                         .fontWeight(.bold)
                         .disabled(mergeOrder.count < 2)
                     }
+                }
+                }
+            }
+            .overlay {
+                if isProcessing {
+                    ImmersiveConversionOverlay(
+                        pdfName: outputName.isEmpty ? "Merged Collection" : outputName,
+                        customMessage: conversionManager.statusMessage ?? "Merging Files..."
+                    )
                 }
             }
         }
