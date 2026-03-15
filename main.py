@@ -162,8 +162,10 @@ def main(page):
                         page.update()
                         def run_server():
                             global web_server
+                            global zc, zc_info
                             try:
-                                import sys, os
+                                import sys, os, socket
+                                from zeroconf import ServiceInfo, Zeroconf
                                 webapp_path = os.path.join(os.path.dirname(__file__), "webapp")
                                 if webapp_path not in sys.path: sys.path.append(webapp_path)
                                 from app import app as flask_app
@@ -171,7 +173,24 @@ def main(page):
                                 web_server = make_server('0.0.0.0', 5000, flask_app)
                                 state["server_running"] = True
                                 ip = get_local_ip()
-                                server_url_txt.value = f"SERVER ACTIVE AT:\nhttp://{ip}:5000"
+                                
+                                try:
+                                    zc = Zeroconf()
+                                    hostname = socket.gethostname() or "AndroidNode"
+                                    desc = {'alias': 'Inksync Android E-Ink'}
+                                    zc_info = ServiceInfo(
+                                        "_inksync._tcp.local.",
+                                        f"{hostname}._inksync._tcp.local.",
+                                        addresses=[socket.inet_aton(ip)],
+                                        port=5000,
+                                        properties=desc,
+                                        server=f"{hostname}.local.",
+                                    )
+                                    zc.register_service(zc_info)
+                                except Exception as zc_err:
+                                    print(f"Zeroconf error: {zc_err}")
+
+                                server_url_txt.value = f"SERVER ACTIVE AT:\nhttp://{ip}:5000\n(mDNS LocalSend READY)"
                                 btn_server.content.value = "STOP WI-FI SERVER"
                                 status_txt.value = "SERVER RUNNING"
                                 page.update()
@@ -185,6 +204,14 @@ def main(page):
                     else:
                         try:
                             web_server.shutdown()
+                            global zc, zc_info
+                            if 'zc' in globals() and zc is not None:
+                                try:
+                                    zc.unregister_service(zc_info)
+                                    zc.close()
+                                except: pass
+                                zc = None
+
                             state["server_running"] = False
                             server_url_txt.value = ""
                             btn_server.content.value = "START WI-FI SERVER"
@@ -382,7 +409,7 @@ def main(page):
                     convert_btn_text = "0 COMICS FOUND"
                 elif total_comics > 0:
                     verb = "IMPORT" if state["view_mode"] == "external" else "CONVERT"
-                    convert_btn_text = f"{verb} {total_comics} COMIC(S)"
+                    convert_btn_text = f"{verb} {total_comics} COMIC(S) [QUEUED]"
                 else:
                     verb = "IMPORT" if state["view_mode"] == "external" else "CONVERT"
                     convert_btn_text = f"SELECT COMICS TO {verb}"
@@ -480,7 +507,7 @@ def main(page):
                             settings_col,
                             ft.Container(bgcolor="black", height=2),
                             mode_toggle,
-                            ft.Text(start_path, color="black", size=14, weight="bold"),
+                            ft.Text(f"STAGED IN QUEUE: {len(state['selected_items'])} FILES (MULTI-FOLDER READY)\nDIR: {start_path}", color="black", size=14, weight="w900"),
                             ft.Container(content=file_list, height=400),
                             
                             ft.Container(bgcolor="black", height=4),

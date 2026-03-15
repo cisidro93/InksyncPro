@@ -162,6 +162,32 @@ def upload_file():
     
     return jsonify({'error': 'Invalid file type'}), 400
 
+@app.route('/upload/<file_id>', methods=['POST'])
+def localsend_upload(file_id):
+    """
+    LocalSend chunked endpoint. Streams the file directly to disk.
+    Expected Headers: X-File-Name (the original file name)
+    """
+    file_name = request.headers.get("X-File-Name", f"{file_id}.pdf")
+    
+    # Optional security checks could be placed here
+    
+    output_path = os.path.join(app.config['OUTPUT_FOLDER'], file_name)
+    
+    try:
+        # Stream directly to disk to bypass RAM limits on Android
+        with open(output_path, "wb") as f:
+            chunk_size = 4096 * 1024 # 4MB chunks
+            while True:
+                chunk = request.stream.read(chunk_size)
+                if len(chunk) == 0:
+                    break
+                f.write(chunk)
+                
+        return jsonify({'message': 'Success', 'file_id': file_id}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/status/<task_id>')
 def get_status(task_id):
     task = tasks.get(task_id)
