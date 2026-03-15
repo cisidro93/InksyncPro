@@ -133,12 +133,7 @@ struct ContentView: View {
             .tabItem { Label("Library", systemImage: "books.vertical") }
             .tag(0)
             
-            // Tab 2: Template Vault (New AI Planners & Journals)
-            NavigationStack {
-                TemplateLibraryView()
-            }
-            .tabItem { Label("Templates", systemImage: "sparkles.rectangle.stack") }
-            .tag(2)
+            // Tab 2: Removed Template Vault per request
             
             // Tab 3: Search (New System Role)
             Text("Global Search")
@@ -182,9 +177,7 @@ struct ContentView: View {
                     NavigationLink(value: 0) {
                         Label("Library", systemImage: "books.vertical.fill")
                     }
-                    NavigationLink(value: 1) {
-                        Label("Templates", systemImage: "sparkles.rectangle.stack")
-                    }
+                    // Templates removed per request
                     NavigationLink(value: 2) {
                         Label("Work Area", systemImage: "pencil.and.outline")
                     }
@@ -235,7 +228,9 @@ struct ContentView: View {
                         }
                     }
                 } else if selectedTab == 1 {
-                    TemplateLibraryView()
+                    // Templates View Removed. Fallback to EmptyView if state was saved.
+                    Text("Templates Feature Temporarily Removed")
+                        .foregroundColor(.secondary)
                 } else if selectedTab == 2 {
                     EditorDashboardView()
                 }
