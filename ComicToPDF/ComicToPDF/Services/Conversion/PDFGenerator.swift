@@ -90,7 +90,15 @@ class PDFGenerator {
                     UIColor.white.setFill()
                     context.fill(pageRect)
                     
-                    optimizedImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                    // ✅ Fix (KCC Optimization): 
+                    // UIGraphicsPDFRenderer defaults to JPEG wrappers for UIImages which bloats 
+                    // B&W manga from 200MB to 800MB+. We forcefully coerce the image to PNG Data first.
+                    if let pngData = optimizedImage.pngData(), let pngImage = UIImage(data: pngData) {
+                        pngImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                    } else {
+                        // Fallback
+                        optimizedImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                    }
                     
                     // Progress
                     current += 1
