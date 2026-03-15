@@ -1405,8 +1405,12 @@ class ConversionManager: ObservableObject {
             mergeSettings.mangaMode = mangaMode
             try await Task.detached { try await merger.mergeEPUBs(sourceURLs: sourceURLs, outputURL: outputURL, settings: mergeSettings) }.value
             let fileSize = (try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-            let newPDF = ConvertedPDF(name: outputURL.lastPathComponent, url: outputURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: safeName))
-            // convertedPDFs.append(newPDF) // Rely on scanLibrary to avoid duplicates
+            
+            // ✅ FIX: Sum original page counts to prevent scanLibrary() memory freezing lookup
+            let totalPages = pdfs.reduce(0) { $0 + $1.pageCount }
+            
+            let newPDF = ConvertedPDF(name: outputURL.lastPathComponent, url: outputURL, pageCount: totalPages, fileSize: fileSize, metadata: PDFMetadata(title: safeName))
+            await MainActor.run { self.convertedPDFs.append(newPDF) } // ✅ FIX: Append directly to skip expensive scan
             if let cover = inheritedCover { thumbnailCache.setObject(cover, forKey: outputURL.path as NSString); objectWillChange.send() }
             else { Task { await self.generateCoverThumbnail(for: newPDF) } }
             isConverting = false; statusMessage = "✅ Merge Complete!"; scanLibrary()
@@ -1774,6 +1778,11 @@ class ConversionManager: ObservableObject {
                             try fileManager.removeItem(at: tempDir)
                         }.value
                     }
+                    
+                    // ✅ Pre-register the file with its known page count (batch.count)
+                    let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                    let outputPDF = ConvertedPDF(name: outputFilename, url: finalOutputURL, pageCount: batch.count, fileSize: finalFileSize, metadata: PDFMetadata(title: outputFilename))
+                    await MainActor.run { self.convertedPDFs.append(outputPDF) }
                 }
                 
                 await MainActor.run {
@@ -1881,6 +1890,12 @@ class ConversionManager: ObservableObject {
                 }
                 
                 try await merger.mergeEPUBs(sourceURLs: batch, outputURL: finalOutputURL, settings: jobSettings, overrideCoverData: overrideCover)
+                
+                // ✅ Pre-register newly generated EPUB with known page count from detached calculation
+                let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                let totalPages = await Task.detached(priority: .background) { return ConversionManager.getPageCountStatic(from: finalOutputURL) }.value
+                let outputPDF = ConvertedPDF(name: outputFilename, url: finalOutputURL, pageCount: totalPages, fileSize: finalFileSize, metadata: PDFMetadata(title: outputFilename))
+                await MainActor.run { self.convertedPDFs.append(outputPDF) }
             }
 
             await MainActor.run { self.statusMessage = "Cleaning up..." }

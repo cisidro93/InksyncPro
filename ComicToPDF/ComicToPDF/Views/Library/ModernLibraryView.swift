@@ -130,20 +130,12 @@ struct ModernLibraryView: View {
                 return lhs.name < rhs.name
             }
             
-            var coverID: UUID? = sortedIssues.first?.id
-            
             if let matchingCollection = conversionManager.collections.first(where: { $0.name == seriesName }),
                let explicitID = matchingCollection.explicitCoverFileID,
                issues.contains(where: { $0.id == explicitID }) {
-                let candidateURL = docs.appendingPathComponent("cover_\(explicitID.uuidString).jpg")
-                if FileManager.default.fileExists(atPath: candidateURL.path) {
-                    coverID = explicitID
-                }
+                coverID = explicitID
             } else {
-                coverID = sortedIssues.first(where: {
-                    let url = docs.appendingPathComponent("cover_\($0.id.uuidString).jpg")
-                    return FileManager.default.fileExists(atPath: url.path)
-                })?.id ?? sortedIssues.first?.id
+                coverID = sortedIssues.first?.id
             }
             
             let group = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: coverID, count: sortedIssues.count, issues: sortedIssues)
@@ -1172,29 +1164,29 @@ struct ModernGridFileCell: View {
                     .multilineTextAlignment(.leading)
                     .frame(height: 38, alignment: .topLeading) // Fixed height to align rows
                 
-                HStack(spacing: 6) {
-                    // Content Type Badge
-                    HStack(spacing: 3) {
-                        Image(systemName: pdf.contentType.icon).font(.system(size: 8))
-                        Text(pdf.contentType.rawValue.uppercased()).font(.system(size: 10, weight: .bold))
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(pdf.contentType.badgeColor.opacity(0.2))
-                    .foregroundColor(pdf.contentType.badgeColor)
-                    .cornerRadius(4)
-                    
-                    Spacer()
-                    
-                    // ✅ NEW: File Extension Badge
-                    if !pdf.fileExtensionString.isEmpty {
-                        Text(pdf.fileExtensionString)
-                            .font(.system(size: 9, weight: .bold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.gray.opacity(0.3))
-                            .foregroundColor(.white)
-                            .cornerRadius(4)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        // Content Type Badge
+                        HStack(spacing: 3) {
+                            Image(systemName: pdf.contentType.icon).font(.system(size: 8))
+                            Text(pdf.contentType.rawValue.uppercased()).font(.system(size: 10, weight: .bold))
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(pdf.contentType.badgeColor.opacity(0.2))
+                        .foregroundColor(pdf.contentType.badgeColor)
+                        .cornerRadius(4)
+                        
+                        // ✅ NEW: File Extension Badge
+                        if !pdf.fileExtensionString.isEmpty {
+                            Text(pdf.fileExtensionString)
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.gray.opacity(0.3))
+                                .foregroundColor(.white)
+                                .cornerRadius(4)
+                        }
                     }
                     
                     Text(pdf.formattedSize)

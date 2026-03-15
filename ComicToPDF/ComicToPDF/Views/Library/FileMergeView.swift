@@ -6,6 +6,7 @@ struct FileMergeView: View {
     @State private var mergeOrder: [ConvertedPDF] = []
     @State private var outputName: String = ""
     @State private var mangaMode: Bool = false
+    @State private var isProcessing = false // ✅ Added processing state
     
     private var availableFiles: [ConvertedPDF] {
         let mergeIDs = Set(mergeOrder.map { $0.id })
@@ -21,7 +22,13 @@ struct FileMergeView: View {
     
     var body: some View {
         NavigationStack {
-            List {
+            if isProcessing {
+                ImmersiveConversionOverlay(
+                    pdfName: outputName.isEmpty ? "Merged Collection" : outputName,
+                    customMessage: conversionManager.statusMessage ?? "Merging Files..."
+                )
+            } else {
+                List {
                 // MARK: - Merge Order (Draggable)
                 Section {
                     if mergeOrder.isEmpty {
@@ -74,9 +81,30 @@ struct FileMergeView: View {
                 }
                 
                 // MARK: - Output Settings
-                Section(header: Text("Output")) {
+                Section(header: Text("Output Options")) {
                     TextField("Collection Name (e.g., My Omnibus)", text: $outputName)
                     Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
+                    
+                    Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
+                        ForEach(TargetDeviceProfile.allCases) { device in
+                            Text(device.rawValue).tag(device)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    Toggle("E-Ink High Contrast Filter", isOn: $conversionManager.conversionSettings.optimizeForDevice)
+                    
+                    Picker("Image Quality", selection: $conversionManager.conversionSettings.compressionQuality) {
+                        ForEach(CompressionPreset.allCases, id: \.self) { preset in
+                            Text(preset.rawValue).tag(preset)
+                        }
+                    }
+                    
+                    Picker("Smart File Splitting", selection: $conversionManager.conversionSettings.splitMode) {
+                        ForEach(FileSizeSplitMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
                 }
                 
                 // MARK: - Available Files
@@ -111,18 +139,26 @@ struct FileMergeView: View {
             .navigationTitle("Merge Files")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    if !isProcessing {
+                        Button("Cancel") { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Merge") {
-                        let name = outputName.trimmingCharacters(in: .whitespaces).isEmpty ? "Merged Collection" : outputName
-                        Task {
-                            await conversionManager.mergePDFs(mergeOrder, outputName: name, mangaMode: mangaMode)
-                            dismiss()
+                    if !isProcessing {
+                        Button("Merge") {
+                            let name = outputName.trimmingCharacters(in: .whitespaces).isEmpty ? "Merged Collection" : outputName
+                            isProcessing = true
+                            Task {
+                                await conversionManager.mergePDFs(mergeOrder, outputName: name, mangaMode: mangaMode)
+                                await MainActor.run {
+                                    isProcessing = false
+                                    dismiss()
+                                }
+                            }
                         }
+                        .fontWeight(.bold)
+                        .disabled(mergeOrder.count < 2)
                     }
-                    .fontWeight(.bold)
-                    .disabled(mergeOrder.count < 2)
                 }
             }
         }

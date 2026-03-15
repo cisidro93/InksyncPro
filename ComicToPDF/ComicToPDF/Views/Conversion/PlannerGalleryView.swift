@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PlannerGalleryView: View {
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
     @State private var promptText: String = ""
     @State private var isGenerating = false
     @State private var selectedDevice: TargetDeviceProfile = .original
@@ -129,7 +130,7 @@ struct PlannerGalleryView: View {
         isGenerating = true
         let safeName = promptText.prefix(20).replacingOccurrences(of: " ", with: "_").replacingOccurrences(of: "/", with: "-")
         let fileName = "AI_\(safeName).pdf"
-        generateMockPlanner(title: String(promptText.prefix(20)), fileName: fileName)
+        generateRealPlanner(prompt: promptText, fileName: fileName)
     }
     
     private func generatePrebuilt(name: String) {
@@ -137,26 +138,35 @@ struct PlannerGalleryView: View {
         isGenerating = true
         let safeName = name.replacingOccurrences(of: " ", with: "_").replacingOccurrences(of: "/", with: "-")
         let fileName = "\(safeName).pdf"
-        generateMockPlanner(title: name, fileName: fileName)
+        
+        // Define system prompt based on template selected
+        let specializedPrompt = "Generate a strictly formatted 2-page \(name) template."
+        generateRealPlanner(prompt: specializedPrompt, fileName: fileName)
     }
     
-    private func generateMockPlanner(title: String, fileName: String) {
+    private func generateRealPlanner(prompt: String, fileName: String) {
+        // Capture environment variable values before entering detached task
+        let settings = conversionManager.conversionSettings
+        let device = selectedDevice
+        
         Task.detached {
             do {
-                var project = PlannerProject(title: title)
-                project.targetDeviceProfile = await MainActor.run { self.selectedDevice }
-                project.pages.append(PlannerPage()) // 1 blank page placeholder
+                // 1. Generate JSON AI Project architecture
+                var project = try await PlannerAIGenerator.generateProject(from: prompt, settings: settings)
                 
+                // 2. Assign Target Device constraints
+                project.targetDeviceProfile = await MainActor.run { device }
+                
+                // 3. Render raw blocks to hyperlinked PDF graphics context
                 let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
                 let outputURL = docsDir.appendingPathComponent(fileName)
-                
                 try PlannerPDFGenerator.generate(from: project, to: outputURL)
                 
+                // 4. Update UI state and dispatch reload
                 await MainActor.run {
                     self.isGenerating = false
                     Logger.shared.log("Successfully Exported to \(outputURL.path)", category: "Export", type: .success)
                     
-                    // ✅ Add to Queue Manager so it displays in the Go Mode library UI
                     let stem = outputURL.deletingPathExtension().lastPathComponent
                     if !ConversionQueueManager.shared.completedGoSourceStems.contains(stem) {
                         ConversionQueueManager.shared.completedGoSourceStems.append(stem)
