@@ -50,9 +50,8 @@ class WiFiServer: ObservableObject {
             
             let listener = try NWListener(using: params, on: 8080)
             
-            // ✅ Fix: Disable Bonjour (Service Advertising) temporarily to avoid -65555 NoAuth errors.
-            // Users connect via direct IP anyway.
-            // listener.service = NWListener.Service(name: "Inksync Pro", type: "_http._tcp")
+            // ✅ Hybrid P2P: Advertise the service so Inksync Boox/Mobile clients can discover it via mDNS
+            listener.service = NWListener.Service(name: UIDevice.current.name, type: "_inksync._tcp")
             
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self = self else { return }
@@ -426,6 +425,35 @@ class WiFiServer: ObservableObject {
         if path == "/" {
             let html = generateHTML()
             sendResponse(connection, 200, html, contentType: "text/html")
+        } else if path == "/queue.zip" {
+            // ✅ NEW: Hybrid P2P On-The-Fly ZIP Streaming
+            let stagedFiles = TransferQueueManager.shared.stagedFiles
+            
+            guard !stagedFiles.isEmpty else {
+                sendResponse(connection, 404, "No staged files in the Transfer Queue.")
+                return
+            }
+            
+            do {
+                // Determine a safe intermediate temp file for the zip
+                let tempZipURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip")
+                defer { try? FileManager.default.removeItem(at: tempZipURL) }
+                
+                guard let archive = Archive(url: tempZipURL, accessMode: .create) else {
+                    sendResponse(connection, 500, "Failed to create archive stream.")
+                    return
+                }
+                
+                for file in stagedFiles {
+                    try archive.addEntry(with: file.name, relativeTo: file.url.deletingLastPathComponent())
+                }
+                
+                let zipData = try Data(contentsOf: tempZipURL, options: .mappedIfSafe)
+                sendResponse(connection, 200, data: zipData, contentType: "application/zip", filename: "Inksync_Queue.zip")
+            } catch {
+                Logger.shared.log("WiFi Transfer ZIP Error: \(error.localizedDescription)", category: "Network", type: .error)
+                sendResponse(connection, 500, "Internal Server Error during ZIP creation.")
+            }
         } else {
             // URL Decode the path (critical for filenames with spaces!)
             // e.g. /my%20comic.epub -> my comic.epub
@@ -545,6 +573,9 @@ class WiFiServer: ObservableObject {
         
         let fileListHTML = fileLinks.isEmpty ? "<li style='justify-content:center; color:#999;'>No files found in Library</li>" : fileLinks.joined(separator: "\n")
         
+        let stagedCount = TransferQueueManager.shared.stagedFiles.count
+        let queueButtonHTML = stagedCount > 0 ? "<div style='margin-bottom: 20px;'><a href='/queue.zip' class='download-btn' style='display:block; text-align:center; padding: 12px; background: #34c759;'>Download \(stagedCount) Staged Files as ZIP</a></div>" : ""
+        
         // HTML Response
         return """
         <html>
@@ -578,6 +609,7 @@ class WiFiServer: ObservableObject {
             <div class="card">
                 <h1>Inksync Pro</h1>
                 <p>Transfer comics directly to and from your device.</p>
+                \(queueButtonHTML)
                 
                 <div class="upload-area" onclick="document.getElementById('fileInput').click()">
                     <h3>Tap to Upload</h3>

@@ -228,12 +228,7 @@ struct ModernLibraryView: View {
         .sheet(item: $activeSheet) { item in
             switch item {
             case .importer, .cloud:
-                DocumentPicker(onDocumentsPicked: { urls in
-                    Task {
-                        await conversionManager.importFilesAsSeries(urls: urls)
-                        activeSheet = nil
-                    }
-                })
+                ImportQueueView()
             case .wifi: WiFiView()
             case .merge: FileMergeView()
             }
