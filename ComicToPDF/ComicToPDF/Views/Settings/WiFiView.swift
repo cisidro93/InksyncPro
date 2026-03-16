@@ -5,6 +5,9 @@ import CoreImage.CIFilterBuiltins
 
 struct WiFiView: View {
     @StateObject private var server = WiFiServer()
+    @StateObject private var peerManager = PeerManager.shared
+    @StateObject private var queueManager = TransferQueueManager.shared
+    @StateObject private var localSendClient = LocalSendClient.shared
     @Environment(\.dismiss) var dismiss
     @State private var qrCodeImage: UIImage?
     
@@ -46,8 +49,57 @@ struct WiFiView: View {
                     .frame(maxWidth: .infinity)
                 }
                 
+                if !queueManager.stagedFiles.isEmpty {
+                    Section(header: Text("Staged Files (\(queueManager.formattedTotalSize()))")) {
+                        ForEach(queueManager.stagedFiles) { file in
+                            HStack {
+                                Image(systemName: "doc.text")
+                                    .foregroundColor(.blue)
+                                Text(file.name)
+                                    .font(.subheadline)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                    
+                    if !peerManager.discoveredPeers.isEmpty {
+                        Section(header: Text("Direct Send to Device (High Speed)")) {
+                            ForEach(peerManager.discoveredPeers, id: \.ipAddress) { peer in
+                                Button(action: {
+                                    Task {
+                                        do {
+                                            try await localSendClient.transferFiles(queueManager.stagedFiles, to: peer)
+                                        } catch {
+                                            Logger.shared.log("Transfer failed: \(error)", category: "Network", type: .error)
+                                        }
+                                    }
+                                }) {
+                                    HStack {
+                                        VStack(alignment: .leading) {
+                                            Text(peer.hostName)
+                                                .font(.headline)
+                                                .foregroundColor(.primary)
+                                            Text("IP: \(peer.ipAddress)")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        if localSendClient.isTransferring {
+                                            ProgressView()
+                                        } else {
+                                            Image(systemName: "paperplane.fill")
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                }
+                                .disabled(localSendClient.isTransferring)
+                            }
+                        }
+                    }
+                }
+                
                 if server.isRunning {
-                    Section(header: Text("Connection Details")) {
+                    Section(header: Text("Browser Fallback Options (Scan or Type)")) {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Type this URL into your browser:")
                                 .font(.subheadline)
@@ -113,6 +165,24 @@ struct WiFiView: View {
                                 .progressViewStyle(LinearProgressViewStyle(tint: .orange))
                             
                             Text("\(Int(server.uploadProgress * 100))%")
+                                .font(.caption.bold())
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                
+                if localSendClient.isTransferring {
+                    Section(header: Text("Direct Transfer Progress")) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Sending: \(localSendClient.currentFileName)")
+                                .font(.caption)
+                                .lineLimit(1)
+                            
+                            ProgressView(value: localSendClient.progress)
+                                .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                            
+                            Text("\(Int(localSendClient.progress * 100))%")
                                 .font(.caption.bold())
                                 .frame(maxWidth: .infinity, alignment: .trailing)
                         }

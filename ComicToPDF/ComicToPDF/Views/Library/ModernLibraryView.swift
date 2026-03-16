@@ -819,6 +819,20 @@ struct ModernLibraryView: View {
                 
                 Spacer()
                 
+                Button {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    for item in items {
+                        TransferQueueManager.shared.stageFile(item)
+                    }
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                    activeSheet = .wifi
+                } label: {
+                    VStack(spacing: 4) { Image(systemName: "wifi").font(.title3); Text("Transfer").font(.caption) }
+                }
+                .disabled(multiSelection.isEmpty)
+                
+                Spacer()
                 // ✅ Advanced Actions Menu 
                 Menu {
                     Button {

@@ -206,18 +206,13 @@ struct DualExportView: View {
     private func handleLocalExport() {
         isProcessing = true
         Task {
-            if let hqURL = await conversionManager.exportForLocalSideload(pdf) {
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.navigateToSync = true
-                }
-                Logger.shared.log("Exported HQ to: \(hqURL.lastPathComponent)", category: "Export", type: .success)
-            } else {
-                await MainActor.run {
-                    self.isProcessing = false
-                }
-                Logger.shared.log("Failed to export Local HQ file.", category: "Export", type: .error)
+            TransferQueueManager.shared.clearQueue()
+            TransferQueueManager.shared.stageFile(pdf)
+            await MainActor.run {
+                self.isProcessing = false
+                self.navigateToSync = true
             }
+            Logger.shared.log("Staged single file to queue for Local High-Quality Export", category: "Export", type: .success)
         }
     }
     
