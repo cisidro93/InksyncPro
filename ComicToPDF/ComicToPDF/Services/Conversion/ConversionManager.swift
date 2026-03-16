@@ -855,72 +855,54 @@ class ConversionManager: ObservableObject {
         await ImportMonitorManager.shared.completeImport()
         guard !importedPDFs.isEmpty else { return }
         
-        // --- Smart Auto-Grouping (String Similarity / Longest Common Prefix) ---
-        var dominantSeries = ""
-        var allSameSeries = false
+        // --- Smart Auto-Grouping (String Clustering) ---
+        var clusters: [String: [ConvertedPDF]] = [:]
         
-        if importedPDFs.count > 1 {
-            // Extract cleaned, alphanumeric prefixes from filenames, ignoring brackets and standard junk
-            let cleanNames: [String] = importedPDFs.compactMap { pdf in
-                let name = pdf.name as NSString
-                // Matches groups like "[Group]" or "(Digital)" and removes them
-                let regex = try? NSRegularExpression(pattern: "\\[.*?\\]|\\(.*?\\)", options: [])
-                let noBrackets = regex?.stringByReplacingMatches(in: name as String, options: [], range: NSRange(location: 0, length: name.length), withTemplate: "") ?? pdf.name
-                
-                // Strip trailing numbers, volume markers, and extensions
-                let withoutExt = (noBrackets as NSString).deletingPathExtension
-                if let range = withoutExt.range(of: "\\s*(v|vol|volume|c|ch|chapter|issue)?\\s*\\d+.*$", options: [.regularExpression, .caseInsensitive]) {
-                    return String(withoutExt[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
-                }
-                return withoutExt.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
-            }.filter { !$0.isEmpty }
+        for pdf in importedPDFs {
+            let name = pdf.name as NSString
+            // Matches groups like "[Group]" or "(Digital)" and removes them
+            let regex = try? NSRegularExpression(pattern: "\\[.*?\\]|\\(.*?\\)", options: [])
+            let noBrackets = regex?.stringByReplacingMatches(in: name as String, options: [], range: NSRange(location: 0, length: name.length), withTemplate: "") ?? pdf.name
             
-            if !cleanNames.isEmpty {
-                // Find the Longest Common Prefix (LCP) across the cleaned names
-                dominantSeries = cleanNames[0]
-                for name in cleanNames.dropFirst() {
-                    while !name.hasPrefix(dominantSeries) && !dominantSeries.isEmpty {
-                        dominantSeries = String(dominantSeries.dropLast())
-                    }
-                }
-                
-                dominantSeries = dominantSeries.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
-                
-                // If a meaningful common prefix exists (e.g. "Bleach") that is at least 3 chars long, auto-group them.
-                if dominantSeries.count >= 3 {
-                    allSameSeries = true
-                } else {
-                    dominantSeries = "" // Fallback to manual prompt if LCP fails
-                }
+            // Strip trailing numbers, volume markers, and extensions to find the pure series name
+            let withoutExt = (noBrackets as NSString).deletingPathExtension
+            var seriesName = withoutExt.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
+            
+            if let range = withoutExt.range(of: "\\s*(v|vol|volume|c|ch|chapter|issue)?\\s*\\d+.*$", options: [.regularExpression, .caseInsensitive]) {
+                seriesName = String(withoutExt[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
             }
-        } else if let single = importedPDFs.first {
-             dominantSeries = single.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? ""
+            
+            if seriesName.count < 3 {
+                // Too short to cluster reliably by name, fallback
+                seriesName = pdf.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? "Ungrouped"
+            }
+            
+            if seriesName.isEmpty { seriesName = "Ungrouped" }
+            
+            clusters[seriesName, default: []].append(pdf)
         }
         
         // Back to Main Actor for State Updates and Covers
         await MainActor.run {
-            if allSameSeries && importedPDFs.count > 1 {
-                // Unambiguous — all files agree on series. Add directly, skip Layer 3 prompt.
-                Task { await self.finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries) }
-                Logger.shared.log("Auto-grouped \(importedPDFs.count) files into series '\(dominantSeries)'", category: "Import")
-            } else if importedPDFs.count > 1 {
-                // --- Layer 3: Post-import grouping prompt ---
-                // Files disagree on series name or have none. Show the grouping sheet.
-                for pdf in importedPDFs {
-                    self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
-                    self.convertedPDFs.append(pdf)
+            for (series, clusterPDFs) in clusters {
+                if clusterPDFs.count > 1 && series != "Ungrouped" {
+                    // Auto-Group this specific cluster
+                    Task { await self.finalizeSeriesImport(pdfs: clusterPDFs, seriesName: series) }
+                    Logger.shared.log("Auto-grouped \(clusterPDFs.count) files into series '\(series)'", category: "Import")
+                } else {
+                    // Single file or un-clusterable — add without grouping
+                    for pdf in clusterPDFs {
+                        self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
+                        self.convertedPDFs.append(pdf)
+                    }
                 }
-                self.saveLibrary()
-                self.scanLibrary()
-                Task {
-                    for pdf in importedPDFs { await self.generateCoverThumbnail(for: pdf) }
-                    try? await Task.sleep(nanoseconds: 700_000_000)
-                    await MainActor.run { self.pendingSeriesGroup = PendingSeriesGroup(pdfs: importedPDFs, suggestedName: dominantSeries) }
-                }
-            } else {
-                // Single file — just add it normally
-                Task { await self.finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries) }
-                for pdf in importedPDFs { Task { await self.generateCoverThumbnail(for: pdf) } }
+            }
+            
+            self.saveLibrary()
+            self.scanLibrary()
+            
+            for pdf in importedPDFs {
+                Task { await self.generateCoverThumbnail(for: pdf) }
             }
         }
     }
