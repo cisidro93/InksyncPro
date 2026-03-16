@@ -102,6 +102,18 @@ def main(page):
         page.overlay.append(file_picker)
         page.file_picker = file_picker
 
+        # Android 13+ SD Card Access Handler
+        try:
+            from flet_permission_handler import PermissionHandler, Permission
+            ph = PermissionHandler()
+            page.overlay.append(ph)
+            def request_sd_access(e=None):
+                if ph:
+                    ph.request_permission(Permission.MANAGE_EXTERNAL_STORAGE)
+        except ImportError:
+            ph = None
+            def request_sd_access(e=None): pass
+
         def render_ui():
             try:
                 page.clean()
@@ -150,7 +162,14 @@ def main(page):
 
                 settings_col = ft.Column([
                     ft.Text("SETTINGS", size=18, weight="w900"),
-                    format_radios, sw_optimize, sw_manga
+                    format_radios, sw_optimize, sw_manga,
+                    ft.Container(
+                        content=ft.Text("GRANT ALL FILES ACCESS (SD CARD)", size=12, weight="w900", color="white", text_align="center"),
+                        on_click=request_sd_access,
+                        bgcolor="black",
+                        padding=8,
+                        visible=(ph is not None)
+                    )
                 ])
                 
                 # E-Ink Optimized View Mode Toggle
@@ -160,6 +179,8 @@ def main(page):
                     state["selected_items"].clear()
                     
                     if state["view_mode"] == "external":
+                        # Request generic file access for SD cards before opening picker
+                        request_sd_access()
                         # Trigger Native File Picker for Import Source
                         if hasattr(page, 'file_picker') and page.file_picker:
                             page.file_picker.get_directory_path(dialog_title="Select Comics Folder")

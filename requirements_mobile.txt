@@ -3,3 +3,4 @@ Pillow
 Flask
 zeroconf
 requests
+flet-permission-handler
