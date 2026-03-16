@@ -295,34 +295,36 @@ class ConversionManager: ObservableObject {
     // MARK: - Cover Image Management (Memory Optimization)
     
     func getCoverURL(for pdf: ConvertedPDF) -> URL? {
-        // Filename: cover_{UUID}.jpg
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return docDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
+        let fileManager = FileManager.default
+        guard let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        let coversDir = appSupportDir.appendingPathComponent("Covers", isDirectory: true)
+        
+        if !fileManager.fileExists(atPath: coversDir.path) {
+            try? fileManager.createDirectory(at: coversDir, withIntermediateDirectories: true)
+        }
+        
+        return coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
     }
     
     /// Migrates legacy Data-based covers to disk-based storage
     func migrateCoversToDisk() {
-
         var updated = false
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         
         for i in 0..<convertedPDFs.count {
             if let data = convertedPDFs[i].coverImageData {
-                let coverURL = docDir.appendingPathComponent("cover_\(convertedPDFs[i].id.uuidString).jpg")
-                
-                // Write to disk
-                try? data.write(to: coverURL)
+                if let coverURL = getCoverURL(for: convertedPDFs[i]) {
+                    // Write to disk in App Support
+                    try? data.write(to: coverURL)
+                }
                 
                 // Clear from memory
                 convertedPDFs[i].coverImageData = nil
                 updated = true
-
             }
         }
         
         if updated {
             saveLibrary()
-
         }
     }
     
@@ -361,10 +363,7 @@ class ConversionManager: ObservableObject {
     
     /// Save cover image to disk and update cache
     func saveCoverImage(_ data: Data, for pdf: ConvertedPDF) {
-        let coverFilename = "cover_\(pdf.id.uuidString).jpg"
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let coverURL = docDir.appendingPathComponent(coverFilename)
-        
+        guard let coverURL = getCoverURL(for: pdf) else { return }
         try? data.write(to: coverURL)
         
         // Update Cache
@@ -507,7 +506,10 @@ class ConversionManager: ObservableObject {
     func deletePDF(_ pdf: ConvertedPDF) {
         do {
             try FileManager.default.removeItem(at: pdf.url)
-            Logger.shared.log("Deleted File: \(pdf.name)", category: "Library")
+            if let coverURL = getCoverURL(for: pdf) {
+                try? FileManager.default.removeItem(at: coverURL)
+            }
+            Logger.shared.log("Deleted File and Cover: \(pdf.name)", category: "Library")
         } catch {
             Logger.shared.log("Failed to delete file: \(error)", category: "Library", type: .error)
         }
