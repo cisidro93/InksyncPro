@@ -2,3 +2,4 @@ flet
 Pillow
 Flask
 zeroconf
+requests

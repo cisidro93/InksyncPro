@@ -26,7 +26,8 @@ def main(page):
             "compress_enabled": False,
             "manga_mode": False,
             "server_running": False,
-            "view_mode": "external" # 'external' for Import, 'internal' for Convert
+            "view_mode": "external", # 'external' for Import, 'internal' for Convert
+            "discovered_peers": {} # name -> {"ip": ip, "port": port, "alias": name}
         }
         
         # Initialize internal storage directory
@@ -187,6 +188,29 @@ def main(page):
                                         server=f"{hostname}.local.",
                                     )
                                     zc.register_service(zc_info)
+                                    
+                                    class PeerListener:
+                                        def remove_service(self, z, type_, name):
+                                            if name in state.get("discovered_peers", {}):
+                                                del state["discovered_peers"][name]
+                                                try: render_ui()
+                                                except: pass
+                                                
+                                        def update_service(self, z, type_, name): pass
+                                        
+                                        def add_service(self, z, type_, name):
+                                            info = z.get_service_info(type_, name)
+                                            if info and hostname not in name:
+                                                peer_ip = socket.inet_ntoa(info.addresses[0])
+                                                alias = info.properties.get(b'alias', b'').decode('utf-8') if info.properties and b'alias' in info.properties else name.replace('._inksync._tcp.local.', '')
+                                                state.setdefault("discovered_peers", {})[name] = {"ip": peer_ip, "port": info.port, "alias": alias}
+                                                try: render_ui()
+                                                except: pass
+
+                                    from zeroconf import ServiceBrowser
+                                    global zc_browser
+                                    state["discovered_peers"] = {}
+                                    zc_browser = ServiceBrowser(zc, "_inksync._tcp.local.", PeerListener())
                                 except Exception as zc_err:
                                     print(f"Zeroconf error: {zc_err}")
 
@@ -204,13 +228,17 @@ def main(page):
                     else:
                         try:
                             web_server.shutdown()
-                            global zc, zc_info
+                            global zc, zc_info, zc_browser
                             if 'zc' in globals() and zc is not None:
                                 try:
+                                    if 'zc_browser' in globals() and zc_browser is not None:
+                                        zc_browser.cancel()
+                                        zc_browser = None
                                     zc.unregister_service(zc_info)
                                     zc.close()
                                 except: pass
                                 zc = None
+                                state["discovered_peers"] = {}
 
                             state["server_running"] = False
                             server_url_txt.value = ""
@@ -226,6 +254,75 @@ def main(page):
                 # Batch Converter Logic
                 progress_bar = ft.ProgressBar(width=300, visible=False, color="black", bgcolor="white")
                 status_txt = ft.Text("STANDING BY", color="black", weight="w900", size=18)
+                
+                # --- OUTGOING P2P SEND UI ---
+                peers_controls = []
+                if state["server_running"] and state.get("discovered_peers"):
+                    peers_controls.append(ft.Text("DISCOVERED DEVICES (TAP TO SEND QUEUE):", size=16, weight="w900"))
+                    for peer_name, peer_data in state["discovered_peers"].items():
+                        def send_to_peer(e, p_data=peer_data):
+                            if not state["selected_items"]:
+                                status_txt.value = "PLEASE STAGE FILES TO SEND FIRST."
+                                page.update()
+                                return
+                            
+                            status_txt.value = f"CONNECTING TO {p_data['alias'].upper()}..."
+                            progress_bar.visible = True
+                            page.update()
+                            
+                            def s_worker():
+                                try:
+                                    import requests, uuid
+                                    
+                                    files_to_send = []
+                                    for p in list(state["selected_items"]):
+                                        if os.path.isdir(p):
+                                            for root, _, files in os.walk(p):
+                                                for f in files:
+                                                    if f.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
+                                                        files_to_send.append(os.path.join(root, f))
+                                        elif os.path.isfile(p):
+                                            files_to_send.append(p)
+                                            
+                                    total_send = len(files_to_send)
+                                    if total_send == 0:
+                                        status_txt.value = "NO VALID FILES TO SEND."
+                                        progress_bar.visible = False
+                                        page.update()
+                                        return
+                                        
+                                    s_count = 0
+                                    for idx, s_path in enumerate(files_to_send):
+                                        s_name = os.path.basename(s_path)
+                                        status_txt.value = f"[{idx+1}/{total_send}] SENDING {s_name.upper()}..."
+                                        progress_bar.value = (idx+1)/total_send
+                                        page.update()
+                                        
+                                        upload_url = f"http://{p_data['ip']}:{p_data['port']}/upload/{uuid.uuid4().hex}"
+                                        headers = {'X-File-Name': s_name}
+                                        
+                                        with open(s_path, 'rb') as vf:
+                                            resp = requests.post(upload_url, data=vf, headers=headers)
+                                            if resp.status_code == 200:
+                                                s_count += 1
+                                                
+                                    status_txt.value = f"TRANSMISSION COMPLETE: {s_count}/{total_send} DELIVERED."
+                                    progress_bar.value = 1.0
+                                    page.update()
+                                    time.sleep(3)
+                                    status_txt.value = "STANDING BY"
+                                    progress_bar.visible = False
+                                    page.update()
+                                except Exception as err:
+                                    status_txt.value = f"TRANSFER ERROR: {str(err).upper()}"
+                                    page.update()
+                                    
+                            import threading
+                            threading.Thread(target=s_worker, daemon=True).start()
+                            
+                        peers_controls.append(eink_button(f"SEND TO {peer_data['alias'].upper()}", on_click=send_to_peer, expand=True, is_primary=True))
+                
+                peers_col = ft.Column(peers_controls) if peers_controls else ft.Container()
 
                 def run_convert(e):
                     if not state["selected_items"]: return
@@ -513,6 +610,7 @@ def main(page):
                             ft.Container(bgcolor="black", height=4),
                             ft.Row([btn_server, btn_convert]),
                             server_url_txt,
+                            peers_col,
                             progress_bar,
                             status_txt
                         ], spacing=10),
