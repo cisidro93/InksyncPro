@@ -433,6 +433,7 @@ def main(page):
                                 return
                                 
                             success_count = 0
+                            new_selected = set()
                             for idx, src in enumerate(files_to_process):
                                 src_filename = os.path.basename(src)
                                 status_txt.value = f"[{idx+1}/{total_files}] IMPORTING {src_filename.upper()}..."
@@ -445,6 +446,7 @@ def main(page):
                                 os.makedirs(target_dir, exist_ok=True)
                                 
                                 dst = os.path.join(target_dir, src_filename)
+                                new_selected.add(dst)
                                 try:
                                     if not os.path.exists(dst):
                                         file_size = os.path.getsize(src)
@@ -474,7 +476,10 @@ def main(page):
                             status_txt.value = f"IMPORT COMPLETE: {success_count}/{total_files} READY IN INTERNAL LIBRARY."
                             progress_bar.value = 1.0
                             
-                            state["selected_items"].clear()
+                            state["view_mode"] = "internal"
+                            state["current_path"] = comic_library_dir
+                            state["selected_items"] = new_selected
+                            
                             page.update()
                             time.sleep(2)
                             render_ui()
