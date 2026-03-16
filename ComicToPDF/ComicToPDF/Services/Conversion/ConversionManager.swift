@@ -1987,7 +1987,22 @@ class ConversionManager: ObservableObject {
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
-            guard let document = PDFDocument(url: url), let page = document.page(at: 0) else { return nil }
+            guard let document = PDFDocument(url: url) else { return nil }
+            
+            // Try up to the first 3 pages to find a portrait cover
+            for i in 0..<min(document.pageCount, 3) {
+                if let page = document.page(at: i) {
+                    let bounds = page.bounds(for: .mediaBox)
+                    // Skip if it's the first page and appears to be a 2-page spread
+                    if i == 0 && bounds.width > bounds.height && document.pageCount > 1 {
+                        continue
+                    }
+                    return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
+                }
+            }
+            
+            // Fallback to page 0 if no portrait pages were found
+            guard let page = document.page(at: 0) else { return nil }
             return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
         }
 
@@ -2031,6 +2046,9 @@ class ConversionManager: ObservableObject {
                     }
                 }
 
+                var firstSpreadImage: UIImage? = nil
+                var attempts = 0
+                
                 for entry in sortedEntries {
                     // Skip directories explicit check
                     if entry.type == .directory { continue }
@@ -2043,6 +2061,14 @@ class ConversionManager: ObservableObject {
                         do {
                             _ = try archive.extract(entry) { data.append($0) }
                             if let image = UIImage(data: data) {
+                                attempts += 1
+                                
+                                // Skip if it's the first page and appears to be a 2-page spread
+                                if attempts == 1 && image.size.width > image.size.height {
+                                    firstSpreadImage = image
+                                    continue
+                                }
+                                
                                 return image
                             }
                         } catch {
@@ -2050,6 +2076,8 @@ class ConversionManager: ObservableObject {
                         }
                     }
                 }
+                
+                return firstSpreadImage
             } catch {
 
             }

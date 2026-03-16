@@ -98,71 +98,76 @@ struct ModernLibraryView: View {
         }
     }
     
-    var libraryItems: [LibraryListItem] {
-        let allPDFs = sortPDFs(conversionManager.visiblePDFs)
-        var items: [(Int, LibraryListItem)] = []
-        var seriesDict: [String: [ConvertedPDF]] = [:]
-        var singles: [ConvertedPDF] = []
-        
-        // Track the first appearance index for sorting
-        var firstAppearanceIndex: [String: Int] = [:]
-        
-        for (index, pdf) in allPDFs.enumerated() {
-            let key = (pdf.metadata.series ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if key.isEmpty {
-                singles.append(pdf)
-                firstAppearanceIndex["single_\(pdf.id)"] = index
-            } else {
-                seriesDict[key, default: []].append(pdf)
-                if firstAppearanceIndex["series_\(key)"] == nil {
-                    firstAppearanceIndex["series_\(key)"] = index
+    @State private var cachedLibraryItems: [LibraryListItem] = []
+    
+    private func updateLibraryItemsCache() {
+        Task.detached(priority: .userInitiated) {
+            let sorted = await MainActor.run { self.sortPDFs(self.conversionManager.visiblePDFs) }
+            let search = await MainActor.run { self.searchText }
+            let collections = await MainActor.run { self.conversionManager.collections }
+            
+            var items: [(Int, LibraryListItem)] = []
+            var seriesDict: [String: [ConvertedPDF]] = [:]
+            var singles: [ConvertedPDF] = []
+            var firstAppearanceIndex: [String: Int] = [:]
+            
+            for (index, pdf) in sorted.enumerated() {
+                let key = (pdf.metadata.series ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if key.isEmpty {
+                    singles.append(pdf)
+                    firstAppearanceIndex["single_\(pdf.id)"] = index
+                } else {
+                    seriesDict[key, default: []].append(pdf)
+                    if firstAppearanceIndex["series_\(key)"] == nil {
+                        firstAppearanceIndex["series_\(key)"] = index
+                    }
                 }
-            }
-        }
-        
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        
-        for (seriesName, issues) in seriesDict {
-            let sortedIssues = issues.sorted { lhs, rhs in
-                if let i1 = lhs.metadata.issueNumber, let n1 = Int(i1),
-                   let i2 = rhs.metadata.issueNumber, let n2 = Int(i2) {
-                    return n1 < n2
-                }
-                return lhs.name < rhs.name
             }
             
-            var coverID: UUID?
-            if let matchingCollection = conversionManager.collections.first(where: { $0.name == seriesName }),
-               let explicitID = matchingCollection.explicitCoverFileID,
-               issues.contains(where: { $0.id == explicitID }) {
-                coverID = explicitID
-            } else {
-                coverID = sortedIssues.first?.id
+            for (seriesName, issues) in seriesDict {
+                let sortedIssues = issues.sorted { lhs, rhs in
+                    if let i1 = lhs.metadata.issueNumber, let n1 = Int(i1),
+                       let i2 = rhs.metadata.issueNumber, let n2 = Int(i2) {
+                        return n1 < n2
+                    }
+                    return lhs.name < rhs.name
+                }
+                
+                var coverID: UUID?
+                if let matchingCollection = collections.first(where: { $0.name == seriesName }),
+                   let explicitID = matchingCollection.explicitCoverFileID,
+                   issues.contains(where: { $0.id == explicitID }) {
+                    coverID = explicitID
+                } else {
+                    coverID = sortedIssues.first?.id
+                }
+                
+                let group = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: coverID, count: sortedIssues.count, issues: sortedIssues)
+                let item = LibraryListItem.series(group)
+                items.append((firstAppearanceIndex["series_\(seriesName)"] ?? 0, item))
             }
             
-            let group = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: coverID, count: sortedIssues.count, issues: sortedIssues)
-            let item = LibraryListItem.series(group)
-            items.append((firstAppearanceIndex["series_\(seriesName)"] ?? 0, item))
-        }
-        
-        for single in singles {
-            let item = LibraryListItem.single(single)
-            items.append((firstAppearanceIndex["single_\(single.id)"] ?? 0, item))
-        }
-        
-        // Apply Search Filter
-        if !searchText.isEmpty {
-            items = items.filter { tuple in
-                switch tuple.1 {
-                case .single(let pdf): return pdf.name.localizedCaseInsensitiveContains(searchText)
-                case .series(let group): return group.title.localizedCaseInsensitiveContains(searchText)
+            for single in singles {
+                let item = LibraryListItem.single(single)
+                items.append((firstAppearanceIndex["single_\(single.id)"] ?? 0, item))
+            }
+            
+            if !search.isEmpty {
+                items = items.filter { tuple in
+                    switch tuple.1 {
+                    case .single(let pdf): return pdf.name.localizedCaseInsensitiveContains(search)
+                    case .series(let group): return group.title.localizedCaseInsensitiveContains(search)
+                    }
                 }
             }
+            
+            items.sort { $0.0 < $1.0 }
+            let finalItems = items.map { $0.1 }
+            
+            await MainActor.run {
+                self.cachedLibraryItems = finalItems
+            }
         }
-        
-        // Restore Sorting Order based on first appearance in allPDFs
-        items.sort { $0.0 < $1.0 }
-        return items.map { $0.1 }
     }
     
     func sortPDFs(_ pdfs: [ConvertedPDF]) -> [ConvertedPDF] {
@@ -319,7 +324,12 @@ struct ModernLibraryView: View {
         .onAppear {
             // Backfill thumbnails for any files imported before the cover fix
             conversionManager.backfillMissingThumbnails()
+            updateLibraryItemsCache()
         }
+        .onChange(of: conversionManager.visiblePDFs, perform: { _ in updateLibraryItemsCache() })
+        .onChange(of: searchText, perform: { _ in updateLibraryItemsCache() })
+        .onChange(of: sortOption, perform: { _ in updateLibraryItemsCache() })
+        .onChange(of: conversionManager.collections.count, perform: { _ in updateLibraryItemsCache() })
     }
     
     // Copy of helpers
@@ -342,7 +352,7 @@ struct ModernLibraryView: View {
             ModernEmptyState(onImport: { activeSheet = .importer }, onFolderImport: nil)
         } else {
             List(selection: useNavigationStack ? nil : $selectedPDF) {
-                ForEach(libraryItems) { item in
+                ForEach(cachedLibraryItems) { item in
                     switch item {
                     case .series(let group):
                         if isBatchMode {
@@ -389,7 +399,7 @@ struct ModernLibraryView: View {
                              .listRowBackground(Color.black)
                              .listRowSeparatorTint(Color(white: 0.2))
                         } else {
-                            if useNavigationStack {
+                            if useNavigationStack && tapAction == .select {
                                 NavigationLink(value: pdf) {
                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                                 }
@@ -443,7 +453,7 @@ struct ModernLibraryView: View {
         } else {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 16)], spacing: 20) {
-                    ForEach(libraryItems) { item in
+                    ForEach(cachedLibraryItems) { item in
                         switch item {
                         case .series(let group):
                             if isBatchMode {
@@ -482,7 +492,7 @@ struct ModernLibraryView: View {
                                 }
                                 .buttonStyle(PlainButtonStyle())
                             } else {
-                                if useNavigationStack {
+                                if useNavigationStack && tapAction == .select {
                                     NavigationLink(value: pdf) {
                                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
                                     }
