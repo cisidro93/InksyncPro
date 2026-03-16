@@ -51,8 +51,10 @@ struct WiFiView: View {
     
     @ViewBuilder
     private var stagedFilesList: some View {
-        Section(header: Text("Staged Files (\(queueManager.formattedTotalSize()))")) {
-            ForEach(queueManager.stagedFiles, id: \.id) { file in
+        let sizeString = queueManager.formattedTotalSize()
+        let headerText = "Staged Files (\(sizeString))"
+        Section(header: Text(headerText)) {
+            ForEach(queueManager.stagedFiles) { file in
                 HStack {
                     Image(systemName: "doc.text")
                         .foregroundColor(.blue)

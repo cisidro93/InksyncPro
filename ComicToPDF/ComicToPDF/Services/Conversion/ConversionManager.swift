@@ -763,8 +763,69 @@ class ConversionManager: ObservableObject {
                     newlyImported.append(pdf)
                 } catch {
                     Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import", type: .error)
+                }
+            }
+            
+            return newlyImported
+        }.value
+        
+        await MainActor.run {
+            for pdf in newPDFs {
+                self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
+                self.convertedPDFs.append(pdf)
+            }
+            self.saveLibrary()
+            self.scanLibrary()
+        }
+    }
+    
+    /// Imports an array of file URLs securely into the documents directory, tracking progress in the background.
+    func importFilesAsSeries(urls: [URL]) async {
+        await MainActor.run { self.isConverting = true; self.processingStatus = "Preparing Import..." }
+        defer { Task { await MainActor.run { self.isConverting = false; self.processingStatus = "" } } }
+        
+        let existingNames = await MainActor.run { Set(self.convertedPDFs.map { $0.name }) }
+        let isVaultUnlocked = await MainActor.run { SecurityManager.shared.isVaultUnlocked }
+
+        await ImportMonitorManager.shared.startImport(totalFiles: urls.count)
+        
+        let importedPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) {
+            let fileManager = FileManager.default
+            let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            var newPDFs: [ConvertedPDF] = []
+            
+            for url in urls {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                
+                let fileName = url.lastPathComponent
+                let destURL = documentsDir.appendingPathComponent(fileName)
+                
+                if existingNames.contains(fileName) || newPDFs.contains(where: { $0.name == fileName }) {
+                    await ImportMonitorManager.shared.incrementSuccess()
+                    continue
+                }
+                
+                do {
+                    if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+                    try fileManager.copyItem(at: url, to: destURL)
+                    let attr = try fileManager.attributesOfItem(atPath: destURL.path)
+                    let size = attr[.size] as? Int64 ?? 0
+                    
+                    var cType: ContentType = .book
+                    let ext = destURL.pathExtension.lowercased()
+                    if ext == "pdf" || ext == "epub" { cType = .book } else { cType = .comic }
+                    
+                    var pdf = ConvertedPDF(
+                        name: fileName,
+                        url: destURL,
+                        pageCount: 0,
+                        fileSize: size,
+                        metadata: PDFMetadata(title: fileName),
+                        contentType: cType
+                    )
                     pdf.isPrivate = isVaultUnlocked
-                    importedPDFs.append(pdf)
+                    newPDFs.append(pdf)
                     
                     await ImportMonitorManager.shared.incrementSuccess()
                 } catch {
@@ -772,40 +833,51 @@ class ConversionManager: ObservableObject {
                     await ImportMonitorManager.shared.incrementFailure()
                 }
             }
-            
-            // Mark Tracker Complete
-            await ImportMonitorManager.shared.completeImport()
-            guard !importedPDFs.isEmpty else { return }
-            
-            // Determine the dominant series name across all imported files
-            let dominantSeries = detectedSeriesNames.max(by: { $0.value < $1.value })?.key ?? ""
-            let allSameSeries = !dominantSeries.isEmpty && importedPDFs.allSatisfy { ($0.metadata.series ?? "") == dominantSeries }
-            
-            // Back to Main Actor for State Updates and Covers
-            await MainActor.run {
-                if allSameSeries && importedPDFs.count > 1 {
-                    // Unambiguous — all files agree on series. Add directly, skip Layer 3 prompt.
-                    Task { await self.finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries) }
-                    Logger.shared.log("Auto-grouped \(importedPDFs.count) files into series '\(dominantSeries)'", category: "Import")
-                } else if importedPDFs.count > 1 {
-                    // --- Layer 3: Post-import grouping prompt ---
-                    // Files disagree on series name or have none. Show the grouping sheet.
-                    for pdf in importedPDFs {
-                        self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
-                        self.convertedPDFs.append(pdf)
-                    }
-                    self.saveLibrary()
-                    self.scanLibrary()
-                    Task {
-                        for pdf in importedPDFs { await self.generateCoverThumbnail(for: pdf) }
-                        try? await Task.sleep(nanoseconds: 700_000_000)
-                        await MainActor.run { self.pendingSeriesGroup = PendingSeriesGroup(pdfs: importedPDFs, suggestedName: dominantSeries) }
-                    }
-                } else {
-                    // Single file — just add it normally
-                    Task { await self.finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries) }
-                    for pdf in importedPDFs { Task { await self.generateCoverThumbnail(for: pdf) } }
+            return newPDFs
+        }.value
+        
+        // Mark Tracker Complete
+        await ImportMonitorManager.shared.completeImport()
+        guard !importedPDFs.isEmpty else { return }
+        
+        // Determine the dominant series name across all imported files
+        let detectedSeriesNames = importedPDFs.reduce(into: [String: Int]()) { dict, pdf in
+            let cleanName = pdf.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? ""
+            if !cleanName.isEmpty {
+                dict[cleanName, default: 0] += 1
+            }
+        }
+        
+        let dominantSeries = detectedSeriesNames.max(by: { $0.value < $1.value })?.key ?? ""
+        let allSameSeries = !dominantSeries.isEmpty && importedPDFs.allSatisfy { 
+            let cleanName = $0.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? ""
+            return cleanName == dominantSeries 
+        }
+        
+        // Back to Main Actor for State Updates and Covers
+        await MainActor.run {
+            if allSameSeries && importedPDFs.count > 1 {
+                // Unambiguous — all files agree on series. Add directly, skip Layer 3 prompt.
+                Task { await self.finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries) }
+                Logger.shared.log("Auto-grouped \(importedPDFs.count) files into series '\(dominantSeries)'", category: "Import")
+            } else if importedPDFs.count > 1 {
+                // --- Layer 3: Post-import grouping prompt ---
+                // Files disagree on series name or have none. Show the grouping sheet.
+                for pdf in importedPDFs {
+                    self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
+                    self.convertedPDFs.append(pdf)
                 }
+                self.saveLibrary()
+                self.scanLibrary()
+                Task {
+                    for pdf in importedPDFs { await self.generateCoverThumbnail(for: pdf) }
+                    try? await Task.sleep(nanoseconds: 700_000_000)
+                    await MainActor.run { self.pendingSeriesGroup = PendingSeriesGroup(pdfs: importedPDFs, suggestedName: dominantSeries) }
+                }
+            } else {
+                // Single file — just add it normally
+                Task { await self.finalizeSeriesImport(pdfs: importedPDFs, seriesName: dominantSeries) }
+                for pdf in importedPDFs { Task { await self.generateCoverThumbnail(for: pdf) } }
             }
         }
     }
