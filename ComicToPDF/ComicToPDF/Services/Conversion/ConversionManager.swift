@@ -785,9 +785,9 @@ class ConversionManager: ObservableObject {
         defer { Task { await MainActor.run { self.isConverting = false; self.processingStatus = "" } } }
         
         let existingNames = await MainActor.run { Set(self.convertedPDFs.map { $0.name }) }
-        let isVaultUnlocked = await MainActor.run { SecurityManager.shared.isVaultUnlocked }
+        let isVaultUnlocked = await MainActor.run { !SecurityManager.shared.isVaultLocked }
 
-        await ImportMonitorManager.shared.startImport(totalFiles: urls.count)
+        await ImportMonitorManager.shared.startImport(totalCount: urls.count)
         
         let importedPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
