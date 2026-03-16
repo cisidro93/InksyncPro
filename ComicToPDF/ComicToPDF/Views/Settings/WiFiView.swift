@@ -20,188 +20,215 @@ struct WiFiView: View {
             .cornerRadius(6)
     }
 
-    var body: some View {
-        NavigationView {
-            Form {
-                Section {
-                    VStack(spacing: 20) {
-                        Image(systemName: "wifi.circle.fill")
-                            .font(.system(size: 72))
-                            .foregroundColor(server.isRunning ? .green : .gray)
-                            .symbolEffect(.pulse, isActive: server.isRunning)
-                        
-                        Text(server.isRunning ? "Wi-Fi Server Active" : "Server Offline")
-                            .font(.title2).bold()
-                        
-                        Button(action: {
-                            if server.isRunning { server.stop() } else { server.start() }
-                        }) {
-                            Text(server.isRunning ? "Stop Server" : "Start Server")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(server.isRunning ? Color.red : Color.green)
-                                .cornerRadius(12)
+    @ViewBuilder
+    private var serverStatusSection: some View {
+        Section {
+            VStack(spacing: 20) {
+                Image(systemName: "wifi.circle.fill")
+                    .font(.system(size: 72))
+                    .foregroundColor(server.isRunning ? .green : .gray)
+                    .symbolEffect(.pulse, isActive: server.isRunning)
+                
+                Text(server.isRunning ? "Wi-Fi Server Active" : "Server Offline")
+                    .font(.title2).bold()
+                
+                Button(action: {
+                    if server.isRunning { server.stop() } else { server.start() }
+                }) {
+                    Text(server.isRunning ? "Stop Server" : "Start Server")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(server.isRunning ? Color.red : Color.green)
+                        .cornerRadius(12)
+                }
+            }
+            .padding(.vertical)
+            .frame(maxWidth: .infinity)
+        }
+    }
+    
+    @ViewBuilder
+    private var stagedFilesSection: some View {
+        Group {
+            if !queueManager.stagedFiles.isEmpty {
+                Section(header: Text("Staged Files (\(queueManager.formattedTotalSize()))")) {
+                    ForEach(queueManager.stagedFiles) { file in
+                        HStack {
+                            Image(systemName: "doc.text")
+                                .foregroundColor(.blue)
+                            Text(file.name)
+                                .font(.subheadline)
+                                .lineLimit(1)
                         }
                     }
-                    .padding(.vertical)
-                    .frame(maxWidth: .infinity)
                 }
                 
-                if !queueManager.stagedFiles.isEmpty {
-                    Section(header: Text("Staged Files (\(queueManager.formattedTotalSize()))")) {
-                        ForEach(queueManager.stagedFiles) { file in
-                            HStack {
-                                Image(systemName: "doc.text")
-                                    .foregroundColor(.blue)
-                                Text(file.name)
-                                    .font(.subheadline)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                    
-                    if !peerManager.discoveredPeers.isEmpty {
-                        Section(header: Text("Direct Send to Device (High Speed)")) {
-                            ForEach(peerManager.discoveredPeers, id: \.ipAddress) { peer in
-                                Button(action: {
-                                    Task {
-                                        do {
-                                            try await localSendClient.transferFiles(queueManager.stagedFiles, to: peer)
-                                        } catch {
-                                            Logger.shared.log("Transfer failed: \(error)", category: "Network", type: .error)
-                                        }
-                                    }
-                                }) {
-                                    HStack {
-                                        VStack(alignment: .leading) {
-                                            Text(peer.hostName)
-                                                .font(.headline)
-                                                .foregroundColor(.primary)
-                                            Text("IP: \(peer.ipAddress)")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                        Spacer()
-                                        if localSendClient.isTransferring {
-                                            ProgressView()
-                                        } else {
-                                            Image(systemName: "paperplane.fill")
-                                                .foregroundColor(.blue)
-                                        }
+                if !peerManager.discoveredPeers.isEmpty {
+                    Section(header: Text("Direct Send to Device (High Speed)")) {
+                        ForEach(peerManager.discoveredPeers, id: \.ipAddress) { peer in
+                            Button(action: {
+                                Task {
+                                    do {
+                                        try await localSendClient.transferFiles(queueManager.stagedFiles, to: peer)
+                                    } catch {
+                                        Logger.shared.log("Transfer failed: \(error)", category: "Network", type: .error)
                                     }
                                 }
-                                .disabled(localSendClient.isTransferring)
+                            }) {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text(peer.hostName)
+                                            .font(.headline)
+                                            .foregroundColor(.primary)
+                                        Text("IP: \(peer.ipAddress)")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    if localSendClient.isTransferring {
+                                        ProgressView()
+                                    } else {
+                                        Image(systemName: "paperplane.fill")
+                                            .foregroundColor(.blue)
+                                    }
+                                }
                             }
+                            .disabled(localSendClient.isTransferring)
                         }
                     }
                 }
-                
-                if server.isRunning {
-                    Section(header: Text("Browser Fallback Options (Scan or Type)")) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Type this URL into your browser:")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            
-                            Text(server.serverURL ?? "http://unknown-ip")
-                                .font(.system(.title3, design: .monospaced))
-                                .fontWeight(.bold)
-                                .padding(10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color(UIColor.tertiarySystemFill))
-                                .cornerRadius(8)
-                                .textSelection(.enabled)
-                        }
-                        .padding(.vertical, 4)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var browserFallbackSection: some View {
+        Group {
+            if server.isRunning {
+                Section(header: Text("Browser Fallback Options (Scan or Type)")) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Type this URL into your browser:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                         
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Security Code (PIN)")
-                                .font(.caption)
-                                .textCase(.uppercase)
-                                .foregroundColor(.secondary)
-                            
-                            Text(server.securityCode)
-                                .font(.system(size: 34, weight: .heavy, design: .monospaced))
-                                .foregroundColor(.blue)
-                        }
-                        .padding(.vertical, 4)
-                        
-                        HStack {
-                            settingsIcon("network", color: server.activeConnections > 0 ? .green : .gray)
-                            Text("\(server.activeConnections) Active Connection\(server.activeConnections == 1 ? "" : "s")")
-                        }
+                        Text(server.serverURL ?? "http://unknown-ip")
+                            .font(.system(.title3, design: .monospaced))
+                            .fontWeight(.bold)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(UIColor.tertiarySystemFill))
+                            .cornerRadius(8)
+                            .textSelection(.enabled)
                     }
+                    .padding(.vertical, 4)
                     
-                    if let qr = qrCodeImage {
-                        Section(header: Text("Quick Connect")) {
-                            VStack(spacing: 12) {
-                                Image(uiImage: qr)
-                                    .resizable()
-                                    .interpolation(.none)
-                                    .scaledToFit()
-                                    .frame(width: 140, height: 140)
-                                    .cornerRadius(12)
-                                
-                                Text("Scan with your mobile device")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical)
-                        }
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Security Code (PIN)")
+                            .font(.caption)
+                            .textCase(.uppercase)
+                            .foregroundColor(.secondary)
+                        
+                        Text(server.securityCode)
+                            .font(.system(size: 34, weight: .heavy, design: .monospaced))
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.vertical, 4)
+                    
+                    HStack {
+                        settingsIcon("network", color: server.activeConnections > 0 ? .green : .gray)
+                        Text("\(server.activeConnections) Active Connection\(server.activeConnections == 1 ? "" : "s")")
                     }
                 }
                 
-                if server.isUploading {
-                    Section(header: Text("In Progress")) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Uploading: \(server.currentUploadFilename)")
+                if let qr = qrCodeImage {
+                    Section(header: Text("Quick Connect")) {
+                        VStack(spacing: 12) {
+                            Image(uiImage: qr)
+                                .resizable()
+                                .interpolation(.none)
+                                .scaledToFit()
+                                .frame(width: 140, height: 140)
+                                .cornerRadius(12)
+                            
+                            Text("Scan with your mobile device")
                                 .font(.caption)
-                                .lineLimit(1)
-                            
-                            ProgressView(value: server.uploadProgress)
-                                .progressViewStyle(LinearProgressViewStyle(tint: .orange))
-                            
-                            Text("\(Int(server.uploadProgress * 100))%")
-                                .font(.caption.bold())
-                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .foregroundColor(.secondary)
                         }
-                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical)
                     }
                 }
-                
-                if localSendClient.isTransferring {
-                    Section(header: Text("Direct Transfer Progress")) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Sending: \(localSendClient.currentFileName)")
-                                .font(.caption)
-                                .lineLimit(1)
-                            
-                            ProgressView(value: localSendClient.progress)
-                                .progressViewStyle(LinearProgressViewStyle(tint: .blue))
-                            
-                            Text("\(Int(localSendClient.progress * 100))%")
-                                .font(.caption.bold())
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-                
-                Section(header: Text("Alternative: USB Transfer")) {
-                    HStack(alignment: .top, spacing: 16) {
-                        settingsIcon("cable.connector", color: .gray)
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("1. Connect to Computer via USB")
-                            Text("2. Open Finder (Mac) or iTunes (PC)")
-                            Text("3. Drag files from the 'Inksync Pro' folder")
-                        }
-                        .font(.subheadline)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var progressSection: some View {
+        Group {
+            if server.isUploading {
+                Section(header: Text("In Progress")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Uploading: \(server.currentUploadFilename)")
+                            .font(.caption)
+                            .lineLimit(1)
+                        
+                        ProgressView(value: server.uploadProgress)
+                            .progressViewStyle(LinearProgressViewStyle(tint: .orange))
+                        
+                        Text("\(Int(server.uploadProgress * 100))%")
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                     .padding(.vertical, 4)
                 }
+            }
+            
+            if localSendClient.isTransferring {
+                Section(header: Text("Direct Transfer Progress")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Sending: \(localSendClient.currentFileName)")
+                            .font(.caption)
+                            .lineLimit(1)
+                        
+                        ProgressView(value: localSendClient.progress)
+                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                        
+                        Text("\(Int(localSendClient.progress * 100))%")
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var alternativeTransferSection: some View {
+        Section(header: Text("Alternative: USB Transfer")) {
+            HStack(alignment: .top, spacing: 16) {
+                settingsIcon("cable.connector", color: .gray)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("1. Connect to Computer via USB")
+                    Text("2. Open Finder (Mac) or iTunes (PC)")
+                    Text("3. Drag files from the 'Inksync Pro' folder")
+                }
+                .font(.subheadline)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                serverStatusSection
+                stagedFilesSection
+                browserFallbackSection
+                progressSection
+                alternativeTransferSection
             }
             .navigationTitle("Transfer Files")
             .toolbar {
