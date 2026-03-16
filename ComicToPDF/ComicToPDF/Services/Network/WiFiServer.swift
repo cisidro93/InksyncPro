@@ -126,6 +126,7 @@ class WiFiServer: ObservableObject {
         var fileHandle: FileHandle?
         var destinationURL: URL?
         var filename: String = ""
+        var relativePath: String? = nil // ✅ NEW: Track folder structure
         var isAuthenticated = false // Track auth per request context
     }
     
@@ -249,6 +250,7 @@ class WiFiServer: ObservableObject {
         } else if method == "POST" {
             // Extract Headers
             var explicitFileName: String? = nil
+            var relativePath: String? = nil
             for line in lines {
                 if line.lowercased().hasPrefix("content-length:") {
                     let value = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) ?? "0"
@@ -256,6 +258,9 @@ class WiFiServer: ObservableObject {
                 }
                 if line.lowercased().hasPrefix("x-file-name:") {
                     explicitFileName = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces)
+                }
+                if line.lowercased().hasPrefix("x-relative-path:") {
+                    relativePath = line.components(separatedBy: ":").dropFirst().joined(separator: ":").trimmingCharacters(in: .whitespaces)
                 }
             }
             
@@ -265,6 +270,7 @@ class WiFiServer: ObservableObject {
             let fileName = explicitFileName ?? fallbackName
             
             context.filename = fileName
+            context.relativePath = relativePath
             setupUpload(context: context)
             
             // Streaming Logic
@@ -355,12 +361,26 @@ class WiFiServer: ObservableObject {
         context.isHeaderParsed = true
         
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let destURL = docDir.appendingPathComponent(context.filename)
+        var destURL: URL
+        
+        if let relPathString = context.relativePath, !relPathString.isEmpty {
+            // Reconstruct the nested folder structure
+            destURL = docDir.appendingPathComponent(relPathString)
+            let directoryURL = destURL.deletingLastPathComponent()
+            do {
+                try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
+            } catch {
+                Logger.shared.log("Failed to create intermediate P2P directory: \(error.localizedDescription)", category: "Network", type: .error)
+            }
+        } else {
+            destURL = docDir.appendingPathComponent(context.filename)
+        }
+        
         context.destinationURL = destURL
         
         // Create file
         FileManager.default.createFile(atPath: destURL.path, contents: nil, attributes: nil)
-        Logger.shared.log("Starting Upload: \(context.filename)", category: "Network")
+        Logger.shared.log("Starting Upload: \(destURL.lastPathComponent) to path: \(destURL.path)", category: "Network")
         
         do {
             context.fileHandle = try FileHandle(forWritingTo: destURL)
@@ -368,7 +388,7 @@ class WiFiServer: ObservableObject {
             // Start Background Task
             DispatchQueue.main.async {
                 self.isUploading = true
-                self.currentUploadFilename = context.filename
+                self.currentUploadFilename = destURL.lastPathComponent
                 self.uploadProgress = 0.0
                 self.startBackgroundTask()
             }
