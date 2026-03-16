@@ -726,45 +726,51 @@ def main(page):
                     file_list = ft.Column(scroll="auto", expand=True, spacing=2)
                 
                 try:
-                    if state["view_mode"] == "external":
-                        # If a path was chosen via picker, show it. Otherwise prompt selection.
-                        if state["current_path"] == "" or state["current_path"] == "None":
-                           file_list.controls.append(ft.Text("PLEASE SELECT A DIRECTORY TO IMPORT FROM.", size=16, weight="w900"))
-                        else:
-                            parent = os.path.dirname(start_path)
-                            if isinstance(file_list, ft.Column):
-                                file_list.controls.append(
-                                    ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True)
-                                )
+                    start_path = state["current_path"]
+                    if start_path == "DRIVES":
+                        file_list.controls.append(ft.Text("SELECT A DRIVE TO BROWSE:", size=16, weight="w900", color="black"))
+                        for drive in get_android_drives():
+                            file_list.controls.append(list_item(drive, "💽", drive, is_dir=True))
                     else:
                         if start_path != comic_library_dir:
                             parent = os.path.dirname(start_path)
+                            def get_go_up_handler(p, sp):
+                                def handler(_):
+                                    if sp in get_android_drives():
+                                        navigate("DRIVES")
+                                    else:
+                                        navigate(p)
+                                return handler
+                                
                             if isinstance(file_list, ft.Column):
                                 file_list.controls.append(
-                                    ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True)
+                                    ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=get_go_up_handler(parent, start_path), bgcolor="black", padding=15, expand=True, ink=True)
                                 )
                         
-                        items = sorted(os.listdir(start_path))
-                        for item in items:
-                            full_path = os.path.join(start_path, item)
-                            if os.path.isdir(full_path):
-                                file_list.controls.append(list_item(item, "📂", full_path, is_dir=True))
-                            else:
-                                if item.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
-                                    file_list.controls.append(list_item(item, "📄", full_path, is_file=True))
+                        try:
+                            items = sorted(os.listdir(start_path))
+                            for item in items:
+                                full_path = os.path.join(start_path, item)
+                                if os.path.isdir(full_path):
+                                    file_list.controls.append(list_item(item, "📂", full_path, is_dir=True))
                                 else:
-                                    if isinstance(file_list, ft.Column):
-                                        file_list.controls.append(
-                                            ft.Container(
-                                                content=ft.Row([
-                                                    ft.Text("⚠️", size=24),
-                                                    ft.Text(item, size=16, color="grey", no_wrap=True)
-                                                ]),
-                                                bgcolor="#EEEEEE",
-                                                border=ft.border.all(1, "grey"),
-                                                padding=15
+                                    if item.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
+                                        file_list.controls.append(list_item(item, "📄", full_path, is_file=True))
+                                    else:
+                                        if isinstance(file_list, ft.Column):
+                                            file_list.controls.append(
+                                                ft.Container(
+                                                    content=ft.Row([
+                                                        ft.Text("⚠️", size=24),
+                                                        ft.Text(item, size=16, color="grey", no_wrap=True)
+                                                    ]),
+                                                    bgcolor="#EEEEEE",
+                                                    border=ft.border.all(1, "grey"),
+                                                    padding=15
+                                                )
                                             )
-                                        )
+                        except PermissionError:
+                            file_list.controls.append(ft.Container(padding=20, content=ft.Text("PERMISSION DENIED.\nPLEASE GRANT ALL FILES ACCESS USING THE SETTINGS BUTTON ABOVE.", size=16, color="red", weight="w900", text_align="center")))
                 except Exception as e:
                     file_list.controls.append(ft.Text(f"ACCESS DENIED: {e}", color="black", weight="w900"))
 
