@@ -61,6 +61,9 @@ jobs:
           cp app_icon.png android_build/ || true
           cp -r webapp android_build/ || true
           cp requirements.txt android_build/ || true
+          echo '[app]' > android_build/flet.toml
+          echo 'name = "InksyncPro"' >> android_build/flet.toml
+          echo 'package_name = "com.cisidro93"' >> android_build/flet.toml
 
       - name: Build APK via Flet
         run: |
