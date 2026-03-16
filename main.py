@@ -752,14 +752,16 @@ def main(page):
                 if state.get("monitor_active", False):
                     tracker_container = ft.Container(
                         content=ft.Column([
-                            ft.Text("BACKGROUND PROCESSING", size=16, weight="w900", color="white"),
-                            ft.Text(state.get("monitor_message", ""), size=14, color="white"),
+                            ft.Text("BACKGROUND PROCESSING", size=16, weight="w900", color="white", text_align="center"),
+                            ft.Text(state.get("monitor_message", ""), size=14, color="white", text_align="center"),
                             ft.ProgressBar(value=state.get("monitor_progress", 0.0), color="white", bgcolor="grey", width=300)
-                        ]),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                         bgcolor="black",
-                        padding=15,
-                        border_radius=8,
-                        margin=ft.margin.only(top=10, bottom=10)
+                        padding=20,
+                        border_radius=12,
+                        border=ft.border.all(2, "white"),
+                        margin=ft.margin.all(20),
+                        shadow=ft.BoxShadow(spread_radius=1, blur_radius=15, color=ft.colors.with_opacity(0.5, "black"))
                     )
                 
                 # Final Layout construction
@@ -775,15 +777,29 @@ def main(page):
                     ft.Container(bgcolor="black", height=4),
                     ft.Row([btn_server, btn_convert]),
                     server_url_txt,
-                    peers_col,
-                    tracker_container
-                ], spacing=10)
+                    peers_col
+                ], spacing=10, scroll=ft.ScrollMode.HIDDEN)
+                
+                # Use a Stack to ensure the loading tracker natively floats directly in the absolute center of the display
+                content_stack = ft.Stack([
+                    main_column
+                ])
+                
+                if state.get("monitor_active", False):
+                     # Add tracker on top
+                     loading_overlay = ft.Container(
+                         content=tracker_container,
+                         alignment=ft.alignment.center,
+                         expand=True
+                     )
+                     content_stack.controls.append(loading_overlay)
                 
                 page.add(
                     ft.Container(
-                        content=main_column,
+                        content=content_stack,
                         padding=15,
-                        border=ft.border.all(4, "black")
+                        border=ft.border.all(4, "black"),
+                        expand=True
                     )
                 )
                 
@@ -797,7 +813,8 @@ def main(page):
                     dlg = ft.AlertDialog(
                         title=ft.Text(state.get("monitor_title", "Report")),
                         content=ft.Text(state.get("monitor_message", "")),
-                        actions=[ft.TextButton("OK", on_click=close_dlg)]
+                        actions=[ft.TextButton("OK", on_click=close_dlg)],
+                        alignment=ft.alignment.center
                     )
                     page.dialog = dlg
                     dlg.open = True
