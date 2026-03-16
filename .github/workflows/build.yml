@@ -27,6 +27,16 @@ jobs:
     - name: Debug Files
       run: ls -R
 
+    - name: Cache Xcode build and SPM
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.build
+          ComicToPDF/build
+        key: ${{ runner.os }}-xcode-${{ hashFiles('ComicToPDF/project.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-xcode-
+
     - name: Generate Project
       run: |
         cd ComicToPDF
@@ -41,7 +51,7 @@ jobs:
                    -sdk iphoneos \
                    -configuration Release \
                    -derivedDataPath build \
-                   clean build \
+                   build \
                    CODE_SIGN_IDENTITY="" \
                    CODE_SIGNING_REQUIRED=NO \
                    CODE_SIGNING_ALLOWED=NO
