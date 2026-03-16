@@ -50,55 +50,64 @@ struct WiFiView: View {
     }
     
     @ViewBuilder
+    private var stagedFilesList: some View {
+        Section(header: Text("Staged Files (\(queueManager.formattedTotalSize()))")) {
+            ForEach(queueManager.stagedFiles, id: \.id) { file in
+                HStack {
+                    Image(systemName: "doc.text")
+                        .foregroundColor(.blue)
+                    Text(file.name)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var discoveredPeersList: some View {
+        if !peerManager.availablePeers.isEmpty {
+            Section(header: Text("Direct Send to Device (High Speed)")) {
+                ForEach(peerManager.availablePeers) { peer in
+                    Button(action: {
+                        Task {
+                            do {
+                                try await localSendClient.transferFiles(queueManager.stagedFiles, to: peer)
+                            } catch {
+                                Logger.shared.log("Transfer failed: \(error)", category: "Network", type: .error)
+                            }
+                        }
+                    }) {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(peer.name)
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                Text("IP: \(peer.ipAddress)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            if localSendClient.isTransferring {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "paperplane.fill")
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+                    .disabled(localSendClient.isTransferring)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private var stagedFilesSection: some View {
         Group {
             if !queueManager.stagedFiles.isEmpty {
-                Section(header: Text("Staged Files (\(queueManager.formattedTotalSize()))")) {
-                    ForEach(queueManager.stagedFiles, id: \.id) { file in
-                        HStack {
-                            Image(systemName: "doc.text")
-                                .foregroundColor(.blue)
-                            Text(file.name)
-                                .font(.subheadline)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-                
-                if !peerManager.availablePeers.isEmpty {
-                    Section(header: Text("Direct Send to Device (High Speed)")) {
-                        ForEach(peerManager.availablePeers) { peer in
-                            Button(action: {
-                                Task {
-                                    do {
-                                        try await localSendClient.transferFiles(queueManager.stagedFiles, to: peer)
-                                    } catch {
-                                        Logger.shared.log("Transfer failed: \(error)", category: "Network", type: .error)
-                                    }
-                                }
-                            }) {
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(peer.hostName)
-                                            .font(.headline)
-                                            .foregroundColor(.primary)
-                                        Text("IP: \(peer.ipAddress)")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                    if localSendClient.isTransferring {
-                                        ProgressView()
-                                    } else {
-                                        Image(systemName: "paperplane.fill")
-                                            .foregroundColor(.blue)
-                                    }
-                                }
-                            }
-                            .disabled(localSendClient.isTransferring)
-                        }
-                    }
-                }
+                stagedFilesList
+                discoveredPeersList
             }
         }
     }
