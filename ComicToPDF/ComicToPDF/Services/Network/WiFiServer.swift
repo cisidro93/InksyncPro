@@ -247,17 +247,22 @@ class WiFiServer: ObservableObject {
         if method == "GET" {
             handleGetRequest(path: path, connection: connection)
         } else if method == "POST" {
-            // Extract Content-Length
+            // Extract Headers
+            var explicitFileName: String? = nil
             for line in lines {
                 if line.lowercased().hasPrefix("content-length:") {
                     let value = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) ?? "0"
                     context.expectedLength = Int64(value) ?? 0
                 }
+                if line.lowercased().hasPrefix("x-file-name:") {
+                    explicitFileName = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces)
+                }
             }
             
             // Setup File Writing
             let rawName = parts[1].replacingOccurrences(of: "/upload/", with: "").replacingOccurrences(of: "/", with: "")
-            let fileName = rawName.isEmpty || rawName == "upload" ? "upload_\(Date().timeIntervalSince1970).cbz" : rawName
+            let fallbackName = rawName.isEmpty || rawName == "upload" ? "upload_\(Date().timeIntervalSince1970).cbz" : rawName
+            let fileName = explicitFileName ?? fallbackName
             
             context.filename = fileName
             setupUpload(context: context)
