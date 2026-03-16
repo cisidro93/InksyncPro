@@ -25,6 +25,7 @@ def main(page):
             "output_format": "epub", # default to epub for kindle
             "compress_enabled": False,
             "manga_mode": False,
+            "server_running": False,
             "view_mode": "external", # 'external' for Import, 'internal' for Convert
             "library_display_mode": "list", # 'list', 'grid', 'cover'
             "discovered_peers": {} # name -> {"ip": ip, "port": port, "alias": name}
