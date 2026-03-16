@@ -20,7 +20,7 @@ def main(page):
         
         # Global State
         state = {
-            "current_path": "/storage/emulated/0/Download",
+            "current_path": "",
             "selected_items": set(),
             "output_format": "epub", # default to epub for kindle
             "compress_enabled": False,
@@ -92,6 +92,15 @@ def main(page):
             except: pass
             return sorted(list(drives))
 
+        def on_dialog_result(e):
+            if e.path:
+                state["current_path"] = e.path
+                render_ui()
+
+        file_picker = ft.FilePicker(on_result=on_dialog_result)
+        page.overlay.append(file_picker)
+        page.file_picker = file_picker
+
         def render_ui():
             try:
                 page.clean()
@@ -148,15 +157,19 @@ def main(page):
                     if state["view_mode"] == new_mode: return
                     state["view_mode"] = new_mode
                     state["selected_items"].clear()
+                    
                     if state["view_mode"] == "external":
-                        state["current_path"] = "/storage/emulated/0/Download"
+                        # Trigger Native File Picker for Import Source
+                        if hasattr(page, 'file_picker') and page.file_picker:
+                            page.file_picker.get_directory_path(dialog_title="Select Comics Folder")
                     else:
                         state["current_path"] = comic_library_dir
+                        
                     render_ui()
                     
                 mode_toggle = ft.Row([
                     ft.Container(
-                        content=ft.Text("SD CARD [IMPORT]", size=16, weight="w900", color="white" if state["view_mode"] == "external" else "black", text_align="center"),
+                        content=ft.Text("IMPORT NEW COMICS", size=16, weight="w900", color="white" if state["view_mode"] == "external" else "black", text_align="center"),
                         on_click=lambda _: on_mode_change("external"),
                         bgcolor="black" if state["view_mode"] == "external" else "white",
                         border=ft.border.all(3, "black"),
@@ -676,26 +689,23 @@ def main(page):
                     file_list = ft.Column(scroll="auto", expand=True, spacing=2)
                 
                 try:
-                    if state["view_mode"] == "external" and start_path == "/storage":
-                        for drive in get_android_drives():
-                             if isinstance(file_list, ft.Column): file_list.controls.append(list_item(drive, "💾", drive, is_dir=True))
-                    else:
-                        if state["view_mode"] == "external":
+                    if state["view_mode"] == "external":
+                        # If a path was chosen via picker, show it. Otherwise prompt selection.
+                        if state["current_path"] == "" or state["current_path"] == "None":
+                           file_list.controls.append(ft.Text("PLEASE SELECT A DIRECTORY TO IMPORT FROM.", size=16, weight="w900"))
+                        else:
                             parent = os.path.dirname(start_path)
                             if isinstance(file_list, ft.Column):
                                 file_list.controls.append(
-                                    ft.Row([
-                                        ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True),
-                                        ft.Container(content=ft.Text("DRIVES", color="black", weight="w900"), on_click=lambda _: navigate("/storage"), bgcolor="white", border=ft.border.all(2,"black"), padding=15, ink=True),
-                                    ])
+                                    ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True)
                                 )
-                        else:
-                            if start_path != comic_library_dir:
-                                parent = os.path.dirname(start_path)
-                                if isinstance(file_list, ft.Column):
-                                    file_list.controls.append(
-                                        ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True)
-                                    )
+                    else:
+                        if start_path != comic_library_dir:
+                            parent = os.path.dirname(start_path)
+                            if isinstance(file_list, ft.Column):
+                                file_list.controls.append(
+                                    ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True)
+                                )
                         
                         items = sorted(os.listdir(start_path))
                         for item in items:
