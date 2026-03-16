@@ -212,6 +212,9 @@ struct ModernLibraryView: View {
                     ImmersiveConversionOverlay(pdfName: "Processing Library Item...")
                         .transition(.opacity.animation(.easeInOut))
                 }
+                
+                // ✅ NEW: Background Import Tracker
+                ImportTrackerView()
             }
         )
         .safeAreaInset(edge: .bottom) {

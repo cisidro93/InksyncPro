@@ -112,11 +112,43 @@ struct ImportQueueView: View {
             }
             .sheet(isPresented: $showingPicker) {
                 DocumentPicker(onDocumentsPicked: { newURLs in
-                    DispatchQueue.main.async {
-                        // Append new URLs while avoiding exact duplicates
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        var extractedURLs: [URL] = []
+                        let fileManager = FileManager.default
+                        let allowedExtensions: Set<String> = ["pdf", "cbz", "zip", "epub"]
+                        
                         for url in newURLs {
-                            if !self.stagedURLs.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
-                                self.stagedURLs.append(url)
+                            // Request security access to read outside the sandbox
+                            let secured = url.startAccessingSecurityScopedResource()
+                            
+                            var isDirectory: ObjCBool = false
+                            if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                                // Recursively search the directory
+                                if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
+                                    for case let fileURL as URL in enumerator {
+                                        if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
+                                            extractedURLs.append(fileURL)
+                                        }
+                                    }
+                                }
+                            } else {
+                                // It's a standard single file selection
+                                if allowedExtensions.contains(url.pathExtension.lowercased()) {
+                                    extractedURLs.append(url)
+                                }
+                            }
+                            
+                            if secured {
+                                url.stopAccessingSecurityScopedResource()
+                            }
+                        }
+                        
+                        DispatchQueue.main.async {
+                            // Append extracted URLs while avoiding exact duplicates
+                            for url in extractedURLs {
+                                if !self.stagedURLs.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
+                                    self.stagedURLs.append(url)
+                                }
                             }
                         }
                     }
