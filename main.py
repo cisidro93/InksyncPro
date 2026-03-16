@@ -25,8 +25,8 @@ def main(page):
             "output_format": "epub", # default to epub for kindle
             "compress_enabled": False,
             "manga_mode": False,
-            "server_running": False,
             "view_mode": "external", # 'external' for Import, 'internal' for Convert
+            "library_display_mode": "list", # 'list', 'grid', 'cover'
             "discovered_peers": {} # name -> {"ip": ip, "port": port, "alias": name}
         }
         
@@ -36,6 +36,28 @@ def main(page):
         os.makedirs(comic_library_dir, exist_ok=True)
         downloads_dir = os.path.join(base_dir, "webapp", "downloads")
         os.makedirs(downloads_dir, exist_ok=True)
+        thumbnails_dir = os.path.join(base_dir, ".cache", "thumbnails")
+        os.makedirs(thumbnails_dir, exist_ok=True)
+        
+        # Thumbnail Extractor
+        def get_thumbnail(cbz_path):
+            import zipfile, hashlib
+            try:
+                # Use a hash of the filepath plus modification time for robust caching
+                file_hash = hashlib.md5(f"{cbz_path}_{os.path.getmtime(cbz_path)}".encode()).hexdigest()
+                thumb_path = os.path.join(thumbnails_dir, f"{file_hash}.jpg")
+                
+                if os.path.exists(thumb_path):
+                    return thumb_path
+                    
+                with zipfile.ZipFile(cbz_path, 'r') as zf:
+                    image_files = sorted([f for f in zf.namelist() if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))])
+                    if image_files:
+                        with zf.open(image_files[0]) as source, open(thumb_path, 'wb') as target:
+                            target.write(source.read())
+                        return thumb_path
+            except: pass
+            return None
         
         # Initialize engines
         import cbz_to_pdf
@@ -139,9 +161,29 @@ def main(page):
                         border=ft.border.all(3, "black"),
                         padding=12,
                         expand=True,
-                        ink=True
                     )
                 ], spacing=0)
+
+                # Library Display Mode Toggle (Only visible in internal mode)
+                display_mode_toggle = ft.Container()
+                if state["view_mode"] == "internal" and state["current_path"] == comic_library_dir:
+                    def on_display_change(e):
+                        state["library_display_mode"] = e.control.selected_index
+                        render_ui()
+                        
+                    display_mode_toggle = ft.Container(
+                        content=ft.CupertinoSlidingSegmentedButton(
+                            selected_index=({"list": 0, "grid": 1, "cover": 2}).get(state["library_display_mode"], 0),
+                            controls=[
+                                ft.Text("List"),
+                                ft.Text("Grid"),
+                                ft.Text("Cover")
+                            ],
+                            on_change=lambda e: (state.update({"library_display_mode": ["list", "grid", "cover"][int(e.data)]}), render_ui())
+                        ),
+                        padding=10,
+                        alignment=ft.alignment.center
+                    )
 
                 # Wi-Fi Server
                 def get_local_ip():
@@ -533,6 +575,7 @@ def main(page):
 
                 def list_item(text, icon, full_path, is_dir=False, is_file=False):
                     is_selected = full_path in state["selected_items"]
+                    display_mode = state.get("library_display_mode", "list") if state["view_mode"] == "internal" and state["current_path"] == comic_library_dir else "list"
                     
                     def on_check(e):
                         toggle_selection(full_path, e.control.value)
@@ -540,6 +583,32 @@ def main(page):
                     def on_row_click(e):
                         if is_dir: navigate(full_path)
                         elif is_file: toggle_selection(full_path, not is_selected)
+                        
+                    if display_mode in ["grid", "cover"] and is_file and full_path.lower().endswith(('.cbz', '.cbr')):
+                        thumb_path = get_thumbnail(full_path)
+                        img_content = ft.Image(src=thumb_path, fit=ft.ImageFit.COVER) if thumb_path else ft.Container(bgcolor="grey")
+                        
+                        return ft.Container(
+                            content=ft.Stack([
+                                img_content,
+                                ft.Container(
+                                    content=ft.Text(text, size=12, color="white", weight="w900", no_wrap=True, text_align="center"),
+                                    bgcolor=ft.colors.with_opacity(0.7, "black"),
+                                    alignment=ft.alignment.bottom_center,
+                                    bottom=0, left=0, right=0, padding=4
+                                ),
+                                ft.Container(
+                                    content=ft.Checkbox(value=is_selected, on_change=on_check, active_color="black"),
+                                    top=4, right=4
+                                )
+                            ]),
+                            on_click=on_row_click,
+                            bgcolor="black",
+                            border=ft.border.all(4 if is_selected else 2, "black" if is_selected else "transparent"),
+                            border_radius=8,
+                            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                            ink=True
+                        )
                         
                     return ft.Container(
                         content=ft.Row([
@@ -554,28 +623,37 @@ def main(page):
                         ink=True
                     )
                 
-                file_list = ft.Column(scroll="auto", expand=True, spacing=2)
                 start_path = state["current_path"]
+                display_mode = state.get("library_display_mode", "list") if state["view_mode"] == "internal" and start_path == comic_library_dir else "list"
+                
+                if display_mode == "grid":
+                    file_list = ft.GridView(expand=True, runs_count=5, max_extent=160, child_aspect_ratio=0.7, spacing=10, run_spacing=10)
+                elif display_mode == "cover":
+                    file_list = ft.GridView(expand=True, runs_count=5, max_extent=280, child_aspect_ratio=0.7, spacing=15, run_spacing=15)
+                else:
+                    file_list = ft.Column(scroll="auto", expand=True, spacing=2)
                 
                 try:
                     if state["view_mode"] == "external" and start_path == "/storage":
                         for drive in get_android_drives():
-                             file_list.controls.append(list_item(drive, "💾", drive, is_dir=True))
+                             if isinstance(file_list, ft.Column): file_list.controls.append(list_item(drive, "💾", drive, is_dir=True))
                     else:
                         if state["view_mode"] == "external":
                             parent = os.path.dirname(start_path)
-                            file_list.controls.append(
-                                ft.Row([
-                                    ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True),
-                                    ft.Container(content=ft.Text("DRIVES", color="black", weight="w900"), on_click=lambda _: navigate("/storage"), bgcolor="white", border=ft.border.all(2,"black"), padding=15, ink=True),
-                                ])
-                            )
+                            if isinstance(file_list, ft.Column):
+                                file_list.controls.append(
+                                    ft.Row([
+                                        ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True),
+                                        ft.Container(content=ft.Text("DRIVES", color="black", weight="w900"), on_click=lambda _: navigate("/storage"), bgcolor="white", border=ft.border.all(2,"black"), padding=15, ink=True),
+                                    ])
+                                )
                         else:
                             if start_path != comic_library_dir:
                                 parent = os.path.dirname(start_path)
-                                file_list.controls.append(
-                                    ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True)
-                                )
+                                if isinstance(file_list, ft.Column):
+                                    file_list.controls.append(
+                                        ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=lambda _: navigate(parent), bgcolor="black", padding=15, expand=True, ink=True)
+                                    )
                         
                         items = sorted(os.listdir(start_path))
                         for item in items:
@@ -586,17 +664,18 @@ def main(page):
                                 if item.lower().endswith(('.cbz', '.cbr')):
                                     file_list.controls.append(list_item(item, "📄", full_path, is_file=True))
                                 else:
-                                    file_list.controls.append(
-                                        ft.Container(
-                                            content=ft.Row([
-                                                ft.Text("⚠️", size=24),
-                                                ft.Text(item, size=16, color="grey", no_wrap=True)
-                                            ]),
-                                            bgcolor="#EEEEEE",
-                                            border=ft.border.all(1, "grey"),
-                                            padding=15
+                                    if isinstance(file_list, ft.Column):
+                                        file_list.controls.append(
+                                            ft.Container(
+                                                content=ft.Row([
+                                                    ft.Text("⚠️", size=24),
+                                                    ft.Text(item, size=16, color="grey", no_wrap=True)
+                                                ]),
+                                                bgcolor="#EEEEEE",
+                                                border=ft.border.all(1, "grey"),
+                                                padding=15
+                                            )
                                         )
-                                    )
                 except Exception as e:
                     file_list.controls.append(ft.Text(f"ACCESS DENIED: {e}", color="black", weight="w900"))
 
@@ -609,6 +688,7 @@ def main(page):
                             settings_col,
                             ft.Container(bgcolor="black", height=2),
                             mode_toggle,
+                            display_mode_toggle,
                             ft.Text(f"STAGED IN QUEUE: {len(state['selected_items'])} FILES (MULTI-FOLDER READY)\nDIR: {start_path}", color="black", size=14, weight="w900"),
                             ft.Container(content=file_list, height=400),
                             
