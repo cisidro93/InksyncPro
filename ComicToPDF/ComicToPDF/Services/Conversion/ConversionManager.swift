@@ -425,21 +425,26 @@ class ConversionManager: ObservableObject {
     
     // MARK: - File Management
     func scanLibrary(addedByMode: AppUIMode? = nil) {
-        let fileManager = FileManager.default
-        let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        
-
+        Task.detached(priority: .background) {
+            let fileManager = FileManager.default
+            let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            
             // Recursive Scan
             // We use enumerator to find files deep in folders
             var newPDFs: [ConvertedPDF] = []
             let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
+            
+            // 1. Get current paths to avoid synchronous MainActor blocking
+            let currentPaths = await MainActor.run {
+                Set(self.convertedPDFs.map { $0.url.standardizedFileURL.path })
+            }
             
             if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
                  for case let fileURL as URL in enumerator {
                      let ext = fileURL.pathExtension.lowercased()
                     if ["pdf", "cbz", "zip", "epub"].contains(ext) {
                          // Check if already exists (Standardized Path Check)
-                         if !convertedPDFs.contains(where: { $0.url.standardizedFileURL.path == fileURL.standardizedFileURL.path }) {
+                         if !currentPaths.contains(fileURL.standardizedFileURL.path) {
                              let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                              // ✅ Tag new files with the mode that triggered this scan
                              let sourceMode = addedByMode ?? .pro
@@ -451,15 +456,19 @@ class ConversionManager: ObservableObject {
                  }
             }
             
-            // Add new ones
+            // Add new ones safely
             if !newPDFs.isEmpty {
-                convertedPDFs.append(contentsOf: newPDFs)
-                Logger.shared.log("Library Scanned: Found \(newPDFs.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
-                saveLibrary()
+                await MainActor.run {
+                    self.convertedPDFs.append(contentsOf: newPDFs)
+                    Logger.shared.log("Library Scanned: Found \(newPDFs.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
+                    self.saveLibrary()
+                }
             }
             
-            // ✅ FIX: Process any file missing page count or metadata (catches Folder Sync & Series Import)
-            let pdfsToProcess = convertedPDFs.filter { $0.pageCount == 0 }
+            // Process any file missing page count or metadata (catches Folder Sync & Series Import)
+            let pdfsToProcess = await MainActor.run {
+                self.convertedPDFs.filter { $0.pageCount == 0 }
+            }
             
             if !pdfsToProcess.isEmpty {
                 // Process Metadata & Thumbnails in Background
@@ -493,14 +502,18 @@ class ConversionManager: ObservableObject {
                 }
             }
             
-            // Cleanup: Remove missing files
-            let missingCount = convertedPDFs.filter { !fileManager.fileExists(atPath: $0.url.path) }.count
-            if missingCount > 0 {
-                convertedPDFs.removeAll { !fileManager.fileExists(atPath: $0.url.path) }
-                Logger.shared.log("Removed \(missingCount) missing files from library", category: "Library")
-            }
+            // Cleanup: Remove missing files safely
+            let allPDFs = await MainActor.run { self.convertedPDFs }
+            let missingIDs = allPDFs.filter { !fileManager.fileExists(atPath: $0.url.path) }.map { $0.id }
             
-
+            if !missingIDs.isEmpty {
+                await MainActor.run {
+                    self.convertedPDFs.removeAll { missingIDs.contains($0.id) }
+                    Logger.shared.log("Removed \(missingIDs.count) missing files from library", category: "Library")
+                    self.saveLibrary()
+                }
+            }
+        }
     }
     
     func deletePDF(_ pdf: ConvertedPDF) {
