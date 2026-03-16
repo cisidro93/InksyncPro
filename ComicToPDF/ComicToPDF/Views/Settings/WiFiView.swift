@@ -54,7 +54,7 @@ struct WiFiView: View {
         Group {
             if !queueManager.stagedFiles.isEmpty {
                 Section(header: Text("Staged Files (\(queueManager.formattedTotalSize()))")) {
-                    ForEach(queueManager.stagedFiles) { file in
+                    ForEach(queueManager.stagedFiles, id: \.id) { file in
                         HStack {
                             Image(systemName: "doc.text")
                                 .foregroundColor(.blue)
@@ -65,9 +65,9 @@ struct WiFiView: View {
                     }
                 }
                 
-                if !peerManager.discoveredPeers.isEmpty {
+                if !peerManager.availablePeers.isEmpty {
                     Section(header: Text("Direct Send to Device (High Speed)")) {
-                        ForEach(peerManager.discoveredPeers, id: \.ipAddress) { peer in
+                        ForEach(peerManager.availablePeers) { peer in
                             Button(action: {
                                 Task {
                                     do {
