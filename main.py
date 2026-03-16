@@ -339,15 +339,24 @@ def main(page):
                                 try:
                                     import requests, uuid
                                     
+                                    # List of dicts: {"abs_path": ..., "rel_path": ...}
                                     files_to_send = []
                                     for p in list(state["selected_items"]):
                                         if os.path.isdir(p):
+                                            parent_folder_name = os.path.basename(p)
                                             for root, _, files in os.walk(p):
                                                 for f in files:
                                                     if f.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
-                                                        files_to_send.append(os.path.join(root, f))
+                                                        abs_path = os.path.join(root, f)
+                                                        # e.g. root = "/storage/Manga/Bleach/Vol1", p = "/storage/Manga/Bleach"
+                                                        # relative_to_selected = "Vol1/file.cbz"
+                                                        rel_to_p = os.path.relpath(abs_path, p)
+                                                        # final logical path: "Bleach/Vol1/file.cbz"
+                                                        logical_path = os.path.join(parent_folder_name, rel_to_p).replace('\\', '/')
+                                                        files_to_send.append({"abs_path": abs_path, "rel_path": logical_path})
                                         elif os.path.isfile(p):
-                                            files_to_send.append(p)
+                                            if p.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
+                                                files_to_send.append({"abs_path": p, "rel_path": os.path.basename(p)})
                                             
                                     total_send = len(files_to_send)
                                     if total_send == 0:
@@ -358,14 +367,20 @@ def main(page):
                                         
                                     s_count = 0
                                     f_count = 0
-                                    for idx, s_path in enumerate(files_to_send):
+                                    for idx, send_data in enumerate(files_to_send):
+                                        s_path = send_data["abs_path"]
+                                        s_rel_path = send_data["rel_path"]
                                         s_name = os.path.basename(s_path)
+                                        
                                         state["monitor_message"] = f"[{idx+1}/{total_send}] SENDING {s_name.upper()}..."
                                         state["monitor_progress"] = (idx+1)/total_send
                                         page.update()
                                         
                                         upload_url = f"http://{p_data['ip']}:{p_data['port']}/upload/{uuid.uuid4().hex}"
-                                        headers = {'X-File-Name': s_name}
+                                        headers = {
+                                            'X-File-Name': s_name,
+                                            'X-Relative-Path': s_rel_path
+                                        }
                                         
                                         try:
                                             with open(s_path, 'rb') as vf:
