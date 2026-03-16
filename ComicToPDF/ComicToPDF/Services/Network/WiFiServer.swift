@@ -271,7 +271,13 @@ class WiFiServer: ObservableObject {
             
             context.filename = fileName
             context.relativePath = relativePath
-            setupUpload(context: context)
+            
+            let success = setupUpload(context: context)
+            if !success {
+                // Reject duplicate or errored uploads instantly
+                sendResponse(connection, 409, "File already exists or cannot be created.")
+                return
+            }
             
             // Streaming Logic
             context.isHeaderParsed = true 
@@ -357,7 +363,7 @@ class WiFiServer: ObservableObject {
         """
     }
     
-    private func setupUpload(context: ConnectionContext) {
+    private func setupUpload(context: ConnectionContext) -> Bool {
         context.isHeaderParsed = true
         
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -378,6 +384,12 @@ class WiFiServer: ObservableObject {
         
         context.destinationURL = destURL
         
+        // ✅ NEW: Duplicate File Prevention
+        if FileManager.default.fileExists(atPath: destURL.path) {
+            Logger.shared.log("WiFi Transfer - Rejected duplicate upload: \(destURL.lastPathComponent)", category: "Network", type: .warning)
+            return false
+        }
+        
         // Create file
         FileManager.default.createFile(atPath: destURL.path, contents: nil, attributes: nil)
         Logger.shared.log("Starting Upload: \(destURL.lastPathComponent) to path: \(destURL.path)", category: "Network")
@@ -392,8 +404,10 @@ class WiFiServer: ObservableObject {
                 self.uploadProgress = 0.0
                 self.startBackgroundTask()
             }
+            return true
         } catch {
             Logger.shared.log("WiFi Transfer Failed to open file for writing: \(error.localizedDescription)", category: "Network", type: .error)
+            return false
         }
     }
     
@@ -698,6 +712,10 @@ class WiFiServer: ObservableObject {
                             status.innerText = "✅ Complete!";
                             fill.style.background = "#34c759";
                             setTimeout(() => location.reload(), 1500);
+                        } else if (xhr.status == 409) {
+                            status.innerText = "⚠️ File already exists!";
+                            fill.style.background = "#ffcc00";
+                            btn.disabled = false;
                         } else {
                             status.innerText = "❌ Error: " + xhr.statusText;
                             btn.disabled = false;

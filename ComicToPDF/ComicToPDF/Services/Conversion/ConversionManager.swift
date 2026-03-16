@@ -607,7 +607,38 @@ class ConversionManager: ObservableObject {
      }
     
     func processImportedFiles(urls: [URL]) async {
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var skippedFiles: [String] = []
+        var filesToProcess: [URL] = []
+        
         for url in urls {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
+            let ext = url.pathExtension.lowercased()
+            let finalName: String
+            if ext == "epub" {
+                finalName = (url.lastPathComponent as NSString).deletingPathExtension + ".cbz"
+            } else {
+                finalName = url.lastPathComponent
+            }
+            let destURL = documentsDir.appendingPathComponent(finalName)
+            
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                skippedFiles.append(finalName)
+            } else {
+                filesToProcess.append(url)
+            }
+        }
+        
+        if !skippedFiles.isEmpty {
+            let message = skippedFiles.count == 1 ? "Skipped duplicate file:\n\(skippedFiles[0])" : "Skipped \(skippedFiles.count) duplicate files."
+            await MainActor.run {
+                self.appAlert = AppAlert(title: "Duplicates Skipped", message: message)
+            }
+        }
+        
+        for url in filesToProcess {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
@@ -671,14 +702,6 @@ class ConversionManager: ObservableObject {
                 let fileName = url.lastPathComponent
                 let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 let destURL = docDir.appendingPathComponent(fileName)
-                if FileManager.default.fileExists(atPath: destURL.path) { 
-                    try FileManager.default.removeItem(at: destURL) 
-                    // ✅ FIX: Remove old reference so scanLibrary treats the replaced file as brand new
-                    // This forces fresh panel extraction from the newly copied CBZ
-                    await MainActor.run {
-                        self.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == fileName })
-                    }
-                }
                 try FileManager.default.copyItem(at: url, to: destURL)
             } catch { 
                 Logger.shared.log("Failed to copy imported file \(url.lastPathComponent): \(error.localizedDescription)", category: "Import", type: .error)
