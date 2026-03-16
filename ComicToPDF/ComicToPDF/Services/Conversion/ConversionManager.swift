@@ -840,18 +840,46 @@ class ConversionManager: ObservableObject {
         await ImportMonitorManager.shared.completeImport()
         guard !importedPDFs.isEmpty else { return }
         
-        // Determine the dominant series name across all imported files
-        let detectedSeriesNames = importedPDFs.reduce(into: [String: Int]()) { dict, pdf in
-            let cleanName = pdf.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? ""
-            if !cleanName.isEmpty {
-                dict[cleanName, default: 0] += 1
-            }
-        }
+        // --- Smart Auto-Grouping (String Similarity / Longest Common Prefix) ---
+        var dominantSeries = ""
+        var allSameSeries = false
         
-        let dominantSeries = detectedSeriesNames.max(by: { $0.value < $1.value })?.key ?? ""
-        let allSameSeries = !dominantSeries.isEmpty && importedPDFs.allSatisfy { 
-            let cleanName = $0.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? ""
-            return cleanName == dominantSeries 
+        if importedPDFs.count > 1 {
+            // Extract cleaned, alphanumeric prefixes from filenames, ignoring brackets and standard junk
+            let cleanNames: [String] = importedPDFs.compactMap { pdf in
+                let name = pdf.name as NSString
+                // Matches groups like "[Group]" or "(Digital)" and removes them
+                let regex = try? NSRegularExpression(pattern: "\\[.*?\\]|\\(.*?\\)", options: [])
+                let noBrackets = regex?.stringByReplacingMatches(in: name as String, options: [], range: NSRange(location: 0, length: name.length), withTemplate: "") ?? pdf.name
+                
+                // Strip trailing numbers, volume markers, and extensions
+                let withoutExt = (noBrackets as NSString).deletingPathExtension
+                if let range = withoutExt.range(of: "\\s*(v|vol|volume|c|ch|chapter|issue)?\\s*\\d+.*$", options: [.regularExpression, .caseInsensitive]) {
+                    return String(withoutExt[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
+                }
+                return withoutExt.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
+            }.filter { !$0.isEmpty }
+            
+            if !cleanNames.isEmpty {
+                // Find the Longest Common Prefix (LCP) across the cleaned names
+                dominantSeries = cleanNames[0]
+                for name in cleanNames.dropFirst() {
+                    while !name.hasPrefix(dominantSeries) && !dominantSeries.isEmpty {
+                        dominantSeries = String(dominantSeries.dropLast())
+                    }
+                }
+                
+                dominantSeries = dominantSeries.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
+                
+                // If a meaningful common prefix exists (e.g. "Bleach") that is at least 3 chars long, auto-group them.
+                if dominantSeries.count >= 3 {
+                    allSameSeries = true
+                } else {
+                    dominantSeries = "" // Fallback to manual prompt if LCP fails
+                }
+            }
+        } else if let single = importedPDFs.first {
+             dominantSeries = single.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? ""
         }
         
         // Back to Main Actor for State Updates and Covers

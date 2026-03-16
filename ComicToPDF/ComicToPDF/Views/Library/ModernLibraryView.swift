@@ -36,6 +36,7 @@ struct ModernLibraryView: View {
         case grid = "Grid"
     }
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
+    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .select // ✅ NEW: Tap Action Selector
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
     
     // Local State
@@ -404,19 +405,27 @@ struct ModernLibraryView: View {
                                     contextMenuContent(pdf)
                                 }
                             } else {
-                                ModernFileRow(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
-                                    .tag(pdf)
-                                    .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
-                                    .listRowSeparatorTint(Color(white: 0.2))
-                                    .swipeActions(edge: .leading) {
-                                        swipeActionsLeading(pdf)
+                                Button {
+                                    if tapAction == .read {
+                                        pdfToRead = pdf
+                                    } else {
+                                        selectedPDF = pdf
                                     }
-                                    .swipeActions(edge: .trailing) {
-                                        swipeActionsTrailing(pdf)
-                                    }
-                                    .contextMenu {
-                                        contextMenuContent(pdf)
-                                    }
+                                } label: {
+                                    ModernFileRow(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
+                                }
+                                .tag(pdf)
+                                .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
+                                .listRowSeparatorTint(Color(white: 0.2))
+                                .swipeActions(edge: .leading) {
+                                    swipeActionsLeading(pdf)
+                                }
+                                .swipeActions(edge: .trailing) {
+                                    swipeActionsTrailing(pdf)
+                                }
+                                .contextMenu {
+                                    contextMenuContent(pdf)
+                                }
                             }
                         }
                     }
@@ -481,7 +490,11 @@ struct ModernLibraryView: View {
                                     .contextMenu { contextMenuContent(pdf) }
                                 } else {
                                     Button {
-                                        selectedPDF = pdf
+                                        if tapAction == .read {
+                                            pdfToRead = pdf
+                                        } else {
+                                            selectedPDF = pdf
+                                        }
                                     } label: {
                                         ModernGridFileCell(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
                                     }
@@ -668,6 +681,23 @@ struct ModernLibraryView: View {
                     Image(systemName: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(Theme.text)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.1), lineWidth: 1))
+                }
+                
+                // ✅ NEW: Tap Action Selector
+                Menu {
+                    Picker("Tap Action", selection: $tapAction) {
+                        ForEach(LibraryTapAction.allCases, id: \.self) { action in
+                            Text(action.rawValue).tag(action)
+                        }
+                    }
+                } label: {
+                    Image(systemName: tapAction == .read ? "hand.tap.fill" : "cursorarrow.click.2")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(Theme.orange)
                         .frame(width: 44, height: 44)
                         .background(.ultraThinMaterial)
                         .clipShape(Circle())
