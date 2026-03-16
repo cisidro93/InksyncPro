@@ -19,6 +19,17 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache Flet and Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.flet
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-flet-gradle-${{ hashFiles('**/*.py', 'requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-flet-gradle-
+
       - name: Install dependencies
         run: |
           pip install -r requirements_mobile.txt
@@ -32,13 +43,31 @@ jobs:
           mv requirements.txt requirements_desktop.txt
           mv requirements_mobile.txt requirements.txt
 
+      - name: Isolate Android source payloads
+        run: |
+          mkdir android_build
+          cp main.py android_build/ || true
+          cp cbz_to_pdf.py android_build/ || true
+          cp cbz_to_epub.py android_build/ || true
+          cp image_processor.py android_build/ || true
+          cp ui_components.py android_build/ || true
+          cp worker.py android_build/ || true
+          cp email_sender.py android_build/ || true
+          cp styles.py android_build/ || true
+          cp utils.py android_build/ || true
+          cp web_server_thread.py android_build/ || true
+          cp download_7zr.py android_build/ || true
+          cp download_unrar.py android_build/ || true
+          cp app_icon.png android_build/ || true
+          cp -r webapp android_build/ || true
+          cp requirements.txt android_build/ || true
+
       - name: Build APK via Flet
         run: |
-          ls -R
-          yes | flet build apk . --verbose
+          yes | flet build apk android_build --verbose
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: build/apk/app-release.apk # Adjust path based on where flet outputs
+          path: build/apk/app-release.apk
