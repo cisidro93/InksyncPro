@@ -9,26 +9,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
-      - name: Cache Flet and Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.flet
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-flet-gradle-${{ hashFiles('**/*.py', 'requirements*.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-flet-gradle-
 
       - name: Install dependencies
         run: |
@@ -43,34 +34,13 @@ jobs:
           mv requirements.txt requirements_desktop.txt
           mv requirements_mobile.txt requirements.txt
 
-      - name: Isolate Android source payloads
-        run: |
-          mkdir android_build
-          cp main.py android_build/ || true
-          cp cbz_to_pdf.py android_build/ || true
-          cp cbz_to_epub.py android_build/ || true
-          cp image_processor.py android_build/ || true
-          cp ui_components.py android_build/ || true
-          cp worker.py android_build/ || true
-          cp email_sender.py android_build/ || true
-          cp styles.py android_build/ || true
-          cp utils.py android_build/ || true
-          cp web_server_thread.py android_build/ || true
-          cp download_7zr.py android_build/ || true
-          cp download_unrar.py android_build/ || true
-          cp app_icon.png android_build/ || true
-          cp -r webapp android_build/ || true
-          cp requirements.txt android_build/ || true
-          echo '[app]' > android_build/flet.toml
-          echo 'name = "InksyncPro"' >> android_build/flet.toml
-          echo 'package_name = "com.cisidro93"' >> android_build/flet.toml
-
       - name: Build APK via Flet
         run: |
-          yes | flet build apk android_build --verbose
+          ls -R
+          yes | flet build apk . --project InksyncPro --org com.cisidro93.inksyncpro --verbose
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: '**/*.apk'
+          path: build/apk/**/*.apk

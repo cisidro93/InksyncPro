@@ -28,7 +28,16 @@ def main(page):
             "server_running": False,
             "view_mode": "external", # 'external' for Import, 'internal' for Convert
             "library_display_mode": "list", # 'list', 'grid', 'cover'
-            "discovered_peers": {} # name -> {"ip": ip, "port": port, "alias": name}
+            "discovered_peers": {}, # name -> {"ip": ip, "port": port, "alias": name}
+            # Background Task Monitor State
+            "monitor_active": False,
+            "monitor_title": "",
+            "monitor_message": "STANDING BY",
+            "monitor_progress": 0.0,
+            "monitor_success": 0,
+            "monitor_fail": 0,
+            "monitor_total": 0,
+            "show_report": False
         }
         
         # Initialize internal storage directory
@@ -202,7 +211,7 @@ def main(page):
                 def toggle_server(e):
                     global web_server
                     if not state["server_running"]:
-                        status_txt.value = "STARTING MEDIA SERVER..."
+                        server_url_txt.value = "STARTING MEDIA SERVER..."
                         page.update()
                         def run_server():
                             global web_server
@@ -259,12 +268,11 @@ def main(page):
 
                                 server_url_txt.value = f"SERVER ACTIVE AT:\nhttp://{ip}:5000\n(mDNS LocalSend READY)"
                                 btn_server.content.value = "STOP WI-FI SERVER"
-                                status_txt.value = "SERVER RUNNING"
                                 page.update()
                                 web_server.serve_forever()
                             except Exception as err:
                                 state["server_running"] = False
-                                status_txt.value = f"SERVER ERROR: {err}"
+                                server_url_txt.value = f"SERVER ERROR: {err}"
                                 page.update()
                         import threading
                         threading.Thread(target=run_server, daemon=True).start()
@@ -284,20 +292,16 @@ def main(page):
                                 state["discovered_peers"] = {}
 
                             state["server_running"] = False
-                            server_url_txt.value = ""
+                            server_url_txt.value = "SERVER STOPPED"
                             btn_server.content.value = "START WI-FI SERVER"
-                            status_txt.value = "SERVER STOPPED"
                             page.update()
                         except Exception as err:
-                            status_txt.value = f"STOP ERROR: {err}"
+                            server_url_txt.value = f"STOP ERROR: {err}"
                             page.update()
                             
                 btn_server = eink_button("STOP WI-FI SERVER" if state["server_running"] else "START WI-FI SERVER", on_click=toggle_server, expand=True)
 
-                # Batch Converter Logic
-                progress_bar = ft.ProgressBar(width=300, visible=False, color="black", bgcolor="white")
-                status_txt = ft.Text("STANDING BY", color="black", weight="w900", size=18)
-                
+                # Batch Converter Logic removed, replaced by dynamic state tracker
                 # --- OUTGOING P2P SEND UI ---
                 peers_controls = []
                 if state["server_running"] and state.get("discovered_peers"):
@@ -305,12 +309,16 @@ def main(page):
                     for peer_name, peer_data in state["discovered_peers"].items():
                         def send_to_peer(e, p_data=peer_data):
                             if not state["selected_items"]:
-                                status_txt.value = "PLEASE STAGE FILES TO SEND FIRST."
+                                state["monitor_active"] = False
+                                state["monitor_title"] = "Selection Empty"
+                                state["monitor_message"] = "PLEASE STAGE FILES TO SEND FIRST."
+                                state["show_report"] = True
                                 page.update()
                                 return
                             
-                            status_txt.value = f"CONNECTING TO {p_data['alias'].upper()}..."
-                            progress_bar.visible = True
+                            state["monitor_active"] = True
+                            state["monitor_message"] = f"CONNECTING TO {p_data['alias'].upper()}..."
+                            state["monitor_progress"] = 0.0
                             page.update()
                             
                             def s_worker():
@@ -329,35 +337,45 @@ def main(page):
                                             
                                     total_send = len(files_to_send)
                                     if total_send == 0:
-                                        status_txt.value = "NO VALID FILES TO SEND."
-                                        progress_bar.visible = False
+                                        state["monitor_active"] = False
+                                        state["monitor_message"] = "NO VALID FILES TO SEND."
                                         page.update()
                                         return
                                         
                                     s_count = 0
+                                    f_count = 0
                                     for idx, s_path in enumerate(files_to_send):
                                         s_name = os.path.basename(s_path)
-                                        status_txt.value = f"[{idx+1}/{total_send}] SENDING {s_name.upper()}..."
-                                        progress_bar.value = (idx+1)/total_send
+                                        state["monitor_message"] = f"[{idx+1}/{total_send}] SENDING {s_name.upper()}..."
+                                        state["monitor_progress"] = (idx+1)/total_send
                                         page.update()
                                         
                                         upload_url = f"http://{p_data['ip']}:{p_data['port']}/upload/{uuid.uuid4().hex}"
                                         headers = {'X-File-Name': s_name}
                                         
-                                        with open(s_path, 'rb') as vf:
-                                            resp = requests.post(upload_url, data=vf, headers=headers)
-                                            if resp.status_code == 200:
-                                                s_count += 1
+                                        try:
+                                            with open(s_path, 'rb') as vf:
+                                                resp = requests.post(upload_url, data=vf, headers=headers)
+                                                if resp.status_code == 200:
+                                                    s_count += 1
+                                                else:
+                                                    f_count += 1
+                                        except:
+                                            f_count += 1
                                                 
-                                    status_txt.value = f"TRANSMISSION COMPLETE: {s_count}/{total_send} DELIVERED."
-                                    progress_bar.value = 1.0
-                                    page.update()
-                                    time.sleep(3)
-                                    status_txt.value = "STANDING BY"
-                                    progress_bar.visible = False
+                                    state["monitor_active"] = False
+                                    state["monitor_success"] = s_count
+                                    state["monitor_fail"] = f_count
+                                    state["monitor_total"] = total_send
+                                    state["monitor_title"] = "Transmission Complete"
+                                    state["monitor_message"] = f"Delivered {s_count} items.\nFailed {f_count} items."
+                                    state["show_report"] = True
                                     page.update()
                                 except Exception as err:
-                                    status_txt.value = f"TRANSFER ERROR: {str(err).upper()}"
+                                    state["monitor_active"] = False
+                                    state["monitor_title"] = "Transfer Error"
+                                    state["monitor_message"] = str(err).upper()
+                                    state["show_report"] = True
                                     page.update()
                                     
                             import threading
@@ -370,8 +388,9 @@ def main(page):
                 def run_convert(e):
                     if not state["selected_items"]: return
                     
-                    status_txt.value = "GATHERING FILES..."
-                    progress_bar.visible = True
+                    state["monitor_active"] = True
+                    state["monitor_message"] = "GATHERING FILES..."
+                    state["monitor_progress"] = 0.0
                     page.update()
                     
                     selected_paths = list(state["selected_items"])
@@ -384,15 +403,15 @@ def main(page):
                                 if os.path.isdir(p):
                                     for root, _, files in os.walk(p):
                                         for f in files:
-                                            if f.lower().endswith(('.cbz', '.cbr')):
+                                            if f.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
                                                 files_to_process.append(os.path.join(root, f))
-                                elif os.path.isfile(p) and p.lower().endswith(('.cbz', '.cbr')):
+                                elif os.path.isfile(p) and p.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
                                     files_to_process.append(p)
                                     
                             total_files = len(files_to_process)
                             if total_files == 0:
-                                status_txt.value = "NO VALID COMICS FOUND IN SELECTION."
-                                progress_bar.visible = False
+                                state["monitor_active"] = False
+                                state["monitor_message"] = "NO VALID COMICS FOUND IN SELECTION."
                                 page.update()
                                 return
                                 
@@ -401,10 +420,11 @@ def main(page):
                             os.makedirs(downloads_dir, exist_ok=True)
                             
                             success_count = 0
+                            fail_count = 0
                             for idx, src in enumerate(files_to_process):
                                 # Update global status text to show overall batch progress
                                 src_filename = os.path.basename(src)
-                                status_txt.value = f"[{idx+1}/{total_files}] PREPPING {src_filename.upper()}..."
+                                state["monitor_message"] = f"[{idx+1}/{total_files}] PREPPING {src_filename.upper()}..."
                                 page.update()
                                 
                                 out_ext = f".{state['output_format']}"
@@ -413,8 +433,8 @@ def main(page):
                                 
                                 # Callback wrapper to prepend batch status
                                 def batch_progress(p, msg):
-                                    progress_bar.value = p/100
-                                    status_txt.value = f"[{idx+1}/{total_files}] {int(p)}% | {msg.upper()}"
+                                    state["monitor_progress"] = p/100
+                                    state["monitor_message"] = f"[{idx+1}/{total_files}] {int(p)}% | {msg.upper()}"
                                     page.update()
                                 
                                 try:
@@ -425,21 +445,31 @@ def main(page):
                                         res = cbz_to_epub_engine(src, dst, manga_mode=state["manga_mode"], optimize=state["compress_enabled"], progress_callback=batch_progress)
                                     
                                     if res: success_count += 1
+                                    else: fail_count += 1
                                 except Exception as inner_e:
                                     print(f"Skipping {src} due to error: {inner_e}")
+                                    fail_count += 1
                             
-                            status_txt.value = f"BATCH COMPLETE: {success_count}/{total_files} READY FOR WI-FI."
-                            progress_bar.value = 1.0
+                            state["monitor_active"] = False
+                            state["monitor_success"] = success_count
+                            state["monitor_fail"] = fail_count
+                            state["monitor_total"] = total_files
+                            state["monitor_title"] = "Conversion Complete"
+                            state["monitor_message"] = f"Converted {success_count} items.\nFailed {fail_count} items."
+                            state["show_report"] = True
                             
                             # Clear selection after successful batch processing
                             state["selected_items"].clear()
                             
                             page.update()
-                            time.sleep(2)
+                            time.sleep(1.5)
                             render_ui() # Refresh the UI to reflect cleared checkboxes
                             
                         except Exception as err:
-                            status_txt.value = f"BATCH ERROR: {str(err).upper()}"
+                            state["monitor_active"] = False
+                            state["monitor_title"] = "Batch Error"
+                            state["monitor_message"] = str(err).upper()
+                            state["show_report"] = True
                             page.update()
                             
                     import threading
@@ -448,8 +478,9 @@ def main(page):
                 def run_import(e):
                     if not state["selected_items"]: return
                     
-                    status_txt.value = "IMPORTING FILES..."
-                    progress_bar.visible = True
+                    state["monitor_active"] = True
+                    state["monitor_message"] = "IMPORTING FILES..."
+                    state["monitor_progress"] = 0.0
                     page.update()
                     
                     selected_paths = list(state["selected_items"])
@@ -463,24 +494,25 @@ def main(page):
                                 if os.path.isdir(p):
                                     for root, _, files in os.walk(p):
                                         for f in files:
-                                            if f.lower().endswith(('.cbz', '.cbr')):
+                                            if f.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
                                                 files_to_process.append(os.path.join(root, f))
-                                elif os.path.isfile(p) and p.lower().endswith(('.cbz', '.cbr')):
+                                elif os.path.isfile(p) and p.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
                                     files_to_process.append(p)
                                     
                             total_files = len(files_to_process)
                             if total_files == 0:
-                                status_txt.value = "NO VALID COMICS FOUND IN SELECTION."
-                                progress_bar.visible = False
+                                state["monitor_active"] = False
+                                state["monitor_message"] = "NO VALID COMICS FOUND IN SELECTION."
                                 page.update()
                                 return
                                 
                             success_count = 0
+                            fail_count = 0
                             new_selected = set()
                             for idx, src in enumerate(files_to_process):
                                 src_filename = os.path.basename(src)
-                                status_txt.value = f"[{idx+1}/{total_files}] IMPORTING {src_filename.upper()}..."
-                                progress_bar.value = (idx+1)/total_files
+                                state["monitor_message"] = f"[{idx+1}/{total_files}] IMPORTING {src_filename.upper()}..."
+                                state["monitor_progress"] = (idx+1)/total_files
                                 page.update()
                                 
                                 # Extract parent folder to maintain series grouping
@@ -508,27 +540,36 @@ def main(page):
                                                     perc = copied_size / file_size if file_size > 0 else 1.0
                                                     mb_copied = copied_size / (1024 * 1024)
                                                     mb_total = file_size / (1024 * 1024)
-                                                    status_txt.value = f"[{idx+1}/{total_files}] COPYING {src_filename.upper()}... {mb_copied:.1f}MB / {mb_total:.1f}MB ({int(perc*100)}%)"
-                                                    progress_bar.value = perc
+                                                    state["monitor_message"] = f"[{idx+1}/{total_files}] COPYING {src_filename.upper()}... {mb_copied:.1f}MB / {mb_total:.1f}MB ({int(perc*100)}%)"
+                                                    state["monitor_progress"] = perc
                                                     page.update()
                                                     
                                     success_count += 1
                                 except Exception as inner_e:
                                     print(f"Skipping {src} setup due to error: {inner_e}")
+                                    fail_count += 1
                             
-                            status_txt.value = f"IMPORT COMPLETE: {success_count}/{total_files} READY IN INTERNAL LIBRARY."
-                            progress_bar.value = 1.0
+                            state["monitor_active"] = False
+                            state["monitor_success"] = success_count
+                            state["monitor_fail"] = fail_count
+                            state["monitor_total"] = total_files
+                            state["monitor_title"] = "Import Complete"
+                            state["monitor_message"] = f"Successfully imported {success_count} item(s).\nFailed {fail_count} item(s)."
+                            state["show_report"] = True
                             
                             state["view_mode"] = "internal"
                             state["current_path"] = comic_library_dir
                             state["selected_items"] = new_selected
                             
                             page.update()
-                            time.sleep(2)
+                            time.sleep(1.5)
                             render_ui()
                             
                         except Exception as err:
-                            status_txt.value = f"IMPORT ERROR: {str(err).upper()}"
+                            state["monitor_active"] = False
+                            state["monitor_title"] = "Import Error"
+                            state["monitor_message"] = str(err).upper()
+                            state["show_report"] = True
                             page.update()
                             
                     import threading
@@ -541,10 +582,10 @@ def main(page):
                             try:
                                 for root, _, files in os.walk(p):
                                     for f in files:
-                                        if f.lower().endswith(('.cbz', '.cbr')):
+                                        if f.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
                                             count += 1
                             except: pass
-                        elif os.path.isfile(p) and p.lower().endswith(('.cbz', '.cbr')):
+                        elif os.path.isfile(p) and p.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
                             count += 1
                     return count
                     
@@ -662,7 +703,7 @@ def main(page):
                             if os.path.isdir(full_path):
                                 file_list.controls.append(list_item(item, "📂", full_path, is_dir=True))
                             else:
-                                if item.lower().endswith(('.cbz', '.cbr')):
+                                if item.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
                                     file_list.controls.append(list_item(item, "📄", full_path, is_file=True))
                                 else:
                                     if isinstance(file_list, ft.Column):
@@ -680,30 +721,61 @@ def main(page):
                 except Exception as e:
                     file_list.controls.append(ft.Text(f"ACCESS DENIED: {e}", color="black", weight="w900"))
 
+                # --- UI Tracker & Dialogs ---
+                tracker_container = ft.Container()
+                if state.get("monitor_active", False):
+                    tracker_container = ft.Container(
+                        content=ft.Column([
+                            ft.Text("BACKGROUND PROCESSING", size=16, weight="w900", color="white"),
+                            ft.Text(state.get("monitor_message", ""), size=14, color="white"),
+                            ft.ProgressBar(value=state.get("monitor_progress", 0.0), color="white", bgcolor="grey", width=300)
+                        ]),
+                        bgcolor="black",
+                        padding=15,
+                        border_radius=8,
+                        margin=ft.margin.only(top=10, bottom=10)
+                    )
+                
                 # Final Layout construction
+                main_column = ft.Column([
+                    ft.Text("COMIC SYNC PRO", size=36, weight="w900", color="black"),
+                    ft.Container(bgcolor="black", height=4),
+                    settings_col,
+                    ft.Container(bgcolor="black", height=2),
+                    mode_toggle,
+                    display_mode_toggle,
+                    ft.Text(f"STAGED IN QUEUE: {len(state['selected_items'])} FILES (MULTI-FOLDER READY)\nDIR: {start_path}", color="black", size=14, weight="w900"),
+                    ft.Container(content=file_list, height=400),
+                    ft.Container(bgcolor="black", height=4),
+                    ft.Row([btn_server, btn_convert]),
+                    server_url_txt,
+                    peers_col,
+                    tracker_container
+                ], spacing=10)
+                
                 page.add(
                     ft.Container(
-                        content=ft.Column([
-                            ft.Text("COMIC SYNC PRO", size=36, weight="w900", color="black"),
-                            ft.Container(bgcolor="black", height=4),
-                            settings_col,
-                            ft.Container(bgcolor="black", height=2),
-                            mode_toggle,
-                            display_mode_toggle,
-                            ft.Text(f"STAGED IN QUEUE: {len(state['selected_items'])} FILES (MULTI-FOLDER READY)\nDIR: {start_path}", color="black", size=14, weight="w900"),
-                            ft.Container(content=file_list, height=400),
-                            
-                            ft.Container(bgcolor="black", height=4),
-                            ft.Row([btn_server, btn_convert]),
-                            server_url_txt,
-                            peers_col,
-                            progress_bar,
-                            status_txt
-                        ], spacing=10),
+                        content=main_column,
                         padding=15,
                         border=ft.border.all(4, "black")
                     )
                 )
+                
+                # Show completion dialog if flagged
+                if state.get("show_report", False):
+                    def close_dlg(e):
+                        state["show_report"] = False
+                        dlg.open = False
+                        page.update()
+                        
+                    dlg = ft.AlertDialog(
+                        title=ft.Text(state.get("monitor_title", "Report")),
+                        content=ft.Text(state.get("monitor_message", "")),
+                        actions=[ft.TextButton("OK", on_click=close_dlg)]
+                    )
+                    page.dialog = dlg
+                    dlg.open = True
+                    
                 page.update()
                 
             except Exception as e:
