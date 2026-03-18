@@ -97,6 +97,9 @@ struct ModernLibraryView: View {
     // ✅ NEW: Native Reader State
     @State private var pdfToRead: ConvertedPDF?
     
+    // ✅ NEW: Media Detail Sheet State
+    @State private var pdfForDetails: ConvertedPDF?
+    
     // ✅ NEW: Batch Series Assignment
     @State private var showingBatchGroupAlert = false
     @State private var batchGroupText = ""
@@ -249,6 +252,14 @@ struct ModernLibraryView: View {
         .sheet(item: $pdfToCloudSync) { pdf in
             CloudSyncView(targetPDF: pdf)
         }
+        // ✅ NEW: Media Details Sheet Layout (Option 1)
+        .sheet(item: $pdfForDetails) { pdf in
+            MediaDetailSheet(pdf: pdf, onAction: { action in
+                handleDetailAction(action: action, for: pdf)
+            })
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         // ✅ NEW: Advanced Metadata & Cover Editor
         .sheet(item: $pdfToEditMetadata) { pdf in
             AdvancedMetadataEditorView(pdf: pdf)
@@ -394,7 +405,7 @@ struct ModernLibraryView: View {
                              .listRowBackground(Color.black)
                              .listRowSeparatorTint(Color(white: 0.2))
                         } else {
-                            if useNavigationStack && tapAction == .select {
+                            if useNavigationStack && tapAction == .details {
                                 NavigationLink(value: pdf) {
                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                                 }
@@ -414,13 +425,13 @@ struct ModernLibraryView: View {
                                     if tapAction == .read {
                                         pdfToRead = pdf
                                     } else {
-                                        selectedPDF = pdf
+                                        pdfForDetails = pdf
                                     }
                                 } label: {
-                                    ModernFileRow(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
+                                    ModernFileRow(pdf: pdf, isSelected: pdfForDetails?.id == pdf.id, isBatch: false)
                                 }
                                 .tag(pdf)
-                                .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
+                                .listRowBackground(pdfForDetails?.id == pdf.id ? Theme.surfaceElevated : Color.black)
                                 .listRowSeparatorTint(Color(white: 0.2))
                                 .swipeActions(edge: .leading) {
                                     swipeActionsLeading(pdf)
@@ -487,7 +498,7 @@ struct ModernLibraryView: View {
                                 }
                                 .buttonStyle(PlainButtonStyle())
                             } else {
-                                if useNavigationStack && tapAction == .select {
+                                if useNavigationStack && tapAction == .details {
                                     NavigationLink(value: pdf) {
                                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
                                     }
@@ -498,10 +509,10 @@ struct ModernLibraryView: View {
                                         if tapAction == .read {
                                             pdfToRead = pdf
                                         } else {
-                                            selectedPDF = pdf
+                                            pdfForDetails = pdf
                                         }
                                     } label: {
-                                        ModernGridFileCell(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
+                                        ModernGridFileCell(pdf: pdf, isSelected: pdfForDetails?.id == pdf.id, isBatch: false)
                                     }
                                     .buttonStyle(PlainButtonStyle())
                                     .contextMenu { contextMenuContent(pdf) }
@@ -1007,6 +1018,28 @@ struct ModernEmptyState: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
+    }
+    private func handleDetailAction(action: LibraryRowAction, for pdf: ConvertedPDF) {
+        // A slight delay ensures the detail sheet finishes dismissing before we pop up a new one
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            switch action {
+            case .read:          pdfToRead = pdf
+            case .covers:        selectedPDF = pdf
+            case .fetchMetadata: pdfToSearchMetadata = pdf
+            case .editMetadata:  pdfToEditMetadata = pdf
+            case .export:        pdfToExport = pdf
+            case .share:         pdfToDirectShare = pdf
+            case .sync:          pdfToCloudSync = pdf
+            case .rename:
+                renameText = pdf.name
+                pdfToRename = pdf
+            case .addToSeries:
+                assignSeriesText = pdf.metadata.series ?? ""
+                pdfToAssignSeries = pdf
+            case .delete:
+                conversionManager.deletePDF(pdf)
+            }
+        }
     }
 }
 
