@@ -523,6 +523,11 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private func swipeActionsLeading(_ pdf: ConvertedPDF) -> some View {
         Button {
+            selectedPDF = pdf
+        } label: { Label("Covers", systemImage: "paintbrush.pointed") }
+        .tint(Theme.purple)
+        
+        Button {
             pdfToExport = pdf
         } label: { Label("Export", systemImage: "square.and.arrow.up") }
         .tint(.green)
@@ -696,21 +701,6 @@ struct ModernLibraryView: View {
                         .overlay(Circle().stroke(.white.opacity(0.1), lineWidth: 1))
                 }
                 
-                // ✅ NEW: Tap Action Selector
-                Menu {
-                    Picker("Tap Action", selection: $tapAction) {
-                        ForEach(LibraryTapAction.allCases, id: \.self) { action in
-                            Text(action.rawValue).tag(action)
-                        }
-                    }
-                } label: {
-                    Image(systemName: tapAction == .read ? "hand.tap.fill" : "cursorarrow.click.2")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Theme.orange)
-                        .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.1), lineWidth: 1))
                 }
             }
             .padding(.horizontal, 20)
@@ -771,7 +761,36 @@ struct ModernLibraryView: View {
                     // Divider
                     Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
                     
-                    // 2. Action Pills
+                    // 2. Action Pick
+                    Menu {
+                        Picker("Tap Action", selection: $tapAction) {
+                            ForEach(LibraryTapAction.allCases, id: \.self) { action in
+                                Text(action.rawValue).tag(action)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("TAP ACTION:")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Theme.textSecondary)
+                                .tracking(1)
+                            
+                            HStack(spacing: 4) {
+                                Text(tapAction.rawValue)
+                                    .font(.system(size: 14, weight: .semibold))
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 10))
+                            }
+                            .foregroundColor(Theme.orange)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.thickMaterial)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
+                    }
+                    
+                    // 3. Action Pills
                     Group {
                         ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.orange) {
                             activeSheet = .importer
@@ -1004,7 +1023,11 @@ struct ModernFileRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                if let img = localCover {
+                if let directCacheImg = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
+                    Image(uiImage: directCacheImg)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else if let img = localCover {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -1133,7 +1156,11 @@ struct ModernSeriesRow: View {
                     RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated).frame(width: 40, height: 56).offset(x: 3, y: -3)
                 }
                 
-                if let img = localCover {
+                if let directCacheImg = conversionManager.thumbnailCache.object(forKey: group.coverIssueID.uuidString as NSString) {
+                    Image(uiImage: directCacheImg)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else if let img = localCover {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
