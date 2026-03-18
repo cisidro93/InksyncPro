@@ -228,8 +228,8 @@ struct MetadataEditorSheet: View {
                         }
                         
                         if let credits = issue.person_credits {
-                            let writers = credits.filter { $0.role.contains("Writer") }.map { $0.name }
-                            let pencillers = credits.filter { $0.role.contains("Penciller") || $0.role.contains("Artist") }.map { $0.name }
+                            let writers = credits.filter { $0.role?.contains("Writer") ?? false }.compactMap { $0.name }
+                            let pencillers = credits.filter { ($0.role?.contains("Penciller") ?? false) || ($0.role?.contains("Artist") ?? false) }.compactMap { $0.name }
                             
                             editedMetadata.writer = writers.joined(separator: ", ")
                             editedMetadata.penciller = pencillers.joined(separator: ", ")

@@ -127,8 +127,8 @@ class BatchMetadataFetcher: ObservableObject {
         }
         
         if let credits = issue.person_credits {
-            let writers = credits.filter { $0.role.contains("Writer") }.map { $0.name }.joined(separator: ", ")
-            let pencillers = credits.filter { $0.role.contains("Penciller") || $0.role.contains("Artist") }.map { $0.name }.joined(separator: ", ")
+            let writers = credits.filter { $0.role?.contains("Writer") ?? false }.compactMap { $0.name }.joined(separator: ", ")
+            let pencillers = credits.filter { ($0.role?.contains("Penciller") ?? false) || ($0.role?.contains("Artist") ?? false) }.compactMap { $0.name }.joined(separator: ", ")
             
             items[index].pdf.metadata.writer = writers.isEmpty ? nil : writers
             items[index].pdf.metadata.penciller = pencillers.isEmpty ? nil : pencillers
