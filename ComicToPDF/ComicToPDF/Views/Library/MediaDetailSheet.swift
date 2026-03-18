@@ -1,10 +1,6 @@
 import SwiftUI
 import UIKit
 
-enum LibraryRowAction {
-    case read, covers, fetchMetadata, editMetadata, export, share, sync, rename, addToSeries, delete
-}
-
 struct MediaDetailSheet: View {
     let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
