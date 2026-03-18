@@ -40,6 +40,21 @@ def main(page):
             "show_report": False
         }
         
+        # Injected sync patch for UI controls: Automatically push state diffs to GUI objects
+        original_update = page.update
+        def hooked_update(*args, **kwargs):
+            if "ctrl_overlay" in state:
+                state["ctrl_overlay"].visible = state.get("monitor_active", False)
+                state["ctrl_title"].value = state.get("monitor_title", "BACKGROUND PROCESSING")
+                state["ctrl_msg"].value = state.get("monitor_message", "")
+                state["ctrl_pb"].value = state.get("monitor_progress", 0.0)
+                if state.get("show_report", False):
+                    state["ctrl_dlg"].title.value = state.get("monitor_title", "Report")
+                    state["ctrl_dlg"].content.value = state.get("monitor_message", "")
+                    state["ctrl_dlg"].open = True
+            original_update(*args, **kwargs)
+        page.update = hooked_update
+        
         # Initialize internal storage directory
         base_dir = os.path.dirname(os.path.abspath(__file__))
         comic_library_dir = os.path.join(base_dir, "comic_library")
@@ -270,21 +285,21 @@ def main(page):
                     if not state["server_running"]:
                         server_url_txt.value = "STARTING MEDIA SERVER..."
                         page.update()
-                        def run_server_task(e=None):
-                            global web_server
-                            global zc, zc_info
+                        def inner_server_launcher():
+                            global web_server, zc, zc_info, zc_browser
                             try:
                                 import sys, os, socket
-                                from zeroconf import ServiceInfo, Zeroconf
+                                from werkzeug.serving import make_server
                                 webapp_path = os.path.join(os.path.dirname(__file__), "webapp")
                                 if webapp_path not in sys.path: sys.path.append(webapp_path)
                                 from app import app as flask_app
-                                from werkzeug.serving import make_server
+                                
                                 web_server = make_server('0.0.0.0', 5000, flask_app)
                                 state["server_running"] = True
                                 ip = get_local_ip()
                                 
                                 try:
+                                    from zeroconf import ServiceInfo, Zeroconf, ServiceBrowser
                                     zc = Zeroconf()
                                     hostname = socket.gethostname() or "AndroidNode"
                                     desc = {'alias': 'Inksync Android E-Ink'}
@@ -316,29 +331,26 @@ def main(page):
                                                 try: render_ui()
                                                 except: pass
 
-                                    from zeroconf import ServiceBrowser
-                                    global zc_browser
                                     state["discovered_peers"] = {}
                                     zc_browser = ServiceBrowser(zc, "_inksync._tcp.local.", PeerListener())
                                 except Exception as zc_err:
-                                    print(f"Zeroconf error: {zc_err}")
+                                    print(f"Zeroconf error safely ignored: {zc_err}")
 
                                 server_url_txt.value = f"SERVER ACTIVE AT:\nhttp://{ip}:5000\n(mDNS LocalSend READY)"
                                 btn_server.content.value = "STOP WI-FI SERVER"
                                 page.update()
                                 
-                                # serve_forever is blocking, so the UI must update strictly BEFORE this fires
-                                # We launch it via an entirely separate generic thread so it doesn't block Flet's run_task
-                                import threading
-                                threading.Thread(target=web_server.serve_forever, daemon=True).start()
+                                web_server.serve_forever()
 
                             except Exception as err:
                                 state["server_running"] = False
                                 server_url_txt.value = f"SERVER ERROR: {err}"
                                 btn_server.content.value = "START WI-FI SERVER"
                                 page.update()
-                                
-                        page.run_task(run_server_task)
+
+                        import threading
+                        # Use a pure Python daemon thread instead of Flet's constrained ThreadPool
+                        threading.Thread(target=inner_server_launcher, daemon=True).start()
                     else:
                         try:
                             web_server.shutdown()
@@ -862,22 +874,27 @@ def main(page):
                 except Exception as e:
                     file_list.controls.append(ft.Text(f"ACCESS DENIED: {e}", color="black", weight="w900"))
 
-                # --- UI Tracker & Dialogs ---
-                tracker_container = ft.Container()
-                if state.get("monitor_active", False):
-                    tracker_container = ft.Container(
-                        content=ft.Column([
-                            ft.Text("BACKGROUND PROCESSING", size=16, weight="w900", color="white", text_align="center"),
-                            ft.Text(state.get("monitor_message", ""), size=14, color="white", text_align="center"),
-                            ft.ProgressBar(value=state.get("monitor_progress", 0.0), color="white", bgcolor="grey", width=300)
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        bgcolor="black",
-                        padding=20,
-                        border_radius=12,
-                        border=ft.border.all(2, "white"),
-                        margin=ft.margin.all(20),
-                        shadow=ft.BoxShadow(spread_radius=1, blur_radius=15, color=ft.colors.with_opacity(0.5, "black"))
-                    )
+                # --- NATIVE UI TRACKER DEFINITION & DIALOG ---
+                monitor_title_txt = ft.Text("BACKGROUND PROCESSING", size=16, weight="w900", color="white", text_align="center")
+                monitor_msg_txt = ft.Text("STANDING BY", size=14, color="white", text_align="center")
+                monitor_pb = ft.ProgressBar(value=0.0, color="white", bgcolor="grey", width=300)
+                
+                state["ctrl_title"] = monitor_title_txt
+                state["ctrl_msg"] = monitor_msg_txt
+                state["ctrl_pb"] = monitor_pb
+
+                tracker_container = ft.Container(
+                    content=ft.Column([
+                        monitor_title_txt, monitor_msg_txt, monitor_pb
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    bgcolor="black", padding=20, border_radius=12, border=ft.border.all(2, "white"),
+                    margin=ft.margin.all(20), shadow=ft.BoxShadow(spread_radius=1, blur_radius=15, color=ft.colors.with_opacity(0.5, "black"))
+                )
+
+                loading_overlay = ft.Container(
+                    content=tracker_container, alignment=ft.alignment.center, expand=True, visible=state.get("monitor_active", False)
+                )
+                state["ctrl_overlay"] = loading_overlay
                 
                 # Final Layout construction
                 main_column = ft.Column([
@@ -895,45 +912,25 @@ def main(page):
                     peers_col
                 ], spacing=10, scroll=ft.ScrollMode.HIDDEN)
                 
-                # Use a Stack to ensure the loading tracker natively floats directly in the absolute center of the display
                 content_stack = ft.Stack([
-                    main_column
+                    main_column,
+                    loading_overlay
                 ])
                 
-                if state.get("monitor_active", False):
-                     # Add tracker on top
-                     loading_overlay = ft.Container(
-                         content=tracker_container,
-                         alignment=ft.alignment.center,
-                         expand=True
-                     )
-                     content_stack.controls.append(loading_overlay)
+                page.add(ft.Container(content=content_stack, padding=15, border=ft.border.all(4, "black"), expand=True))
                 
-                page.add(
-                    ft.Container(
-                        content=content_stack,
-                        padding=15,
-                        border=ft.border.all(4, "black"),
-                        expand=True
-                    )
-                )
-                
-                # Show completion dialog if flagged
-                if state.get("show_report", False):
-                    def close_dlg(e):
-                        state["show_report"] = False
-                        dlg.open = False
-                        page.update()
-                        
-                    dlg = ft.AlertDialog(
-                        title=ft.Text(state.get("monitor_title", "Report")),
-                        content=ft.Text(state.get("monitor_message", "")),
-                        actions=[ft.TextButton("OK", on_click=close_dlg)],
-                        alignment=ft.alignment.center
-                    )
-                    page.dialog = dlg
-                    dlg.open = True
+                def close_dlg(e):
+                    state["show_report"] = False
+                    dlg.open = False
+                    page.update()
                     
+                dlg = ft.AlertDialog(
+                    title=ft.Text("Report"), content=ft.Text(""),
+                    actions=[ft.TextButton("OK", on_click=close_dlg)], alignment=ft.alignment.center
+                )
+                page.dialog = dlg
+                state["ctrl_dlg"] = dlg
+                
                 page.update()
                 
             except Exception as e:
