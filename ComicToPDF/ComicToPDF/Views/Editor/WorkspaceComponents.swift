@@ -306,153 +306,160 @@ struct CoverStudioView: View {
     
     var body: some View {
         VStack(spacing: 20) {
-            
             Text("Cover House")
                 .font(.title2)
                 .fontWeight(.bold)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
             
-            // --- THE MAIN STAGE (LIVE PREVIEW) ---
-            ZStack(alignment: .bottomTrailing) {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(UIColor.secondarySystemGroupedBackground))
-                    .frame(height: 380)
-                    .shadow(radius: 10, y: 5)
-                
-                if let displayURL = previewCoverURL ?? activeCoverURL, let uiImage = displayImage {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(height: 360)
-                        .cornerRadius(12)
-                        .padding(10)
-                } else {
-                    VStack {
-                        Image(systemName: "photo.artframe")
-                            .font(.system(size: 60))
-                            .foregroundColor(.secondary)
-                        Text("No Cover Selected")
-                            .foregroundColor(.secondary)
-                            .padding(.top)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                
-                // Apply Button (Only if previewing a different cover)
-                if previewCoverURL != nil && previewCoverURL != activeCoverURL {
-                    Button(action: {
-                        Task { await applyPreviewCover() }
-                    }) {
-                        Label("Apply Cover", systemImage: "checkmark.seal.fill")
-                            .font(.headline)
-                            .padding()
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .clipShape(Capsule())
-                            .shadow(radius: 5)
-                    }
-                    .padding()
-                }
-            }
-            .padding(.horizontal)
+            mainStageView
             
-            // --- THE UNIFIED GALLERY ---
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Variants & Recommendations")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
-                
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 20) {
-                        
-                        // 1. ORIGINAL COVER FALLBACK
-                        CoverVariantCell(
-                            imageURL: conversionManager.getOriginalCoverURL(for: livePDF),
-                            label: "Original",
-                            isActive: activeCoverURL == conversionManager.getOriginalCoverURL(for: livePDF),
-                            onSelect: { previewCoverURL = conversionManager.getOriginalCoverURL(for: livePDF) }
-                        )
-                        
-                        // 2. SAVED VARIANTS (From User Extraction / Previous applying)
-                        ForEach(Array(livePDF.metadata.coverVariants.keys.sorted(by: { $0.uuidString < $1.uuidString })), id: \.self) { variantID in
-                            if let url = livePDF.metadata.coverVariants[variantID] {
-                                CoverVariantCell(
-                                    imageURL: url,
-                                    label: "Saved Variant",
-                                    isActive: activeCoverURL == url,
-                                    onSelect: { previewCoverURL = url }
-                                )
-                            }
-                        }
-                        
-                        // 3. FETCHED TOP 10 RECOMMENDATIONS
-                        ForEach(fetchedCovers) { fetched in
+            galleryView
+        }
+    }
+    
+    // --- THE MAIN STAGE (LIVE PREVIEW) ---
+    private var mainStageView: some View {
+        ZStack(alignment: .bottomTrailing) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(UIColor.secondarySystemGroupedBackground))
+                .frame(height: 380)
+                .shadow(radius: 10, y: 5)
+            
+            if let displayURL = previewCoverURL ?? activeCoverURL, let uiImage = displayImage {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(height: 360)
+                    .cornerRadius(12)
+                    .padding(10)
+            } else {
+                VStack {
+                    Image(systemName: "photo.artframe")
+                        .font(.system(size: 60))
+                        .foregroundColor(.secondary)
+                    Text("No Cover Selected")
+                        .foregroundColor(.secondary)
+                        .padding(.top)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            
+            // Apply Button (Only if previewing a different cover)
+            if previewCoverURL != nil && previewCoverURL != activeCoverURL {
+                Button(action: {
+                    Task { await applyPreviewCover() }
+                }) {
+                    Label("Apply Cover", systemImage: "checkmark.seal.fill")
+                        .font(.headline)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .clipShape(Capsule())
+                        .shadow(radius: 5)
+                }
+                .padding()
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    // --- THE UNIFIED GALLERY ---
+    private var galleryView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Variants & Recommendations")
+                .font(.headline)
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 20) {
+                    
+                    // 1. ORIGINAL COVER FALLBACK
+                    CoverVariantCell(
+                        imageURL: conversionManager.getOriginalCoverURL(for: livePDF),
+                        label: "Original",
+                        isActive: activeCoverURL == conversionManager.getOriginalCoverURL(for: livePDF),
+                        onSelect: { previewCoverURL = conversionManager.getOriginalCoverURL(for: livePDF) }
+                    )
+                    
+                    // 2. SAVED VARIANTS (From User Extraction / Previous applying)
+                    ForEach(Array(livePDF.metadata.coverVariants.keys.sorted(by: { $0.uuidString < $1.uuidString })), id: \.self) { variantID in
+                        if let url = livePDF.metadata.coverVariants[variantID] {
                             CoverVariantCell(
-                                imageURL: fetched.url,
-                                label: fetched.sourceName,
-                                isActive: activeCoverURL == fetched.url,
-                                isAI: fetched.isAIHunted,
-                                onSelect: { previewCoverURL = fetched.url }
+                                imageURL: url,
+                                label: "Saved Variant",
+                                isActive: activeCoverURL == url,
+                                onSelect: { previewCoverURL = url }
                             )
                         }
-                        
-                        // 4. FETCH ACTION / LOAD MORE
-                        if isFetching {
-                            VStack(spacing: 12) {
-                                ProgressView()
-                                Text("Hunting...").font(.caption).foregroundColor(.secondary)
-                            }
-                            .frame(width: 140, height: 210)
-                            .background(Color(UIColor.secondarySystemBackground))
-                            .cornerRadius(12)
-                        } else {
-                            Button(action: fetchCoverRecommendations) {
-                                VStack(spacing: 12) {
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
-                                        .fill(Color.orange)
-                                        .frame(width: 140, height: 210)
-                                        .overlay(
-                                            VStack {
-                                                Image(systemName: "magnifyingglass.circle.fill")
-                                                    .font(.system(size: 40))
-                                                    .foregroundColor(.orange)
-                                                Text(hasFetched ? "Load More" : "Find Covers")
-                                                    .font(.caption)
-                                                    .fontWeight(.bold)
-                                                    .foregroundColor(.orange)
-                                                    .padding(.top, 4)
-                                            }
-                                        )
-                                }
-                            }
+                    }
+                    
+                    // 3. FETCHED TOP 10 RECOMMENDATIONS
+                    ForEach(fetchedCovers) { fetched in
+                        CoverVariantCell(
+                            imageURL: fetched.url,
+                            label: fetched.sourceName,
+                            isActive: activeCoverURL == fetched.url,
+                            isAI: fetched.isAIHunted,
+                            onSelect: { previewCoverURL = fetched.url }
+                        )
+                    }
+                    
+                    // 4. FETCH ACTION / LOAD MORE
+                    if isFetching {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("Hunting...").font(.caption).foregroundColor(.secondary)
                         }
-                        
-                        // 5. IMPORT BUTTON
-                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        .frame(width: 140, height: 210)
+                        .background(Color(UIColor.secondarySystemBackground))
+                        .cornerRadius(12)
+                    } else {
+                        Button(action: fetchCoverRecommendations) {
                             VStack(spacing: 12) {
                                 RoundedRectangle(cornerRadius: 12)
                                     .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
-                                    .fill(Color.blue)
+                                    .fill(Color.orange)
                                     .frame(width: 140, height: 210)
                                     .overlay(
-                                        Image(systemName: "photo.badge.plus")
-                                            .font(.system(size: 40))
-                                            .foregroundColor(.blue)
+                                        VStack {
+                                            Image(systemName: "magnifyingglass.circle.fill")
+                                                .font(.system(size: 40))
+                                                .foregroundColor(.orange)
+                                            Text(hasFetched ? "Load More" : "Find Covers")
+                                                .font(.caption)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.orange)
+                                                .padding(.top, 4)
+                                        }
                                     )
-                                Text("Library")
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.blue)
                             }
                         }
-                        
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom, 20)
+                    
+                    // 5. IMPORT BUTTON
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        VStack(spacing: 12) {
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
+                                .fill(Color.blue)
+                                .frame(width: 140, height: 210)
+                                .overlay(
+                                    Image(systemName: "photo.badge.plus")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.blue)
+                                )
+                            Text("Library")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    
                 }
+                .padding(.horizontal)
+                .padding(.bottom, 20)
             }
         }
         .padding(.top)
