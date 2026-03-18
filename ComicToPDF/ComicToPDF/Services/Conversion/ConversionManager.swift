@@ -109,10 +109,14 @@ class ConversionManager: ObservableObject {
             return PanelExtractor.Panel(boundingBox: visionRect)
         }
         
-        if panelOverrides[pdfID] == nil {
-            panelOverrides[pdfID] = [:]
+        if legacyPanels.isEmpty {
+            panelOverrides[pdfID]?[model.pageIndex] = nil // Destroy empty node
+        } else {
+            if panelOverrides[pdfID] == nil {
+                panelOverrides[pdfID] = [:]
+            }
+            panelOverrides[pdfID]?[model.pageIndex] = legacyPanels
         }
-        panelOverrides[pdfID]?[model.pageIndex] = legacyPanels
         
         // Auto-save library changes
         saveLibrary()
@@ -1975,7 +1979,21 @@ class ConversionManager: ObservableObject {
 
     // MARK: - Thumbnails & Helpers
     func generateCoverThumbnail(for pdf: ConvertedPDF) async {
-        // Check if we already have a cover on disk
+        // Quick lookup: Do we have a custom cover assigned?
+        if let variantID = pdf.metadata.selectedCoverID,
+           let variantURL = pdf.metadata.coverVariants[variantID],
+           FileManager.default.fileExists(atPath: variantURL.path),
+           let data = try? Data(contentsOf: variantURL),
+           let image = UIImage(data: data),
+           let jpegData = image.jpegData(compressionQuality: 0.7) {
+            
+            // Sync custom variant to the active cache key
+            saveCoverImage(jpegData, for: pdf)
+            return
+        }
+        
+        // Otherwise: Fallback to Heuristic Extraction
+        // Check if we already have a generated cover on disk
         if let coverURL = getCoverURL(for: pdf),
            FileManager.default.fileExists(atPath: coverURL.path) { return }
         
@@ -1989,7 +2007,6 @@ class ConversionManager: ObservableObject {
         
         // Use saveCoverImage which writes to disk AND caches with the correct UUID key
         saveCoverImage(jpegData, for: pdf)
-        // ✅ DELETED: objectWillChange.send() - We no longer invalidate the entire List on a single cover generation.
     }
     
     /// Generate covers for all imported files that are missing one. Called on app launch
@@ -2581,6 +2598,91 @@ class ConversionManager: ObservableObject {
              self.editorCache = nil
              // We don't force endSession because that might close the UI, but we clear the cache so next page load re-unzips.
         }
+        
+        // ✅ ADVANCED COVER STUDIO: Heuristic Re-evaluation
+        if pageIndices.contains(0) {
+            await MainActor.run {
+                self.thumbnailCache.removeObject(forKey: pdf.id.uuidString as NSString)
+            }
+            
+            // Remove Explicit Variant if active
+            if pdf.metadata.selectedCoverID == nil {
+                // If it's just the extracted default, force the system to find the new first valid portrait page
+                await generateCoverThumbnail(for: pdf)
+            }
+            
+            await MainActor.run {
+                self.objectWillChange.send() // Force UI refresh for the new cover
+            }
+        }
+    }
+    
+    // MARK: - Advanced Cover Studio
+    func extractCoverVariant(from pdf: ConvertedPDF, pageIndex: Int) async throws {
+        let fileManager = FileManager.default
+        
+        // Ensure "Covers" sandbox directory exists
+        let coversDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Covers")
+        try? fileManager.createDirectory(at: coversDir, withIntermediateDirectories: true)
+        
+        // 1. Unzip just that one page
+        guard let archive = try? Archive(url: pdf.url, accessMode: .read, pathEncoding: .utf8) else {
+            throw NSError(domain: "CoverError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
+        }
+        
+        let sortedEntries = archive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        let imageEntries = sortedEntries.filter { entry in
+            let ext = (entry.path as NSString).pathExtension.lowercased()
+            return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
+        }
+        
+        guard pageIndex >= 0 && pageIndex < imageEntries.count else { return }
+        
+        let targetEntry = imageEntries[pageIndex]
+        let tempID = UUID().uuidString
+        let tempURL = fileManager.temporaryDirectory.appendingPathComponent(tempID)
+        
+        _ = try archive.extract(targetEntry, to: tempURL)
+        
+        // 2. Load into UIImage to ensure format/size
+        guard let extractedImage = UIImage(contentsOfFile: tempURL.path),
+              let jpegData = extractedImage.jpegData(compressionQuality: 0.9) else {
+            try? fileManager.removeItem(at: tempURL)
+            throw NSError(domain: "CoverError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to render image payload"])
+        }
+        
+        try? fileManager.removeItem(at: tempURL) // Clean
+        
+        // 3. Save to Covers Sandbox
+        let variantID = UUID()
+        let variantURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")
+        try jpegData.write(to: variantURL)
+        
+        // 4. Update PDFManifest with the new Variant
+        await MainActor.run {
+            if let idx = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                self.convertedPDFs[idx].metadata.coverVariants[variantID] = variantURL
+                self.saveLibrary()
+                self.objectWillChange.send() // Refresh Cover Studio UI
+            }
+        }
+    }
+    
+    func setActiveCoverVariant(_ variantID: UUID?, for pdf: ConvertedPDF) async {
+        await MainActor.run {
+            if let idx = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                self.convertedPDFs[idx].metadata.selectedCoverID = variantID
+                
+                // Clear the cache so it forces a reload of the new variant or fallback original
+                self.thumbnailCache.removeObject(forKey: pdf.url.path as NSString)
+                
+                self.saveLibrary()
+                self.objectWillChange.send()
+            }
+        }
+        
+        // Ensure standard thumbnail is generated for the new variant
+        await generateCoverThumbnail(for: self.convertedPDFs.first(where: { $0.id == pdf.id }) ?? pdf)
     }
     
     // MARK: - Chapter Detection

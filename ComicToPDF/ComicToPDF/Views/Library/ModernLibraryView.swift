@@ -249,6 +249,10 @@ struct SeriesGroup: Identifiable, Hashable {
             case .merge: FileMergeView()
             }
         }
+        .fullScreenCover(item: $selectedPDF) { pdf in
+            AdvancedWorkspaceView(pdf: pdf)
+                .environmentObject(conversionManager)
+        }
         .sheet(item: $pdfToExport) { pdf in
             DualExportView(pdf: pdf)
         }

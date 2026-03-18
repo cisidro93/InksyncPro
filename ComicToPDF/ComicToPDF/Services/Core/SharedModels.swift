@@ -166,6 +166,12 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var comicVineID: Int?
     var seriesID: Int?
     var tags: [String] = []
+    // Reading Progress
+    public var lastReadPage: Int?
+    
+    // ✅ NEW: Advanced Cover Variants Tracking
+    public var selectedCoverID: UUID? = nil
+    public var coverVariants: [UUID: URL] = [:]
     // ✅ Calibre-style Reading Options
     var isManga: Bool? // Overrides global setting if present
     var isWebtoon: Bool? // For vertical scroll support
