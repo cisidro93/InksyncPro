@@ -92,15 +92,8 @@ def main(page):
             except: pass
             return sorted(list(drives))
 
-        def on_dialog_result(e):
-            if e.path:
-                state["current_path"] = e.path
-                render_ui()
-
-        file_picker = ft.FilePicker()
-        file_picker.on_result = on_dialog_result
-        page.overlay.append(file_picker)
-        page.file_picker = file_picker
+        # Removed FilePicker permanently to fix Android RSOD.
+        # We now use the custom native file browser entirely.
 
         # Android 13+ SD Card Access Handler
         try:
@@ -179,11 +172,10 @@ def main(page):
                     state["selected_items"].clear()
                     
                     if state["view_mode"] == "external":
-                        # Request generic file access for SD cards before opening picker
+                        # Request generic file access for SD cards before opening browser
                         request_sd_access()
-                        # Trigger Native File Picker for Import Source
-                        if hasattr(page, 'file_picker') and page.file_picker:
-                            page.file_picker.get_directory_path(dialog_title="Select Comics Folder")
+                        # Start at DRIVES level instead of launching crash-prone FilePicker
+                        state["current_path"] = "DRIVES"
                     else:
                         state["current_path"] = comic_library_dir
                         
@@ -727,32 +719,92 @@ def main(page):
                 
                 try:
                     start_path = state["current_path"]
-                    if start_path == "DRIVES":
-                        file_list.controls.append(ft.Text("SELECT A DRIVE TO BROWSE:", size=16, weight="w900", color="black"))
-                        for drive in get_android_drives():
-                            file_list.controls.append(list_item(drive, "💽", drive, is_dir=True))
-                    else:
-                        if start_path != comic_library_dir:
-                            parent = os.path.dirname(start_path)
-                            def get_go_up_handler(p, sp):
-                                def handler(_):
-                                    if sp in get_android_drives():
-                                        navigate("DRIVES")
-                                    else:
-                                        navigate(p)
-                                return handler
-                                
-                            if isinstance(file_list, ft.Column):
-                                file_list.controls.append(
-                                    ft.Container(content=ft.Text("UP DIR", color="white", weight="w900"), on_click=get_go_up_handler(parent, start_path), bgcolor="black", padding=15, expand=True, ink=True)
+                    
+                    # --- Breadcrumb Navigation UI ---
+                    if start_path != "DRIVES" and start_path != comic_library_dir:
+                        path_parts = ["DRIVES"] + [p for p in start_path.split('/') if p]
+                        breadcrumb_controls = []
+                        for i, part in enumerate(path_parts):
+                            target_path = "DRIVES" if i == 0 else "/" + "/".join(path_parts[1:i+1])
+                            def make_breadcrumb_handler(tp):
+                                return lambda _: navigate(tp)
+                            
+                            breadcrumb_controls.append(
+                                ft.Container(
+                                    content=ft.Text(part.upper(), size=14, weight="w900", color="white"),
+                                    bgcolor="black", padding=8, ink=True, border_radius=4,
+                                    on_click=make_breadcrumb_handler(target_path)
                                 )
-                        
+                            )
+                            if i < len(path_parts) - 1:
+                                breadcrumb_controls.append(ft.Text(">", size=14, weight="w900", color="black"))
+                                
+                        file_list.controls.append(
+                            ft.Container(
+                                content=ft.Row(breadcrumb_controls, scroll="auto"),
+                                bgcolor="#EEEEEE", padding=10, border=ft.border.all(2, "black")
+                            )
+                        )
+                    
+                    if start_path == "DRIVES":
+                        file_list.controls.append(ft.Text("QUICK ACCESS:", size=16, weight="w900", color="black"))
+                        quick_folders = [
+                            ("/storage/emulated/0/Download", "⬇️", "DOWNLOADS"),
+                            ("/storage/emulated/0/Documents", "📄", "DOCUMENTS"),
+                            ("/storage/emulated/0/DCIM", "📷", "PHOTOS/IMAGES"),
+                            ("/storage/emulated/0/Pictures", "🖼️", "PICTURES")
+                        ]
+                        for f_path, icon, label in quick_folders:
+                            if os.path.exists(f_path):
+                                def make_quick_handler(tp):
+                                    return lambda _: navigate(tp)
+                                file_list.controls.append(
+                                    ft.Container(
+                                        content=ft.Row([ft.Text(icon, size=24), ft.Text(label, size=16, weight="w900")]),
+                                        bgcolor="white", border=ft.border.all(2, "black"), padding=10, ink=True,
+                                        on_click=make_quick_handler(f_path)
+                                    )
+                                )
+                                
+                        file_list.controls.append(ft.Text("ALL STORAGE DRIVES:", size=16, weight="w900", color="black"))
+                        for drive in get_android_drives():
+                            def make_drive_handler(tp):
+                                return lambda _: navigate(tp)
+                            file_list.controls.append(
+                                ft.Container(
+                                    content=ft.Row([ft.Text("💽", size=24), ft.Text(drive, size=16, weight="w900")]),
+                                    bgcolor="white", border=ft.border.all(2, "black"), padding=10, ink=True,
+                                    on_click=make_drive_handler(drive)
+                                )
+                            )
+                    else:
                         try:
                             items = sorted(os.listdir(start_path))
                             for item in items:
                                 full_path = os.path.join(start_path, item)
                                 if os.path.isdir(full_path):
-                                    file_list.controls.append(list_item(item, "📂", full_path, is_dir=True))
+                                    # Modified Directory Listing: Clicking the row navigates, clicking the checkbox selects the folder for batch import.
+                                    is_selected = full_path in state["selected_items"]
+                                    
+                                    def on_dir_check(e, p=full_path):
+                                        toggle_selection(p, e.control.value)
+                                        
+                                    def on_dir_click(e, p=full_path):
+                                        navigate(p)
+                                        
+                                    dir_row = ft.Container(
+                                        content=ft.Row([
+                                            ft.Checkbox(value=is_selected, on_change=on_dir_check, active_color="black"),
+                                            ft.Text("📂", size=24),
+                                            ft.Text(item, size=16, weight="w900", color="black", expand=True)
+                                        ]),
+                                        on_click=on_dir_click,
+                                        bgcolor="white",
+                                        border=ft.border.all(4 if is_selected else 2, "black"),
+                                        padding=15,
+                                        ink=True
+                                    )
+                                    file_list.controls.append(dir_row)
                                 else:
                                     if item.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
                                         file_list.controls.append(list_item(item, "📄", full_path, is_file=True))
@@ -762,11 +814,11 @@ def main(page):
                                                 ft.Container(
                                                     content=ft.Row([
                                                         ft.Text("⚠️", size=24),
-                                                        ft.Text(item, size=16, color="grey", no_wrap=True)
+                                                        ft.Text(item[:30]+"..." if len(item)>30 else item, size=14, color="grey", no_wrap=True)
                                                     ]),
                                                     bgcolor="#EEEEEE",
                                                     border=ft.border.all(1, "grey"),
-                                                    padding=15
+                                                    padding=10
                                                 )
                                             )
                         except PermissionError:
