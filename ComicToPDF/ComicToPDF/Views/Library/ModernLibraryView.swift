@@ -1190,7 +1190,7 @@ struct ModernSeriesRow: View {
                     RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated).frame(width: 40, height: 56).offset(x: 3, y: -3)
                 }
                 
-                if let directCacheImg = conversionManager.thumbnailCache.object(forKey: group.coverIssueID.uuidString as NSString) {
+                if let uuid = group.coverIssueID, let directCacheImg = conversionManager.thumbnailCache.object(forKey: uuid.uuidString as NSString) {
                     Image(uiImage: directCacheImg)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
