@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum LibraryRowAction {
     case read, covers, fetchMetadata, editMetadata, export, share, sync, rename, addToSeries, delete

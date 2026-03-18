@@ -51,7 +51,7 @@ struct ModernLibraryView: View {
         case grid = "Grid"
     }
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
-    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .select // ✅ NEW: Tap Action Selector
+    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details // ✅ NEW: Tap Action Selector
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
     
     // Local State
@@ -967,6 +967,30 @@ struct ModernLibraryView: View {
             }
         }
     }
+    
+    // MARK: - Navigation Action Router
+    private func handleDetailAction(action: LibraryRowAction, for pdf: ConvertedPDF) {
+        // A slight delay ensures the detail sheet finishes dismissing before we pop up a new one
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            switch action {
+            case .read:          pdfToRead = pdf
+            case .covers:        selectedPDF = pdf
+            case .fetchMetadata: pdfToSearchMetadata = pdf
+            case .editMetadata:  pdfToEditMetadata = pdf
+            case .export:        pdfToExport = pdf
+            case .share:         pdfToDirectShare = pdf
+            case .sync:          pdfToCloudSync = pdf
+            case .rename:
+                renameText = pdf.name
+                pdfToRename = pdf
+            case .addToSeries:
+                assignSeriesText = pdf.metadata.series ?? ""
+                pdfToAssignSeries = pdf
+            case .delete:
+                conversionManager.deletePDF(pdf)
+            }
+        }
+    }
 }
 
 // MARK: - Subcomponents
@@ -1018,28 +1042,6 @@ struct ModernEmptyState: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
-    }
-    private func handleDetailAction(action: LibraryRowAction, for pdf: ConvertedPDF) {
-        // A slight delay ensures the detail sheet finishes dismissing before we pop up a new one
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            switch action {
-            case .read:          pdfToRead = pdf
-            case .covers:        selectedPDF = pdf
-            case .fetchMetadata: pdfToSearchMetadata = pdf
-            case .editMetadata:  pdfToEditMetadata = pdf
-            case .export:        pdfToExport = pdf
-            case .share:         pdfToDirectShare = pdf
-            case .sync:          pdfToCloudSync = pdf
-            case .rename:
-                renameText = pdf.name
-                pdfToRename = pdf
-            case .addToSeries:
-                assignSeriesText = pdf.metadata.series ?? ""
-                pdfToAssignSeries = pdf
-            case .delete:
-                conversionManager.deletePDF(pdf)
-            }
-        }
     }
 }
 
