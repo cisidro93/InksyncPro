@@ -701,7 +701,6 @@ struct ModernLibraryView: View {
                         .overlay(Circle().stroke(.white.opacity(0.1), lineWidth: 1))
                 }
                 
-                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
