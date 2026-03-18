@@ -270,7 +270,7 @@ struct WorkspaceInspectorView: View {
     }
 }
 
-// MARK: - Cover Studio
+// MARK: - Cover Studio (The "Cover House")
 struct CoverStudioView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     let pdf: ConvertedPDF
@@ -282,77 +282,174 @@ struct CoverStudioView: View {
         conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) ?? pdf
     }
     
+    // Cover House Advanced State
+    @State private var previewCoverURL: URL? = nil // The Live Preview Main Stage
+    @State private var fetchedCovers: [FetchedCover] = []
+    @State private var isFetching = false
+    @State private var hasFetched = false
+    @State private var fetchLimit = 10
+
+    
+    var activeCoverURL: URL? { conversionManager.getCoverURL(for: livePDF) }
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Cover Art Studio")
+        VStack(spacing: 20) {
+            
+            Text("Cover House")
                 .font(.title2)
                 .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
             
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 20) {
-                    // 1. ORIGINAL COVER FALLBACK
-                    CoverVariantCell(
-                        pdf: livePDF,
-                        variantID: nil,
-                        imageURL: conversionManager.getCoverURL(for: livePDF),
-                        isActive: livePDF.metadata.selectedCoverID == nil,
-                        onSelect: {
-                            Task { await conversionManager.setActiveCoverVariant(nil, for: livePDF) }
-                        }
-                    )
-                    
-                    // 2. SAVED VARIANTS
-                    ForEach(Array(livePDF.metadata.coverVariants.keys.sorted(by: { $0.uuidString < $1.uuidString })), id: \.self) { variantID in
-                        if let url = livePDF.metadata.coverVariants[variantID] {
-                            CoverVariantCell(
-                                pdf: livePDF,
-                                variantID: variantID,
-                                imageURL: url,
-                                isActive: livePDF.metadata.selectedCoverID == variantID,
-                                onSelect: {
-                                    Task { await conversionManager.setActiveCoverVariant(variantID, for: livePDF) }
-                                }
-                            )
-                        }
+            // --- THE MAIN STAGE (LIVE PREVIEW) ---
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(UIColor.secondarySystemGroupedBackground))
+                    .frame(height: 380)
+                    .shadow(radius: 10, y: 5)
+                
+                if let displayURL = previewCoverURL ?? activeCoverURL, let uiImage = UIImage(contentsOfFile: displayURL.path) ?? (displayURL.isFileURL ? nil : try? UIImage(data: Data(contentsOf: displayURL))) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 360)
+                        .cornerRadius(12)
+                        .padding(10)
+                } else {
+                    VStack {
+                        Image(systemName: "photo.artframe")
+                            .font(.system(size: 60))
+                            .foregroundColor(.secondary)
+                        Text("No Cover Selected")
+                            .foregroundColor(.secondary)
+                            .padding(.top)
                     }
-                    
-                    // 3. IMPORT BUTTON
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        VStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
-                                .fill(Color.blue)
-                                .frame(width: 160, height: 240)
-                                .overlay(
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 40))
-                                        .foregroundColor(.blue)
-                                )
-                            Text("Import Custom")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.blue)
-                        }
-                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 20)
-            }
-            
-            Divider().padding(.horizontal)
-            
-            HStack(alignment: .top) {
-                Image(systemName: "lightbulb.fill")
-                    .foregroundColor(.yellow)
-                Text("To extract a cover directly from the comic, press and hold on any page in the Grid and select 'Make Cover Variant'.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineSpacing(4)
+                
+                // Apply Button (Only if previewing a different cover)
+                if previewCoverURL != nil && previewCoverURL != activeCoverURL {
+                    Button(action: {
+                        Task { await applyPreviewCover() }
+                    }) {
+                        Label("Apply Cover", systemImage: "checkmark.seal.fill")
+                            .font(.headline)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .clipShape(Capsule())
+                            .shadow(radius: 5)
+                    }
+                    .padding()
+                }
             }
             .padding(.horizontal)
+            
+            // --- THE UNIFIED GALLERY ---
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Variants & Recommendations")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 20) {
+                        
+                        // 1. ORIGINAL COVER FALLBACK
+                        CoverVariantCell(
+                            imageURL: conversionManager.getOriginalCoverURL(for: livePDF),
+                            label: "Original",
+                            isActive: activeCoverURL == conversionManager.getOriginalCoverURL(for: livePDF),
+                            onSelect: { previewCoverURL = conversionManager.getOriginalCoverURL(for: livePDF) }
+                        )
+                        
+                        // 2. SAVED VARIANTS (From User Extraction / Previous applying)
+                        ForEach(Array(livePDF.metadata.coverVariants.keys.sorted(by: { $0.uuidString < $1.uuidString })), id: \.self) { variantID in
+                            if let url = livePDF.metadata.coverVariants[variantID] {
+                                CoverVariantCell(
+                                    imageURL: url,
+                                    label: "Saved Variant",
+                                    isActive: activeCoverURL == url,
+                                    onSelect: { previewCoverURL = url }
+                                )
+                            }
+                        }
+                        
+                        // 3. FETCHED TOP 10 RECOMMENDATIONS
+                        ForEach(fetchedCovers) { fetched in
+                            CoverVariantCell(
+                                imageURL: fetched.url,
+                                label: fetched.sourceName,
+                                isActive: activeCoverURL == fetched.url,
+                                isAI: fetched.isAIHunted,
+                                onSelect: { previewCoverURL = fetched.url }
+                            )
+                        }
+                        
+                        // 4. FETCH ACTION / LOAD MORE
+                        if isFetching {
+                            VStack(spacing: 12) {
+                                ProgressView()
+                                Text("Hunting...").font(.caption).foregroundColor(.secondary)
+                            }
+                            .frame(width: 140, height: 210)
+                            .background(Color(UIColor.secondarySystemBackground))
+                            .cornerRadius(12)
+                        } else {
+                            Button(action: fetchCoverRecommendations) {
+                                VStack(spacing: 12) {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
+                                        .fill(Color.orange)
+                                        .frame(width: 140, height: 210)
+                                        .overlay(
+                                            VStack {
+                                                Image(systemName: "magnifyingglass.circle.fill")
+                                                    .font(.system(size: 40))
+                                                    .foregroundColor(.orange)
+                                                Text(hasFetched ? "Load More" : "Find Covers")
+                                                    .font(.caption)
+                                                    .fontWeight(.bold)
+                                                    .foregroundColor(.orange)
+                                                    .padding(.top, 4)
+                                            }
+                                        )
+                                }
+                            }
+                        }
+                        
+                        // 5. IMPORT BUTTON
+                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                            VStack(spacing: 12) {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
+                                    .fill(Color.blue)
+                                    .frame(width: 140, height: 210)
+                                    .overlay(
+                                        Image(systemName: "photo.badge.plus")
+                                            .font(.system(size: 40))
+                                            .foregroundColor(.blue)
+                                    )
+                                Text("Library")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 20)
+                }
+            }
         }
         .padding(.top)
+        .onAppear {
+            if !hasFetched && fetchedCovers.isEmpty {
+                // Auto-fetch on initial load for premium feel
+                fetchCoverRecommendations()
+            }
+        }
         .onChange(of: selectedPhotoItem) { _, newItem in
             Task {
                 if let data = try? await newItem?.loadTransferable(type: Data.self),
@@ -360,10 +457,7 @@ struct CoverStudioView: View {
                    let jpegData = image.jpegData(compressionQuality: 0.9) {
                     
                     let variantID = UUID()
-                    let fileManager = FileManager.default
-                    let coversDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Covers")
-                    try? fileManager.createDirectory(at: coversDir, withIntermediateDirectories: true)
-                    
+                    let coversDir = ConversionManager.getCoversDirectory()
                     let variantURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")
                     try? jpegData.write(to: variantURL)
                     
@@ -371,58 +465,161 @@ struct CoverStudioView: View {
                         if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == livePDF.id }) {
                             conversionManager.convertedPDFs[idx].metadata.coverVariants[variantID] = variantURL
                             conversionManager.saveLibrary()
+                            previewCoverURL = variantURL
                         }
                     }
                 }
             }
         }
     }
+    
+    // MARK: - Cover Fetching Logic
+    private func fetchCoverRecommendations() {
+        guard !isFetching else { return }
+        isFetching = true
+        
+        Task {
+            // Check for BYOK AI Key
+            let aiKey = conversionManager.conversionSettings.openAIAPIKey
+            
+            let results = await CoverFetchService.shared.fetchCovers(for: livePDF.metadata, openAIKey: aiKey.isEmpty ? nil : aiKey, limit: fetchLimit)
+
+            
+            await MainActor.run {
+                if !hasFetched {
+                    self.fetchedCovers = results
+                } else {
+                    // Load More: Append new unique ones
+                    for res in results where !self.fetchedCovers.contains(where: { $0.url == res.url }) {
+                        self.fetchedCovers.append(res)
+                    }
+                }
+                self.hasFetched = true
+                self.isFetching = false
+                if self.hasFetched {
+                    self.fetchLimit += 10 // increment for the next "Load More"
+                }
+            }
+        }
+    }
+    
+    private func applyPreviewCover() async {
+        guard let targetURL = previewCoverURL else { return }
+        
+        // If it's an online URL, we must download and save it to the local app sandbox variant bucket
+        if !targetURL.isFileURL {
+            // Download Data
+            if let (data, _) = try? await URLSession.shared.data(from: targetURL),
+               let image = UIImage(data: data),
+               let jpegData = image.jpegData(compressionQuality: 0.9) {
+                
+                let variantID = UUID()
+                let coversDir = ConversionManager.getCoversDirectory()
+                let finalLocalURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")
+                try? jpegData.write(to: finalLocalURL)
+                
+                // Update Metadata & Make Active
+                await MainActor.run {
+                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == livePDF.id }) {
+                        conversionManager.convertedPDFs[idx].metadata.coverVariants[variantID] = finalLocalURL
+                        Task { await conversionManager.setActiveCoverVariant(variantID, for: livePDF) }
+                        previewCoverURL = finalLocalURL // Update preview reference
+                    }
+                }
+            }
+        } else {
+            // It's already local (Original or Saved Variant)
+            // Just apply it via ConversionManager
+            let variantID = livePDF.metadata.coverVariants.first(where: { $0.value == targetURL })?.key
+            await conversionManager.setActiveCoverVariant(variantID, for: livePDF)
+        }
+    }
 }
 
 // Sub-component for individual cover preview cells
 struct CoverVariantCell: View {
-    let pdf: ConvertedPDF
-    let variantID: UUID?
     let imageURL: URL?
+    let label: String
     let isActive: Bool
+    var isAI: Bool = false
     let onSelect: () -> Void
+    
+    @State private var webImage: UIImage? = nil
     
     var body: some View {
         Button(action: onSelect) {
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 ZStack(alignment: .bottomTrailing) {
                     Group {
-                        if let url = imageURL, let uiImage = UIImage(contentsOfFile: url.path) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
+                        if let url = imageURL {
+                            if url.isFileURL {
+                                if let uiImage = UIImage(contentsOfFile: url.path) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                } else {
+                                    Rectangle().fill(Color.gray.opacity(0.2))
+                                }
+                            } else {
+                                // Async Web Image Loading
+                                if let img = webImage {
+                                    Image(uiImage: img)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                } else {
+                                    ProgressView()
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .background(Color(UIColor.secondarySystemBackground))
+                                        .onAppear {
+                                            loadWebImage(from: url)
+                                        }
+                                }
+                            }
                         } else {
-                            Rectangle().fill(Color.gray.opacity(0.2))
+                            Rectangle().fill(Color.gray.opacity(0.1))
                         }
                     }
-                    .frame(width: 160, height: 240)
+                    .frame(width: 140, height: 210)
                     .cornerRadius(12)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(isActive ? Color.green : Color.clear, lineWidth: 4)
+                            .stroke(isActive ? Color.blue : Color.clear, lineWidth: 4)
                     )
-                    .shadow(color: Color.black.opacity(0.15), radius: 8, y: 4)
+                    .shadow(color: Color.black.opacity(0.1), radius: 5, y: 3)
                     
-                    if isActive {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.title2)
-                            .foregroundColor(.green)
+                    if isAI {
+                        Image(systemName: "sparkles")
+                            .font(.caption)
+                            .foregroundColor(.purple)
+                            .padding(6)
                             .background(Circle().fill(Color.white))
-                            .offset(x: 8, y: 8)
+                            .offset(x: 4, y: 4)
+                    } else if isActive {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.title3)
+                            .foregroundColor(.blue)
+                            .background(Circle().fill(Color.white))
+                            .offset(x: 4, y: 4)
                     }
                 }
                 
-                Text(variantID == nil ? "Original" : "Variant")
-                    .font(.caption)
-                    .fontWeight(isActive ? .bold : .regular)
+                Text(label)
+                    .font(.caption2)
+                    .fontWeight(isActive ? .bold : .medium)
                     .foregroundColor(isActive ? .primary : .secondary)
+                    .lineLimit(1)
+                    .frame(width: 130)
             }
         }
         .buttonStyle(.plain)
+    }
+    
+    // Lightweight async loader for web thumbnails
+    private func loadWebImage(from url: URL) {
+        Task {
+            if let (data, _) = try? await URLSession.shared.data(from: url), let img = UIImage(data: data) {
+                await MainActor.run { self.webImage = img }
+            }
+        }
     }
 }

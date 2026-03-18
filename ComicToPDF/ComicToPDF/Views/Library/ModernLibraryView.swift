@@ -100,7 +100,8 @@ struct ModernLibraryView: View {
     // ✅ NEW: Batch Series Assignment
     @State private var showingBatchGroupAlert = false
     @State private var batchGroupText = ""
-    
+    @State private var cachedLibraryItems: [LibraryListItem] = []
+
 // ✅ NEW: Unified Library Item
 // Fast Diffing
 enum LibraryListItem: Identifiable, Hashable {
@@ -136,7 +137,7 @@ struct SeriesGroup: Identifiable, Hashable {
     let id: String
     let title: String
     let coverIssueID: UUID?
-    let count: Int
+    var count: Int
     var issues: [ConvertedPDF] // Mutable to support drag-and-drop
     
     var coverURL: URL? { coverIssueID.flatMap { id in issues.first(where: { $0.id == id })?.url } }
