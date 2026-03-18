@@ -464,8 +464,9 @@ class ConversionManager: ObservableObject {
             // ✅ NEW: Execute O(N) Set conversion entirely off the Main Thread
             let pathSet = Set(currentPaths)
             
-            if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
-                 for case let fileURL as URL in enumerator {
+            if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]),
+               let urls = enumerator.allObjects as? [URL] {
+                 for fileURL in urls {
                      let ext = fileURL.pathExtension.lowercased()
                     if ["pdf", "cbz", "zip", "epub"].contains(ext) {
                          // Check if already exists (Standardized Path Check)
@@ -482,10 +483,11 @@ class ConversionManager: ObservableObject {
             }
             
             // Add new ones safely
-            if !newPDFs.isEmpty {
+            let finalNewPDFs = newPDFs
+            if !finalNewPDFs.isEmpty {
                 await MainActor.run {
-                    self.convertedPDFs.append(contentsOf: newPDFs)
-                    Logger.shared.log("Library Scanned: Found \(newPDFs.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
+                    self.convertedPDFs.append(contentsOf: finalNewPDFs)
+                    Logger.shared.log("Library Scanned: Found \(finalNewPDFs.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
                     self.saveLibrary()
                 }
             }
@@ -850,7 +852,7 @@ class ConversionManager: ObservableObject {
         let existingNames = await MainActor.run { Set(self.convertedPDFs.map { $0.name }) }
         let isVaultUnlocked = await MainActor.run { !SecurityManager.shared.isVaultLocked }
 
-        await ImportMonitorManager.shared.startImport(totalCount: urls.count)
+        await MainActor.run { ImportMonitorManager.shared.startImport(totalCount: urls.count) }
         
         let importedPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
@@ -900,7 +902,7 @@ class ConversionManager: ObservableObject {
         }.value
         
         // Mark Tracker Complete
-        await ImportMonitorManager.shared.completeImport()
+        await MainActor.run { ImportMonitorManager.shared.completeImport() }
         guard !importedPDFs.isEmpty else { return }
         
         // --- Smart Auto-Grouping (String Clustering) ---

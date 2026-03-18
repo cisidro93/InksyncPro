@@ -40,7 +40,7 @@ class LocalSendClient: ObservableObject {
         }
         
         // Step 1: Prepare Upload (Handshake)
-        let totalPayloadSize = files.reduce(0) { $0 + $1.fileSize }
+        let _ = files.reduce(0) { $0 + $1.fileSize }
         
         // Basic metadata mapping for LocalSend-style JSON
         let filesMetadata = files.map { pdf -> [String: Any] in
@@ -52,7 +52,7 @@ class LocalSendClient: ObservableObject {
             ]
         }
         
-        let preparePayload: [String: Any] = [
+        let _ : [String: Any] = [
             "info": [
                 "alias": "Inksync iOS",
                 "version": "1.0",

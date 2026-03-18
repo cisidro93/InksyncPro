@@ -152,6 +152,40 @@ struct SeriesGroup: Identifiable, Hashable {
         return lhs.id == rhs.id && lhs.count == rhs.count && lhs.coverIssueID == rhs.coverIssueID
     }
 }
+
+    // ✅ Detached Background Compute
+    private func updateLibraryItemsCache() {
+        // Capture context snapshot to safely detach
+        let pdfs = conversionManager.visiblePDFs
+        
+        Task.detached(priority: .background) {
+            var groups: [String: SeriesGroup] = [:]
+            var singles: [ConvertedPDF] = []
+            var firstAppearanceIndex: [String: Int] = [:]
+            
+            for (index, pdf) in pdfs.enumerated() {
+                if let seriesName = pdf.metadata.series, !seriesName.isEmpty {
+                    let seriesKey = "series_\(seriesName)"
+                    if firstAppearanceIndex[seriesKey] == nil { firstAppearanceIndex[seriesKey] = index }
+                    
+                    if groups[seriesName] == nil {
+                        groups[seriesName] = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: pdf.id, count: 0, issues: [])
+                    }
+                    groups[seriesName]!.issues.append(pdf)
+                    groups[seriesName]!.count += 1
+                } else {
+                    let singleKey = "single_\(pdf.id)"
+                    if firstAppearanceIndex[singleKey] == nil { firstAppearanceIndex[singleKey] = index }
+                    singles.append(pdf)
+                }
+            }
+            
+            var items: [(Int, LibraryListItem)] = []
+            
+            for (_, group) in groups {
+                let item = LibraryListItem.series(group)
+                items.append((firstAppearanceIndex["series_\(group.id)"] ?? 0, item))
+            }
             
             for single in singles {
                 let item = LibraryListItem.single(single)
