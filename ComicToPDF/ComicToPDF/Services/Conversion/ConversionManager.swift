@@ -330,7 +330,18 @@ class ConversionManager: ObservableObject {
         return coversDir
     }
 
+    /// Returns the active cover (either the selected variant, or the original fallback)
     func getCoverURL(for pdf: ConvertedPDF) -> URL? {
+        if let selectedID = pdf.metadata.selectedCoverID,
+           let variantURL = pdf.metadata.coverVariants[selectedID],
+           FileManager.default.fileExists(atPath: variantURL.path) {
+            return variantURL
+        }
+        return getOriginalCoverURL(for: pdf)
+    }
+
+    /// Returns the absolute path to the original extracted cover image saved in Application Support
+    func getOriginalCoverURL(for pdf: ConvertedPDF) -> URL {
         let coversDir = Self.getCoversDirectory()
         return coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
     }
