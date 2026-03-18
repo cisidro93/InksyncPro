@@ -270,7 +270,7 @@ def main(page):
                     if not state["server_running"]:
                         server_url_txt.value = "STARTING MEDIA SERVER..."
                         page.update()
-                        def run_server():
+                        def run_server_task(e=None):
                             global web_server
                             global zc, zc_info
                             try:
@@ -326,13 +326,19 @@ def main(page):
                                 server_url_txt.value = f"SERVER ACTIVE AT:\nhttp://{ip}:5000\n(mDNS LocalSend READY)"
                                 btn_server.content.value = "STOP WI-FI SERVER"
                                 page.update()
-                                web_server.serve_forever()
+                                
+                                # serve_forever is blocking, so the UI must update strictly BEFORE this fires
+                                # We launch it via an entirely separate generic thread so it doesn't block Flet's run_task
+                                import threading
+                                threading.Thread(target=web_server.serve_forever, daemon=True).start()
+
                             except Exception as err:
                                 state["server_running"] = False
                                 server_url_txt.value = f"SERVER ERROR: {err}"
+                                btn_server.content.value = "START WI-FI SERVER"
                                 page.update()
-                        import threading
-                        threading.Thread(target=run_server, daemon=True).start()
+                                
+                        page.run_task(run_server_task)
                     else:
                         try:
                             web_server.shutdown()
