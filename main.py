@@ -95,10 +95,47 @@ def main(page):
         # Removed FilePicker permanently to fix Android RSOD.
         # We now use the custom native file browser entirely.
 
-        # Android 13+ SD Card Access Handler has been removed.
-        # "flet_permission_handler" causes an "Unknown Control" crash when bundled in the APK.
-        ph = None
-        def request_sd_access(e=None): pass
+        # Enterprise Android 13+ SD Card Access Handler using PyJNIus
+        def request_sd_access(e=None):
+            try:
+                from jnius import autoclass, cast
+                
+                # Get Android classes
+                Environment = autoclass('android.os.Environment')
+                Intent = autoclass('android.content.Intent')
+                Settings = autoclass('android.provider.Settings')
+                Uri = autoclass('android.net.Uri')
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                
+                # Check if we already have the Manage External Storage permission
+                if not Environment.isExternalStorageManager():
+                    # Create Intent to open the "All Files Access" settings page for our app
+                    currentActivity = cast('android.app.Activity', PythonActivity.mActivity)
+                    intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    
+                    # Set the URI to specifically point to our package
+                    uri = Uri.parse("package:" + currentActivity.getPackageName())
+                    intent.setData(uri)
+                    
+                    # Start the settings activity
+                    currentActivity.startActivity(intent)
+                    
+                    if e:
+                        page.snack_bar = ft.SnackBar(ft.Text("Opening Android Settings. Please toggle 'Allow access to manage all files' on."), open=True)
+                        page.update()
+                else:
+                    if e:
+                        page.snack_bar = ft.SnackBar(ft.Text("Storage access is already granted!"), open=True)
+                        page.update()
+            except ImportError:
+                # We are likely running on Desktop/iOS where jnius isn't available
+                if e:
+                    page.snack_bar = ft.SnackBar(ft.Text("Native Android storage permissions are only required on Android devices."), open=True)
+                    page.update()
+            except Exception as err:
+                if e:
+                    page.snack_bar = ft.SnackBar(ft.Text(f"Failed to request permission mapping: {err}"), open=True)
+                    page.update()
 
         def render_ui():
             try:
@@ -154,7 +191,7 @@ def main(page):
                         on_click=request_sd_access,
                         bgcolor="black",
                         padding=8,
-                        visible=(ph is not None)
+                        visible=("android" in sys.platform.lower() or "linux" in sys.platform.lower()) # Show on Android builds
                     )
                 ])
                 
