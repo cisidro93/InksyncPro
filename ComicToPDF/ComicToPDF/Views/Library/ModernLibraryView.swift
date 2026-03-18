@@ -195,17 +195,19 @@ struct ModernLibraryView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // MARK: - Toolbar & Filter Header
-            liquidGlassHeader
+        Group {
+            Group {
+                VStack(spacing: 0) {
+                    // MARK: - Toolbar & Filter Header
+                    liquidGlassHeader
 
-            // ... (Content Area) ...
-            if viewStyle == .list {
-                pdfListLayout
-            } else {
-                pdfGridLayout
-            }
-        }
+                    // ... (Content Area) ...
+                    if viewStyle == .list {
+                        pdfListLayout
+                    } else {
+                        pdfGridLayout
+                    }
+                }
         .overlay(
             Group {
                 if conversionManager.isConverting {
@@ -243,6 +245,7 @@ struct ModernLibraryView: View {
         .sheet(item: $pdfToExport) { pdf in
             DualExportView(pdf: pdf)
         }
+        } // End of Inner Group
         .sheet(item: $pdfToDirectShare) { pdf in
             ShareSheet(activityItems: [pdf.url])
         }
@@ -269,6 +272,7 @@ struct ModernLibraryView: View {
             let selectedFiles = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
             BatchMetadataEditorView(selectedPDFs: selectedFiles)
         }
+        } // End of Outer Group
         // ✅ Rename Alert
         .alert("Rename File", isPresented: Binding(
             get: { pdfToRename != nil },
