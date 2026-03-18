@@ -239,13 +239,32 @@ class ConversionManager: ObservableObject {
             let settings: ConversionSettings
             let history: [ConvertedPDF]
             let devices: [KindleDevice]
-            var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil // ✅ NEW: Persistence
-            var watchedFolders: [WatchedFolder]? = nil // ✅ NEW: Watched Folders
-            var presets: [ConversionPreset]? = nil // ✅ NEW: Presets
+            var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil
+            var watchedFolders: [WatchedFolder]? = nil
+            var presets: [ConversionPreset]? = nil
         }
-        let index = LibraryIndex(files: convertedPDFs, collections: collections, settings: conversionSettings, history: sendHistory, devices: kindleDevices, panelOverrides: panelOverrides, watchedFolders: watchedFolders, presets: conversionPresets)
-        if let url = fileURL(for: libraryFileName), let encoded = try? JSONEncoder().encode(index) {
-            try? encoded.write(to: url)
+        
+        let index = LibraryIndex(
+            files: convertedPDFs,
+            collections: collections,
+            settings: conversionSettings,
+            history: sendHistory,
+            devices: kindleDevices,
+            panelOverrides: panelOverrides,
+            watchedFolders: watchedFolders,
+            presets: conversionPresets
+        )
+        
+        // ✅ NEW: Background IO
+        // Detach massive JSON serialization from the Main Thread to prevent 120Hz scrolling hitches
+        Task.detached(priority: .background) {
+            guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("inksync_pro_library.json") else { return }
+            do {
+                let encoded = try JSONEncoder().encode(index)
+                try encoded.write(to: url, options: .atomic)
+            } catch {
+                print("Background Save Failed: \(error)")
+            }
         }
     }
     
@@ -434,17 +453,19 @@ class ConversionManager: ObservableObject {
             var newPDFs: [ConvertedPDF] = []
             let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
             
-            // 1. Get current paths to avoid synchronous MainActor blocking
             let currentPaths = await MainActor.run {
-                Set(self.convertedPDFs.map { $0.url.standardizedFileURL.path })
+                self.convertedPDFs.map { $0.url.standardizedFileURL.path }
             }
+            
+            // ✅ NEW: Execute O(N) Set conversion entirely off the Main Thread
+            let pathSet = Set(currentPaths)
             
             if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
                  for case let fileURL as URL in enumerator {
                      let ext = fileURL.pathExtension.lowercased()
                     if ["pdf", "cbz", "zip", "epub"].contains(ext) {
                          // Check if already exists (Standardized Path Check)
-                         if !currentPaths.contains(fileURL.standardizedFileURL.path) {
+                         if !pathSet.contains(fileURL.standardizedFileURL.path) {
                              let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                              // ✅ Tag new files with the mode that triggered this scan
                              let sourceMode = addedByMode ?? .pro
@@ -1968,7 +1989,7 @@ class ConversionManager: ObservableObject {
         
         // Use saveCoverImage which writes to disk AND caches with the correct UUID key
         saveCoverImage(jpegData, for: pdf)
-        objectWillChange.send()
+        // ✅ DELETED: objectWillChange.send() - We no longer invalidate the entire List on a single cover generation.
     }
     
     /// Generate covers for all imported files that are missing one. Called on app launch
@@ -1996,7 +2017,7 @@ class ConversionManager: ObservableObject {
                 
                 await MainActor.run {
                     self.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
-                    self.objectWillChange.send()
+                    // ✅ DELETED: self.objectWillChange.send() - Cells now observe their own local state via .task
                 }
             } else {
                 // Generate from scratch if it doesn't exist

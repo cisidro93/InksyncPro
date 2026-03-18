@@ -97,6 +97,27 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
     func toPDFDocument() -> PDFDocument {
         return PDFDocument(url: url) ?? PDFDocument()
     }
+    
+    // ✅ NEW: Explicit Equatable & Hashable for Core Rendering Performance
+    // Instead of diffing the massive tree of metadata, dates, and chapters on every frame,
+    // SwiftUI will now only compare the immutable ID, favorite status, name, and page count.
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(name)
+        hasher.combine(isFavorite)
+        hasher.combine(pageCount)
+        hasher.combine(fileSize)
+    }
+
+    static func == (lhs: ConvertedPDF, rhs: ConvertedPDF) -> Bool {
+        // Fast paths to bypass heavy layout equality checks
+        return lhs.id == rhs.id &&
+               lhs.name == rhs.name &&
+               lhs.isFavorite == rhs.isFavorite &&
+               lhs.pageCount == rhs.pageCount &&
+               lhs.fileSize == rhs.fileSize 
+    }
 }
 
 // ✅ Shared Error Type

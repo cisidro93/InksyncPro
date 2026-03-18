@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import Combine
 
 // MARK: - Theme Colors
 struct Theme {
@@ -12,6 +13,20 @@ struct Theme {
     static let text = Color.white
     static let textSecondary = Color(red: 142/255, green: 142/255, blue: 147/255) // #8E8E93
     static let textTertiary = Color(red: 99/255, green: 99/255, blue: 102/255) // #636366
+}
+
+// ✅ NEW: Combine Debouncer for Library Search
+class SearchDebouncer: ObservableObject {
+    @Published var text: String = ""
+    @Published var debouncedText: String = ""
+    private var bag = Set<AnyCancellable>()
+    
+    init() {
+        $text
+            .debounce(for: .seconds(0.3), scheduler: RunLoop.main)
+            .removeDuplicates()
+            .assign(to: &$debouncedText)
+    }
 }
 
 struct ModernLibraryView: View {
@@ -40,6 +55,7 @@ struct ModernLibraryView: View {
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
     
     // Local State
+    @StateObject private var searchDebouncer = SearchDebouncer()
     @State private var searchText = ""
     
     enum SidebarSheet: Identifiable {
@@ -85,78 +101,69 @@ struct ModernLibraryView: View {
     @State private var showingBatchGroupAlert = false
     @State private var batchGroupText = ""
     
-    // ✅ NEW: Unified Library Item
-    enum LibraryListItem: Identifiable, Hashable {
-        case single(ConvertedPDF)
-        case series(SeriesGroup)
-        
-        var id: String {
-            switch self {
-            case .single(let pdf): return "single_\(pdf.id)"
-            case .series(let group): return "series_\(group.id)"
-            }
+// ✅ NEW: Unified Library Item
+// Fast Diffing
+enum LibraryListItem: Identifiable, Hashable {
+    case single(ConvertedPDF)
+    case series(SeriesGroup)
+    
+    var id: String {
+        switch self {
+        case .single(let pdf): return "single_\(pdf.id)"
+        case .series(let group): return "series_\(group.id)"
         }
     }
     
-    @State private var cachedLibraryItems: [LibraryListItem] = []
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        switch self {
+        case .single(let pdf): hasher.combine(pdf.hashValue)
+        case .series(let group): hasher.combine(group.hashValue)
+        }
+    }
     
-    private func updateLibraryItemsCache() {
-        Task.detached(priority: .userInitiated) {
-            let sorted = await MainActor.run { self.sortPDFs(self.conversionManager.visiblePDFs) }
-            let search = await MainActor.run { self.searchText }
-            let collections = await MainActor.run { self.conversionManager.collections }
-            
-            var items: [(Int, LibraryListItem)] = []
-            var seriesDict: [String: [ConvertedPDF]] = [:]
-            var singles: [ConvertedPDF] = []
-            var firstAppearanceIndex: [String: Int] = [:]
-            
-            for (index, pdf) in sorted.enumerated() {
-                let key = (pdf.metadata.series ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if key.isEmpty {
-                    singles.append(pdf)
-                    firstAppearanceIndex["single_\(pdf.id)"] = index
-                } else {
-                    seriesDict[key, default: []].append(pdf)
-                    if firstAppearanceIndex["series_\(key)"] == nil {
-                        firstAppearanceIndex["series_\(key)"] = index
-                    }
-                }
-            }
-            
-            for (seriesName, issues) in seriesDict {
-                let sortedIssues = issues.sorted { lhs, rhs in
-                    if let i1 = lhs.metadata.issueNumber, let n1 = Int(i1),
-                       let i2 = rhs.metadata.issueNumber, let n2 = Int(i2) {
-                        return n1 < n2
-                    }
-                    return lhs.name < rhs.name
-                }
-                
-                var coverID: UUID?
-                if let matchingCollection = collections.first(where: { $0.name == seriesName }),
-                   let explicitID = matchingCollection.explicitCoverFileID,
-                   issues.contains(where: { $0.id == explicitID }) {
-                    coverID = explicitID
-                } else {
-                    coverID = sortedIssues.first?.id
-                }
-                
-                let group = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: coverID, count: sortedIssues.count, issues: sortedIssues)
-                let item = LibraryListItem.series(group)
-                items.append((firstAppearanceIndex["series_\(seriesName)"] ?? 0, item))
-            }
+    static func == (lhs: LibraryListItem, rhs: LibraryListItem) -> Bool {
+        switch (lhs, rhs) {
+        case (.single(let l), .single(let r)): return l == r
+        case (.series(let l), .series(let r)): return l == r
+        default: return false
+        }
+    }
+}
+
+// ✅ Series Grouping Concept
+struct SeriesGroup: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let coverIssueID: UUID?
+    let count: Int
+    var issues: [ConvertedPDF] // Mutable to support drag-and-drop
+    
+    var coverURL: URL? { coverIssueID.flatMap { id in issues.first(where: { $0.id == id })?.url } }
+    
+    // ✅ Fast Equality to bypass deep struct inspection
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(count)
+        hasher.combine(coverIssueID)
+    }
+    
+    static func == (lhs: SeriesGroup, rhs: SeriesGroup) -> Bool {
+        return lhs.id == rhs.id && lhs.count == rhs.count && lhs.coverIssueID == rhs.coverIssueID
+    }
+}
             
             for single in singles {
                 let item = LibraryListItem.single(single)
                 items.append((firstAppearanceIndex["single_\(single.id)"] ?? 0, item))
             }
             
-            if !search.isEmpty {
+            let query = await MainActor.run { self.searchDebouncer.debouncedText }
+            if !query.isEmpty {
                 items = items.filter { tuple in
                     switch tuple.1 {
-                    case .single(let pdf): return pdf.name.localizedCaseInsensitiveContains(search)
-                    case .series(let group): return group.title.localizedCaseInsensitiveContains(search)
+                    case .single(let pdf): return pdf.name.localizedCaseInsensitiveContains(query)
+                    case .series(let group): return group.title.localizedCaseInsensitiveContains(query)
                     }
                 }
             }
@@ -999,10 +1006,13 @@ struct ModernFileRow: View {
     let isBatch: Bool
     @EnvironmentObject var conversionManager: ConversionManager
     
+    // ✅ NEW: Isolated State for smooth List scrolling
+    @State private var localCover: UIImage? = nil
+    
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                if let img = conversionManager.getThumbnail(for: pdf) {
+                if let img = localCover {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -1069,6 +1079,12 @@ struct ModernFileRow: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
+        // ✅ NEW: Lazy Asynchronous Fetch
+        .task(id: pdf.id) {
+            if let img = conversionManager.getThumbnail(for: pdf) {
+                await MainActor.run { self.localCover = img }
+            }
+        }
     }
 }
 
@@ -1106,6 +1122,9 @@ struct ModernSeriesRow: View {
     let isBatch: Bool
     @EnvironmentObject var conversionManager: ConversionManager
     
+    // ✅ NEW: Isolated State for smooth List scrolling
+    @State private var localCover: UIImage? = nil
+    
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
@@ -1114,7 +1133,7 @@ struct ModernSeriesRow: View {
                     RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated).frame(width: 40, height: 56).offset(x: 3, y: -3)
                 }
                 
-                if let issueID = group.coverIssueID, let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }), let img = conversionManager.getThumbnail(for: pdf) {
+                if let img = localCover {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -1168,6 +1187,14 @@ struct ModernSeriesRow: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
+        // ✅ NEW: Lazy Asynchronous Fetch
+        .task(id: group.id) {
+            if let issueID = group.coverIssueID,
+               let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }),
+               let img = conversionManager.getThumbnail(for: pdf) {
+                await MainActor.run { self.localCover = img }
+            }
+        }
     }
 }
 
@@ -1179,11 +1206,14 @@ struct ModernGridFileCell: View {
     let isBatch: Bool
     @EnvironmentObject var conversionManager: ConversionManager
     
+    // ✅ NEW: Isolated Image State for Lazy Loading
+    @State private var localCover: UIImage? = nil
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Cover Image Setup
             ZStack(alignment: .topTrailing) {
-                if let img = conversionManager.getThumbnail(for: pdf) {
+                if let img = localCover {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -1263,6 +1293,9 @@ struct ModernGridSeriesCell: View {
     let isBatch: Bool
     @EnvironmentObject var conversionManager: ConversionManager
     
+    // ✅ NEW: Isolated Image State
+    @State private var localCover: UIImage? = nil
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             
@@ -1273,7 +1306,7 @@ struct ModernGridSeriesCell: View {
                         RoundedRectangle(cornerRadius: 12).fill(Theme.surfaceElevated).padding(4).offset(y: -8)
                         RoundedRectangle(cornerRadius: 12).fill(Theme.surfaceElevated).padding(2).offset(y: -4)
                     }
-                    if let issueID = group.coverIssueID, let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }), let img = conversionManager.getThumbnail(for: pdf) {
+                    if let img = localCover {
                         Image(uiImage: img)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
