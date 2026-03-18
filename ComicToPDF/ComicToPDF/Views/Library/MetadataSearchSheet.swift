@@ -159,6 +159,13 @@ struct MetadataSearchSheet: View {
             newMeta.summary = issue.description?.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil) ?? ""
             newMeta.tags.append("ComicVine")
             
+            if let credits = issue.person_credits {
+                let writers = credits.filter { $0.role?.contains("Writer") ?? false }.compactMap { $0.name }.joined(separator: ", ")
+                let pencillers = credits.filter { ($0.role?.contains("Penciller") ?? false) || ($0.role?.contains("Artist") ?? false) }.compactMap { $0.name }.joined(separator: ", ")
+                newMeta.writer = writers.isEmpty ? nil : writers
+                newMeta.penciller = pencillers.isEmpty ? nil : pencillers
+            }
+            
             conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
              // Fetch cover if available?
              if let url = issue.image?.original_url {
@@ -231,8 +238,8 @@ struct MetadataSearchSheet: View {
                         newMeta.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
                     }
                     if let credits = issue.person_credits {
-                        let writers = credits.filter { $0.role.contains("Writer") }.map { $0.name }.joined(separator: ", ")
-                        let pencillers = credits.filter { $0.role.contains("Penciller") || $0.role.contains("Artist") }.map { $0.name }.joined(separator: ", ")
+                        let writers = credits.filter { $0.role?.contains("Writer") ?? false }.compactMap { $0.name }.joined(separator: ", ")
+                        let pencillers = credits.filter { ($0.role?.contains("Penciller") ?? false) || ($0.role?.contains("Artist") ?? false) }.compactMap { $0.name }.joined(separator: ", ")
                         newMeta.writer = writers.isEmpty ? nil : writers
                         newMeta.penciller = pencillers.isEmpty ? nil : pencillers
                     }

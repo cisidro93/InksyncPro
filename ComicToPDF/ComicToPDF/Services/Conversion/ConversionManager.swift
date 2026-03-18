@@ -2053,7 +2053,7 @@ class ConversionManager: ObservableObject {
                 
                 await MainActor.run {
                     self.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
-                    // ✅ DELETED: self.objectWillChange.send() - Cells now observe their own local state via .task
+                    self.objectWillChange.send() // Re-trigger UI redraw so cells show the cover
                 }
             } else {
                 // Generate from scratch if it doesn't exist

@@ -17,6 +17,7 @@ enum AppUIMode: String, Codable, CaseIterable {
 enum LibraryTapAction: String, CaseIterable {
     case select = "Tap to Select"
     case read = "Tap to Read"
+    case workspace = "Edit Workspace"
 }
 
 // ✅ NEW: Content Type Classification

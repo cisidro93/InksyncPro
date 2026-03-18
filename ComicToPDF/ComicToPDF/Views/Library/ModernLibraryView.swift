@@ -566,6 +566,10 @@ struct ModernLibraryView: View {
         } label: { Label("Read / Preview", systemImage: "book.pages") }
         
         Button {
+            selectedPDF = pdf
+        } label: { Label("Edit Workspace (Covers)", systemImage: "paintbrush.pointed") }
+        
+        Button {
             toggleFavorite(for: pdf)
         } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star") }
         
@@ -1019,6 +1023,14 @@ struct ModernFileRow: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(Theme.text)
                     .lineLimit(1)
+                
+                // ✅ Show Fetched Metadata Context
+                if let series = pdf.metadata.series, !series.isEmpty {
+                    Text("\(series) \(pdf.metadata.issueNumber.map { "#\($0)" } ?? "")")
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.textSecondary)
+                        .lineLimit(1)
+                }
                 
                 HStack(spacing: 6) {
                     // Content Type Badge

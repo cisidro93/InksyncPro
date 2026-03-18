@@ -171,7 +171,7 @@ struct ComicVineIssueDetails: Codable {
 }
 
 struct ComicVinePerson: Codable {
-    let id: Int
-    let name: String
-    let role: String // "Writer, Artist"
+    let id: Int?
+    let name: String?
+    let role: String? // "Writer, Artist"
 }
