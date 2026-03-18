@@ -95,17 +95,10 @@ def main(page):
         # Removed FilePicker permanently to fix Android RSOD.
         # We now use the custom native file browser entirely.
 
-        # Android 13+ SD Card Access Handler
-        try:
-            from flet_permission_handler import PermissionHandler, Permission
-            ph = PermissionHandler()
-            page.overlay.append(ph)
-            def request_sd_access(e=None):
-                if ph:
-                    ph.request_permission(Permission.MANAGE_EXTERNAL_STORAGE)
-        except ImportError:
-            ph = None
-            def request_sd_access(e=None): pass
+        # Android 13+ SD Card Access Handler has been removed.
+        # "flet_permission_handler" causes an "Unknown Control" crash when bundled in the APK.
+        ph = None
+        def request_sd_access(e=None): pass
 
         def render_ui():
             try:
