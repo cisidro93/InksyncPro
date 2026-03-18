@@ -317,15 +317,21 @@ class ConversionManager: ObservableObject {
     
     // MARK: - Cover Image Management (Memory Optimization)
     
-    func getCoverURL(for pdf: ConvertedPDF) -> URL? {
+    static func getCoversDirectory() -> URL {
         let fileManager = FileManager.default
-        guard let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        guard let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return fileManager.temporaryDirectory
+        }
         let coversDir = appSupportDir.appendingPathComponent("Covers", isDirectory: true)
         
         if !fileManager.fileExists(atPath: coversDir.path) {
             try? fileManager.createDirectory(at: coversDir, withIntermediateDirectories: true)
         }
-        
+        return coversDir
+    }
+
+    func getCoverURL(for pdf: ConvertedPDF) -> URL? {
+        let coversDir = Self.getCoversDirectory()
         return coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
     }
     

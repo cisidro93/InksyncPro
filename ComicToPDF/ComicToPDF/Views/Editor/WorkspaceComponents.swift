@@ -292,6 +292,18 @@ struct CoverStudioView: View {
     
     var activeCoverURL: URL? { conversionManager.getCoverURL(for: livePDF) }
     
+    private var displayImage: UIImage? {
+        guard let url = previewCoverURL ?? activeCoverURL else { return nil }
+        if url.isFileURL {
+            return UIImage(contentsOfFile: url.path)
+        } else {
+            if let data = try? Data(contentsOf: url) {
+                return UIImage(data: data)
+            }
+        }
+        return nil
+    }
+    
     var body: some View {
         VStack(spacing: 20) {
             
@@ -308,7 +320,7 @@ struct CoverStudioView: View {
                     .frame(height: 380)
                     .shadow(radius: 10, y: 5)
                 
-                if let displayURL = previewCoverURL ?? activeCoverURL, let uiImage = UIImage(contentsOfFile: displayURL.path) ?? (displayURL.isFileURL ? nil : try? UIImage(data: Data(contentsOf: displayURL))) {
+                if let displayURL = previewCoverURL ?? activeCoverURL, let uiImage = displayImage {
                     Image(uiImage: uiImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
