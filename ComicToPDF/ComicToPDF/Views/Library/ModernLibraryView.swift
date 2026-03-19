@@ -1,10 +1,10 @@
-import SwiftUI
+﻿import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 
 
 
-// âœ… NEW: Combine Debouncer for Library Search
+// Ã¢Å“â€¦ NEW: Combine Debouncer for Library Search
 class SearchDebouncer: ObservableObject {
     @Published var text: String = ""
     @Published var debouncedText: String = ""
@@ -26,21 +26,21 @@ struct ModernLibraryView: View {
     @Binding var showingBatchMergeReorder: Bool
     @Binding var batchMergeItems: [ConvertedPDF]
     
-    // âœ… Navigation Mode
+    // Ã¢Å“â€¦ Navigation Mode
     var useNavigationStack: Bool = false
     
-    // âœ… Editor State
+    // Ã¢Å“â€¦ Editor State
     @State private var pdfToEditMetadata: ConvertedPDF?
-    // âœ… Root-level folder picker callback (avoids iOS 16/17 delegate swallowing bug)
+    // Ã¢Å“â€¦ Root-level folder picker callback (avoids iOS 16/17 delegate swallowing bug)
     var onFolderImport: (() -> Void)? = nil
     
-    // âœ… NEW: View Style State
+    // Ã¢Å“â€¦ NEW: View Style State
     enum LibraryViewStyle: String {
         case list = "List"
         case grid = "Grid"
     }
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
-    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details // âœ… NEW: Tap Action Selector
+    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details // Ã¢Å“â€¦ NEW: Tap Action Selector
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
     
     // Local State
@@ -60,42 +60,42 @@ struct ModernLibraryView: View {
         case size = "Size"
         case favorites = "Favorites First"
         case type = "Single / Series"
-        case extensionType = "Format (CBZ/PDF)" // âœ… NEW: Format Sorting
+        case extensionType = "Format (CBZ/PDF)" // Ã¢Å“â€¦ NEW: Format Sorting
         var id: String { rawValue }
     }
     @State private var sortOption: SortOption = .dateAdded
     @State private var showingSortMenu = false
     
-    // âœ… NEW: Rename Logic
+    // Ã¢Å“â€¦ NEW: Rename Logic
     @State private var pdfToRename: ConvertedPDF?
     @State private var renameText = ""
     
-    // âœ… NEW: Batch Editor State
+    // Ã¢Å“â€¦ NEW: Batch Editor State
     @State private var showBatchMetadataEditor = false
     
-    // âœ… NEW: Export State
+    // Ã¢Å“â€¦ NEW: Export State
     @State private var pdfToExport: ConvertedPDF?
-    @State private var pdfToDirectShare: ConvertedPDF? // âœ… Competitor Hardening: Native Share
+    @State private var pdfToDirectShare: ConvertedPDF? // Ã¢Å“â€¦ Competitor Hardening: Native Share
     @State private var pdfToSearchMetadata: ConvertedPDF?
-    @State private var pdfToCloudSync: ConvertedPDF? // âœ… NEW: WebDAV Sync
+    @State private var pdfToCloudSync: ConvertedPDF? // Ã¢Å“â€¦ NEW: WebDAV Sync
     
-    // âœ… Layer 4: Manual Series Assignment (Single)
+    // Ã¢Å“â€¦ Layer 4: Manual Series Assignment (Single)
     @State private var pdfToAssignSeries: ConvertedPDF?
     @State private var assignSeriesText = ""
     
-    // âœ… NEW: Native Reader State
+    // Ã¢Å“â€¦ NEW: Native Reader State
     @State private var pdfToRead: ConvertedPDF?
     
-    // âœ… NEW: Media Detail Sheet State
+    // Ã¢Å“â€¦ NEW: Media Detail Sheet State
     @State private var pdfForDetails: ConvertedPDF?
     
-    // âœ… NEW: Batch Series Assignment
+    // Ã¢Å“â€¦ NEW: Batch Series Assignment
     @State private var showingBatchGroupAlert = false
     @State private var batchGroupText = ""
     @State private var cachedLibraryItems: [LibraryListItem] = []
 
 // Definitions moved to SeriesModels.swift
-    // âœ… Detached Background Compute
+    // Ã¢Å“â€¦ Detached Background Compute
     private func updateLibraryItemsCache() {
         // Capture context snapshot to safely detach
         let pdfs = conversionManager.visiblePDFs
@@ -233,7 +233,7 @@ struct ModernLibraryView: View {
                         .transition(.opacity.animation(.easeInOut))
                 }
                 
-                // âœ… NEW: Background Import Tracker
+                // Ã¢Å“â€¦ NEW: Background Import Tracker
                 ImportTrackerView()
             }
         )
@@ -244,7 +244,7 @@ struct ModernLibraryView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
-        // âœ… Native Reader
+        // Ã¢Å“â€¦ Native Reader
         .fullScreenCover(item: $pdfToRead) { pdf in
             ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
         }
@@ -273,7 +273,7 @@ struct ModernLibraryView: View {
         .sheet(item: $pdfToCloudSync) { pdf in
             CloudSyncView(targetPDF: pdf)
         }
-        // âœ… NEW: Media Details Sheet Layout (Option 1)
+        // Ã¢Å“â€¦ NEW: Media Details Sheet Layout (Option 1)
         .sheet(item: $pdfForDetails) { pdf in
             MediaDetailSheet(pdf: pdf, onAction: { action in
                 handleDetailAction(action: action, for: pdf)
@@ -281,17 +281,17 @@ struct ModernLibraryView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        // âœ… NEW: Advanced Metadata & Cover Editor
+        // Ã¢Å“â€¦ NEW: Advanced Metadata & Cover Editor
         .sheet(item: $pdfToEditMetadata) { pdf in
             AdvancedMetadataEditorView(pdf: pdf)
         }
-        // âœ… NEW: Batch Metadata Editor
+        // Ã¢Å“â€¦ NEW: Batch Metadata Editor
         .sheet(isPresented: $showBatchMetadataEditor) {
             let selectedFiles = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
             BatchMetadataEditorView(selectedPDFs: selectedFiles)
         }
         } // End of Outer Group
-        // âœ… Rename Alert
+        // Ã¢Å“â€¦ Rename Alert
         .alert("Rename File", isPresented: Binding(
             get: { pdfToRename != nil },
             set: { if !$0 { pdfToRename = nil } }
@@ -375,36 +375,6 @@ struct ModernLibraryView: View {
         }
     }
     
-                    // 3. Selection / Batch
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            isBatchMode.toggle()
-                            if !isBatchMode { multiSelection.removeAll() }
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.circle.badge.questionmark")
-                            Text(isBatchMode ? "Done" : "Select")
-                        }
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isBatchMode ? .white : Theme.text)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(isBatchMode ? AnyShapeStyle(Theme.orange) : AnyShapeStyle(.thickMaterial))
-                        .clipShape(Capsule())
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-            .padding(.bottom, 16)
-        }
-        .overlay(
-            Rectangle().frame(height: 1).foregroundColor(.white.opacity(0.05)),
-            alignment: .bottom
-        )
-    }
-    
-    // MARK: - Batch Bottom Toolbar
     @ViewBuilder private var batchBottomToolbar: some View {
         VStack(spacing: 0) {
             Divider().background(Color.white.opacity(0.1))
@@ -455,7 +425,7 @@ struct ModernLibraryView: View {
                 .disabled(multiSelection.isEmpty)
                 
                 Spacer()
-                // âœ… Advanced Actions Menu 
+                // Ã¢Å“â€¦ Advanced Actions Menu 
                 Menu {
                     Button {
                         let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
