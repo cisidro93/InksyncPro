@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 
@@ -507,6 +507,8 @@ struct ModernLibraryView: View {
             case .addToSeries:
                 assignSeriesText = pdf.metadata.series ?? ""
                 pdfToAssignSeries = pdf
+            case .favorite:
+                toggleFavorite(for: pdf)
             case .delete:
                 conversionManager.deletePDF(pdf)
             }
