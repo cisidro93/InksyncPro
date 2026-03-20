@@ -7,9 +7,9 @@ struct BatchMetadataEditorView: View {
     let selectedPDFs: [ConvertedPDF]
     
     // Form State (Only fields that will be applied to ALL selected files)
-    @State private var author: String = ""
-    @State private var publisher: String = ""
-    @State private var series: String = ""
+    @AppStorage("batchLastAuthor") private var author: String = ""
+    @AppStorage("batchLastPublisher") private var publisher: String = ""
+    @AppStorage("batchLastSeries") private var series: String = ""
     @State private var tags: [String] = []
     
     // Apply Toggles (User chooses which fields to actually overwrite)

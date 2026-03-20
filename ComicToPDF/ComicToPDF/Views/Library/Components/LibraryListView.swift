@@ -46,7 +46,16 @@ struct LibraryListView: View {
                                     for issue in group.issues { conversionManager.deletePDF(issue) }
                                 } label: { Label("Delete Series", systemImage: "trash") }
                             }
-                            .swipeActions(edge: .trailing) {
+                            // ✅ Comic Zeal Swipe Selection Action (Swipe Left)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button {
+                                    isBatchMode = true
+                                    for issue in group.issues { multiSelection.insert(issue.id) }
+                                } label: {
+                                    Label("Select Group", systemImage: "checkmark.circle.fill")
+                                }
+                                .tint(.green)
+                                
                                 Button(role: .destructive) {
                                     for issue in group.issues { conversionManager.deletePDF(issue) }
                                 } label: { Label("Delete Series", systemImage: "trash") }
@@ -72,11 +81,18 @@ struct LibraryListView: View {
                                 }
                                 .listRowBackground(Color.black)
                                 .listRowSeparatorTint(Color(white: 0.2))
+                                // ✅ Comic Zeal Swipe Selection Action (Swipe Left)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button {
+                                        isBatchMode = true
+                                        multiSelection.insert(pdf.id)
+                                    } label: { Label("Select", systemImage: "checkmark.circle.fill") }
+                                    .tint(.green)
+                                    
+                                    swipeActionsTrailing(pdf)
+                                }
                                 .swipeActions(edge: .leading) {
                                     swipeActionsLeading(pdf)
-                                }
-                                .swipeActions(edge: .trailing) {
-                                    swipeActionsTrailing(pdf)
                                 }
                                 .contextMenu {
                                     contextMenuContent(pdf)
@@ -94,11 +110,18 @@ struct LibraryListView: View {
                                 .tag(pdf)
                                 .listRowBackground(Color.black)
                                 .listRowSeparatorTint(Color(white: 0.2))
+                                // ✅ Comic Zeal Swipe Selection Action (Swipe Left)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button {
+                                        isBatchMode = true
+                                        multiSelection.insert(pdf.id)
+                                    } label: { Label("Select", systemImage: "checkmark.circle.fill") }
+                                    .tint(.green)
+                                    
+                                    swipeActionsTrailing(pdf)
+                                }
                                 .swipeActions(edge: .leading) {
                                     swipeActionsLeading(pdf)
-                                }
-                                .swipeActions(edge: .trailing) {
-                                    swipeActionsTrailing(pdf)
                                 }
                                 .contextMenu {
                                     contextMenuContent(pdf)

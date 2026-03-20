@@ -91,11 +91,9 @@ struct ModernFileRow: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
-        // ✅ NEW: Lazy Asynchronous Fetch
+        // ✅ NEW: Lazy Asynchronous Fetch with Cancellation
         .task(id: pdf.id) {
-            if let img = conversionManager.getThumbnail(for: pdf) {
-                await MainActor.run { self.localCover = img }
-            }
+            await conversionManager.loadThumbnailAsync(for: pdf)
         }
     }
 }
@@ -175,12 +173,11 @@ struct ModernSeriesRow: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
-        // ✅ NEW: Lazy Asynchronous Fetch
+        // ✅ NEW: Lazy Asynchronous Fetch with Cancellation
         .task(id: group.id) {
             if let issueID = group.coverIssueID,
-               let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }),
-               let img = conversionManager.getThumbnail(for: pdf) {
-                await MainActor.run { self.localCover = img }
+               let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) {
+                await conversionManager.loadThumbnailAsync(for: pdf)
             }
         }
     }

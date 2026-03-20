@@ -432,15 +432,23 @@ class ConversionManager: ObservableObject {
             saveLibrary()
             Logger.shared.log("Updated metadata for \(pdf.name)", category: "Metadata")
             
-            // ✅ Pro Feature: Write back to ComicInfo.xml
-            if pdf.url.pathExtension.lowercased() == "cbz" || pdf.url.pathExtension.lowercased() == "zip" {
-                Task {
-                    do {
+            // ✅ Pro Feature: Write back to file formats
+            Task {
+                do {
+                    let ext = pdf.url.pathExtension.lowercased()
+                    if ext == "cbz" || ext == "zip" {
                         try await ComicInfoWriter.write(metadata: newMetadata, to: pdf.url)
                         Logger.shared.log("Wrote metadata changes back to archive: \(pdf.name)", category: "Metadata")
-                    } catch {
-                        Logger.shared.log("Failed to write to archive: \(error.localizedDescription)", category: "Metadata", type: .error)
+                    } else if ext == "epub" {
+                        // Attempt native EPUB injection
+                        let panels = await getCombinedManifest(for: pdf)
+                        try await injectMetadata(into: pdf.url, panels: panels, metadata: newMetadata)
+                        Logger.shared.log("Injected updated metadata into EPUB: \(pdf.name)", category: "Metadata")
+                    } else if ext == "pdf" {
+                        Logger.shared.log("Metadata updated successfully in library for PDF: \(pdf.name)", category: "Metadata")
                     }
+                } catch {
+                    Logger.shared.log("Failed to write to archive: \(error.localizedDescription)", category: "Metadata", type: .error)
                 }
             }
         }
@@ -2042,6 +2050,28 @@ class ConversionManager: ObservableObject {
         }
     }
     
+    // ✅ NEW: Async Cancellation-Aware Thumbnail Loader
+    func loadThumbnailAsync(for pdf: ConvertedPDF) async {
+        if thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil { return }
+        
+        // Check disk cache first to avoid extracting the archive again
+        if let coverURL = await self.getCoverURL(for: pdf),
+           let data = try? Data(contentsOf: coverURL),
+           let image = UIImage(data: data) {
+            
+            await MainActor.run {
+                self.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
+                self.objectWillChange.send()
+            }
+        } else {
+            // Generate from scratch if it doesn't exist
+            await self.generateCoverThumbnail(for: pdf)
+            if let _ = thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
+                await MainActor.run { self.objectWillChange.send() }
+            }
+        }
+    }
+    
     func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
         if let cached = thumbnailCache.object(forKey: pdf.id.uuidString as NSString) { return cached }
         
@@ -2130,6 +2160,7 @@ class ConversionManager: ObservableObject {
                 var attempts = 0
                 
                 for entry in sortedEntries {
+                    if Task.isCancelled { return nil } // ✅ Abort heavy Zip iteration if SwiftUI view was cancelled
                     // Skip directories explicit check
                     if entry.type == .directory { continue }
                     

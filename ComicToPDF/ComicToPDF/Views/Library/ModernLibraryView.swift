@@ -355,7 +355,8 @@ struct ModernLibraryView: View {
             updateLibraryItemsCache()
         }
         .onChange(of: conversionManager.visiblePDFs, perform: { _ in updateLibraryItemsCache() })
-        .onChange(of: searchText, perform: { _ in updateLibraryItemsCache() })
+        .onChange(of: searchText) { newValue in searchDebouncer.text = newValue }
+        .onChange(of: searchDebouncer.debouncedText, perform: { _ in updateLibraryItemsCache() })
         .onChange(of: sortOption, perform: { _ in updateLibraryItemsCache() })
         .onChange(of: conversionManager.collections.count, perform: { _ in updateLibraryItemsCache() })
     }

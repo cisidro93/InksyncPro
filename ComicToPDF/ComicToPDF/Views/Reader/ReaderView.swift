@@ -115,6 +115,15 @@ struct ReaderView: View {
                     }
                 }
             }
+            .focusable()
+            .onKeyPress(.leftArrow) {
+                prevPage()
+                return .handled
+            }
+            .onKeyPress(.rightArrow) {
+                nextPage()
+                return .handled
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {

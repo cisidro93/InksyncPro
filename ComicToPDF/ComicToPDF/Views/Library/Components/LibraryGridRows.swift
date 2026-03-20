@@ -13,7 +13,11 @@ struct ModernGridFileCell: View {
         VStack(alignment: .leading, spacing: 8) {
             // Cover Image Setup
             ZStack(alignment: .topTrailing) {
-                if let img = localCover {
+                if let directCacheImg = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
+                    Image(uiImage: directCacheImg)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else if let img = localCover {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -84,10 +88,9 @@ struct ModernGridFileCell: View {
         .cornerRadius(12)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
+        // ✅ NEW: Lazy Asynchronous Fetch with Cancellation
         .task(id: pdf.id) {
-            if let img = conversionManager.getThumbnail(for: pdf) {
-                await MainActor.run { self.localCover = img }
-            }
+            await conversionManager.loadThumbnailAsync(for: pdf)
         }
     }
 }
@@ -111,7 +114,11 @@ struct ModernGridSeriesCell: View {
                         RoundedRectangle(cornerRadius: 12).fill(Theme.surfaceElevated).padding(4).offset(y: -8)
                         RoundedRectangle(cornerRadius: 12).fill(Theme.surfaceElevated).padding(2).offset(y: -4)
                     }
-                    if let img = localCover {
+                    if let issueID = group.coverIssueID, let directCacheImg = conversionManager.thumbnailCache.object(forKey: issueID.uuidString as NSString) {
+                        Image(uiImage: directCacheImg)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else if let img = localCover {
                         Image(uiImage: img)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
@@ -171,12 +178,11 @@ struct ModernGridSeriesCell: View {
         .cornerRadius(12)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
-        // ✅ NEW: Lazy Asynchronous Fetch
+        // ✅ NEW: Lazy Asynchronous Fetch with Cancellation
         .task(id: group.id) {
             if let issueID = group.coverIssueID,
-               let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }),
-               let img = conversionManager.getThumbnail(for: pdf) {
-                await MainActor.run { self.localCover = img }
+               let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) {
+                await conversionManager.loadThumbnailAsync(for: pdf)
             }
         }
     }
