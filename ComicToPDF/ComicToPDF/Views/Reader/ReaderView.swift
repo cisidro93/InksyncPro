@@ -63,36 +63,11 @@ struct ReaderView: View {
                             }
                         }
                     } else {
-                        // PAGED MODE (Premium 3D Page Curl)
+                        // ✅ ZERO-LATENCY METAL PPL READER
                         if fileURL.pathExtension.lowercased() != "pdf" {
                             if !pages.isEmpty {
-                                PageCurlReaderView(
-                                    pages: pages.enumerated().map { index, pageURL in
-                                        Group {
-                                            if fileURL.pathExtension.lowercased() == "epub" {
-                                                EPUBSmartReader(
-                                                    pageURL: pageURL,
-                                                    panelMode: $isPanelViewEnabled,
-                                                    onNextPage: nextPage,
-                                                    onPrevPage: prevPage
-                                                )
-                                            } else {
-                                                AsyncImage(url: pageURL) { phase in
-                                                    if let image = phase.image {
-                                                        image.resizable().aspectRatio(contentMode: .fit)
-                                                    } else {
-                                                        ProgressView()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        .id(pageURL)
-                                    },
-                                    currentPageIndex: $currentPageIndex,
-                                    transitionStyle: .pageCurl, // 3D Curl effect
-                                    navigationOrientation: .horizontal
-                                )
-                                .ignoresSafeArea(edges: [.bottom, .horizontal])
+                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex)
+                                    .ignoresSafeArea()
                             }
                         } else {
                             PDFKitView(url: fileURL)
@@ -182,8 +157,14 @@ struct ReaderView: View {
                 if let enumerator = fileManager.enumerator(at: dest, includingPropertiesForKeys: nil) {
                     var foundPages: [URL] = []
                     while let file = enumerator.nextObject() as? URL {
-                        if ["xhtml", "html"].contains(file.pathExtension.lowercased()) {
-                            foundPages.append(file)
+                        // ✅ RENOVATED: Extract Raw Images for Metal PPL Engine (Bypassing slow HTML WKWebViews)
+                        if ["jpg", "jpeg", "png", "webp", "heic"].contains(file.pathExtension.lowercased()) {
+                            // Filter out standard EPUB structural assets (like cover thumbnails or tiny icons)
+                            if !file.lastPathComponent.lowercased().contains("thumbnail") && !file.lastPathComponent.lowercased().contains("cover") {
+                                foundPages.append(file)
+                            } else if file.lastPathComponent.lowercased() == "cover.jpg" {
+                                foundPages.insert(file, at: 0) // Ensure explicit cover is page 0
+                            }
                         }
                     }
                     foundPages.sort { $0.lastPathComponent < $1.lastPathComponent }
@@ -247,123 +228,7 @@ struct ReaderView: View {
     }
 }
 
-// MARK: - Smart EPUB WebView
-struct EPUBSmartReader: UIViewRepresentable {
-    let pageURL: URL
-    @Binding var panelMode: Bool
-    var onNextPage: () -> Void
-    var onPrevPage: () -> Void
-    
-    func makeUIView(context: Context) -> WKWebView {
-        let prefs = WKWebpagePreferences()
-        prefs.allowsContentJavaScript = true
-        let config = WKWebViewConfiguration()
-        config.defaultWebpagePreferences = prefs
-        
-        // JAVASCRIPT: Handle Panels & Navigation internally
-        let js = """
-        var panelIndex = -1;
-        var panels = [];
-        var isPanelMode = \(panelMode);
-
-        // CSS for Zoom
-        var style = document.createElement('style');
-        style.innerHTML = `body { transition: transform 0.4s ease; transform-origin: top left; overflow: hidden; touch-action: none; }`;
-        document.head.appendChild(style);
-
-        function initPanels() {
-            var page = document.querySelector('.page');
-            if (page && page.dataset.panels) {
-                try { panels = JSON.parse(page.dataset.panels); } catch(e) {}
-            }
-        }
-        
-        // Main Tap Logic
-        document.addEventListener('click', function(e) {
-            e.preventDefault(); // Stop standard browser handling
-            
-            var x = e.clientX;
-            var width = window.innerWidth;
-            
-            // Right Side Tap (Next)
-            if (x > width * 0.4) {
-                if (isPanelMode && panels.length > 0) {
-                    // Try to advance panel
-                    if (panelIndex < panels.length - 1) {
-                        panelIndex++;
-                        zoomToPanel();
-                        return; // Stay on this page
-                    }
-                }
-                // No panels left, go to next page
-                window.webkit.messageHandlers.navHandler.postMessage("next");
-            } 
-            // Left Side Tap (Prev)
-            else {
-                if (isPanelMode && panels.length > 0) {
-                    // Try to reverse panel
-                    if (panelIndex > 0) {
-                        panelIndex--;
-                        zoomToPanel();
-                        return; // Stay on this page
-                    } else if (panelIndex === 0) {
-                        // Reset zoom before going back
-                        panelIndex = -1;
-                        document.body.style.transform = "scale(1) translate(0,0)";
-                        return;
-                    }
-                }
-                // No panels left (or at start), go to prev page
-                window.webkit.messageHandlers.navHandler.postMessage("prev");
-            }
-        });
-        
-        function zoomToPanel() {
-            var p = panels[panelIndex];
-            var scale = Math.min(window.innerWidth/p.width, window.innerHeight/p.height) * 0.98;
-            var tx = -p.x * 100;
-            var ty = -p.y * 100;
-            document.body.style.transform = `scale(${1/p.width}) translate(${tx}%, ${ty}%)`; 
-        }
-        
-        window.onload = initPanels;
-        """
-        
-        let script = WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        config.userContentController.addUserScript(script)
-        config.userContentController.add(context.coordinator, name: "navHandler")
-        
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.isOpaque = false
-        webView.backgroundColor = .systemBackground
-        webView.scrollView.isScrollEnabled = false // Disable scrolling to prevent interference
-        
-        return webView
-    }
-    
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        if webView.url != pageURL {
-            webView.loadFileURL(pageURL, allowingReadAccessTo: pageURL.deletingLastPathComponent())
-        }
-    }
-    
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-    
-    class Coordinator: NSObject, WKScriptMessageHandler {
-        var parent: EPUBSmartReader
-        init(_ parent: EPUBSmartReader) { self.parent = parent }
-        
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            if let body = message.body as? String {
-                if body == "next" {
-                    parent.onNextPage()
-                } else if body == "prev" {
-                    parent.onPrevPage()
-                }
-            }
-        }
-    }
-}
+// ✅ EPUBSmartReader completely removed and renovated into the PPL Metal Engine.
 
 // MARK: - Standard PDF Component
 struct PDFKitView: UIViewRepresentable {

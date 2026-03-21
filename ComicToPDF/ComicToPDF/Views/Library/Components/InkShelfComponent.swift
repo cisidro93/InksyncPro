@@ -21,7 +21,7 @@ struct InkShelfComponent: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(shelfItems, id: \.self) { item in
-                                        shelfItemView
+                                    shelfItemView(for: item)
                                 }
                             }
                             .padding(.horizontal)
@@ -88,19 +88,29 @@ struct InkShelfComponent: View {
     }
     
     @ViewBuilder
-    private var shelfItemView: some View {
+    private func shelfItemView(for item: String) -> some View {
         let base = RoundedRectangle(cornerRadius: 12)
             .fill(.ultraThinMaterial)
             .frame(width: 80, height: 110)
-            .overlay(
-                Image(systemName: "book.closed")
-                    .foregroundColor(.white)
-            )
+        
+        // Wrap Icon with OS availability for SF Symbols 6
+        let icon = Image(systemName: "book.closed.fill")
+            .foregroundColor(.white)
+            .font(.largeTitle)
+        
+        let overlayView: AnyView
+        if #available(iOS 17.0, *) {
+            overlayView = AnyView(icon.symbolEffect(.bounce, value: shelfItems.count))
+        } else {
+            overlayView = AnyView(icon)
+        }
+        
+        let finalBase = base.overlay(overlayView)
         
         if #available(iOS 17.0, *) {
-            base.geometryGroup()
+            finalBase.geometryGroup()
         } else {
-            base
+            finalBase
         }
     }
 }
