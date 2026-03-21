@@ -26,6 +26,21 @@ actor ConversionEngine {
     ///   - url: Source file URL
     ///   - settings: Conversion settings snapshot (Value Type for thread safety)
     func process(url: URL, settings: ConversionSettings) async throws -> URL {
+        // ✅ PHASE 9: Unrestricted Execution
+        let backgroundTaskToken = await MainActor.run {
+            var token: UIBackgroundTaskIdentifier = .invalid
+            token = UIApplication.shared.beginBackgroundTask(withName: "EngineProcess_\(url.lastPathComponent)") {
+                UIApplication.shared.endBackgroundTask(token)
+            }
+            return token
+        }
+        
+        defer {
+            Task { @MainActor in
+                UIApplication.shared.endBackgroundTask(backgroundTaskToken)
+            }
+        }
+        
         progressSubject.send(.started(file: url))
         
         do {
@@ -114,6 +129,21 @@ actor ConversionEngine {
 
     // MARK: - PDF Import Logic
     func performPDFImport(url: URL, destFolder: URL) async throws -> URL {
+        // ✅ PHASE 9: Unrestricted Execution
+        let backgroundTaskToken = await MainActor.run {
+            var token: UIBackgroundTaskIdentifier = .invalid
+            token = UIApplication.shared.beginBackgroundTask(withName: "EngineImport_\(url.lastPathComponent)") {
+                UIApplication.shared.endBackgroundTask(token)
+            }
+            return token
+        }
+        
+        defer {
+            Task { @MainActor in
+                UIApplication.shared.endBackgroundTask(backgroundTaskToken)
+            }
+        }
+        
         progressSubject.send(.started(file: url))
         
         let importer = PDFImporter()

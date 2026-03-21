@@ -228,12 +228,10 @@ struct ModernLibraryView: View {
                 }
         .overlay(
             Group {
-                if conversionManager.isConverting {
-                    ImmersiveConversionOverlay(pdfName: "Processing Library Item...")
-                        .transition(.opacity.animation(.easeInOut))
-                }
+                // ✅ PHASE 9: Unrestricted UI
+                // Removed the massive screen-blocking ImmersiveConversionOverlay
                 
-                // Ã¢Å“â€¦ NEW: Background Import Tracker
+                // Active Background Import Tracker (Non-blocking pill)
                 ImportTrackerView()
             }
         )

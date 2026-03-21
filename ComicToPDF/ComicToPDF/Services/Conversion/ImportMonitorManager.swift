@@ -12,6 +12,9 @@ class ImportMonitorManager: ObservableObject {
     @Published private(set) var filesProcessed: Int = 0
     @Published private(set) var filesFailed: Int = 0
     
+    // ✅ PHASE 9: Unrestricted Background Processing Survival Token
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    
     // Alert state to show the user upon completion
     @Published var showCompletionReport: Bool = false
     @Published private(set) var finalReportMessage: String = ""
@@ -25,6 +28,14 @@ class ImportMonitorManager: ObservableObject {
         self.filesProcessed = 0
         self.filesFailed = 0
         self.showCompletionReport = false
+        
+        // Grab a survival token from iOS Springboard to prevent the watchdog from killing the thread when minimized
+        if self.backgroundTask == .invalid {
+            self.backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ImportMonitor") {
+                UIApplication.shared.endBackgroundTask(self.backgroundTask)
+                self.backgroundTask = .invalid
+            }
+        }
     }
     
     @MainActor
@@ -51,6 +62,12 @@ class ImportMonitorManager: ObservableObject {
         }
         
         self.showCompletionReport = true
+        
+        // Release the survival token back to iOS to allow natural sleeping
+        if self.backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(self.backgroundTask)
+            self.backgroundTask = .invalid
+        }
     }
     
     var progress: Double {
