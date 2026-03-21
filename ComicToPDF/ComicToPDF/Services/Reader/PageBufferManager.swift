@@ -63,12 +63,17 @@ class PageBufferManager: ObservableObject {
         // Detached hardware task for heavy lifting
         return await Task.detached(priority: .userInitiated) {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                  let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+                  let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { 
+                
+                await MainActor.run {
+                    Logger.shared.log("PageBufferManager: Failed to render page at index: \(index). Malformed Image Array or IO Failure.", category: "Engine", type: .error)
+                }
+                
+                return nil 
+            }
             
             // If PPL is active, we crop directly out of the memory buffer to reduce Metal draw overdraw.
             // If not active, we return the full frame.
-            // In a production PPL engine, if the lock is enabled, we math out the strict rect.
-            // For now, we pass the massive full image down to Metal and let the GPU scale it flawlessly.
             return cgImage
         }.value
     }

@@ -285,15 +285,29 @@ class ConversionManager: ObservableObject {
             var watchedFolders: [WatchedFolder]? = nil // ✅ NEW
             var presets: [ConversionPreset]? = nil // ✅ NEW
         }
-        guard let url = fileURL(for: libraryFileName), let data = try? Data(contentsOf: url), let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) else { return }
-        self.convertedPDFs = index.files
-        self.collections = index.collections
-        self.conversionSettings = index.settings
-        self.sendHistory = index.history
-        self.kindleDevices = index.devices
-        self.panelOverrides = index.panelOverrides ?? [:] // ✅ Restore overrides
-        self.watchedFolders = index.watchedFolders ?? [] // ✅ Restore Watched Folders
-        self.conversionPresets = index.presets ?? [] // ✅ Restore Presets
+        guard let url = fileURL(for: libraryFileName) else { return }
+        
+        Task.detached(priority: .userInitiated) {
+            do {
+                let data = try Data(contentsOf: url)
+                let index = try JSONDecoder().decode(LibraryIndex.self, from: data)
+                
+                await MainActor.run {
+                    self.convertedPDFs = index.files
+                    self.collections = index.collections
+                    self.conversionSettings = index.settings
+                    self.sendHistory = index.history
+                    self.kindleDevices = index.devices
+                    self.panelOverrides = index.panelOverrides ?? [:]
+                    self.watchedFolders = index.watchedFolders ?? []
+                    self.conversionPresets = index.presets ?? []
+                }
+            } catch {
+                await MainActor.run {
+                    Logger.shared.log("Critical Boot Error: JSON Decode failed. \(error.localizedDescription)", category: "Library", type: .error)
+                }
+            }
+        }
     }
     
     private func fileURL(for name: String) -> URL? {

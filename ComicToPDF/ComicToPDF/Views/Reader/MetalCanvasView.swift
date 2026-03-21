@@ -132,7 +132,7 @@ struct MetalCanvasView: UIViewRepresentable {
             do {
                 _ = try ciContext.startTask(toRender: centeredImage, from: CGRect(origin: .zero, size: drawableSize), to: destination, at: CGPoint.zero)
             } catch {
-                print("Metal Engine Layout Error: \(error)")
+                Logger.shared.log("Metal Engine Layout Error: \(error.localizedDescription)", category: "Engine", type: .error)
             }
             
             commandBuffer.present(drawable)
