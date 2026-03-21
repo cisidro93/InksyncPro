@@ -133,7 +133,7 @@ struct ComicZealScrubber: View {
     }
     
     private func handleDrag(value: DragGesture.Value, itemHeight: CGFloat) {
-        let index = Int(value.localLocation.y / itemHeight)
+        let index = Int(value.location.y / itemHeight)
         if index >= 0 && index < letters.count {
             let letter = String(letters[index])
             if activeLetter != letter {
