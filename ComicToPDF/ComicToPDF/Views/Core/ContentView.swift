@@ -1,8 +1,10 @@
 import SwiftUI
+import SwiftData
 import PDFKit
 import UniformTypeIdentifiers
 
 struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) var sizeClass
     @StateObject private var conversionManager = ConversionManager()
     // ✅ NEW: Wi-Fi Server for Kindle Sync
@@ -88,6 +90,10 @@ struct ContentView: View {
         .onAppear {
             if !hasSeenOnboarding {
                 showOnboarding = true
+            }
+            Task { @MainActor in
+                MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
+                MigrationService.shared.performSmartGrouping(context: modelContext)
             }
         }
         // Layer 3: Post-import series grouping prompt

@@ -1,5 +1,6 @@
 import SwiftUI
 import BackgroundTasks
+import SwiftData
 
 @main
 struct InksyncProApp: App {
@@ -16,6 +17,15 @@ struct InksyncProApp: App {
         WindowGroup { 
             ContentView()
                 .environmentObject(ConversionManager())
+                // ✅ SwiftData Engine Attachment
+                .modelContainer(for: [InkContainer.self, InkDocument.self])
+                .onAppear {
+                    // Trigger Migration asynchronously if on iOS 18 simulator
+                    Task { @MainActor in
+                        // Context is automatically available in views, but we can't easily grab it inside WindowGroup without a local view wrapper. 
+                        // MigrationService call will be placed inside ContentView's onAppear to guarantee environment context.
+                    }
+                }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
                     case .background, .inactive:
