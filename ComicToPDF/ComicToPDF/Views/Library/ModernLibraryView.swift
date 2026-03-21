@@ -494,6 +494,7 @@ struct ModernLibraryView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             switch action {
             case .read:          pdfToRead = pdf
+            case .details:       pdfForDetails = pdf
             case .covers:        selectedPDF = pdf
             case .fetchMetadata: pdfToSearchMetadata = pdf
             case .editMetadata:  pdfToEditMetadata = pdf

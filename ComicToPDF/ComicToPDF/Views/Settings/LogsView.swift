@@ -47,7 +47,7 @@ struct LogsView: View {
                 }
                 Spacer()
                 
-                Toggle("Errors Only", isOn: $showErrorsOnly)
+                Toggle(showErrorsOnly ? "View Full Logs" : "Errors Only", isOn: $showErrorsOnly)
                     .toggleStyle(.button)
                     .font(.caption)
             }

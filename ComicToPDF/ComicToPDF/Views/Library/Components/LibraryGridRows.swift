@@ -88,9 +88,18 @@ struct ModernGridFileCell: View {
         .cornerRadius(12)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
-        // ✅ NEW: Lazy Asynchronous Fetch with Cancellation
+        // ✅ PHASE 10: State-Isolated Lazy Asynchronous Fetch 
+        // Eliminates O(N) redraw lag by completely circumventing the ConversionManager's global objectWillChange.send() broadcast loop
         .task(id: pdf.id) {
-            await conversionManager.loadThumbnailAsync(for: pdf)
+            if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
+                self.localCover = img
+            } else if let coverURL = await conversionManager.getCoverURL(for: pdf),
+                      let data = try? Data(contentsOf: coverURL),
+                      let image = UIImage(data: data) {
+                
+                conversionManager.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
+                await MainActor.run { self.localCover = image }
+            }
         }
     }
 }

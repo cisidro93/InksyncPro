@@ -18,8 +18,9 @@ struct LibraryListView: View {
         if conversionManager.visiblePDFs.isEmpty {
             ModernEmptyState(onImport: onImport, onFolderImport: nil)
         } else {
-            List(selection: useNavigationStack ? nil : $selectedPDF) {
-                ForEach(items) { item in
+            ScrollViewReader { proxy in
+                List(selection: useNavigationStack ? nil : $selectedPDF) {
+                    ForEach(items) { item in
                     switch item {
                     case .series(let group):
                         if isBatchMode {
@@ -102,7 +103,7 @@ struct LibraryListView: View {
                                     if tapAction == .read {
                                         onAction(.read, pdf)
                                     } else {
-                                        onAction(.fetchMetadata, pdf) // using fetchMetadata here to trigger details, wait ModernLibraryView uses pdfForDetails
+                                        onAction(.details, pdf) // using details here to trigger MediaDetailSheet
                                     }
                                 } label: {
                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
@@ -130,10 +131,45 @@ struct LibraryListView: View {
                         }
                     }
                 }
-            }
+                }
+            } // end List
             .listStyle(.plain)
             .background(Color.black)
+            .overlay(alignment: .trailing) {
+                // ✅ PHASE 10: Comic Zeal Feature Restored
+                ComicZealScrubber { letter in
+                    if let targetID = firstItemId(for: letter) {
+                        withAnimation { proxy.scrollTo(targetID, anchor: .top) }
+                    }
+                }
+                .padding(.vertical, 30)
+                .padding(.trailing, 2)
+            }
+            } // end ScrollViewReader
         }
+    }
+    
+    // ✅ NEW: Fast Index Search
+    private func firstItemId(for letter: String) -> String? {
+        if letter == "#" {
+            return items.first { item in
+                let title: String
+                switch item {
+                case .series(let group): title = group.title
+                case .single(let pdf): title = pdf.name
+                }
+                return title.first?.isNumber == true || !title.first!.isLetter
+            }?.id
+        }
+        
+        return items.first { item in
+            let title: String
+            switch item {
+            case .series(let group): title = group.title
+            case .single(let pdf): title = pdf.name
+            }
+            return title.uppercased().hasPrefix(letter)
+        }?.id
     }
     
     @ViewBuilder

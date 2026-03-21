@@ -14,6 +14,7 @@ struct ReaderView: View {
     
     @State private var isPanelViewEnabled = true
     @State private var isVerticalScroll = false
+    @State private var isToolbarVisible = true
     
     // Unzip State
     @State private var unzippedDir: URL?
@@ -66,11 +67,20 @@ struct ReaderView: View {
                         // ✅ ZERO-LATENCY METAL PPL READER
                         if fileURL.pathExtension.lowercased() != "pdf" {
                             if !pages.isEmpty {
-                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex)
-                                    .ignoresSafeArea()
+                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex) {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        isToolbarVisible.toggle()
+                                    }
+                                }
+                                .ignoresSafeArea()
                             }
                         } else {
                             PDFKitView(url: fileURL)
+                                .onTapGesture {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        isToolbarVisible.toggle()
+                                    }
+                                }
                         }
                     }
                 }
@@ -100,6 +110,9 @@ struct ReaderView: View {
                 return .handled
             }
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar(isToolbarVisible ? .visible : .hidden, for: .navigationBar)
+            .toolbar(isToolbarVisible ? .visible : .hidden, for: .tabBar)
+            .statusBar(hidden: !isToolbarVisible)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") { dismiss() }.fontWeight(.bold)

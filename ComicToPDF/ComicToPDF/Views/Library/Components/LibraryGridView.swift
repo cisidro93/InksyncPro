@@ -18,7 +18,8 @@ struct LibraryGridView: View {
         if conversionManager.visiblePDFs.isEmpty {
             ModernEmptyState(onImport: onImport, onFolderImport: nil)
         } else {
-            ScrollView {
+            ScrollViewReader { proxy in
+                ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 16)], spacing: 20) {
                     ForEach(items) { item in
                         switch item {
@@ -70,7 +71,7 @@ struct LibraryGridView: View {
                                         if tapAction == .read {
                                             onAction(.read, pdf)
                                         } else {
-                                            onAction(.fetchMetadata, pdf) // Triggers details using ModernLibraryView state
+                                            onAction(.details, pdf) // Triggers details using ModernLibraryView state
                                         }
                                     } label: {
                                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
@@ -87,7 +88,41 @@ struct LibraryGridView: View {
                 .padding(.bottom, 100)
             }
             .background(Color.black)
+            .overlay(alignment: .trailing) {
+                // ✅ PHASE 10: Comic Zeal Feature Restored
+                ComicZealScrubber { letter in
+                    if let targetID = firstItemId(for: letter) {
+                        withAnimation { proxy.scrollTo(targetID, anchor: .top) }
+                    }
+                }
+                .padding(.vertical, 30)
+                .padding(.trailing, 2)
+            }
+            } // End ScrollViewReader
         }
+    }
+    
+    // ✅ NEW: Fast Index Search
+    private func firstItemId(for letter: String) -> String? {
+        if letter == "#" {
+            return items.first { item in
+                let title: String
+                switch item {
+                case .series(let group): title = group.title
+                case .single(let pdf): title = pdf.name
+                }
+                return title.first?.isNumber == true || !title.first!.isLetter
+            }?.id
+        }
+        
+        return items.first { item in
+            let title: String
+            switch item {
+            case .series(let group): title = group.title
+            case .single(let pdf): title = pdf.name
+            }
+            return title.uppercased().hasPrefix(letter)
+        }?.id
     }
     
     @ViewBuilder

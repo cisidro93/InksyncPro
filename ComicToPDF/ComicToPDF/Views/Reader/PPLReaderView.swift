@@ -3,6 +3,7 @@ import SwiftUI
 struct PPLReaderView: View {
     let pages: [URL]
     @Binding var currentPageIndex: Int
+    var onCenterTap: () -> Void
     @StateObject private var bufferManager = PageBufferManager.shared
     
     // High-Frequency Gesture Tracking
@@ -65,6 +66,8 @@ struct PPLReaderView: View {
                                 prevPage(geo: geo.size)
                             } else if location.x > width * 0.7 {
                                 nextPage(geo: geo.size)
+                            } else {
+                                onCenterTap()
                             }
                         }
                     }

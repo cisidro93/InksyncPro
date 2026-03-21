@@ -144,6 +144,7 @@ struct OnboardingView: View {
         generator.impactOccurred()
         
         // 1. Mark as seen
+        UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
         withAnimation {
             hasSeenOnboarding = true
         }
