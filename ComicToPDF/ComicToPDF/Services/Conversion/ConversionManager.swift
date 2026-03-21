@@ -2082,7 +2082,7 @@ class ConversionManager: ObservableObject {
         if thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil { return }
         
         // Check disk cache first to avoid extracting the archive again
-        if let coverURL = await self.getCoverURL(for: pdf),
+        if let coverURL = self.getCoverURL(for: pdf),
            let data = try? Data(contentsOf: coverURL),
            let image = UIImage(data: data) {
             

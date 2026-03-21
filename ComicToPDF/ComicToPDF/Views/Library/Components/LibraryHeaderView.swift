@@ -16,6 +16,7 @@ struct LibraryHeaderView: View {
     
     // Vault unlock callback
     var onVaultToggle: () -> Void
+    var onSelectAll: (() -> Void)? = nil
     
     var body: some View {
         VStack(spacing: 16) {
@@ -222,6 +223,23 @@ struct LibraryHeaderView: View {
                         .padding(.vertical, 10)
                         .background(isBatchMode ? AnyShapeStyle(Theme.orange) : AnyShapeStyle(.thickMaterial))
                         .clipShape(Capsule())
+                    }
+                    
+                    if isBatchMode {
+                        Button(action: {
+                            onSelectAll?()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.square.fill")
+                                Text("All")
+                            }
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Theme.blue)
+                            .clipShape(Capsule())
+                        }
                     }
                 }
                 .padding(.horizontal, 20)

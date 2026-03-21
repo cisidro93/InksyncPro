@@ -131,7 +131,6 @@ struct LibraryListView: View {
                         }
                     }
                 }
-                }
             } // end List
             .listStyle(.plain)
             .background(Color.black)

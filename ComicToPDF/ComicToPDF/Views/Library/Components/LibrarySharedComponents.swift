@@ -95,3 +95,48 @@ struct ModernEmptyState: View {
         .background(Color.black)
     }
 }
+
+// MARK: - Comic Zeal Scrubber
+struct ComicZealScrubber: View {
+    let onScrub: (String) -> Void
+    let letters = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ#")
+    @State private var activeLetter: String? = nil
+    
+    var body: some View {
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                ForEach(letters, id: \.self) { char in
+                    Text(String(char))
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundColor(activeLetter == String(char) ? Theme.blue : Theme.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: geo.size.height / CGFloat(letters.count))
+                }
+            }
+            .background(
+                Capsule()
+                    .fill(Color.black.opacity(0.4))
+            )
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let height = geo.size.height / CGFloat(letters.count)
+                        let index = Int(value.localLocation.y / height)
+                        if index >= 0 && index < letters.count {
+                            let letter = String(letters[index])
+                            if activeLetter != letter {
+                                activeLetter = letter
+                                onScrub(letter)
+                                let generator = UISelectionFeedbackGenerator()
+                                generator.selectionChanged()
+                            }
+                        }
+                    }
+                    .onEnded { _ in
+                        activeLetter = nil
+                    }
+            )
+        }
+        .frame(width: 24)
+    }
+}

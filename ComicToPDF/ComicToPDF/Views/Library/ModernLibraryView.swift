@@ -198,7 +198,29 @@ struct ModernLibraryView: View {
                         multiSelection: $multiSelection,
                         batchMergeItems: $batchMergeItems,
                         showingBatchMergeReorder: $showingBatchMergeReorder,
-                        onVaultToggle: handleVaultToggle
+                        onVaultToggle: handleVaultToggle,
+                        onSelectAll: {
+                            let totalVisibleItems = cachedLibraryItems.reduce(0) { count, item in
+                                switch item {
+                                case .single: return count + 1
+                                case .series(let grp): return count + grp.issues.count
+                                }
+                            }
+                            
+                            let isAllSelected = totalVisibleItems > 0 && multiSelection.count >= totalVisibleItems
+                            
+                            if isAllSelected {
+                                multiSelection.removeAll()
+                            } else {
+                                let allIds = cachedLibraryItems.flatMap { item -> [UUID] in
+                                    switch item {
+                                    case .single(let pdf): return [pdf.id]
+                                    case .series(let group): return group.issues.map { $0.id }
+                                    }
+                                }
+                                allIds.forEach { multiSelection.insert($0) }
+                            }
+                        }
                     )
 
                     // MARK: - Discrete Layout Layers
