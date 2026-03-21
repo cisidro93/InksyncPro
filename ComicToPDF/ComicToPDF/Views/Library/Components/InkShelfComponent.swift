@@ -89,28 +89,28 @@ struct InkShelfComponent: View {
     
     @ViewBuilder
     private func shelfItemView(for item: String) -> some View {
-        let base = RoundedRectangle(cornerRadius: 12)
-            .fill(.ultraThinMaterial)
-            .frame(width: 80, height: 110)
-        
-        // Wrap Icon with OS availability for SF Symbols 6
-        let icon = Image(systemName: "book.closed.fill")
-            .foregroundColor(.white)
-            .font(.largeTitle)
-        
-        let overlayView: AnyView
-        if #available(iOS 17.0, *) {
-            overlayView = AnyView(icon.symbolEffect(.bounce, value: shelfItems.count))
-        } else {
-            overlayView = AnyView(icon)
-        }
-        
-        let finalBase = base.overlay(overlayView)
-        
-        if #available(iOS 17.0, *) {
-            finalBase.geometryGroup()
-        } else {
-            finalBase
+        Group {
+            if #available(iOS 17.0, *) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 80, height: 110)
+                    .overlay(
+                        Image(systemName: "book.closed.fill")
+                            .foregroundColor(.white)
+                            .font(.largeTitle)
+                            .symbolEffect(.bounce, value: shelfItems.count)
+                    )
+                    .geometryGroup()
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 80, height: 110)
+                    .overlay(
+                        Image(systemName: "book.closed.fill")
+                            .foregroundColor(.white)
+                            .font(.largeTitle)
+                    )
+            }
         }
     }
 }
