@@ -46,9 +46,9 @@ class MigrationService {
         for pdf in legacyPDFs {
             let doc = InkDocument(id: pdf.id, name: pdf.name, url: pdf.url, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata, isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate, coverImageData: pdf.coverImageData, contentType: pdf.contentType, chapters: pdf.chapters, addedByMode: pdf.addedByMode)
             
-            // Re-establish relationships natively in SwiftData
+            // Re-establish relationships natively in SwiftData (Now supporting Many-to-Many arrays)
             if let colId = pdf.collectionId, let parentContainer = containerMap[colId] {
-                doc.container = parentContainer
+                doc.containers = [parentContainer]
             }
             context.insert(doc)
         }
@@ -66,8 +66,10 @@ class MigrationService {
     // Automatically takes an array of unassigned documents and creates InkContainers 
     // for series matching known syntax (e.g. "Batman Vol. 1", "Batman Vol. 2")
     func performSmartGrouping(context: ModelContext) {
-        let fetchDescriptor = FetchDescriptor<InkDocument>(predicate: #Predicate { $0.container == nil })
-        guard let orphans = try? context.fetch(fetchDescriptor) else { return }
+        // Fetch all documents and filter in memory to dodge `#Predicate` translation limitations on optional arrays
+        let fetchDescriptor = FetchDescriptor<InkDocument>()
+        guard let allDocs = try? context.fetch(fetchDescriptor) else { return }
+        let orphans = allDocs.filter { $0.containers?.isEmpty ?? true }
         
         var groupedByName: [String: [InkDocument]] = [:]
         
@@ -103,7 +105,8 @@ class MigrationService {
                 }
                 
                 for doc in docs {
-                    doc.container = container
+                    if doc.containers == nil { doc.containers = [] }
+                    doc.containers?.append(container)
                 }
             }
         }

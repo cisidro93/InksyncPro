@@ -19,8 +19,8 @@ final class InkContainer: Identifiable {
     @Relationship(deleteRule: .cascade, inverse: \InkContainer.parent)
     var children: [InkContainer]?
     
-    // Backing Documents
-    @Relationship(deleteRule: .nullify, inverse: \InkDocument.container)
+    // Backing Documents (Many-To-Many for Reading Lists)
+    @Relationship(deleteRule: .nullify, inverse: \InkDocument.containers)
     var items: [InkDocument]?
     
     init(id: UUID = UUID(), name: String, icon: String = "folder", color: String = "blue", creationDate: Date = Date(), explicitCoverFileID: UUID? = nil) {
@@ -51,8 +51,8 @@ final class InkDocument: Identifiable {
     var chapters: [Chapter]
     var addedByMode: AppUIMode
     
-    // Parent Link
-    var container: InkContainer?
+    // Parent Link (Many-to-Many for Series + Custom Reading Lists)
+    var containers: [InkContainer]?
     
     var fileExtensionString: String {
         return url.pathExtension.uppercased()

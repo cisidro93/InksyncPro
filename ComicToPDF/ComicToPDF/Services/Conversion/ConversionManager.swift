@@ -964,6 +964,19 @@ class ConversionManager: ObservableObject {
             if seriesName.count < 3 {
                 // Too short to cluster reliably by name, fallback
                 seriesName = pdf.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? "Ungrouped"
+                
+                // ✅ NEW: Layer 5 AI Vision Clustering
+                if seriesName == "Ungrouped" || seriesName.count < 3 {
+                    // Pre-emptively generate and flush the cover to disk so the Neural Engine can read it
+                    await self.generateCoverThumbnail(for: pdf)
+                    if let coverURL = self.getOriginalCoverURL(for: pdf) as URL?,
+                       let aiDetectedTitle = await CoverVisionAnalyzer.detectTitle(from: coverURL) {
+                        seriesName = aiDetectedTitle
+                        Logger.shared.log("Vision AI clustered '\(pdf.name)' into '\(aiDetectedTitle)'", category: "AI")
+                    } else {
+                        seriesName = "Ungrouped"
+                    }
+                }
             }
             
             if seriesName.isEmpty { seriesName = "Ungrouped" }
