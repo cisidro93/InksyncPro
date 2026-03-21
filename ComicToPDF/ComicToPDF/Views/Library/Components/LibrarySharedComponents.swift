@@ -104,13 +104,15 @@ struct ComicZealScrubber: View {
     
     var body: some View {
         GeometryReader { geo in
+            let itemHeight = geo.size.height / CGFloat(letters.count)
+            
             VStack(spacing: 0) {
                 ForEach(letters, id: \.self) { char in
                     Text(String(char))
                         .font(.system(size: 10, weight: .heavy))
                         .foregroundColor(activeLetter == String(char) ? Theme.blue : Theme.textSecondary)
                         .frame(maxWidth: .infinity)
-                        .frame(height: geo.size.height / CGFloat(letters.count))
+                        .frame(height: itemHeight)
                 }
             }
             .background(
@@ -120,17 +122,7 @@ struct ComicZealScrubber: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        let height = geo.size.height / CGFloat(letters.count)
-                        let index = Int(value.localLocation.y / height)
-                        if index >= 0 && index < letters.count {
-                            let letter = String(letters[index])
-                            if activeLetter != letter {
-                                activeLetter = letter
-                                onScrub(letter)
-                                let generator = UISelectionFeedbackGenerator()
-                                generator.selectionChanged()
-                            }
-                        }
+                        handleDrag(value: value, itemHeight: itemHeight)
                     }
                     .onEnded { _ in
                         activeLetter = nil
@@ -138,5 +130,18 @@ struct ComicZealScrubber: View {
             )
         }
         .frame(width: 24)
+    }
+    
+    private func handleDrag(value: DragGesture.Value, itemHeight: CGFloat) {
+        let index = Int(value.localLocation.y / itemHeight)
+        if index >= 0 && index < letters.count {
+            let letter = String(letters[index])
+            if activeLetter != letter {
+                activeLetter = letter
+                onScrub(letter)
+                let generator = UISelectionFeedbackGenerator()
+                generator.selectionChanged()
+            }
+        }
     }
 }
