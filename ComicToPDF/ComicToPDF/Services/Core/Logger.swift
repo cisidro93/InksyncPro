@@ -102,6 +102,17 @@ class Logger: ObservableObject {
         Task { @MainActor in
             self.parsedLogs.insert(entryObject, at: 0)
             if self.parsedLogs.count > 500 { self.parsedLogs.removeLast() }
+            
+            // ✅ PHASE 8: Universal Alerts
+            // Immediately broadcast critical failures to the SwiftUI View layer
+            // so active bugs pop up on the user's screen instead of silently dropping.
+            if type == .error {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("GlobalErrorTriggered"),
+                    object: nil,
+                    userInfo: ["message": message, "category": category]
+                )
+            }
         }
         
         queue.async {
