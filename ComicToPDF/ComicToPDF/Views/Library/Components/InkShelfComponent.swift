@@ -21,15 +21,7 @@ struct InkShelfComponent: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(shelfItems, id: \.self) { item in
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(.ultraThinMaterial)
-                                        .frame(width: 80, height: 110)
-                                        .overlay(
-                                            Image(systemName: "book.closed")
-                                                .foregroundColor(.white)
-                                        )
-                                        // ✅ iOS 18: Geometry Group for smooth structural animations
-                                        .geometryGroup()
+                                        shelfItemView
                                 }
                             }
                             .padding(.horizontal)
@@ -38,25 +30,8 @@ struct InkShelfComponent: View {
                 }
                 .frame(height: 140)
                 .frame(maxWidth: .infinity)
-                // ✅ iOS 18 MeshGradient background for Liquid Glass aesthetic
-                .background(
-                    MeshGradient(
-                        width: 3,
-                        height: 3,
-                        points: [
-                            [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
-                            [0.0, 0.5], [0.5, 0.5], [1.0, 0.5],
-                            [0.0, 1.0], [0.5, 1.0], [1.0, 1.0]
-                        ],
-                        colors: [
-                            .black.opacity(0.8), .purple.opacity(0.4), .black.opacity(0.8),
-                            .blue.opacity(0.3), .black.opacity(0.9), .blue.opacity(0.3),
-                            .black.opacity(0.8), .purple.opacity(0.4), .black.opacity(0.8)
-                        ]
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
-                )
+                // ✅ iOS 18 MeshGradient background for Liquid Glass aesthetic (with graceful fallback)
+                .background(shelfBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(Color.white.opacity(0.2), lineWidth: 1)
@@ -80,5 +55,52 @@ struct InkShelfComponent: View {
         }
         .ignoresSafeArea(.all, edges: .bottom)
         .animation(.spring(response: 0.5, dampingFraction: 0.8), value: isVisible)
+    }
+    
+    @ViewBuilder
+    private var shelfBackground: some View {
+        if #available(iOS 18.0, *) {
+            MeshGradient(
+                width: 3,
+                height: 3,
+                points: [
+                    [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
+                    [0.0, 0.5], [0.5, 0.5], [1.0, 0.5],
+                    [0.0, 1.0], [0.5, 1.0], [1.0, 1.0]
+                ],
+                colors: [
+                    .black.opacity(0.8), .purple.opacity(0.4), .black.opacity(0.8),
+                    .blue.opacity(0.3), .black.opacity(0.9), .blue.opacity(0.3),
+                    .black.opacity(0.8), .purple.opacity(0.4), .black.opacity(0.8)
+                ]
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
+        } else {
+            LinearGradient(
+                colors: [.black.opacity(0.9), .purple.opacity(0.3), .black.opacity(0.9)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
+        }
+    }
+    
+    @ViewBuilder
+    private var shelfItemView: some View {
+        let base = RoundedRectangle(cornerRadius: 12)
+            .fill(.ultraThinMaterial)
+            .frame(width: 80, height: 110)
+            .overlay(
+                Image(systemName: "book.closed")
+                    .foregroundColor(.white)
+            )
+        
+        if #available(iOS 17.0, *) {
+            base.geometryGroup()
+        } else {
+            base
+        }
     }
 }
