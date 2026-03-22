@@ -22,6 +22,18 @@ struct AdvancedWorkspaceView: View {
         conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) ?? pdf
     }
     
+    // Mutable Binding constructor for deep hierarchy views
+    var livePDFBinding: Binding<ConvertedPDF> {
+        Binding {
+            conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) ?? pdf
+        } set: { newValue in
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx] = newValue
+                conversionManager.saveLibrary()
+            }
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -58,7 +70,7 @@ struct AdvancedWorkspaceView: View {
                             .ignoresSafeArea()
                         
                         WorkspaceInspectorView(
-                            pdf: livePDF,
+                            pdf: livePDFBinding,
                             activeTab: $activeTab
                         )
                         .frame(width: 320)

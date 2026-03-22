@@ -56,7 +56,12 @@ enum ContentType: String, Codable, CaseIterable {
 struct ConvertedPDF: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
-    let url: URL
+    var url: URL
+    var parentFolderID: UUID?
+    
+    // Core Data Sync fields
+    var dataSyncHash: String?
+    var lastModified: Date
     var pageCount: Int
     var fileSize: Int64
     var metadata: PDFMetadata

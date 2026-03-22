@@ -238,7 +238,7 @@ struct WorkspaceToolPalette: View {
 
 // MARK: - Inspector View
 struct WorkspaceInspectorView: View {
-    let pdf: ConvertedPDF
+    @Binding var pdf: ConvertedPDF
     @Binding var activeTab: AdvancedWorkspaceView.WorkspaceTab
     
     @State private var showingMetadataSheet = false
@@ -290,7 +290,7 @@ struct WorkspaceInspectorView: View {
                 }
                 .sheet(isPresented: $showingMetadataSheet) {
                     // Properly mounts as an independent Modal stack
-                    MetadataEditorSheet(pdf: pdf)
+                    MetadataEditorSheet(pdf: $pdf)
                 }
             case .chapters:
                 ScrollView {
