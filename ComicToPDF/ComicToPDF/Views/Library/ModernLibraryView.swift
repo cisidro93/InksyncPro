@@ -314,10 +314,10 @@ struct ModernLibraryView: View {
             let selectedFiles = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
             BatchMetadataEditorView(selectedPDFs: selectedFiles)
         }
-        // Ã¢Å“â€¦ NEW: Cognitive AI Renamer (State of the Art)
+        // Ã¢Å“â€¦ NEW: Local XML Renamer Engine
         .sheet(isPresented: $showCognitiveBatchRenamer) {
             let selectedFiles = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-            CognitiveBatchRenamerView(pdfs: selectedFiles)
+            BatchLocalRenamerView(pdfs: selectedFiles)
                 .environmentObject(conversionManager)
         }
         } // End of Outer Group

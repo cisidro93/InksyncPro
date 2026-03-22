@@ -55,6 +55,15 @@ struct MetadataEditorSheet: View {
                                 }
                                 .disabled(isSearching)
                             }
+                            Button(action: {
+                                runLocalXMLExtract()
+                            }) {
+                                if isSearching {
+                                    ProgressView()
+                                } else {
+                                    Label("Auto-Fetch XML", systemImage: "doc.text.viewfinder")
+                                }
+                            }
                         }
                         
                         if isSearching {
@@ -169,40 +178,28 @@ struct MetadataEditorSheet: View {
     @State private var showingRenamePrompt = false
     @State private var newSuggestedCacheName = ""
     
-    func runAIVisionExtract() {
-        let aiKey = conversionManager.conversionSettings.openAIAPIKey
-        guard !aiKey.isEmpty else { return }
-        
+    func runLocalXMLExtract() {
         isSearching = true
         errorMessage = nil
         
         Task {
             do {
-                let coverURL = conversionManager.getCoverURL(for: pdf)
-                let result = try await CognitiveMetadataService.shared.extractMetadata(filename: pdf.name, coverURL: coverURL, apiKey: aiKey)
+                let resultString = try LocalComicInfoService.shared.generateDeterministicFilename(from: pdf.url)
                 
                 await MainActor.run {
-                    editedMetadata.series = result.series ?? editedMetadata.series
-                    editedMetadata.title = result.title ?? editedMetadata.title
-                    editedMetadata.issueNumber = result.issueNumber ?? editedMetadata.issueNumber
-                    editedMetadata.publisher = result.publisher ?? editedMetadata.publisher
-                    if let year = result.publicationYear {
-                        editedMetadata.tags.append(year)
-                    }
-                    if !editedMetadata.tags.contains("AI Extracted") {
-                        editedMetadata.tags.append("AI Extracted")
+                    editedMetadata.title = resultString
+                    if !editedMetadata.tags.contains("Local XML Scanned") {
+                        editedMetadata.tags.append("Local XML Scanned")
                     }
                     isSearching = false
                     
-                    // Trigger physical rename prompt if we found good data
-                    if let s = result.series, let i = result.issueNumber {
-                        newSuggestedCacheName = "\(s) #\(i)"
-                        showingRenamePrompt = true
-                    }
+                    // Trigger physical rename prompt
+                    newSuggestedCacheName = resultString
+                    showingRenamePrompt = true
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = "AI Extraction Failed: \(error.localizedDescription)"
+                    errorMessage = "XML Extraction Failed: \(error.localizedDescription)"
                     isSearching = false
                 }
             }

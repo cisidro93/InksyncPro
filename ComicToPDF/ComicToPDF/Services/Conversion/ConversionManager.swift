@@ -2784,13 +2784,15 @@ class ConversionManager: ObservableObject {
                                .replacingOccurrences(of: "\\", with: "-")
                                .replacingOccurrences(of: ":", with: "-")
         
-        let finalFilename = "\(cleanName).\(pathExtension)"
         let targetDirectory = currentURL.deletingLastPathComponent()
-        let newURL = targetDirectory.appendingPathComponent(finalFilename)
+        var newURL = targetDirectory.appendingPathComponent("\(cleanName).\(pathExtension)")
         
-        // Prevent overwriting
-        guard !fileManager.fileExists(atPath: newURL.path) else {
-            throw NSError(domain: "FileSystem", code: 409, userInfo: [NSLocalizedDescriptionKey: "A file with this exact clean name already exists in the same folder."])
+        // Prevent overwriting via _v2, _v3 iteration
+        var counter = 2
+        while fileManager.fileExists(atPath: newURL.path) {
+            let sequencedName = "\(cleanName)_v\(counter).\(pathExtension)"
+            newURL = targetDirectory.appendingPathComponent(sequencedName)
+            counter += 1
         }
         
         // Securely Rename using Coordinator to ensure CoreData/FileProvider stability
