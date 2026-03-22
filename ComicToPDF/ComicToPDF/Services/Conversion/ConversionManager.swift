@@ -2795,13 +2795,11 @@ class ConversionManager: ObservableObject {
         
         // Securely Rename using Coordinator to ensure CoreData/FileProvider stability
         var nsError: NSError?
-        NSFileCoordinator().coordinate(writingItemAt: currentURL, options: .forMoving, error: &nsError) { newTarget1 in
-            NSFileCoordinator().coordinate(writingItemAt: newURL, options: .forReplacing, error: &nsError) { newTarget2 in
-                do {
-                    try fileManager.moveItem(at: newTarget1, to: newTarget2)
-                } catch {
-                    Logger.shared.log("Move Failure: \(error)", category: "FileSystem", type: .error)
-                }
+        NSFileCoordinator().coordinate(writingItemAt: currentURL, options: .forMoving, writingItemAt: newURL, options: .forReplacing, error: &nsError) { newTarget1, newTarget2 in
+            do {
+                try fileManager.moveItem(at: newTarget1, to: newTarget2)
+            } catch {
+                Logger.shared.log("Move Failure: \(error)", category: "FileSystem", type: .error)
             }
         }
         

@@ -57,11 +57,11 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
     var url: URL
-    var parentFolderID: UUID?
+    var parentFolderID: UUID? = nil
     
     // Core Data Sync fields
-    var dataSyncHash: String?
-    var lastModified: Date
+    var dataSyncHash: String? = nil
+    var lastModified: Date = Date()
     var pageCount: Int
     var fileSize: Int64
     var metadata: PDFMetadata
