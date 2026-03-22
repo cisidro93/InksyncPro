@@ -270,31 +270,15 @@ class ConversionManager: ObservableObject {
     }
 
     /// Returns the active cover (either the selected variant, or the original fallback)
-    func getCoverURL(for pdf: ConvertedPDF) -> URL? {
-        if let selectedID = pdf.metadata.selectedCoverID,
-           let variantURL = pdf.metadata.coverVariants[selectedID],
-           FileManager.default.fileExists(atPath: variantURL.path) {
-            return variantURL
-        }
+    func getCoverURL(for pdf: ConvertedPDF) -> URL? { PhysicalFileSystemRouter.shared.getCoverURL(for: pdf) }
         return getOriginalCoverURL(for: pdf)
     }
 
     /// Returns the absolute path to the original extracted cover image saved in Application Support
-    func getOriginalCoverURL(for pdf: ConvertedPDF) -> URL {
-        let coversDir = Self.getCoversDirectory()
-        return coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
-    }
+    func getOriginalCoverURL(for pdf: ConvertedPDF) -> URL { PhysicalFileSystemRouter.shared.getOriginalCoverURL(for: pdf) }
     
     /// Migrates legacy Data-based covers to disk-based storage
-    func migrateCoversToDisk() {
-        var updated = false
-        
-        for i in 0..<convertedPDFs.count {
-            if let data = convertedPDFs[i].coverImageData {
-                if let coverURL = getCoverURL(for: convertedPDFs[i]) {
-                    // Write to disk in App Support
-                    try? data.write(to: coverURL)
-                }
+    func migrateCoversToDisk() { PhysicalFileSystemRouter.shared.migrateCoversToDisk(manager: self) }
                 
                 // Clear from memory
                 convertedPDFs[i].coverImageData = nil
@@ -308,13 +292,7 @@ class ConversionManager: ObservableObject {
     }
     
     /// Thread-safe, memory-efficient cover loader
-    func loadCoverThumbnail(for pdf: ConvertedPDF) async -> UIImage? {
-        let key = pdf.id.uuidString as NSString
-        
-        // 1. Check Cache
-        if let cached = thumbnailCache.object(forKey: key) {
-            return cached
-        }
+    func loadCoverThumbnail(for pdf: ConvertedPDF) async -> UIImage? { await PhysicalFileSystemRouter.shared.loadCoverThumbnail(for: pdf, manager: self) }
         
         // 2. Load from Disk (Background Thread)
         return await Task.detached(priority: .userInitiated) {
@@ -341,16 +319,7 @@ class ConversionManager: ObservableObject {
     }
     
     /// Save cover image to disk and update cache
-    func saveCoverImage(_ data: Data, for pdf: ConvertedPDF) {
-        guard let coverURL = getCoverURL(for: pdf) else { return }
-        try? data.write(to: coverURL)
-        
-        // Update Cache
-        if let image = UIImage(data: data) {
-            let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
-            let key = pdf.id.uuidString as NSString
-            thumbnailCache.setObject(thumbnail, forKey: key)
-        }
+    func saveCoverImage(_ data: Data, for pdf: ConvertedPDF) { PhysicalFileSystemRouter.shared.saveCoverImage(data, for: pdf, manager: self) }
         
         // Ensure memory property is nil (if we are updating an existing object that might have it)
         if let index = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
@@ -507,12 +476,7 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    func deletePDF(_ pdf: ConvertedPDF) {
-        do {
-            try FileManager.default.removeItem(at: pdf.url)
-            if let coverURL = getCoverURL(for: pdf) {
-                try? FileManager.default.removeItem(at: coverURL)
-            }
+    func deletePDF(_ pdf: ConvertedPDF) { PhysicalFileSystemRouter.shared.deletePDF(pdf, manager: self) }
             Logger.shared.log("Deleted File and Cover: \(pdf.name)", category: "Library")
         } catch {
             Logger.shared.log("Failed to delete file: \(error)", category: "Library", type: .error)
@@ -1364,19 +1328,7 @@ class ConversionManager: ObservableObject {
     }
 
     // MARK: - Thumbnails & Helpers
-    func generateCoverThumbnail(for pdf: ConvertedPDF) async {
-        // Quick lookup: Do we have a custom cover assigned?
-        if let variantID = pdf.metadata.selectedCoverID,
-           let variantURL = pdf.metadata.coverVariants[variantID],
-           FileManager.default.fileExists(atPath: variantURL.path),
-           let data = try? Data(contentsOf: variantURL),
-           let image = UIImage(data: data),
-           let jpegData = image.jpegData(compressionQuality: 0.7) {
-            
-            // Sync custom variant to the active cache key
-            saveCoverImage(jpegData, for: pdf)
-            return
-        }
+    func generateCoverThumbnail(for pdf: ConvertedPDF) async { await PhysicalFileSystemRouter.shared.generateCoverThumbnail(for: pdf, manager: self) }
         
         // Otherwise: Fallback to Heuristic Extraction
         // Check if we already have a generated cover on disk
@@ -1397,11 +1349,7 @@ class ConversionManager: ObservableObject {
     
     /// Generate covers for all imported files that are missing one. Called on app launch
     /// and after bulk imports to backfill any items imported before this fix.
-    func backfillMissingThumbnails() {
-        let pdfsNeedingCovers = convertedPDFs.filter { pdf in
-            guard let coverURL = getCoverURL(for: pdf) else { return true }
-            return !FileManager.default.fileExists(atPath: coverURL.path)
-        }
+    func backfillMissingThumbnails() { PhysicalFileSystemRouter.shared.backfillMissingThumbnails(manager: self) }
         guard !pdfsNeedingCovers.isEmpty else { return }
         Logger.shared.log("Backfilling thumbnails for \(pdfsNeedingCovers.count) files.", category: "System")
         for pdf in pdfsNeedingCovers {
@@ -1410,18 +1358,7 @@ class ConversionManager: ObservableObject {
     }
     
     // ✅ NEW: Async Cancellation-Aware Thumbnail Loader
-    func loadThumbnailAsync(for pdf: ConvertedPDF) async {
-        if thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil { return }
-        
-        // Check disk cache first to avoid extracting the archive again
-        if let coverURL = self.getCoverURL(for: pdf),
-           let data = try? Data(contentsOf: coverURL),
-           let image = UIImage(data: data) {
-            
-            await MainActor.run {
-                self.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
-                self.objectWillChange.send()
-            }
+    func loadThumbnailAsync(for pdf: ConvertedPDF) async { await PhysicalFileSystemRouter.shared.loadThumbnailAsync(for: pdf, manager: self) }
         } else {
             // Generate from scratch if it doesn't exist
             await self.generateCoverThumbnail(for: pdf)
@@ -1431,19 +1368,7 @@ class ConversionManager: ObservableObject {
         }
     }
     
-    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
-        if let cached = thumbnailCache.object(forKey: pdf.id.uuidString as NSString) { return cached }
-        
-        Task.detached(priority: .userInitiated) {
-            // Check disk cache first to avoid extracting the archive again
-            if let coverURL = await self.getCoverURL(for: pdf),
-               let data = try? Data(contentsOf: coverURL),
-               let image = UIImage(data: data) {
-                
-                await MainActor.run {
-                    self.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
-                    self.objectWillChange.send() // Re-trigger UI redraw so cells show the cover
-                }
+    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? { PhysicalFileSystemRouter.shared.getThumbnail(for: pdf, manager: self) }
             } else {
                 // Generate from scratch if it doesn't exist
                 await self.generateCoverThumbnail(for: pdf)
@@ -2097,10 +2022,7 @@ class ConversionManager: ObservableObject {
     // MARK: - Advanced Filesystem Engineering
     
     /// Physically renames the underlying .cbz, .epub, or .pdf on the iOS Storage and updates the database pointer.
-    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String) throws {
-        guard let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) else {
-            throw NSError(domain: "Database", code: 404, userInfo: [NSLocalizedDescriptionKey: "File not found within internal database loop."])
-        }
+    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String) throws { try PhysicalFileSystemRouter.shared.safelyRenamePhysicalFile(pdf: pdf, newName: newName, manager: self) }
         
         let fileManager = FileManager.default
         let currentURL = pdf.url
@@ -3081,3 +3003,4 @@ extension ConversionManager {
         }
     }
 }
+
