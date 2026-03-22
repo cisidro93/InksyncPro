@@ -221,97 +221,22 @@ class ConversionManager: ObservableObject {
     }
     
     private func createWelcomeFile() {
-        let fileManager = FileManager.default
-        if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
-            let welcomeURL = docDir.appendingPathComponent("Welcome.txt")
-            if !fileManager.fileExists(atPath: welcomeURL.path) {
-                let content = "Welcome to Inksync Pro!\n\nThis folder is where you can access your converted files.\nTo import comics, you can drag and drop them here or use the 'Import' button in the app."
-                try? content.write(to: welcomeURL, atomically: true, encoding: .utf8)
-            }
-        }
+        LibraryPersistenceManager.shared.createWelcomeFile()
     }
-    
-
     
     func cleanupMemory() { thumbnailCache.removeAllObjects() }
     
-    // MARK: - Persistence
+    // MARK: - Persistence Façade
     func saveLibrary() {
-        struct LibraryIndex: Codable {
-            let files: [ConvertedPDF]
-            let collections: [PDFCollection]
-            let settings: ConversionSettings
-            let history: [ConvertedPDF]
-            let devices: [KindleDevice]
-            var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil
-            var watchedFolders: [WatchedFolder]? = nil
-            var presets: [ConversionPreset]? = nil
-        }
-        
-        let index = LibraryIndex(
-            files: convertedPDFs,
-            collections: collections,
-            settings: conversionSettings,
-            history: sendHistory,
-            devices: kindleDevices,
-            panelOverrides: panelOverrides,
-            watchedFolders: watchedFolders,
-            presets: conversionPresets
-        )
-        
-        // ✅ NEW: Background IO
-        // Detach massive JSON serialization from the Main Thread to prevent 120Hz scrolling hitches
-        Task.detached(priority: .background) {
-            guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("inksync_pro_library.json") else { return }
-            do {
-                let encoded = try JSONEncoder().encode(index)
-                try encoded.write(to: url, options: .atomic)
-            } catch {
-                print("Background Save Failed: \(error)")
-            }
+        Task { @MainActor in
+            LibraryPersistenceManager.shared.save(manager: self)
         }
     }
     
     func savePDFs() { saveLibrary() }
     
     func loadLibrary() {
-        struct LibraryIndex: Codable {
-            let files: [ConvertedPDF]
-            let collections: [PDFCollection]
-            let settings: ConversionSettings
-            let history: [ConvertedPDF]
-            let devices: [KindleDevice]
-            var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil // ✅ NEW
-            var watchedFolders: [WatchedFolder]? = nil // ✅ NEW
-            var presets: [ConversionPreset]? = nil // ✅ NEW
-        }
-        guard let url = fileURL(for: libraryFileName) else { return }
-        
-        Task.detached(priority: .userInitiated) {
-            do {
-                let data = try Data(contentsOf: url)
-                let index = try JSONDecoder().decode(LibraryIndex.self, from: data)
-                
-                await MainActor.run {
-                    self.convertedPDFs = index.files
-                    self.collections = index.collections
-                    self.conversionSettings = index.settings
-                    self.sendHistory = index.history
-                    self.kindleDevices = index.devices
-                    self.panelOverrides = index.panelOverrides ?? [:]
-                    self.watchedFolders = index.watchedFolders ?? []
-                    self.conversionPresets = index.presets ?? []
-                }
-            } catch {
-                await MainActor.run {
-                    Logger.shared.log("Critical Boot Error: JSON Decode failed. \(error.localizedDescription)", category: "Library", type: .error)
-                }
-            }
-        }
-    }
-    
-    private func fileURL(for name: String) -> URL? {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(name)
+        LibraryPersistenceManager.shared.load(manager: self)
     }
     
     func savePanelOverrides(for pdfID: UUID, pageIndex: Int, panels: [PanelExtractor.Panel]) async {
