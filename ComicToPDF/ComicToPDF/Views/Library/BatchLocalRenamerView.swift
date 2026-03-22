@@ -33,7 +33,7 @@ struct BatchLocalRenamerView: View {
                     processingListView
                 }
             }
-            .navigationTitle("Local XML Renamer")
+            .navigationTitle("Physical Disk Renamer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -77,7 +77,7 @@ struct BatchLocalRenamerView: View {
                 .font(.system(size: 60))
                 .foregroundColor(Theme.blue)
             
-            Text("High-Precision Extraction")
+            Text("Physical File Renaming")
                 .font(.title2.bold())
             
             VStack(alignment: .leading, spacing: 16) {

@@ -847,21 +847,29 @@ class ConversionManager: ObservableObject {
                     let size = attr[.size] as? Int64 ?? 0
                     
                     let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
-                    var metadata = PDFMetadata(title: fileName)
-                    metadata.series = seriesName
+                    var smartDisplayName = fileName
+                    var smartMetadata = PDFMetadata(title: fileName)
+                    smartMetadata.series = seriesName
                     
                     let contentExt = destURL.pathExtension.lowercased()
                     var cType: ContentType = .book
-                    if contentExt == "pdf" { cType = .book }
-                    else if contentExt == "epub" { cType = .book }
-                    else { cType = .comic }
+                    if contentExt == "pdf" || contentExt == "epub" { cType = .book } else { cType = .comic }
+                    
+                    // ✅ PHASE 14: Non-Destructive Auto-Extraction (Folder Recursion)
+                    if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
+                        smartDisplayName = xmlData.displayName
+                        smartMetadata.title = xmlData.parsedTitle ?? smartDisplayName
+                        smartMetadata.series = xmlData.parsedSeries ?? seriesName
+                        smartMetadata.issueNumber = xmlData.parsedNumber
+                        smartMetadata.tags.append("Auto XML Scrape")
+                    }
                     
                     let pdf = ConvertedPDF(
-                        name: fileName,
+                        name: smartDisplayName,
                         url: destURL,
                         pageCount: 0,
                         fileSize: size,
-                        metadata: metadata,
+                        metadata: smartMetadata,
                         contentType: cType
                     )
                     newlyImported.append(pdf)
@@ -920,12 +928,25 @@ class ConversionManager: ObservableObject {
                     let ext = destURL.pathExtension.lowercased()
                     if ext == "pdf" || ext == "epub" { cType = .book } else { cType = .comic }
                     
+                    var smartDisplayName = fileName
+                    var smartMetadata = PDFMetadata(title: fileName)
+                    
+                    // ✅ PHASE 14: Non-Destructive Auto-Extraction
+                    // Seamlessly inherits XML properties without issuing NSFileCoordinator locks onto the underlying .cbz
+                    if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
+                        smartDisplayName = xmlData.displayName
+                        smartMetadata.title = xmlData.parsedTitle ?? smartDisplayName
+                        smartMetadata.series = xmlData.parsedSeries
+                        smartMetadata.issueNumber = xmlData.parsedNumber
+                        smartMetadata.tags.append("Auto XML Scrape")
+                    }
+                    
                     var pdf = ConvertedPDF(
-                        name: fileName,
+                        name: smartDisplayName,
                         url: destURL,
                         pageCount: 0,
                         fileSize: size,
-                        metadata: PDFMetadata(title: fileName),
+                        metadata: smartMetadata,
                         contentType: cType
                     )
                     pdf.isPrivate = isVaultUnlocked

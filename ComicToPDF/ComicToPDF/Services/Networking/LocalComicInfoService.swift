@@ -10,6 +10,11 @@ class LocalComicInfoService {
     /// Streams `ComicInfo.xml` directly from the archive, parses the necessary tags, and returns the exactly formatted filename string.
     /// Under the Zero-Silence Policy, every failure or warning must be explicitly thrown or logged.
     func generateDeterministicFilename(from cbzURL: URL) throws -> String {
+        return try fetchNonDestructiveMetadata(from: cbzURL).displayName
+    }
+    
+    /// Parses the archive non-destructively, returning the calculated UI string alongside the raw internal tags.
+    func fetchNonDestructiveMetadata(from cbzURL: URL) throws -> (displayName: String, parsedSeries: String?, parsedNumber: String?, parsedVolume: String?, parsedTitle: String?) {
         guard let archive = try? Archive(url: cbzURL, accessMode: .read) else {
             let errorMsg = "BadZipFile: Could not open archive at \(cbzURL.lastPathComponent)"
             Logger.shared.log(errorMsg, category: "LocalRenamer", type: .error)
@@ -93,7 +98,7 @@ class LocalComicInfoService {
         
         // Remove Non-printable ASCII/Unicode clutter
         candidateName = candidateName.components(separatedBy: .controlCharacters).joined()
-        return candidateName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (displayName: candidateName.trimmingCharacters(in: .whitespacesAndNewlines), parsedSeries: parser.series, parsedNumber: parser.number, parsedVolume: parser.volume, parsedTitle: parser.title)
     }
 }
 
