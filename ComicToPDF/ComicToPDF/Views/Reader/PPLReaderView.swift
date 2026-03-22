@@ -3,6 +3,7 @@ import SwiftUI
 struct PPLReaderView: View {
     let pages: [URL]
     @Binding var currentPageIndex: Int
+    var isMangaMode: Bool
     var onCenterTap: () -> Void
     @StateObject private var bufferManager = PageBufferManager.shared
     
@@ -51,21 +52,40 @@ struct PPLReaderView: View {
                                 } else {
                                     // Zero-Latency Swipe Gestures for 1.0x Scale
                                     if val.translation.width < -60 {
-                                        nextPage(geo: geo.size)
+                                        isMangaMode ? prevPage(geo: geo.size) : nextPage(geo: geo.size)
                                     } else if val.translation.width > 60 {
-                                        prevPage(geo: geo.size)
+                                        isMangaMode ? nextPage(geo: geo.size) : prevPage(geo: geo.size)
                                     }
                                 }
                             }
                     )
                     // Zero-Latency Edge Tap Gestures
+                    .onTapGesture(count: 2) { location in
+                        // Double Tap to Smart Zoom
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            if scale > 1.0 {
+                                scale = 1.0
+                                offset = .zero
+                                updatePPL(in: geo.size)
+                            } else {
+                                // Smart Zoom (Fit Width Approximation)
+                                scale = 2.0
+                                
+                                // Pan toward the tap location
+                                let tapX = location.x - (geo.size.width / 2)
+                                let tapY = location.y - (geo.size.height / 2)
+                                offset = CGSize(width: -tapX * scale, height: -tapY * scale)
+                                updatePPL(in: geo.size)
+                            }
+                        }
+                    }
                     .onTapGesture { location in
                         if scale <= 1.0 {
                             let width = geo.size.width
                             if location.x < width * 0.3 {
-                                prevPage(geo: geo.size)
+                                isMangaMode ? nextPage(geo: geo.size) : prevPage(geo: geo.size)
                             } else if location.x > width * 0.7 {
-                                nextPage(geo: geo.size)
+                                isMangaMode ? prevPage(geo: geo.size) : nextPage(geo: geo.size)
                             } else {
                                 onCenterTap()
                             }

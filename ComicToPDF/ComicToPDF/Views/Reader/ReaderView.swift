@@ -12,6 +12,7 @@ struct ReaderView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     
+    @AppStorage("isMangaMode") private var isMangaMode = false
     @State private var isPanelViewEnabled = true
     @State private var isVerticalScroll = false
     @State private var isToolbarVisible = true
@@ -67,7 +68,7 @@ struct ReaderView: View {
                         // ✅ ZERO-LATENCY METAL PPL READER
                         if fileURL.pathExtension.lowercased() != "pdf" {
                             if !pages.isEmpty {
-                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex) {
+                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, isMangaMode: isMangaMode) {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         isToolbarVisible.toggle()
                                     }
@@ -85,28 +86,50 @@ struct ReaderView: View {
                     }
                 }
                 
-                // Page Indicator (Only show in Paged Mode)
+                // Hardware Hardware Binding
+                VolumeHook(onUp: {
+                    isMangaMode ? nextPage() : prevPage()
+                }, onDown: {
+                    isMangaMode ? prevPage() : nextPage()
+                })
+                .frame(width: 0, height: 0)
+                
+                // ✅ Immersive UI OSD
                 if !isVerticalScroll && !pages.isEmpty && !isLoading {
                     VStack {
                         Spacer()
-                        HStack {
-                            Text("Page \(currentPageIndex + 1) / \(pages.count)")
-                                .font(.caption)
-                                .padding(6)
-                                .background(.thinMaterial)
-                                .cornerRadius(8)
+                        if isToolbarVisible {
+                            ReaderScrubber(
+                                currentPageIndex: $currentPageIndex,
+                                totalPages: pages.count,
+                                isMangaMode: isMangaMode,
+                                pages: pages
+                            )
+                            .padding(.bottom, 20)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        } else {
+                            // Micro-pill that fades out the visual pollution
+                            Text("\(currentPageIndex + 1) / \(pages.count)")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.black.opacity(0.5))
+                                .clipShape(Capsule())
+                                .padding(.bottom, 10)
+                                .opacity(0.3)
                         }
-                        .padding(.bottom, 20)
                     }
                 }
             }
             .focusable()
+            .focusEffectDisabled()
             .onKeyPress(.leftArrow) {
-                prevPage()
+                isMangaMode ? nextPage() : prevPage()
                 return .handled
             }
             .onKeyPress(.rightArrow) {
-                nextPage()
+                isMangaMode ? prevPage() : nextPage()
                 return .handled
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -116,6 +139,13 @@ struct ReaderView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") { dismiss() }.fontWeight(.bold)
+                }
+                ToolbarItem(placement: .principal) {
+                    if isToolbarVisible {
+                        Text(fileURL.deletingPathExtension().lastPathComponent)
+                            .font(.headline)
+                            .lineLimit(1)
+                    }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 16) {
@@ -127,8 +157,13 @@ struct ReaderView: View {
                         }
                         
                         Menu {
-                            Toggle("Vertical Scroll", isOn: $isVerticalScroll)
-                            Toggle("Panel View", isOn: $isPanelViewEnabled)
+                            Section("Reading Direction") {
+                                Toggle("Manga Mode (R-to-L)", isOn: $isMangaMode)
+                                Toggle("Vertical Webtoon", isOn: $isVerticalScroll)
+                            }
+                            Section("Advanced") {
+                                Toggle("Panel View", isOn: $isPanelViewEnabled)
+                            }
                         } label: {
                             Image(systemName: "gear")
                         }
@@ -255,5 +290,166 @@ struct PDFKitView: UIViewRepresentable {
     }
     func updateUIView(_ pdfView: PDFView, context: Context) {
         if pdfView.document == nil { pdfView.document = PDFDocument(url: url) }
+    }
+}
+
+// MARK: - Premium UI Components
+
+struct ReaderScrubber: View {
+    @Binding var currentPageIndex: Int
+    let totalPages: Int
+    let isMangaMode: Bool
+    let pages: [URL]
+    
+    @State private var dragIndex: Int? = nil // Tracks the thumb while scrubbing
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            // Floating Thumbnail Preview
+            if let activeIndex = dragIndex, activeIndex >= 0 && activeIndex < pages.count {
+                VStack(spacing: 4) {
+                    AsyncImage(url: pages[activeIndex]) { phase in
+                        if let image = phase.image {
+                            image.resizable().aspectRatio(contentMode: .fit)
+                        } else {
+                            Color.black.opacity(0.8)
+                        }
+                    }
+                    .frame(width: 90, height: 130)
+                    .cornerRadius(8)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
+                    
+                    Text("Page \(activeIndex + 1)")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.8))
+                        .clipShape(Capsule())
+                }
+                .transition(.opacity.combined(with: .scale))
+            } else {
+                Text("Page \(currentPageIndex + 1) of \(totalPages)")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial)
+                    .background(Color.black.opacity(0.3))
+                    .clipShape(Capsule())
+            }
+            
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.2)).frame(height: 6)
+                    
+                    let displayIndex = dragIndex ?? currentPageIndex
+                    let normalized = isMangaMode ? CGFloat(totalPages - 1 - displayIndex) : CGFloat(displayIndex)
+                    let ratio = totalPages > 1 ? normalized / CGFloat(totalPages - 1) : 0
+                    let thumbWidth: CGFloat = 20
+                    let trackWidth = geo.size.width - thumbWidth
+                    
+                    Capsule()
+                        .fill(Theme.orange)
+                        .frame(width: ratio * trackWidth + thumbWidth, height: 6)
+                    
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: thumbWidth, height: thumbWidth)
+                        .shadow(radius: 4)
+                        .offset(x: ratio * trackWidth)
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { val in
+                                    let percentage = min(max(val.location.x / geo.size.width, 0), 1)
+                                    let rawIndex = Int(round(percentage * CGFloat(totalPages - 1)))
+                                    let targeted = isMangaMode ? (totalPages - 1 - rawIndex) : rawIndex
+                                    
+                                    if dragIndex != targeted {
+                                        let generator = UISelectionFeedbackGenerator()
+                                        generator.selectionChanged()
+                                        dragIndex = targeted
+                                    }
+                                }
+                                .onEnded { _ in
+                                    if let final = dragIndex {
+                                        currentPageIndex = final
+                                    }
+                                    dragIndex = nil
+                                }
+                        )
+                }
+                .frame(height: 24)
+            }
+            .frame(height: 24)
+            .padding(.horizontal, 30)
+        }
+        .padding(.top, 10)
+        .padding(.bottom, 20)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.black.opacity(0.8))
+                .shadow(radius: 10)
+        )
+        .padding(.horizontal, 20)
+    }
+}
+
+
+import MediaPlayer
+import AVFoundation
+
+struct VolumeHook: UIViewControllerRepresentable {
+    var onUp: () -> Void
+    var onDown: () -> Void
+    
+    func makeUIViewController(context: Context) -> VolumeObserverController {
+        return VolumeObserverController(onUp: onUp, onDown: onDown)
+    }
+    func updateUIViewController(_ uiViewController: VolumeObserverController, context: Context) {}
+}
+
+class VolumeObserverController: UIViewController {
+    var onUp: () -> Void
+    var onDown: () -> Void
+    private var baseVolume: Float = 0.5
+    private var audioSession = AVAudioSession.sharedInstance()
+    private var observation: NSKeyValueObservation?
+    private let volumeView = MPVolumeView() // Native iOS 17 trick to perfectly hide the Volume HUD
+    
+    init(onUp: @escaping () -> Void, onDown: @escaping () -> Void) {
+        self.onUp = onUp
+        self.onDown = onDown
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) { fatalError() }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.addSubview(volumeView)
+        volumeView.frame = CGRect(x: -1000, y: -1000, width: 1, height: 1)
+        volumeView.isHidden = false
+        
+        try? audioSession.setCategory(.ambient) // Extremely important! Allows background music to keep playing while reading comic
+        try? audioSession.setActive(true)
+        baseVolume = audioSession.outputVolume
+        
+        observation = audioSession.observe(\.outputVolume, options: [.new]) { [weak self] session, change in
+            guard let self = self, let newVolume = change.newValue else { return }
+            if newVolume > self.baseVolume || newVolume == 1.0 {
+                self.onUp()
+            } else if newVolume < self.baseVolume || newVolume == 0.0 {
+                self.onDown()
+            }
+            self.baseVolume = newVolume
+        }
+    }
+    
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        observation?.invalidate()
+        try? audioSession.setActive(false)
     }
 }

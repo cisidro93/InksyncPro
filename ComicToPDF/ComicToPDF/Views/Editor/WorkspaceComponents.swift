@@ -241,6 +241,8 @@ struct WorkspaceInspectorView: View {
     let pdf: ConvertedPDF
     @Binding var activeTab: AdvancedWorkspaceView.WorkspaceTab
     
+    @State private var showingMetadataSheet = false
+    
     var body: some View {
         VStack(spacing: 0) {
             // Inspector Segments
@@ -254,17 +256,52 @@ struct WorkspaceInspectorView: View {
             .pickerStyle(.segmented)
             .padding()
             
-            ScrollView {
-                switch activeTab {
-                case .metadata:
-                    MetadataSearchSheet(pdf: pdf) // Reusing existing component conceptually. Will need adjusting for non-modal context
-                case .chapters:
-                    Text("Chapter List View")
-                case .coverStudio:
-                    CoverStudioView(pdf: pdf)
-                default:
-                    EmptyView()
+            // Removed unregulated ScrollView wrapper that destroyed internal NavigationViews
+            switch activeTab {
+            case .metadata:
+                VStack(spacing: 24) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 50))
+                        .foregroundColor(.secondary)
+                        .padding(.top, 40)
+                    
+                    Text("Metadata & Details")
+                        .font(.title2.bold())
+                    
+                    Text("Edit the Series, Title, Author, Date, and search the online ComicVine database for volume data.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 30)
+                    
+                    Button(action: { showingMetadataSheet = true }) {
+                        Label("Open Metadata Editor", systemImage: "pencil.and.list.clipboard")
+                            .font(.headline)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .clipShape(Capsule())
+                    }
+                    .padding(.horizontal, 40)
+                    .padding(.top, 10)
+                    
+                    Spacer()
                 }
+                .sheet(isPresented: $showingMetadataSheet) {
+                    // Properly mounts as an independent Modal stack
+                    MetadataEditorSheet(pdf: pdf)
+                }
+            case .chapters:
+                ScrollView {
+                    Text("Chapter List View")
+                }
+            case .coverStudio:
+                ScrollView {
+                    CoverStudioView(pdf: pdf)
+                }
+            default:
+                EmptyView()
             }
         }
     }

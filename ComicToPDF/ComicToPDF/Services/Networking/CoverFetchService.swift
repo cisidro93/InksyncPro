@@ -30,28 +30,36 @@ class CoverFetchService {
     func fetchCovers(for metadata: PDFMetadata, openAIKey: String? = nil, limit: Int = 10) async -> [FetchedCover] {
         var allCovers: [FetchedCover] = []
         
-        // Base Query construction
-        var queryParts = [metadata.title]
-        if let series = metadata.series, !series.isEmpty, !metadata.title.localizedCaseInsensitiveContains(series) {
-            queryParts.append(series)
-        }
-        if let issue = metadata.issueNumber, !issue.isEmpty {
-            queryParts.append("#\(issue)")
-        }
-        let baseQuery = queryParts.joined(separator: " ").trimmingCharacters(in: .whitespaces)
-        let fallbackQuery = metadata.title.trimmingCharacters(in: .whitespaces) // Broadest query if specific fails
-        guard !fallbackQuery.isEmpty else { return [] }
+        // Base Query construction (Aggressive Clean-up for REST APIs)
+        var queryStr = metadata.series?.isEmpty == false ? (metadata.series ?? metadata.title) : metadata.title
         
-        let fetchQuery = baseQuery.isEmpty ? fallbackQuery : baseQuery
+        // Strip # symbols as they break URL encoding for Apple Books and OpenLibrary
+        if let issue = metadata.issueNumber, !issue.isEmpty {
+            let cleanIssue = issue.replacingOccurrences(of: "#", with: "")
+            if !queryStr.contains(cleanIssue) {
+                queryStr += " \(cleanIssue)"
+            }
+        }
+        
+        let fetchQuery = queryStr.trimmingCharacters(in: .whitespaces)
+        
+        // Broaden the search query for comics to hit trade paperbacks that contain variant galleries
+        let isComic = (metadata.series != nil || metadata.issueNumber != nil || metadata.writer != nil || metadata.comicVineID != nil)
+        let searchVariantQuery = isComic ? "\(fetchQuery) comic variant" : fetchQuery
         
         // Concurrent fetching
         let fetchedSets = await withTaskGroup(of: [FetchedCover].self) { group in
             // 1. Apple Books (iTunes Search API)
             group.addTask { await self.fetchiTunesCovers(query: fetchQuery, limit: limit) }
+            if isComic { group.addTask { await self.fetchiTunesCovers(query: searchVariantQuery, limit: limit) } }
+            
             // 2. Google Books API
             group.addTask { await self.fetchGoogleBooksCovers(query: fetchQuery, limit: limit) }
+            if isComic { group.addTask { await self.fetchGoogleBooksCovers(query: searchVariantQuery, limit: limit) } }
+            
             // 3. OpenLibrary API
             group.addTask { await self.fetchOpenLibraryCovers(query: fetchQuery, limit: limit) }
+            if isComic { group.addTask { await self.fetchOpenLibraryCovers(query: searchVariantQuery, limit: limit) } }
             
             // 4. Existing ComicVine Fallback (If Metadata contains ID)
             if let volID = metadata.seriesID, let issueNum = metadata.issueNumber {
@@ -60,8 +68,6 @@ class CoverFetchService {
             
             // 5. Active AI Agent Hunter
             if let aiKey = openAIKey, !aiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // Determine if it's a comic or a book to tune the prompt
-                let isComic = (metadata.series != nil || metadata.issueNumber != nil || metadata.writer != nil || metadata.comicVineID != nil)
                 group.addTask { await self.fetchAICovers(query: fetchQuery, isComic: isComic, apiKey: aiKey, limit: limit) }
             }
             
