@@ -46,15 +46,6 @@ struct MetadataEditorSheet: View {
                                 .disabled(isSearching)
                             }
                             
-                            if !conversionManager.conversionSettings.openAIAPIKey.isEmpty {
-                                Button(action: runAIVisionExtract) {
-                                    HStack {
-                                        Label("AI Vision", systemImage: "sparkles")
-                                            .foregroundColor(.purple)
-                                    }
-                                }
-                                .disabled(isSearching)
-                            }
                             Button(action: {
                                 runLocalXMLExtract()
                             }) {

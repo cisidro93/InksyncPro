@@ -94,7 +94,7 @@ struct ModernGridFileCell: View {
             if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
                 self.localCover = img
             } else if let coverURL = conversionManager.getCoverURL(for: pdf) {
-                let generated = await Task.detached(priority: .userInitiated) {
+                let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
                     if let data = try? Data(contentsOf: coverURL), let image = UIImage(data: data) {
                         return image
                     }

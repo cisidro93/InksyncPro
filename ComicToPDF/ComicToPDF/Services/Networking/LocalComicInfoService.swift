@@ -43,7 +43,7 @@ class LocalComicInfoService {
         }
         
         // 3. Parse Metadata Tags
-        let parser = ComicInfoXMLParser()
+        let parser = LocalRenamerXMLParser()
         let parserRef = XMLParser(data: xmlData)
         parserRef.delegate = parser
         
@@ -98,7 +98,7 @@ class LocalComicInfoService {
 }
 
 /// Specialized internal delegate that rips Data fields directly off the streaming XML DOM.
-class ComicInfoXMLParser: NSObject, XMLParserDelegate {
+class LocalRenamerXMLParser: NSObject, XMLParserDelegate {
     var series: String?
     var number: String?
     var volume: String?
