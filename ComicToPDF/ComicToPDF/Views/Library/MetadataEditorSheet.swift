@@ -31,21 +31,36 @@ struct MetadataEditorSheet: View {
             Form {
                 // MARK: - Auto-Fill Section
                 Section(header: Text("Auto-Fill")) {
-                    if conversionManager.conversionSettings.comicVineAPIKey.isEmpty {
-                        Text("⚠️ Add API Key in Settings to enable Auto-Fill")
+                    if conversionManager.conversionSettings.comicVineAPIKey.isEmpty && conversionManager.conversionSettings.openAIAPIKey.isEmpty {
+                        Text("⚠️ Add API Keys in Settings to enable Auto-Fill or AI Extraction")
                             .font(.caption)
                             .foregroundColor(.orange)
                     } else {
-                        Button(action: searchComicVine) {
-                            HStack {
-                                Label("Fetch from ComicVine", systemImage: "network")
-                                if isSearching {
-                                    Spacer()
-                                    ProgressView()
+                        HStack(spacing: 16) {
+                            if !conversionManager.conversionSettings.comicVineAPIKey.isEmpty {
+                                Button(action: searchComicVine) {
+                                    HStack {
+                                        Label("Fetch ComicVine", systemImage: "network")
+                                    }
                                 }
+                                .disabled(isSearching)
+                            }
+                            
+                            if !conversionManager.conversionSettings.openAIAPIKey.isEmpty {
+                                Button(action: runAIVisionExtract) {
+                                    HStack {
+                                        Label("AI Vision", systemImage: "sparkles")
+                                            .foregroundColor(.purple)
+                                    }
+                                }
+                                .disabled(isSearching)
                             }
                         }
-                        .disabled(isSearching)
+                        
+                        if isSearching {
+                            ProgressView()
+                                .padding(.top, 4)
+                        }
                     }
                     
                     if let error = errorMessage {
@@ -135,10 +150,77 @@ struct MetadataEditorSheet: View {
             .sheet(isPresented: $showResults) {
                 SearchResultsView(results: searchResults, onSelect: fetchDetails)
             }
+            .alert("Rename File?", isPresented: Binding(
+                get: { showingRenamePrompt },
+                set: { showingRenamePrompt = $0 }
+            )) {
+                Button("Rename on Disk", role: .destructive) {
+                    Task { await physicalRenameFile() }
+                }
+                Button("Keep Original Name", role: .cancel) { saveChanges() }
+            } message: {
+                Text("Would you like to permanently rename the underlying file on your iPad to:\n\n'\(newSuggestedCacheName)'?")
+            }
         }
     }
     
-    // MARK: - Logic
+    // MARK: - State & Logic
+    
+    @State private var showingRenamePrompt = false
+    @State private var newSuggestedCacheName = ""
+    
+    func runAIVisionExtract() {
+        let aiKey = conversionManager.conversionSettings.openAIAPIKey
+        guard !aiKey.isEmpty else { return }
+        
+        isSearching = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                let coverURL = conversionManager.getCoverURL(for: pdf)
+                let result = try await CognitiveMetadataService.shared.extractMetadata(filename: pdf.name, coverURL: coverURL, apiKey: aiKey)
+                
+                await MainActor.run {
+                    editedMetadata.series = result.series ?? editedMetadata.series
+                    editedMetadata.title = result.title ?? editedMetadata.title
+                    editedMetadata.issueNumber = result.issueNumber ?? editedMetadata.issueNumber
+                    editedMetadata.publisher = result.publisher ?? editedMetadata.publisher
+                    if let year = result.publicationYear {
+                        editedMetadata.tags.append(year)
+                    }
+                    if !editedMetadata.tags.contains("AI Extracted") {
+                        editedMetadata.tags.append("AI Extracted")
+                    }
+                    isSearching = false
+                    
+                    // Trigger physical rename prompt if we found good data
+                    if let s = result.series, let i = result.issueNumber {
+                        newSuggestedCacheName = "\(s) #\(i)"
+                        showingRenamePrompt = true
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "AI Extraction Failed: \(error.localizedDescription)"
+                    isSearching = false
+                }
+            }
+        }
+    }
+    
+    func physicalRenameFile() async {
+        do {
+            try conversionManager.safelyRenamePhysicalFile(pdf: pdf, newName: newSuggestedCacheName)
+            await MainActor.run {
+                saveChanges() // Save and dismiss
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Rename Failed: \(error.localizedDescription)"
+            }
+        }
+    }
     
     func saveChanges() {
         // We need to write back metadata

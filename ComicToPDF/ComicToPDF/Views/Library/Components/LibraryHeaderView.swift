@@ -13,6 +13,7 @@ struct LibraryHeaderView: View {
     @Binding var multiSelection: Set<UUID>
     @Binding var batchMergeItems: [ConvertedPDF]
     @Binding var showingBatchMergeReorder: Bool
+    @Binding var showCognitiveBatchRenamer: Bool
     
     // Vault unlock callback
     var onVaultToggle: () -> Void
@@ -199,6 +200,14 @@ struct LibraryHeaderView: View {
                             } else {
                                 withAnimation { isBatchMode = true }
                                 conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.")
+                            }
+                        })
+                        ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {
+                            if multiSelection.count >= 1 {
+                                showCognitiveBatchRenamer = true
+                            } else {
+                                withAnimation { isBatchMode = true }
+                                conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.")
                             }
                         })
                         ActionPill(title: "Vault", icon: conversionManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: conversionManager.isVaultUnlocked ? Theme.orange : Theme.blue) { 

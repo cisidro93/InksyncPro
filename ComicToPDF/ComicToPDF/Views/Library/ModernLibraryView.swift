@@ -73,6 +73,9 @@ struct ModernLibraryView: View {
     // Ã¢Å“â€¦ NEW: Batch Editor State
     @State private var showBatchMetadataEditor = false
     
+    // Ã¢Å“â€¦ NEW: AI Batch Editor State
+    @State private var showCognitiveBatchRenamer = false
+    
     // Ã¢Å“â€¦ NEW: Export State
     @State private var pdfToExport: ConvertedPDF?
     @State private var pdfToDirectShare: ConvertedPDF? // Ã¢Å“â€¦ Competitor Hardening: Native Share
@@ -198,6 +201,7 @@ struct ModernLibraryView: View {
                         multiSelection: $multiSelection,
                         batchMergeItems: $batchMergeItems,
                         showingBatchMergeReorder: $showingBatchMergeReorder,
+                        showCognitiveBatchRenamer: $showCognitiveBatchRenamer,
                         onVaultToggle: handleVaultToggle,
                         onSelectAll: {
                             let totalVisibleItems = cachedLibraryItems.reduce(0) { count, item in
@@ -309,6 +313,12 @@ struct ModernLibraryView: View {
         .sheet(isPresented: $showBatchMetadataEditor) {
             let selectedFiles = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
             BatchMetadataEditorView(selectedPDFs: selectedFiles)
+        }
+        // Ã¢Å“â€¦ NEW: Cognitive AI Renamer (State of the Art)
+        .sheet(isPresented: $showCognitiveBatchRenamer) {
+            let selectedFiles = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+            CognitiveBatchRenamerView(pdfs: selectedFiles)
+                .environmentObject(conversionManager)
         }
         } // End of Outer Group
         // Ã¢Å“â€¦ Rename Alert

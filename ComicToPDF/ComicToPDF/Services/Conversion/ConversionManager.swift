@@ -2762,6 +2762,63 @@ class ConversionManager: ObservableObject {
         await generateCoverThumbnail(for: self.convertedPDFs.first(where: { $0.id == pdf.id }) ?? pdf)
     }
     
+    // MARK: - Advanced Filesystem Engineering
+    
+    /// Physically renames the underlying .cbz, .epub, or .pdf on the iOS Storage and updates the database pointer.
+    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String) throws {
+        guard let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) else {
+            throw NSError(domain: "Database", code: 404, userInfo: [NSLocalizedDescriptionKey: "File not found within internal database loop."])
+        }
+        
+        let fileManager = FileManager.default
+        let currentURL = pdf.url
+        
+        // Ensure file exists
+        guard fileManager.fileExists(atPath: currentURL.path) else {
+            throw NSError(domain: "FileSystem", code: 404, userInfo: [NSLocalizedDescriptionKey: "The physical file no longer exists at original path."])
+        }
+        
+        // Strip any unsafe characters from the proposed new name
+        let pathExtension = currentURL.pathExtension
+        let cleanName = newName.replacingOccurrences(of: "/", with: "-")
+                               .replacingOccurrences(of: "\\", with: "-")
+                               .replacingOccurrences(of: ":", with: "-")
+        
+        let finalFilename = "\(cleanName).\(pathExtension)"
+        let targetDirectory = currentURL.deletingLastPathComponent()
+        let newURL = targetDirectory.appendingPathComponent(finalFilename)
+        
+        // Prevent overwriting
+        guard !fileManager.fileExists(atPath: newURL.path) else {
+            throw NSError(domain: "FileSystem", code: 409, userInfo: [NSLocalizedDescriptionKey: "A file with this exact clean name already exists in the same folder."])
+        }
+        
+        // Securely Rename using Coordinator to ensure CoreData/FileProvider stability
+        var nsError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: currentURL, options: .forMoving, error: &nsError) { newTarget1 in
+            NSFileCoordinator().coordinate(writingItemAt: newURL, options: .forReplacing, error: &nsError) { newTarget2 in
+                do {
+                    try fileManager.moveItem(at: newTarget1, to: newTarget2)
+                } catch {
+                    Logger.shared.log("Move Failure: \(error)", category: "FileSystem", type: .error)
+                }
+            }
+        }
+        
+        if let fail = nsError {
+            throw fail
+        }
+        
+        // Update Internal Database Pointers
+        DispatchQueue.main.async {
+            self.convertedPDFs[idx].url = newURL
+            // Display name also dynamically updates because PDF name binds to the newURL dynamically typically, 
+            // but we must explicitly enforce it if it's stored.
+            self.convertedPDFs[idx].name = newURL.lastPathComponent
+            self.saveLibrary()
+        }
+    }
+    
     // MARK: - Chapter Detection
     func detectChapters(for pdf: ConvertedPDF) async {
         guard pdf.contentType == .book || pdf.contentType == .hybrid else { return }
