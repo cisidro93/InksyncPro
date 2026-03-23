@@ -83,40 +83,68 @@ class PeerManager: ObservableObject {
         
         for result in results {
             if case .service(let name, _, _, _) = result.endpoint {
-                // In a true implementation, we would extract the IP and properties from the endpoint or TXT records.
-                // For simplicity in this iOS core engine refactor, we parse the basic name.
-                // Normally we need to resolve the endpoint to an IP address using NWConnection or get it from TXT record.
-                
-                // We mock the IP resolution here since NWBrowser.Result.endpoint doesn't expose IP directly without establishing a connection.
-                let mockIp = extractMockIP(from: name) ?? "0.0.0.0" 
-                
-                let peer = PeerNode(
-                    id: UUID(),
-                    name: name,
-                    ipAddress: mockIp,
-                    port: 8080,
-                    os: "Unknown",
-                    deviceModel: "Unknown",
-                    protocolType: "Inksync"
-                )
-                
-                if !discoveredPeers.contains(peer) {
-                    discoveredPeers.append(peer)
+                resolveIP(from: result.endpoint) { [weak self] resolvedIP in
+                    guard let self = self, let ip = resolvedIP else { return }
+                    
+                    let peer = PeerNode(
+                        id: UUID(),
+                        name: name,
+                        ipAddress: ip,
+                        port: 8080,
+                        os: "Unknown",
+                        deviceModel: "Unknown",
+                        protocolType: "Inksync"
+                    )
+                    
+                    DispatchQueue.main.async {
+                        if !self.availablePeers.contains(peer) {
+                            var newPeers = self.availablePeers
+                            newPeers.append(peer)
+                            self.availablePeers = newPeers.sorted(by: { $0.name < $1.name })
+                        }
+                    }
                 }
             }
         }
-        
-        DispatchQueue.main.async {
-            self.availablePeers = discoveredPeers.sorted(by: { $0.name < $1.name })
-        }
     }
     
-    // A temporary helper since retrieving direct IPs from NWBrowser requires an active network handshake in Swift
-    private func extractMockIP(from name: String) -> String? {
-        // e.g., "Boox NoteAir (192.168.1.100)"
-        if let range1 = name.range(of: "("), let range2 = name.range(of: ")") {
-            return String(name[range1.upperBound..<range2.lowerBound])
+    // Natively resolves the endpoint to an IP without requiring unencrypted broadcast text.
+    private func resolveIP(from endpoint: NWEndpoint, completion: @escaping (String?) -> Void) {
+        let connection = NWConnection(to: endpoint, using: .tcp)
+        var hasCompleted = false
+        connection.stateUpdateHandler = { state in
+            guard !hasCompleted else { return }
+            switch state {
+            case .ready:
+                hasCompleted = true
+                if let remote = connection.currentPath?.remoteEndpoint,
+                   case .hostPort(let host, _) = remote {
+                    var ipAddress: String? = nil
+                    switch host {
+                    case .ipv4(let ipv4):
+                        // Convert IPv4Address to String
+                        ipAddress = "\(ipv4)".components(separatedBy: "%").first
+                    case .ipv6(let ipv6):
+                        // Convert IPv6Address to String
+                        ipAddress = "\(ipv6)".components(separatedBy: "%").first
+                    default: break
+                    }
+                    // Fallback to name-based resolution if native mapping doesn't unwrap purely
+                    let finalIP = ipAddress ?? "\(host)".components(separatedBy: "%").first
+                    completion(finalIP)
+                } else {
+                    completion(nil)
+                }
+                connection.cancel()
+            case .failed, .cancelled:
+                if !hasCompleted {
+                    hasCompleted = true
+                    completion(nil)
+                }
+            default:
+                break
+            }
         }
-        return nil
+        connection.start(queue: .global(qos: .userInitiated))
     }
 }

@@ -157,8 +157,33 @@ class EPUBMerger {
         if fileManager.fileExists(atPath: outputURL.path) {
             try fileManager.removeItem(at: outputURL)
         }
-        try fileManager.zipItem(at: epubDir, to: outputURL)
-    }
+        
+        guard let archive = Archive(url: outputURL, accessMode: .create) else {
+            throw NSError(domain: "EPUBMerger", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to allocate ZIP stream"])
+        }
+        
+        // 7. Critical: Inject IDPF Valid Uncompressed Mimetype File
+        let mimetypePath = epubDir.appendingPathComponent("mimetype")
+        try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
+        try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
+        
+        // 8. Recursive Payload Addition
+        let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
+        if let enumerator = fileManager.enumerator(at: epubDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                if fileURL.lastPathComponent == "mimetype" { continue }
+                
+                var isDirectory: ObjCBool = false
+                fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
+                if isDirectory.boolValue { continue }
+                
+                let relativePath = fileURL.path.replacingOccurrences(of: epubDir.path + "/", with: "")
+                let ext = fileURL.pathExtension.lowercased()
+                let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp"].contains(ext) ? .none : .deflate
+                
+                try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
+            }
+        }
     
     private func findImages(in directory: URL) throws -> [URL] {
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]

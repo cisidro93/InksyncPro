@@ -16,13 +16,13 @@ class SecurityManager: ObservableObject {
     private var context = LAContext()
     
     init() {
-        // Load preference
-        self.isVaultEnabled = UserDefaults.standard.bool(forKey: "isVaultEnabled")
+        // Load preference securely
+        self.isVaultEnabled = KeychainHelper.get()
     }
     
-    /// Toggle Vault protection preference
+    /// Toggle Vault protection preference securely
     func setVaultEnabled(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: "isVaultEnabled")
+        KeychainHelper.set(enabled)
         self.isVaultEnabled = enabled
         if enabled {
             self.lockVault()
@@ -66,6 +66,50 @@ class SecurityManager: ObservableObject {
     /// Call when scene becomes active
     func handleAppForegrounding() {
         shouldBlurContent = false
+    }
+}
+
+// MARK: - Secure Storage
+
+private struct KeychainHelper {
+    static let service = "com.inksync.vault.secure"
+    static let account = "isVaultEnabled"
+    
+    static func set(_ state: Bool) {
+        let data = Data(String(state).utf8)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        
+        if status == errSecSuccess {
+            let attributes: [String: Any] = [kSecValueData as String: data]
+            SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        } else {
+            var newQuery = query
+            newQuery[kSecValueData as String] = data
+            // Only accessible when device is unlocked
+            newQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
+            SecItemAdd(newQuery as CFDictionary, nil)
+        }
+    }
+    
+    static func get() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecSuccess, let data = result as? Data, let str = String(data: data, encoding: .utf8) {
+            return str == "true"
+        }
+        return false // Default 
     }
 }
 
