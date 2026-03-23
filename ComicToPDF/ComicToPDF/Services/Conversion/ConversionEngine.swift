@@ -159,6 +159,12 @@ actor ConversionEngine {
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try? fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
+        // Use a defer block to guarantee we ALWAYS clean out the massive JPEG extraction cache
+        // even if the loop throws an error on page 499 or the user cancels the import.
+        defer { 
+            try? fileManager.removeItem(at: tempDir) 
+        }
+        
         // Extract Pages
         for i in 0..<pageCount {
             if Task.isCancelled { throw CancellationError() }
@@ -187,8 +193,6 @@ actor ConversionEngine {
         
         // Use existing ZipUtilities helper
         try await ZipUtilities.zipDirectory(tempDir, to: cbzURL)
-        
-        try? fileManager.removeItem(at: tempDir) // Cleanup
         
         progressSubject.send(.completed(file: url, result: cbzURL))
         return cbzURL

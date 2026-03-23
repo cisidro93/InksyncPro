@@ -58,40 +58,69 @@ class WebDAVSyncManager: ObservableObject {
         
         let fileSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         
-        return try await withCheckedThrowingContinuation { continuation in
-            let task = session.uploadTask(with: request, fromFile: fileURL) { data, response, error in
-                if let error = error {
-                    Task { @MainActor in
-                        self.isSyncing = false
-                        self.lastSyncStatus = "Upload Failed: \(error.localizedDescription)"
+        return try await withTaskCancellationHandler {
+            return try await withCheckedThrowingContinuation { continuation in
+                let task = session.uploadTask(with: request, fromFile: fileURL) { [weak self] data, response, error in
+                    guard let self = self else {
+                        continuation.resume(throwing: CancellationError())
+                        return
                     }
-                    continuation.resume(throwing: error)
-                    return
+                    if let error = error {
+                        Task { @MainActor in
+                            self.isSyncing = false
+                            if (error as NSError).code == NSURLErrorCancelled {
+                                self.lastSyncStatus = "Upload Cancelled"
+                            } else {
+                                self.lastSyncStatus = "Upload Failed: \(error.localizedDescription)"
+                            }
+                            self.activeTask = nil
+                        }
+                        if (error as NSError).code == NSURLErrorCancelled {
+                            continuation.resume(throwing: CancellationError())
+                        } else {
+                            continuation.resume(throwing: error)
+                        }
+                        return
+                    }
+                    
+                    if let httpResponse = response as? HTTPURLResponse {
+                        if (200...299).contains(httpResponse.statusCode) {
+                            Task { @MainActor in
+                                self.isSyncing = false
+                                self.syncProgress = 1.0
+                                self.lastSyncStatus = "Successfully uploaded \(fileURL.lastPathComponent)"
+                                self.activeTask = nil
+                            }
+                            continuation.resume(returning: ())
+                        } else {
+                            Task { @MainActor in
+                                self.isSyncing = false
+                                self.lastSyncStatus = "Server Error: \(httpResponse.statusCode)"
+                                self.activeTask = nil
+                            }
+                            continuation.resume(throwing: CloudSyncError.httpError(statusCode: httpResponse.statusCode))
+                        }
+                    } else {
+                        // Crucial: Handle malformed proxy/network interceptors rather than hanging indefinitely.
+                        Task { @MainActor in
+                            self.isSyncing = false
+                            self.lastSyncStatus = "Server returned an unrecognizable response."
+                            self.activeTask = nil
+                        }
+                        continuation.resume(throwing: URLError(.badServerResponse))
+                    }
                 }
                 
-                if let httpResponse = response as? HTTPURLResponse {
-                    if (200...299).contains(httpResponse.statusCode) {
-                        Task { @MainActor in
-                            self.isSyncing = false
-                            self.syncProgress = 1.0
-                            self.lastSyncStatus = "Successfully uploaded \(fileURL.lastPathComponent)"
-                        }
-                        continuation.resume(returning: ())
-                    } else {
-                        Task { @MainActor in
-                            self.isSyncing = false
-                            self.lastSyncStatus = "Server Error: \(httpResponse.statusCode)"
-                        }
-                        continuation.resume(throwing: CloudSyncError.httpError(statusCode: httpResponse.statusCode))
-                    }
+                Task { @MainActor in
+                    self.activeTask = task
                 }
+                
+                task.resume()
             }
-            
-            // Note: In a real implementation with accurate progress tracking,
-            // we would implement URLSessionTaskDelegate to track bytes sent.
-            // For now, this utilizes async/await with the basic closure.
-            
-            task.resume()
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.activeTask?.cancel()
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ import Combine
 
 /// A global, background-safe queue for processing massive files asynchronously.
 /// This prevents `@MainActor` from locking the UI during heavy E-Ink conversions.
+@MainActor
 class ConversionQueueManager: ObservableObject {
     static let shared = ConversionQueueManager()
     
@@ -166,18 +167,24 @@ class ConversionQueueManager: ObservableObject {
     }
     
     private func handleEngineEvent(_ event: ConversionProgressEvent) {
+        let activeFileName = activeItem?.sourceURL.lastPathComponent
+        
         switch event {
         case .started(let file):
+            guard file.lastPathComponent == activeFileName else { return }
             Logger.shared.log("Queue: started \(file.lastPathComponent)", category: "Queue")
             self.statusMessage = "Processing \(file.lastPathComponent)..."
-        case .progress(_, let current, let total, let message):
+        case .progress(let file, let current, let total, let message):
+            guard file.lastPathComponent == activeFileName else { return }
             self.currentProgress = Double(current) / Double(total)
             self.statusMessage = message
         case .completed(let file, _):
+            guard file.lastPathComponent == activeFileName else { return }
             Logger.shared.log("Queue: completed \(file.lastPathComponent)", category: "Queue")
             self.statusMessage = "Finishing up..."
             self.completedItemsCount += 1
         case .failed(let file, let error):
+            guard file.lastPathComponent == activeFileName else { return }
             let msg = "Queue: FAILED \(file.lastPathComponent) — \(error.localizedDescription)"
             Logger.shared.log(msg, category: "Queue", type: .error)
             self.statusMessage = "Error: \(error.localizedDescription)"

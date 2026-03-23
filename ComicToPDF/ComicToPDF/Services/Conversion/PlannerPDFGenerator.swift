@@ -87,8 +87,11 @@ class PlannerPDFGenerator {
                     // 3. Draw PencilKit Strokes over everything
                     do {
                         let drawing = try PKDrawing(data: page.drawingData)
-                        let drawingImage = drawing.image(from: drawing.bounds, scale: 1.0)
-                        drawingImage.draw(in: drawing.bounds)
+                        // Verify the drawing actually has strokes and non-zero bounds to prevent UIKit crashes
+                        if !drawing.bounds.isEmpty && !drawing.bounds.isNull && drawing.bounds.width > 1 {
+                            let drawingImage = drawing.image(from: drawing.bounds, scale: 1.0)
+                            drawingImage.draw(in: drawing.bounds)
+                        }
                     } catch {
                         Logger.shared.log("Failed to decode PKDrawing on page \(index)", category: "PlannerPDF", type: .warning)
                     }

@@ -364,9 +364,9 @@ class ConversionManager: ObservableObject {
             // ✅ NEW: Execute O(N) Set conversion entirely off the Main Thread
             let pathSet = Set(currentPaths)
             
-            if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]),
-               let urls = enumerator.allObjects as? [URL] {
-                 for fileURL in urls {
+            if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+                 for case let fileURL as URL in enumerator {
+                     await Task.yield()
                      let ext = fileURL.pathExtension.lowercased()
                     if ["pdf", "cbz", "zip", "epub"].contains(ext) {
                          // Check if already exists (Standardized Path Check)
@@ -739,11 +739,12 @@ class ConversionManager: ObservableObject {
         let cacheToDelete = self.editorCache
         
         // We delay the file deletion slightly to let the Task catch the cancellation error
+        let bgTask = UIApplication.shared.beginBackgroundTask(expirationHandler: nil)
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) {
             if let cache = cacheToDelete {
                  try? FileManager.default.removeItem(at: cache.folder)
-
             }
+            UIApplication.shared.endBackgroundTask(bgTask)
         }
     }
     

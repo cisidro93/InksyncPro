@@ -38,7 +38,9 @@ class EPUBGenerator {
 
     // MARK: - Public API
     
+    @available(*, deprecated, message: "Use URL-based `generateEPUB(from:outputName:)` to prevent OOM errors with large comic files")
     func generateEPUB(images: [UIImage], outputName: String, progress: @escaping (Double) -> Void) async throws -> URL {
+        Logger.shared.log("⚠️ WARNING: Using memory-heavy UIImage array variant of generateEPUB. Use URL stream instead.", category: "Memory", type: .warning)
         // 1. Setup Directory
         try? FileManager.default.removeItem(at: tempDirectory)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -300,9 +302,17 @@ class EPUBGenerator {
         
         // 1. Mimetype (MUST be first and uncompressed)
         let mimetypeURL = tempDirectory.appendingPathComponent("mimetype")
+        let mimeHandle = try FileHandle(forReadingFrom: mimetypeURL)
         try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: Int64(20), compressionMethod: .none) { position, size in
-            return try Data(contentsOf: mimetypeURL).subdata(in: 0..<Int(size))
+            if #available(iOS 13.4, *) {
+                try mimeHandle.seek(toOffset: UInt64(position))
+                return try mimeHandle.read(upToCount: Int(size)) ?? Data()
+            } else {
+                mimeHandle.seek(toFileOffset: UInt64(position))
+                return mimeHandle.readData(ofLength: Int(size))
+            }
         }
+        try? mimeHandle.close()
         
         // 2. Add remaining files (META-INF, OEBPS)
         let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
@@ -320,9 +330,17 @@ class EPUBGenerator {
             
             if !isDirectory {
                 let fileSize = UInt32(resourceValues.fileSize ?? 0)
+                let handle = try FileHandle(forReadingFrom: fileURL)
                 try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(fileSize), compressionMethod: .deflate) { position, size in
-                    return try Data(contentsOf: fileURL).subdata(in: 0..<Int(size))
+                    if #available(iOS 13.4, *) {
+                        try handle.seek(toOffset: UInt64(position))
+                        return try handle.read(upToCount: Int(size)) ?? Data()
+                    } else {
+                        handle.seek(toFileOffset: UInt64(position))
+                        return handle.readData(ofLength: Int(size))
+                    }
                 }
+                try? handle.close()
             } else {
                  // Directories are implicit or added as 0-size entries in some zip implementations, 
                  // but ZIPFoundation typically handles file paths. We can skip explicit directory entries

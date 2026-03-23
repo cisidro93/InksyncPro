@@ -64,17 +64,20 @@ struct SmartCropper {
     // MARK: - Legacy High-Performance Inward Scan
     
     private static func performVImageInwardScan(cgImage: CGImage, safetyPadding: CGFloat, sensitivity: Float = 0.05) -> CGRect? {
+        guard let workingImage = createLowResThumbnail(from: cgImage, maxDimension: 512) else { return nil }
+        guard workingImage.width > 10 && workingImage.height > 10 else { return nil }
+        
         // We only care about luminance for margin detection usually (white/black borders)
         var format = vImage_CGImageFormat(
             bitsPerComponent: 8,
             bitsPerPixel: 32,
-            colorSpace: nil,
+            colorSpace: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
             version: 0, decode: nil, renderingIntent: .defaultIntent
         )
         
         var sourceBuffer = vImage_Buffer()
-        let error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, cgImage, vImage_Flags(kvImageNoFlags))
+        let error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, workingImage, vImage_Flags(kvImageNoFlags))
         guard error == kvImageNoError else { return nil }
         defer { free(sourceBuffer.data) }
         
@@ -133,6 +136,30 @@ struct SmartCropper {
     }
     
     // MARK: - Pixel Helpers
+    
+    private static func createLowResThumbnail(from cgImage: CGImage, maxDimension: CGFloat) -> CGImage? {
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        
+        if width <= maxDimension && height <= maxDimension { return cgImage }
+        
+        let ratio = maxDimension / max(width, height)
+        let newWidth = Int(width * ratio)
+        let newHeight = Int(height * ratio)
+        
+        guard let colorSpace = cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB() else { return cgImage }
+        guard let context = CGContext(data: nil,
+                                      width: newWidth,
+                                      height: newHeight,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: 0,
+                                      space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return cgImage }
+        
+        context.interpolationQuality = .low
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: newWidth, height: newHeight))
+        return context.makeImage()
+    }
     
     @inline(__always)
     private static func getPixelLuma(data: UnsafePointer<UInt8>, x: Int, y: Int, rowBytes: Int) -> Int {

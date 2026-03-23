@@ -43,6 +43,8 @@ final class InkDocument: Identifiable {
     var fileSize: Int64
     var isFavorite: Bool
     var isPrivate: Bool
+    
+    @Attribute(.externalStorage) 
     var coverImageData: Data?
     
     // Embedded Value Types (SwiftData generates JSON/BLOB automatically for these Codable structs)

@@ -73,15 +73,26 @@ class CloudSyncManager: ObservableObject {
         
         let finalSettings = autoSettings
         
-        // 3. Queue the files
+        // 3. Setup Archive Folder to prevent double-queuing
+        let archiveFolder = inbox.deletingLastPathComponent().appendingPathComponent("Archive", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: archiveFolder.path) {
+            try? FileManager.default.createDirectory(at: archiveFolder, withIntermediateDirectories: true)
+        }
+        
         Logger.shared.log("CloudSync: \(filesToProcess.count) file(s) found in inbox — queuing", category: "Cloud")
         for file in filesToProcess {
-            // Check if we've already converted this exact URL (or move it to an "Archive" folder)
-            // For safety, let's just queue it. 
-            // In a pro app, we would move it to "processed" after.
-            
-            await MainActor.run {
-                ConversionQueueManager.shared.enqueue(url: file, settings: finalSettings, mode: .go)
+            let destinationURL = archiveFolder.appendingPathComponent(file.lastPathComponent)
+            do {
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    try FileManager.default.removeItem(at: destinationURL)
+                }
+                try FileManager.default.moveItem(at: file, to: destinationURL)
+                
+                await MainActor.run {
+                    ConversionQueueManager.shared.enqueue(url: destinationURL, settings: finalSettings, mode: .go)
+                }
+            } catch {
+                Logger.shared.log("CloudSync: failed to archive \(file.lastPathComponent) — \(error.localizedDescription)", category: "Cloud", type: .error)
             }
         }
         
