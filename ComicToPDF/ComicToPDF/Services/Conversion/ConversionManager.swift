@@ -365,7 +365,7 @@ class ConversionManager: ObservableObject {
             let pathSet = Set(currentPaths)
             
             if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
-                 for case let fileURL as URL in enumerator {
+                 while let fileURL = enumerator.nextObject() as? URL {
                      await Task.yield()
                      let ext = fileURL.pathExtension.lowercased()
                     if ["pdf", "cbz", "zip", "epub"].contains(ext) {

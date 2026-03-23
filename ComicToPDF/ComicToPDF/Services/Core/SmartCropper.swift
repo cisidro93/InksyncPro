@@ -71,7 +71,7 @@ struct SmartCropper {
         var format = vImage_CGImageFormat(
             bitsPerComponent: 8,
             bitsPerPixel: 32,
-            colorSpace: CGColorSpaceCreateDeviceRGB(),
+            colorSpace: Unmanaged.passRetained(CGColorSpaceCreateDeviceRGB()),
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
             version: 0, decode: nil, renderingIntent: .defaultIntent
         )
@@ -147,7 +147,7 @@ struct SmartCropper {
         let newWidth = Int(width * ratio)
         let newHeight = Int(height * ratio)
         
-        guard let colorSpace = cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB() else { return cgImage }
+        let colorSpace = cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB()
         guard let context = CGContext(data: nil,
                                       width: newWidth,
                                       height: newHeight,
