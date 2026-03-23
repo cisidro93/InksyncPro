@@ -47,7 +47,7 @@ struct ModernLibraryView: View {
                         sortOption: Binding(get: { sortOption }, set: { sortOption = $0; viewModel.sortPDFs(conversionManager.visiblePDFs, sortOption: $0) }),
                         viewStyle: $viewStyle,
                         tapAction: $tapAction,
-                        activeSheet: .constant(nil), // Handled by Router now
+                        onSheetTrigger: { dest in viewModel.activeSheet = dest },
                         isBatchMode: $isBatchMode,
                         multiSelection: $multiSelection,
                         batchMergeItems: $batchMergeItems,
@@ -99,40 +99,7 @@ struct ModernLibraryView: View {
                     }
                 }
                 .sheet(item: $viewModel.activeSheet) { item in
-                    switch item {
-                    case .importer: ImportQueueView()
-                    case .wifi: WiFiView()
-                    case .merge: FileMergeView()
-                    case .cloudSync(let pdf): CloudSyncView(targetPDF: pdf)
-                    case .export(let pdf): DualExportView(pdf: pdf)
-                    case .directShare(let pdf): ShareSheet(activityItems: [pdf.url])
-                    case .details(let pdf):
-                        MediaDetailSheet(pdf: pdf, onAction: { action in
-                            viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager)
-                        })
-                        .presentationDetents([.medium, .large])
-                        .presentationDragIndicator(.visible)
-                    case .searchMetadata(let pdf): MetadataSearchSheet(pdf: pdf)
-                    case .editMetadata(let pdf): AdvancedMetadataEditorView(pdf: pdf)
-                    case .batchMetadata(let pdfs): BatchMetadataEditorView(selectedPDFs: pdfs)
-                    case .cognitiveBatchRenamer(let pdfs):
-                        BatchLocalRenamerView(pdfs: pdfs).environmentObject(conversionManager)
-                    case .seriesAssignment(let pdf, let isBatch, let selection):
-                        CollectionEditorSheet { name, icon, color in
-                            if let singlePDF = pdf, !name.trimmingCharacters(in: .whitespaces).isEmpty {
-                                conversionManager.assignToSeries(singlePDF, seriesName: name)
-                                conversionManager.createCollection(name: name, icon: icon, color: color)
-                            } else if isBatch {
-                                let cleanName = name.trimmingCharacters(in: .whitespaces)
-                                if !cleanName.isEmpty && !selection.isEmpty {
-                                    for item in selection { conversionManager.assignToSeries(item, seriesName: cleanName) }
-                                    conversionManager.createCollection(name: cleanName, icon: icon, color: color)
-                                    isBatchMode = false
-                                    multiSelection.removeAll()
-                                }
-                            }
-                        }
-                    }
+                    destinationSheet(for: item)
                 }
             } // End Inner Group
         } // End Outer Group
@@ -163,6 +130,46 @@ struct ModernLibraryView: View {
         .onChange(of: conversionManager.visiblePDFs) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption) }
         .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption) }
         .onChange(of: conversionManager.collections.count) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption) }
+    }
+    
+    // MARK: - Extracted Router UI
+    @ViewBuilder
+    private func destinationSheet(for item: LibrarySheetDestination) -> some View {
+        switch item {
+        case .importer: ImportQueueView()
+        case .wifi: WiFiView()
+        case .merge: FileMergeView()
+        case .cloud: ImportQueueView() // Same underlying view as legacy cloud trigger
+        case .cloudSync(let pdf): CloudSyncView(targetPDF: pdf)
+        case .export(let pdf): DualExportView(pdf: pdf)
+        case .directShare(let pdf): ShareSheet(activityItems: [pdf.url])
+        case .details(let pdf):
+            MediaDetailSheet(pdf: pdf, onAction: { action in
+                viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager)
+            })
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        case .searchMetadata(let pdf): MetadataSearchSheet(pdf: pdf)
+        case .editMetadata(let pdf): AdvancedMetadataEditorView(pdf: pdf)
+        case .batchMetadata(let pdfs): BatchMetadataEditorView(selectedPDFs: pdfs)
+        case .cognitiveBatchRenamer(let pdfs):
+            BatchLocalRenamerView(pdfs: pdfs).environmentObject(conversionManager)
+        case .seriesAssignment(let pdf, let isBatch, let selection):
+            CollectionEditorSheet { name, icon, color in
+                if let singlePDF = pdf, !name.trimmingCharacters(in: .whitespaces).isEmpty {
+                    conversionManager.assignToSeries(singlePDF, seriesName: name)
+                    conversionManager.createCollection(name: name, icon: icon, color: color)
+                } else if isBatch {
+                    let cleanName = name.trimmingCharacters(in: .whitespaces)
+                    if !cleanName.isEmpty && !selection.isEmpty {
+                        for item in selection { conversionManager.assignToSeries(item, seriesName: cleanName) }
+                        conversionManager.createCollection(name: cleanName, icon: icon, color: color)
+                        isBatchMode = false
+                        multiSelection.removeAll()
+                    }
+                }
+            }
+        }
     }
     
     // MARK: - Actions

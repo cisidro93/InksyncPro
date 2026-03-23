@@ -8,7 +8,7 @@ struct LibraryHeaderView: View {
     @Binding var sortOption: ModernLibraryView.SortOption
     @Binding var viewStyle: ModernLibraryView.LibraryViewStyle
     @Binding var tapAction: LibraryTapAction
-    @Binding var activeSheet: ModernLibraryView.SidebarSheet?
+    var onSheetTrigger: (LibrarySheetDestination) -> Void
     @Binding var isBatchMode: Bool
     @Binding var multiSelection: Set<UUID>
     @Binding var batchMergeItems: [ConvertedPDF]
@@ -186,13 +186,13 @@ struct LibraryHeaderView: View {
                     // 3. Action Pills
                     Group {
                         ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.orange) {
-                            activeSheet = .importer
+                            onSheetTrigger(.importer)
                         }
-                        ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { activeSheet = .wifi }
-                        ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { activeSheet = .cloud }
+                        ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
+                        ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { onSheetTrigger(.cloud) }
                     }
                     Group {
-                        ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { activeSheet = .merge }
+                        ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { onSheetTrigger(.merge) }
                         ActionPill(title: "Convert & Merge", icon: "doc.on.doc.fill", color: Theme.purple, action: {
                             if multiSelection.count >= 2 {
                                 batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }

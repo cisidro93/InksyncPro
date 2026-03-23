@@ -4,6 +4,7 @@ enum LibrarySheetDestination: Identifiable {
     case importer
     case wifi
     case merge
+    case cloud
     case cloudSync(ConvertedPDF)
     case export(ConvertedPDF)
     case directShare(ConvertedPDF)
@@ -19,6 +20,7 @@ enum LibrarySheetDestination: Identifiable {
         case .importer: return "importer"
         case .wifi: return "wifi"
         case .merge: return "merge"
+        case .cloud: return "cloud"
         case .cloudSync(let p): return "cloudSync_\(p.id)"
         case .export(let p): return "export_\(p.id)"
         case .directShare(let p): return "directShare_\(p.id)"
