@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import ZIPFoundation
 import SwiftUI
 
@@ -232,7 +232,7 @@ class ImportOrchestrator {
         }
     }
     
-    private func finalizeSeriesImport(pdfs: [ConvertedPDF], seriesName: String, manager: ConversionManager) async {
+    func finalizeSeriesImport(pdfs: [ConvertedPDF], seriesName: String, manager: ConversionManager) async {
         await MainActor.run {
             let targetCollection: PDFCollection
             if let existing = manager.collections.first(where: { $0.name == seriesName }), !seriesName.isEmpty {
