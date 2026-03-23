@@ -635,6 +635,10 @@ class ConversionManager: ObservableObject {
         await ImportOrchestrator.shared.importFilesAsSeries(urls: urls, manager: self)
     }
 
+    func finalizeSeriesImport(pdfs: [ConvertedPDF], seriesName: String) async {
+        await ImportOrchestrator.shared.finalizeSeriesImport(pdfs: pdfs, seriesName: seriesName, manager: self)
+    }
+
     func assignToSeries(_ pdf: ConvertedPDF, seriesName: String) {
         ImportOrchestrator.shared.assignToSeries(pdf, seriesName: seriesName, manager: self)
     }
@@ -2881,3 +2885,4 @@ extension ConversionManager {
         }
     }
 }
+
