@@ -94,11 +94,40 @@ class CBZToEPUBConverter {
                 // C. Process and Append
                 if isSliced {
                     for slice in imagesToProcess {
+                        autoreleasepool {
+                            var finalData: Data
+                            if needsProcessing {
+                                if settings.optimizeForDevice {
+                                    let optimized = EInkOptimizer.shared.processImage(
+                                        slice,
+                                        for: settings.targetDeviceProfile,
+                                        applyGrayscale: settings.imageEnhancement.grayscale,
+                                        cropMargins: settings.trimMargins,
+                                        reduceMoire: settings.imageEnhancement.reduceMoire,
+                                        dither: settings.imageEnhancement.ditheringEnabled,
+                                        marginOffset: settings.bindingMarginOffset,
+                                        marginSide: settings.bindingMarginSide,
+                                        isOddPage: globalImageIndex % 2 == 0
+                                    )
+                                    let finalProcessed = ImageProcessor.process(image: optimized, settings: settings) ?? optimized
+                                    finalData = finalProcessed.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
+                                } else {
+                                    let processedImage = ImageProcessor.process(image: slice, settings: settings) ?? slice
+                                    finalData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
+                                }
+                            } else {
+                                finalData = slice.jpegData(compressionQuality: 1.0) ?? Data()
+                            }
+                            appendToBatch(finalData, globalImageIndex)
+                        }
+                    }
+                } else {
+                    autoreleasepool {
                         var finalData: Data
                         if needsProcessing {
-                            if settings.optimizeForDevice {
+                            if settings.optimizeForDevice, let rawImage = UIImage(contentsOfFile: srcURL.path) {
                                 let optimized = EInkOptimizer.shared.processImage(
-                                    slice,
+                                    rawImage,
                                     for: settings.targetDeviceProfile,
                                     applyGrayscale: settings.imageEnhancement.grayscale,
                                     cropMargins: settings.trimMargins,
@@ -109,45 +138,20 @@ class CBZToEPUBConverter {
                                     isOddPage: globalImageIndex % 2 == 0
                                 )
                                 let finalProcessed = ImageProcessor.process(image: optimized, settings: settings) ?? optimized
-                                finalData = finalProcessed.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
+                                let quality = settings.compressionQuality.value
+                                finalData = finalProcessed.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
+                            } else if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
+                                let quality = settings.compressionQuality.value
+                                finalData = processedImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
                             } else {
-                                let processedImage = ImageProcessor.process(image: slice, settings: settings) ?? slice
-                                finalData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
+                                finalData = (try? Data(contentsOf: srcURL)) ?? Data() // Fallback
                             }
                         } else {
-                            finalData = slice.jpegData(compressionQuality: 1.0) ?? Data()
+                             // Safe to copy exact original bytes
+                             finalData = (try? Data(contentsOf: srcURL)) ?? Data()
                         }
                         appendToBatch(finalData, globalImageIndex)
                     }
-                } else {
-                    var finalData: Data
-                    if needsProcessing {
-                        if settings.optimizeForDevice, let rawImage = UIImage(contentsOfFile: srcURL.path) {
-                            let optimized = EInkOptimizer.shared.processImage(
-                                rawImage,
-                                for: settings.targetDeviceProfile,
-                                applyGrayscale: settings.imageEnhancement.grayscale,
-                                cropMargins: settings.trimMargins,
-                                reduceMoire: settings.imageEnhancement.reduceMoire,
-                                dither: settings.imageEnhancement.ditheringEnabled,
-                                marginOffset: settings.bindingMarginOffset,
-                                marginSide: settings.bindingMarginSide,
-                                isOddPage: globalImageIndex % 2 == 0
-                            )
-                            let finalProcessed = ImageProcessor.process(image: optimized, settings: settings) ?? optimized
-                            let quality = settings.compressionQuality.value
-                            finalData = finalProcessed.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
-                        } else if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
-                            let quality = settings.compressionQuality.value
-                            finalData = processedImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
-                        } else {
-                            finalData = (try? Data(contentsOf: srcURL)) ?? Data() // Fallback
-                        }
-                    } else {
-                         // Safe to copy exact original bytes
-                         finalData = (try? Data(contentsOf: srcURL)) ?? Data()
-                    }
-                    appendToBatch(finalData, globalImageIndex)
                 }
             } // END autoreleasepool
             
