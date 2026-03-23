@@ -170,7 +170,7 @@ class EPUBMerger {
         // 8. Recursive Payload Addition
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
         if let enumerator = fileManager.enumerator(at: epubDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
-            for case let fileURL as URL in enumerator {
+            while let fileURL = enumerator.nextObject() as? URL {
                 if fileURL.lastPathComponent == "mimetype" { continue }
                 
                 var isDirectory: ObjCBool = false
@@ -184,6 +184,7 @@ class EPUBMerger {
                 try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
             }
         }
+    }
     
     private func findImages(in directory: URL) throws -> [URL] {
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
