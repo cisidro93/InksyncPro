@@ -2,12 +2,8 @@ import SwiftUI
 
 struct ConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @StateObject private var viewModel = ConversionViewModel()
     let pdf: ConvertedPDF
-
-    @State private var isMangaMode = false
-    @State private var selectedPipeline: OutputPipeline = .standard
-    @State private var showingPreview = false
-    @State private var showingCalibreGuide = false
 
     var body: some View {
         Form {
@@ -31,8 +27,8 @@ struct ConvertView: View {
                 .pickerStyle(.menu)
                 .onChange(of: conversionManager.conversionSettings.outputFormat) { _, newFormat in
                     if newFormat != .epub {
-                        selectedPipeline = .standard
-                        applyPipeline(.standard)
+                        viewModel.selectedPipeline = .standard
+                        viewModel.applyPipeline(.standard, to: &conversionManager.conversionSettings)
                     }
                 }
                 
@@ -63,17 +59,23 @@ struct ConvertView: View {
                         Text("EPUB Export Mode")
                             .font(.headline)
                             .padding(.bottom, 4)
-                            .foregroundColor(conversionManager.conversionSettings.outputFormat == .epub ? .primary : .secondary)
+                            .foregroundColor(.primary)
 
                         ForEach(OutputPipeline.allCases) { pipeline in
-                            let isDisabled = pipelineIsDisabled(pipeline)
+                            let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: conversionManager.conversionSettings.outputFormat)
                             Button(action: {
                                 if !isDisabled {
-                                    selectedPipeline = pipeline
-                                    applyPipeline(pipeline)
+                                    viewModel.selectedPipeline = pipeline
+                                    viewModel.applyPipeline(pipeline, to: &conversionManager.conversionSettings)
                                 }
                             }) {
-                                pipelineCard(pipeline, isDisabled: isDisabled)
+                                PipelineCardView(
+                                    pipeline: pipeline,
+                                    isDisabled: isDisabled,
+                                    isSelected: viewModel.selectedPipeline == pipeline,
+                                    viewModel: viewModel,
+                                    currentFormat: conversionManager.conversionSettings.outputFormat
+                                )
                             }
                             .buttonStyle(PlainButtonStyle())
                             .disabled(conversionManager.isConverting || isDisabled)
@@ -83,14 +85,13 @@ struct ConvertView: View {
                     .padding(.vertical, 4)
 
                     // Preview & Guide buttons
-                    if selectedPipeline == .proPanel {
+                    if viewModel.selectedPipeline == .proPanel {
                         VStack(spacing: 8) {
-                            Button(action: { showingPreview = true }) {
+                            Button(action: { viewModel.showingPreview = true }) {
                                 Label("Preview Panel Detection (Page 4)", systemImage: "eye")
                                     .frame(maxWidth: .infinity)
                             }
-                            
-                            Button(action: { showingCalibreGuide = true }) {
+                            Button(action: { viewModel.showingCalibreGuide = true }) {
                                 Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
                                     .font(.caption)
                                     .foregroundColor(.blue)
@@ -104,22 +105,22 @@ struct ConvertView: View {
 
             // MARK: - Layout
             Section {
-                Picker("Reading Direction", selection: $isMangaMode) {
+                Picker("Reading Direction", selection: $viewModel.isMangaMode) {
                     Text("Left-to-Right (Western)").tag(false)
                     Text("Right-to-Left (Manga)").tag(true)
                 }
                 .pickerStyle(.segmented)
                 .disabled(conversionManager.isConverting)
             } header: { Text("Layout") } footer: {
-                Text(isMangaMode ? "Panels ordered Right-to-Left." : "Panels ordered Left-to-Right.")
+                Text(viewModel.isMangaMode ? "Panels ordered Right-to-Left." : "Panels ordered Left-to-Right.")
             }
 
             // MARK: - Convert Button
             Section {
                 Button(action: {
                     Task {
-                        applyPipeline(selectedPipeline)
-                        await conversionManager.convertComic(pdf, mangaMode: isMangaMode)
+                        viewModel.applyPipeline(viewModel.selectedPipeline, to: &conversionManager.conversionSettings)
+                        await conversionManager.convertComic(pdf, mangaMode: viewModel.isMangaMode)
                     }
                 }) {
                     Text("Start Conversion").frame(maxWidth: .infinity).foregroundColor(.blue).bold()
@@ -143,53 +144,56 @@ struct ConvertView: View {
         )
         .navigationTitle("Convert Comic")
         .onAppear {
-            isMangaMode = pdf.metadata.isManga ?? conversionManager.conversionSettings.mangaMode
-            selectedPipeline = conversionManager.conversionSettings.outputPipeline
+            viewModel.isMangaMode = pdf.metadata.isManga ?? conversionManager.conversionSettings.mangaMode
+            viewModel.selectedPipeline = conversionManager.conversionSettings.outputPipeline
         }
-        .sheet(isPresented: $showingPreview) {
+        .sheet(isPresented: $viewModel.showingPreview) {
             PrecisionCanvasView(pdf: pdf, pageIndex: .constant(3), totalCount: pdf.pageCount, conversionManager: conversionManager)
         }
-        .sheet(isPresented: $showingCalibreGuide) {
+        .sheet(isPresented: $viewModel.showingCalibreGuide) {
             CalibreGuideView()
         }
     }
+}
 
-    // MARK: - Pipeline Card View
+// MARK: - MVVM UI Components
 
-    @ViewBuilder
-    private func pipelineCard(_ pipeline: OutputPipeline, isDisabled: Bool) -> some View {
-        let isSelected = selectedPipeline == pipeline
-        let cardColor: Color = isDisabled ? .gray : (isSelected ? cardAccentColor(pipeline) : Color(UIColor.secondarySystemGroupedBackground))
+struct PipelineCardView: View {
+    let pipeline: OutputPipeline
+    let isDisabled: Bool
+    let isSelected: Bool
+    @ObservedObject var viewModel: ConversionViewModel
+    let currentFormat: OutputFormat
+
+    var body: some View {
+        let cardColor: Color = isDisabled ? .gray : (isSelected ? viewModel.cardAccentColor(for: pipeline) : Color(UIColor.secondarySystemGroupedBackground))
         let textColor: Color = isSelected ? .white : (isDisabled ? .gray : .primary)
         let subtextColor: Color = isSelected ? .white.opacity(0.8) : (isDisabled ? .gray.opacity(0.7) : .secondary)
 
         HStack(spacing: 14) {
-            Image(systemName: pipelineIcon(pipeline))
+            Image(systemName: viewModel.pipelineIcon(for: pipeline))
                 .font(.title2)
                 .frame(width: 30)
-                .foregroundColor(isDisabled ? .gray : (isSelected ? .white : cardAccentColor(pipeline)))
+                .foregroundColor(isDisabled ? .gray : (isSelected ? .white : viewModel.cardAccentColor(for: pipeline)))
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(pipeline.rawValue).font(.headline).foregroundColor(textColor)
-
                     if pipeline == .proPanel {
                         if isDisabled {
-                            if conversionManager.conversionSettings.outputFormat != .epub {
-                                badgePill("EPUB Only", color: .gray)
+                            if currentFormat != .epub {
+                                PipelineBadge(label: "EPUB Only", color: .gray)
                             } else {
-                                badgePill("Comics Only", color: .gray)
+                                PipelineBadge(label: "Comics Only", color: .gray)
                             }
                         } else {
-                            badgePill("Guided View", color: isSelected ? .purple.opacity(0.8) : .purple)
+                            PipelineBadge(label: "Guided View", color: isSelected ? .purple.opacity(0.8) : .purple)
                         }
                     }
                 }
-                Text(pipelineSubtitle(pipeline)).font(.caption).foregroundColor(subtextColor)
+                Text(viewModel.pipelineSubtitle(for: pipeline)).font(.caption).foregroundColor(subtextColor)
             }
-
             Spacer()
-
             if isSelected {
                 Image(systemName: "checkmark.circle.fill").foregroundColor(.white)
             }
@@ -199,63 +203,21 @@ struct ConvertView: View {
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected ? cardAccentColor(pipeline) : Color.gray.opacity(0.2), lineWidth: 1)
+                .stroke(isSelected ? viewModel.cardAccentColor(for: pipeline) : Color.gray.opacity(0.2), lineWidth: 1)
         )
     }
+}
 
-    @ViewBuilder
-    private func badgePill(_ label: String, color: Color) -> some View {
+struct PipelineBadge: View {
+    let label: String
+    let color: Color
+    var body: some View {
         Text(label)
             .font(.caption2).bold()
             .foregroundColor(.white)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(color)
             .cornerRadius(4)
-    }
-
-    // MARK: - Helpers
-
-    private func pipelineIcon(_ pipeline: OutputPipeline) -> String {
-        switch pipeline {
-        case .standard: return "doc.richtext"
-        case .proPanel: return "rectangle.split.3x1"
-        }
-    }
-
-    private func cardAccentColor(_ pipeline: OutputPipeline) -> Color {
-        switch pipeline {
-        case .standard: return .blue
-        case .proPanel: return .purple
-        }
-    }
-
-    private func pipelineSubtitle(_ pipeline: OutputPipeline) -> String {
-        switch pipeline {
-        case .standard:
-            return "EPUB · No panel zoom · Cloud-safe (OneDrive, Google Drive, Send-to-Kindle)"
-        case .proPanel:
-            return "EPUB · Full Amazon Panel View Support · Universal Compatibility"
-        }
-    }
-
-    /// Books do not support Pro Panel, and Pro Panel is strictly an EPUB feature.
-    private func pipelineIsDisabled(_ pipeline: OutputPipeline) -> Bool {
-        if pipeline == .proPanel {
-            if pdf.contentType == .book { return true }
-            if conversionManager.conversionSettings.outputFormat != .epub { return true }
-        }
-        return false
-    }
-
-    private func applyPipeline(_ pipeline: OutputPipeline) {
-        conversionManager.conversionSettings.outputPipeline = pipeline
-        switch pipeline {
-        case .standard:
-            conversionManager.conversionSettings.enablePanelSplit = false
-        case .proPanel:
-            conversionManager.conversionSettings.enablePanelSplit = true
-            conversionManager.conversionSettings.epubSettings.includeFullPage = true
-        }
     }
 }
 

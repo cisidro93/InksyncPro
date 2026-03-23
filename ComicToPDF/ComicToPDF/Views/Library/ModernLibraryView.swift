@@ -2,24 +2,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 
-
-
-// Ã¢Å“â€¦ NEW: Combine Debouncer for Library Search
-class SearchDebouncer: ObservableObject {
-    @Published var text: String = ""
-    @Published var debouncedText: String = ""
-    private var bag = Set<AnyCancellable>()
-    
-    init() {
-        $text
-            .debounce(for: .seconds(0.3), scheduler: RunLoop.main)
-            .removeDuplicates()
-            .assign(to: &$debouncedText)
-    }
-}
-
 struct ModernLibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @StateObject private var viewModel = LibraryViewModel()
+    
     @Binding var selectedPDF: ConvertedPDF?
     @Binding var isBatchMode: Bool
     @Binding var multiSelection: Set<UUID>
@@ -28,10 +14,6 @@ struct ModernLibraryView: View {
     
     // Ã¢Å“â€¦ Navigation Mode
     var useNavigationStack: Bool = false
-    
-    // Ã¢Å“â€¦ Editor State
-    @State private var pdfToEditMetadata: ConvertedPDF?
-    // Ã¢Å“â€¦ Root-level folder picker callback (avoids iOS 16/17 delegate swallowing bug)
     var onFolderImport: (() -> Void)? = nil
     
     // Ã¢Å“â€¦ NEW: View Style State
@@ -40,151 +22,20 @@ struct ModernLibraryView: View {
         case grid = "Grid"
     }
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
-    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details // Ã¢Å“â€¦ NEW: Tap Action Selector
+    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details 
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
     
-    // Local State
-    @StateObject private var searchDebouncer = SearchDebouncer()
-    @State private var searchText = ""
-    
-    enum SidebarSheet: Identifiable {
-        case importer, wifi, cloud, merge
-        var id: Int { hashValue }
-    }
-    
-    @State private var activeSheet: SidebarSheet?
-    // UI State
+    // UI Options Enum (kept for picker logic)
     enum SortOption: String, CaseIterable, Identifiable {
         case dateAdded = "Most Recent"
         case name = "Name"
         case size = "Size"
         case favorites = "Favorites First"
         case type = "Single / Series"
-        case extensionType = "Format (CBZ/PDF)" // Ã¢Å“â€¦ NEW: Format Sorting
+        case extensionType = "Format (CBZ/PDF)"
         var id: String { rawValue }
     }
     @State private var sortOption: SortOption = .dateAdded
-    @State private var showingSortMenu = false
-    
-    // Ã¢Å“â€¦ NEW: Rename Logic
-    @State private var pdfToRename: ConvertedPDF?
-    @State private var renameText = ""
-    
-    // Ã¢Å“â€¦ NEW: Batch Editor State
-    @State private var showBatchMetadataEditor = false
-    
-    // Ã¢Å“â€¦ NEW: AI Batch Editor State
-    @State private var showCognitiveBatchRenamer = false
-    
-    // Ã¢Å“â€¦ NEW: Export State
-    @State private var pdfToExport: ConvertedPDF?
-    @State private var pdfToDirectShare: ConvertedPDF? // Ã¢Å“â€¦ Competitor Hardening: Native Share
-    @State private var pdfToSearchMetadata: ConvertedPDF?
-    @State private var pdfToCloudSync: ConvertedPDF? // Ã¢Å“â€¦ NEW: WebDAV Sync
-    
-    // Ã¢Å“â€¦ Layer 4: Manual Series Assignment (Single)
-    @State private var pdfToAssignSeries: ConvertedPDF?
-    @State private var assignSeriesText = ""
-    
-    // Ã¢Å“â€¦ NEW: Native Reader State
-    @State private var pdfToRead: ConvertedPDF?
-    
-    // Ã¢Å“â€¦ NEW: Media Detail Sheet State
-    @State private var pdfForDetails: ConvertedPDF?
-    
-    // Ã¢Å“â€¦ NEW: Batch Series Assignment
-    @State private var showingBatchGroupAlert = false
-    @State private var batchGroupText = ""
-    @State private var cachedLibraryItems: [LibraryListItem] = []
-
-// Definitions moved to SeriesModels.swift
-    // Ã¢Å“â€¦ Detached Background Compute
-    private func updateLibraryItemsCache() {
-        // Capture context snapshot to safely detach
-        let pdfs = conversionManager.visiblePDFs
-        
-        Task.detached(priority: .background) {
-            var groups: [String: SeriesGroup] = [:]
-            var singles: [ConvertedPDF] = []
-            var firstAppearanceIndex: [String: Int] = [:]
-            
-            for (index, pdf) in pdfs.enumerated() {
-                if let seriesName = pdf.metadata.series, !seriesName.isEmpty {
-                    let seriesKey = "series_\(seriesName)"
-                    if firstAppearanceIndex[seriesKey] == nil { firstAppearanceIndex[seriesKey] = index }
-                    
-                    if groups[seriesName] == nil {
-                        groups[seriesName] = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: pdf.id, count: 0, issues: [])
-                    }
-                    groups[seriesName]!.issues.append(pdf)
-                    groups[seriesName]!.count += 1
-                } else {
-                    let singleKey = "single_\(pdf.id)"
-                    if firstAppearanceIndex[singleKey] == nil { firstAppearanceIndex[singleKey] = index }
-                    singles.append(pdf)
-                }
-            }
-            
-            var items: [(Int, LibraryListItem)] = []
-            
-            for (_, group) in groups {
-                let item = LibraryListItem.series(group)
-                items.append((firstAppearanceIndex["series_\(group.id)"] ?? 0, item))
-            }
-            
-            for single in singles {
-                let item = LibraryListItem.single(single)
-                items.append((firstAppearanceIndex["single_\(single.id)"] ?? 0, item))
-            }
-            
-            let query = await MainActor.run { self.searchDebouncer.debouncedText }
-            if !query.isEmpty {
-                items = items.filter { tuple in
-                    switch tuple.1 {
-                    case .single(let pdf): return pdf.name.localizedCaseInsensitiveContains(query)
-                    case .series(let group): return group.title.localizedCaseInsensitiveContains(query)
-                    }
-                }
-            }
-            
-            items.sort { $0.0 < $1.0 }
-            let finalItems = items.map { $0.1 }
-            
-            await MainActor.run {
-                self.cachedLibraryItems = finalItems
-            }
-        }
-    }
-    
-    func sortPDFs(_ pdfs: [ConvertedPDF]) -> [ConvertedPDF] {
-        switch sortOption {
-        case .dateAdded: return pdfs.reversed() // Returns newest imported first, which places it natively at index 0 and top-left.
-        case .name: return pdfs.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        case .size: return pdfs.sorted { $0.fileSize > $1.fileSize }
-        case .favorites:
-            return pdfs.sorted {
-                if $0.isFavorite == $1.isFavorite { return false }
-                return $0.isFavorite && !$1.isFavorite
-            }
-        case .type:
-            return pdfs.sorted {
-                let s1 = ($0.metadata.series ?? "").isEmpty
-                let s2 = ($1.metadata.series ?? "").isEmpty
-                if s1 != s2 { return s2 } // Place series first
-                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-            }
-        case .extensionType:
-            return pdfs.sorted {
-                $0.fileExtensionString.localizedStandardCompare($1.fileExtensionString) == .orderedAscending
-            }
-        }
-    }
-
-    private func toggleFavorite(for pdf: ConvertedPDF) {
-        if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-            conversionManager.convertedPDFs[index].isFavorite.toggle()
-        }
-    }
 
     var body: some View {
         Group {
@@ -192,184 +43,110 @@ struct ModernLibraryView: View {
                 VStack(spacing: 0) {
                     // MARK: - Dedicated Header Component
                     LibraryHeaderView(
-                        searchText: $searchText,
-                        sortOption: $sortOption,
+                        searchText: $viewModel.searchText,
+                        sortOption: Binding(get: { sortOption }, set: { sortOption = $0; viewModel.sortPDFs(conversionManager.visiblePDFs, sortOption: $0) }),
                         viewStyle: $viewStyle,
                         tapAction: $tapAction,
-                        activeSheet: $activeSheet,
+                        activeSheet: .constant(nil), // Handled by Router now
                         isBatchMode: $isBatchMode,
                         multiSelection: $multiSelection,
                         batchMergeItems: $batchMergeItems,
                         showingBatchMergeReorder: $showingBatchMergeReorder,
-                        showCognitiveBatchRenamer: $showCognitiveBatchRenamer,
+                        showCognitiveBatchRenamer: .constant(false), // Handled by Router
                         onVaultToggle: handleVaultToggle,
-                        onSelectAll: {
-                            let totalVisibleItems = cachedLibraryItems.reduce(0) { count, item in
-                                switch item {
-                                case .single: return count + 1
-                                case .series(let grp): return count + grp.issues.count
-                                }
-                            }
-                            
-                            let isAllSelected = totalVisibleItems > 0 && multiSelection.count >= totalVisibleItems
-                            
-                            if isAllSelected {
-                                multiSelection.removeAll()
-                            } else {
-                                let allIds = cachedLibraryItems.flatMap { item -> [UUID] in
-                                    switch item {
-                                    case .single(let pdf): return [pdf.id]
-                                    case .series(let group): return group.issues.map { $0.id }
-                                    }
-                                }
-                                allIds.forEach { multiSelection.insert($0) }
-                            }
-                        }
+                        onSelectAll: handleSelectAll
                     )
 
                     // MARK: - Discrete Layout Layers
                     if viewStyle == .list {
                         LibraryListView(
-                            items: cachedLibraryItems,
+                            items: viewModel.cachedLibraryItems,
                             isBatchMode: $isBatchMode,
                             multiSelection: $multiSelection,
                             useNavigationStack: useNavigationStack,
                             tapAction: $tapAction,
                             selectedPDF: $selectedPDF,
-                            onAction: handleDetailAction,
-                            onImport: { activeSheet = .importer }
+                            onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
+                            onImport: { viewModel.activeSheet = .importer }
                         )
                     } else {
                         LibraryGridView(
-                            items: cachedLibraryItems,
+                            items: viewModel.cachedLibraryItems,
                             isBatchMode: $isBatchMode,
                             multiSelection: $multiSelection,
                             useNavigationStack: useNavigationStack,
                             tapAction: $tapAction,
                             selectedPDF: $selectedPDF,
-                            onAction: handleDetailAction,
-                            onImport: { activeSheet = .importer }
+                            onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
+                            onImport: { viewModel.activeSheet = .importer }
                         )
                     }
                 }
-        .overlay(
-            Group {
-                // ✅ PHASE 9: Unrestricted UI
-                // Removed the massive screen-blocking ImmersiveConversionOverlay
-                
-                // Active Background Import Tracker (Non-blocking pill)
-                ImportTrackerView()
-            }
-        )
-        .safeAreaInset(edge: .bottom) {
-            if isBatchMode {
-                batchBottomToolbar
-                    .transition(.move(edge: .bottom))
-            }
-        }
-        .background(Color.black.ignoresSafeArea())
-        // Ã¢Å“â€¦ Native Reader
-        .fullScreenCover(item: $pdfToRead) { pdf in
-            ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
-        }
-        .sheet(item: $activeSheet) { item in
-            switch item {
-            case .importer, .cloud:
-                ImportQueueView()
-            case .wifi: WiFiView()
-            case .merge: FileMergeView()
-            }
-        }
-        .fullScreenCover(item: $selectedPDF) { pdf in
-            AdvancedWorkspaceView(pdf: pdf)
-                .environmentObject(conversionManager)
-        }
-        .sheet(item: $pdfToExport) { pdf in
-            DualExportView(pdf: pdf)
-        }
-        } // End of Inner Group
-        .sheet(item: $pdfToDirectShare) { pdf in
-            ShareSheet(activityItems: [pdf.url])
-        }
-        .sheet(item: $pdfToSearchMetadata) { pdf in
-            MetadataSearchSheet(pdf: pdf)
-        }
-        .sheet(item: $pdfToCloudSync) { pdf in
-            CloudSyncView(targetPDF: pdf)
-        }
-        // Ã¢Å“â€¦ NEW: Media Details Sheet Layout (Option 1)
-        .sheet(item: $pdfForDetails) { pdf in
-            MediaDetailSheet(pdf: pdf, onAction: { action in
-                handleDetailAction(action: action, for: pdf)
-            })
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-        }
-        // Ã¢Å“â€¦ NEW: Advanced Metadata & Cover Editor
-        .sheet(item: $pdfToEditMetadata) { pdf in
-            AdvancedMetadataEditorView(pdf: pdf)
-        }
-        // Ã¢Å“â€¦ NEW: Batch Metadata Editor
-        .sheet(isPresented: $showBatchMetadataEditor) {
-            let selectedFiles = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-            BatchMetadataEditorView(selectedPDFs: selectedFiles)
-        }
-        // Ã¢Å“â€¦ NEW: Local XML Renamer Engine
-        .sheet(isPresented: $showCognitiveBatchRenamer) {
-            let selectedFiles = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-            BatchLocalRenamerView(pdfs: selectedFiles)
-                .environmentObject(conversionManager)
-        }
-        } // End of Outer Group
-        // Ã¢Å“â€¦ Rename Alert
+                .overlay(ImportTrackerView())
+                .safeAreaInset(edge: .bottom) {
+                    if isBatchMode {
+                        batchBottomToolbar.transition(.move(edge: .bottom))
+                    }
+                }
+                .background(Color.black.ignoresSafeArea())
+                // Ã¢Å“â€¦ MVVM Unified Navigation Router
+                .fullScreenCover(item: $viewModel.activeFullScreen) { dest in
+                    switch dest {
+                    case .read(let pdf):
+                        ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
+                    case .advancedWorkspace(let pdf):
+                        AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
+                    }
+                }
+                .sheet(item: $viewModel.activeSheet) { item in
+                    switch item {
+                    case .importer: ImportQueueView()
+                    case .wifi: WiFiView()
+                    case .merge: FileMergeView()
+                    case .cloudSync(let pdf): CloudSyncView(targetPDF: pdf)
+                    case .export(let pdf): DualExportView(pdf: pdf)
+                    case .directShare(let pdf): ShareSheet(activityItems: [pdf.url])
+                    case .details(let pdf):
+                        MediaDetailSheet(pdf: pdf, onAction: { action in
+                            viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager)
+                        })
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.visible)
+                    case .searchMetadata(let pdf): MetadataSearchSheet(pdf: pdf)
+                    case .editMetadata(let pdf): AdvancedMetadataEditorView(pdf: pdf)
+                    case .batchMetadata(let pdfs): BatchMetadataEditorView(selectedPDFs: pdfs)
+                    case .cognitiveBatchRenamer(let pdfs):
+                        BatchLocalRenamerView(pdfs: pdfs).environmentObject(conversionManager)
+                    case .seriesAssignment(let pdf, let isBatch, let selection):
+                        CollectionEditorSheet { name, icon, color in
+                            if let singlePDF = pdf, !name.trimmingCharacters(in: .whitespaces).isEmpty {
+                                conversionManager.assignToSeries(singlePDF, seriesName: name)
+                                conversionManager.createCollection(name: name, icon: icon, color: color)
+                            } else if isBatch {
+                                let cleanName = name.trimmingCharacters(in: .whitespaces)
+                                if !cleanName.isEmpty && !selection.isEmpty {
+                                    for item in selection { conversionManager.assignToSeries(item, seriesName: cleanName) }
+                                    conversionManager.createCollection(name: cleanName, icon: icon, color: color)
+                                    isBatchMode = false
+                                    multiSelection.removeAll()
+                                }
+                            }
+                        }
+                    }
+                }
+            } // End Inner Group
+        } // End Outer Group
+        
         .alert("Rename File", isPresented: Binding(
-            get: { pdfToRename != nil },
-            set: { if !$0 { pdfToRename = nil } }
+            get: { viewModel.pdfToRename != nil },
+            set: { if !$0 { viewModel.pdfToRename = nil } }
         )) {
-            TextField("New Name", text: $renameText)
+            TextField("New Name", text: $viewModel.renameText)
             Button("Cancel", role: .cancel) { }
             Button("Rename") {
-                if let pdf = pdfToRename {
-                    conversionManager.renamePDF(pdf, to: renameText)
+                if let pdf = viewModel.pdfToRename {
+                    conversionManager.renamePDF(pdf, to: viewModel.renameText)
                 }
-            }
-        }
-        // Layer 4: Custom Series Sheet
-        .sheet(isPresented: Binding(
-            get: { pdfToAssignSeries != nil || showingBatchGroupAlert },
-            set: { isPresented in
-                if !isPresented {
-                    pdfToAssignSeries = nil
-                    showingBatchGroupAlert = false
-                }
-            }
-        )) {
-            CollectionEditorSheet { name, icon, color in
-                if let singlePDF = pdfToAssignSeries {
-                    // Single Assignment
-                    if !name.trimmingCharacters(in: .whitespaces).isEmpty {
-                        conversionManager.assignToSeries(singlePDF, seriesName: name)
-                        // Also create the metadata collection record
-                        conversionManager.createCollection(name: name, icon: icon, color: color)
-                    }
-                } else if showingBatchGroupAlert {
-                    // Batch group assignment
-                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    let cleanName = name.trimmingCharacters(in: .whitespaces)
-                    if !cleanName.isEmpty && !items.isEmpty {
-                        for item in items {
-                            conversionManager.assignToSeries(item, seriesName: cleanName)
-                        }
-                        // Create the metadata collection record
-                        conversionManager.createCollection(name: cleanName, icon: icon, color: color)
-                        
-                        isBatchMode = false
-                        multiSelection.removeAll()
-                    }
-                }
-                
-                pdfToAssignSeries = nil
-                showingBatchGroupAlert = false
             }
         }
         .alert(item: $conversionManager.appAlert) { alert in
@@ -380,18 +157,48 @@ struct ModernLibraryView: View {
             return true
         }
         .onAppear {
-            // Backfill thumbnails for any files imported before the cover fix
             conversionManager.backfillMissingThumbnails()
-            updateLibraryItemsCache()
+            viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption)
         }
-        .onChange(of: conversionManager.visiblePDFs) { updateLibraryItemsCache() }
-        .onChange(of: searchText) { searchDebouncer.text = searchText }
-        .onChange(of: searchDebouncer.debouncedText) { updateLibraryItemsCache() }
-        .onChange(of: sortOption) { updateLibraryItemsCache() }
-        .onChange(of: conversionManager.collections.count) { updateLibraryItemsCache() }
+        .onChange(of: conversionManager.visiblePDFs) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption) }
+        .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption) }
+        .onChange(of: conversionManager.collections.count) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption) }
     }
     
-    // Copy of helpers
+    // MARK: - Actions
+    private func handleSelectAll() {
+        let totalVisibleItems = viewModel.cachedLibraryItems.reduce(0) { count, item in
+            switch item {
+            case .single: return count + 1
+            case .series(let grp): return count + grp.issues.count
+            }
+        }
+        let isAllSelected = totalVisibleItems > 0 && multiSelection.count >= totalVisibleItems
+        if isAllSelected {
+            multiSelection.removeAll()
+        } else {
+            let allIds = viewModel.cachedLibraryItems.flatMap { item -> [UUID] in
+                switch item {
+                case .single(let pdf): return [pdf.id]
+                case .series(let group): return group.issues.map { $0.id }
+                }
+            }
+            allIds.forEach { multiSelection.insert($0) }
+        }
+    }
+
+    private func handleVaultToggle() {
+        if conversionManager.isVaultUnlocked {
+            withAnimation { conversionManager.isVaultUnlocked = false }
+        } else {
+            Task {
+                if await SecurityManager.shared.authenticate() {
+                    await MainActor.run { withAnimation { conversionManager.isVaultUnlocked = true } }
+                }
+            }
+        }
+    }
+    
     private func loadFiles(from providers: [NSItemProvider]) {
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
@@ -405,7 +212,7 @@ struct ModernLibraryView: View {
             }
         }
     }
-    
+
     @ViewBuilder private var batchBottomToolbar: some View {
         VStack(spacing: 0) {
             Divider().background(Color.white.opacity(0.1))
@@ -415,9 +222,7 @@ struct ModernLibraryView: View {
                     for item in items { conversionManager.deletePDF(item) }
                     isBatchMode = false
                     multiSelection.removeAll()
-                } label: {
-                    VStack(spacing: 4) { Image(systemName: "trash").font(.title3); Text("Delete").font(.caption) }
-                }
+                } label: { VStack(spacing: 4) { Image(systemName: "trash").font(.title3); Text("Delete").font(.caption) } }
                 .disabled(multiSelection.isEmpty)
                 
                 Spacer()
@@ -425,73 +230,51 @@ struct ModernLibraryView: View {
                 Button {
                     batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                     showingBatchMergeReorder = true
-                } label: {
-                    VStack(spacing: 4) { Image(systemName: "doc.on.doc.fill").font(.title3); Text("Convert & Merge").font(.caption) }
-                }
+                } label: { VStack(spacing: 4) { Image(systemName: "doc.on.doc.fill").font(.title3); Text("Convert & Merge").font(.caption) } }
                 .disabled(multiSelection.count < 2)
                 
                 Spacer()
                 
                 Button {
-                    batchGroupText = ""
-                    showingBatchGroupAlert = true
-                } label: {
-                    VStack(spacing: 4) { Image(systemName: "rectangle.stack.badge.plus").font(.title3); Text("Group").font(.caption) }
-                }
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    viewModel.activeSheet = .seriesAssignment(nil, isBatch: true, selection: items)
+                } label: { VStack(spacing: 4) { Image(systemName: "rectangle.stack.badge.plus").font(.title3); Text("Group").font(.caption) } }
                 .disabled(multiSelection.isEmpty)
                 
                 Spacer()
                 
                 Button {
                     let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    for item in items {
-                        TransferQueueManager.shared.stageFile(item)
-                    }
+                    for item in items { TransferQueueManager.shared.stageFile(item) }
                     isBatchMode = false
                     multiSelection.removeAll()
-                    activeSheet = .wifi
-                } label: {
-                    VStack(spacing: 4) { Image(systemName: "wifi").font(.title3); Text("Transfer").font(.caption) }
-                }
+                    viewModel.activeSheet = .wifi
+                } label: { VStack(spacing: 4) { Image(systemName: "wifi").font(.title3); Text("Transfer").font(.caption) } }
                 .disabled(multiSelection.isEmpty)
                 
                 Spacer()
-                // Ã¢Å“â€¦ Advanced Actions Menu 
+                
                 Menu {
                     Button {
                         let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                         Task { await conversionManager.convertQueue(items) }
                         isBatchMode = false
                         multiSelection.removeAll()
-                    } label: {
-                        Label("Fast Convert", systemImage: "arrow.triangle.2.circlepath")
-                    }
+                    } label: { Label("Fast Convert", systemImage: "arrow.triangle.2.circlepath") }
                     
                     Button {
                         batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                         showingBatchMergeReorder = true
-                    } label: {
-                        Label("Convert & Merge", systemImage: "doc.on.doc.fill")
-                    }
+                    } label: { Label("Convert & Merge", systemImage: "doc.on.doc.fill") }
                     
-                    Button {
-                        activeSheet = .merge
-                    } label: {
-                        Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge")
-                    }
-                    
+                    Button { viewModel.activeSheet = .merge } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
                     Divider()
-                    
                     Button {
-                        showBatchMetadataEditor = true
-                    } label: {
-                        Label("Intelligent Metadata", systemImage: "sparkles")
-                    }
+                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        viewModel.activeSheet = .batchMetadata(items)
+                    } label: { Label("Intelligent Metadata", systemImage: "sparkles") }
                 } label: {
-                    VStack(spacing: 4) { 
-                        Image(systemName: "ellipsis.circle.fill").font(.title3)
-                        Text("Actions").font(.caption) 
-                    }
+                    VStack(spacing: 4) { Image(systemName: "ellipsis.circle.fill").font(.title3); Text("Actions").font(.caption) }
                     .foregroundColor(Theme.orange)
                 }
                 .disabled(multiSelection.isEmpty)
@@ -501,49 +284,6 @@ struct ModernLibraryView: View {
             .background(.ultraThinMaterial)
             .foregroundColor(.white)
             .environment(\.colorScheme, .dark)
-        }
-    }
-    
-    // MARK: - Handlers
-    private func handleVaultToggle() {
-        if conversionManager.isVaultUnlocked {
-            withAnimation { conversionManager.isVaultUnlocked = false }
-        } else {
-            Task {
-                let success = await SecurityManager.shared.authenticate()
-                if success {
-                    await MainActor.run {
-                        withAnimation { conversionManager.isVaultUnlocked = true }
-                    }
-                }
-            }
-        }
-    }
-    
-    // MARK: - Navigation Action Router
-    private func handleDetailAction(action: LibraryRowAction, for pdf: ConvertedPDF) {
-        // A slight delay ensures the detail sheet finishes dismissing before we pop up a new one
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            switch action {
-            case .read:          pdfToRead = pdf
-            case .details:       pdfForDetails = pdf
-            case .covers:        selectedPDF = pdf
-            case .fetchMetadata: pdfToSearchMetadata = pdf
-            case .editMetadata:  pdfToEditMetadata = pdf
-            case .export:        pdfToExport = pdf
-            case .share:         pdfToDirectShare = pdf
-            case .sync:          pdfToCloudSync = pdf
-            case .rename:
-                renameText = pdf.name
-                pdfToRename = pdf
-            case .addToSeries:
-                assignSeriesText = pdf.metadata.series ?? ""
-                pdfToAssignSeries = pdf
-            case .favorite:
-                toggleFavorite(for: pdf)
-            case .delete:
-                conversionManager.deletePDF(pdf)
-            }
         }
     }
 }
