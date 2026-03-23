@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import UIKit
 import SwiftUI
 
@@ -53,7 +53,7 @@ class PhysicalFileSystemRouter {
         let key = pdf.id.uuidString as NSString
         if let cached = manager.thumbnailCache.object(forKey: key) { return cached }
         
-        return await Task.detached(priority: .userInitiated) {
+        return await Task.detached(priority: .userInitiated) { () -> UIImage? in
             if let url = self.getCoverURL(for: pdf), FileManager.default.fileExists(atPath: url.path) {
                 if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
                     let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
@@ -114,7 +114,7 @@ class PhysicalFileSystemRouter {
         if let coverURL = getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) { return }
         
         let url = pdf.url
-        let image = await Task.detached(priority: .background) {
+        let image = await Task.detached(priority: .background) { () -> UIImage? in
             return ConversionManager.extractCoverImageStatic(from: url)
         }.value
         
@@ -211,3 +211,4 @@ class PhysicalFileSystemRouter {
         }
     }
 }
+

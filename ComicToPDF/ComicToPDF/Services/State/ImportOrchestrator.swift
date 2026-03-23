@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import ZIPFoundation
 import SwiftUI
 
@@ -13,7 +13,7 @@ class ImportOrchestrator {
         
         let existingNames = await MainActor.run { Set(manager.convertedPDFs.map { $0.name }) }
 
-        let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) {
+        let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let accessing = folderURL.startAccessingSecurityScopedResource()
             defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
             
@@ -118,7 +118,7 @@ class ImportOrchestrator {
 
         await MainActor.run { ImportMonitorManager.shared.startImport(totalCount: urls.count) }
         
-        let importedPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) {
+        let importedPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let fileManager = FileManager.default
             let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
             var newPDFs: [ConvertedPDF] = []
@@ -287,7 +287,7 @@ class ImportOrchestrator {
         
         let existingNames = await MainActor.run { Set(manager.convertedPDFs.map { $0.name }) }
         
-        let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) {
+        let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let fileManager = FileManager.default
             let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
             var newlyImported: [ConvertedPDF] = []
@@ -549,3 +549,4 @@ class ImportOrchestrator {
         }
     }
 }
+
