@@ -22,7 +22,7 @@ class ImportOrchestrator {
                 let bookmarkData = try folderURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
                 await MainActor.run {
                     if !manager.watchedFolders.contains(where: { $0.bookmarkData == bookmarkData }) {
-                        let watched = WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
+                        let watched = ConversionManager.WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
                         manager.watchedFolders.append(watched)
                         manager.saveLibrary()
                     }
