@@ -174,24 +174,40 @@ struct MetadataEditorSheet: View {
         errorMessage = nil
         
         Task {
-            do {
-                let resultString = try LocalComicInfoService.shared.generateDeterministicFilename(from: pdf.url)
-                
-                await MainActor.run {
-                    editedMetadata.title = resultString
+            let parsedInfo = ComicInfoParser.parse(from: pdf.url)
+            let renameString = try? LocalComicInfoService.shared.generateDeterministicFilename(from: pdf.url)
+            
+            await MainActor.run {
+                if let info = parsedInfo {
+                    if let series = info.series { editedMetadata.series = series; editedMetadata.volume = series }
+                    if let title = info.title { editedMetadata.title = title }
+                    if let number = info.number { editedMetadata.issueNumber = number }
+                    if let writer = info.writer { editedMetadata.writer = writer }
+                    if let publisher = info.publisher { editedMetadata.publisher = publisher }
+                    if let summary = info.summary { editedMetadata.summary = summary }
+                    if let year = info.year {
+                        var comps = DateComponents()
+                        comps.year = year
+                        comps.month = 1
+                        comps.day = 1
+                        editedMetadata.publicationDate = Calendar.current.date(from: comps)
+                    }
+                    
+                    for tag in info.tags {
+                        if !editedMetadata.tags.contains(tag) { editedMetadata.tags.append(tag) }
+                    }
                     if !editedMetadata.tags.contains("Local XML Scanned") {
                         editedMetadata.tags.append("Local XML Scanned")
                     }
-                    isSearching = false
-                    
-                    // Trigger physical rename prompt
-                    newSuggestedCacheName = resultString
-                    showingRenamePrompt = true
+                } else {
+                    errorMessage = "XML Extraction Failed: No valid ComicInfo.xml found."
                 }
-            } catch {
-                await MainActor.run {
-                    errorMessage = "XML Extraction Failed: \(error.localizedDescription)"
-                    isSearching = false
+                
+                isSearching = false
+                
+                if let suggested = renameString {
+                    newSuggestedCacheName = suggested
+                    showingRenamePrompt = true
                 }
             }
         }
@@ -211,12 +227,8 @@ struct MetadataEditorSheet: View {
     }
     
     func saveChanges() {
-        // We need to write back metadata
         pdf.metadata = editedMetadata
-        
-        // Trigger save in manager (assuming changes to @Published propagate, but we might need explicit save)
-        conversionManager.saveLibrary()
-        
+        conversionManager.updateMetadata(for: pdf, with: editedMetadata, newCover: nil)
         dismiss()
     }
     

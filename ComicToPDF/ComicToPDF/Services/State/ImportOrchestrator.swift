@@ -79,10 +79,27 @@ class ImportOrchestrator {
                     
                     if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
                         smartDisplayName = xmlData.displayName
-                        smartMetadata.title = xmlData.parsedTitle ?? smartDisplayName
-                        smartMetadata.series = xmlData.parsedSeries ?? seriesName
-                        smartMetadata.issueNumber = xmlData.parsedNumber
+                    }
+                    
+                    if let parsedInfo = ComicInfoParser.parse(from: destURL) {
+                        smartMetadata.title = parsedInfo.title ?? smartDisplayName
+                        smartMetadata.series = parsedInfo.series ?? seriesName
+                        smartMetadata.issueNumber = parsedInfo.number
+                        smartMetadata.writer = parsedInfo.writer
+                        smartMetadata.publisher = parsedInfo.publisher
+                        smartMetadata.summary = parsedInfo.summary
+                        if let year = parsedInfo.year {
+                            var comps = DateComponents()
+                            comps.year = year; comps.month = 1; comps.day = 1
+                            smartMetadata.publicationDate = Calendar.current.date(from: comps)
+                        }
+                        for tag in parsedInfo.tags {
+                            if !smartMetadata.tags.contains(tag) { smartMetadata.tags.append(tag) }
+                        }
                         smartMetadata.tags.append("Auto XML Scrape")
+                    } else {
+                        smartMetadata.title = smartDisplayName
+                        smartMetadata.series = seriesName
                     }
                     
                     let pdf = ConvertedPDF(
@@ -340,18 +357,39 @@ class ImportOrchestrator {
                             let attr = try fileManager.attributesOfItem(atPath: destURL.path)
                             let size = attr[.size] as? Int64 ?? 0
                             
+                            var smartDisplayName = fileName
+                            if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
+                                smartDisplayName = xmlData.displayName
+                            }
+                            
                             let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
-                            var metadata = PDFMetadata(title: fileName)
+                            var metadata = PDFMetadata(title: smartDisplayName)
                             metadata.series = seriesName
+                            
+                            if let parsedInfo = ComicInfoParser.parse(from: destURL) {
+                                metadata.title = parsedInfo.title ?? smartDisplayName
+                                metadata.series = parsedInfo.series ?? seriesName
+                                metadata.issueNumber = parsedInfo.number
+                                metadata.writer = parsedInfo.writer
+                                metadata.publisher = parsedInfo.publisher
+                                metadata.summary = parsedInfo.summary
+                                if let year = parsedInfo.year {
+                                    var comps = DateComponents()
+                                    comps.year = year; comps.month = 1; comps.day = 1
+                                    metadata.publicationDate = Calendar.current.date(from: comps)
+                                }
+                                for tag in parsedInfo.tags {
+                                    if !metadata.tags.contains(tag) { metadata.tags.append(tag) }
+                                }
+                                metadata.tags.append("Auto XML Folder Scrape")
+                            }
                             
                             let contentExt = destURL.pathExtension.lowercased()
                             var cType: ContentType = .book
-                            if contentExt == "pdf" { cType = .book }
-                            else if contentExt == "epub" { cType = .book }
-                            else { cType = .comic }
+                            if contentExt == "pdf" || contentExt == "epub" { cType = .book } else { cType = .comic }
                             
                             let pdf = ConvertedPDF(
-                                name: fileName,
+                                name: smartDisplayName,
                                 url: destURL,
                                 pageCount: 0,
                                 fileSize: size,
