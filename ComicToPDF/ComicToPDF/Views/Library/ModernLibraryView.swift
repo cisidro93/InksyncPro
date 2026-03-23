@@ -384,11 +384,11 @@ struct ModernLibraryView: View {
             conversionManager.backfillMissingThumbnails()
             updateLibraryItemsCache()
         }
-        .onChange(of: conversionManager.visiblePDFs, perform: { _ in updateLibraryItemsCache() })
-        .onChange(of: searchText) { newValue in searchDebouncer.text = newValue }
-        .onChange(of: searchDebouncer.debouncedText, perform: { _ in updateLibraryItemsCache() })
-        .onChange(of: sortOption, perform: { _ in updateLibraryItemsCache() })
-        .onChange(of: conversionManager.collections.count, perform: { _ in updateLibraryItemsCache() })
+        .onChange(of: conversionManager.visiblePDFs) { updateLibraryItemsCache() }
+        .onChange(of: searchText) { searchDebouncer.text = searchText }
+        .onChange(of: searchDebouncer.debouncedText) { updateLibraryItemsCache() }
+        .onChange(of: sortOption) { updateLibraryItemsCache() }
+        .onChange(of: conversionManager.collections.count) { updateLibraryItemsCache() }
     }
     
     // Copy of helpers
