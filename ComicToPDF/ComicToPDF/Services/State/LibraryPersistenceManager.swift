@@ -15,7 +15,7 @@ class LibraryPersistenceManager {
         let history: [ConvertedPDF]
         let devices: [KindleDevice]
         var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil
-        var watchedFolders: [WatchedFolder]? = nil
+        var watchedFolders: [ConversionManager.WatchedFolder]? = nil
         var presets: [ConversionPreset]? = nil
     }
     

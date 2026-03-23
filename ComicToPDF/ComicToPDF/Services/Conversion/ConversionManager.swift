@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 import PDFKit
 import ZIPFoundation
 import Combine
@@ -2885,8 +2885,4 @@ extension ConversionManager {
         }
     }
 
-    // MARK: - Orchestrator Restored Callbacks
-    func finalizeSeriesImport(pdfs: [ConvertedPDF], seriesName: String) async {
-        await ImportOrchestrator.shared.finalizeSeriesImport(pdfs: pdfs, seriesName: seriesName, manager: self)
-    }
 }

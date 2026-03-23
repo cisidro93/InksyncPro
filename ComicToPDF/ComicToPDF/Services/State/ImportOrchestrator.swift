@@ -3,6 +3,7 @@ import ZIPFoundation
 import SwiftUI
 
 /// A dedicated Orchestrator that natively extracts and inherits the incredibly heavy background operations required to parse multi-gigabyte ZIP/CBZ streams and PDF pages cleanly without tying up the Application's main Presentation state object.
+@MainActor
 class ImportOrchestrator {
     static let shared = ImportOrchestrator()
     private init() {}
@@ -212,8 +213,9 @@ class ImportOrchestrator {
             clusters[seriesName, default: []].append(pdf)
         }
         
+        let finalClusters = clusters
         await MainActor.run {
-            for (series, clusterPDFs) in clusters {
+            for (series, clusterPDFs) in finalClusters {
                 if clusterPDFs.count > 1 && series != "Ungrouped" {
                     Task { await self.finalizeSeriesImport(pdfs: clusterPDFs, seriesName: series, manager: manager) }
                 } else {
@@ -367,8 +369,9 @@ class ImportOrchestrator {
             }
             
             if !staleBookmarkIndices.isEmpty {
+                let finalStale = staleBookmarkIndices
                 await MainActor.run {
-                    for i in staleBookmarkIndices.sorted(by: >) { manager.watchedFolders.remove(at: i) }
+                    for i in finalStale.sorted(by: >) { manager.watchedFolders.remove(at: i) }
                     manager.saveLibrary()
                 }
             }

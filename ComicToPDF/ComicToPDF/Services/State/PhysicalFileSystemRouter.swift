@@ -1,8 +1,9 @@
-﻿import Foundation
+import Foundation
 import UIKit
 import SwiftUI
 
 /// Safely handles all iOS Storage interactions, including disk persistence, thumbnail caching into Application Support, and atomic NSFileCoordinator bindings independent from the Presentation logic.
+@MainActor
 class PhysicalFileSystemRouter {
     static let shared = PhysicalFileSystemRouter()
     private init() {}
@@ -50,14 +51,14 @@ class PhysicalFileSystemRouter {
     }
     
     func loadCoverThumbnail(for pdf: ConvertedPDF, manager: ConversionManager) async -> UIImage? {
-        let key = pdf.id.uuidString as NSString
-        if let cached = manager.thumbnailCache.object(forKey: key) { return cached }
+        let keyStr = pdf.id.uuidString
+        if let cached = manager.thumbnailCache.object(forKey: keyStr as NSString) { return cached }
         
         return await Task.detached(priority: .userInitiated) { () -> UIImage? in
-            if let url = self.getCoverURL(for: pdf), FileManager.default.fileExists(atPath: url.path) {
+            if let url = await self.getCoverURL(for: pdf), FileManager.default.fileExists(atPath: url.path) {
                 if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
                     let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
-                    await MainActor.run { manager.thumbnailCache.setObject(thumbnail, forKey: key) }
+                    await MainActor.run { manager.thumbnailCache.setObject(thumbnail, forKey: keyStr as NSString) }
                     return thumbnail
                 }
             }
@@ -150,13 +151,14 @@ class PhysicalFileSystemRouter {
     }
     
     func getThumbnail(for pdf: ConvertedPDF, manager: ConversionManager) -> UIImage? {
-        if let cached = manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) { return cached }
+        let keyStr = pdf.id.uuidString
+        if let cached = manager.thumbnailCache.object(forKey: keyStr as NSString) { return cached }
         Task.detached(priority: .userInitiated) {
-            if let coverURL = self.getCoverURL(for: pdf),
+            if let coverURL = await self.getCoverURL(for: pdf),
                let data = try? Data(contentsOf: coverURL),
                let image = UIImage(data: data) {
                 await MainActor.run {
-                    manager.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
+                    manager.thumbnailCache.setObject(image, forKey: keyStr as NSString)
                     manager.objectWillChange.send()
                 }
             } else {
