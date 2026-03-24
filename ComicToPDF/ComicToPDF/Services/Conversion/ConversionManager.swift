@@ -2185,6 +2185,35 @@ class ConversionManager: ObservableObject {
         }
     }
     
+    // MARK: - KFX Export
+    func exportForKFX(_ pdf: ConvertedPDF) async -> URL? {
+        isConverting = true
+        processingStatus = "Building KFX Package..."
+        statusMessage = "Extracting images and scripts..."
+        
+        defer {
+            isConverting = false
+            statusMessage = nil
+            Task { @MainActor in self.processingStatus = "" }
+        }
+        
+        do {
+            let converter = CBZToEPUBConverter()
+            let outputURL = try await converter.buildKFXPackage(
+                sourceURL: pdf.url,
+                settings: conversionSettings,
+                metadata: pdf.metadata,
+                progress: { progress in
+                    Task { @MainActor in self.conversionProgress = progress }
+                }
+            )
+            return outputURL
+        } catch {
+            Logger.shared.log("❌ KFX Export Failed: \\(error.localizedDescription)", category: "Export", type: .error)
+            return nil
+        }
+    }
+    
     func exportForLocalSideload(_ pdf: ConvertedPDF) async -> URL? {
         // Track 2: Local High-Quality
         let fileManager = FileManager.default

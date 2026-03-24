@@ -663,6 +663,7 @@ enum OutputFormat: String, CaseIterable, Codable, Identifiable {
     case epub = "EPUB (Kindle)"
     case pdf = "PDF"
     case cbz = "CBZ"
+    case kfxPackage = "KFX-Ready Package (.inksync)"
     
     var id: String { rawValue }
     var icon: String {
@@ -670,6 +671,7 @@ enum OutputFormat: String, CaseIterable, Codable, Identifiable {
         case .epub: return "book.fill"
         case .pdf: return "doc.text.fill"
         case .cbz: return "archivebox.fill"
+        case .kfxPackage: return "square.and.arrow.up.on.square"
         }
     }
 }
