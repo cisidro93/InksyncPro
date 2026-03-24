@@ -49,15 +49,14 @@ class AnnotationStore: ObservableObject {
     @Published private var store: [UUID: [Annotation]] = [:]
     
     private let queue = DispatchQueue(label: "com.inksync.AnnotationStore", qos: .userInitiated)
-    private let fileManager = FileManager.default
-    private lazy var annotationsDir: URL = {
-        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    private func getAnnotationsDir() -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dir = docs.appendingPathComponent("annotations")
-        if !fileManager.fileExists(atPath: dir.path) {
-            try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         return dir
-    }()
+    }
     
     private init() {
         loadAll()
@@ -94,7 +93,8 @@ class AnnotationStore: ObservableObject {
         queue.async { [weak self] in
             guard let self = self else { return }
             do {
-                let files = try self.fileManager.contentsOfDirectory(at: self.annotationsDir, includingPropertiesForKeys: nil)
+                let dir = self.getAnnotationsDir()
+                let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
                 var loadedStore: [UUID: [Annotation]] = [:]
                 
                 for file in files where file.pathExtension == "json" {
@@ -116,7 +116,7 @@ class AnnotationStore: ObservableObject {
     
     private func save(pdfID: UUID) {
         let pdfAnnotations = store[pdfID] ?? []
-        let fileURL = annotationsDir.appendingPathComponent("\(pdfID.uuidString).json")
+        let fileURL = getAnnotationsDir().appendingPathComponent("\(pdfID.uuidString).json")
         
         queue.async {
             do {

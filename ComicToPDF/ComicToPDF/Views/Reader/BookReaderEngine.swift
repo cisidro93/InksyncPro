@@ -39,7 +39,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             
             if !self.fileManager.fileExists(atPath: self.tempDir.path) {
                 try? self.fileManager.createDirectory(at: self.tempDir, withIntermediateDirectories: true)
-                guard let archive = try? Archive(url: self.pdf.url, accessMode: .read) else {
+                guard let archive = Archive(url: self.pdf.url, accessMode: .read) else {
                     DispatchQueue.main.async { self.isLoading = false }
                     return
                 }

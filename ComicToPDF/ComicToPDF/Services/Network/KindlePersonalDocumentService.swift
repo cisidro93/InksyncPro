@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import MessageUI
+import SwiftUI
 
 @MainActor
 class KindlePersonalDocumentService: NSObject, ObservableObject, MFMailComposeViewControllerDelegate {

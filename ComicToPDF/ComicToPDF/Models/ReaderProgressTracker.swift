@@ -20,15 +20,15 @@ class ReaderProgressTracker: ObservableObject {
     @Published private var progressMap: [UUID: ReadingProgress] = [:]
     
     private let queue = DispatchQueue(label: "com.inksync.ProgressTracker", qos: .userInitiated)
-    private let fileManager = FileManager.default
-    private lazy var progressDir: URL = {
-        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+// Removed fileManager properties to avoid actor isolation issues
+    private func getProgressDir() -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dir = docs.appendingPathComponent("progress")
-        if !fileManager.fileExists(atPath: dir.path) {
-            try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         return dir
-    }()
+    }
     
     private init() {
         loadAll()
@@ -82,7 +82,7 @@ class ReaderProgressTracker: ObservableObject {
             }
         }
         
-        for date. in uniqueDays {
+        for date in uniqueDays {
             if date == expectedDate {
                 streak += 1
                 expectedDate = calendar.date(byAdding: .day, value: -1, to: expectedDate) ?? expectedDate
@@ -124,7 +124,8 @@ class ReaderProgressTracker: ObservableObject {
         queue.async { [weak self] in
             guard let self = self else { return }
             do {
-                let files = try self.fileManager.contentsOfDirectory(at: self.progressDir, includingPropertiesForKeys: nil)
+                let dir = self.getProgressDir()
+                let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
                 var loadedMap: [UUID: ReadingProgress] = [:]
                 
                 for file in files where file.pathExtension == "json" {

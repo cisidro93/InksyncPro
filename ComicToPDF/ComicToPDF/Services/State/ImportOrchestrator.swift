@@ -154,9 +154,9 @@ class ImportOrchestrator {
                         metadata: smartMetadata,
                         contentType: cType
                     )
-                    pdf.contentKind = detectContentKind(url: destURL)
+                    pdf.contentKind = await self.detectContentKind(url: destURL)
                     if pdf.contentKind == .document {
-                        pdf.documentSubtype = detectDocumentSubtype(url: destURL, fileSize: size)
+                        pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                     }
                     newlyImported.append(pdf)
                 } catch {
@@ -230,9 +230,9 @@ class ImportOrchestrator {
                         metadata: smartMetadata,
                         contentType: cType
                     )
-                    pdf.contentKind = detectContentKind(url: destURL)
+                    pdf.contentKind = await self.detectContentKind(url: destURL)
                     if pdf.contentKind == .document {
-                        pdf.documentSubtype = detectDocumentSubtype(url: destURL, fileSize: size)
+                        pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                     }
                     pdf.isPrivate = isVaultUnlocked
                     newPDFs.append(pdf)
@@ -448,9 +448,9 @@ class ImportOrchestrator {
                                 metadata: metadata,
                                 contentType: cType
                             )
-                            pdf.contentKind = detectContentKind(url: destURL)
+                            pdf.contentKind = await self.detectContentKind(url: destURL)
                             if pdf.contentKind == .document {
-                                pdf.documentSubtype = detectDocumentSubtype(url: destURL, fileSize: size)
+                                pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                             }
                             newlyImported.append(pdf)
                         } catch {
@@ -625,9 +625,9 @@ class ImportOrchestrator {
                 pageCount: extractedCount, fileSize: fileSize,
                 metadata: PDFMetadata(title: fileName), contentType: contentType
             )
-            newPDF.contentKind = detectContentKind(url: cbzURL)
+            newPDF.contentKind = await self.detectContentKind(url: cbzURL)
             if newPDF.contentKind == .document {
-                newPDF.documentSubtype = detectDocumentSubtype(url: cbzURL, fileSize: fileSize)
+                newPDF.documentSubtype = await self.detectDocumentSubtype(url: cbzURL, fileSize: fileSize)
             }
             
             if let coverData = newCoverData {
