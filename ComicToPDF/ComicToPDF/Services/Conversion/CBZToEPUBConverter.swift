@@ -367,7 +367,7 @@ class CBZToEPUBConverter {
         return outputURL
     }
 
-    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
+    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int? = nil, height: Int? = nil) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
                 <div class="page">
