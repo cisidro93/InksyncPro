@@ -41,6 +41,21 @@ class ConversionManager: ObservableObject {
     // Guided View Data
     @Published var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]] = [:]
     
+    // Panel Editor State
+    @Published var isPresentingPanelEditor: Bool = false
+    @Published var currentEditorImage: UIImage? = nil
+    @Published var currentEditorPanels: [CGRect] = []
+    var panelEditorContinuation: CheckedContinuation<[CGRect], Never>?
+    
+    // Panel Editor submission
+    func submitPanelEdits(_ panels: [CGRect]) {
+        if let continuation = panelEditorContinuation {
+            continuation.resume(returning: panels)
+            panelEditorContinuation = nil
+        }
+        isPresentingPanelEditor = false
+    }
+    
     // ✅ NEW: Precision Canvas Models (Normalized Coordinates)
     @Published var pageModels: [UUID: [Int: PageModel]] = [:]  
     
@@ -2141,7 +2156,16 @@ class ConversionManager: ObservableObject {
                          if let image = UIImage(contentsOfFile: fileURL.path) {
                             let detected = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: conversionSettings.mangaMode)
                             if !detected.isEmpty {
-                                panelsToInject[index] = detected
+                                // Suspend and present PanelEditorView
+                                let editedRects = await withCheckedContinuation { continuation in
+                                    Task { @MainActor in
+                                        self.currentEditorImage = image
+                                        self.currentEditorPanels = detected.map { $0.boundingBox }
+                                        self.panelEditorContinuation = continuation
+                                        self.isPresentingPanelEditor = true
+                                    }
+                                }
+                                panelsToInject[index] = editedRects.map { PanelExtractor.Panel(boundingBox: $0) }
                             }
                         }
                     }

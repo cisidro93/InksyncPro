@@ -113,6 +113,17 @@ struct ContentView: View {
                 }
             )
         }
+        .sheet(isPresented: $conversionManager.isPresentingPanelEditor) {
+            if let img = conversionManager.currentEditorImage {
+                PanelEditorView(
+                    image: img,
+                    panels: $conversionManager.currentEditorPanels,
+                    onDone: { editedRects in
+                        conversionManager.submitPanelEdits(editedRects)
+                    }
+                )
+            }
+        }
         // ✅ PHASE 8: Universal Alert Trap
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("GlobalErrorTriggered"))) { notification in
             if let userInfo = notification.userInfo,
