@@ -17,7 +17,6 @@
 
 - **OS**: iOS/iPadOS 16 or later
 - **Xcode**: Xcode 15 or later
-- **Installation**: Sideloading required via [Signulous](https://www.signulous.com/) or [AltStore](https://altstore.io/).
 
 ## Build Instructions
 
@@ -27,10 +26,7 @@ To build the application manually:
 3. Select your desired deployment target and click "Build" (Cmd+B) or "Run" (Cmd+R).
 4. Alternatively, push to GitHub and let GitHub Actions produce the `.ipa` artifact automatically.
 
-## Sideloading Instructions
 
-1. If you don't wish to build the app manually, download the latest compiled unsigned `.ipa` artifact from GitHub Actions (Actions → latest successful run → Artifacts).
-2. Sideload the IPA onto your iOS or iPadOS device using a service such as [Signulous](https://www.signulous.com/) or [AltStore](https://altstore.io/).
 
 ## License
 
