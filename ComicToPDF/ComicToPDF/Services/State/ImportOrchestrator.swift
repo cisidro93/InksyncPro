@@ -8,6 +8,50 @@ class ImportOrchestrator {
     static let shared = ImportOrchestrator()
     private init() {}
     
+    // ✅ NEW: Unified Reader Format Heuristics
+    private func hasComicIndicators(url: URL) -> Bool {
+        let name = url.lastPathComponent.lowercased()
+        let comicKeywords = ["vol", "issue", "chapter", "ch", "#", "manga", "tankobon"]
+        for keyword in comicKeywords {
+            if name.contains(keyword) { return true }
+        }
+        return false
+    }
+    
+    private func detectContentKind(url: URL) -> ContentKind {
+        let ext = url.pathExtension.lowercased()
+        switch ext {
+        case "epub", "mobi":
+            return .book
+        case "pdf":
+            if hasComicIndicators(url: url) { return .comic }
+            return .document
+        case "cbz", "cbr", "cb7", "cbt":
+            return .comic
+        default:
+            return .document
+        }
+    }
+    
+    private func detectDocumentSubtype(url: URL, fileSize: Int64) -> DocumentSubtype {
+        let name = url.lastPathComponent.lowercased()
+        let isLargeFile = fileSize > 10 * 1024 * 1024
+        
+        if name.contains("arxiv") || name.contains("doi") || name.contains("paper") {
+            return .researchPaper
+        }
+        
+        if isLargeFile && (name.contains("mag") || name.contains("issue")) {
+            return .magazine
+        }
+        
+        if name.contains("manual") || name.contains("guide") {
+            return .manual
+        }
+        
+        return .unknown
+    }
+    
     func importFolderStructure(from folderURL: URL, manager: ConversionManager) async {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Folder Sync..." }
         defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
@@ -102,7 +146,7 @@ class ImportOrchestrator {
                         smartMetadata.series = seriesName
                     }
                     
-                    let pdf = ConvertedPDF(
+                    var pdf = ConvertedPDF(
                         name: smartDisplayName,
                         url: destURL,
                         pageCount: 0,
@@ -110,6 +154,10 @@ class ImportOrchestrator {
                         metadata: smartMetadata,
                         contentType: cType
                     )
+                    pdf.contentKind = detectContentKind(url: destURL)
+                    if pdf.contentKind == .document {
+                        pdf.documentSubtype = detectDocumentSubtype(url: destURL, fileSize: size)
+                    }
                     newlyImported.append(pdf)
                 } catch {
                     Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import", type: .error)
@@ -182,6 +230,10 @@ class ImportOrchestrator {
                         metadata: smartMetadata,
                         contentType: cType
                     )
+                    pdf.contentKind = detectContentKind(url: destURL)
+                    if pdf.contentKind == .document {
+                        pdf.documentSubtype = detectDocumentSubtype(url: destURL, fileSize: size)
+                    }
                     pdf.isPrivate = isVaultUnlocked
                     newPDFs.append(pdf)
                     
@@ -388,7 +440,7 @@ class ImportOrchestrator {
                             var cType: ContentType = .book
                             if contentExt == "pdf" || contentExt == "epub" { cType = .book } else { cType = .comic }
                             
-                            let pdf = ConvertedPDF(
+                            var pdf = ConvertedPDF(
                                 name: smartDisplayName,
                                 url: destURL,
                                 pageCount: 0,
@@ -396,6 +448,10 @@ class ImportOrchestrator {
                                 metadata: metadata,
                                 contentType: cType
                             )
+                            pdf.contentKind = detectContentKind(url: destURL)
+                            if pdf.contentKind == .document {
+                                pdf.documentSubtype = detectDocumentSubtype(url: destURL, fileSize: size)
+                            }
                             newlyImported.append(pdf)
                         } catch {
                             Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import", type: .error)
@@ -564,11 +620,15 @@ class ImportOrchestrator {
             let attributes = try FileManager.default.attributesOfItem(atPath: cbzURL.path)
             let fileSize = attributes[.size] as? Int64 ?? 0
             
-            let newPDF = ConvertedPDF(
+            var newPDF = ConvertedPDF(
                 id: UUID(), name: fileName, url: cbzURL,
                 pageCount: extractedCount, fileSize: fileSize,
                 metadata: PDFMetadata(title: fileName), contentType: contentType
             )
+            newPDF.contentKind = detectContentKind(url: cbzURL)
+            if newPDF.contentKind == .document {
+                newPDF.documentSubtype = detectDocumentSubtype(url: cbzURL, fileSize: fileSize)
+            }
             
             if let coverData = newCoverData {
                 manager.saveCoverImage(coverData, for: newPDF)

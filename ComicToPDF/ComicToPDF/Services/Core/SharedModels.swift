@@ -53,6 +53,20 @@ enum ContentType: String, Codable, CaseIterable {
     }
 }
 
+// ✅ NEW: Unified Reader Content Kinds
+enum ContentKind: String, Codable {
+    case comic       // CBZ, CBR, CB7, CBT
+    case book        // EPUB, MOBI
+    case document    // PDF
+}
+
+enum DocumentSubtype: String, Codable {
+    case researchPaper
+    case magazine
+    case manual
+    case unknown
+}
+
 struct ConvertedPDF: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
@@ -72,6 +86,15 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
     var contentType: ContentType = .comic  // ✅ NEW: Track content type
     var chapters: [Chapter] = [] // ✅ NEW: Detected Chapters
     var addedByMode: AppUIMode = .pro // ✅ NEW: Track source UI mode
+    
+    // ✅ NEW: Unified Reader Properties
+    var contentKind: ContentKind = .comic
+    var documentSubtype: DocumentSubtype = .unknown
+    var isOnDevice: Bool = false
+    var lastTransferFailed: Bool = false
+    var lastOutputFormat: OutputFormat? = nil
+    var lastConversionDate: Date? = nil
+    var panelConfidenceScore: Double? = nil
     
     // ✅ NEW: File Extension Tracker
     var fileExtensionString: String {
@@ -97,6 +120,13 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
         self.contentType = contentType
         self.chapters = chapters
         self.addedByMode = addedByMode
+        self.contentKind = .comic
+        self.documentSubtype = .unknown
+        self.isOnDevice = false
+        self.lastTransferFailed = false
+        self.lastOutputFormat = nil
+        self.lastConversionDate = nil
+        self.panelConfidenceScore = nil
     }
     
     func toPDFDocument() -> PDFDocument {

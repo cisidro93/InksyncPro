@@ -23,6 +23,31 @@ struct LibraryGridItem: View {
             .frame(height: 200)
             .frame(maxWidth: .infinity)
             .cornerRadius(12)
+            .overlay(
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        if pdf.contentKind == .book {
+                            Image(systemName: "book.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white)
+                                .padding(6)
+                                .background(Color.black.opacity(0.7))
+                                .clipShape(Circle())
+                                .padding(6)
+                        } else if pdf.contentKind == .document {
+                            Image(systemName: "doc.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white)
+                                .padding(6)
+                                .background(Color.black.opacity(0.7))
+                                .clipShape(Circle())
+                                .padding(6)
+                        }
+                    }
+                }
+            )
             .shadow(radius: 2)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -79,9 +104,31 @@ struct LibraryPDFRowWithCover: View {
             }
             .frame(width: 50, height: 70)
             .cornerRadius(4)
-            .clipped()
-            .frame(width: 50, height: 70)
-            .cornerRadius(4)
+            .overlay(
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        if pdf.contentKind == .book {
+                            Image(systemName: "book.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(.white)
+                                .padding(4)
+                                .background(Color.black.opacity(0.7))
+                                .clipShape(Circle())
+                                .padding(2)
+                        } else if pdf.contentKind == .document {
+                            Image(systemName: "doc.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(.white)
+                                .padding(4)
+                                .background(Color.black.opacity(0.7))
+                                .clipShape(Circle())
+                                .padding(2)
+                        }
+                    }
+                }
+            )
             .clipped()
             
             VStack(alignment: .leading, spacing: 4) {
