@@ -3,7 +3,7 @@ import ZIPFoundation
 
 class CBZToEPUBConverter {
     
-    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, progress: @escaping (Double) -> Void) async throws -> [URL] {
+    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, sourceIsMangaPDF: Bool = false, progress: @escaping (Double) -> Void) async throws -> [URL] {
         Logger.shared.log("Starting Enterprise Conversion (No TOC). Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
         
         let fileManager = FileManager.default
