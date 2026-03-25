@@ -107,17 +107,63 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     }
 }
 
-// Custom WebView to inject Typography using JS
+// Custom WebView subclass to add "Highlight" to the native iOS text selection menu
+class HighlightableWebView: WKWebView {
+    var onHighlightRequested: (() -> Void)?
+    
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(customHighlightAction(_:)) {
+            return true
+        }
+        // Allow Copy alongside Highlight
+        if action == #selector(copy(_:)) {
+            return true
+        }
+        return false // Hide definition, share, etc. for cleaner UI
+    }
+    
+    @objc func customHighlightAction(_ sender: Any?) {
+        onHighlightRequested?()
+    }
+}
+
+// Custom WebView to inject Typography and JS Bridges
 struct EPUBWebView: UIViewRepresentable {
     @Binding var htmlContent: String
     @Binding var baseUrl: URL
     var settings: TypographySettings
+    var onHighlightCreated: ((String, String) -> Void)?
+    var onPageLoaded: ((WKWebView) -> Void)?
+    
+    class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+        var parent: EPUBWebView
+        init(_ parent: EPUBWebView) { self.parent = parent }
+        
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "highlightHandler", let dict = message.body as? [String: String] {
+                if let text = dict["text"], let html = dict["html"] {
+                    parent.onHighlightCreated?(text, html)
+                }
+            }
+        }
+        
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            parent.onPageLoaded?(webView)
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
     
     func makeUIView(context: Context) -> WKWebView {
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences = prefs
+        
+        // Add JS Bridge Listener
+        config.userContentController.add(context.coordinator, name: "highlightHandler")
         
         // CSS Injection
         let userScript = WKUserScript(
@@ -143,18 +189,62 @@ struct EPUBWebView: UIViewRepresentable {
                     column-count: 1 !important;
                 }
                 img { max-width: 100% !important; height: auto !important; }
+                .inksync-highlight { background-color: #ffd700; color: #000; border-radius: 3px; }
             `;
             head.appendChild(style);
+            
+            // Highlight Engine JS
+            window.applyInksyncHighlight = function(colorHex) {
+                var sel = window.getSelection();
+                if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+                
+                var text = sel.toString();
+                document.execCommand("hiliteColor", false, colorHex);
+                window.getSelection().removeAllRanges();
+                
+                // We no longer send thousands of lines of HTML back. We just send the text string!
+                window.webkit.messageHandlers.highlightHandler.postMessage({
+                    "text": text,
+                    "html": "N/A"
+                });
+            };
+            
+            // Restores highlights perfectly dynamically on page load without EPUB mutation!
+            window.restoreInksyncHighlight = function(textToFind, colorHex) {
+                // Save current selection just in case
+                var currentSel = window.getSelection();
+                var savedRange = currentSel.rangeCount > 0 ? currentSel.getRangeAt(0) : null;
+                
+                currentSel.removeAllRanges();
+                // Find and highlight every instance gracefully
+                // window.find(aString, aCaseSensitive, aBackwards, aWrapAround, aWholeWord, aSearchInFrames, aShowDialog);
+                var found = window.find(textToFind, true, false, true, false, false, false);
+                if(found) {
+                    document.execCommand("hiliteColor", false, colorHex);
+                }
+                
+                currentSel.removeAllRanges();
+                if(savedRange) currentSel.addRange(savedRange);
+            };
             """,
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: true
         )
         config.userContentController.addUserScript(userScript)
         
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = HighlightableWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
         webView.backgroundColor = UIColor(hex: settings.themeHex) ?? .white
         webView.scrollView.backgroundColor = webView.backgroundColor
+        
+        // Setup custom UIMenuController item
+        let highlightMenuItem = UIMenuItem(title: "Highlight", action: #selector(HighlightableWebView.customHighlightAction(_:)))
+        UIMenuController.shared.menuItems = [highlightMenuItem]
+        
+        webView.onHighlightRequested = {
+            webView.evaluateJavaScript("window.applyInksyncHighlight('#ffd700');")
+        }
         
         return webView
     }
@@ -162,6 +252,9 @@ struct EPUBWebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         if webView.url?.absoluteString != baseUrl.absoluteString || webView.title == nil {
             webView.loadHTMLString(htmlContent, baseURL: baseUrl)
+        } else if webView.title != nil {
+            // If the swift model's HTML changed (e.g. from an incoming highlight save), we don't reload the whole page to prevent jumping,
+            // because the DOM already has the highlight! 
         }
         webView.backgroundColor = UIColor(hex: settings.themeHex) ?? .white
         webView.scrollView.backgroundColor = webView.backgroundColor
@@ -192,21 +285,46 @@ struct BookReaderEngine: View {
                     .foregroundColor(Color(hex: settings.textHex))
             } else {
                 if let url = vm.chapterHtmlFiles.isEmpty ? nil : vm.chapterHtmlFiles[0] {
-                    EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(url), settings: settings)
-                        .edgesIgnoringSafeArea(.horizontal)
-                        .onTapGesture {
-                            chromeVisible.toggle()
-                        }
-                        // Swipe to change chapters
-                        .gesture(DragGesture(minimumDistance: 50, coordinateSpace: .local)
-                            .onEnded { value in
-                                if value.translation.width < -50 {
-                                    vm.loadChapter(index: min(vm.chapterHtmlFiles.count - 1, vm.currentChapterIndex + 1))
-                                } else if value.translation.width > 50 {
-                                    vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
-                                }
-                            }
+                    EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(url), settings: settings, onHighlightCreated: { selectedText, _ in
+                        
+                        let highlight = Annotation(
+                            pdfID: pdf.id,
+                            pageIndex: vm.currentChapterIndex,
+                            chapterTitle: "Chapter \(vm.currentChapterIndex + 1)",
+                            kind: .highlight,
+                            createdAt: Date(),
+                            modifiedAt: Date(),
+                            colorHex: "#ffd700",
+                            selectedText: selectedText
                         )
+                        AnnotationStore.shared.add(highlight)
+                        
+                    }, onPageLoaded: { webView in
+                        let pageAnnotations = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == vm.currentChapterIndex && $0.kind == .highlight }
+                        for ann in pageAnnotations {
+                            if let text = ann.selectedText, let color = ann.colorHex {
+                                // Escape backticks and standard quotes for JS interpolation
+                                let safeText = text.replacingOccurrences(of: "`", with: "\\`")
+                                                   .replacingOccurrences(of: "\"", with: "\\\"")
+                                                   .replacingOccurrences(of: "\n", with: " ")
+                                let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
+                                webView.evaluateJavaScript(js)
+                            }
+                        }
+                    })
+                    .edgesIgnoringSafeArea(.horizontal)
+                    .onTapGesture {
+                        chromeVisible.toggle()
+                    }
+                    .gesture(DragGesture(minimumDistance: 50, coordinateSpace: .local)
+                        .onEnded { value in
+                            if value.translation.width < -50 {
+                                vm.loadChapter(index: min(vm.chapterHtmlFiles.count - 1, vm.currentChapterIndex + 1))
+                            } else if value.translation.width > 50 {
+                                vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
+                            }
+                        }
+                    )
                 }
             }
             
