@@ -1,63 +1,6 @@
-import SwiftUI
+﻿import SwiftUI
 import WebKit
 import ZIPFoundation
-
-// MARK: - Reading Preferences (persisted globally)
-struct EBookReadingPreferences {
-    @AppStorage("ebook_fontSize") static var fontSize: Double = 18
-    @AppStorage("ebook_fontFamily") static var fontFamily: String = EBookFontFamily.literata.rawValue
-    @AppStorage("ebook_theme") static var theme: String = EBookTheme.sepia.rawValue
-    @AppStorage("ebook_lineHeight") static var lineHeight: Double = 1.7
-}
-
-enum EBookTheme: String, CaseIterable, Identifiable {
-    case light = "Light"
-    case sepia = "Sepia"
-    case dark  = "Dark"
-    var id: String { rawValue }
-    
-    var background: Color {
-        switch self { case .light: return Color(hex: "#FAFAFA")
-                      case .sepia: return Color(hex: "#F5EDD6")
-                      case .dark:  return Color(hex: "#141414") }
-    }
-    var foreground: Color {
-        switch self { case .light: return Color(hex: "#1A1A1A")
-                      case .sepia: return Color(hex: "#3B2D1F")
-                      case .dark:  return Color(hex: "#E8E0D5") }
-    }
-    var cssBackground: String {
-        switch self { case .light: return "#FAFAFA"
-                      case .sepia: return "#F5EDD6"
-                      case .dark:  return "#141414" }
-    }
-    var cssText: String {
-        switch self { case .light: return "#1A1A1A"
-                      case .sepia: return "#3B2D1F"
-                      case .dark:  return "#E8E0D5" }
-    }
-    var cssLink: String {
-        switch self { case .light, .sepia: return "#7B5EA7"
-                      case .dark:          return "#B39DDB" }
-    }
-    var systemUIStyle: UIUserInterfaceStyle {
-        switch self { case .dark: return .dark; default: return .light }
-    }
-}
-
-enum EBookFontFamily: String, CaseIterable, Identifiable {
-    case literata  = "Georgia"
-    case system    = "-apple-system"
-    case serif     = "Palatino, serif"
-    case mono      = "Menlo, monospace"
-    var id: String { rawValue }
-    var displayName: String {
-        switch self { case .literata: return "Literata (Serif)"
-                      case .system:   return "System"
-                      case .serif:    return "Palatino"
-                      case .mono:     return "Monotype" }
-    }
-}
 
 // MARK: - EBookReaderView
 struct EBookReaderView: View {
@@ -67,21 +10,18 @@ struct EBookReaderView: View {
     @Environment(\.dismiss) private var dismiss
     
     // Preferences — shared across all books
-    @AppStorage("ebook_fontSize")   private var fontSize:    Double = 18
-    @AppStorage("ebook_fontFamily") private var fontFamily:  String = EBookFontFamily.literata.rawValue
-    @AppStorage("ebook_theme")      private var themeRaw:    String = EBookTheme.sepia.rawValue
-    @AppStorage("ebook_lineHeight") private var lineHeight:  Double = 1.7
+
+
     
     // Per-book progress key: fingerprinted by filename
     private var progressKey: String { "ebook_progress_\(fileURL.lastPathComponent.hashValue)" }
-    @AppStorage("ebook_progress_placeholder") private var _dummy: Int = 0
+
     
     // State
     @State private var metadata: EBookMetadata?
     @State private var currentIndex: Int = 0
     @State private var isLoading = true
     @State private var showChapterList = false
-    @State private var showSettings = false
     @State private var showHUD = true
     @State private var errorMessage: String?
     @State private var unzipDir: URL?
@@ -90,7 +30,7 @@ struct EBookReaderView: View {
     @State private var chapterPage: Int = 0
     @State private var chapterTotalPages: Int = 1
     
-    private var theme: EBookTheme { EBookTheme(rawValue: themeRaw) ?? .sepia }
+
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
     private var progressFraction: Double {
         guard totalChapters > 1 else { return 0 }
@@ -100,13 +40,13 @@ struct EBookReaderView: View {
     var body: some View {
         ZStack(alignment: .top) {
             // Background bleeds into status bar
-            theme.background.ignoresSafeArea()
+            prefs.activeTheme.background(colorScheme: colorScheme).ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // ── Reading Progress Bar ──────────────────────────────────
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Rectangle().fill(theme.foreground.opacity(0.08)).frame(height: 2)
+                        Rectangle().fill(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.08)).frame(height: 2)
                         Rectangle()
                             .fill(LinearGradient(colors: [Color(hex: "#7B5EA7"), Color(hex: "#B39DDB")],
                                                  startPoint: .leading, endPoint: .trailing))
@@ -123,13 +63,11 @@ struct EBookReaderView: View {
                     } else if let err = errorMessage {
                         readerErrorView(err)
                     } else if let meta = metadata, !meta.spineItems.isEmpty {
-                        EBookWebReader(
+                                                EBookWebReader(
                             spineItem:  meta.spineItems[currentIndex],
                             unzipDir:   unzipDir,
-                            theme:      theme,
-                            fontSize:   fontSize,
-                            fontFamily: fontFamily,
-                            lineHeight: lineHeight,
+                            prefs:      prefs,
+                            colorScheme: colorScheme,
                             currentPage: $chapterPage,
                             totalPages: $chapterTotalPages,
                             onNext: nextChapter,
@@ -145,11 +83,10 @@ struct EBookReaderView: View {
             
             // ── HUD Overlays (tap-to-show UI) ─────────────────────────────
             if showChapterList { chapterDrawer }
-            if showSettings    { settingsHUD }
         }
         .navigationBarHidden(true)
         .statusBarHidden(false)
-        .preferredColorScheme(theme.systemUIStyle == .dark ? .dark : .light)
+        
         .overlay(alignment: .top) {
             if showHUD {
                 topBar
@@ -162,6 +99,10 @@ struct EBookReaderView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+                .sheet(isPresented: $showingSettingsPanel) {
+            EBookSettingsPanel()
+                .presentationDetents([.medium, .large])
+        }
         .task { await loadBook() }
         .onDisappear { cleanup(); saveProgress() }
     }
@@ -172,36 +113,36 @@ struct EBookReaderView: View {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(theme.foreground)
+                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
                     .padding(10)
-                    .background(theme.foreground.opacity(0.08))
+                    .background(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.08))
                     .clipShape(Circle())
             }
             
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.headline).lineLimit(1).foregroundStyle(theme.foreground)
+                Text(title).font(.headline).lineLimit(1).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
                 if let chapter = metadata?.spineItems[safe: currentIndex] {
-                    Text(chapter.label).font(.caption).foregroundStyle(theme.foreground.opacity(0.55)).lineLimit(1)
+                    Text(chapter.label).font(.caption).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.55)).lineLimit(1)
                 }
             }
             
             Spacer()
             
-            Button { withAnimation(.spring()) { showSettings.toggle(); if showSettings { showChapterList = false } } } label: {
+                        Button { showingSettingsPanel.toggle(); showChapterList = false } label: {
                 Image(systemName: "textformat.size")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(theme.foreground)
+                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
                     .padding(10)
-                    .background(showSettings ? theme.foreground.opacity(0.15) : theme.foreground.opacity(0.08))
+                    .background(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.08))
                     .clipShape(Circle())
             }
             
-            Button { withAnimation(.spring()) { showChapterList.toggle(); if showChapterList { showSettings = false } } } label: {
+            Button { withAnimation(.spring()) { showChapterList.toggle() } } label: {
                 Image(systemName: "list.bullet")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(theme.foreground)
+                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
                     .padding(10)
-                    .background(showChapterList ? theme.foreground.opacity(0.15) : theme.foreground.opacity(0.08))
+                    .background(showChapterList ? prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.15) : prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.08))
                     .clipShape(Circle())
             }
         }
@@ -209,7 +150,7 @@ struct EBookReaderView: View {
         .padding(.top, 8)
         .padding(.bottom, 12)
         .background(
-            theme.background.opacity(0.92)
+            prefs.activeTheme.background(colorScheme: colorScheme).opacity(0.92)
                 .background(.ultraThinMaterial.opacity(0.3))
                 .ignoresSafeArea(edges: .top)
         )
@@ -221,18 +162,18 @@ struct EBookReaderView: View {
             Button { prevChapter() } label: {
                 Image(systemName: "chevron.left.circle.fill")
                     .font(.system(size: 32))
-                    .foregroundStyle(currentIndex == 0 ? theme.foreground.opacity(0.2) : Color(hex: "#7B5EA7"))
+                    .foregroundStyle(currentIndex == 0 ? prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.2) : Color(hex: "#7B5EA7"))
             }
             .disabled(currentIndex == 0)
             
             VStack(spacing: 2) {
                 Text("Page \(chapterPage + 1) of \(chapterTotalPages)")
                     .font(.caption.monospacedDigit().bold())
-                    .foregroundStyle(theme.foreground)
+                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
                 if totalChapters > 1 {
                     Text("Chapter \(currentIndex + 1) / \(totalChapters)")
                         .font(.system(size: 10, weight: .medium).monospacedDigit())
-                        .foregroundStyle(theme.foreground.opacity(0.5))
+                        .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.5))
                 }
             }
             .frame(minWidth: 90)
@@ -240,14 +181,14 @@ struct EBookReaderView: View {
             Button { nextChapter() } label: {
                 Image(systemName: "chevron.right.circle.fill")
                     .font(.system(size: 32))
-                    .foregroundStyle(currentIndex >= totalChapters - 1 ? theme.foreground.opacity(0.2) : Color(hex: "#7B5EA7"))
+                    .foregroundStyle(currentIndex >= totalChapters - 1 ? prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.2) : Color(hex: "#7B5EA7"))
             }
             .disabled(currentIndex >= totalChapters - 1)
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 24)
         .background(
-            theme.background.opacity(0.92)
+            prefs.activeTheme.background(colorScheme: colorScheme).opacity(0.92)
                 .background(.ultraThinMaterial.opacity(0.3))
                 .ignoresSafeArea(edges: .bottom)
         )
@@ -276,7 +217,7 @@ struct EBookReaderView: View {
                                     Text(chapter.label)
                                         .font(.subheadline)
                                         .fontWeight(idx == currentIndex ? .semibold : .regular)
-                                        .foregroundStyle(idx == currentIndex ? Color(hex: "#7B5EA7") : theme.foreground)
+                                        .foregroundStyle(idx == currentIndex ? Color(hex: "#7B5EA7") : prefs.activeTheme.foreground(colorScheme: colorScheme))
                                     Spacer()
                                 }
                                 .padding(.horizontal, 16).padding(.vertical, 13)
@@ -288,88 +229,13 @@ struct EBookReaderView: View {
                         }
                     }
                 }
-                .onAppear { proxy.scrollTo(currentIndex, anchor: .center) }
+                .sheet(isPresented: $showingSettingsPanel) {
+            EBookSettingsPanel().presentationDetents([.medium, .large])
+        }
+        .onAppear { proxy.scrollTo(currentIndex, anchor: .center) }
             }
             .frame(maxWidth: 320)
-            .background(theme.background.opacity(0.97))
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 8)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.horizontal, 16)
-            Spacer()
-        }
-        .transition(.asymmetric(
-            insertion: .move(edge: .trailing).combined(with: .opacity),
-            removal:   .move(edge: .trailing).combined(with: .opacity)
-        ))
-    }
-    
-    // MARK: - Settings HUD
-    @ViewBuilder private var settingsHUD: some View {
-        VStack(spacing: 0) {
-            Color.clear.frame(height: 72)
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Reading Settings").font(.headline).foregroundStyle(theme.foreground)
-                
-                // Theme Picker
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Theme").font(.caption).foregroundStyle(theme.foreground.opacity(0.6)).textCase(.uppercase)
-                    HStack(spacing: 10) {
-                        ForEach(EBookTheme.allCases) { t in
-                            Button { withAnimation(.easeInOut(duration: 0.2)) { themeRaw = t.rawValue } } label: {
-                                Text(t.rawValue)
-                                    .font(.caption).fontWeight(.semibold)
-                                    .padding(.horizontal, 14).padding(.vertical, 8)
-                                    .background(t.background)
-                                    .foregroundStyle(t.foreground)
-                                    .overlay(RoundedRectangle(cornerRadius: 8)
-                                        .strokeBorder(themeRaw == t.rawValue ? Color(hex: "#7B5EA7") : Color.clear, lineWidth: 2))
-                                    .cornerRadius(8)
-                            }
-                        }
-                    }
-                }
-                
-                // Font Size
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Size  \(Int(fontSize))pt").font(.caption).foregroundStyle(theme.foreground.opacity(0.6)).textCase(.uppercase)
-                    HStack(spacing: 16) {
-                        Button { fontSize = max(12, fontSize - 2) } label: {
-                            Image(systemName: "textformat.size.smaller")
-                                .foregroundStyle(theme.foreground).padding(10)
-                                .background(theme.foreground.opacity(0.1)).clipShape(Circle())
-                        }
-                        Slider(value: $fontSize, in: 12...28, step: 1)
-                            .tint(Color(hex: "#7B5EA7"))
-                        Button { fontSize = min(28, fontSize + 2) } label: {
-                            Image(systemName: "textformat.size.larger")
-                                .foregroundStyle(theme.foreground).padding(10)
-                                .background(theme.foreground.opacity(0.1)).clipShape(Circle())
-                        }
-                    }
-                }
-                
-                // Font Family
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Font").font(.caption).foregroundStyle(theme.foreground.opacity(0.6)).textCase(.uppercase)
-                    HStack(spacing: 8) {
-                        ForEach(EBookFontFamily.allCases) { fam in
-                            Button { fontFamily = fam.rawValue } label: {
-                                Text(fam.displayName.components(separatedBy: " ").first ?? fam.displayName)
-                                    .font(.caption).fontWeight(.medium)
-                                    .padding(.horizontal, 10).padding(.vertical, 7)
-                                    .background(fontFamily == fam.rawValue ? Color(hex: "#7B5EA7").opacity(0.15) : theme.foreground.opacity(0.07))
-                                    .foregroundStyle(fontFamily == fam.rawValue ? Color(hex: "#7B5EA7") : theme.foreground)
-                                    .cornerRadius(7)
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(20)
-            .frame(maxWidth: 340)
-            .background(theme.background.opacity(0.97))
+            .background(prefs.activeTheme.background(colorScheme: colorScheme).opacity(0.97))
             .background(.thinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 8)
@@ -392,7 +258,7 @@ struct EBookReaderView: View {
                 .scaleEffect(1.4)
             Text("Opening Book…")
                 .font(.subheadline)
-                .foregroundStyle(theme.foreground.opacity(0.6))
+                .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.6))
         }
     }
     
@@ -401,8 +267,8 @@ struct EBookReaderView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 44))
                 .foregroundStyle(.orange)
-            Text("Couldn't Open Book").font(.headline).foregroundStyle(theme.foreground)
-            Text(msg).font(.subheadline).foregroundStyle(theme.foreground.opacity(0.6))
+            Text("Couldn't Open Book").font(.headline).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
+            Text(msg).font(.subheadline).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.6))
                 .multilineTextAlignment(.center).padding(.horizontal, 40)
         }
     }
@@ -475,10 +341,8 @@ struct EBookReaderView: View {
 struct EBookWebReader: UIViewRepresentable {
     let spineItem:  EBookMetadata.SpineItem
     let unzipDir:   URL?
-    let theme:      EBookTheme
-    let fontSize:   Double
-    let fontFamily: String
-    let lineHeight: Double
+    @ObservedObject var prefs: EBookPreferences
+    let colorScheme: ColorScheme
     @Binding var currentPage: Int
     @Binding var totalPages: Int
     var onNext: () -> Void
@@ -511,14 +375,14 @@ struct EBookWebReader: UIViewRepresentable {
         guard FileManager.default.fileExists(atPath: contentURL.path) else { return }
         
         // Only reload if the chapter changed
-        if context.coordinator.lastLoadedHref == spineItem.href
-           && context.coordinator.lastTheme == theme.rawValue
-           && context.coordinator.lastFontSize == fontSize { return }
-        context.coordinator.lastLoadedHref = spineItem.href
-        context.coordinator.lastTheme = theme.rawValue
-        context.coordinator.lastFontSize = fontSize
+                // Re-render trigger on ANY pref change
+        let currentStateHash = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)"
         
-        // Read HTML with smart encoding fallback
+        if context.coordinator.lastLoadedHref == spineItem.href && context.coordinator.lastTheme == currentStateHash { return }
+        context.coordinator.lastLoadedHref = spineItem.href
+        context.coordinator.lastTheme = currentStateHash
+        
+        // Read HTML
         var rawHTML: String?
         var usedEncoding: String.Encoding = .utf8
         if let html = try? String(contentsOf: contentURL, usedEncoding: &usedEncoding) {
@@ -535,7 +399,7 @@ struct EBookWebReader: UIViewRepresentable {
                 html = regex.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "")
             }
             
-            let styledHTML = injectReaderCSS(into: html)
+            let styledHTML = injectReaderCSS(into: html, prefs: prefs, colorScheme: colorScheme)
             
             // Write to a temporary file in the same directory to grant WKWebView `allowingReadAccessTo` privileges for images and CSS.
             let injectedURL = contentURL.deletingPathExtension().appendingPathExtension("injected.html")
@@ -700,3 +564,6 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
+
+
+
