@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SplitStudyWorkspace: View {
     let fileURL: URL
-    let contentType: LibraryContentType
+    let contentType: ContentType
     let pdf: ConvertedPDF?
     
     @AppStorage("study_split_fraction") private var splitFraction: Double = 0.65
