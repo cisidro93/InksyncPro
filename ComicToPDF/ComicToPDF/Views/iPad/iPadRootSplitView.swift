@@ -33,12 +33,19 @@ struct iPadRootSplitView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             // Sidebar
-            List(iPadSection.allCases, id: \.self, selection: $selectedTab) { section in
-                Label(section.title, systemImage: section.icon)
-                    .foregroundColor(
-                        selectedTab == section.rawValue ? .inkBlue : .inkTextPrimary
-                    )
-                    .tag(section.rawValue) // Wire to selectedTab binding
+            List(selection: Binding(
+                get: { iPadSection(rawValue: selectedTab) },
+                set: { newValue in
+                    if let new = newValue { selectedTab = new.rawValue }
+                }
+            )) {
+                ForEach(iPadSection.allCases, id: \.self) { section in
+                    Label(section.title, systemImage: section.icon)
+                        .foregroundColor(
+                            selectedTab == section.rawValue ? .inkBlue : .inkTextPrimary
+                        )
+                        .tag(section) // Wire to selectedTab binding
+                }
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
