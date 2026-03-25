@@ -38,11 +38,10 @@ struct ReaderView: View {
     
     // MARK: - Comic / Manga Reader
     private var comicReaderBody: some View {
-        NavigationStack {
-            ZStack {
-                if isLoading {
-                    ProgressView("Opening Book...").scaleEffect(1.2)
-                } else if let error = errorMessage {
+        ZStack {
+            if isLoading {
+                ProgressView("Opening Book...").scaleEffect(1.2)
+            } else if let error = errorMessage {
                     VStack {
                         Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundColor(.red)
                         Text("Error: \(error)").padding()
@@ -123,6 +122,9 @@ struct ReaderView: View {
                 }
             }
             .focusable()
+                }
+            }
+            .focusable()
             .focusEffectDisabled()
             .onKeyPress(.leftArrow) {
                 isMangaMode ? nextPage() : prevPage()
@@ -132,42 +134,12 @@ struct ReaderView: View {
                 isMangaMode ? prevPage() : nextPage()
                 return .handled
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(isToolbarVisible ? .visible : .hidden, for: .navigationBar)
-            .toolbar(isToolbarVisible ? .visible : .hidden, for: .tabBar)
-            .statusBar(hidden: !isToolbarVisible)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Done") { dismiss() }.fontWeight(.bold)
-                }
-                ToolbarItem(placement: .principal) {
-                    if isToolbarVisible {
-                        Text(fileURL.deletingPathExtension().lastPathComponent)
-                            .font(.headline)
-                            .lineLimit(1)
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 16) {
-                        if pdf != nil {
-                            Button(action: toggleBookmark) {
-                                Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                                    .foregroundColor(isBookmarked ? Theme.orange : Theme.blue)
-                            }
-                        }
-                        
-                        Menu {
-                            Section("Reading Direction") {
-                                Toggle("Manga Mode (R-to-L)", isOn: $isMangaMode)
-                                Toggle("Vertical Webtoon", isOn: $isVerticalScroll)
-                            }
-                            Section("Advanced") {
-                                Toggle("Panel View", isOn: $isPanelViewEnabled)
-                            }
-                        } label: {
-                            Image(systemName: "gear")
-                        }
-                    }
+            .navigationBarHidden(true)
+            .statusBarHidden(!isToolbarVisible)
+            .overlay(alignment: .top) {
+                if isToolbarVisible && !isLoading && errorMessage == nil {
+                    topBar
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .task {
@@ -179,7 +151,66 @@ struct ReaderView: View {
                     try? FileManager.default.removeItem(at: dir)
                 }
             }
-        } // End NavigationStack
+        } // End ZStack
+    }
+    
+    // MARK: - Top Bar
+    @ViewBuilder private var topBar: some View {
+        HStack(spacing: 16) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .padding(10)
+                    .background(Color.primary.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            
+            VStack(alignment: .leading, spacing: 1) {
+                Text(fileURL.deletingPathExtension().lastPathComponent)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+            }
+            
+            Spacer()
+            
+            if pdf != nil {
+                Button(action: toggleBookmark) {
+                    Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(isBookmarked ? Theme.orange : .primary)
+                        .padding(10)
+                        .background(Color.primary.opacity(0.08))
+                        .clipShape(Circle())
+                }
+            }
+            
+            Menu {
+                Section("Reading Direction") {
+                    Toggle("Manga Mode (R-to-L)", isOn: $isMangaMode)
+                    Toggle("Vertical Webtoon", isOn: $isVerticalScroll)
+                }
+                Section("Advanced") {
+                    Toggle("Panel View", isOn: $isPanelViewEnabled)
+                }
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .padding(10)
+                    .background(Color.primary.opacity(0.08))
+                    .clipShape(Circle())
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .background(
+            Color(UIColor.systemBackground).opacity(0.92)
+                .background(.ultraThinMaterial.opacity(0.3))
+                .ignoresSafeArea(edges: .top)
+        )
     }
     
     // MARK: - Archive Preparation
@@ -322,27 +353,27 @@ struct ReaderScrubber: View {
                     
                     Text("Page \(activeIndex + 1)")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.8))
+                        .background(Color(UIColor.systemBackground))
                         .clipShape(Capsule())
+                        .shadow(radius: 3)
                 }
                 .transition(.opacity.combined(with: .scale))
             } else {
                 Text("Page \(currentPageIndex + 1) of \(totalPages)")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(.ultraThinMaterial)
-                    .background(Color.black.opacity(0.3))
+                    .background(Color(UIColor.systemBackground).opacity(0.8))
                     .clipShape(Capsule())
             }
             
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.2)).frame(height: 6)
+                    Capsule().fill(.primary.opacity(0.15)).frame(height: 6)
                     
                     let displayIndex = dragIndex ?? currentPageIndex
                     let normalized = isMangaMode ? CGFloat(totalPages - 1 - displayIndex) : CGFloat(displayIndex)
@@ -355,7 +386,7 @@ struct ReaderScrubber: View {
                         .frame(width: ratio * trackWidth + thumbWidth, height: 6)
                     
                     Circle()
-                        .fill(Color.white)
+                        .fill(Color(UIColor.systemBackground))
                         .frame(width: thumbWidth, height: thumbWidth)
                         .shadow(radius: 4)
                         .offset(x: ratio * trackWidth)
@@ -388,10 +419,11 @@ struct ReaderScrubber: View {
         .padding(.top, 10)
         .padding(.bottom, 20)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.black.opacity(0.8))
-                .shadow(radius: 10)
+            Color(UIColor.systemBackground).opacity(0.92)
+                .background(.ultraThinMaterial.opacity(0.3))
         )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: Color.black.opacity(0.15), radius: 10, y: 5)
         .padding(.horizontal, 20)
     }
 }
