@@ -12,6 +12,36 @@ struct TypographySettings: Codable, Equatable {
     var themeHex: String = "#ffffff"
     var textHex: String = "#000000"
 }
+class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+    static let shared = TTSManager()
+    let synthesizer = AVSpeechSynthesizer()
+    @Published var isSpeaking = false
+    
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
+    
+    func speak(text: String) {
+        if synthesizer.isSpeaking { stop() }
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = 0.5
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        synthesizer.speak(utterance)
+        isSpeaking = true
+    }
+    
+    func stop() {
+        synthesizer.stopSpeaking(at: .immediate)
+        isSpeaking = false
+        try? AVAudioSession.sharedInstance().setActive(false)
+    }
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async { self.isSpeaking = false }
+    }
+}
 
 class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var isLoading = true
@@ -266,6 +296,8 @@ struct BookReaderEngine: View {
     var onDismiss: () -> Void
     
     @StateObject private var vm: BookReaderViewModel
+    @StateObject private var tts = TTSManager.shared
+    @State private var webViewReference: WKWebView?
     @State private var chromeVisible = false
     @State private var showAnnotations = false
     @State private var settings = TypographySettings(themeHex: "#1C1C1E", textHex: "#E5E5EA") // Dark default
@@ -301,6 +333,7 @@ struct BookReaderEngine: View {
                         AnnotationStore.shared.add(highlight)
                         
                     }, onPageLoaded: { webView in
+                        self.webViewReference = webView
                         let pageAnnotations = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == vm.currentChapterIndex && $0.kind == .highlight }
                         for ann in pageAnnotations {
                             if let text = ann.selectedText, let color = ann.colorHex {
@@ -355,12 +388,21 @@ struct BookReaderEngine: View {
                 },
                 currentProgress: Binding(
                     get: { Double(vm.currentChapterIndex) / Double(max(1, vm.chapterHtmlFiles.count - 1)) },
-                    set: { vm.loadChapter(index: Int($0 * Double(max(1, vm.chapterHtmlFiles.count - 1)))) }
+                    set: { vm.currentChapterIndex = Int($0 * Double(max(1, vm.chapterHtmlFiles.count - 1))) }
                 ),
                 totalPages: vm.chapterHtmlFiles.count,
                 hasTTS: true,
+                isSpeaking: tts.isSpeaking,
                 onTTSToggle: {
-                    vm.toggleTTS(text: "Text to speech requires Javascript text extraction bridge to be fully implemented.")
+                    if tts.isSpeaking {
+                        tts.stop()
+                    } else {
+                        webViewReference?.evaluateJavaScript("document.body.innerText") { result, _ in
+                            if let text = result as? String, !text.isEmpty {
+                                tts.speak(text: text)
+                            }
+                        }
+                    }
                 }
             )
         }
@@ -370,6 +412,7 @@ struct BookReaderEngine: View {
             }
         }
         .onDisappear {
+            tts.stop()
             ReaderProgressTracker.shared.update(ReadingProgress(
                 pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: vm.currentChapterIndex,
                 currentChapterIndex: vm.currentChapterIndex, currentChapterOffset: 0.0,

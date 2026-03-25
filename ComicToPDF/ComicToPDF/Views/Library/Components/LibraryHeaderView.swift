@@ -185,6 +185,7 @@ struct LibraryHeaderView: View {
                     
                     // 3. Action Pills
                     Group {
+                        ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }
                         ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.orange) {
                             onSheetTrigger(.importer)
                         }

@@ -136,6 +136,7 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private func destinationSheet(for item: LibrarySheetDestination) -> some View {
         switch item {
+        case .stats: ReadingStatsView()
         case .importer: ImportQueueView()
         case .wifi: WiFiView()
         case .merge: FileMergeView()

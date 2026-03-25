@@ -11,11 +11,30 @@ struct DocumentReaderEngine: View {
     @State private var isPencilMode = false
     @State private var pdfDocument: PDFDocument?
     
+    // KOReader Parity
+    @State private var isReflowMode = false
+    @State private var reflowText: String = "Extracting text..."
+    
     var body: some View {
         ZStack {
             Color(UIColor.systemBackground).edgesIgnoringSafeArea(.all)
             
-            if let doc = pdfDocument {
+            if isReflowMode {
+                ScrollView {
+                    Text(reflowText)
+                        .font(.system(.body, design: .serif))
+                        .lineSpacing(8)
+                        .padding(24)
+                        .padding(.top, 40)
+                        .padding(.bottom, 80)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .foregroundColor(Color(UIColor.label))
+                }
+                .background(Color(UIColor.systemBackground))
+                .onTapGesture {
+                    chromeVisible.toggle()
+                }
+            } else if let doc = pdfDocument {
                 PDFKitRepresentedView(document: doc,
                                       pdf: pdf,
                                       currentPageIndex: $currentPageIndex,
@@ -52,13 +71,19 @@ struct DocumentReaderEngine: View {
                     get: { Double(currentPageIndex) / Double(max(1, pdf.pageCount - 1)) },
                     set: {
                         currentPageIndex = Int($0 * Double(max(1, pdf.pageCount - 1)))
-                        // In a full implementation, this setter would trigger PDFView.go(to: page)
                     }
                 ),
-                totalPages: pdf.pageCount
+                totalPages: pdf.pageCount,
+                isPDF: true,
+                isReflowActive: isReflowMode,
+                onCropToggle: { applySmartCrop() },
+                onReflowToggle: {
+                    isReflowMode.toggle()
+                    if isReflowMode { updateReflowText() }
+                }
             )
             
-            if isPencilMode {
+            if isPencilMode && !isReflowMode {
                 // Overlay PencilKit ToolPicker Indicator
                 VStack {
                     Spacer()
@@ -85,8 +110,37 @@ struct DocumentReaderEngine: View {
                     if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                         self.currentPageIndex = saved.currentPageIndex
                     }
+                    if isReflowMode { updateReflowText() }
                 }
             }
+        }
+        .onChange(of: currentPageIndex) { _ in
+            if isReflowMode { updateReflowText() }
+        }
+    }
+    
+    // MARK: KOReader Parity Dynamics
+    
+    private func updateReflowText() {
+        guard let doc = pdfDocument, let page = doc.page(at: currentPageIndex) else { return }
+        let extracted = page.string ?? ""
+        self.reflowText = extracted.isEmpty ? "No extractable text on this page." : extracted
+    }
+    
+    private func applySmartCrop() {
+        guard let doc = pdfDocument else { return }
+        for i in 0..<doc.pageCount {
+            if let page = doc.page(at: i) {
+                // Approximate KOReader margin clip by aggressively cutting 12% padding
+                var crop = page.bounds(for: .cropBox)
+                crop = crop.insetBy(dx: crop.width * 0.12, dy: crop.height * 0.12)
+                page.setBounds(crop, for: .cropBox)
+            }
+        }
+        // Force PDFView to redraw the structural bounds
+        self.pdfDocument = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.pdfDocument = doc
         }
     }
 }

@@ -6,9 +6,9 @@ import PDFKit
 import ZIPFoundation
 
 struct ReaderView: View {
-    let fileURL: URL
+    @State var fileURL: URL
     let contentType: ContentType
-    var pdf: ConvertedPDF? // Added to support Bookmarking
+    @State var pdf: ConvertedPDF? // Added to support Bookmarking
     
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
@@ -25,15 +25,39 @@ struct ReaderView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     
+    // Binge Mode State
+    @State private var showBingePrompt = false
+    @State private var nextVolumeToRead: ConvertedPDF? = nil
+    
+    // Casual Comforts State
+    @State private var brightnessLevel: CGFloat = UIScreen.main.brightness
+    @State private var warmthLevel: Double = 0.0 // 0.0 to 0.4
+    @State private var showSwipeHUD = false
+    @State private var hudMessage = ""
+    @State private var swipeStartBrightness: CGFloat = 0
+    @State private var swipeStartWarmth: Double = 0
+    
     var body: some View {
-        // ✅ Route: text-based EPUB → EBookReaderView, everything else → image reader
-        if fileURL.pathExtension.lowercased() == "epub" && contentType == .book {
-            EBookReaderView(
-                fileURL: fileURL,
-                title: fileURL.deletingPathExtension().lastPathComponent
-            )
-        } else {
-            comicReaderBody
+        GeometryReader { geo in
+            ZStack {
+                // ✅ Route: text-based EPUB → EBookReaderView, everything else → image reader
+                if fileURL.pathExtension.lowercased() == "epub" && contentType == .book {
+                    EBookReaderView(
+                        fileURL: fileURL,
+                        title: fileURL.deletingPathExtension().lastPathComponent
+                    )
+                } else {
+                    comicReaderBody
+                }
+                
+                // KOReader Casual Comforts Overlay
+                edgeSwipeOverlay(in: geo)
+                
+                // Manga Binge-Mode HUD
+                if showBingePrompt, let nextVol = nextVolumeToRead {
+                    bingeModeOverlay(nextVol: nextVol)
+                }
+            }
         }
     }
     
@@ -271,14 +295,133 @@ struct ReaderView: View {
     }
     
     // MARK: - Navigation
-    func nextPage() {
-        if currentPageIndex < pages.count - 1 { currentPageIndex += 1 }
+    private func nextPage() {
+        if currentPageIndex < pages.count - 1 {
+            currentPageIndex += 1
+        } else {
+            // Trigger Manga Binge-Mode auto-continuation
+            if let nextVol = getNextVolume() {
+                self.nextVolumeToRead = nextVol
+                withAnimation(.spring()) { self.showBingePrompt = true }
+            }
+        }
     }
     
-    func prevPage() {
-        if currentPageIndex > 0 { currentPageIndex -= 1 }
+    private func prevPage() {
+        if currentPageIndex > 0 {
+            currentPageIndex -= 1
+        }
     }
     
+    // MARK: - Manga Binge-Mode Pipeline
+    
+    private func getNextVolume() -> ConvertedPDF? {
+        guard let current = pdf, let series = current.metadata.series else { return nil }
+        let seriesItems = conversionManager.convertedPDFs.filter { $0.metadata.series == series && $0.id != current.id && !$0.isPrivate }
+        
+        let sorted = seriesItems.sorted { a, b in
+            let aNum = Double(a.metadata.issueNumber ?? a.metadata.volume ?? "0") ?? 0
+            let bNum = Double(b.metadata.issueNumber ?? b.metadata.volume ?? "0") ?? 0
+            return aNum < bNum
+        }
+        
+        let currentNum = Double(current.metadata.issueNumber ?? current.metadata.volume ?? "0") ?? 0
+        return sorted.first { (Double($0.metadata.issueNumber ?? $0.metadata.volume ?? "0") ?? 0) > currentNum }
+    }
+    
+    @ViewBuilder
+    private func bingeModeOverlay(nextVol: ConvertedPDF) -> some View {
+        ZStack {
+            Color.black.opacity(0.8).ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation { showBingePrompt = false }
+                }
+            
+            VStack(spacing: 24) {
+                Image(systemName: "books.vertical.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(Theme.orange)
+                
+                Text("Volume Complete!")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                
+                Text("Continue reading the next issue in the series?")
+                    .font(.headline)
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                
+                VStack(spacing: 12) {
+                    Text(nextVol.name)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    
+                    if let issue = nextVol.metadata.issueNumber {
+                        Text("Issue #\(issue)")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.orange)
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(12)
+                .padding(.horizontal, 32)
+                
+                HStack(spacing: 16) {
+                    Button(action: {
+                        withAnimation { showBingePrompt = false }
+                    }) {
+                        Text("Later")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.white.opacity(0.2))
+                            .cornerRadius(12)
+                    }
+                    
+                    Button(action: {
+                        launchBingeJump(to: nextVol)
+                    }) {
+                        Text("Read Now")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Theme.orange)
+                            .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal, 32)
+                .padding(.top, 16)
+            }
+            .padding(32)
+            .background(BlurView(style: .systemMaterialDark))
+            .cornerRadius(24)
+            .shadow(radius: 20)
+            .padding(40)
+        }
+        .zIndex(1000)
+    }
+    
+    private func launchBingeJump(to nextPDF: ConvertedPDF) {
+        withAnimation { showBingePrompt = false }
+        isLoading = true
+        fileURL = nextPDF.fileURL
+        pdf = nextPDF
+        
+        // Cleanup old
+        if let dir = unzippedDir { try? FileManager.default.removeItem(at: dir) }
+        unzippedDir = nil
+        pages = []
+        currentPageIndex = 0
+        
+        Task { await prepareArchive() }
+    }
     // MARK: - Bookmarks
     private var isBookmarked: Bool {
         guard let pdf = pdf else { return false }
@@ -480,5 +623,95 @@ class VolumeObserverController: UIViewController {
         super.viewDidDisappear(animated)
         observation?.invalidate()
         try? audioSession.setActive(false)
+    }
+    // MARK: - KOReader Casual Comforts (Edge Swipes)
+    
+    @ViewBuilder
+    private func edgeSwipeOverlay(in geo: GeometryProxy) -> some View {
+        ZStack {
+            // Warmth Filter
+            Color.orange
+                .opacity(warmthLevel)
+                .allowsHitTesting(false)
+                .ignoresSafeArea()
+            
+            // Edge Swipe Sensors
+            HStack(spacing: 0) {
+                // Left Edge -> Brightness
+                Color.black.opacity(0.001) // Virtually invisible but hit-testable
+                    .frame(width: max(30, geo.size.width * 0.08))
+                    .gesture(
+                        DragGesture(minimumDistance: 15)
+                            .onChanged { val in handleEdgeSwipe(val: val, geo: geo, isLeft: true) }
+                            .onEnded { _ in finishEdgeSwipe() }
+                    )
+                    .onTapGesture {
+                        if !isMangaMode { prevPage() } else { nextPage() }
+                    }
+                
+                Spacer()
+                
+                // Right Edge -> Warmth
+                Color.black.opacity(0.001)
+                    .frame(width: max(30, geo.size.width * 0.08))
+                    .gesture(
+                        DragGesture(minimumDistance: 15)
+                            .onChanged { val in handleEdgeSwipe(val: val, geo: geo, isLeft: false) }
+                            .onEnded { _ in finishEdgeSwipe() }
+                    )
+                    .onTapGesture {
+                        if !isMangaMode { nextPage() } else { prevPage() }
+                    }
+            }
+            
+            // Interaction HUD
+            if showSwipeHUD {
+                VStack {
+                    Spacer()
+                    Text(hudMessage)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .background(Color.black.opacity(0.8))
+                        .cornerRadius(16)
+                        .padding(.bottom, 120)
+                }
+                .transition(.opacity)
+                .zIndex(100)
+            }
+        }
+        .onAppear {
+            swipeStartBrightness = UIScreen.main.brightness
+        }
+    }
+    
+    private func handleEdgeSwipe(val: DragGesture.Value, geo: GeometryProxy, isLeft: Bool) {
+        if !showSwipeHUD {
+            swipeStartBrightness = UIScreen.main.brightness
+            swipeStartWarmth = warmthLevel
+            withAnimation(.fast) { showSwipeHUD = true }
+        }
+        
+        let deltaY = val.translation.height / geo.size.height
+        
+        if isLeft {
+            let newBright = max(0.0, min(1.0, swipeStartBrightness - deltaY))
+            UIScreen.main.brightness = newBright
+            self.brightnessLevel = newBright
+            self.hudMessage = "Brightness: \(Int(newBright * 100))%"
+        } else {
+            let newWarmth = max(0.0, min(0.4, swipeStartWarmth - deltaY))
+            self.warmthLevel = newWarmth
+            self.hudMessage = "Warmth: \(Int((newWarmth / 0.4) * 100))%"
+        }
+    }
+    
+    private func finishEdgeSwipe() {
+        swipeStartBrightness = UIScreen.main.brightness
+        swipeStartWarmth = warmthLevel
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation { self.showSwipeHUD = false }
+        }
     }
 }

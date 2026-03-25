@@ -16,10 +16,16 @@ struct ReaderChrome: View {
     // Scrubber
     @Binding var currentProgress: Double
     let totalPages: Int
-    
     // Optional TTS
     var hasTTS: Bool = false
+    var isSpeaking: Bool = false
     var onTTSToggle: (() -> Void)? = nil
+    
+    // Optional KOReader PDF Tools
+    var isPDF: Bool = false
+    var isReflowActive: Bool = false
+    var onCropToggle: (() -> Void)? = nil
+    var onReflowToggle: (() -> Void)? = nil
     
     var body: some View {
         VStack {
@@ -46,8 +52,25 @@ struct ReaderChrome: View {
                     .cornerRadius(16)
                 
                 Spacer()
-                
-                HStack(spacing: 12) {
+                    if isPDF {
+                        Button(action: { onReflowToggle?() }) {
+                            Image(systemName: "text.alignleft")
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(isReflowActive ? .black : .white)
+                                .padding(12)
+                                .background(isReflowActive ? Color.white : Color.black.opacity(0.6))
+                                .clipShape(Circle())
+                        }
+                        
+                        Button(action: { onCropToggle?() }) {
+                            Image(systemName: "crop")
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(.white)
+                                .padding(12)
+                                .background(Color.black.opacity(0.6))
+                                .clipShape(Circle())
+                        }
+                    }
                     Button(action: onAnnotationsToggle) {
                         Image(systemName: "note.text")
                             .font(.body.weight(.semibold))
@@ -100,11 +123,11 @@ struct ReaderChrome: View {
                     
                     if hasTTS {
                         Button(action: { onTTSToggle?() }) {
-                            Image(systemName: "headphones")
+                            Image(systemName: isSpeaking ? "stop.circle.fill" : "headphones")
                                 .font(.body.weight(.semibold))
                                 .foregroundColor(.white)
                                 .padding(12)
-                                .background(Color.black.opacity(0.6))
+                                .background(isSpeaking ? Color.orange : Color.black.opacity(0.6))
                                 .clipShape(Circle())
                         }
                     }

@@ -37,10 +37,24 @@ class ReaderProgressTracker: ObservableObject {
     func progress(for pdfID: UUID) -> ReadingProgress? {
         return progressMap[pdfID]
     }
-    
     func update(_ progress: ReadingProgress) {
-        progressMap[progress.pdfID] = progress
-        save(pdfID: progress.pdfID)
+        var updated = progress
+        
+        // Calculate Time-To-Finish Heuristic (Phase 3 Casual Comfort)
+        // Assume rough velocity of 1.5 minutes per page for books, 0.5 minutes for manga/comics
+        let pagesLeft = max(0, updated.totalPagesRead > 0 ? (updated.currentChapterIndex == nil ? 100 /* fallback */ : 100) : 100)
+        // Wait, totalPages is not in progress. CompletionFraction is!
+        if updated.completionFraction > 0 && updated.completionFraction <= 1.0 {
+            // We can estimate total pages or directly estimate time remaining if we know average velocity
+            let isBook = updated.currentChapterIndex != nil
+            let velocityPerPercent = isBook ? 4.0 : 1.5 // minutes per 1% completion
+            
+            let percentRemaining = (1.0 - updated.completionFraction) * 100.0
+            updated.estimatedMinutesRemaining = Int(percentRemaining * velocityPerPercent)
+        }
+        
+        progressMap[updated.pdfID] = updated
+        save(pdfID: updated.pdfID)
     }
     
     func markComplete(pdfID: UUID) {
