@@ -423,13 +423,90 @@ struct ReaderView: View {
         Task { await prepareArchive() }
     }
     
-    // MARK: - Navigation Helpers
-    private func prevPage() {
-        if currentPageIndex > 0 { currentPageIndex -= 1 }
+    // MARK: - KOReader Casual Comforts (Edge Swipes)
+    
+    @ViewBuilder
+    private func edgeSwipeOverlay(in geo: GeometryProxy) -> some View {
+        ZStack {
+            Color.orange
+                .opacity(warmthLevel)
+                .allowsHitTesting(false)
+                .ignoresSafeArea()
+            
+            HStack(spacing: 0) {
+                Color.black.opacity(0.001)
+                    .frame(width: max(30, geo.size.width * 0.08))
+                    .gesture(
+                        DragGesture(minimumDistance: 15)
+                            .onChanged { val in handleEdgeSwipe(val: val, geo: geo, isLeft: true) }
+                            .onEnded { _ in finishEdgeSwipe() }
+                    )
+                    .onTapGesture {
+                        if !isMangaMode { prevPage() } else { nextPage() }
+                    }
+                
+                Spacer()
+                
+                Color.black.opacity(0.001)
+                    .frame(width: max(30, geo.size.width * 0.08))
+                    .gesture(
+                        DragGesture(minimumDistance: 15)
+                            .onChanged { val in handleEdgeSwipe(val: val, geo: geo, isLeft: false) }
+                            .onEnded { _ in finishEdgeSwipe() }
+                    )
+                    .onTapGesture {
+                        if !isMangaMode { nextPage() } else { prevPage() }
+                    }
+            }
+            
+            if showSwipeHUD {
+                VStack {
+                    Spacer()
+                    Text(hudMessage)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .background(Color.black.opacity(0.8))
+                        .cornerRadius(16)
+                        .padding(.bottom, 120)
+                }
+                .transition(.opacity)
+                .zIndex(100)
+            }
+        }
+        .onAppear {
+            swipeStartBrightness = UIScreen.main.brightness
+        }
     }
     
-    private func nextPage() {
-        if currentPageIndex < pages.count - 1 { currentPageIndex += 1 }
+    private func handleEdgeSwipe(val: DragGesture.Value, geo: GeometryProxy, isLeft: Bool) {
+        if !showSwipeHUD {
+            swipeStartBrightness = UIScreen.main.brightness
+            swipeStartWarmth = warmthLevel
+            withAnimation { showSwipeHUD = true }
+        }
+        
+        let deltaY = val.translation.height / geo.size.height
+        
+        if isLeft {
+            let newBright = max(0.0, min(1.0, swipeStartBrightness - deltaY))
+            UIScreen.main.brightness = newBright
+            self.brightnessLevel = newBright
+            self.hudMessage = "Brightness: \(Int(newBright * 100))%"
+        } else {
+            let newWarmth = max(0.0, min(0.4, swipeStartWarmth - deltaY))
+            self.warmthLevel = newWarmth
+            self.hudMessage = "Warmth: \(Int((newWarmth / 0.4) * 100))%"
+        }
+    }
+    
+    private func finishEdgeSwipe() {
+        swipeStartBrightness = UIScreen.main.brightness
+        swipeStartWarmth = warmthLevel
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation { self.showSwipeHUD = false }
+        }
     }
     
     // MARK: - Bookmarks
@@ -575,97 +652,6 @@ struct ReaderScrubber: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: Color.black.opacity(0.15), radius: 10, y: 5)
         .padding(.horizontal, 20)
-    }
-    // MARK: - KOReader Casual Comforts (Edge Swipes)
-    
-    @ViewBuilder
-    private func edgeSwipeOverlay(in geo: GeometryProxy) -> some View {
-        ZStack {
-            // Warmth Filter
-            Color.orange
-                .opacity(warmthLevel)
-                .allowsHitTesting(false)
-                .ignoresSafeArea()
-            
-            // Edge Swipe Sensors
-            HStack(spacing: 0) {
-                // Left Edge -> Brightness
-                Color.black.opacity(0.001) // Virtually invisible but hit-testable
-                    .frame(width: max(30, geo.size.width * 0.08))
-                    .gesture(
-                        DragGesture(minimumDistance: 15)
-                            .onChanged { val in handleEdgeSwipe(val: val, geo: geo, isLeft: true) }
-                            .onEnded { _ in finishEdgeSwipe() }
-                    )
-                    .onTapGesture {
-                        if !isMangaMode { prevPage() } else { nextPage() }
-                    }
-                
-                Spacer()
-                
-                // Right Edge -> Warmth
-                Color.black.opacity(0.001)
-                    .frame(width: max(30, geo.size.width * 0.08))
-                    .gesture(
-                        DragGesture(minimumDistance: 15)
-                            .onChanged { val in handleEdgeSwipe(val: val, geo: geo, isLeft: false) }
-                            .onEnded { _ in finishEdgeSwipe() }
-                    )
-                    .onTapGesture {
-                        if !isMangaMode { nextPage() } else { prevPage() }
-                    }
-            }
-            
-            // Interaction HUD
-            if showSwipeHUD {
-                VStack {
-                    Spacer()
-                    Text(hudMessage)
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
-                        .background(Color.black.opacity(0.8))
-                        .cornerRadius(16)
-                        .padding(.bottom, 120)
-                }
-                .transition(.opacity)
-                .zIndex(100)
-            }
-        }
-        .onAppear {
-            swipeStartBrightness = UIScreen.main.brightness
-        }
-    }
-    
-    private func handleEdgeSwipe(val: DragGesture.Value, geo: GeometryProxy, isLeft: Bool) {
-        if !showSwipeHUD {
-            swipeStartBrightness = UIScreen.main.brightness
-            swipeStartWarmth = warmthLevel
-            withAnimation(.fast) { showSwipeHUD = true }
-        }
-        
-        let deltaY = val.translation.height / geo.size.height
-        
-        if isLeft {
-            let newBright = max(0.0, min(1.0, swipeStartBrightness - deltaY))
-            UIScreen.main.brightness = newBright
-            self.brightnessLevel = newBright
-            self.hudMessage = "Brightness: \(Int(newBright * 100))%"
-        } else {
-            let newWarmth = max(0.0, min(0.4, swipeStartWarmth - deltaY))
-            self.warmthLevel = newWarmth
-            self.hudMessage = "Warmth: \(Int((newWarmth / 0.4) * 100))%"
-        }
-    }
-    
-    private func finishEdgeSwipe() {
-        swipeStartBrightness = UIScreen.main.brightness
-        swipeStartWarmth = warmthLevel
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            withAnimation { self.showSwipeHUD = false }
-        }
-    }
 }
 
 

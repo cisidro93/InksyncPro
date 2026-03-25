@@ -14,7 +14,7 @@ struct TypographySettings: Codable, Equatable {
     var textHex: String = "#000000"
 }
 @MainActor
-class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+class TTSManager: NSObject, ObservableObject, @preconcurrency AVSpeechSynthesizerDelegate {
     static let shared = TTSManager()
     let synthesizer = AVSpeechSynthesizer()
     @Published var isSpeaking = false
@@ -40,7 +40,7 @@ class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
         try? AVAudioSession.sharedInstance().setActive(false)
     }
     
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         DispatchQueue.main.async { self.isSpeaking = false }
     }
 }
@@ -71,7 +71,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             
             if !self.fileManager.fileExists(atPath: self.tempDir.path) {
                 try? self.fileManager.createDirectory(at: self.tempDir, withIntermediateDirectories: true)
-                guard let archive = try? Archive(url: self.pdf.url, accessMode: .read) else {
+                guard let archive = Archive(url: self.pdf.url, accessMode: .read) else {
                     DispatchQueue.main.async { self.isLoading = false }
                     return
                 }

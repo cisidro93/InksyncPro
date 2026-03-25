@@ -1719,9 +1719,8 @@ class ConversionManager: ObservableObject {
         scanLibrary()
         
         // Clear cache if we edited the file currently open
-        if self.editorCache?.pdfID == pdf.id {
-             self.editorCache = nil
-             // We don't force endSession because that might close the UI, but we clear the cache so next page load re-unzips.
+        Task {
+            await EditorSessionManager.shared.clearCache(for: pdf.id)
         }
         
         // ✅ ADVANCED COVER STUDIO: Heuristic Re-evaluation

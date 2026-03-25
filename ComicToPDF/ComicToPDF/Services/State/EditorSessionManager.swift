@@ -54,6 +54,12 @@ actor EditorSessionManager {
         return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 1920)
     }
     
+    func clearCache(for pdfID: UUID) {
+        if editorCache?.pdfID == pdfID {
+            editorCache = nil
+        }
+    }
+    
     /// Ends the current ZIP editing session and clears the cache/disk
     func endSession(manager: ConversionManager?) async {
         activeExtractionTask?.cancel()
@@ -71,10 +77,12 @@ actor EditorSessionManager {
         self.editorCache = nil
         
         if let cache = cacheToDelete {
-             let bgTask = UIApplication.shared.beginBackgroundTask(expirationHandler: nil)
-             DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) {
-                 try? FileManager.default.removeItem(at: cache.folder)
-                 UIApplication.shared.endBackgroundTask(bgTask)
+             Task { @MainActor in
+                 let bgTask = UIApplication.shared.beginBackgroundTask(expirationHandler: nil)
+                 DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) {
+                     try? FileManager.default.removeItem(at: cache.folder)
+                     UIApplication.shared.endBackgroundTask(bgTask)
+                 }
              }
         }
     }
