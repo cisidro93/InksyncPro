@@ -423,10 +423,14 @@ struct EBookReaderView: View {
         
         await MainActor.run {
             self.unzipDir = dest
-            self.metadata = parsed
-            // Restore saved chapter (clamp to valid range)
-            let total = parsed?.spineItems.count ?? 1
-            self.currentIndex = min(saved, max(0, total - 1))
+            if let parsed = parsed, !parsed.spineItems.isEmpty {
+                self.metadata = parsed
+                // Restore saved chapter (clamp to valid range)
+                let total = parsed.spineItems.count
+                self.currentIndex = min(saved, max(0, total - 1))
+            } else {
+                self.errorMessage = "This EPUB file seems to be corrupted or missing a valid reading spine."
+            }
             self.isLoading = false
         }
     }
@@ -469,7 +473,13 @@ struct EBookWebReader: UIViewRepresentable {
     
     func updateUIView(_ wv: WKWebView, context: Context) {
         guard let dir = unzipDir else { return }
-        let contentURL = dir.appendingPathComponent(spineItem.href)
+        
+        var contentURL = dir.appendingPathComponent(spineItem.href)
+        if !FileManager.default.fileExists(atPath: contentURL.path) {
+            if let decoded = spineItem.href.removingPercentEncoding {
+                contentURL = dir.appendingPathComponent(decoded)
+            }
+        }
         guard FileManager.default.fileExists(atPath: contentURL.path) else { return }
         
         // Only reload if the chapter changed
@@ -483,7 +493,11 @@ struct EBookWebReader: UIViewRepresentable {
         // Read HTML and inject our reading CSS + nav script
         if let rawHTML = try? String(contentsOf: contentURL, encoding: .utf8) {
             let styledHTML = injectReaderCSS(into: rawHTML)
-            wv.loadHTMLString(styledHTML, baseURL: contentURL.deletingLastPathComponent())
+            
+            // Write to a temporary file in the same directory to grant WKWebView `allowingReadAccessTo` privileges for images and CSS.
+            let injectedURL = contentURL.deletingPathExtension().appendingPathExtension("injected.html")
+            try? styledHTML.write(to: injectedURL, atomically: true, encoding: .utf8)
+            wv.loadFileURL(injectedURL, allowingReadAccessTo: dir)
         } else {
             wv.loadFileURL(contentURL, allowingReadAccessTo: dir)
         }
