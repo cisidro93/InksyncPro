@@ -44,7 +44,7 @@ struct ModernLibraryView: View {
                     // MARK: - Dedicated Header Component
                     LibraryHeaderView(
                         searchText: $viewModel.searchText,
-                        sortOption: Binding(get: { sortOption }, set: { sortOption = $0; viewModel.sortPDFs(conversionManager.visiblePDFs, sortOption: $0) }),
+                        sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(conversionManager.visiblePDFs, sortOption: $0) }),
                         viewStyle: $viewStyle,
                         tapAction: $tapAction,
                         onSheetTrigger: { dest in viewModel.activeSheet = dest },
@@ -154,6 +154,16 @@ struct ModernLibraryView: View {
         case .batchMetadata(let pdfs): BatchMetadataEditorView(selectedPDFs: pdfs)
         case .cognitiveBatchRenamer(let pdfs):
             BatchLocalRenamerView(pdfs: pdfs).environmentObject(conversionManager)
+        case .smartImport(let url):
+            SmartImportSheet(sourceURL: url).environmentObject(conversionManager)
+        case .completionSend(let pdf):
+            CompletionSendView(pdf: pdf).environmentObject(conversionManager)
+        case .addDevice:
+            AddDeviceSheet().environmentObject(conversionManager)
+        case .readingStats:
+            Text("Reading Stats")
+                .font(.title)
+                .foregroundColor(.inkTextSecondary)
         case .seriesAssignment(let pdf, let isBatch, let selection):
             CollectionEditorSheet { name, icon, color in
                 if let singlePDF = pdf, !name.trimmingCharacters(in: .whitespaces).isEmpty {

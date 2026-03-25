@@ -15,7 +15,7 @@ struct ReadNowView: View {
 
     var recentlyAdded: [ConvertedPDF] {
         manager.visiblePDFs
-            .sorted { $0.dateAdded > $1.dateAdded }
+            .sorted(by: { $0.dateAdded > $1.dateAdded })
             .prefix(8)
             .map { $0 }
     }

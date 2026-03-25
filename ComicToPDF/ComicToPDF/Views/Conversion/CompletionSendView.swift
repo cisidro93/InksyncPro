@@ -152,9 +152,9 @@ struct CompletionSendView: View {
             }
 
             // Update success state on PDF model
-            if let idx = manager.visiblePDFs.firstIndex(where: { $0.id == pdf.id }) {
-                manager.visiblePDFs[idx].isOnDevice = true
-                manager.visiblePDFs[idx].lastTransferFailed = false
+            if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                manager.convertedPDFs[idx].isOnDevice = true
+                manager.convertedPDFs[idx].lastTransferFailed = false
                 manager.saveLibrary()
             }
 
@@ -171,8 +171,8 @@ struct CompletionSendView: View {
             isSending = false
             errorMessage = error.localizedDescription
 
-            if let idx = manager.visiblePDFs.firstIndex(where: { $0.id == pdf.id }) {
-                manager.visiblePDFs[idx].lastTransferFailed = true
+            if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                manager.convertedPDFs[idx].lastTransferFailed = true
                 manager.saveLibrary()
             }
         }

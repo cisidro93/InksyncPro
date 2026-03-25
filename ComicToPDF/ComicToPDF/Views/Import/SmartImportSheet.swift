@@ -214,14 +214,16 @@ struct ImportFormView: View {
 
                     // Destination
                     HStack {
-                        Image(systemName: vm.destinationDevice?.deviceType.sfSymbol ?? "questionmark.circle")
+                        let symbol = vm.destinationDevice?.deviceType.sfSymbol ?? "questionmark.circle"
+                        Image(systemName: symbol)
                             .foregroundColor(.inkBlue)
                             .font(.system(size: 16))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Sending to")
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundColor(.inkTextSecondary)
-                            Text(vm.destinationDevice?.name ?? "No device — tap to add")
+                            let deviceName = vm.destinationDevice?.name ?? "No device — tap to add"
+                            Text(deviceName)
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(.inkTextPrimary)
                         }
@@ -307,7 +309,8 @@ struct SkippedImportView: View {
                 Text("Converting as usual")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(.inkTextPrimary)
-                Text("\(vm.seriesName) · \(vm.destinationDevice?.name ?? "device")")
+                let skipDeviceName = vm.destinationDevice?.name ?? "device"
+                Text("\(vm.seriesName) · \(skipDeviceName)")
                     .font(.system(size: 14))
                     .foregroundColor(.inkTextSecondary)
             }
