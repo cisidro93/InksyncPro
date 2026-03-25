@@ -652,6 +652,7 @@ struct ReaderScrubber: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: Color.black.opacity(0.15), radius: 10, y: 5)
         .padding(.horizontal, 20)
+    }
 }
 
 

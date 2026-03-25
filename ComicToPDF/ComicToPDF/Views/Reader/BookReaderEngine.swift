@@ -14,7 +14,7 @@ struct TypographySettings: Codable, Equatable {
     var textHex: String = "#000000"
 }
 @MainActor
-class TTSManager: NSObject, ObservableObject, @preconcurrency AVSpeechSynthesizerDelegate {
+class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     static let shared = TTSManager()
     let synthesizer = AVSpeechSynthesizer()
     @Published var isSpeaking = false
