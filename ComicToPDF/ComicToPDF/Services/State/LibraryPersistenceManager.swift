@@ -17,6 +17,8 @@ class LibraryPersistenceManager {
         var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil
         var watchedFolders: [ConversionManager.WatchedFolder]? = nil
         var presets: [ConversionPreset]? = nil
+        var registeredDevices: [RegisteredDevice]? = nil
+        var primaryDeviceID: UUID? = nil
     }
     
     /// Snapshots the Façade state properties and dispatches them deep inside a background payload for asynchronous storage.
@@ -30,7 +32,9 @@ class LibraryPersistenceManager {
             devices: manager.kindleDevices,
             panelOverrides: manager.panelOverrides,
             watchedFolders: manager.watchedFolders,
-            presets: manager.conversionPresets
+            presets: manager.conversionPresets,
+            registeredDevices: manager.registeredDevices,
+            primaryDeviceID: manager.primaryDeviceID
         )
         
         Task.detached(priority: .background) {
@@ -69,6 +73,8 @@ class LibraryPersistenceManager {
                     manager.panelOverrides = index.panelOverrides ?? [:]
                     manager.watchedFolders = index.watchedFolders ?? []
                     manager.conversionPresets = index.presets ?? []
+                    manager.registeredDevices = index.registeredDevices ?? []
+                    manager.primaryDeviceID = index.primaryDeviceID
                 }
             } catch {
                 await MainActor.run {

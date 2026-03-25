@@ -14,6 +14,11 @@ enum LibrarySheetDestination: Identifiable {
     case batchMetadata([ConvertedPDF])
     case cognitiveBatchRenamer([ConvertedPDF])
     case seriesAssignment(ConvertedPDF?, isBatch: Bool, selection: [ConvertedPDF])
+    // NEW routes for Deep UX Overhaul
+    case smartImport(URL)
+    case completionSend(ConvertedPDF)
+    case addDevice
+    case readingStats
     
     var id: String {
         switch self {
@@ -30,6 +35,11 @@ enum LibrarySheetDestination: Identifiable {
         case .batchMetadata: return "batchMeta"
         case .cognitiveBatchRenamer: return "batchRenamer"
         case .seriesAssignment(let p, let batch, _): return "series_\(p?.id.uuidString ?? "batch_\(batch)")"
+        // NEW id bindings
+        case .smartImport(let url): return "smartImport_\(url.lastPathComponent)"
+        case .completionSend(let p): return "completionSend_\(p.id)"
+        case .addDevice: return "addDevice"
+        case .readingStats: return "readingStats"
         }
     }
 }

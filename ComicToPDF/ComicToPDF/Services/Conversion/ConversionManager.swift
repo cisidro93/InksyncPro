@@ -21,6 +21,15 @@ class ConversionManager: ObservableObject {
     }
     @Published var watchedFolders: [WatchedFolder] = []
     
+    // MARK: - Device Registry (Deep Module UX)
+    @Published var registeredDevices: [RegisteredDevice] = []
+    @Published var primaryDeviceID: UUID?
+
+    var primaryDevice: RegisteredDevice? {
+        registeredDevices.first { $0.id == primaryDeviceID }
+            ?? registeredDevices.first
+    }
+    
     // MARK: - Series Grouping Prompt (Layer 3)
     struct PendingSeriesGroup: Identifiable {
         let id = UUID()

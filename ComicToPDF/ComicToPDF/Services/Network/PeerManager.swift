@@ -147,4 +147,11 @@ class PeerManager: ObservableObject {
         }
         connection.start(queue: .global(qos: .userInitiated))
     }
+    
+    // MARK: - Device Reachability (Deep Module UX)
+    func isReachable(deviceName: String) -> Bool {
+        availablePeers.contains {
+            $0.name.localizedCaseInsensitiveContains(deviceName)
+        }
+    }
 }
