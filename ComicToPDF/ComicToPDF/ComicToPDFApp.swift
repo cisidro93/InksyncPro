@@ -18,7 +18,7 @@ struct InksyncProApp: App {
             ContentView()
                 .environmentObject(ConversionManager())
                 // ✅ SwiftData Engine Attachment
-                .modelContainer(for: [InkContainer.self, InkDocument.self])
+                .modelContainer(for: [SDConvertedPDF.self, SDPDFCollection.self])
                 .onAppear {
                     // Trigger Migration asynchronously if on iOS 18 simulator
                     Task { @MainActor in

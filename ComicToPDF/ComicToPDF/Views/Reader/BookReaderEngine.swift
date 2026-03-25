@@ -498,7 +498,7 @@ struct AnnotationListView: View {
                     ForEach(items) { annotation in
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text(annotation.chapterTitle ?? "Page $(nnotation.pageIndex + 1)")
+                                Text(annotation.chapterTitle ?? "Page \(annotation.pageIndex + 1)")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .textCase(.uppercase)
@@ -513,7 +513,7 @@ struct AnnotationListView: View {
                             }
                             
                             if let text = annotation.selectedText {
-                                Text(""\$text"")
+                                Text("\"\(text)\"")
                                     .font(.system(.body, design: .serif))
                                     .italic()
                                     .lineLimit(4)

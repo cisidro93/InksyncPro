@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import SwiftUI
 import CoreGraphics
 import UIKit
@@ -869,4 +870,88 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     case unknown = "check_required" // Legacy files, needs heuristic
     case normalized = "normalized_0_1000" // Known Good (New Scan, Validated)
     case pixels = "pixels" // Raw pixels (needs conversion)
+}
+
+// MARK: - SwiftData Migration Models (Phase 5)
+// These prefixes (SD) allow incremental lazy-loading adoption without instantaneously shattering the 190+ view dependency injections bound to the legacy struct.
+@Model final class SDConvertedPDF: Identifiable, Hashable {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var url: URL
+    var parentFolderID: UUID?
+    
+    // Core Data Sync fields
+    var dataSyncHash: String?
+    var lastModified: Date
+    var pageCount: Int
+    var fileSize: Int64
+    var metadata: PDFMetadata
+    var collectionId: UUID?
+    var isFavorite: Bool
+    var isPrivate: Bool
+    
+    @Attribute(.externalStorage)
+    var coverImageData: Data?
+    
+    var contentType: ContentType
+    var chapters: [Chapter]
+    var addedByMode: AppUIMode
+    
+    // Unified Reader Properties
+    var contentKind: ContentKind
+    var documentSubtype: DocumentSubtype
+    var isOnDevice: Bool
+    var lastTransferFailed: Bool
+    var lastOutputFormat: OutputFormat?
+    var lastConversionDate: Date?
+    var panelConfidenceScore: Double?
+    
+    @Transient var fileExtensionString: String {
+        return url.pathExtension.uppercased()
+    }
+    
+    @Transient var formattedSize: String {
+        let mb = Double(fileSize) / 1024 / 1024
+        return String(format: "%.1f MB", mb)
+    }
+    
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro) {
+        self.id = id
+        self.name = name
+        self.url = url
+        self.pageCount = pageCount
+        self.fileSize = fileSize
+        self.metadata = metadata
+        self.collectionId = collectionId
+        self.isFavorite = isFavorite
+        self.isPrivate = isPrivate
+        self.coverImageData = coverImageData
+        self.contentType = contentType
+        self.chapters = chapters
+        self.addedByMode = addedByMode
+        
+        self.lastModified = Date()
+        self.contentKind = .comic
+        self.documentSubtype = .unknown
+        self.isOnDevice = false
+        self.lastTransferFailed = false
+    }
+}
+
+@Model final class SDPDFCollection: Identifiable {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var icon: String
+    var color: String
+    var creationDate: Date
+    var explicitCoverFileID: UUID?
+    
+    init(id: UUID, name: String, icon: String, color: String, creationDate: Date, explicitCoverFileID: UUID? = nil) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.color = color
+        self.creationDate = creationDate
+        self.explicitCoverFileID = explicitCoverFileID
+    }
 }

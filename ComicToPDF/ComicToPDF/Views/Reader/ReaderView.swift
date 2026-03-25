@@ -411,7 +411,7 @@ struct ReaderView: View {
     private func launchBingeJump(to nextPDF: ConvertedPDF) {
         withAnimation { showBingePrompt = false }
         isLoading = true
-        fileURL = nextPDF.fileURL
+        fileURL = nextPDF.url
         pdf = nextPDF
         
         // Cleanup old
@@ -422,6 +422,16 @@ struct ReaderView: View {
         
         Task { await prepareArchive() }
     }
+    
+    // MARK: - Navigation Helpers
+    private func prevPage() {
+        if currentPageIndex > 0 { currentPageIndex -= 1 }
+    }
+    
+    private func nextPage() {
+        if currentPageIndex < pages.count - 1 { currentPageIndex += 1 }
+    }
+    
     // MARK: - Bookmarks
     private var isBookmarked: Bool {
         guard let pdf = pdf else { return false }
@@ -566,64 +576,6 @@ struct ReaderScrubber: View {
         .shadow(color: Color.black.opacity(0.15), radius: 10, y: 5)
         .padding(.horizontal, 20)
     }
-}
-
-
-import MediaPlayer
-import AVFoundation
-
-struct VolumeHook: UIViewControllerRepresentable {
-    var onUp: () -> Void
-    var onDown: () -> Void
-    
-    func makeUIViewController(context: Context) -> VolumeObserverController {
-        return VolumeObserverController(onUp: onUp, onDown: onDown)
-    }
-    func updateUIViewController(_ uiViewController: VolumeObserverController, context: Context) {}
-}
-
-class VolumeObserverController: UIViewController {
-    var onUp: () -> Void
-    var onDown: () -> Void
-    private var baseVolume: Float = 0.5
-    private var audioSession = AVAudioSession.sharedInstance()
-    private var observation: NSKeyValueObservation?
-    private let volumeView = MPVolumeView() // Native iOS 17 trick to perfectly hide the Volume HUD
-    
-    init(onUp: @escaping () -> Void, onDown: @escaping () -> Void) {
-        self.onUp = onUp
-        self.onDown = onDown
-        super.init(nibName: nil, bundle: nil)
-    }
-    
-    required init?(coder: NSCoder) { fatalError() }
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.addSubview(volumeView)
-        volumeView.frame = CGRect(x: -1000, y: -1000, width: 1, height: 1)
-        volumeView.isHidden = false
-        
-        try? audioSession.setCategory(.ambient) // Extremely important! Allows background music to keep playing while reading comic
-        try? audioSession.setActive(true)
-        baseVolume = audioSession.outputVolume
-        
-        observation = audioSession.observe(\.outputVolume, options: [.new]) { [weak self] session, change in
-            guard let self = self, let newVolume = change.newValue else { return }
-            if newVolume > self.baseVolume || newVolume == 1.0 {
-                self.onUp()
-            } else if newVolume < self.baseVolume || newVolume == 0.0 {
-                self.onDown()
-            }
-            self.baseVolume = newVolume
-        }
-    }
-    
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        observation?.invalidate()
-        try? audioSession.setActive(false)
-    }
     // MARK: - KOReader Casual Comforts (Edge Swipes)
     
     @ViewBuilder
@@ -713,5 +665,63 @@ class VolumeObserverController: UIViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             withAnimation { self.showSwipeHUD = false }
         }
+    }
+}
+
+
+import MediaPlayer
+import AVFoundation
+
+struct VolumeHook: UIViewControllerRepresentable {
+    var onUp: () -> Void
+    var onDown: () -> Void
+    
+    func makeUIViewController(context: Context) -> VolumeObserverController {
+        return VolumeObserverController(onUp: onUp, onDown: onDown)
+    }
+    func updateUIViewController(_ uiViewController: VolumeObserverController, context: Context) {}
+}
+
+class VolumeObserverController: UIViewController {
+    var onUp: () -> Void
+    var onDown: () -> Void
+    private var baseVolume: Float = 0.5
+    private var audioSession = AVAudioSession.sharedInstance()
+    private var observation: NSKeyValueObservation?
+    private let volumeView = MPVolumeView() // Native iOS 17 trick to perfectly hide the Volume HUD
+    
+    init(onUp: @escaping () -> Void, onDown: @escaping () -> Void) {
+        self.onUp = onUp
+        self.onDown = onDown
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) { fatalError() }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.addSubview(volumeView)
+        volumeView.frame = CGRect(x: -1000, y: -1000, width: 1, height: 1)
+        volumeView.isHidden = false
+        
+        try? audioSession.setCategory(.ambient) // Extremely important! Allows background music to keep playing while reading comic
+        try? audioSession.setActive(true)
+        baseVolume = audioSession.outputVolume
+        
+        observation = audioSession.observe(\.outputVolume, options: [.new]) { [weak self] session, change in
+            guard let self = self, let newVolume = change.newValue else { return }
+            if newVolume > self.baseVolume || newVolume == 1.0 {
+                self.onUp()
+            } else if newVolume < self.baseVolume || newVolume == 0.0 {
+                self.onDown()
+            }
+            self.baseVolume = newVolume
+        }
+    }
+    
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        observation?.invalidate()
+        try? audioSession.setActive(false)
     }
 }
