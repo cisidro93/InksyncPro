@@ -135,14 +135,14 @@ actor EBookParser {
         let parser = MiniXMLParser(data: data)
         
         // Metadata fields
-        metadata.title       = parser.firstTextContent(tag: "dc:title") ?? ""
-        metadata.author      = parser.firstTextContent(tag: "dc:creator") ?? ""
-        metadata.publisher   = parser.firstTextContent(tag: "dc:publisher") ?? ""
-        metadata.language    = parser.firstTextContent(tag: "dc:language") ?? ""
-        metadata.description = parser.firstTextContent(tag: "dc:description") ?? ""
+        metadata.title       = parser.firstTextContent(tag: "title") ?? ""
+        metadata.author      = parser.firstTextContent(tag: "creator") ?? ""
+        metadata.publisher   = parser.firstTextContent(tag: "publisher") ?? ""
+        metadata.language    = parser.firstTextContent(tag: "language") ?? ""
+        metadata.description = parser.firstTextContent(tag: "description") ?? ""
         
-        // ISBN from dc:identifier
-        metadata.isbn = parser.allTextContents(tag: "dc:identifier")
+        // ISBN from dc:identifier or identifier
+        metadata.isbn = parser.allTextContents(tag: "identifier")
             .first { $0.hasPrefix("urn:isbn:") || $0.hasPrefix("ISBN") } ?? ""
         
         // Cover: look for <meta name="cover" content="itemId">
@@ -217,11 +217,12 @@ private class MiniXMLParser: NSObject, XMLParserDelegate {
     
     // MARK: - XMLParserDelegate
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String]) {
-        tagStack.append(elementName)
+        let nodeName = elementName.contains(":") ? String(elementName.split(separator: ":").last ?? "") : elementName
+        tagStack.append(nodeName)
         currentText = ""
         
         // Accumulate all attribute dictionaries per tag name (lowercased)
-        let lower = elementName.lowercased()
+        let lower = nodeName.lowercased()
         attributesByTag[lower, default: []].append(attributes)
         
         // Capture manifest items
@@ -243,7 +244,8 @@ private class MiniXMLParser: NSObject, XMLParserDelegate {
     }
     
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
-        let lower = elementName.lowercased()
+        let nodeName = elementName.contains(":") ? String(elementName.split(separator: ":").last ?? "") : elementName
+        let lower = nodeName.lowercased()
         let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             textByTag[lower, default: []].append(trimmed)
