@@ -40,6 +40,7 @@ struct StudyNotebookView: View {
             .padding(12)
             .font(.system(size: 15, design: .monospaced))
             .scrollContentBackground(.hidden)
+            .foregroundColor(.inkTextPrimary)
             .background(Color.inkBackground)
         }
         .onAppear {

@@ -8,8 +8,7 @@ struct SplitStudyWorkspace: View {
     @AppStorage("study_split_fraction") private var splitFraction: Double = 0.65
     @Environment(\.horizontalSizeClass) var hSizeClass
     @Environment(\.dismiss) var dismiss
-    
-    @State private var showNotebook = true
+    @State private var showNotebook = false
     
     var body: some View {
         GeometryReader { geo in
@@ -36,10 +35,10 @@ struct SplitStudyWorkspace: View {
                             )
                             .contentShape(Rectangle())
                             .gesture(
-                                DragGesture()
+                                DragGesture(coordinateSpace: .global)
                                     .onChanged { val in
                                         let newFraction = val.location.x / geo.size.width
-                                        splitFraction = min(max(newFraction, 0.4), 0.8)
+                                        splitFraction = min(max(newFraction, 0.2), 0.8)
                                     }
                             )
                         
