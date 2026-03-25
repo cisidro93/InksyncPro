@@ -31,6 +31,18 @@ struct ImportTriggerView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
         }
+        .dropDestination(for: URL.self) { items, _ in
+            guard let first = items.first else { return false }
+            let accessing = first.startAccessingSecurityScopedResource()
+            let dest = FileManager.default.temporaryDirectory
+                .appendingPathComponent(first.lastPathComponent)
+            try? FileManager.default.removeItem(at: dest)
+            try? FileManager.default.copyItem(at: first, to: dest)
+            if accessing { first.stopAccessingSecurityScopedResource() }
+            importedURL = dest
+            showImportSheet = true
+            return true
+        }
         .fileImporter(
             isPresented: $isPresenting,
             allowedContentTypes: [.item],

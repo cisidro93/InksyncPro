@@ -159,9 +159,18 @@ struct SmartImportSheet: View {
 // MARK: - Import Form (full sheet for new/unknown series)
 struct ImportFormView: View {
     @ObservedObject var vm: SmartImportViewModel
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     let onConfirm: () -> Void
 
     var body: some View {
+        if hSizeClass == .regular {
+            iPadImportForm
+        } else {
+            iPhoneImportForm
+        }
+    }
+
+    private var iPhoneImportForm: some View {
         ScrollView {
             VStack(spacing: 20) {
                 // Cover + title area
@@ -186,52 +195,16 @@ struct ImportFormView: View {
                     SmartFieldRow(label: "Volume", value: vm.volumeNumber.isEmpty ? "—" : vm.volumeNumber, confirmed: false)
 
                     // Direction toggle
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Reading Direction")
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundColor(.inkTextSecondary)
-                            Text(vm.isManga ? "Right to Left" : "Left to Right")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(vm.detectedIsManga ? .inkGreen : .inkTextPrimary)
-                        }
-                        Spacer()
-                        if vm.detectedIsManga {
-                            Text("Auto-detected")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.inkGreen)
-                        }
-                        Toggle("", isOn: $vm.isManga)
-                            .tint(.inkBlue)
-                            .labelsHidden()
-                            .onChange(of: vm.isManga) { _ in
-                                vm.userEditedDirection = true
-                            }
-                    }
-                    .padding(12)
-                    .background(Color.inkSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    directionToggle
+                        .padding(12)
+                        .background(Color.inkSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
 
                     // Destination
-                    HStack {
-                        let symbol = vm.destinationDevice?.deviceType.sfSymbol ?? "questionmark.circle"
-                        Image(systemName: symbol)
-                            .foregroundColor(.inkBlue)
-                            .font(.system(size: 16))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Sending to")
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundColor(.inkTextSecondary)
-                            let deviceName = vm.destinationDevice?.name ?? "No device — tap to add"
-                            Text(deviceName)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.inkTextPrimary)
-                        }
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(Color.inkSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    deviceSelector
+                        .padding(12)
+                        .background(Color.inkSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .padding(.horizontal, 20)
 
@@ -285,6 +258,137 @@ struct ImportFormView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 30)
             }
+        }
+    }
+
+    private var iPadImportForm: some View {
+        HStack(alignment: .top, spacing: 40) {
+            // Left column — cover + series info
+            VStack(spacing: 16) {
+                // Cover (larger on iPad)
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.inkSurfaceRaised)
+                    .frame(width: 120, height: 170)
+                    .overlay(
+                        Image(systemName: "book.closed.fill")
+                            .foregroundColor(.inkTextSecondary)
+                            .font(.system(size: 36))
+                    )
+
+                Text(vm.seriesName)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.inkTextPrimary)
+                    .multilineTextAlignment(.center)
+
+                Text(vm.destinationDescription)
+                    .font(.system(size: 12))
+                    .foregroundColor(.inkBlue)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.inkBlue.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .frame(width: 180)
+
+            // Right column — all controls
+            VStack(spacing: 12) {
+                SmartFieldRow(label: "Title", value: vm.title, confirmed: !vm.userEditedTitle)
+                SmartFieldRow(label: "Series", value: vm.seriesName, confirmed: true)
+                SmartFieldRow(label: "Volume", value: vm.volumeNumber.isEmpty ? "—" : vm.volumeNumber, confirmed: false)
+
+                // Direction toggle
+                directionToggle
+                    .padding(12)
+                    .background(Color.inkSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                // Device selector
+                deviceSelector
+                    .padding(12)
+                    .background(Color.inkSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                if vm.shouldShowPanelStrip {
+                    PageFlagStrip(
+                        flaggedIndices: vm.flaggedPageIndices,
+                        totalPages: vm.pageCount
+                    )
+                }
+
+                DisclosureGroup("Advanced options", isExpanded: $vm.showAdvanced) {
+                    PipelineSelector(selectedPipeline: $vm.selectedPipeline, pdf: nil)
+                        .padding(.top, 8)
+                }
+                .foregroundColor(.inkTextSecondary)
+
+                // Action buttons
+                HStack(spacing: 12) {
+                    Button("Advanced Settings") { /* open ConvertView */ }
+                        .font(.system(size: 14))
+                        .foregroundColor(.inkTextSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.inkSurfaceRaised)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                    Button(action: onConfirm) {
+                        Text("Add to Library →")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.inkBlue)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+            }
+        }
+        .padding(32)
+    }
+
+    @ViewBuilder
+    private var directionToggle: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Reading Direction")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.inkTextSecondary)
+                Text(vm.isManga ? "Right to Left" : "Left to Right")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(vm.detectedIsManga ? .inkGreen : .inkTextPrimary)
+            }
+            Spacer()
+            if vm.detectedIsManga {
+                Text("Auto-detected")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.inkGreen)
+            }
+            Toggle("", isOn: $vm.isManga)
+                .tint(.inkBlue)
+                .labelsHidden()
+                .onChange(of: vm.isManga) { _ in
+                    vm.userEditedDirection = true
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var deviceSelector: some View {
+        HStack {
+            let symbol = vm.destinationDevice?.deviceType.sfSymbol ?? "questionmark.circle"
+            Image(systemName: symbol)
+                .foregroundColor(.inkBlue)
+                .font(.system(size: 16))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Sending to")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.inkTextSecondary)
+                let deviceName = vm.destinationDevice?.name ?? "No device — tap to add"
+                Text(deviceName)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.inkTextPrimary)
+            }
+            Spacer()
         }
     }
 }

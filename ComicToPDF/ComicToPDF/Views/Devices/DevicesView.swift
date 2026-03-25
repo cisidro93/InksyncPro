@@ -3,32 +3,116 @@ import SwiftUI
 struct DevicesView: View {
     @EnvironmentObject var manager: ConversionManager
     @EnvironmentObject var peerManager: PeerManager
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var showAddDevice = false
+    @State private var selectedDeviceID: UUID?
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.inkBackground.ignoresSafeArea()
+        if hSizeClass == .regular {
+            iPadDevicesLayout
+        } else {
+            iPhoneDevicesLayout
+        }
+    }
 
-                List {
-                    Section {
-                        if manager.registeredDevices.isEmpty {
-                            VStack(spacing: 12) {
-                                Image(systemName: "ipad.and.iphone")
-                                    .font(.system(size: 40))
-                                    .foregroundColor(.inkTextSecondary)
-                                Text("No devices configured")
-                                    .foregroundColor(.inkTextSecondary)
-                                Button("Add your Kindle or iPad") {
-                                    showAddDevice = true
-                                }
-                                .foregroundColor(.inkBlue)
+    private var iPhoneDevicesLayout: some View {
+        NavigationStack {
+            deviceContent
+                .navigationTitle("Devices")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            showAddDevice = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .foregroundColor(.inkBlue)
+                    }
+                }
+                .sheet(isPresented: $showAddDevice) {
+                    AddDeviceSheet()
+                        .environmentObject(manager)
+                }
+                .onAppear(perform: handleAppear)
+        }
+    }
+
+    private var iPadDevicesLayout: some View {
+        NavigationSplitView {
+            deviceContent
+                .navigationTitle("Devices")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            showAddDevice = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .foregroundColor(.inkBlue)
+                    }
+                }
+                .sheet(isPresented: $showAddDevice) {
+                    AddDeviceSheet()
+                        .environmentObject(manager)
+                }
+                .onAppear(perform: handleAppear)
+        } detail: {
+            if let selectedDeviceID, let device = manager.registeredDevices.first(where: { $0.id == selectedDeviceID }) {
+                DeviceDetailView(device: device)
+            } else {
+                VStack(spacing: 16) {
+                    Image(systemName: "ipad.and.iphone")
+                        .font(.system(size: 52))
+                        .foregroundColor(.inkTextTertiary)
+                    Text("Select a device")
+                        .font(.system(size: 17))
+                        .foregroundColor(.inkTextSecondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.inkBackground)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var deviceContent: some View {
+        ZStack {
+            Color.inkBackground.ignoresSafeArea()
+
+            List(selection: $selectedDeviceID) {
+                Section {
+                    if manager.registeredDevices.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "ipad.and.iphone")
+                                .font(.system(size: 40))
+                                .foregroundColor(.inkTextSecondary)
+                            Text("No devices configured")
+                                .foregroundColor(.inkTextSecondary)
+                            Button("Add your Kindle or iPad") {
+                                showAddDevice = true
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 20)
-                            .listRowBackground(Color.inkSurface)
-                        } else {
-                            ForEach(manager.registeredDevices) { device in
+                            .foregroundColor(.inkBlue)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
+                        .listRowBackground(Color.inkSurface)
+                    } else {
+                        ForEach(manager.registeredDevices) { device in
+                            if hSizeClass == .regular {
+                                // iPad: use NavigationLink-style selection
+                                NavigationLink(value: device.id) {
+                                    DeviceRow(
+                                        device: device,
+                                        isPrimary: device.id == manager.primaryDeviceID,
+                                        isOnline: peerManager.isReachable(deviceName: device.name)
+                                    ) {
+                                        manager.primaryDeviceID = device.id
+                                        manager.saveLibrary()
+                                    }
+                                }
+                                .listRowBackground(selectedDeviceID == device.id ? Color.inkBlue.opacity(0.15) : Color.inkSurface)
+                            } else {
+                                // iPhone: traditional action row
                                 DeviceRow(
                                     device: device,
                                     isPrimary: device.id == manager.primaryDeviceID,
@@ -37,52 +121,40 @@ struct DevicesView: View {
                                     manager.primaryDeviceID = device.id
                                     manager.saveLibrary()
                                 }
-                            }
-                            .onDelete { indexSet in
-                                manager.registeredDevices.remove(atOffsets: indexSet)
-                                manager.saveLibrary()
+                                .listRowBackground(Color.inkSurface)
                             }
                         }
-                    } header: {
-                        Text("My Devices")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.inkTextSecondary)
-                    }
-                    .listRowBackground(Color.inkSurface)
-
-                    Section {
-                        Button("How does the desktop KFX conversion work?") {
-                            // Show KFX guide sheet
+                        .onDelete { indexSet in
+                            manager.registeredDevices.remove(atOffsets: indexSet)
+                            manager.saveLibrary()
                         }
-                        .foregroundColor(.inkBlue)
                     }
-                    .listRowBackground(Color.inkSurface)
+                } header: {
+                    Text("My Devices")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.inkTextSecondary)
                 }
-                .listStyle(.insetGrouped)
-                .scrollContentBackground(.hidden)
-            }
-            .navigationTitle("Devices")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showAddDevice = true
-                    } label: {
-                        Image(systemName: "plus")
+                .listRowBackground(Color.inkSurface)
+
+                Section {
+                    Button("How does the desktop KFX conversion work?") {
+                        // Show KFX guide sheet
                     }
                     .foregroundColor(.inkBlue)
                 }
+                .listRowBackground(Color.inkSurface)
             }
-            .sheet(isPresented: $showAddDevice) {
-                AddDeviceSheet()
-                    .environmentObject(manager)
-            }
-            .onAppear {
-                // On first launch with no devices, auto-present AddDeviceSheet
-                if manager.registeredDevices.isEmpty &&
-                   !UserDefaults.standard.bool(forKey: "hasCompletedDeviceSetup") {
-                    showAddDevice = true
-                }
-            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+        }
+    }
+
+    private func handleAppear() {
+        if manager.registeredDevices.isEmpty &&
+           !UserDefaults.standard.bool(forKey: "hasCompletedDeviceSetup") {
+            showAddDevice = true
+        } else if hSizeClass == .regular && selectedDeviceID == nil {
+            selectedDeviceID = manager.registeredDevices.first?.id
         }
     }
 }
@@ -135,6 +207,8 @@ struct DeviceRow: View {
                 Button("Set primary") { onSetPrimary() }
                     .font(.system(size: 12))
                     .foregroundColor(.inkTextSecondary)
+                    // Added buttonStyle to prevent tapping row capturing button on iPhone
+                    .buttonStyle(.plain)
             }
         }
         .padding(.vertical, 4)

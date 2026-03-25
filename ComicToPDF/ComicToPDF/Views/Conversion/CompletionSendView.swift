@@ -9,6 +9,7 @@ struct CompletionSendView: View {
     @State private var isSending = false
     @State private var sendSuccess = false
     @State private var errorMessage: String?
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     var targetDevice: RegisteredDevice? {
         if let id = selectedDeviceID {
@@ -22,115 +23,163 @@ struct CompletionSendView: View {
             ZStack {
                 Color.inkBackground.ignoresSafeArea()
 
-                VStack(spacing: 24) {
-                    Spacer()
-
-                    // Visual status
-                    ZStack {
-                        Circle()
-                            .fill(sendSuccess ? Color.inkGreen.opacity(0.15) : Color.inkBlue.opacity(0.15))
-                            .frame(width: 80, height: 80)
-                        Image(systemName: sendSuccess ? "checkmark" : (isSending ? "paperplane.fill" : "wand.and.stars"))
-                            .font(.system(size: 32, weight: .semibold))
-                            .foregroundColor(sendSuccess ? .inkGreen : .inkBlue)
-                            .scaleEffect(isSending ? 1.2 : 1.0)
-                            .offset(x: isSending ? 5 : 0, y: isSending ? -5 : 0)
-                            .animation(.spring(response: 0.4, dampingFraction: 0.6).repeatForever(autoreverses: true), value: isSending)
-                    }
-
-                    VStack(spacing: 8) {
-                        Text(sendSuccess ? "Sent Successfully" : "Conversion Complete")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(.inkTextPrimary)
-
-                        if !sendSuccess {
-                            Text(pdf.metadata.title.isEmpty ? pdf.name : pdf.metadata.title)
-                                .font(.system(size: 15))
-                                .foregroundColor(.inkTextSecondary)
-                                .lineLimit(1)
-                                .padding(.horizontal, 40)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-
-                    if !sendSuccess {
-                        // Device Selector
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Send to Device")
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundColor(.inkTextSecondary)
-                                .padding(.horizontal, 8)
-
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(manager.registeredDevices) { device in
-                                        DeviceSelectCard(
-                                            device: device,
-                                            isSelected: (selectedDeviceID ?? manager.primaryDeviceID) == device.id
-                                        ) {
-                                            selectedDeviceID = device.id
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, 8)
-                            }
-                        }
-                        .padding(.vertical, 20)
-
-                        if let err = errorMessage {
-                            Text(err)
-                                .font(.system(size: 13))
-                                .foregroundColor(.inkRed)
-                                .padding()
-                                .background(Color.inkRed.opacity(0.1))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-
-                        // Send Action
-                        Button {
-                            Task { await performSend() }
-                        } label: {
-                            HStack {
-                                if isSending {
-                                    ProgressView().tint(.white).padding(.trailing, 8)
-                                }
-                                Text(isSending ? "Sending..." : "Send to \(targetDevice?.name ?? "Device")")
-                                    .font(.system(size: 16, weight: .semibold))
-                            }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(targetDevice == nil ? Color.inkTextTertiary : Color.inkBlue)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
-                        .disabled(targetDevice == nil || isSending)
-                        .padding(.horizontal, 24)
-
-                        Button("Skip for now") {
-                            dismiss()
-                        }
-                        .font(.system(size: 15))
-                        .foregroundColor(.inkTextSecondary)
-                        .padding(.top, 8)
-                    } else {
-                        Button("Done") {
-                            dismiss()
-                        }
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.inkGreen)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .padding(.horizontal, 24)
-                        .padding(.top, 40)
-                    }
-
-                    Spacer()
+                if hSizeClass == .regular {
+                    iPadCompletionLayout
+                } else {
+                    iPhoneCompletionLayout
                 }
             }
             .navigationBarHidden(true)
         }
+    }
+
+    private var iPhoneCompletionLayout: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            statusHeader
+            if !sendSuccess {
+                deviceSelectionArea
+                sendActions
+            } else {
+                doneButton
+            }
+            Spacer()
+        }
+    }
+
+    private var iPadCompletionLayout: some View {
+        HStack(spacing: 60) {
+            // Left: Status
+            VStack(spacing: 24) {
+                statusHeader
+                if sendSuccess {
+                    doneButton
+                        .frame(maxWidth: 300)
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            // Right: Actions
+            if !sendSuccess {
+                VStack(spacing: 24) {
+                    deviceSelectionArea
+                    sendActions
+                        .frame(maxWidth: 300)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(40)
+    }
+
+    @ViewBuilder
+    private var statusHeader: some View {
+        ZStack {
+            Circle()
+                .fill(sendSuccess ? Color.inkGreen.opacity(0.15) : Color.inkBlue.opacity(0.15))
+                .frame(width: 80, height: 80)
+            Image(systemName: sendSuccess ? "checkmark" : (isSending ? "paperplane.fill" : "wand.and.stars"))
+                .font(.system(size: 32, weight: .semibold))
+                .foregroundColor(sendSuccess ? .inkGreen : .inkBlue)
+                .scaleEffect(isSending ? 1.2 : 1.0)
+                .offset(x: isSending ? 5 : 0, y: isSending ? -5 : 0)
+                .animation(.spring(response: 0.4, dampingFraction: 0.6).repeatForever(autoreverses: true), value: isSending)
+        }
+
+        VStack(spacing: 8) {
+            Text(sendSuccess ? "Sent Successfully" : "Conversion Complete")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.inkTextPrimary)
+
+            if !sendSuccess {
+                Text(pdf.metadata.title.isEmpty ? pdf.name : pdf.metadata.title)
+                    .font(.system(size: 15))
+                    .foregroundColor(.inkTextSecondary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 40)
+                    .multilineTextAlignment(.center)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var deviceSelectionArea: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Send to Device")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(.inkTextSecondary)
+                .padding(.horizontal, 8)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(manager.registeredDevices) { device in
+                        DeviceSelectCard(
+                            device: device,
+                            isSelected: (selectedDeviceID ?? manager.primaryDeviceID) == device.id
+                        ) {
+                            selectedDeviceID = device.id
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+        }
+        .padding(.vertical, 20)
+    }
+
+    @ViewBuilder
+    private var sendActions: some View {
+        VStack(spacing: 16) {
+            if let err = errorMessage {
+                Text(err)
+                    .font(.system(size: 13))
+                    .foregroundColor(.inkRed)
+                    .padding()
+                    .background(Color.inkRed.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+
+            // Send Action
+            Button {
+                Task { await performSend() }
+            } label: {
+                HStack {
+                    if isSending {
+                        ProgressView().tint(.white).padding(.trailing, 8)
+                    }
+                    Text(isSending ? "Sending..." : "Send to \(targetDevice?.name ?? "Device")")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(targetDevice == nil ? Color.inkTextTertiary : Color.inkBlue)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .disabled(targetDevice == nil || isSending)
+            .padding(.horizontal, 24)
+
+            Button("Skip for now") {
+                dismiss()
+            }
+            .font(.system(size: 15))
+            .foregroundColor(.inkTextSecondary)
+        }
+    }
+
+    @ViewBuilder
+    private var doneButton: some View {
+        Button("Done") {
+            dismiss()
+        }
+        .font(.system(size: 16, weight: .semibold))
+        .foregroundColor(.white)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(Color.inkGreen)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 24)
+        .padding(.top, 40)
     }
 
     private func performSend() async {

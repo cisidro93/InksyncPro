@@ -13,6 +13,7 @@ class LibraryViewModel: ObservableObject {
     // Routing State
     @Published var activeSheet: LibrarySheetDestination?
     @Published var activeFullScreen: LibraryFullScreenDestination?
+    @Published var selectedPDF: ConvertedPDF? = nil
     
     // Single-view specific state that isn't cleanly enum-mappable due to alerts
     @Published var pdfToRename: ConvertedPDF?

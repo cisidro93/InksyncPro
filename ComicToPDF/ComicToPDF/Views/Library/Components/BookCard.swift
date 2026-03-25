@@ -10,10 +10,10 @@ struct BookCard: View {
     let onContextAction: (BookCardAction) -> Void
 
     @State private var coverImage: UIImage? = nil
-
-    // Fixed dimensions
-    let cardWidth: CGFloat = 88
-    let coverHeight: CGFloat = 124
+    
+    // Configurable width for non-grid contexts. If nil, expands to fill container.
+    var fixedWidth: CGFloat? = 88
+    private let coverAspectRatio: CGFloat = 0.66
 
     var statusBadge: (label: String, color: Color)? {
         if pdf.lastTransferFailed { return ("Failed", .inkRed) }
@@ -41,7 +41,8 @@ struct BookCard: View {
                             )
                     }
                 }
-                .frame(width: cardWidth, height: coverHeight)
+                .aspectRatio(coverAspectRatio, contentMode: .fit)
+                .frame(width: fixedWidth)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
@@ -77,19 +78,19 @@ struct BookCard: View {
 
             // Title
             Text(pdf.metadata.title.isEmpty ? pdf.name : pdf.metadata.title)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.inkTextPrimary)
                 .lineLimit(2)
-                .frame(width: cardWidth, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             // Volume / issue if available
             if let vol = pdf.metadata.volume, !vol.isEmpty {
                 Text("Vol. \(vol)")
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.inkTextSecondary)
             }
         }
-        .frame(width: cardWidth)
+        .frame(width: fixedWidth)
         .onTapGesture(perform: onTap)
         .onLongPressGesture(minimumDuration: 0.5, perform: onLongPress)
         .contextMenu {
