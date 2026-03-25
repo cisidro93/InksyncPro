@@ -71,7 +71,7 @@ struct ReadNowTabView: View {
             .background(Color(UIColor.systemBackground))
             .navigationTitle("Read Now")
             .fullScreenCover(item: $pdfToRead) { pdf in
-                UnifiedReaderView(pdf: pdf)
+                SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
             }
         }
     }

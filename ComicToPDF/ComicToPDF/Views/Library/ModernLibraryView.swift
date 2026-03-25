@@ -93,7 +93,7 @@ struct ModernLibraryView: View {
                 .fullScreenCover(item: $viewModel.activeFullScreen) { dest in
                     switch dest {
                     case .read(let pdf):
-                        ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
+                        SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
                     case .advancedWorkspace(let pdf):
                         AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
                     }

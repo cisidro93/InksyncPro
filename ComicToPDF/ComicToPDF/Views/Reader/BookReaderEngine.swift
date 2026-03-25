@@ -160,10 +160,14 @@ class HighlightableWebView: WKWebView {
             return true
         }
         // Allow Copy alongside Highlight
-        if action == #selector(copy(_:)) {
+                let actionStr = NSStringFromSelector(action)
+        let allowedNativeFunctions = ["copy:", "_lookup:", "_translate:", "share:", "_define:", "speak:"]
+        
+        if allowedNativeFunctions.contains(actionStr) {
             return true
         }
-        return false // Hide definition, share, etc. for cleaner UI
+        
+        return super.canPerformAction(action, withSender: sender)
     }
     
     @objc func customHighlightAction(_ sender: Any?) {
@@ -349,6 +353,7 @@ struct BookReaderEngine: View {
                             selectedText: selectedText
                         )
                         AnnotationStore.shared.add(highlight)
+                        StudyNotesStore.shared.appendHighlight(selectedText, chapter: "Chapter \(vm.currentChapterIndex + 1)")
                         
                     }, onPageLoaded: { webView in
                         self.webViewReference = webView
@@ -568,4 +573,5 @@ struct AnnotationListView: View {
         }
     }
 }
+
 

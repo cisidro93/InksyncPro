@@ -116,7 +116,7 @@ struct SeriesDetailView: View {
             }
         }
         .fullScreenCover(item: $pdfToRead) { pdf in
-            ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
+            SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
         }
         .safeAreaInset(edge: .bottom) {
             if isSelectionMode {
