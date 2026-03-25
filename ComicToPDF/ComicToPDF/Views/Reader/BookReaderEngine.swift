@@ -456,11 +456,11 @@ extension UIColor {
 
         } else {
             return nil
+        }
         self.init(red: r, green: g, blue: b, alpha: a)
     }
 }
-                    Text("No highlights or notes yet.\n\nSelect text in the book to create highlights.")
-                        .foregroundColor(.secondary)
+
 struct AnnotationListView: View {
     let pdfID: UUID
     let documentTitle: String
@@ -498,7 +498,7 @@ struct AnnotationListView: View {
                     ForEach(items) { annotation in
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text(annotation.chapterTitle ?? "Page \(annotation.pageIndex + 1)")
+                                Text(annotation.chapterTitle ?? "Page $(nnotation.pageIndex + 1)")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .textCase(.uppercase)
@@ -513,7 +513,7 @@ struct AnnotationListView: View {
                             }
                             
                             if let text = annotation.selectedText {
-                                Text("\"\(text)\"")
+                                Text(""\$text"")
                                     .font(.system(.body, design: .serif))
                                     .italic()
                                     .lineLimit(4)

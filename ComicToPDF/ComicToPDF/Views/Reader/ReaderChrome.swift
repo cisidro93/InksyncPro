@@ -88,7 +88,6 @@ struct ReaderChrome: View {
                             .clipShape(Circle())
                     }
                 }
-            }
             .padding(.horizontal)
             .padding(.top, 8)
             
