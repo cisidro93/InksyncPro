@@ -604,7 +604,6 @@ struct EBookWebReader: UIViewRepresentable {
                 decisionHandler(.allow)
             }
         }
-        }
     }
 }
 
@@ -614,6 +613,7 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
+
 
 
 
