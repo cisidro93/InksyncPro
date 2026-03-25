@@ -8,10 +8,16 @@ struct MetadataSearchSheet: View {
     // Service is now a singleton
     
     @State private var query = ""
-    @State private var results: [ComicVineVolume] = [] // Changed from CVIssue to ComicVineVolume
+    @State private var comicResults: [ComicVineVolume] = []
+    @State private var bookResults: [GoogleBookItem] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showingErrorAlert = false
+    
+    // Auto-Select the platform based on File Type
+    private var isBookMode: Bool {
+        return pdf.contentType == .book || pdf.fileURL.pathExtension.lowercased() == "epub"
+    }
     
     var body: some View {
         NavigationView {
@@ -31,8 +37,8 @@ struct MetadataSearchSheet: View {
                 }
                 .padding()
                 
-                // API Key Warning
-                if conversionManager.conversionSettings.comicVineAPIKey.isEmpty {
+                // API Key Warning (Only pertinent to ComicVine)
+                if !isBookMode && conversionManager.conversionSettings.comicVineAPIKey.isEmpty {
                     Text("⚠️ Please set ComicVine API Key in Settings")
                         .font(.caption)
                         .foregroundColor(.red)
@@ -43,11 +49,42 @@ struct MetadataSearchSheet: View {
                 if isLoading {
                     ProgressView()
                     Spacer()
+                } else if isBookMode {
+                    List(bookResults) { book in
+                        Button(action: { selectBook(book) }) {
+                            HStack {
+                                if let urlStr = book.volumeInfo.imageLinks?.bestQualityURL,
+                                   let url = URL(string: urlStr) {
+                                    AsyncImage(url: url) { phase in
+                                        if let image = phase.image {
+                                            image.resizable().aspectRatio(contentMode: .fit)
+                                        } else {
+                                            Color.gray.frame(width: 55, height: 75)
+                                        }
+                                    }
+                                    .frame(width: 50, height: 75)
+                                    .cornerRadius(4)
+                                } else {
+                                    Rectangle().fill(Color.gray).frame(width: 50, height: 75)
+                                        .overlay(Image(systemName: "book.closed").foregroundColor(.white))
+                                }
+                                
+                                VStack(alignment: .leading) {
+                                    Text(book.volumeInfo.title).font(.headline)
+                                    if let authors = book.volumeInfo.authors {
+                                        Text(authors.joined(separator: ", ")).font(.caption).foregroundColor(.secondary)
+                                    }
+                                    if let publisher = book.volumeInfo.publisher {
+                                        Text(publisher).font(.caption2).foregroundColor(.gray)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
-                    List(results) { volume in
+                    List(comicResults) { volume in
                         Button(action: { selectVolume(volume) }) {
                             HStack {
-                                // Async Image for Result Preview
                                 AsyncImage(url: URL(string: volume.image?.icon_url ?? "")) { phase in
                                     if let image = phase.image {
                                         image.resizable().aspectRatio(contentMode: .fit)
@@ -88,15 +125,36 @@ struct MetadataSearchSheet: View {
     
     func performSearch() {
         guard !query.isEmpty else { return }
-        let key = conversionManager.conversionSettings.comicVineAPIKey
-        guard !key.isEmpty else { return }
         
         isLoading = true
         errorMessage = nil
         
+        if isBookMode {
+            Task {
+                do {
+                    bookResults = try await BookMetadataService.shared.searchBooks(query: query)
+                    isLoading = false
+                } catch {
+                    Logger.shared.log("BookVine Search Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = error.localizedDescription
+                        showingErrorAlert = true
+                    }
+                }
+            }
+            return
+        }
+        
+        let key = conversionManager.conversionSettings.comicVineAPIKey
+        guard !key.isEmpty else {
+            isLoading = false
+            return
+        }
+        
         Task {
             do {
-                results = try await ComicVineService.shared.searchVolumes(query: query, apiKey: key)
+                comicResults = try await ComicVineService.shared.searchVolumes(query: query, apiKey: key)
                 isLoading = false
             } catch {
                 Logger.shared.log("Search Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
@@ -104,6 +162,41 @@ struct MetadataSearchSheet: View {
                     isLoading = false
                     errorMessage = error.localizedDescription
                     showingErrorAlert = true
+                }
+            }
+        }
+    }
+    
+    func selectBook(_ book: GoogleBookItem) {
+        isLoading = true
+        Task {
+            await MainActor.run {
+                var newMeta = pdf.metadata
+                newMeta.title = book.volumeInfo.title
+                newMeta.series = book.volumeInfo.subtitle
+                newMeta.publisher = book.volumeInfo.publisher
+                
+                if let authors = book.volumeInfo.authors {
+                    newMeta.writer = authors.joined(separator: ", ")
+                }
+                
+                if let desc = book.volumeInfo.description {
+                    newMeta.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
+                }
+                
+                if let dateString = book.volumeInfo.publishedDate {
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = dateString.count == 4 ? "yyyy" : (dateString.count == 7 ? "yyyy-MM" : "yyyy-MM-dd")
+                    newMeta.publicationDate = formatter.date(from: dateString)
+                }
+                
+                newMeta.tags.append("Google Books")
+                conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
+                
+                if let urlStr = book.volumeInfo.imageLinks?.bestQualityURL {
+                    Task { await fetchAndSaveCover(urlStr) }
+                } else {
+                    dismiss()
                 }
             }
         }

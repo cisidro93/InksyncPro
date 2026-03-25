@@ -12,6 +12,11 @@ struct MetadataEditorSheet: View {
     @State private var isSearching = false
     @State private var searchResults: [ComicVineVolume] = []
     @State private var showResults = false
+    
+    // BookVine State
+    @State private var bookSearchResults: [GoogleBookItem] = []
+    @State private var showBookResults = false
+    
     @State private var errorMessage: String?
     
     // Date Formatter
@@ -37,25 +42,29 @@ struct MetadataEditorSheet: View {
                             .foregroundColor(.orange)
                     } else {
                         HStack(spacing: 16) {
-                            if !conversionManager.conversionSettings.comicVineAPIKey.isEmpty {
+                            if !conversionManager.conversionSettings.comicVineAPIKey.isEmpty && pdf.contentType != .book {
                                 Button(action: searchComicVine) {
-                                    HStack {
-                                        Label("Fetch ComicVine", systemImage: "network")
-                                    }
+                                    Label("Fetch ComicVine", systemImage: "network")
                                 }
                                 .disabled(isSearching)
                             }
                             
-                            Button(action: {
-                                runLocalXMLExtract()
-                            }) {
-                                if isSearching {
-                                    ProgressView()
-                                } else {
-                                    Label("Auto-Fetch XML", systemImage: "doc.text.viewfinder")
+                            if pdf.contentType == .book || pdf.fileURL.pathExtension.lowercased() == "epub" {
+                                Button(action: searchBookVine) {
+                                    Label("Fetch BookVine", systemImage: "book.pages")
+                                }
+                                .disabled(isSearching)
+                            }
+                            
+                            if pdf.contentType != .book {
+                                Button(action: { runLocalXMLExtract() }) {
+                                    if isSearching {
+                                        ProgressView()
+                                    } else {
+                                        Label("Auto-Fetch XML", systemImage: "doc.text.viewfinder")
+                                    }
                                 }
                             }
-                        }
                         
                         if isSearching {
                             ProgressView()
@@ -146,9 +155,13 @@ struct MetadataEditorSheet: View {
                     }
                 }
             }
-            // Results Sheet
+            // ComicVine Results Sheet
             .sheet(isPresented: $showResults) {
                 SearchResultsView(results: searchResults, onSelect: fetchDetails)
+            }
+            // BookVine Results Sheet
+            .sheet(isPresented: $showBookResults) {
+                BookVineResultsView(results: bookSearchResults, onSelect: applyBookMetadata)
             }
             .alert("Rename File?", isPresented: Binding(
                 get: { showingRenamePrompt },
@@ -238,8 +251,6 @@ struct MetadataEditorSheet: View {
         isSearching = true
         errorMessage = nil
         
-        // Use filename or title
-        // Heuristic: Try to extract Series Name from filename if Title is generic
         let query = MetadataHeuristics.cleanFilename(pdf.name)
         
         Task {
@@ -260,6 +271,79 @@ struct MetadataEditorSheet: View {
                 await MainActor.run {
                     self.isSearching = false
                     self.errorMessage = "Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    func searchBookVine() {
+        isSearching = true
+        errorMessage = nil
+        
+        let query = MetadataHeuristics.cleanFilename(pdf.name)
+        
+        Task {
+            do {
+                let results = try await BookMetadataService.shared.searchBooks(query: query)
+                
+                await MainActor.run {
+                    self.bookSearchResults = results
+                    self.isSearching = false
+                    if results.isEmpty {
+                        self.errorMessage = "No BookVine results found for '\(query)'"
+                    } else {
+                        self.showBookResults = true
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.isSearching = false
+                    self.errorMessage = "Google Books API Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    func applyBookMetadata(_ book: GoogleBookItem) {
+        showBookResults = false
+        
+        let info = book.volumeInfo
+        
+        editedMetadata.title = info.title
+        editedMetadata.series = info.subtitle
+        editedMetadata.publisher = info.publisher
+        
+        if let authors = info.authors, !authors.isEmpty {
+            editedMetadata.writer = authors.joined(separator: ", ")
+        }
+        
+        if let desc = info.description {
+            editedMetadata.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
+        }
+        
+        if let dateString = info.publishedDate {
+            // Google Books dates can be "YYYY-MM-DD", "YYYY-MM", or just "YYYY"
+            let formatter = DateFormatter()
+            if dateString.count == 4 {
+                formatter.dateFormat = "yyyy"
+            } else if dateString.count == 7 {
+                formatter.dateFormat = "yyyy-MM"
+            } else {
+                formatter.dateFormat = "yyyy-MM-dd"
+            }
+            editedMetadata.publicationDate = formatter.date(from: dateString)
+        }
+        
+        editedMetadata.tags.append("Google Books")
+        
+        // Asynchronously download the high-res cover image without freezing the UI
+        if let imageURLStr = info.imageLinks?.bestQualityURL, let url = URL(string: imageURLStr) {
+            Task {
+                if let data = try? Data(contentsOf: url) {
+                    await MainActor.run {
+                        conversionManager.saveCoverImage(data, for: pdf)
+                        conversionManager.saveLibrary() // Write changes to disk immediately
+                    }
                 }
             }
         }
@@ -372,6 +456,73 @@ struct SearchResultsView: View {
                 }
             }
             .navigationTitle("Select Series")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// Subview for Google Books Results
+struct BookVineResultsView: View {
+    let results: [GoogleBookItem]
+    let onSelect: (GoogleBookItem) -> Void
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List(results) { book in
+                Button {
+                    onSelect(book)
+                    dismiss()
+                } label: {
+                    HStack(spacing: 12) {
+                        if let urlStr = book.volumeInfo.imageLinks?.smallThumbnail ?? book.volumeInfo.imageLinks?.thumbnail,
+                           let url = URL(string: urlStr.replacingOccurrences(of: "http://", with: "https://")) {
+                            AsyncImage(url: url) { image in
+                                image.resizable().aspectRatio(contentMode: .fit)
+                            } placeholder: {
+                                Color.gray.opacity(0.3)
+                            }
+                            .frame(width: 40, height: 60)
+                            .cornerRadius(4)
+                        } else {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(width: 40, height: 60)
+                                .overlay(Image(systemName: "book.closed").foregroundColor(.secondary))
+                                .cornerRadius(4)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(book.volumeInfo.title)
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            if let authors = book.volumeInfo.authors {
+                                Text(authors.joined(separator: ", "))
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            HStack {
+                                if let pub = book.volumeInfo.publisher {
+                                    Text(pub)
+                                }
+                                Spacer()
+                                if let date = book.volumeInfo.publishedDate {
+                                    Text(date)
+                                }
+                            }
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Select Book")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
