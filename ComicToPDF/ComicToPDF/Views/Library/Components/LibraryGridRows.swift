@@ -38,7 +38,7 @@ struct ModernGridFileCell: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .aspectRatio(0.7, contentMode: .fill) // Standard comic aspect ratio
+            .aspectRatio(0.66, contentMode: .fill) // Standard comic aspect ratio
             .cornerRadius(8)
             .clipped()
             
@@ -157,7 +157,7 @@ struct ModernGridSeriesCell: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .aspectRatio(0.7, contentMode: .fit) // Standard comic aspect ratio
+            .aspectRatio(0.66, contentMode: .fit) // Standard comic aspect ratio
             
             // Text Details
             VStack(alignment: .leading, spacing: 4) {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LibraryGridView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     
     let items: [LibraryListItem]
     @Binding var isBatchMode: Bool
@@ -20,7 +21,9 @@ struct LibraryGridView: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 16)], spacing: 20) {
+                // Adaptive grid sizing: roughly 3 columns on phone, 5-6 on iPad
+                let minWidth: CGFloat = hSizeClass == .regular ? 160 : 100
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: minWidth, maximum: 280), spacing: 16)], spacing: 20) {
                     ForEach(items) { item in
                         switch item {
                         case .series(let group):

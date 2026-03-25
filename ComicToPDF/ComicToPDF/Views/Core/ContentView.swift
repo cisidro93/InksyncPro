@@ -5,61 +5,89 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.horizontalSizeClass) private var hSizeClass
-    
+    @Environment(\.horizontalSizeClass) var sizeClass
     @StateObject private var conversionManager = ConversionManager()
+    // ✅ NEW: Wi-Fi Server for Kindle Sync
     @StateObject private var wifiServer = WiFiServer()
-    @StateObject private var peerManager = PeerManager.shared
     
     @State private var selectedTab = 0
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    @State private var selectedPDF: ConvertedPDF?
+    
+    // Global Sheets
+    @State private var pdfToShare: ConvertedPDF?
+    @State private var pdfToEdit: ConvertedPDF?
+    @State private var showingLargeFileAlert = false
+    @State private var largeFilePDF: ConvertedPDF?
+    
+    // Batch Mode State (Hoisted)
+    @State private var isBatchMode = false
+    @State private var multiSelection = Set<UUID>()
+    @State private var showingBatchMergeReorder = false
+    @State private var batchMergeItems: [ConvertedPDF] = []
+    
+    // ✅ New State for "Save & Open Workflow"
+    @State private var showingWebExport = false
+    @State private var webExportPDF: ConvertedPDF?
+    
+    // ✅ Onboarding State
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @State private var showOnboarding = false
     
-    // Universal Alerts
+    // ✅ UI Mode State
+    @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
+    
+    // ✅ iPad Layout Toggles
+    @AppStorage("useSidebar") private var useSidebar = true
+    @State private var showingSettingsInspector = false
+    // (columnVisibility managed above)
+    
+    // ✅ PHASE 8: Universal Alerts
     @State private var showingGlobalError = false
     @State private var globalErrorMessage = ""
 
-    @State private var showSmartImport = false
-    
-    // MARK: - Adaptive root navigation
     var body: some View {
-        Group {
-            if #available(iOS 18, *) {
-                adaptiveTabView_iOS18
-            } else {
-                adaptiveTabView_legacy
+        VStack(spacing: 0) {
+            // ✅ Global "Go vs Pro" Mode Switcher
+            HStack {
+                Spacer()
+                Picker("UI Mode", selection: $appUIMode) {
+                    Text("Go Mode").tag(AppUIMode.go)
+                    Text("Pro Mode").tag(AppUIMode.pro)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 300)
+                Spacer()
             }
+            .padding(.vertical, 8)
+            .background(Color(.systemBackground).ignoresSafeArea(edges: .top))
+            .zIndex(1)
+            
+            ZStack {
+                if appUIMode == .go {
+                    GoConvertView()
+                        .transition(.opacity)
+                } else {
+                    if sizeClass == .compact || !useSidebar {
+                        liquidGlassLayout
+                            .transition(.opacity)
+                    } else {
+                        iPadLayout
+                            .transition(.opacity)
+                    }
+                }
+            }
+            .animation(.easeInOut, value: appUIMode)
         }
-        .preferredColorScheme(.dark)
         .secureVaultPrivacy()
-        .modifier(iPadKeyboardShortcuts(
-            selectedTab: $selectedTab,
-            showImport: $showSmartImport
-        ))
-        .fileImporter(
-            isPresented: $showSmartImport,
-            allowedContentTypes: [.item],
-            allowsMultipleSelection: false
-        ) { result in
-            // Root-level global file importer via keyboard shortcut
-            if case .success(let urls) = result, let url = urls.first {
-                let accessing = url.startAccessingSecurityScopedResource()
-                let dest = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(url.lastPathComponent)
-                try? FileManager.default.removeItem(at: dest)
-                try? FileManager.default.copyItem(at: url, to: dest)
-                if accessing { url.stopAccessingSecurityScopedResource() }
-                
-                // Switch to import tab so we can intercept it cleanly, 
-                // or we could show a global sheet. For now, we will 
-                // rely on the user having to switch manually if we don't have a global sheet state.
-                selectedTab = 2
-            }
-        }
         .environmentObject(conversionManager)
         .environmentObject(wifiServer)
-        .environmentObject(peerManager)
         .environmentObject(SecurityManager.shared)
+        .environment(\.dynamicTypeSize, conversionManager.conversionSettings.textSize.swiftUIValue)
+        .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
+        .alert(item: $conversionManager.appAlert) { alert in
+            Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView()
         }
@@ -67,13 +95,36 @@ struct ContentView: View {
             if !hasSeenOnboarding {
                 showOnboarding = true
             }
-            peerManager.startDiscovery()
             Task { @MainActor in
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
                 MigrationService.shared.performSmartGrouping(context: modelContext)
             }
         }
-        // Universal Alert Trap
+        // Layer 3: Post-import series grouping prompt
+        .sheet(item: $conversionManager.pendingSeriesGroup) { group in
+            SeriesGroupingSheet(
+                importedPDFs: group.pdfs,
+                suggestedName: group.suggestedName,
+                onConfirm: { seriesName in
+                    Task { await conversionManager.finalizeSeriesImport(pdfs: group.pdfs, seriesName: seriesName) }
+                },
+                onSkip: {
+                    conversionManager.pendingSeriesGroup = nil
+                }
+            )
+        }
+        .sheet(isPresented: $conversionManager.isPresentingPanelEditor) {
+            if let img = conversionManager.currentEditorImage {
+                PanelEditorView(
+                    image: img,
+                    panels: $conversionManager.currentEditorPanels,
+                    onDone: { editedRects in
+                        conversionManager.submitPanelEdits(editedRects)
+                    }
+                )
+            }
+        }
+        // ✅ PHASE 8: Universal Alert Trap
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("GlobalErrorTriggered"))) { notification in
             if let userInfo = notification.userInfo,
                let message = userInfo["message"] as? String,
@@ -87,56 +138,184 @@ struct ContentView: View {
         } message: {
             Text(globalErrorMessage)
         }
+        // ✅ Hardware Shortcuts
+        .modifier(iPadKeyboardShortcuts(
+            selectedTab: $selectedTab,
+            showImport: $showingWebExport
+        ))
+        .fileImporter(
+            isPresented: $showingWebExport, // re-using this binding to pop our global root importer
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                let accessing = url.startAccessingSecurityScopedResource()
+                let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                try? FileManager.default.removeItem(at: dest)
+                try? FileManager.default.copyItem(at: url, to: dest)
+                if accessing { url.stopAccessingSecurityScopedResource() }
+                selectedTab = 1 // Switch to Import Tab
+            }
+        }
     }
-    
-    // iOS 18+: sidebar tab style (iPad shows rail/sidebar, iPhone shows bottom bar)
-    @available(iOS 18, *)
-    private var adaptiveTabView_iOS18: some View {
+
+    // ✅ iOS 26 "Liquid Glass" Layout
+    var liquidGlassLayout: some View {
         TabView(selection: $selectedTab) {
-            Tab("Read Now", systemImage: "book.open.fill", value: 0) {
-                ReadNowView()
+            // Tab 1: Library
+            NavigationStack {
+                ModernLibraryView(
+                    selectedPDF: $selectedPDF,
+                    isBatchMode: $isBatchMode,
+                    multiSelection: $multiSelection,
+                    showingBatchMergeReorder: $showingBatchMergeReorder,
+                    batchMergeItems: $batchMergeItems,
+                    useNavigationStack: true,
+                    onFolderImport: {
+                        FolderImportCoordinator.present { urls in
+                            guard !urls.isEmpty else { return }
+                            Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                        }
+                    }
+                )
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: ConvertedPDF.self) { pdf in
+                    ConvertView(pdf: pdf)
+                        .id(pdf.id)
+                }
             }
-            Tab("Library", systemImage: "books.vertical.fill", value: 1) {
-                InkLibraryView()
-            }
-            Tab("Import", systemImage: "arrow.down.circle.fill", value: 2) {
+            .tabItem { Label("Library", systemImage: "books.vertical") }
+            .tag(0)
+            
+            // Tab 2: Import
+            NavigationStack {
                 ImportTriggerView()
             }
-            Tab("Devices", systemImage: "ipad.and.iphone", value: 3) {
-                DevicesView()
+            .tabItem { Label("Import", systemImage: "arrow.down.circle.fill") }
+            .tag(1)
+            
+            // Tab 3: Devices
+            DevicesView()
+            .tabItem { Label("Devices", systemImage: "ipad.and.iphone") }
+            .tag(2)
+            
+            // Tab 4: Work Area
+            NavigationStack {
+                EditorDashboardView()
+            }
+            .tabItem { Label("Work Area", systemImage: "pencil.and.outline") }
+            .tag(3)
+            
+            // Tab 5: Settings
+            NavigationStack {
+                SettingsView()
+            }
+            .tabItem { Label("Settings", systemImage: "gear") }
+            .tag(4)
+        }
+        // ✅ iOS 26 Enhancements
+        .ios26_tabBarMinimizeBehavior(.onScrollDown)
+        .ios26_tabViewBottomAccessory {
+            if conversionManager.isConverting {
+                ProgressOverlay(
+                    progress: conversionManager.conversionProgress,
+                    message: conversionManager.processingStatus
+                )
             }
         }
-        .tabViewStyle(.sidebarAdaptable)
-        .tint(.inkBlue)
     }
-
-    // iOS 16–17: manual adaptation
-    private var adaptiveTabView_legacy: some View {
-        if hSizeClass == .regular {
-            // iPad on iOS 16-17: use NavigationSplitView with manual sidebar
-            return AnyView(iPadRootSplitView(selectedTab: $selectedTab))
-        } else {
-            // iPhone: standard bottom tab bar
-            return AnyView(iPhoneTabView)
+    
+    var iPadLayout: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            VStack(spacing: 0) {
+                let tabBinding = Binding<Int?>(
+                    get: { selectedTab },
+                    set: { selectedTab = $0 ?? 0 }
+                )
+                List(selection: tabBinding) {
+                    NavigationLink(value: 0) {
+                        Label("Library", systemImage: "books.vertical.fill")
+                    }
+                    NavigationLink(value: 1) {
+                        Label("Import", systemImage: "arrow.down.circle.fill")
+                    }
+                    NavigationLink(value: 2) {
+                        Label("Devices", systemImage: "ipad.and.iphone")
+                    }
+                    NavigationLink(value: 3) {
+                        Label("Work Area", systemImage: "pencil.and.outline")
+                    }
+                }
+                .navigationTitle("Inksync")
+                
+                Spacer()
+                
+                // Settings button at the bottom of the sidebar
+                Button(action: {
+                    showingSettingsInspector.toggle()
+                }) {
+                    HStack {
+                        Image(systemName: "gear")
+                        Text("Settings")
+                        Spacer()
+                    }
+                    .padding()
+                    .foregroundColor(.white)
+                }
+            }
+        } detail: {
+            NavigationStack {
+                if selectedTab == 0 {
+                    ModernLibraryView(
+                        selectedPDF: $selectedPDF,
+                        isBatchMode: $isBatchMode,
+                        multiSelection: $multiSelection,
+                        showingBatchMergeReorder: $showingBatchMergeReorder,
+                        batchMergeItems: $batchMergeItems,
+                        useNavigationStack: false, // Handle selection manually in detail if needed, but since we are the detail, maybe we DO want navigation stack inside it for reader? Actually, ModernLibraryView already handles `useNavigationStack: false` by setting `selectedPDF`.
+                        onFolderImport: {
+                            FolderImportCoordinator.present { urls in
+                                guard !urls.isEmpty else { return }
+                                Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                            }
+                        }
+                    )
+                    .toolbar(.hidden, for: .navigationBar)
+                    // If a PDF is selected, we want to push the ConvertView. 
+                    // To do this cleanly without breaking the grid, we use a navigationDestination bounded to selectedPDF
+                    .navigationDestination(isPresented: Binding(
+                        get: { selectedPDF != nil },
+                        set: { if !$0 { selectedPDF = nil } }
+                    )) {
+                        if let pdf = selectedPDF {
+                            ConvertView(pdf: pdf)
+                        }
+                    }
+                } else if selectedTab == 1 {
+                    ImportTriggerView()
+                } else if selectedTab == 2 {
+                    DevicesView()
+                } else if selectedTab == 3 {
+                    EditorDashboardView()
+                }
+            }
+            // ✅ iPad Settings Inspector
+            .inspector(isPresented: $showingSettingsInspector) {
+                NavigationStack {
+                    SettingsView()
+                        .navigationTitle("Settings")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showingSettingsInspector = false }.bold()
+                            }
+                        }
+                }
+                .presentationDetents([.medium, .large])
+                .inspectorColumnWidth(min: 300, ideal: 350, max: 400)
+            }
         }
-    }
-
-    private var iPhoneTabView: some View {
-        TabView(selection: $selectedTab) {
-            ReadNowView()
-                .tabItem { Label("Read Now", systemImage: "book.open.fill") }
-                .tag(0)
-            InkLibraryView()
-                .tabItem { Label("Library", systemImage: "books.vertical.fill") }
-                .tag(1)
-            ImportTriggerView()
-                .tabItem { Label("Import", systemImage: "arrow.down.circle.fill") }
-                .tag(2)
-            DevicesView()
-                .tabItem { Label("Devices", systemImage: "ipad.and.iphone") }
-                .tag(3)
-        }
-        .tint(.inkBlue)
+        .navigationSplitViewStyle(.balanced)
     }
 }
 
