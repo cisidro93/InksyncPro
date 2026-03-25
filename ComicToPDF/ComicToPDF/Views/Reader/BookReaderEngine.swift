@@ -13,6 +13,7 @@ struct TypographySettings: Codable, Equatable {
     var themeHex: String = "#ffffff"
     var textHex: String = "#000000"
 }
+@MainActor
 class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     static let shared = TTSManager()
     let synthesizer = AVSpeechSynthesizer()
@@ -70,7 +71,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             
             if !self.fileManager.fileExists(atPath: self.tempDir.path) {
                 try? self.fileManager.createDirectory(at: self.tempDir, withIntermediateDirectories: true)
-                guard let archive = Archive(url: self.pdf.url, accessMode: .read) else {
+                guard let archive = try? Archive(url: self.pdf.url, accessMode: .read) else {
                     DispatchQueue.main.async { self.isLoading = false }
                     return
                 }
@@ -507,7 +508,7 @@ struct AnnotationListView: View {
                                 
                                 if let color = annotation.colorHex {
                                     Circle()
-                                        .fill(Color(hex: color) ?? .yellow)
+                                        .fill(Color(UIColor(hex: color) ?? .yellow))
                                         .frame(width: 12, height: 12)
                                 }
                             }

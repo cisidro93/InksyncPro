@@ -79,8 +79,6 @@ class PeerManager: ObservableObject {
     
     /// Maps generic NWBrowser.Result items into concrete PeerNode structures.
     private func processBrowseResults(_ results: Set<NWBrowser.Result>) {
-        var discoveredPeers: [PeerNode] = []
-        
         for result in results {
             if case .service(let name, _, _, _) = result.endpoint {
                 resolveIP(from: result.endpoint) { [weak self] resolvedIP in

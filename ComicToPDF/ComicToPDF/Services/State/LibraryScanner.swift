@@ -1,0 +1,89 @@
+import Foundation
+import UIKit
+import Combine
+import ZIPFoundation
+
+/// Resolves the 'God Object' bottleneck by handling intensive O(N) file system enumeration strictly off the Main Thread.
+actor LibraryScanner {
+    static let shared = LibraryScanner()
+    
+    func scanLibrary(addedByMode: AppUIMode? = nil, manager: ConversionManager) async {
+        let fileManager = FileManager.default
+        let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        
+        var newPDFs: [ConvertedPDF] = []
+        let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
+        
+        let currentPaths = await MainActor.run {
+            manager.convertedPDFs.map { $0.url.standardizedFileURL.path }
+        }
+        
+        let pathSet = Set(currentPaths)
+        
+        if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+            while let fileURL = enumerator.nextObject() as? URL {
+                await Task.yield()
+                let ext = fileURL.pathExtension.lowercased()
+                if ["pdf", "cbz", "zip", "epub"].contains(ext) {
+                    if !pathSet.contains(fileURL.standardizedFileURL.path) {
+                        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                        let sourceMode = addedByMode ?? .pro
+                        var newPDF = ConvertedPDF(name: fileURL.lastPathComponent, url: fileURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: fileURL.lastPathComponent))
+                        newPDF.addedByMode = sourceMode
+                        newPDFs.append(newPDF)
+                    }
+                }
+            }
+        }
+        
+        let finalNewPDFs = newPDFs
+        if !finalNewPDFs.isEmpty {
+            await MainActor.run {
+                manager.convertedPDFs.append(contentsOf: finalNewPDFs)
+                Logger.shared.log("Library Scanned: Found \(finalNewPDFs.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
+                manager.saveLibrary()
+            }
+        }
+        
+        let pdfsToProcess = await MainActor.run {
+            manager.convertedPDFs.filter { $0.pageCount == 0 }
+        }
+        
+        if !pdfsToProcess.isEmpty {
+            for pdf in pdfsToProcess {
+                Task {
+                    await manager.generateCoverThumbnail(for: pdf)
+                    
+                    let count = await Task.detached(priority: .background) {
+                        return ConversionManager.getPageCountStatic(from: pdf.url)
+                    }.value
+                    
+                    if count > 0 {
+                        await MainActor.run {
+                            if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                                manager.convertedPDFs[idx].pageCount = count
+                            }
+                        }
+                    }
+                    
+                    if let validPanels = try? await manager.extractSmartPanels(from: pdf.url) {
+                        await MainActor.run {
+                            manager.savePanelOverrides(for: pdf.id, panels: validPanels)
+                        }
+                    }
+                }
+            }
+        }
+        
+        let allPDFs = await MainActor.run { manager.convertedPDFs }
+        let missingIDs = allPDFs.filter { !fileManager.fileExists(atPath: $0.url.path) }.map { $0.id }
+        
+        if !missingIDs.isEmpty {
+            await MainActor.run {
+                manager.convertedPDFs.removeAll { missingIDs.contains($0.id) }
+                Logger.shared.log("Removed \(missingIDs.count) missing files from library", category: "Library")
+                manager.saveLibrary()
+            }
+        }
+    }
+}

@@ -43,9 +43,7 @@ class ConversionManager: ObservableObject {
     internal var thumbnailCache = NSCache<NSString, UIImage>()
     
     // MARK: - Editor Session Cache
-    // Prevents "Death Spiral" by keeping the comic unzipped while editing
-    private var editorCache: (pdfID: UUID, folder: URL, files: [URL])?
-    private var activeExtractionTask: Task<(workingDir: URL, files: [URL]), Error>?
+    // Delegated to EditorSessionManager to prevent "Death Spiral" UI blocking.
     
     // Guided View Data
     @Published var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]] = [:]
@@ -372,98 +370,9 @@ class ConversionManager: ObservableObject {
     
     // MARK: - File Management
     func scanLibrary(addedByMode: AppUIMode? = nil) {
-        Task.detached(priority: .background) {
-            let fileManager = FileManager.default
-            let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            
-            // Recursive Scan
-            // We use enumerator to find files deep in folders
-            var newPDFs: [ConvertedPDF] = []
-            let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
-            
-            let currentPaths = await MainActor.run {
-                self.convertedPDFs.map { $0.url.standardizedFileURL.path }
-            }
-            
-            // ✅ NEW: Execute O(N) Set conversion entirely off the Main Thread
-            let pathSet = Set(currentPaths)
-            
-            if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
-                 while let fileURL = enumerator.nextObject() as? URL {
-                     await Task.yield()
-                     let ext = fileURL.pathExtension.lowercased()
-                    if ["pdf", "cbz", "zip", "epub"].contains(ext) {
-                         // Check if already exists (Standardized Path Check)
-                         if !pathSet.contains(fileURL.standardizedFileURL.path) {
-                             let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-                             // ✅ Tag new files with the mode that triggered this scan
-                             let sourceMode = addedByMode ?? .pro
-                             var newPDF = ConvertedPDF(name: fileURL.lastPathComponent, url: fileURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: fileURL.lastPathComponent))
-                             newPDF.addedByMode = sourceMode
-                             newPDFs.append(newPDF)
-                         }
-                     }
-                 }
-            }
-            
-            // Add new ones safely
-            let finalNewPDFs = newPDFs
-            if !finalNewPDFs.isEmpty {
-                await MainActor.run {
-                    self.convertedPDFs.append(contentsOf: finalNewPDFs)
-                    Logger.shared.log("Library Scanned: Found \(finalNewPDFs.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
-                    self.saveLibrary()
-                }
-            }
-            
-            // Process any file missing page count or metadata (catches Folder Sync & Series Import)
-            let pdfsToProcess = await MainActor.run {
-                self.convertedPDFs.filter { $0.pageCount == 0 }
-            }
-            
-            if !pdfsToProcess.isEmpty {
-                // Process Metadata & Thumbnails in Background
-                for pdf in pdfsToProcess {
-                    Task {
-                        // 1. Thumbnails
-                        await self.generateCoverThumbnail(for: pdf)
-                        
-                        // 2. Page Count
-                        let count = await Task.detached(priority: .background) {
-                            return ConversionManager.getPageCountStatic(from: pdf.url)
-                        }.value
-                        
-                        if count > 0 {
-                            await MainActor.run {
-                                if let idx = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                                    var updated = self.convertedPDFs[idx]
-                                    updated.pageCount = count
-                                    self.convertedPDFs[idx] = updated
-                                }
-                            }
-                        }
-                        
-                        // 3. Extract Embedded Panels (if any)
-                        if let validPanels = try? await self.extractSmartPanels(from: pdf.url) {
-                            await MainActor.run {
-                                self.savePanelOverrides(for: pdf.id, panels: validPanels)
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Cleanup: Remove missing files safely
-            let allPDFs = await MainActor.run { self.convertedPDFs }
-            let missingIDs = allPDFs.filter { !fileManager.fileExists(atPath: $0.url.path) }.map { $0.id }
-            
-            if !missingIDs.isEmpty {
-                await MainActor.run {
-                    self.convertedPDFs.removeAll { missingIDs.contains($0.id) }
-                    Logger.shared.log("Removed \(missingIDs.count) missing files from library", category: "Library")
-                    self.saveLibrary()
-                }
-            }
+        Task {
+            // ✅ Delegated O(N) file enumeration to strictly concurrent Actor
+            await LibraryScanner.shared.scanLibrary(addedByMode: addedByMode, manager: self)
         }
     }
     
@@ -682,93 +591,21 @@ class ConversionManager: ObservableObject {
     
     // MARK: - STABLE FILE EXTRACTION
     func extractImageFiles(from url: URL) async throws -> (workingDir: URL, files: [URL]) {
-        // We capture the result from ZipUtilities
-        let result = try await ZipUtilities.extractComic(from: url)
-        
-        // We remap 'imageURLs' to 'files' to satisfy the function signature
-        return (workingDir: result.workingDir, files: result.imageURLs)
+        return try await EditorSessionManager.shared.extractImageFiles(from: url)
     }
     
     func extractImageURLs(from url: URL) async throws -> [URL] {
-        return try await extractImageFiles(from: url).files
+        return try await EditorSessionManager.shared.extractImageURLs(from: url)
     }
     
     // Helper used by Editor for Single Page Load
     func extractFullPage(from pdf: ConvertedPDF, index: Int) async throws -> UIImage? {
-        
-        // 1. Check if we already have this session active (Smart Cache)
-        if let cache = editorCache, cache.pdfID == pdf.id {
-            // Already unzipped! Instant load.
-            guard index < cache.files.count else { return nil }
-            return ConversionManager.loadDownsampledImageStatic(at: cache.files[index], maxDimension: 1920)
-        }
-        
-        // 2. If it's a NEW session (ID mismatch), we must clean up the old one first
-        if let oldCache = editorCache, oldCache.pdfID != pdf.id {
-
-            endSession() // Clean up old files immediately
-        }
-        
-        // 3. Concurrency Lock: If extraction is already running for THIS file, wait for it
-        if let existingTask = activeExtractionTask {
-            // Wait for existing task
-             let result = try await existingTask.value
-             // Double check ID match after await
-             if result.workingDir.lastPathComponent.contains(pdf.id.uuidString) || true { // Simplified check
-                 self.editorCache = (pdf.id, result.workingDir, result.files)
-                 guard index < result.files.count else { return nil }
-                 return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 1920)
-             }
-        }
-        
-        // 4. Start New Extraction Task
-
-        let newTask = Task.detached(priority: .userInitiated) {
-            let result = try await ZipUtilities.extractComic(from: pdf.url)
-            return (workingDir: result.workingDir, files: result.imageURLs)
-        }
-        
-        self.activeExtractionTask = newTask
-        
-        let result = try await newTask.value
-        
-        // 5. Update Cache
-        self.editorCache = (pdf.id, result.workingDir, result.files)
-        self.activeExtractionTask = nil
-        
-        guard index < result.files.count else { return nil }
-        return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 1920)
+        return try await EditorSessionManager.shared.extractFullPage(pdfID: pdf.id, pdfURL: pdf.url, index: index)
     }
     
     func endSession() {
-
-        
-        // 1. Cancel the background unzipping IMMEDIATELY
-        activeExtractionTask?.cancel()
-        activeExtractionTask = nil
-        
-        // 2. Clear UI
-        // We use MainActor.run just in case, though this class is @MainActor already.
-        Task { @MainActor in
-            self.editorCache = nil
-            // Don't reset isConverting/progress here as that might be for other tasks? 
-            // Actually, Editor Session is distinct from Conversion. 
-            // Let's keep status clean.
-            if self.processingStatus.contains("Importing") == false {
-                 self.statusMessage = "Ready"
-            }
-        }
-        
-        // 3. Clean up disk (Add a slight delay to ensure the Task actually stopped writing)
-        let cacheToDelete = self.editorCache
-        
-        // We delay the file deletion slightly to let the Task catch the cancellation error
-        let bgTask = UIApplication.shared.beginBackgroundTask(expirationHandler: nil)
-        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) {
-            if let cache = cacheToDelete {
-                 try? FileManager.default.removeItem(at: cache.folder)
-            }
-            UIApplication.shared.endBackgroundTask(bgTask)
+        Task {
+            await EditorSessionManager.shared.endSession(manager: self)
         }
     }
     

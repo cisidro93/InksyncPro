@@ -33,22 +33,22 @@ class MigrationService {
             legacyCollections = cols
         }
         
-        var containerMap: [UUID: InkContainer] = [:]
+        var containerMap: [UUID: SDPDFCollection] = [:]
         
         // 1. Insert Containers
         for col in legacyCollections {
-            let container = InkContainer(id: col.id, name: col.name, icon: col.icon, color: col.color, creationDate: col.creationDate, explicitCoverFileID: col.explicitCoverFileID)
+            let container = SDPDFCollection(id: col.id, name: col.name, icon: col.icon, color: col.color, creationDate: col.creationDate, explicitCoverFileID: col.explicitCoverFileID)
             context.insert(container)
             containerMap[col.id] = container
         }
         
         // 2. Insert Documents and Relate
         for pdf in legacyPDFs {
-            let doc = InkDocument(id: pdf.id, name: pdf.name, url: pdf.url, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata, isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate, coverImageData: pdf.coverImageData, contentType: pdf.contentType, chapters: pdf.chapters, addedByMode: pdf.addedByMode)
+            let doc = SDConvertedPDF(id: pdf.id, name: pdf.name, url: pdf.url, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata, collectionId: pdf.collectionId, isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate, coverImageData: pdf.coverImageData, contentType: pdf.contentType, chapters: pdf.chapters, addedByMode: pdf.addedByMode)
             
-            // Re-establish relationships natively in SwiftData (Now supporting Many-to-Many arrays)
-            if let colId = pdf.collectionId, let parentContainer = containerMap[colId] {
-                doc.containers = [parentContainer]
+            // Re-establish relationships natively in SwiftData
+            if let colId = pdf.collectionId, containerMap[colId] != nil {
+                // the document already has collectionId set in init
             }
             context.insert(doc)
         }
@@ -67,11 +67,11 @@ class MigrationService {
     // for series matching known syntax (e.g. "Batman Vol. 1", "Batman Vol. 2")
     func performSmartGrouping(context: ModelContext) {
         // Fetch all documents and filter in memory to dodge `#Predicate` translation limitations on optional arrays
-        let fetchDescriptor = FetchDescriptor<InkDocument>()
+        let fetchDescriptor = FetchDescriptor<SDConvertedPDF>()
         guard let allDocs = try? context.fetch(fetchDescriptor) else { return }
-        let orphans = allDocs.filter { $0.containers?.isEmpty ?? true }
+        let orphans = allDocs.filter { $0.collectionId == nil }
         
-        var groupedByName: [String: [InkDocument]] = [:]
+        var groupedByName: [String: [SDConvertedPDF]] = [:]
         
         for doc in orphans {
             // Priority 1: Use Explicit Metadata Series
@@ -81,7 +81,7 @@ class MigrationService {
             }
             
             // Priority 2: Use file regex stripping issue numbers
-            let seriesBaseName = doc.name.replacingOccurrences(of: #"(?i)(\svol(\.|ume)?\s*\d+|\sissue\s*\d+|\s#\d+|\s-\s\d+).*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            let seriesBaseName = doc.name.replacingOccurrences(of: #"(?i)(\svol(\.|ume)?\s*\d+|\sissue\s*\d+|\s#\d+|\s-\s\d+).*"#, with: "", options: String.CompareOptions.regularExpression).trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
             
             groupedByName[seriesBaseName, default: []].append(doc)
         }
@@ -92,21 +92,20 @@ class MigrationService {
             // Only group if there are at least 2 matching items
             if docs.count > 1 {
                 // Check if container already exists
-                let namePredicate = #Predicate<InkContainer> { $0.name == seriesName }
-                var existingContainer: InkContainer?
+                let namePredicate = #Predicate<SDPDFCollection> { $0.name == seriesName }
+                var existingContainer: SDPDFCollection?
                 if let fetchRes = try? context.fetch(FetchDescriptor(predicate: namePredicate)), let match = fetchRes.first {
                     existingContainer = match
                 }
                 
-                let container = existingContainer ?? InkContainer(name: seriesName)
+                let container = existingContainer ?? SDPDFCollection(id: UUID(), name: seriesName, icon: "folder", color: "blue", creationDate: Date(), explicitCoverFileID: nil)
                 if existingContainer == nil {
                     context.insert(container)
                     generatedCount += 1
                 }
                 
                 for doc in docs {
-                    if doc.containers == nil { doc.containers = [] }
-                    doc.containers?.append(container)
+                    doc.collectionId = container.id
                 }
             }
         }
@@ -114,6 +113,66 @@ class MigrationService {
         if generatedCount > 0 {
             try? context.save()
             Logger.shared.log("Smart Grouping generated \(generatedCount) new recursive series collections.", category: "Library")
+        }
+    }
+    
+    // ✅ NEW: Dual-Write Background Sync
+    // Silently builds the SwiftData database while legacy monolithic arrays are still being used by the UI layer.
+    func syncToSwiftData(pdfs: [ConvertedPDF], collections: [PDFCollection]) {
+        Task.detached(priority: .background) {
+            do {
+                let container = try ModelContainer(for: SDConvertedPDF.self, SDPDFCollection.self)
+                let context = ModelContext(container)
+                
+                // 1. Sync Collections
+                for col in collections {
+                    let colId = col.id
+                    let predicate = #Predicate<SDPDFCollection> { $0.id == colId }
+                    var existing: SDPDFCollection?
+                    if let fetchRes = try? context.fetch(FetchDescriptor(predicate: predicate)), let match = fetchRes.first {
+                        existing = match
+                    }
+                    if let existing = existing {
+                        existing.name = col.name
+                        existing.icon = col.icon
+                        existing.color = col.color
+                        existing.explicitCoverFileID = col.explicitCoverFileID
+                    } else {
+                        let newCol = SDPDFCollection(id: col.id, name: col.name, icon: col.icon, color: col.color, creationDate: col.creationDate, explicitCoverFileID: col.explicitCoverFileID)
+                        context.insert(newCol)
+                    }
+                }
+                
+                // 2. Sync PDFs
+                for pdf in pdfs {
+                    let pdfId = pdf.id
+                    let predicate = #Predicate<SDConvertedPDF> { $0.id == pdfId }
+                    var existingDoc: SDConvertedPDF?
+                    if let fetchRes = try? context.fetch(FetchDescriptor(predicate: predicate)), let match = fetchRes.first {
+                        existingDoc = match
+                    }
+                    
+                    if let existing = existingDoc {
+                        existing.name = pdf.name
+                        existing.pageCount = pdf.pageCount
+                        existing.fileSize = pdf.fileSize
+                        existing.metadata = pdf.metadata
+                        existing.collectionId = pdf.collectionId
+                        existing.isFavorite = pdf.isFavorite
+                        existing.isPrivate = pdf.isPrivate
+                        existing.contentType = pdf.contentType
+                        existing.addedByMode = pdf.addedByMode
+                    } else {
+                        let doc = SDConvertedPDF(id: pdf.id, name: pdf.name, url: pdf.url, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata, collectionId: pdf.collectionId, isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate, coverImageData: pdf.coverImageData, contentType: pdf.contentType, chapters: pdf.chapters, addedByMode: pdf.addedByMode)
+                        context.insert(doc)
+                    }
+                }
+                
+                try context.save()
+                // Logger.shared.log("Dual-Write SwiftData sync successful.", category: "Persistence")
+            } catch {
+                Logger.shared.log("Dual-Write SwiftData sync failed: \(error.localizedDescription)", category: "Migration", type: .error)
+            }
         }
     }
 }

@@ -42,7 +42,7 @@ class ReaderProgressTracker: ObservableObject {
         
         // Calculate Time-To-Finish Heuristic (Phase 3 Casual Comfort)
         // Assume rough velocity of 1.5 minutes per page for books, 0.5 minutes for manga/comics
-        let pagesLeft = max(0, updated.totalPagesRead > 0 ? (updated.currentChapterIndex == nil ? 100 /* fallback */ : 100) : 100)
+        _ = max(0, updated.totalPagesRead > 0 ? (updated.currentChapterIndex == nil ? 100 /* fallback */ : 100) : 100)
         // Wait, totalPages is not in progress. CompletionFraction is!
         if updated.completionFraction > 0 && updated.completionFraction <= 1.0 {
             // We can estimate total pages or directly estimate time remaining if we know average velocity

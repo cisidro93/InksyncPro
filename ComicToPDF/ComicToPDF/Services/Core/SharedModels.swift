@@ -68,7 +68,7 @@ enum DocumentSubtype: String, Codable {
     case unknown
 }
 
-struct ConvertedPDF: Identifiable, Codable, Hashable {
+struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var name: String
     var url: URL
@@ -187,7 +187,7 @@ struct GenericFileDocument: FileDocument {
     }
 }
 
-struct PDFMetadata: Codable, Equatable, Hashable {
+struct PDFMetadata: Codable, Equatable, Hashable, Sendable {
     var title: String
     var author: String?
     var series: String?
@@ -215,13 +215,13 @@ struct PDFMetadata: Codable, Equatable, Hashable {
 }
 
 // ✅ NEW: Chapter Structure
-struct Chapter: Identifiable, Codable, Hashable {
+struct Chapter: Identifiable, Codable, Hashable, Sendable {
     var id: UUID = UUID()
     var title: String
     var pageIndex: Int // 0-based index of the start page
 }
 
-struct PDFCollection: Identifiable, Codable, Equatable {
+struct PDFCollection: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     var name: String
     var icon: String
@@ -241,7 +241,7 @@ func colorFor(_ name: String) -> Color {
     }
 }
 
-struct KindleDevice: Identifiable, Codable, Equatable, Hashable {
+struct KindleDevice: Identifiable, Codable, Equatable, Hashable, Sendable {
     let id: UUID
     var name: String
     var email: String
@@ -424,7 +424,7 @@ enum AIVendor: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-struct ConversionSettings: Codable, Equatable {
+struct ConversionSettings: Codable, Equatable, Sendable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
     var optimizeForDevice: Bool = true
@@ -640,7 +640,7 @@ struct ConversionSettings: Codable, Equatable {
     }
 }
 
-struct EPUBSettings: Codable, Equatable {
+struct EPUBSettings: Codable, Equatable, Sendable {
     enum ReadingDirection: String, Codable {
         case ltr = "ltr"
         case rtl = "rtl"
@@ -656,7 +656,7 @@ struct EPUBSettings: Codable, Equatable {
     var readingDirection: ReadingDirection = .ltr
 }
 
-struct ImageEnhancementSettings: Codable, Equatable {
+struct ImageEnhancementSettings: Codable, Equatable, Sendable {
     var grayscale: Bool = false
     var autoContrast: Bool = false
     var invertColors: Bool = false
@@ -721,7 +721,7 @@ enum CompressionPreset: String, CaseIterable, Codable {
     }
 }
 
-struct ConversionPreset: Identifiable, Codable {
+struct ConversionPreset: Identifiable, Codable, Sendable {
     var id: UUID = UUID()
     var name: String
     var settings: ConversionSettings

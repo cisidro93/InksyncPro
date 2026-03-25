@@ -37,6 +37,9 @@ class LibraryPersistenceManager {
             primaryDeviceID: manager.primaryDeviceID
         )
         
+        let syncPDFs = manager.convertedPDFs
+        let syncCols = manager.collections
+        
         Task.detached(priority: .background) {
             guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName) else { return }
             
@@ -51,6 +54,9 @@ class LibraryPersistenceManager {
             } catch {
                 Logger.shared.log("LibraryPersistenceManager: Background Save Failed: \(error)", category: "Persistence", type: .error)
             }
+            
+            // ✅ Trigger Dual-Write Sync to SwiftData
+            await MigrationService.shared.syncToSwiftData(pdfs: syncPDFs, collections: syncCols)
         }
     }
     

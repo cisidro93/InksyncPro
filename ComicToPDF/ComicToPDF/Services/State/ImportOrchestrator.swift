@@ -625,9 +625,9 @@ class ImportOrchestrator {
                 pageCount: extractedCount, fileSize: fileSize,
                 metadata: PDFMetadata(title: fileName), contentType: contentType
             )
-            newPDF.contentKind = await self.detectContentKind(url: cbzURL)
+            newPDF.contentKind = self.detectContentKind(url: cbzURL)
             if newPDF.contentKind == .document {
-                newPDF.documentSubtype = await self.detectDocumentSubtype(url: cbzURL, fileSize: fileSize)
+                newPDF.documentSubtype = self.detectDocumentSubtype(url: cbzURL, fileSize: fileSize)
             }
             
             if let coverData = newCoverData {

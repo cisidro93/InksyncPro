@@ -114,7 +114,7 @@ struct DocumentReaderEngine: View {
                 }
             }
         }
-        .onChange(of: currentPageIndex) { _ in
+        .onChange(of: currentPageIndex) { old, new in
             if isReflowMode { updateReflowText() }
         }
     }

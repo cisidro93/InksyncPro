@@ -37,7 +37,7 @@ class ComicImageCache: ObservableObject {
             self.pdfDocument = nil
             queue.async { [weak self] in
                 guard let self = self else { return }
-                guard let archive = Archive(url: pdf.url, accessMode: .read) else {
+                guard let archive = try? Archive(url: pdf.url, accessMode: .read) else {
                     DispatchQueue.main.async { self.isLoading = false }
                     return
                 }

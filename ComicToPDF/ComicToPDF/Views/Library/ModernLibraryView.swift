@@ -44,7 +44,7 @@ struct ModernLibraryView: View {
                     // MARK: - Dedicated Header Component
                     LibraryHeaderView(
                         searchText: $viewModel.searchText,
-                        sortOption: Binding(get: { sortOption }, set: { sortOption = $0; viewModel.sortPDFs(conversionManager.visiblePDFs, sortOption: $0) }),
+                        sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(conversionManager.visiblePDFs, sortOption: $0) }),
                         viewStyle: $viewStyle,
                         tapAction: $tapAction,
                         onSheetTrigger: { dest in viewModel.activeSheet = dest },
