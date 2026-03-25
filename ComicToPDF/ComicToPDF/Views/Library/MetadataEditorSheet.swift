@@ -65,6 +65,7 @@ struct MetadataEditorSheet: View {
                                     }
                                 }
                             }
+                        }
                         
                         if isSearching {
                             ProgressView()
@@ -318,7 +319,7 @@ struct MetadataEditorSheet: View {
         }
         
         if let desc = info.description {
-            editedMetadata.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
+            editedMetadata.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: String.CompareOptions.regularExpression, range: nil)
         }
         
         if let dateString = info.publishedDate {

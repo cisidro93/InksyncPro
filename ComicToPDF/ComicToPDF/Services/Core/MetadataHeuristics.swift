@@ -39,3 +39,79 @@ struct MetadataHeuristics {
         return nil
     }
 }
+
+// MARK: - BookVine (Google Books API) Services
+// Embedded here to avoid manual 'project.pbxproj' reference updates dynamically.
+
+/// Defines the structure returned by the Google Books API
+struct GoogleBooksResponse: Codable {
+    let items: [GoogleBookItem]?
+}
+
+struct GoogleBookItem: Codable, Identifiable {
+    let id: String
+    let volumeInfo: GoogleBookVolumeInfo
+}
+
+struct GoogleBookVolumeInfo: Codable {
+    let title: String
+    let subtitle: String?
+    let authors: [String]?
+    let publisher: String?
+    let publishedDate: String?
+    let description: String?
+    let pageCount: Int?
+    let industryIdentifiers: [GoogleBookIdentifier]?
+    let imageLinks: GoogleBookImageLinks?
+}
+
+struct GoogleBookIdentifier: Codable {
+    let type: String
+    let identifier: String
+}
+
+struct GoogleBookImageLinks: Codable {
+    let thumbnail: String?
+    let smallThumbnail: String?
+    let small: String?
+    let medium: String?
+    let large: String?
+    let extraLarge: String?
+    
+    // Helper to get the highest resolution available
+    var bestQualityURL: String? {
+        let urlStr = extraLarge ?? large ?? medium ?? small ?? thumbnail ?? smallThumbnail
+        return urlStr?.replacingOccurrences(of: "http://", with: "https://")
+    }
+}
+
+/// Service responsible for fetching metadata for novels, textbooks, and EPUBs from the Google Books API.
+class BookMetadataService {
+    static let shared = BookMetadataService()
+    
+    private init() {}
+    
+    func searchBooks(query: String) async throws -> [GoogleBookItem] {
+        let cleanQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let urlString = "https://www.googleapis.com/books/v1/volumes?q=\(cleanQuery)&maxResults=40"
+        
+        guard let url = URL(string: urlString) else {
+            throw URLError(.badURL)
+        }
+        
+        let (data, response) = try await URLSession.shared.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        
+        let decoded = try JSONDecoder().decode(GoogleBooksResponse.self, from: data)
+        return decoded.items ?? []
+    }
+    
+    func searchByISBN(_ isbn: String) async throws -> GoogleBookItem? {
+        let cleanISBN = isbn.replacingOccurrences(of: "-", with: "").replacingOccurrences(of: " ", with: "")
+        let results = try await searchBooks(query: "isbn:\(cleanISBN)")
+        return results.first
+    }
+}

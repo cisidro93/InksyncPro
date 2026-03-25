@@ -16,7 +16,7 @@ struct MetadataSearchSheet: View {
     
     // Auto-Select the platform based on File Type
     private var isBookMode: Bool {
-        return pdf.contentType == .book || pdf.fileURL.pathExtension.lowercased() == "epub"
+        return pdf.contentType == .book || pdf.url.pathExtension.lowercased() == "epub"
     }
     
     var body: some View {
@@ -181,7 +181,7 @@ struct MetadataSearchSheet: View {
                 }
                 
                 if let desc = book.volumeInfo.description {
-                    newMeta.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
+                    newMeta.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: String.CompareOptions.regularExpression, range: nil)
                 }
                 
                 if let dateString = book.volumeInfo.publishedDate {
