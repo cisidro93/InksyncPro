@@ -52,7 +52,7 @@ actor EBookParser {
             }
             
             let opfDir = (opfPath as NSString).deletingLastPathComponent
-            let metadata = try parseOPF(data: opfData, opfDir: opfDir)
+            let metadata = try self.parseOPF(data: opfData, opfDir: opfDir, archive: archive)
             
             Logger.shared.log("EBookParser: parsed \"\(metadata.title)\" — \(metadata.spineItems.count) spine items", category: "EBook")
             return metadata
@@ -130,7 +130,7 @@ actor EBookParser {
         return parser.firstAttributeValue(tag: "rootfile", attribute: "full-path")
     }
     
-    private func parseOPF(data: Data, opfDir: String) throws -> EBookMetadata {
+    private func parseOPF(data: Data, opfDir: String, archive: Archive) throws -> EBookMetadata {
         var metadata = EBookMetadata()
         let parser = MiniXMLParser(data: data)
         
@@ -152,17 +152,107 @@ actor EBookParser {
             metadata.coverItem = parser.manifestHref(forId: coverItemId, opfDir: opfDir) ?? ""
         }
         
+        // 1. Locate and parse the Table of Contents (TOC) Map
+        var tocMap: [String: String] = [:]
+        var tocHref = parser.firstAttributeValue(tag: "item", attribute: "href", where: "properties", equals: "nav") // EPUB 3
+        if tocHref == nil {
+            if let ncxId = parser.firstAttributeValue(tag: "spine", attribute: "toc") { // EPUB 2
+                tocHref = parser.manifestHref(forId: ncxId, opfDir: "")
+            }
+        }
+        
+        if let href = tocHref {
+            let fullTocPath = opfDir.isEmpty ? href : "\(opfDir)/\(href)"
+            if let entry = findEntry(named: fullTocPath, in: archive),
+               let tocData = try? readEntry(entry: entry, in: archive) {
+                let tocParser = TOCParser(data: tocData)
+                tocParser.parse()
+                tocMap = tocParser.tocMap
+            }
+        }
+        
         // Spine items from <spine> → <itemref idref="...">
         let spineIds = parser.spineItemRefs()
         metadata.spineItems = spineIds.compactMap { idref in
-            guard let href = parser.manifestHref(forId: idref, opfDir: opfDir) else { return nil }
-            let label = URL(string: href)?.deletingPathExtension().lastPathComponent
+            guard let fullHref = parser.manifestHref(forId: idref, opfDir: opfDir) else { return nil }
+            
+            // Match the TOC href strictly locally as found in the OPF
+            let localHref = parser.manifestHref(forId: idref, opfDir: "") ?? ""
+            let baseHref = localHref.components(separatedBy: "#").first ?? localHref
+            
+            let label = tocMap[baseHref] ?? URL(string: fullHref)?.deletingPathExtension().lastPathComponent
                              .replacingOccurrences(of: "_", with: " ")
                              .capitalized ?? idref
-            return EBookMetadata.SpineItem(id: idref, href: href, label: label)
+                             
+            return EBookMetadata.SpineItem(id: idref, href: fullHref, label: label)
         }
         
         return metadata
+    }
+}
+
+// MARK: - TOCParser
+/// Extracts chapter titles by mapping `href` -> `title` from either an NCX or NAV document.
+private class TOCParser: NSObject, XMLParserDelegate {
+    private let data: Data
+    var tocMap: [String: String] = [:]
+    
+    private var currentText = ""
+    private var currentHref: String?
+    
+    private var inNavLabel = false
+    private var inNav = false
+    
+    init(data: Data) { self.data = data }
+    
+    func parse() {
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+        parser.parse()
+    }
+    
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String]) {
+        let nodeName = elementName.contains(":") ? String(elementName.split(separator: ":").last ?? "") : elementName
+        let lower = nodeName.lowercased()
+        
+        currentText = ""
+        
+        if lower == "navmap" || lower == "nav" {
+            inNav = true
+        } else if lower == "navlabel" {
+            inNavLabel = true
+        } else if lower == "content", let src = attributes["src"] {
+            currentHref = src // EPUB 2 NCX
+        } else if lower == "a", let href = attributes["href"] {
+            currentHref = href // EPUB 3 NAV
+        }
+    }
+    
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        let nodeName = elementName.contains(":") ? String(elementName.split(separator: ":").last ?? "") : elementName
+        let lower = nodeName.lowercased()
+        let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if lower == "navlabel" {
+            inNavLabel = false
+        } else if lower == "text" && inNavLabel {
+            if let href = currentHref, !trimmed.isEmpty {
+                let baseHref = href.components(separatedBy: "#").first ?? href
+                // Only write the first instance to avoid sub-chapter overwrites
+                if tocMap[baseHref] == nil { tocMap[baseHref] = trimmed }
+            }
+        } else if lower == "a" && inNav {
+            if let href = currentHref, !trimmed.isEmpty {
+                let baseHref = href.components(separatedBy: "#").first ?? href
+                if tocMap[baseHref] == nil { tocMap[baseHref] = trimmed }
+            }
+        } else if lower == "navmap" || lower == "nav" {
+            inNav = false
+        }
+    }
+    
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        currentText += string
     }
 }
 
