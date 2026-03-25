@@ -422,7 +422,8 @@ struct EBookWebReader: UIViewRepresentable {
         """ : ""
 
         let css = """
-        <meta charset="utf-8">
+                <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
         <style id="__inksync_reader__">
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
                 html {
@@ -511,14 +512,27 @@ struct EBookWebReader: UIViewRepresentable {
             if (e.target.tagName.toLowerCase() === 'a') return;
             var x = e.clientX;
             var w = window.innerWidth;
-            if (x < w * 0.25) { // Left 25%
+            if (x < w * 0.35) { // Left 35%
                 if (_currentPage > 0) goToPage(_currentPage - 1);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
-            } else if (x > w * 0.75) { // Right 25%
+            } else if (x > w * 0.65) { // Right 35%
                 if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
                 else window.webkit.messageHandlers.nav.postMessage('next');
             } else {
                 window.webkit.messageHandlers.nav.postMessage('center');
+            }
+        });
+
+        // Keyboard Navigation (Bluetooth, Smart Keyboard, etc)
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight' || e.key === 'Space') {
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
+                else window.webkit.messageHandlers.nav.postMessage('next');
+                e.preventDefault();
+            } else if (e.key === 'ArrowLeft') {
+                if (_currentPage > 0) goToPage(_currentPage - 1);
+                else window.webkit.messageHandlers.nav.postMessage('prev');
+                e.preventDefault();
             }
         });
         </script>
@@ -572,6 +586,7 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
+
 
 
 
