@@ -565,10 +565,13 @@ struct CoverStudioView: View {
         // If it's an online URL, we must download and save it to the local app sandbox variant bucket
         if !targetURL.isFileURL {
             // Download Data
-            if let (data, _) = try? await URLSession.shared.data(from: targetURL),
+            // Stream massive external payloads natively to disk to prevent OOM Jetsam crashes
+            if let (tempURL, _) = try? await URLSession.shared.download(from: targetURL),
+               let data = try? Data(contentsOf: tempURL, options: .mappedIfSafe),
                let image = UIImage(data: data),
                let jpegData = image.jpegData(compressionQuality: 0.9) {
                 
+                try? FileManager.default.removeItem(at: tempURL)
                 let variantID = UUID()
                 let coversDir = ConversionManager.getCoversDirectory()
                 let finalLocalURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")

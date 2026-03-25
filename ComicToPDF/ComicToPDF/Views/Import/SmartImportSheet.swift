@@ -12,6 +12,7 @@ class SmartImportViewModel: ObservableObject {
     @Published var flaggedPageIndices: [Int] = []
     @Published var overallConfidence: Double = 0.0
     @Published var isAnalysing: Bool = true
+    @Published var extractionError: String? = nil
     @Published var seriesMemory: SeriesMemory? = nil
     @Published var showAdvanced: Bool = false
     @Published var selectedPipeline: OutputPipeline = .standard
@@ -68,7 +69,8 @@ class SmartImportViewModel: ObservableObject {
         if destinationDevice == nil { destinationDevice = manager.primaryDevice }
 
         // 5. Lightweight panel scan (first 15 pages only)
-        if let extraction = try? await ZipUtilities.extractComic(from: sourceURL) {
+        do {
+            let extraction = try await ZipUtilities.extractComic(from: sourceURL)
             let sample = Array(extraction.imageURLs.prefix(15))
             pageCount = extraction.imageURLs.count
             var confidences: [Double] = []
@@ -83,6 +85,8 @@ class SmartImportViewModel: ObservableObject {
             }
             overallConfidence = confidences.isEmpty ? 0.8 : confidences.reduce(0, +) / Double(confidences.count)
             try? FileManager.default.removeItem(at: extraction.workingDir)
+        } catch {
+            self.extractionError = "Could not validate comic archive. The volume may be corrupted or encrypted: \(error.localizedDescription)"
         }
 
         isAnalysing = false
@@ -153,6 +157,14 @@ struct SmartImportSheet: View {
             }
         }
         .task { await vm.analyse(manager: manager) }
+        .alert("Import Failed", isPresented: Binding(
+            get: { vm.extractionError != nil },
+            set: { if !$0 { dismiss() } }
+        )) {
+            Button("OK", role: .cancel) { dismiss() }
+        } message: {
+            Text(vm.extractionError ?? "Archive is corrupted or invalid.")
+        }
     }
 }
 

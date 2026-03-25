@@ -24,7 +24,7 @@ class LocalSendClient: ObservableObject {
     func transferFiles(_ files: [ConvertedPDF], to peer: PeerNode) async throws {
         guard !files.isEmpty else { return }
         guard let baseURL = URL(string: "http://\(peer.ipAddress):\(peer.port)") else {
-            throw NSLocalizedString("Invalid Peer URL", comment: "") as! Error
+            throw NSError(domain: "LocalSend", code: 400, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Invalid Peer URL", comment: "")])
         }
         
         await MainActor.run {
