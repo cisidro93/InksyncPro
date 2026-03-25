@@ -72,7 +72,18 @@ actor EBookParser {
         let tempFileURL = tempDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension((href as NSString).pathExtension)
         
         do {
-            guard let entry = archive[href] else {
+            var targetEntry: Entry? = archive[href]
+            if targetEntry == nil {
+                let lowerHref = href.lowercased()
+                for e in archive {
+                    if e.path.lowercased().hasSuffix(lowerHref) {
+                        targetEntry = e
+                        break
+                    }
+                }
+            }
+            
+            guard let entry = targetEntry else {
                 Logger.shared.log("EBookParser: Cover entry not found at \(href) in \(url.lastPathComponent)", category: "EBook", type: .error)
                 return nil
             }
@@ -88,15 +99,24 @@ actor EBookParser {
     // MARK: - Private Helpers
     
     private func readOPFPath(from archive: Archive) throws -> String? {
-        guard let entry = archive["META-INF/container.xml"],
+        guard let entry = findEntry(named: "META-INF/container.xml", in: archive),
               let data = try? readEntry(entry: entry, in: archive) else { return nil }
         return parseContainerXML(data: data)
     }
     
     private func readEntry(at path: String, in archive: Archive) throws -> Data? {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        guard let entry = archive[trimmed] else { return nil }
+        guard let entry = findEntry(named: trimmed, in: archive) else { return nil }
         return try readEntry(entry: entry, in: archive)
+    }
+    
+    private func findEntry(named path: String, in archive: Archive) -> Entry? {
+        if let exact = archive[path] { return exact }
+        let target = path.lowercased()
+        for entry in archive {
+            if entry.path.lowercased().hasSuffix(target) { return entry }
+        }
+        return nil
     }
     
     private func readEntry(entry: Entry, in archive: Archive) throws -> Data? {
