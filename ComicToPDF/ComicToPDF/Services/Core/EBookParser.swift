@@ -185,18 +185,21 @@ private class MiniXMLParser: NSObject, XMLParserDelegate {
     init(data: Data) { self.data = data }
     
     // MARK: - Query API
-    func firstTextContent(tag: String) -> String? { textByTag[tag]?.first(where: { !$0.isEmpty }) }
-    func allTextContents(tag: String) -> [String] { textByTag[tag] ?? [] }
+    func firstTextContent(tag: String) -> String? { _ = parse(); return textByTag[tag]?.first(where: { !$0.isEmpty }) }
+    func allTextContents(tag: String) -> [String] { _ = parse(); return textByTag[tag] ?? [] }
     
     func firstAttributeValue(tag: String, attribute: String) -> String? {
-        attributesByTag[tag]?.first.flatMap { $0[attribute] }
+        _ = parse()
+        return attributesByTag[tag]?.first.flatMap { $0[attribute] }
     }
     
     func firstAttributeValue(tag: String, attribute: String, where whereAttr: String, equals value: String) -> String? {
-        attributesByTag[tag]?.first(where: { $0[whereAttr] == value }).flatMap { $0[attribute] }
+        _ = parse()
+        return attributesByTag[tag]?.first(where: { $0[whereAttr] == value }).flatMap { $0[attribute] }
     }
     
     func manifestHref(forId id: String, opfDir: String) -> String? {
+        _ = parse()
         guard let item = manifestItems.first(where: { $0.id == id }) else { return nil }
         let joined = opfDir.isEmpty ? item.href : "\(opfDir)/\(item.href)"
         return joined
