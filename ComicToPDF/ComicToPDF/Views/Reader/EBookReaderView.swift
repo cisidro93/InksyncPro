@@ -425,12 +425,12 @@ struct EBookWebReader: UIViewRepresentable {
         <meta charset="utf-8">
         <style id="__inksync_reader__">
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        html, body {
+                html {
             margin: 0 !important;
             padding: 0 !important;
             height: 100vh !important;
             width: 100vw !important;
-            \\(isPaged ? "overflow-x: hidden !important; overflow-y: hidden !important;" : "overflow-x: hidden !important; overflow-y: auto !important;")
+            \\(isPaged ? "overflow: hidden !important;" : "overflow-x: hidden !important; overflow-y: auto !important;")
             background-color: \\(prefs.activeTheme.cssBackground(colorScheme: colorScheme)) !important;
         }
         body {
@@ -442,6 +442,9 @@ struct EBookWebReader: UIViewRepresentable {
             
             \\(pagedCSS)
             
+            margin: 0 !important;
+            height: 100vh !important;
+            \\(isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;")
             padding-top: 60px !important;
             padding-bottom: 60px !important;
             padding-left: \\(prefs.textMargin)px !important;
@@ -472,8 +475,8 @@ struct EBookWebReader: UIViewRepresentable {
         var _totalPages = 1;
 
         function updateMetrics() {
-            // Screen width equals one page scroll
-            _totalPages = Math.max(1, Math.ceil(document.body.scrollWidth / window.innerWidth));
+            // Document element scrollWidth reliably accounts for WebKit column flows
+            _totalPages = Math.max(1, Math.ceil(document.documentElement.scrollWidth / window.innerWidth));
             window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
         }
 
@@ -569,6 +572,7 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
+
 
 
 
