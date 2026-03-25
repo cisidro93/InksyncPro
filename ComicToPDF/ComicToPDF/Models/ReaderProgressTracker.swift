@@ -21,7 +21,7 @@ class ReaderProgressTracker: ObservableObject {
     
     private let queue = DispatchQueue(label: "com.inksync.ProgressTracker", qos: .userInitiated)
 // Removed fileManager properties to avoid actor isolation issues
-    private func getProgressDir() -> URL {
+    private nonisolated func getProgressDir() -> URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dir = docs.appendingPathComponent("progress")
         if !FileManager.default.fileExists(atPath: dir.path) {
@@ -52,7 +52,7 @@ class ReaderProgressTracker: ObservableObject {
     
     func deleteProgress(for pdfID: UUID) {
         progressMap.removeValue(forKey: pdfID)
-        let fileURL = progressDir.appendingPathComponent("\(pdfID.uuidString).json")
+        let fileURL = getProgressDir().appendingPathComponent("\(pdfID.uuidString).json")
         queue.async {
             try? FileManager.default.removeItem(at: fileURL)
         }
@@ -147,7 +147,7 @@ class ReaderProgressTracker: ObservableObject {
     
     private func save(pdfID: UUID) {
         guard let progress = progressMap[pdfID] else { return }
-        let fileURL = progressDir.appendingPathComponent("\(pdfID.uuidString).json")
+        let fileURL = getProgressDir().appendingPathComponent("\(pdfID.uuidString).json")
         
         queue.async {
             do {

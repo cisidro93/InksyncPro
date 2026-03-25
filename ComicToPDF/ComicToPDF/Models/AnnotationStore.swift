@@ -49,7 +49,7 @@ class AnnotationStore: ObservableObject {
     @Published private var store: [UUID: [Annotation]] = [:]
     
     private let queue = DispatchQueue(label: "com.inksync.AnnotationStore", qos: .userInitiated)
-    private func getAnnotationsDir() -> URL {
+    private nonisolated func getAnnotationsDir() -> URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dir = docs.appendingPathComponent("annotations")
         if !FileManager.default.fileExists(atPath: dir.path) {
