@@ -1,5 +1,14 @@
 import SwiftUI
 
+extension Binding where Value == String? {
+    var bound: Binding<String> {
+        Binding<String>(
+            get: { self.wrappedValue ?? "" },
+            set: { self.wrappedValue = $0.isEmpty ? nil : $0 }
+        )
+    }
+}
+
 struct MetadataEditorSheet: View {
     @Binding var pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
@@ -34,114 +43,20 @@ struct MetadataEditorSheet: View {
     var body: some View {
         NavigationView {
             Form {
-                // MARK: - Auto-Fill Section
-                Section(header: Text("Auto-Fill")) {
-                    if conversionManager.conversionSettings.comicVineAPIKey.isEmpty && conversionManager.conversionSettings.openAIAPIKey.isEmpty {
-                        Text("⚠️ Add API Keys in Settings to enable Auto-Fill or AI Extraction")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    } else {
-                        HStack(spacing: 16) {
-                            if !conversionManager.conversionSettings.comicVineAPIKey.isEmpty && pdf.contentType != .book {
-                                Button(action: searchComicVine) {
-                                    Label("Fetch ComicVine", systemImage: "network")
-                                }
-                                .disabled(isSearching)
-                            }
-                            
-                            if pdf.contentType == .book || pdf.fileURL.pathExtension.lowercased() == "epub" {
-                                Button(action: searchBookVine) {
-                                    Label("Fetch BookVine", systemImage: "book.pages")
-                                }
-                                .disabled(isSearching)
-                            }
-                            
-                            if pdf.contentType != .book {
-                                Button(action: { runLocalXMLExtract() }) {
-                                    if isSearching {
-                                        ProgressView()
-                                    } else {
-                                        Label("Auto-Fetch XML", systemImage: "doc.text.viewfinder")
-                                    }
-                                }
-                            }
-                        }
-                        
-                        if isSearching {
-                            ProgressView()
-                                .padding(.top, 4)
-                        }
-                    }
-                    
-                    if let error = errorMessage {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-                }
+                autoFillSection()
+                coreInfoSection()
+                creditsSection()
                 
-                // MARK: - Core Metadata
-                Section(header: Text("Core Info")) {
-                    TextField("Title", text: $editedMetadata.title)
-                    TextField("Series", text: Binding(get: { editedMetadata.series ?? "" }, set: { editedMetadata.series = $0.isEmpty ? nil : $0 }))
-                    TextField("Volume", text: Binding(get: { editedMetadata.volume ?? "" }, set: { editedMetadata.volume = $0.isEmpty ? nil : $0 }))
-                    TextField("Issue #", text: Binding(get: { editedMetadata.issueNumber ?? "" }, set: { editedMetadata.issueNumber = $0.isEmpty ? nil : $0 }))
-                }
-                
-                // MARK: - Credits
-                Section(header: Text("Credits")) {
-                    TextField("Writer", text: Binding(get: { editedMetadata.writer ?? "" }, set: { editedMetadata.writer = $0.isEmpty ? nil : $0 }))
-                    TextField("Penciller", text: Binding(get: { editedMetadata.penciller ?? "" }, set: { editedMetadata.penciller = $0.isEmpty ? nil : $0 }))
-                    TextField("Publisher", text: Binding(get: { editedMetadata.publisher ?? "" }, set: { editedMetadata.publisher = $0.isEmpty ? nil : $0 }))
-                    
-                    // Date Binding
-                    TextField("Publication Date (YYYY-MM-DD)", text: Binding(
-                        get: {
-                            if let date = editedMetadata.publicationDate {
-                                return dateFormatter.string(from: date)
-                            }
-                            return ""
-                        },
-                        set: { newValue in
-                            if let date = dateFormatter.date(from: newValue) {
-                                editedMetadata.publicationDate = date
-                            } else if newValue.isEmpty {
-                                editedMetadata.publicationDate = nil
-                            }
-                        }
-                    ))
-                }
-                
-                // MARK: - Tags
                 Section(header: Text("Tags")) {
                     TagEditorView(tags: $editedMetadata.tags)
                 }
                 
-                // MARK: - Summary
                 Section(header: Text("Summary")) {
-                    TextEditor(text: Binding(get: { editedMetadata.summary ?? "" }, set: { editedMetadata.summary = $0.isEmpty ? nil : $0 }))
+                    TextEditor(text: $editedMetadata.summary.bound)
                         .frame(height: 100)
                 }
                 
-                // MARK: - Technical
-                Section(header: Text("System")) {
-                    if let id = editedMetadata.comicVineID {
-                        HStack {
-                            Text("ComicVine ID")
-                            Spacer()
-                            Text("\(id)")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    Picker("Content Type", selection: $pdf.contentType) {
-                        ForEach(ContentType.allCases, id: \.self) { type in
-                            Label(type.rawValue, systemImage: type.icon).tag(type)
-                        }
-                    }
-                    
-                    Toggle("Private File", isOn: $pdf.isPrivate)
-                }
+                systemSection()
             }
             .navigationTitle("Edit Metadata")
             .navigationBarTitleDisplayMode(.inline)
@@ -175,6 +90,85 @@ struct MetadataEditorSheet: View {
             } message: {
                 Text("Would you like to permanently rename the underlying file on your iPad to:\n\n'\(newSuggestedCacheName)'?")
             }
+        }
+    }
+    
+    // MARK: - View Builders
+    
+    @ViewBuilder
+    private func autoFillSection() -> some View {
+        Section(header: Text("Auto-Fill")) {
+            if conversionManager.conversionSettings.comicVineAPIKey.isEmpty && conversionManager.conversionSettings.openAIAPIKey.isEmpty {
+                Text("⚠️ Add API Keys in Settings to enable Auto-Fill or AI Extraction")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            } else {
+                HStack(spacing: 16) {
+                    if !conversionManager.conversionSettings.comicVineAPIKey.isEmpty && pdf.contentType != .book {
+                        Button(action: searchComicVine) {
+                            Label("Fetch ComicVine", systemImage: "network")
+                        }.disabled(isSearching)
+                    }
+                    if pdf.contentType == .book || pdf.url.pathExtension.lowercased() == "epub" {
+                        Button(action: searchBookVine) {
+                            Label("Fetch BookVine", systemImage: "book.pages")
+                        }.disabled(isSearching)
+                    }
+                    if pdf.contentType != .book {
+                        Button(action: { runLocalXMLExtract() }) {
+                            if isSearching { ProgressView() } else { Label("Auto-Fetch XML", systemImage: "doc.text.viewfinder") }
+                        }
+                    }
+                }
+                if isSearching { ProgressView().padding(.top, 4) }
+            }
+            if let error = errorMessage {
+                Text(error).font(.caption).foregroundColor(.red)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func coreInfoSection() -> some View {
+        Section(header: Text("Core Info")) {
+            TextField("Title", text: $editedMetadata.title)
+            TextField("Series", text: $editedMetadata.series.bound)
+            TextField("Volume", text: $editedMetadata.volume.bound)
+            TextField("Issue #", text: $editedMetadata.issueNumber.bound)
+        }
+    }
+    
+    @ViewBuilder
+    private func creditsSection() -> some View {
+        Section(header: Text("Credits")) {
+            TextField("Writer", text: $editedMetadata.writer.bound)
+            TextField("Penciller", text: $editedMetadata.penciller.bound)
+            TextField("Publisher", text: $editedMetadata.publisher.bound)
+            TextField("Publication Date (YYYY-MM-DD)", text: Binding(
+                get: {
+                    if let date = editedMetadata.publicationDate { return dateFormatter.string(from: date) }
+                    return ""
+                },
+                set: { newValue in
+                    if let date = dateFormatter.date(from: newValue) { editedMetadata.publicationDate = date }
+                    else if newValue.isEmpty { editedMetadata.publicationDate = nil }
+                }
+            ))
+        }
+    }
+    
+    @ViewBuilder
+    private func systemSection() -> some View {
+        Section(header: Text("System")) {
+            if let id = editedMetadata.comicVineID {
+                HStack { Text("ComicVine ID"); Spacer(); Text("\(id)").foregroundColor(.secondary) }
+            }
+            Picker("Content Type", selection: $pdf.contentType) {
+                ForEach(ContentType.allCases, id: \.self) { type in
+                    Label(type.rawValue, systemImage: type.icon).tag(type)
+                }
+            }
+            Toggle("Private File", isOn: $pdf.isPrivate)
         }
     }
     
