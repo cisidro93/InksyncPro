@@ -1,5 +1,6 @@
 
 import SwiftUI
+import UIKit
 import WebKit
 import PDFKit
 import ZIPFoundation
@@ -356,7 +357,7 @@ struct ReaderScrubber: View {
                         .foregroundColor(.primary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color(UIColor.systemBackground))
+                        .background(Color(uiColor: UIColor.systemBackground))
                         .clipShape(Capsule())
                         .shadow(radius: 3)
                 }
@@ -367,7 +368,7 @@ struct ReaderScrubber: View {
                     .foregroundColor(.primary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color(UIColor.systemBackground).opacity(0.8))
+                    .background(Color(uiColor: UIColor.systemBackground).opacity(0.8))
                     .clipShape(Capsule())
             }
             
@@ -386,7 +387,7 @@ struct ReaderScrubber: View {
                         .frame(width: ratio * trackWidth + thumbWidth, height: 6)
                     
                     Circle()
-                        .fill(Color(UIColor.systemBackground))
+                        .fill(Color(uiColor: UIColor.systemBackground))
                         .frame(width: thumbWidth, height: thumbWidth)
                         .shadow(radius: 4)
                         .offset(x: ratio * trackWidth)
@@ -419,7 +420,7 @@ struct ReaderScrubber: View {
         .padding(.top, 10)
         .padding(.bottom, 20)
         .background(
-            Color(UIColor.systemBackground).opacity(0.92)
+            Color(uiColor: UIColor.systemBackground).opacity(0.92)
                 .background(.ultraThinMaterial.opacity(0.3))
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
