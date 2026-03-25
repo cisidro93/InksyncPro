@@ -16,8 +16,9 @@ struct EBookReaderView: View {
 
 
     
-    // Per-book progress key: fingerprinted by filename
+        // Per-book progress key: fingerprinted by filename
     private var progressKey: String { "ebook_progress_\(fileURL.lastPathComponent.hashValue)" }
+    private var pageKey: String { "ebook_page_\(fileURL.lastPathComponent.hashValue)" }
 
     
     // State
@@ -66,12 +67,13 @@ struct EBookReaderView: View {
                     } else if let err = errorMessage {
                         readerErrorView(err)
                     } else if let meta = metadata, !meta.spineItems.isEmpty {
-                                                EBookWebReader(
+                                                                        EBookWebReader(
                             spineItem:  meta.spineItems[currentIndex],
                             unzipDir:   unzipDir,
                             prefs:      prefs,
                             colorScheme: colorScheme,
                             currentPage: $chapterPage,
+                            initialPage: chapterPage,
                             totalPages: $chapterTotalPages,
                             onNext: nextChapter,
                             onPrev: prevChapter,
@@ -277,14 +279,16 @@ struct EBookReaderView: View {
     }
     
     // MARK: - Navigation
-    private func nextChapter() {
+        private func nextChapter() {
         guard currentIndex < totalChapters - 1 else { return }
+        chapterPage = 0 // Start next chapter at page 0
         withAnimation(.easeInOut(duration: 0.18)) { currentIndex += 1 }
         saveProgress()
     }
     
     private func prevChapter() {
         guard currentIndex > 0 else { return }
+        chapterPage = 99999 // Send a signal to JS to jump to the END of the previous chapter
         withAnimation(.easeInOut(duration: 0.18)) { currentIndex -= 1 }
         saveProgress()
     }
@@ -294,7 +298,8 @@ struct EBookReaderView: View {
         Logger.shared.log("EBookReader: opening \(fileURL.lastPathComponent)", category: "EBook")
         
         // Restore saved progress
-        let saved = UserDefaults.standard.integer(forKey: progressKey)
+                let saved = UserDefaults.standard.integer(forKey: progressKey)
+        let savedPage = UserDefaults.standard.integer(forKey: pageKey)
         
         // Parse metadata (streaming OPF, no full unzip)
         let parsed = await EBookParser.shared.parse(epub: fileURL)
@@ -321,7 +326,12 @@ struct EBookReaderView: View {
                 self.metadata = parsed
                 // Restore saved chapter (clamp to valid range)
                 let total = parsed.spineItems.count
-                self.currentIndex = min(saved, max(0, total - 1))
+                                self.currentIndex = min(saved, max(0, total - 1))
+                if saved == self.currentIndex {
+                    self.chapterPage = savedPage
+                } else {
+                    self.chapterPage = 0
+                }
             } else {
                 self.errorMessage = "This EPUB file seems to be corrupted or missing a valid reading spine."
             }
@@ -329,8 +339,9 @@ struct EBookReaderView: View {
         }
     }
     
-    private func saveProgress() {
+        private func saveProgress() {
         UserDefaults.standard.set(currentIndex, forKey: progressKey)
+        UserDefaults.standard.set(chapterPage, forKey: pageKey)
     }
     
     private func cleanup() {
@@ -345,8 +356,9 @@ struct EBookWebReader: UIViewRepresentable {
     let spineItem:  EBookMetadata.SpineItem
     let unzipDir:   URL?
     @ObservedObject var prefs: EBookPreferences
-    let colorScheme: ColorScheme
+        let colorScheme: ColorScheme
     @Binding var currentPage: Int
+    var initialPage: Int
     @Binding var totalPages: Int
     var onNext: () -> Void
     var onPrev: () -> Void
@@ -402,7 +414,7 @@ struct EBookWebReader: UIViewRepresentable {
                 html = regex.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "")
             }
             
-            let styledHTML = injectReaderCSS(into: html, prefs: prefs, colorScheme: colorScheme)
+                        let styledHTML = injectReaderCSS(into: html, prefs: prefs, colorScheme: colorScheme, initialPage: initialPage)
             
             // Write to a temporary file in the same directory to grant WKWebView `allowingReadAccessTo` privileges for images and CSS.
             let injectedURL = contentURL.deletingPathExtension().appendingPathExtension("injected.html")
@@ -412,7 +424,7 @@ struct EBookWebReader: UIViewRepresentable {
             wv.loadFileURL(contentURL, allowingReadAccessTo: dir)
         }
     }
-    private func injectReaderCSS(into html: String, prefs: EBookPreferences, colorScheme: ColorScheme) -> String {
+        private func injectReaderCSS(into html: String, prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         let pagedCSS = isPaged ? """
             /* Paged */
@@ -472,7 +484,7 @@ struct EBookWebReader: UIViewRepresentable {
             });
         });
         
-        var _currentPage = 0;
+                var _currentPage = \(initialPage);
         var _totalPages = 1;
 
         function updateMetrics() {
@@ -569,13 +581,29 @@ struct EBookWebReader: UIViewRepresentable {
             }
         }
         
-        // Prevent external navigation — keep reader self-contained
+                // Intercept navigation for Footnotes, External links, and Chapters
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             if action.navigationType == .linkActivated {
+                if let url = action.request.url {
+                    if url.scheme == "http" || url.scheme == "https" {
+                        UIApplication.shared.open(url)
+                    } else if let fragment = url.fragment {
+                        // Internal anchor (e.g., footnote)
+                        let js = """
+                        var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                        if (el) {
+                            var targetPage = Math.floor(el.getBoundingClientRect().left / window.innerWidth) + _currentPage;
+                            goToPage(Math.max(0, targetPage));
+                        }
+                        """
+                        webView.evaluateJavaScript(js, completionHandler: nil)
+                    }
+                }
                 decisionHandler(.cancel)
             } else {
                 decisionHandler(.allow)
             }
+        }
         }
     }
 }
@@ -586,6 +614,9 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
+
+
+
 
 
 
