@@ -518,9 +518,24 @@ struct EBookWebReader: UIViewRepresentable {
         context.coordinator.lastTheme = theme.rawValue
         context.coordinator.lastFontSize = fontSize
         
-        // Read HTML and inject our reading CSS + nav script
-        if let rawHTML = try? String(contentsOf: contentURL, encoding: .utf8) {
-            let styledHTML = injectReaderCSS(into: rawHTML)
+        // Read HTML with smart encoding fallback
+        var rawHTML: String?
+        var usedEncoding: String.Encoding = .utf8
+        if let html = try? String(contentsOf: contentURL, usedEncoding: &usedEncoding) {
+            rawHTML = html
+        } else if let data = try? Data(contentsOf: contentURL) {
+            if let latin = String(data: data, encoding: .isoLatin1) { rawHTML = latin }
+            else if let ascii = String(data: data, encoding: .ascii) { rawHTML = ascii }
+        }
+        
+        if var html = rawHTML {
+            // Strip any legacy charset declarations to prevent WKWebView from mangling our UTF-8 file
+            let pattern = "<meta[^>]*charset[^>]*>"
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                html = regex.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "")
+            }
+            
+            let styledHTML = injectReaderCSS(into: html)
             
             // Write to a temporary file in the same directory to grant WKWebView `allowingReadAccessTo` privileges for images and CSS.
             let injectedURL = contentURL.deletingPathExtension().appendingPathExtension("injected.html")
@@ -533,6 +548,7 @@ struct EBookWebReader: UIViewRepresentable {
     
     private func injectReaderCSS(into html: String) -> String {
         let css = """
+        <meta charset="utf-8">
         <style id="__inksync_reader__">
         @import url('https://fonts.googleapis.com/css2?family=Literata:ital,wght@0,400;0,600;1,400&display=swap');
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -563,6 +579,11 @@ struct EBookWebReader: UIViewRepresentable {
             box-sizing: border-box !important;
             word-wrap: break-word;
             -webkit-text-size-adjust: none;
+            
+            /* Premium Typography */
+            text-align: justify !important;
+            -webkit-hyphens: auto !important;
+            hyphens: auto !important;
         }
         h1,h2,h3,h4 { color: \(theme.cssText) !important; line-height: 1.3; }
         p { margin: 0 0 1em; }
