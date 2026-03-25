@@ -5,9 +5,12 @@ import ZIPFoundation
 // MARK: - EBookReaderView
 struct EBookReaderView: View {
     let fileURL: URL
-    let title: String
+        let title: String
     
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var prefs = EBookPreferences.shared
+    @Environment(\.colorScheme) var colorScheme
+    @State private var showingSettingsPanel = false
     
     // Preferences — shared across all books
 
@@ -409,51 +412,53 @@ struct EBookWebReader: UIViewRepresentable {
             wv.loadFileURL(contentURL, allowingReadAccessTo: dir)
         }
     }
-    
-    private func injectReaderCSS(into html: String) -> String {
+    private func injectReaderCSS(into html: String, prefs: EBookPreferences, colorScheme: ColorScheme) -> String {
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        let pagedCSS = isPaged ? """
+            /* Paged */
+            column-width: calc(100vw - \\(prefs.textMargin * 2)px) !important;
+            column-gap: \\(prefs.textMargin * 2)px !important;
+            column-fill: auto !important;
+        """ : ""
+
         let css = """
         <meta charset="utf-8">
         <style id="__inksync_reader__">
-        @import url('https://fonts.googleapis.com/css2?family=Literata:ital,wght@0,400;0,600;1,400&display=swap');
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html, body {
             margin: 0 !important;
             padding: 0 !important;
             height: 100vh !important;
             width: 100vw !important;
-            overflow-x: hidden !important;
-            overflow-y: hidden !important;
-            background-color: \(theme.cssBackground) !important;
+            \\(isPaged ? "overflow-x: hidden !important; overflow-y: hidden !important;" : "overflow-x: hidden !important; overflow-y: auto !important;")
+            background-color: \\(prefs.activeTheme.cssBackground(colorScheme: colorScheme)) !important;
         }
         body {
-            color: \(theme.cssText) !important;
-            font-family: \(fontFamily), serif;
-            font-size: \(Int(fontSize))px;
-            line-height: \(String(format: "%.1f", lineHeight));
+            color: \\(prefs.activeTheme.cssText(colorScheme: colorScheme)) !important;
+            font-family: \\(prefs.fontFamily);
+            font-size: \\(Int(prefs.fontSize))px;
+            line-height: \\(String(format: "%.1f", prefs.lineHeight));
+            text-align: \\(prefs.textAlign) !important;
             
-            /* The holy grail of pagination */
-            column-width: calc(100vw - 40px) !important;
-            column-gap: 40px !important;
-            column-fill: auto !important;
+            \\(pagedCSS)
             
             padding-top: 60px !important;
             padding-bottom: 60px !important;
-            padding-left: 20px !important;
-            padding-right: 20px !important;
+            padding-left: \\(prefs.textMargin)px !important;
+            padding-right: \\(prefs.textMargin)px !important;
             box-sizing: border-box !important;
             word-wrap: break-word;
             -webkit-text-size-adjust: none;
             
             /* Premium Typography */
-            text-align: justify !important;
             -webkit-hyphens: auto !important;
             hyphens: auto !important;
         }
-        h1,h2,h3,h4 { color: \(theme.cssText) !important; line-height: 1.3; }
-        p { margin: 0 0 1em; }
+        p { margin-bottom: \\(prefs.paragraphSpacing)em !important; text-indent: \\(prefs.paragraphIndent)em !important; }
+        h1,h2,h3,h4 { color: \\(prefs.activeTheme.cssText(colorScheme: colorScheme)) !important; line-height: 1.3; }
         img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
-        a { color: \(theme.cssLink) !important; }
-        blockquote { border-left: 3px solid \(theme.cssLink); margin-left: 0; padding-left: 16px; opacity: 0.85; }
+        a { color: \\(prefs.activeTheme.cssLink(colorScheme: colorScheme)) !important; }
+        blockquote { border-left: 3px solid \\(prefs.activeTheme.cssLink(colorScheme: colorScheme)); margin-left: 0; padding-left: 16px; opacity: 0.85; }
         </style>
         <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -564,6 +569,7 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
+
 
 
 
