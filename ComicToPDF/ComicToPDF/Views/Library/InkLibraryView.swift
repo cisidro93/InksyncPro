@@ -8,7 +8,7 @@ struct InkLibraryView: View {
     @State private var activeSheet: LibrarySheetDestination?
 
     var sortedCollections: [PDFCollection] {
-        manager.collections.sorted(by: { $0.orderIndex < $1.orderIndex })
+        manager.collections.sorted(by: { $0.creationDate < $1.creationDate })
     }
 
     var attentionItems: [ConvertedPDF] {
