@@ -82,8 +82,13 @@ struct EBookReaderView: View {
     @State private var isLoading = true
     @State private var showChapterList = false
     @State private var showSettings = false
+    @State private var showHUD = true
     @State private var errorMessage: String?
     @State private var unzipDir: URL?
+    
+    // Page state matching current chapter
+    @State private var chapterPage: Int = 0
+    @State private var chapterTotalPages: Int = 1
     
     private var theme: EBookTheme { EBookTheme(rawValue: themeRaw) ?? .sepia }
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
@@ -125,8 +130,11 @@ struct EBookReaderView: View {
                             fontSize:   fontSize,
                             fontFamily: fontFamily,
                             lineHeight: lineHeight,
+                            currentPage: $chapterPage,
+                            totalPages: $chapterTotalPages,
                             onNext: nextChapter,
-                            onPrev: prevChapter
+                            onPrev: prevChapter,
+                            onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } }
                         )
                         .transition(.opacity)
                         .animation(.easeInOut(duration: 0.2), value: currentIndex)
@@ -142,8 +150,18 @@ struct EBookReaderView: View {
         .navigationBarHidden(true)
         .statusBarHidden(false)
         .preferredColorScheme(theme.systemUIStyle == .dark ? .dark : .light)
-        .overlay(alignment: .top) { topBar }
-        .overlay(alignment: .bottom) { bottomBar }
+        .overlay(alignment: .top) {
+            if showHUD {
+                topBar
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showHUD {
+                bottomBar
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .task { await loadBook() }
         .onDisappear { cleanup(); saveProgress() }
     }
@@ -207,10 +225,17 @@ struct EBookReaderView: View {
             }
             .disabled(currentIndex == 0)
             
-            Text("\(currentIndex + 1) / \(totalChapters)")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(theme.foreground.opacity(0.5))
-                .frame(minWidth: 60)
+            VStack(spacing: 2) {
+                Text("Page \(chapterPage + 1) of \(chapterTotalPages)")
+                    .font(.caption.monospacedDigit().bold())
+                    .foregroundStyle(theme.foreground)
+                if totalChapters > 1 {
+                    Text("Chapter \(currentIndex + 1) / \(totalChapters)")
+                        .font(.system(size: 10, weight: .medium).monospacedDigit())
+                        .foregroundStyle(theme.foreground.opacity(0.5))
+                }
+            }
+            .frame(minWidth: 90)
             
             Button { nextChapter() } label: {
                 Image(systemName: "chevron.right.circle.fill")
@@ -454,13 +479,16 @@ struct EBookWebReader: UIViewRepresentable {
     let fontSize:   Double
     let fontFamily: String
     let lineHeight: Double
+    @Binding var currentPage: Int
+    @Binding var totalPages: Int
     var onNext: () -> Void
     var onPrev: () -> Void
+    var onCenterTap: () -> Void
     
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController.add(context.coordinator, name: "nav")
-        config.userContentController.add(context.coordinator, name: "ready")
+        config.userContentController.add(context.coordinator, name: "metrics")
         
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.isOpaque = false
@@ -508,22 +536,37 @@ struct EBookWebReader: UIViewRepresentable {
         <style id="__inksync_reader__">
         @import url('https://fonts.googleapis.com/css2?family=Literata:ital,wght@0,400;0,600;1,400&display=swap');
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        html { background: \(theme.cssBackground) !important; }
-        body {
+        html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            height: 100vh !important;
+            width: 100vw !important;
+            overflow-x: hidden !important;
+            overflow-y: hidden !important;
             background-color: \(theme.cssBackground) !important;
+        }
+        body {
             color: \(theme.cssText) !important;
             font-family: \(fontFamily), serif;
             font-size: \(Int(fontSize))px;
             line-height: \(String(format: "%.1f", lineHeight));
-            max-width: 680px;
-            margin: 0 auto;
-            padding: 24px 20px 120px;
+            
+            /* The holy grail of pagination */
+            column-width: calc(100vw - 40px) !important;
+            column-gap: 40px !important;
+            column-fill: auto !important;
+            
+            padding-top: 60px !important;
+            padding-bottom: 60px !important;
+            padding-left: 20px !important;
+            padding-right: 20px !important;
+            box-sizing: border-box !important;
             word-wrap: break-word;
             -webkit-text-size-adjust: none;
         }
         h1,h2,h3,h4 { color: \(theme.cssText) !important; line-height: 1.3; }
         p { margin: 0 0 1em; }
-        img { max-width: 100%; height: auto; border-radius: 4px; }
+        img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
         a { color: \(theme.cssLink) !important; }
         blockquote { border-left: 3px solid \(theme.cssLink); margin-left: 0; padding-left: 16px; opacity: 0.85; }
         </style>
@@ -534,15 +577,57 @@ struct EBookWebReader: UIViewRepresentable {
                 el.style.removeProperty('color');
             });
         });
-        // Swipe navigation
+        
+        var _currentPage = 0;
+        var _totalPages = 1;
+
+        function updateMetrics() {
+            // Screen width equals one page scroll
+            _totalPages = Math.max(1, Math.ceil(document.body.scrollWidth / window.innerWidth));
+            window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+        }
+
+        function goToPage(page) {
+            _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
+            window.scrollTo({ left: _currentPage * window.innerWidth, behavior: 'instant' });
+            updateMetrics();
+        }
+
+        window.onload = function() { setTimeout(updateMetrics, 100); };
+        window.addEventListener('resize', function() {
+            updateMetrics();
+            goToPage(_currentPage);
+        });
+
+        // Swipe & Tap engine
         var _sx = 0;
         document.addEventListener('touchstart', function(e) { _sx = e.changedTouches[0].clientX; }, {passive:true});
         document.addEventListener('touchend', function(e) {
             var dx = e.changedTouches[0].clientX - _sx;
-            if (Math.abs(dx) > 60) {
-                window.webkit.messageHandlers.nav.postMessage(dx < 0 ? 'next' : 'prev');
+            if (dx < -40) { // Swipe Left (Next)
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
+                else window.webkit.messageHandlers.nav.postMessage('next');
+            } else if (dx > 40) { // Swipe Right (Prev)
+                if (_currentPage > 0) goToPage(_currentPage - 1);
+                else window.webkit.messageHandlers.nav.postMessage('prev');
             }
         }, {passive:true});
+
+        document.addEventListener('click', function(e) {
+            // Ignore clicks on links
+            if (e.target.tagName.toLowerCase() === 'a') return;
+            var x = e.clientX;
+            var w = window.innerWidth;
+            if (x < w * 0.25) { // Left 25%
+                if (_currentPage > 0) goToPage(_currentPage - 1);
+                else window.webkit.messageHandlers.nav.postMessage('prev');
+            } else if (x > w * 0.75) { // Right 25%
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
+                else window.webkit.messageHandlers.nav.postMessage('next');
+            } else {
+                window.webkit.messageHandlers.nav.postMessage('center');
+            }
+        });
         </script>
         """
         
@@ -563,10 +648,17 @@ struct EBookWebReader: UIViewRepresentable {
         init(_ parent: EBookWebReader) { self.parent = parent }
         
         func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard let body = message.body as? String else { return }
-            DispatchQueue.main.async {
-                if body == "next" { self.parent.onNext() }
-                else if body == "prev" { self.parent.onPrev() }
+            if message.name == "nav", let body = message.body as? String {
+                DispatchQueue.main.async {
+                    if body == "next" { self.parent.onNext() }
+                    else if body == "prev" { self.parent.onPrev() }
+                    else if body == "center" { self.parent.onCenterTap() }
+                }
+            } else if message.name == "metrics", let body = message.body as? [String: Int] {
+                DispatchQueue.main.async {
+                    self.parent.currentPage = body["current"] ?? 0
+                    self.parent.totalPages = body["total"] ?? 1
+                }
             }
         }
         
