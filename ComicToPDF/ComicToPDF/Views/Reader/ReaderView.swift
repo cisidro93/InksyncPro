@@ -149,7 +149,6 @@ struct ReaderView: View {
                     try? FileManager.default.removeItem(at: dir)
                 }
             }
-        } // End ZStack
     }
     
     // MARK: - Top Bar
