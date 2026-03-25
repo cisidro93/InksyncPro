@@ -123,9 +123,6 @@ struct ReaderView: View {
                 }
             }
             .focusable()
-                }
-            }
-            .focusable()
             .focusEffectDisabled()
             .onKeyPress(.leftArrow) {
                 isMangaMode ? nextPage() : prevPage()
