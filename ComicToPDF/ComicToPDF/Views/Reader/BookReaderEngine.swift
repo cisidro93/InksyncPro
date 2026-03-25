@@ -71,7 +71,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             
             if !self.fileManager.fileExists(atPath: self.tempDir.path) {
                 try? self.fileManager.createDirectory(at: self.tempDir, withIntermediateDirectories: true)
-                guard let archive = Archive(url: self.pdf.url, accessMode: .read) else {
+                guard let archive = try? Archive(url: self.pdf.url, accessMode: .read) else {
                     DispatchQueue.main.async { self.isLoading = false }
                     return
                 }
@@ -124,7 +124,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
         if var html = rawHTML {
             let pattern = "<meta[^>]*charset[^>]*>"
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                html = regex.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "<meta charset="utf-8">")
+                html = regex.stringByReplacingMatches(in: html, options: [], range: NSRange(html.startIndex..., in: html), withTemplate: "<meta charset=\\\"utf-8\\\">")
             }
             self.currentChapterHTML = html
             self.isLoading = false
