@@ -468,6 +468,8 @@ struct ReaderView: View {
                         if !isMangaMode { nextPage() } else { prevPage() }
                     }
             }
+            .padding(.top, 100)
+            .padding(.bottom, 120)
             
             if showSwipeHUD {
                 VStack {
