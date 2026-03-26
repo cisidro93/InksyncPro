@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 import WebKit
 import PDFKit
 import ZIPFoundation
@@ -159,8 +159,7 @@ class HighlightableWebView: WKWebView {
         if action == #selector(customHighlightAction(_:)) {
             return true
         }
-        // Allow Copy alongside Highlight
-                let actionStr = NSStringFromSelector(action)
+        let actionStr = NSStringFromSelector(action)
         let allowedNativeFunctions = ["copy:", "_lookup:", "_translate:", "share:", "_define:", "speak:"]
         
         if allowedNativeFunctions.contains(actionStr) {
@@ -172,6 +171,16 @@ class HighlightableWebView: WKWebView {
     
     @objc func customHighlightAction(_ sender: Any?) {
         onHighlightRequested?()
+    }
+    
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        
+        // Dynamically inject the Highlight option into the WKWebView UIMenu selection bounds
+        let highlightCommand = UICommand(title: "Highlight", action: #selector(customHighlightAction(_:)))
+        let highlightMenu = UIMenu(title: "Inksync", options: .displayInline, children: [highlightCommand])
+        
+        builder.insertSibling(highlightMenu, afterMenu: .standardEdit)
     }
 }
 

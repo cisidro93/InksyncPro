@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import NaturalLanguage
 
 struct CodableCGRect: Codable {
     var x, y, width, height: Double
@@ -28,6 +29,7 @@ struct Annotation: Codable, Identifiable {
     var colorHex: String?                 // highlight colour
     var selectedText: String?             // the highlighted text
     var noteText: String?                 // user's note on the annotation
+    var tags: [String]?                   // NLP auto-generated tags
     var bounds: CodableCGRect?            // page-relative bounds (0–1 normalized)
 
     enum AnnotationKind: String, Codable {
@@ -70,8 +72,47 @@ class AnnotationStore: ObservableObject {
         if store[annotation.pdfID] == nil {
             store[annotation.pdfID] = []
         }
-        store[annotation.pdfID]?.append(annotation)
-        save(pdfID: annotation.pdfID)
+        
+        var newAnnotation = annotation
+        
+        // Pre-run lightweight NLP tagging if text exists and tags are not manually assigned
+        if let text = newAnnotation.selectedText, newAnnotation.kind == .highlight, newAnnotation.tags == nil {
+            newAnnotation.tags = extractNLPKeywords(from: text)
+        }
+        
+        store[newAnnotation.pdfID]?.append(newAnnotation)
+        save(pdfID: newAnnotation.pdfID)
+    }
+    
+    /// Executes Apple's deep lexical and entity extraction algorithms to surface contextual tags
+    private func extractNLPKeywords(from text: String) -> [String] {
+        let tagger = NLTagger(tagSchemes: [.lexicalClass, .nameType])
+        tagger.string = text
+        
+        let options: NLTagger.Options = [.omitWhitespace, .omitPunctuation, .joinNames]
+        let allowedTags: [NLTag] = [.noun, .organizationName, .placeName, .personalName]
+        
+        var extractedTags = Set<String>()
+        
+        // First Pass: Deep Name Types (Entities)
+        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .nameType, options: options) { tag, tokenRange in
+            if let tag = tag, allowedTags.contains(tag) {
+                let word = String(text[tokenRange]).lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                if word.count > 2 { extractedTags.insert(word) }
+            }
+            return true
+        }
+        
+        // Second Pass: Standard Nouns
+        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .lexicalClass, options: options) { tag, tokenRange in
+            if let tag = tag, allowedTags.contains(tag) {
+                let word = String(text[tokenRange]).lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                if word.count > 2 { extractedTags.insert(word) }
+            }
+            return true
+        }
+        
+        return Array(extractedTags).prefix(10).map { String($0) }
     }
     
     func update(_ annotation: Annotation) {

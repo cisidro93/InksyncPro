@@ -145,6 +145,39 @@ struct DocumentReaderEngine: View {
     }
 }
 
+// Custom PDFView to intercept native iOS Text Selection Menus
+class HighlightablePDFView: PDFView {
+    var onHighlightCreated: ((String, CGRect) -> Void)?
+    
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(customHighlightAction(_:)) { return true }
+        let allowed = ["copy:", "share:", "_lookup:", "_define:"]
+        if allowed.contains(NSStringFromSelector(action)) { return true }
+        return super.canPerformAction(action, withSender: sender)
+    }
+    
+    @objc func customHighlightAction(_ sender: Any?) {
+        guard let selection = self.currentSelection, let page = selection.pages.first else { return }
+        let text = selection.string ?? ""
+        let bounds = selection.bounds(for: page)
+        
+        // Natively draw the highlight on the PDF document
+        let annotation = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
+        annotation.color = .systemYellow.withAlphaComponent(0.5)
+        page.addAnnotation(annotation)
+        
+        self.clearSelection()
+        onHighlightCreated?(text, bounds)
+    }
+    
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        let highlightCommand = UICommand(title: "Highlight", action: #selector(customHighlightAction(_:)))
+        let highlightMenu = UIMenu(title: "Inksync", options: .displayInline, children: [highlightCommand])
+        builder.insertSibling(highlightMenu, afterMenu: .standardEdit)
+    }
+}
+
 // SwiftUI PDFView wrapper
 struct PDFKitRepresentedView: UIViewRepresentable {
     let document: PDFDocument
@@ -154,12 +187,38 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     @Binding var isPencilMode: Bool
     
     func makeUIView(context: Context) -> UIView {
-        let pdfView = PDFView()
+        let pdfView = HighlightablePDFView()
         pdfView.document = document
         pdfView.autoScales = true
         pdfView.displayDirection = .vertical
         pdfView.displayMode = pdf.documentSubtype == .magazine ? .singlePageContinuous : .singlePageContinuous
         pdfView.delegate = context.coordinator
+        
+        pdfView.onHighlightCreated = { text, bounds in
+            guard let page = pdfView.currentPage else { return }
+            let index = document.index(for: page)
+            
+            // Normalize coordinates (0-1) for storage
+            let pageBounds = page.bounds(for: .mediaBox)
+            let normalizedBounds = CodableCGRect(
+                x: Double(bounds.minX / pageBounds.width),
+                y: Double(bounds.minY / pageBounds.height),
+                width: Double(bounds.width / pageBounds.width),
+                height: Double(bounds.height / pageBounds.height)
+            )
+            
+            let annotation = Annotation(
+                pdfID: pdf.id,
+                pageIndex: index,
+                kind: .highlight,
+                createdAt: Date(),
+                modifiedAt: Date(),
+                colorHex: "#FFD700",
+                selectedText: text,
+                bounds: normalizedBounds
+            )
+            AnnotationStore.shared.add(annotation)
+        }
         
         let canvasView = PKCanvasView()
         canvasView.isOpaque = false
