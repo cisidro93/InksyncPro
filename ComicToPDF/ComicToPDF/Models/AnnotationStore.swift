@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import NaturalLanguage
+import SwiftData
 
 struct CodableCGRect: Codable {
     var x, y, width, height: Double
@@ -40,6 +41,67 @@ struct Annotation: Codable, Identifiable {
     }
 }
 
+@Model final class SDAnnotation: Identifiable {
+    @Attribute(.unique) var id: UUID
+    var pdfID: UUID
+    var pageIndex: Int
+    var chapterTitle: String?
+    var kindRaw: String
+    var createdAt: Date
+    var modifiedAt: Date
+    var colorHex: String?
+    var selectedText: String?
+    var noteText: String?
+    var tags: [String]?
+    
+    var boundsX: Double?
+    var boundsY: Double?
+    var boundsW: Double?
+    var boundsH: Double?
+    
+    init(from dto: Annotation) {
+        self.id = dto.id
+        self.pdfID = dto.pdfID
+        self.pageIndex = dto.pageIndex
+        self.chapterTitle = dto.chapterTitle
+        self.kindRaw = dto.kind.rawValue
+        self.createdAt = dto.createdAt
+        self.modifiedAt = dto.modifiedAt
+        self.colorHex = dto.colorHex
+        self.selectedText = dto.selectedText
+        self.noteText = dto.noteText
+        self.tags = dto.tags
+        self.boundsX = dto.bounds?.x
+        self.boundsY = dto.bounds?.y
+        self.boundsW = dto.bounds?.width
+        self.boundsH = dto.bounds?.height
+    }
+    
+    func toDTO() -> Annotation {
+        let kind = Annotation.AnnotationKind(rawValue: kindRaw) ?? .highlight
+        var bounds: CodableCGRect? = nil
+        if let x = boundsX, let y = boundsY, let w = boundsW, let h = boundsH {
+            bounds = CodableCGRect(x: x, y: y, width: w, height: h)
+        }
+        return Annotation(id: id, pdfID: pdfID, pageIndex: pageIndex, chapterTitle: chapterTitle, kind: kind, createdAt: createdAt, modifiedAt: modifiedAt, colorHex: colorHex, selectedText: selectedText, noteText: noteText, tags: tags, bounds: bounds)
+    }
+    
+    func update(from dto: Annotation) {
+        self.pageIndex = dto.pageIndex
+        self.chapterTitle = dto.chapterTitle
+        self.kindRaw = dto.kind.rawValue
+        self.modifiedAt = dto.modifiedAt
+        self.colorHex = dto.colorHex
+        self.selectedText = dto.selectedText
+        self.noteText = dto.noteText
+        self.tags = dto.tags
+        self.boundsX = dto.bounds?.x
+        self.boundsY = dto.bounds?.y
+        self.boundsW = dto.bounds?.width
+        self.boundsH = dto.bounds?.height
+    }
+}
+
 enum ExportFormat {
     case markdown, plainText, csv
 }
@@ -49,18 +111,12 @@ class AnnotationStore: ObservableObject {
     static let shared = AnnotationStore()
     
     @Published private var store: [UUID: [Annotation]] = [:]
+    private var modelContext: ModelContext?
     
-    private let queue = DispatchQueue(label: "com.inksync.AnnotationStore", qos: .userInitiated)
-    private nonisolated func getAnnotationsDir() -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dir = docs.appendingPathComponent("annotations")
-        if !FileManager.default.fileExists(atPath: dir.path) {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        }
-        return dir
-    }
+    private init() {}
     
-    private init() {
+    func initialize(with context: ModelContext) {
+        self.modelContext = context
         loadAll()
     }
     
@@ -69,19 +125,20 @@ class AnnotationStore: ObservableObject {
     }
     
     func add(_ annotation: Annotation) {
-        if store[annotation.pdfID] == nil {
-            store[annotation.pdfID] = []
-        }
-        
         var newAnnotation = annotation
         
-        // Pre-run lightweight NLP tagging if text exists and tags are not manually assigned
+        // Pre-run lightweight NLP tagging
         if let text = newAnnotation.selectedText, newAnnotation.kind == .highlight, newAnnotation.tags == nil {
             newAnnotation.tags = extractNLPKeywords(from: text)
         }
         
-        store[newAnnotation.pdfID]?.append(newAnnotation)
-        save(pdfID: newAnnotation.pdfID)
+        store[newAnnotation.pdfID, default: []].append(newAnnotation)
+        
+        if let context = modelContext {
+            let sdModel = SDAnnotation(from: newAnnotation)
+            context.insert(sdModel)
+            try? context.save()
+        }
     }
     
     /// Executes Apple's deep lexical and entity extraction algorithms to surface contextual tags
@@ -120,59 +177,50 @@ class AnnotationStore: ObservableObject {
         var updated = annotation
         updated.modifiedAt = Date()
         store[annotation.pdfID]?[index] = updated
-        save(pdfID: annotation.pdfID)
-    }
-    
-    func delete(id: UUID, pdfID: UUID) {
-        store[pdfID]?.removeAll(where: { $0.id == id })
-        save(pdfID: pdfID)
-    }
-    
-    // MARK: - Persistence
-    
-    private func loadAll() {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            do {
-                let dir = self.getAnnotationsDir()
-                let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
-                var loadedStore: [UUID: [Annotation]] = [:]
-                
-                for file in files where file.pathExtension == "json" {
-                    if let uuid = UUID(uuidString: file.deletingPathExtension().lastPathComponent),
-                       let data = try? Data(contentsOf: file),
-                       let annotations = try? JSONDecoder().decode([Annotation].self, from: data) {
-                        loadedStore[uuid] = annotations
-                    }
-                }
-                
-                Task { @MainActor in
-                    self.store = loadedStore
-                }
-            } catch {
-                print("Failed to load annotations: \(error)")
+        
+        if let context = modelContext {
+            let idString = annotation.id.uuidString
+            // Fetch the specific SDAnnotation
+            var fetchDescriptor = FetchDescriptor<SDAnnotation>()
+            // Simplest way to find specific ID since UUID predicate in SwiftData has quirks
+            if let allAnnotations = try? context.fetch(fetchDescriptor),
+               let target = allAnnotations.first(where: { $0.id == annotation.id }) {
+                target.update(from: updated)
+                try? context.save()
             }
         }
     }
     
-    private func save(pdfID: UUID) {
-        let pdfAnnotations = store[pdfID] ?? []
-        let fileURL = getAnnotationsDir().appendingPathComponent("\(pdfID.uuidString).json")
+    func delete(id: UUID, pdfID: UUID) {
+        store[pdfID]?.removeAll(where: { $0.id == id })
         
-        queue.async {
-            do {
-                if pdfAnnotations.isEmpty {
-                    if FileManager.default.fileExists(atPath: fileURL.path) {
-                        try FileManager.default.removeItem(at: fileURL)
-                    }
-                    return
-                }
-                
-                let data = try JSONEncoder().encode(pdfAnnotations)
-                try data.write(to: fileURL, options: .atomic)
-            } catch {
-                print("Failed to save annotations for \(pdfID): \(error)")
+        if let context = modelContext {
+            var fetchDescriptor = FetchDescriptor<SDAnnotation>()
+            if let allAnnotations = try? context.fetch(fetchDescriptor),
+               let target = allAnnotations.first(where: { $0.id == id }) {
+                context.delete(target)
+                try? context.save()
             }
+        }
+    }
+    
+    // MARK: - SwiftData Persistence
+    
+    private func loadAll() {
+        guard let context = modelContext else { return }
+        do {
+            let descriptor = FetchDescriptor<SDAnnotation>()
+            let allAnnotations = try context.fetch(descriptor)
+            
+            var loadedStore: [UUID: [Annotation]] = [:]
+            for sd in allAnnotations {
+                let dto = sd.toDTO()
+                loadedStore[dto.pdfID, default: []].append(dto)
+            }
+            
+            self.store = loadedStore
+        } catch {
+            print("Failed to load SDAnnotations: \(error)")
         }
     }
     

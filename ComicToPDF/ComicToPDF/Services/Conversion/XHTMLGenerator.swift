@@ -1,14 +1,18 @@
 import Foundation
 
 class XHTMLGenerator {
-    static func generateSVGWrappedXHTML(imageName: String, width: Int, height: Int) -> String {
+    static func generateSVGWrappedXHTML(imageName: String, width: Int, height: Int, isFixedLayout: Bool = true) -> String {
+        let viewport = isFixedLayout 
+            ? "<meta name=\"viewport\" content=\"width=\(width), height=\(height)\"/>"
+            : "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/>"
+            
         let header = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xmlns:xlink="http://www.w3.org/1999/xlink">
         <head>
             <meta charset="UTF-8"/>
-            <meta name="viewport" content="width=\(width), height=\(height)"/>
+            \(viewport)
             <title>\(imageName)</title>
         """
         

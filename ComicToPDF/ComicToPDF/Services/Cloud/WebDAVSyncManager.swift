@@ -12,7 +12,8 @@ class WebDAVSyncManager: ObservableObject {
     @Published var lastSyncStatus: String = ""
     
     private var session: URLSession
-    private var activeTask: URLSessionUploadTask?
+    // ✅ PHASE 8: Replaced single pointer with concurrent Task Queue mapping
+    private var activeTasks: [UUID: URLSessionUploadTask] = [:]
     
     private init() {
         let config = URLSessionConfiguration.default
@@ -56,7 +57,7 @@ class WebDAVSyncManager: ObservableObject {
             request.setValue("application/vnd.comicbook+zip", forHTTPHeaderField: "Content-Type")
         }
         
-        let fileSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        let taskID = UUID() // ✅ Isolate this specific session connection
         
         return try await withTaskCancellationHandler {
             return try await withCheckedThrowingContinuation { continuation in
@@ -65,15 +66,22 @@ class WebDAVSyncManager: ObservableObject {
                         continuation.resume(throwing: CancellationError())
                         return
                     }
+                    
+                    Task { @MainActor in
+                        self.activeTasks.removeValue(forKey: taskID)
+                        // If no other tasks are running, disable the syncing flag
+                        if self.activeTasks.isEmpty {
+                            self.isSyncing = false
+                        }
+                    }
+                    
                     if let error = error {
                         Task { @MainActor in
-                            self.isSyncing = false
                             if (error as NSError).code == NSURLErrorCancelled {
                                 self.lastSyncStatus = "Upload Cancelled"
                             } else {
                                 self.lastSyncStatus = "Upload Failed: \(error.localizedDescription)"
                             }
-                            self.activeTask = nil
                         }
                         if (error as NSError).code == NSURLErrorCancelled {
                             continuation.resume(throwing: CancellationError())
@@ -86,41 +94,49 @@ class WebDAVSyncManager: ObservableObject {
                     if let httpResponse = response as? HTTPURLResponse {
                         if (200...299).contains(httpResponse.statusCode) {
                             Task { @MainActor in
-                                self.isSyncing = false
                                 self.syncProgress = 1.0
                                 self.lastSyncStatus = "Successfully uploaded \(fileURL.lastPathComponent)"
-                                self.activeTask = nil
                             }
                             continuation.resume(returning: ())
                         } else {
                             Task { @MainActor in
-                                self.isSyncing = false
                                 self.lastSyncStatus = "Server Error: \(httpResponse.statusCode)"
-                                self.activeTask = nil
                             }
                             continuation.resume(throwing: CloudSyncError.httpError(statusCode: httpResponse.statusCode))
                         }
                     } else {
                         // Crucial: Handle malformed proxy/network interceptors rather than hanging indefinitely.
                         Task { @MainActor in
-                            self.isSyncing = false
                             self.lastSyncStatus = "Server returned an unrecognizable response."
-                            self.activeTask = nil
                         }
                         continuation.resume(throwing: URLError(.badServerResponse))
                     }
                 }
                 
                 Task { @MainActor in
-                    self.activeTask = task
+                    self.activeTasks[taskID] = task
                 }
                 
                 task.resume()
             }
         } onCancel: {
             Task { @MainActor [weak self] in
-                self?.activeTask?.cancel()
+                self?.activeTasks[taskID]?.cancel()
+                self?.activeTasks.removeValue(forKey: taskID)
             }
+        }
+    }
+    
+    // ✅ Emergency kill switch protecting against background runaway UI states
+    func cancelAllSyncs() {
+        Task { @MainActor in
+            for task in activeTasks.values {
+                task.cancel()
+            }
+            activeTasks.removeAll()
+            isSyncing = false
+            syncProgress = 0.0
+            lastSyncStatus = "All pending uploads terminated."
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import UIKit
 import ZIPFoundation
 
@@ -75,38 +75,40 @@ class EPUBMerger {
             let foundImages = try findImages(in: unzipDir)
             
             for imgURL in foundImages {
-                let newName = "page_\(String(format: "%05d", globalPageIndex)).jpg"
-                let destURL = imagesDir.appendingPathComponent(newName)
-                
-                // Copy/Re-compress
-                if let data = try? Data(contentsOf: imgURL) {
-                    try data.write(to: destURL)
+                autoreleasepool {
+                    let newName = "page_\(String(format: "%05d", globalPageIndex)).jpg"
+                    let destURL = imagesDir.appendingPathComponent(newName)
+                    
+                    // Copy/Re-compress
+                    if let data = try? Data(contentsOf: imgURL) {
+                        try? data.write(to: destURL)
+                    }
+                    
+                    // Manifest & HTML
+                    let htmlName = "page_\(String(format: "%05d", globalPageIndex)).xhtml"
+                    let htmlContent = """
+                    <?xml version="1.0" encoding="UTF-8"?>
+                    <!DOCTYPE html>
+                    <html xmlns="http://www.w3.org/1999/xhtml">
+                    <head>
+                        <title>Page \(globalPageIndex)</title>
+                        <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
+                        <link rel="stylesheet" type="text/css" href="css/style.css"/>
+                    </head>
+                    <body>
+                        <div class="svg-wrapper"><img src="images/\(newName)" alt=""/></div>
+                    </body>
+                    </html>
+                    """
+                    
+                    try? htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
+                    
+                    manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
+                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/jpeg\"/>")
+                    spineItems.append("<itemref idref=\"page_\(globalPageIndex)\" linear=\"yes\"/>")
+                    
+                    globalPageIndex += 1
                 }
-                
-                // Manifest & HTML
-                let htmlName = "page_\(String(format: "%05d", globalPageIndex)).xhtml"
-                let htmlContent = """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <!DOCTYPE html>
-                <html xmlns="http://www.w3.org/1999/xhtml">
-                <head>
-                    <title>Page \(globalPageIndex)</title>
-                    <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-                    <link rel="stylesheet" type="text/css" href="css/style.css"/>
-                </head>
-                <body>
-                    <div class="svg-wrapper"><img src="images/\(newName)" alt=""/></div>
-                </body>
-                </html>
-                """
-                
-                try htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
-                
-                manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/jpeg\"/>")
-                spineItems.append("<itemref idref=\"page_\(globalPageIndex)\" linear=\"yes\"/>")
-                
-                globalPageIndex += 1
             }
         }
         
@@ -171,17 +173,19 @@ class EPUBMerger {
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
         if let enumerator = fileManager.enumerator(at: epubDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
             while let fileURL = enumerator.nextObject() as? URL {
-                if fileURL.lastPathComponent == "mimetype" { continue }
-                
-                var isDirectory: ObjCBool = false
-                fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
-                if isDirectory.boolValue { continue }
-                
-                let relativePath = fileURL.path.replacingOccurrences(of: epubDir.path + "/", with: "")
-                let ext = fileURL.pathExtension.lowercased()
-                let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp"].contains(ext) ? .none : .deflate
-                
-                try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
+                autoreleasepool {
+                    if fileURL.lastPathComponent == "mimetype" { return }
+                    
+                    var isDirectory: ObjCBool = false
+                    fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
+                    if isDirectory.boolValue { return }
+                    
+                    let relativePath = fileURL.path.replacingOccurrences(of: epubDir.path + "/", with: "")
+                    let ext = fileURL.pathExtension.lowercased()
+                    let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp"].contains(ext) ? .none : .deflate
+                    
+                    try? archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
+                }
             }
         }
     }

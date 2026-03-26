@@ -95,6 +95,9 @@ struct ContentView: View {
             if !hasSeenOnboarding {
                 showOnboarding = true
             }
+            // Bind legacy memory-cache mapping to active SwiftData context
+            AnnotationStore.shared.initialize(with: modelContext)
+            
             Task { @MainActor in
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
                 MigrationService.shared.performSmartGrouping(context: modelContext)
