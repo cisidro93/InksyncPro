@@ -214,7 +214,7 @@ class PhysicalFileSystemRouter {
             manager.saveLibrary()
         }
     }
-}
+    
     // MARK: - Extracted Static Disk Helpers
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()

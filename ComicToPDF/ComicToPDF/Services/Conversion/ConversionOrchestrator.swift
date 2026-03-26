@@ -202,7 +202,8 @@ final class ConversionOrchestrator {
                 if !currentBatch.isEmpty { batches.append(currentBatch) }
                 guard !batches.isEmpty && !batches[0].isEmpty else { await MainActor.run { manager.isConverting = false }; return newMergedPDFs }
                 
-                await MainActor.run { manager.processingStatus = "Step 2/2: Merging..."; manager.statusMessage = "Merging \(batches.count) parts..."; manager.conversionProgress = 0.5 }
+                let batchCount = batches.count
+                await MainActor.run { manager.processingStatus = "Step 2/2: Merging..."; manager.statusMessage = "Merging \(batchCount) parts..."; manager.conversionProgress = 0.5 }
                 let ext = jobSettings.outputFormat == .cbz ? ".cbz" : ".pdf"
                 
                 for (batchIndex, batch) in batches.enumerated() {
@@ -306,7 +307,8 @@ final class ConversionOrchestrator {
             if !currentEPUBBatch.isEmpty { generatedBatches.append(currentEPUBBatch) }
             guard !generatedBatches.isEmpty && !generatedBatches[0].isEmpty else { await MainActor.run { manager.isConverting = false }; return newMergedPDFs }
             
-            await MainActor.run { manager.processingStatus = "Step 2/2: Merging..."; manager.statusMessage = "Merging \(generatedBatches.count) EPUB parts..."; manager.conversionProgress = 0.5 }
+            let batchCount = generatedBatches.count
+            await MainActor.run { manager.processingStatus = "Step 2/2: Merging..."; manager.statusMessage = "Merging \(batchCount) EPUB parts..."; manager.conversionProgress = 0.5 }
             let merger = EPUBMerger()
             
             for (batchIndex, batch) in generatedBatches.enumerated() {
@@ -320,7 +322,8 @@ final class ConversionOrchestrator {
                 try await merger.mergeEPUBs(sourceURLs: batch, outputURL: finalOutputURL, settings: jobSettings, overrideCoverData: overrideCover)
                 
                 let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-                let totalPages = await Task.detached(priority: .background) { return PhysicalFileSystemRouter.getPageCountStatic(from: finalOutputURL) }.value
+                let outputURL = finalOutputURL
+                let totalPages = await Task.detached(priority: .background) { return PhysicalFileSystemRouter.getPageCountStatic(from: outputURL) }.value
                 let outputPDF = ConvertedPDF(name: outputFilename, url: finalOutputURL, pageCount: totalPages, fileSize: finalFileSize, metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: mangaMode))
                 newMergedPDFs.append(outputPDF)
                 await MainActor.run { manager.convertedPDFs.insert(outputPDF, at: 0) }
