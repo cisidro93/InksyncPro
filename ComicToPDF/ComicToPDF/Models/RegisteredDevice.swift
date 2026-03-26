@@ -36,3 +36,34 @@ struct RegisteredDevice: Codable, Identifiable, Equatable {
         case saveToFiles = "Save to Files"
     }
 }
+
+import SwiftData
+
+@Model
+final class SDRegisteredDevice: Identifiable, Equatable {
+    var id: UUID = UUID()
+    var name: String
+    var rawDeviceType: String
+    var rawTransferMethod: String
+    var kindleEmail: String?
+    
+    // Derived properties
+    var deviceType: RegisteredDevice.DeviceType {
+        get { RegisteredDevice.DeviceType(rawValue: rawDeviceType) ?? .other }
+        set { rawDeviceType = newValue.rawValue }
+    }
+    var transferMethod: RegisteredDevice.TransferMethod {
+        get { RegisteredDevice.TransferMethod(rawValue: rawTransferMethod) ?? .airDrop }
+        set { rawTransferMethod = newValue.rawValue }
+    }
+    
+    @Transient var isOnline: Bool = false
+    
+    init(id: UUID = UUID(), name: String, deviceType: RegisteredDevice.DeviceType, transferMethod: RegisteredDevice.TransferMethod, kindleEmail: String? = nil) {
+        self.id = id
+        self.name = name
+        self.rawDeviceType = deviceType.rawValue
+        self.rawTransferMethod = transferMethod.rawValue
+        self.kindleEmail = kindleEmail
+    }
+}

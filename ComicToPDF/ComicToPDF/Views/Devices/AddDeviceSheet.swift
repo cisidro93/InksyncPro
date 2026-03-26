@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AddDeviceSheet: View {
     @EnvironmentObject var manager: ConversionManager
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) var dismiss
 
     @State private var name: String = ""
@@ -72,17 +73,18 @@ struct AddDeviceSheet: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
-                        var device = RegisteredDevice(
+                        let device = SDRegisteredDevice(
                             name: name,
                             deviceType: deviceType,
-                            transferMethod: transferMethod
+                            transferMethod: transferMethod,
+                            kindleEmail: kindleEmail.isEmpty ? nil : kindleEmail
                         )
-                        if !kindleEmail.isEmpty { device.kindleEmail = kindleEmail }
-                        manager.registeredDevices.append(device)
+                        modelContext.insert(device)
                         if manager.primaryDeviceID == nil {
                             manager.primaryDeviceID = device.id
+                            manager.saveLibrary()
                         }
-                        manager.saveLibrary()
+                        try? modelContext.save()
                         UserDefaults.standard.set(true, forKey: "hasCompletedDeviceSetup")
                         dismiss()
                     }

@@ -135,18 +135,17 @@ struct SeriesMergeConfigurationView: View {
         isProcessing = true
         
         Task {
-            // First we need to ensure the resulting PDF is correctly tagged to the series!
-            // Wait, we need the series name!
-            // Let's get it from the first item
-            _ = files.first?.metadata.series
+            // Explicitly extract the Series mapping tag to assign the generated merge automatically
+            let seriesTag = files.first?.metadata.series
             
-            await conversionManager.convertAndMerge(sourceFiles: files, outputName: name, mangaMode: mode)
-            
-            // Wait, convertAndMerge generates new PDFs but doesn't auto-assign them to the series natively in code, it relies on scanLibrary.
-            // But if we want it to automatically appear in the series, we can try to explicitly set the series name on the newly generated output if it replaces something.
-            // Actually, in ConversionManager, convertAndMerge creates EPUBs and relies on scanLibrary. To explicitly set metadata, we would need to edit metadata before scanning, but standard metadata extraction should catch it if the filename matches the series folder, or we can just leave it to user.
+            // Execute the bulk engine and implicitly return the generated data payload
+            let mergedBooks = await conversionManager.convertAndMerge(sourceFiles: files, outputName: name, mangaMode: mode, overrideSeries: seriesTag)
             
             await MainActor.run {
+                // If the Engine produced an array, safely pop it to the UI (already explicitly added to ConversionManager)
+                if let newBook = mergedBooks.first {
+                    print("Merged Book generated natively: \(newBook.name)")
+                }
                 isProcessing = false
                 dismiss()
             }

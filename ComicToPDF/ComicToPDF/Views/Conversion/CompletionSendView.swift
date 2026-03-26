@@ -1,9 +1,10 @@
-import SwiftUI
+import SwiftData
 
 struct CompletionSendView: View {
     @EnvironmentObject var manager: ConversionManager
     let pdf: ConvertedPDF
     @Environment(\.dismiss) var dismiss
+    @Query private var savedDevices: [SDRegisteredDevice]
 
     @State private var selectedDeviceID: UUID?
     @State private var isSending = false
@@ -11,11 +12,11 @@ struct CompletionSendView: View {
     @State private var errorMessage: String?
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
-    var targetDevice: RegisteredDevice? {
+    var targetDevice: SDRegisteredDevice? {
         if let id = selectedDeviceID {
-            return manager.registeredDevices.first { $0.id == id }
+            return savedDevices.first { $0.id == id }
         }
-        return manager.primaryDevice
+        return savedDevices.first { $0.id == manager.primaryDeviceID } ?? savedDevices.first
     }
 
     var body: some View {
@@ -112,7 +113,7 @@ struct CompletionSendView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(manager.registeredDevices) { device in
+                    ForEach(savedDevices) { device in
                         DeviceSelectCard(
                             device: device,
                             isSelected: (selectedDeviceID ?? manager.primaryDeviceID) == device.id
@@ -229,7 +230,7 @@ struct CompletionSendView: View {
 }
 
 struct DeviceSelectCard: View {
-    let device: RegisteredDevice
+    let device: SDRegisteredDevice
     let isSelected: Bool
     let onTap: () -> Void
 

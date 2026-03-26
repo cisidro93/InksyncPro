@@ -1,0 +1,11 @@
+//
+//  Config.xcconfig
+//  InksyncPro
+//
+//  Created for environment secrets and private API overrides.
+//  WARNING: DO NOT COMMIT THIS FILE TO SCM.
+//
+
+// Example variables for CI/CD or P2P WebDAV configurations
+INKSYNC_WEBDAV_DEFAULT_PORT = 8080
+INKSYNC_ALLOW_DEBUG_LOGGING = YES

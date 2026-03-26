@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 
 @MainActor
 class SmartImportViewModel: ObservableObject {
@@ -8,7 +8,7 @@ class SmartImportViewModel: ObservableObject {
     @Published var volumeNumber: String = ""
     @Published var isManga: Bool = false
     @Published var detectedIsManga: Bool = false
-    @Published var destinationDevice: RegisteredDevice?
+    @Published var destinationDevice: SDRegisteredDevice?
     @Published var flaggedPageIndices: [Int] = []
     @Published var overallConfidence: Double = 0.0
     @Published var isAnalysing: Bool = true
@@ -33,7 +33,7 @@ class SmartImportViewModel: ObservableObject {
         self.sourceURL = sourceURL
     }
 
-    func analyse(manager: ConversionManager) async {
+    func analyse(savedDevices: [SDRegisteredDevice], primaryDeviceID: UUID?) async {
         // 1. Display name from LocalComicInfoService
         if let xml = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: sourceURL) {
             title = xml.displayName
@@ -60,13 +60,19 @@ class SmartImportViewModel: ObservableObject {
             if let mem = seriesMemory {
                 isManga = mem.confirmedMangaRTL ?? isManga
                 if let devID = mem.lastDeviceID {
-                    destinationDevice = manager.registeredDevices.first { $0.id == devID }
+                    destinationDevice = savedDevices.first { $0.id == devID }
                 }
             }
         }
 
         // 4. Destination device fallback
-        if destinationDevice == nil { destinationDevice = manager.primaryDevice }
+        if destinationDevice == nil { 
+            if let primaryID = primaryDeviceID, let primary = savedDevices.first(where: { $0.id == primaryID }) {
+                destinationDevice = primary
+            } else {
+                destinationDevice = savedDevices.first
+            }
+        }
 
         // 5. Lightweight panel scan (first 15 pages only)
         do {
@@ -119,6 +125,8 @@ struct SmartImportSheet: View {
     @StateObject private var vm: SmartImportViewModel
     @EnvironmentObject var manager: ConversionManager
     @Environment(\.dismiss) var dismiss
+    
+    @Query private var savedDevices: [SDRegisteredDevice]
 
     init(sourceURL: URL) {
         self.sourceURL = sourceURL
@@ -156,7 +164,7 @@ struct SmartImportSheet: View {
                 }
             }
         }
-        .task { await vm.analyse(manager: manager) }
+        .task { await vm.analyse(savedDevices: savedDevices, primaryDeviceID: manager.primaryDeviceID) }
         .alert("Import Failed", isPresented: Binding(
             get: { vm.extractionError != nil },
             set: { if !$0 { dismiss() } }

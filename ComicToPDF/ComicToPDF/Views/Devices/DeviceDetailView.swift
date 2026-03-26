@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct DeviceDetailView: View {
-    let device: RegisteredDevice
+    let device: SDRegisteredDevice
     @EnvironmentObject var manager: ConversionManager
     @EnvironmentObject var peerManager: PeerManager
+    @Environment(\.modelContext) private var modelContext
     
     var body: some View {
         VStack(spacing: 24) {
@@ -56,10 +57,8 @@ struct DeviceDetailView: View {
             Spacer()
             
             Button {
-                if let index = manager.registeredDevices.firstIndex(where: { $0.id == device.id }) {
-                    manager.registeredDevices.remove(at: index)
-                    manager.saveLibrary()
-                }
+                modelContext.delete(device)
+                try? modelContext.save()
             } label: {
                 Text("Remove Device")
                     .foregroundColor(.inkRed)

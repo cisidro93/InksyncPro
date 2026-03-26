@@ -1,11 +1,15 @@
 import SwiftUI
+import SwiftData
 
 struct DevicesView: View {
     @EnvironmentObject var manager: ConversionManager
     @EnvironmentObject var peerManager: PeerManager
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var showAddDevice = false
     @State private var selectedDeviceID: UUID?
+    
+    @Query(sort: \SDRegisteredDevice.name) private var savedDevices: [SDRegisteredDevice]
 
     var body: some View {
         if hSizeClass == .regular {
@@ -57,7 +61,7 @@ struct DevicesView: View {
                 }
                 .onAppear(perform: handleAppear)
         } detail: {
-            if let selectedDeviceID, let device = manager.registeredDevices.first(where: { $0.id == selectedDeviceID }) {
+            if let selectedDeviceID, let device = savedDevices.first(where: { $0.id == selectedDeviceID }) {
                 DeviceDetailView(device: device)
             } else {
                 VStack(spacing: 16) {
@@ -81,7 +85,7 @@ struct DevicesView: View {
 
             List(selection: $selectedDeviceID) {
                 Section {
-                    if manager.registeredDevices.isEmpty {
+                    if savedDevices.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "ipad.and.iphone")
                                 .font(.system(size: 40))
@@ -97,7 +101,7 @@ struct DevicesView: View {
                         .padding(.vertical, 20)
                         .listRowBackground(Color.inkSurface)
                     } else {
-                        ForEach(manager.registeredDevices) { device in
+                        ForEach(savedDevices) { device in
                             if hSizeClass == .regular {
                                 // iPad: use NavigationLink-style selection
                                 NavigationLink(value: device.id) {
@@ -124,9 +128,12 @@ struct DevicesView: View {
                                 .listRowBackground(Color.inkSurface)
                             }
                         }
+                        }
                         .onDelete { indexSet in
-                            manager.registeredDevices.remove(atOffsets: indexSet)
-                            manager.saveLibrary()
+                            for index in indexSet {
+                                modelContext.delete(savedDevices[index])
+                            }
+                            try? modelContext.save()
                         }
                     }
                 } header: {
@@ -150,17 +157,17 @@ struct DevicesView: View {
     }
 
     private func handleAppear() {
-        if manager.registeredDevices.isEmpty &&
+        if savedDevices.isEmpty &&
            !UserDefaults.standard.bool(forKey: "hasCompletedDeviceSetup") {
             showAddDevice = true
         } else if hSizeClass == .regular && selectedDeviceID == nil {
-            selectedDeviceID = manager.registeredDevices.first?.id
+            selectedDeviceID = savedDevices.first?.id
         }
     }
 }
 
 struct DeviceRow: View {
-    let device: RegisteredDevice
+    let device: SDRegisteredDevice
     let isPrimary: Bool
     let isOnline: Bool
     let onSetPrimary: () -> Void

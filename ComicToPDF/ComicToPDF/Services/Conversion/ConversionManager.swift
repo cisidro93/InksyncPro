@@ -878,9 +878,11 @@ class ConversionManager: ObservableObject {
         
         isConverting = false
     }
-    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool) async {
-        guard !sourceFiles.isEmpty else { return }
+    @discardableResult
+    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil) async -> [ConvertedPDF] {
+        guard !sourceFiles.isEmpty else { return [] }
         isConverting = true
+        var newMergedPDFs: [ConvertedPDF] = []
         
         let fileManager = FileManager.default
         let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -946,7 +948,7 @@ class ConversionManager: ObservableObject {
                 }
                 
                 guard !batches.isEmpty && !batches[0].isEmpty else {
-                    isConverting = false; return
+                    isConverting = false; return newMergedPDFs
                 }
                 
                 await MainActor.run {
@@ -1012,8 +1014,9 @@ class ConversionManager: ObservableObject {
                     
                     // ✅ Pre-register the file with its known page count (batch.count)
                     let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-                    let outputPDF = ConvertedPDF(name: outputFilename, url: finalOutputURL, pageCount: batch.count, fileSize: finalFileSize, metadata: PDFMetadata(title: outputFilename))
-                    await MainActor.run { self.convertedPDFs.append(outputPDF) }
+                    let outputPDF = ConvertedPDF(name: outputFilename, url: finalOutputURL, pageCount: batch.count, fileSize: finalFileSize, metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: jobSettings.mangaMode))
+                    newMergedPDFs.append(outputPDF)
+                    await MainActor.run { self.convertedPDFs.insert(outputPDF, at: 0) }
                 }
                 
                 await MainActor.run {
@@ -1025,7 +1028,7 @@ class ConversionManager: ObservableObject {
                 }
                 try? await Task.sleep(nanoseconds: 3 * 1_000_000_000)
                 await MainActor.run { self.statusMessage = nil }
-                return
+                return newMergedPDFs
             }
             
             // EPUB Bulk Merge (Existing Pipeline)
@@ -1099,7 +1102,7 @@ class ConversionManager: ObservableObject {
             }
             
             guard !generatedBatches.isEmpty && !generatedBatches[0].isEmpty else {
-                isConverting = false; return
+                isConverting = false; return newMergedPDFs
             }
             
             await MainActor.run {
@@ -1125,8 +1128,9 @@ class ConversionManager: ObservableObject {
                 // ✅ Pre-register newly generated EPUB with known page count from detached calculation
                 let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                 let totalPages = await Task.detached(priority: .background) { return ConversionManager.getPageCountStatic(from: finalOutputURL) }.value
-                let outputPDF = ConvertedPDF(name: outputFilename, url: finalOutputURL, pageCount: totalPages, fileSize: finalFileSize, metadata: PDFMetadata(title: outputFilename))
-                await MainActor.run { self.convertedPDFs.append(outputPDF) }
+                let outputPDF = ConvertedPDF(name: outputFilename, url: finalOutputURL, pageCount: totalPages, fileSize: finalFileSize, metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: mangaMode))
+                newMergedPDFs.append(outputPDF)
+                await MainActor.run { self.convertedPDFs.insert(outputPDF, at: 0) }
             }
 
             await MainActor.run { self.statusMessage = "Cleaning up..." }
@@ -1143,12 +1147,14 @@ class ConversionManager: ObservableObject {
             }
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000)
             await MainActor.run { self.statusMessage = nil }
+            return newMergedPDFs
             
         } catch {
             await MainActor.run {
                 self.statusMessage = "Merge Failed: \(error.localizedDescription)"
                 self.isConverting = false
             }
+            return newMergedPDFs
         }
     }
 
