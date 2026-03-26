@@ -1,4 +1,4 @@
-
+﻿
 import SwiftUI
 import UIKit
 import WebKit
@@ -7,8 +7,9 @@ import ZIPFoundation
 
 struct ReaderView: View {
     @State var fileURL: URL
-    let contentType: ContentType
+        let contentType: ContentType
     @State var pdf: ConvertedPDF? // Added to support Bookmarking
+    var onExit: (() -> Void)? = nil
     
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
@@ -713,5 +714,6 @@ class VolumeObserverController: UIViewController {
         try? audioSession.setActive(false)
     }
 }
+
 
 

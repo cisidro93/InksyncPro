@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 
 @MainActor
 class SmartImportViewModel: ObservableObject {
@@ -378,7 +378,7 @@ struct ImportFormView: View {
             Toggle("", isOn: $vm.isManga)
                 .tint(.inkBlue)
                 .labelsHidden()
-                .onChange(of: vm.isManga) { _ in
+                                .onChange(of: vm.isManga) {
                     vm.userEditedDirection = true
                 }
         }
@@ -481,3 +481,4 @@ struct AnalysingView: View {
         }
     }
 }
+
