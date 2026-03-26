@@ -116,7 +116,7 @@ class PhysicalFileSystemRouter {
         
         let url = pdf.url
         let image = await Task.detached(priority: .background) { () -> UIImage? in
-            return ConversionManager.extractCoverImageStatic(from: url)
+            return PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
         }.value
         
         guard let image = image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
@@ -213,4 +213,135 @@ class PhysicalFileSystemRouter {
         }
     }
 }
+    // MARK: - Extracted Static Disk Helpers
+    nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
+        let ext = url.pathExtension.lowercased()
+        if ext == "pdf" {
+            guard let document = PDFDocument(url: url) else { return nil }
+            
+            // Try up to the first 3 pages to find a portrait cover
+            for i in 0..<min(document.pageCount, 3) {
+                if let page = document.page(at: i) {
+                    let bounds = page.bounds(for: .mediaBox)
+                    // Skip if it's the first page and appears to be a 2-page spread
+                    if i == 0 && bounds.width > bounds.height && document.pageCount > 1 {
+                        continue
+                    }
+                    return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
+                }
+            }
+            
+            // Fallback to page 0 if no portrait pages were found
+            guard let page = document.page(at: 0) else { return nil }
+            return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
+        }
 
+        if ["cbz", "zip", "epub"].contains(ext) {
+            // ✅ Security Scope Safety (Paranoid Check)
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
+            do {
+                // Remove 'try?' to let errors propagate to the catch block
+                let archive = try Archive(url: url, accessMode: .read)
+                
+                // ✅ Fix: Use localized sort to match Finder/ZipUtilities (1, 2, 10 vs 1, 10, 2)
+                let sortedEntries = archive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                
+                // Check mimetype for EPUBs
+                if ext == "epub" {
+                    if let mimetypeEntry = archive["mimetype"] {
+                        Logger.shared.log("[Flight Recorder] [0] mimetype Size: \(mimetypeEntry.uncompressedSize)", category: "Debug")
+                        
+                        // Check Compression Method
+                        let compressionMethod = mimetypeEntry.type == .file ? (mimetypeEntry.compressedSize == mimetypeEntry.uncompressedSize ? "STORED (Likely)" : "DEFLATED") : "UNKNOWN"
+                        Logger.shared.log("[Flight Recorder] [0] Compression: \(compressionMethod) (C: \(mimetypeEntry.compressedSize) / U: \(mimetypeEntry.uncompressedSize))", category: "Debug")
+                        
+                        if mimetypeEntry.uncompressedSize == 20 {
+                            Logger.shared.log("[Flight Recorder] ✅ Mimetype size is correct (20 bytes)", category: "Debug")
+                        } else {
+                            Logger.shared.log("[Flight Recorder] ❌ Mimetype size is WRONG: \(mimetypeEntry.uncompressedSize)", category: "Debug")
+                        }
+                        
+                        var data = Data()
+                        _ = try? archive.extract(mimetypeEntry, consumer: { data.append($0) })
+                        if let content = String(data: data, encoding: .ascii) {
+                           Logger.shared.log("[Flight Recorder] 📄 Mimetype Content: '\(content)'", category: "Debug")
+                           if content != "application/epub+zip" {
+                               Logger.shared.log("[Flight Recorder] ❌ Mimetype Content INVALID", category: "Debug")
+                           }
+                        }
+                    } else {
+                         Logger.shared.log("[Flight Recorder] ❌ Mimetype file MISSING!", category: "Debug")
+                    }
+                }
+
+                var firstSpreadImage: UIImage? = nil
+                var attempts = 0
+                
+                for entry in sortedEntries {
+                    if Task.isCancelled { return nil } // ✅ Abort heavy Zip iteration if SwiftUI view was cancelled
+                    // Skip directories explicit check
+                    if entry.type == .directory { continue }
+                    
+                    let entryExt = (entry.path as NSString).pathExtension.lowercased()
+                    if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
+                        if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
+                        
+                        var data = Data()
+                        do {
+                            _ = try archive.extract(entry) { data.append($0) }
+                            if let image = UIImage(data: data) {
+                                attempts += 1
+                                
+                                // Skip if it's the first page and appears to be a 2-page spread
+                                if attempts == 1 && image.size.width > image.size.height {
+                                    firstSpreadImage = image
+                                    continue
+                                }
+                                
+                                return image
+                            }
+                        } catch {
+
+                        }
+                    }
+                }
+                
+                return firstSpreadImage
+            } catch {
+
+            }
+        }
+        return nil
+    }
+    
+    nonisolated static func getPageCountStatic(from url: URL) -> Int {
+        let ext = url.pathExtension.lowercased()
+        if ext == "pdf" {
+            return PDFDocument(url: url)?.pageCount ?? 0
+        }
+
+        if ["cbz", "zip", "epub"].contains(ext) {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
+            guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return 0 }
+            
+            var count = 0
+            for entry in archive {
+                if entry.type == .directory { continue }
+                let entryExt = (entry.path as NSString).pathExtension.lowercased()
+                if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
+                    if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
+                    count += 1
+                }
+            }
+            return count
+        }
+        return 0
+    }
+
+    
+    // ✅ NEW: Extract Smart Panels from ComicInfo.xml
+}

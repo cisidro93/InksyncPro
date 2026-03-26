@@ -55,7 +55,7 @@ actor LibraryScanner {
                     await manager.generateCoverThumbnail(for: pdf)
                     
                     let count = await Task.detached(priority: .background) {
-                        return ConversionManager.getPageCountStatic(from: pdf.url)
+                        return PhysicalFileSystemRouter.getPageCountStatic(from: pdf.url)
                     }.value
                     
                     if count > 0 {
