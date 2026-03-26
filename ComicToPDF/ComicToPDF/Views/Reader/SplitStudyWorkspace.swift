@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 
 struct SplitStudyWorkspace: View {
     let fileURL: URL
@@ -16,11 +16,11 @@ struct SplitStudyWorkspace: View {
             
             if isCompact {
                 // iPhone or compact iPad view -> just reader, notebook is hidden
-                ReaderView(fileURL: fileURL, contentType: contentType, pdf: pdf)
+                ReaderView(fileURL: fileURL, contentType: contentType, pdf: pdf, onExit: { dismiss() })
             } else {
                 HStack(spacing: 0) {
                     // Left: Reader
-                    ReaderView(fileURL: fileURL, contentType: contentType, pdf: pdf)
+                    ReaderView(fileURL: fileURL, contentType: contentType, pdf: pdf, onExit: { dismiss() })
                         .frame(width: showNotebook ? geo.size.width * splitFraction : geo.size.width)
                     
                     if showNotebook {
@@ -71,3 +71,4 @@ struct SplitStudyWorkspace: View {
         .edgesIgnoringSafeArea(.all)
     }
 }
+

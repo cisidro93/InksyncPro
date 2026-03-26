@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 
@@ -93,7 +93,7 @@ struct ModernLibraryView: View {
                 .fullScreenCover(item: $viewModel.activeFullScreen) { dest in
                     switch dest {
                     case .read(let pdf):
-                        SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
+                        if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) }
                     case .advancedWorkspace(let pdf):
                         AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
                     }
@@ -295,3 +295,4 @@ struct ModernLibraryView: View {
         }
     }
 }
+

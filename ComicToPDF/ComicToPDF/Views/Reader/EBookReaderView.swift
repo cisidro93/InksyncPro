@@ -6,6 +6,7 @@ import ZIPFoundation
 struct EBookReaderView: View {
     let fileURL: URL
         let title: String
+    var onExit: (() -> Void)? = nil
     
     @Environment(\.dismiss) private var dismiss
     @StateObject private var prefs = EBookPreferences.shared
@@ -115,7 +116,7 @@ struct EBookReaderView: View {
     // MARK: - Top Bar
     @ViewBuilder private var topBar: some View {
         HStack(spacing: 16) {
-            Button { dismiss() } label: {
+            Button { if let onExit = onExit { onExit() } else { dismiss() } } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
@@ -151,8 +152,10 @@ struct EBookReaderView: View {
                     .clipShape(Circle())
             }
         }
-        .padding(.horizontal, 16)
+                .padding(.horizontal, 16)
+        .padding(.top, (UIApplication.shared.connectedScenes.compactMap { .padding(.horizontal, 16)
         .padding(.top, 8)
+        .padding(.bottom, 12) as? UIWindowScene }.first?.windows.first?.safeAreaInsets.top ?? 47) + 8)
         .padding(.bottom, 12)
         .background(
             prefs.activeTheme.background(colorScheme: colorScheme).opacity(0.92)
@@ -471,7 +474,7 @@ struct EBookWebReader: UIViewRepresentable {
             hyphens: auto !important;
         }
         p { margin-bottom: \\(prefs.paragraphSpacing)em !important; text-indent: \\(prefs.paragraphIndent)em !important; }
-        h1,h2,h3,h4 { color: \\(prefs.activeTheme.cssText(colorScheme: colorScheme)) !important; line-height: 1.3; }
+                p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \\(prefs.activeTheme.cssText(colorScheme: colorScheme)) !important; line-height: 1.3; }
         img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
         a { color: \\(prefs.activeTheme.cssLink(colorScheme: colorScheme)) !important; }
         blockquote { border-left: 3px solid \\(prefs.activeTheme.cssLink(colorScheme: colorScheme)); margin-left: 0; padding-left: 16px; opacity: 0.85; }
@@ -613,6 +616,9 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
+
+
+
 
 
 

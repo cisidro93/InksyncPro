@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 
 struct ReadNowTabView: View {
     @EnvironmentObject var conversionManager: ConversionManager
@@ -71,7 +71,7 @@ struct ReadNowTabView: View {
             .background(Color(UIColor.systemBackground))
             .navigationTitle("Read Now")
             .fullScreenCover(item: $pdfToRead) { pdf in
-                SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
+                if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) }
             }
         }
     }
@@ -110,3 +110,4 @@ struct ReadNowCard: View {
         }
     }
 }
+

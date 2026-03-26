@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 
 struct SeriesDetailView: View {
     let series: SeriesGroup
@@ -116,7 +116,7 @@ struct SeriesDetailView: View {
             }
         }
         .fullScreenCover(item: $pdfToRead) { pdf in
-            SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
+            if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) }
         }
         .safeAreaInset(edge: .bottom) {
             if isSelectionMode {
@@ -355,4 +355,5 @@ struct SeriesDetailView: View {
         await MainActor.run { headerCover = img }
     }
 }
+
 

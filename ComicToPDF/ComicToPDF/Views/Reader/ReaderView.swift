@@ -44,7 +44,8 @@ struct ReaderView: View {
                 if fileURL.pathExtension.lowercased() == "epub" && contentType == .book {
                     EBookReaderView(
                         fileURL: fileURL,
-                        title: fileURL.deletingPathExtension().lastPathComponent
+                        title: fileURL.deletingPathExtension().lastPathComponent,
+                        onExit: onExit ?? { dismiss() }
                     )
                 } else {
                     comicReaderBody
@@ -178,7 +179,7 @@ struct ReaderView: View {
     // MARK: - Top Bar
     @ViewBuilder private var topBar: some View {
         HStack(spacing: 16) {
-            Button { dismiss() } label: {
+            Button { if let onExit = onExit { onExit() } else { dismiss() } } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.primary)
@@ -225,7 +226,7 @@ struct ReaderView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.top, (UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.windows.first?.safeAreaInsets.top ?? 47) + 8)
         .padding(.bottom, 12)
         .background(
             Color(UIColor.systemBackground).opacity(0.92)
@@ -712,3 +713,5 @@ class VolumeObserverController: UIViewController {
         try? audioSession.setActive(false)
     }
 }
+
+
