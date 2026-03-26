@@ -27,6 +27,10 @@ struct ReaderChrome: View {
     var onCropToggle: (() -> Void)? = nil
     var onReflowToggle: (() -> Void)? = nil
     
+    // Image Enhancement
+    var isEnhanced: Bool = false
+    var onEnhanceToggle: (() -> Void)? = nil
+    
     var body: some View {
         VStack {
             // Top Bar
@@ -68,6 +72,16 @@ struct ReaderChrome: View {
                                 .foregroundColor(.white)
                                 .padding(12)
                                 .background(Color.black.opacity(0.6))
+                                .clipShape(Circle())
+                        }
+                    }
+                    if onEnhanceToggle != nil {
+                        Button(action: { onEnhanceToggle?() }) {
+                            Image(systemName: "wand.and.stars")
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(isEnhanced ? .black : .white)
+                                .padding(12)
+                                .background(isEnhanced ? Color.yellow : Color.black.opacity(0.6))
                                 .clipShape(Circle())
                         }
                     }

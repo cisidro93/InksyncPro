@@ -1,6 +1,19 @@
-﻿import SwiftUI
+import SwiftUI
 import ZIPFoundation
 import PDFKit
+
+extension View {
+    @ViewBuilder
+    func applyComicEnhancements(isEnhanced: Bool) -> some View {
+        if isEnhanced {
+            self
+                .contrast(1.25)
+                .saturation(1.35)
+        } else {
+            self
+        }
+    }
+}
 
 enum ComicReadingMode: String, CaseIterable, Codable {
     case pageHorizontal   // Single page, horizontal swipe (default)
@@ -148,6 +161,7 @@ class ComicImageCache: ObservableObject {
 }
 
 struct ComicReaderEngine: View {
+    @EnvironmentObject var manager: ConversionManager
     let pdf: ConvertedPDF
     var onDismiss: () -> Void
     
@@ -155,6 +169,7 @@ struct ComicReaderEngine: View {
     @State private var chromeVisible = false
     @State private var currentIndex: Int = 0
     @State private var readingMode: ComicReadingMode = .pageHorizontal
+    @State private var isEnhanced: Bool = false
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void) {
         self.pdf = pdf
@@ -175,11 +190,14 @@ struct ComicReaderEngine: View {
                         webtoonView
                     } else if readingMode == .pageTwoUp {
                         twoUpView
+                    } else if readingMode == .panelNavigation {
+                        guidedView
                     } else {
                         // Standard Horizontal or RTL Mode
                         TabView(selection: $currentIndex) {
                             ForEach(0..<cache.pageCount, id: \.self) { index in
                                 ComicPageView(image: cache.getImage(at: index))
+                                    .applyComicEnhancements(isEnhanced: isEnhanced)
                                     .tag(index)
                                     .rotation3DEffect(.degrees(readingMode == .mangaRTL ? 180 : 0), axis: (x: 0, y: 1, z: 0))
                             }
@@ -214,7 +232,8 @@ struct ComicReaderEngine: View {
                 onAnnotationsToggle: {},
                 onSettingsToggle: {
                     // Quick toggle reading mode
-                    if readingMode == .pageHorizontal { readingMode = .mangaRTL }
+                    if readingMode == .pageHorizontal { readingMode = .panelNavigation }
+                    else if readingMode == .panelNavigation { readingMode = .mangaRTL }
                     else if readingMode == .mangaRTL { readingMode = .webtoonScroll }
                     else if readingMode == .webtoonScroll { readingMode = .pageTwoUp }
                     else { readingMode = .pageHorizontal }
@@ -223,7 +242,9 @@ struct ComicReaderEngine: View {
                     get: { Double(currentIndex) / Double(max(1, cache.pageCount - 1)) },
                     set: { currentIndex = Int($0 * Double(max(1, cache.pageCount - 1))) }
                 ),
-                totalPages: cache.pageCount
+                totalPages: cache.pageCount,
+                isEnhanced: isEnhanced,
+                onEnhanceToggle: { isEnhanced.toggle() }
             )
         }
         .onAppear {
@@ -233,6 +254,24 @@ struct ComicReaderEngine: View {
         }
     }
     
+    var guidedView: some View {
+        TabView(selection: $currentIndex) {
+            ForEach(0..<cache.pageCount, id: \.self) { index in
+                let panelsForPage = manager.panelOverrides[pdf.id]?[index] ?? []
+                ComicGuidedPageView(
+                    image: cache.getImage(at: index),
+                    panels: panelsForPage,
+                    masterIndex: $currentIndex,
+                    totalPages: cache.pageCount,
+                    onTapChrome: { chromeVisible.toggle() }
+                )
+                .applyComicEnhancements(isEnhanced: isEnhanced)
+                .tag(index)
+            }
+        }
+        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+    }
+    
     var webtoonView: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
@@ -240,6 +279,7 @@ struct ComicReaderEngine: View {
                     if let image = cache.getImage(at: index) {
                         Image(uiImage: image)
                             .resizable()
+                            .applyComicEnhancements(isEnhanced: isEnhanced)
                             .aspectRatio(contentMode: .fill)
                             .padding(.bottom, 2)
                             .onAppear { currentIndex = index }
@@ -261,10 +301,10 @@ struct ComicReaderEngine: View {
                 
                 HStack(spacing: 0) {
                     if let img1 = cache.getImage(at: index1) {
-                        Image(uiImage: img1).resizable().aspectRatio(contentMode: .fit)
+                        Image(uiImage: img1).resizable().applyComicEnhancements(isEnhanced: isEnhanced).aspectRatio(contentMode: .fit)
                     }
                     if index2 < cache.pageCount, let img2 = cache.getImage(at: index2) {
-                        Image(uiImage: img2).resizable().aspectRatio(contentMode: .fit)
+                        Image(uiImage: img2).resizable().applyComicEnhancements(isEnhanced: isEnhanced).aspectRatio(contentMode: .fit)
                     }
                 }
                 .tag(index1)
@@ -296,6 +336,127 @@ struct ComicPageView: View {
             }
         } else {
             Color.black
+        }
+    }
+}
+
+// MARK: - Guided View Component
+struct ComicGuidedPageView: View {
+    let image: UIImage?
+    let panels: [PanelExtractor.Panel]
+    @Binding var masterIndex: Int
+    let totalPages: Int
+    var onTapChrome: () -> Void
+    
+    @State private var currentPanelIndex: Int = -1 // -1 means Zoomed Out
+    
+    var body: some View {
+        GeometryReader { geo in
+            if let img = image {
+                let metrics = calculateMetrics(for: geo.size, image: img)
+                
+                Image(uiImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .scaleEffect(metrics.scale)
+                    .offset(x: metrics.offsetX, y: metrics.offsetY)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: currentPanelIndex)
+                    .onTapGesture { loc in
+                        let third = geo.size.width / 3
+                        if loc.x < third {
+                            rewind()
+                        } else if loc.x > geo.size.width - third {
+                            advance()
+                        } else {
+                            onTapChrome()
+                        }
+                    }
+            } else {
+                Color.black
+            }
+        }
+        .onAppear {
+            currentPanelIndex = -1 // Start zoomed out
+        }
+    }
+    
+    struct ViewMetrics {
+        let scale: CGFloat
+        let offsetX: CGFloat
+        let offsetY: CGFloat
+    }
+    
+    private func calculateMetrics(for proxy: CGSize, image: UIImage) -> ViewMetrics {
+        if currentPanelIndex == -1 || panels.isEmpty { return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0) }
+        
+        let panel = panels[currentPanelIndex]
+        let imgSize = image.size
+        
+        // Convert Vision Normalized Rect to Image Pixel Rect (UIKit / Top-Left origin)
+        let rect = CGRect(
+            x: panel.boundingBox.minX * imgSize.width,
+            y: (1.0 - panel.boundingBox.maxY) * imgSize.height,
+            width: panel.boundingBox.width * imgSize.width,
+            height: panel.boundingBox.height * imgSize.height
+        )
+        
+        // 1. Calculate how the image fits perfectly on screen at scale=1
+        let imageRatio = imgSize.width / imgSize.height
+        let screenRatio = proxy.width / proxy.height
+        
+        var renderW: CGFloat
+        var renderH: CGFloat
+        if imageRatio > screenRatio {
+            renderW = proxy.width
+            renderH = proxy.width / imageRatio
+        } else {
+            renderH = proxy.height
+            renderW = proxy.height * imageRatio
+        }
+        
+        // 2. Map pixel rect to render rect
+        let mappedX = (rect.minX / imgSize.width) * renderW
+        let mappedY = (rect.minY / imgSize.height) * renderH
+        let mappedW = (rect.width / imgSize.width) * renderW
+        let mappedH = (rect.height / imgSize.height) * renderH
+        
+        // 3. Target Scale to fit the panel perfectly (with 5% breathing room)
+        let scaleX = proxy.width / mappedW
+        let scaleY = proxy.height / mappedH
+        let scale = min(scaleX, scaleY) * 0.95
+        
+        // 4. Calculate Offset to center the panel
+        // Center of the physical screen representation
+        let panelCenter = CGPoint(x: mappedX + mappedW / 2, y: mappedY + mappedH / 2)
+        let imageRenderCenter = CGPoint(x: renderW / 2, y: renderH / 2)
+        
+        // SwiftUI offsets are post-scale transform
+        let tx = (imageRenderCenter.x - panelCenter.x) * scale
+        let ty = (imageRenderCenter.y - panelCenter.y) * scale
+        
+        return ViewMetrics(scale: scale, offsetX: tx, offsetY: ty)
+    }
+    
+    private func advance() {
+        if currentPanelIndex < panels.count - 1 {
+            currentPanelIndex += 1
+        } else {
+            if masterIndex < totalPages - 1 {
+                currentPanelIndex = -1 // Reset for return
+                masterIndex += 1
+            }
+        }
+    }
+    
+    private func rewind() {
+        if currentPanelIndex > -1 {
+            currentPanelIndex -= 1
+        } else {
+            if masterIndex > 0 {
+                currentPanelIndex = -1
+                masterIndex -= 1
+            }
         }
     }
 }
