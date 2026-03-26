@@ -34,15 +34,25 @@ class ComicImageCache: ObservableObject {
     private var entries: [Entry] = []
     
     @Published var isLoading = true
+    @Published var cacheUpdatedTick = 0 // Triggers SwiftUI redraw for async streams
     var pageCount: Int = 0
     let isPDF: Bool
+    let isStream: Bool
     private let pdfDocument: PDFDocument?
     
     init(pdf: ConvertedPDF) {
+        let scheme = pdf.url.scheme?.lowercased() ?? ""
+        isStream = (scheme == "http" || scheme == "https")
+        
         let ext = pdf.url.pathExtension.lowercased()
         isPDF = (ext == "pdf")
         
-        if isPDF {
+        if isStream {
+            self.pdfDocument = nil
+            // In a real flow, the PDF object carries the page count metadata
+            self.pageCount = 100 // Prototype fallback
+            self.isLoading = false
+        } else if isPDF {
             self.pdfDocument = PDFDocument(url: pdf.url)
             self.pageCount = pdfDocument?.pageCount ?? 0
             self.isLoading = false
@@ -79,8 +89,14 @@ class ComicImageCache: ObservableObject {
             return cachedImage
         }
         
-        // 2. Not in memory, extract it synchronously to avoid SwiftUI layout thrashing on fast swiping
-        // Wait, SwiftUI loves async for TabViews padding but TabView loads surrounding views.
+        if isStream {
+            // Async HTTP Fetch to prevent blocking Main Thread
+            fetchStreamImage(at: index)
+            prefetchSurrounding(index: index)
+            return nil // UI will render ProgressView until network completes
+        }
+        
+        // 2. Local Extraction (Synchronous for smooth UX without layout popping)
         let image = extractOrRenderImage(at: index)
         if let img = image {
             cache.setObject(img, forKey: NSNumber(value: index))
@@ -156,6 +172,28 @@ class ComicImageCache: ObservableObject {
                     }
                 }
             }
+        }
+    }
+    private func fetchStreamImage(at index: Int) {
+        // Prevent duplicate network calls for same index
+        if accessQueue.contains(index) { return }
+        
+        guard let url = URL(string: "\(pdfDocument == nil ? "http://prototype-stream" : .init())/\(index)") else { return } // Replace with actual pdf.url in production
+        
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.accessQueue.append(index) // Mark as fetching
+            
+            // Native HTTP call prototyping Kavita PSE API layout
+            let task = URLSession.shared.dataTask(with: url) { data, response, error in
+                if let data = data, let image = UIImage(data: data) {
+                    self.cache.setObject(image, forKey: NSNumber(value: index))
+                    DispatchQueue.main.async {
+                        self.cacheUpdatedTick += 1
+                    }
+                }
+            }
+            task.resume()
         }
     }
 }

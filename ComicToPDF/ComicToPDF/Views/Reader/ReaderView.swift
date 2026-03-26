@@ -568,6 +568,14 @@ struct PDFKitView: UIViewRepresentable {
 
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         tap.delegate = context.coordinator
+        
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.delegate = context.coordinator
+        
+        tap.require(toFail: doubleTap)
+        
+        pdfView.addGestureRecognizer(doubleTap)
         pdfView.addGestureRecognizer(tap)
 
         NotificationCenter.default.addObserver(
@@ -606,6 +614,48 @@ struct PDFKitView: UIViewRepresentable {
         init(_ parent: PDFKitView) { self.parent = parent }
         
         @objc func handleTap(_ gesture: UITapGestureRecognizer) { parent.onSingleTap() }
+        
+        @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+            guard let pdfView = gesture.view as? PDFView,
+                  let currentPage = pdfView.currentPage else { return }
+            
+            let point = gesture.location(in: pdfView)
+            let pagePoint = pdfView.convert(point, to: currentPage)
+            
+            // Toggle Zoom Out if currently zoomed in
+            let autoScale = pdfView.scaleFactorForSizeToFit
+            if pdfView.scaleFactor > autoScale * 1.05 {
+                UIView.animate(withDuration: 0.3) {
+                    pdfView.autoScales = true
+                }
+                return
+            }
+            
+            // Smart Crop text isolation heuristics
+            // Sweep a large vertical rectangle intersecting the text column
+            let sweepRect = CGRect(x: pagePoint.x - 50, y: pagePoint.y - 400, width: 100, height: 800)
+            if let selection = currentPage.selection(for: sweepRect) {
+                let bounds = selection.bounds(for: currentPage) // Represents the column bounds natively
+                
+                // If it successfully grabbed a real column
+                if bounds.width > 50 && bounds.height > 50 {
+                    let targetScale = (pdfView.bounds.width / bounds.width) * 0.95 // Lock column width to screen + 5% margin
+                    UIView.animate(withDuration: 0.3) {
+                        pdfView.scaleFactor = targetScale
+                        // Auto-scroll to the top of the selected block so the user can start reading down
+                        let topOfColumn = CGRect(x: bounds.minX, y: bounds.maxY, width: bounds.width, height: 1)
+                        pdfView.go(to: topOfColumn, on: currentPage)
+                    }
+                    return
+                }
+            }
+            
+            // Fallback: 2x Zoom on Tap Center
+            UIView.animate(withDuration: 0.3) {
+                pdfView.scaleFactor = pdfView.scaleFactor * 2.0
+                pdfView.go(to: CGRect(x: pagePoint.x, y: pagePoint.y, width: 1, height: 1), on: currentPage)
+            }
+        }
         
         @objc func pageChanged(_ notification: Notification) {
             guard let pdfView = notification.object as? PDFView,
