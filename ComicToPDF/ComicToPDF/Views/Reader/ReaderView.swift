@@ -1,4 +1,4 @@
-﻿
+
 import SwiftUI
 import UIKit
 import WebKit
@@ -7,7 +7,7 @@ import ZIPFoundation
 
 struct ReaderView: View {
     @State var fileURL: URL
-        let contentType: ContentType
+    let contentType: ContentType
     @State var pdf: ConvertedPDF? // Added to support Bookmarking
     var onExit: (() -> Void)? = nil
     
@@ -227,7 +227,7 @@ struct ReaderView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, (UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.windows.first?.safeAreaInsets.top ?? 47) + 8)
+        .padding(.top, 50)
         .padding(.bottom, 12)
         .background(
             Color(UIColor.systemBackground).opacity(0.92)
@@ -714,6 +714,3 @@ class VolumeObserverController: UIViewController {
         try? audioSession.setActive(false)
     }
 }
-
-
-

@@ -113,47 +113,7 @@ struct EBookReaderView: View {
         .onDisappear { cleanup(); saveProgress() }
     }
     
-        // MARK: - Top Bar
-    @ViewBuilder private var topBar: some View {
-        HStack(spacing: 16) {
-            Button { if let onExit = onExit { onExit() } else { dismiss() } } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
-                    .padding(10)
-                    .background(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.08))
-                    .clipShape(Circle())
-            }
-            
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.headline).lineLimit(1).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
-                if let chapter = metadata?.spineItems[safe: currentIndex] {
-                    Text(chapter.label).font(.caption).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.55)).lineLimit(1)
-                }
-            }
-            
-            Spacer()
-            
-            Button { showingSettingsPanel.toggle(); showChapterList = false } label: {
-                Image(systemName: "textformat.size")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
-                    .padding(10)
-                    .background(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.08))
-                    .clipShape(Circle())
-            }
-            
-            Button { withAnimation(.spring()) { showChapterList.toggle() } } label: {
-                Image(systemName: "list.bullet")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
-                    .padding(10)
-                    .background(showChapterList ? prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.15) : prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.08))
-                    .clipShape(Circle())
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, (UIApplication.shared.connectedScenes.compactMap { // MARK: - Top Bar
+    // MARK: - Top Bar
     @ViewBuilder private var topBar: some View {
         HStack(spacing: 16) {
             Button { if let onExit = onExit { onExit() } else { dismiss() } } label: {
@@ -192,20 +152,8 @@ struct EBookReaderView: View {
                     .clipShape(Circle())
             }
         }
-                .padding(.horizontal, 16)
-                        .padding(.top, (UIApplication.shared.connectedScenes.compactMap { .padding(.top, (UIApplication.shared.connectedScenes.compactMap { .padding(.top, (UIApplication.shared.connectedScenes.compactMap { .padding(.horizontal, 16) as? UIWindowScene }.first?.windows.first?.safeAreaInsets.top ?? 47) + 8)
-        .padding(.top, 8)
-        .padding(.bottom, 12) as? UIWindowScene }.first?.windows.first?.safeAreaInsets.top ?? 47) + 8)
-        .padding(.bottom, 12) as? UIWindowScene }.first?.windows.first?.safeAreaInsets.top ?? 47) + 8)
-        .padding(.bottom, 12)
-        .background(
-            prefs.activeTheme.background(colorScheme: colorScheme).opacity(0.92)
-                .background(.ultraThinMaterial.opacity(0.3))
-                .ignoresSafeArea(edges: .top)
-        )
-    }
-    
-    // MARK: - Bottom Bar as? UIWindowScene }.first?.windows.first?.safeAreaInsets.top ?? 47) + 8)
+        .padding(.horizontal, 16)
+        .padding(.top, 50)
         .padding(.bottom, 12)
         .background(
             prefs.activeTheme.background(colorScheme: colorScheme).opacity(0.92)
@@ -524,7 +472,7 @@ struct EBookWebReader: UIViewRepresentable {
             hyphens: auto !important;
         }
         p { margin-bottom: \\(prefs.paragraphSpacing)em !important; text-indent: \\(prefs.paragraphIndent)em !important; }
-                p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \\(prefs.activeTheme.cssText(colorScheme: colorScheme)) !important; line-height: 1.3; }
+        p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \\(prefs.activeTheme.cssText(colorScheme: colorScheme)) !important; line-height: 1.3; }
         img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
         a { color: \\(prefs.activeTheme.cssLink(colorScheme: colorScheme)) !important; }
         blockquote { border-left: 3px solid \\(prefs.activeTheme.cssLink(colorScheme: colorScheme)); margin-left: 0; padding-left: 16px; opacity: 0.85; }
@@ -666,11 +614,6 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
-
-
-
-
-
 
 
 
