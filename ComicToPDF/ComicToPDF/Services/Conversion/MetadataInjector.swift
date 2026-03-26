@@ -92,7 +92,7 @@ final class MetadataInjector {
         
         // We need to read the OLD archive first to prepare these updates
         // We scope this so we close the file handle before writing the new one (Windows safe)
-        try {
+        do {
             guard let sourceArchive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) else { return }
             
             // A. Prepare OPF Update
@@ -264,7 +264,7 @@ final class MetadataInjector {
                      }
                 }
             }
-        }()
+        } catch { Logger.shared.log("Failed to prepare updates: \(error)", category: "Injection") }
         
         // ---------------------------------------------------------
         // PHASE 2: STRICT RE-ZIP (Write New File)
