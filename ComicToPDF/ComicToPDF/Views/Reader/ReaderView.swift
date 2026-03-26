@@ -1,4 +1,4 @@
-
+﻿
 import SwiftUI
 import UIKit
 import WebKit
@@ -42,73 +42,31 @@ struct ReaderView: View {
         GeometryReader { geo in
             ZStack {
                 // ✅ Route: text-based EPUB → EBookReaderView, everything else → image reader
-                if fileURL.pathExtension.lowercased() == "epub" && contentType == .book {
-                    EBookReaderView(
-                        fileURL: fileURL,
-                        title: fileURL.deletingPathExtension().lastPathComponent,
-                        onExit: onExit ?? { dismiss() }
-                    )
-                } else {
-                    comicReaderBody
-                }
-                
-                // KOReader Casual Comforts Overlay
-                edgeSwipeOverlay(in: geo)
-                
-                // Manga Binge-Mode HUD
-                if showBingePrompt, let nextVol = nextVolumeToRead {
-                    bingeModeOverlay(nextVol: nextVol)
-                }
-            }
-        }
-    }
-    
-    // MARK: - Comic / Manga Reader
-    private var comicReaderBody: some View {
-        ZStack {
-            if isLoading {
-                ProgressView("Opening Book...").scaleEffect(1.2)
-            } else if let error = errorMessage {
-                    VStack {
-                        Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundColor(.red)
-                        Text("Error: \(error)").padding()
-                    }
-                } else {
-                    // ✅ READER CONTENT
-                    if isVerticalScroll {
-                        // VERTICAL WEBTOON MODE
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(pages, id: \.self) { pageURL in
-                                    AsyncImage(url: pageURL) { phase in
-                                        if let image = phase.image {
-                                            image.resizable().aspectRatio(contentMode: .fit)
-                                        } else {
-                                            Color.gray.opacity(0.1).frame(height: 300)
-                                        }
-                                    }
+                                    if fileURL.pathExtension.lowercased() != "pdf" {
+                        if !pages.isEmpty {
+                            PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, isMangaMode: isMangaMode) {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isToolbarVisible.toggle()
                                 }
                             }
+                            .ignoresSafeArea()
                         }
                     } else {
-                        // ✅ ZERO-LATENCY METAL PPL READER
-                        if fileURL.pathExtension.lowercased() != "pdf" {
-                            if !pages.isEmpty {
-                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, isMangaMode: isMangaMode) {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        isToolbarVisible.toggle()
-                                    }
+                        PDFKitView(
+                            url: fileURL,
+                            currentPageIndex: $currentPageIndex,
+                            totalPages: $pages, // Note: we can just use pages array size to report total pages to the Scrubber
+                            isVerticalScroll: isVerticalScroll,
+                            isMangaMode: isMangaMode,
+                            onSingleTap: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isToolbarVisible.toggle()
                                 }
-                                .ignoresSafeArea()
                             }
-                        } else {
-                            PDFKitView(url: fileURL)
-                                .onTapGesture {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        isToolbarVisible.toggle()
-                                    }
-                                }
-                        }
+                        )
+                        .colorMultiply(.white)
+                        .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
+                    }
                     }
                 }
                 
@@ -541,15 +499,97 @@ struct ReaderView: View {
 // MARK: - Standard PDF Component
 struct PDFKitView: UIViewRepresentable {
     let url: URL
+    @Binding var currentPageIndex: Int
+    @Binding var totalPages: [URL] // Hack to report Total Pages bounds out to ReaderView
+    let isVerticalScroll: Bool
+    let isMangaMode: Bool
+    let onSingleTap: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
         pdfView.autoScales = true
-        pdfView.displayMode = .singlePageContinuous
-        pdfView.displayDirection = .vertical
+        pdfView.displayMode = .singlePage // Zero-latency rendering
+        pdfView.displayDirection = isVerticalScroll ? .vertical : .horizontal
+        pdfView.displaysPageBreaks = false
+        
+        // Tap Gesture to intercept taps before they get absorbed
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tap.delegate = context.coordinator
+        pdfView.addGestureRecognizer(tap)
+        
+        // Page tracking Notification
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.pageChanged(_:)),
+            name: .PDFViewPageChanged,
+            object: pdfView
+        )
+        
+        if let document = PDFDocument(url: url) {
+            pdfView.document = document
+            DispatchQueue.main.async {
+                self.totalPages = Array(repeating: url, count: document.pageCount)
+            }
+        }
         return pdfView
     }
+
     func updateUIView(_ pdfView: PDFView, context: Context) {
-        if pdfView.document == nil { pdfView.document = PDFDocument(url: url) }
+        pdfView.displayDirection = isVerticalScroll ? .vertical : .horizontal
+        pdfView.displaysRTL = isMangaMode
+        
+        // Scrubbing sync: if SwiftUI changes currentPageIndex via scrubber, navigate!
+        if let doc = pdfView.document,
+           currentPageIndex >= 0 && currentPageIndex < doc.pageCount,
+           let currentVisible = pdfView.currentPage,
+           doc.index(for: currentVisible) != currentPageIndex {
+            if let targetPage = doc.page(at: currentPageIndex) {
+                pdfView.go(to: targetPage)
+            }
+        }
+    }
+
+    class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: PDFKitView
+        
+        init(_ parent: PDFKitView) {
+            self.parent = parent
+        }
+        
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            parent.onSingleTap()
+        }
+        
+        @objc func pageChanged(_ notification: Notification) {
+            guard let pdfView = notification.object as? PDFView,
+                  let currentPage = pdfView.currentPage,
+                  let document = pdfView.document else { return }
+            
+            let index = document.index(for: currentPage)
+            if index != parent.currentPageIndex {
+                DispatchQueue.main.async {
+                    self.parent.currentPageIndex = index
+                }
+            }
+        }
+        
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true // Allow internal scrolls while still listening for taps
+        }
+    }
+}
+
+extension View {
+    @ViewBuilder func colorInvertIfDark(theme: EBookTheme) -> some View {
+        if theme == .dark || theme == .obsidian {
+            self.colorInvert().hueRotation(.degrees(180))
+        } else {
+            self
+        }
     }
 }
 
@@ -714,3 +754,4 @@ class VolumeObserverController: UIViewController {
         try? audioSession.setActive(false)
     }
 }
+
