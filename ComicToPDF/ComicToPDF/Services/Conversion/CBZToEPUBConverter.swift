@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 import ZIPFoundation
 
 class CBZToEPUBConverter {
@@ -227,7 +227,7 @@ class CBZToEPUBConverter {
             try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
         }
         
-        let bookUUID = UUID().uuidString
+        _ = UUID().uuidString
         manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
         manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
@@ -271,13 +271,13 @@ class CBZToEPUBConverter {
         
         for (localIndex, item) in batch.enumerated() {
             let trueExt = (item.sourceURL.pathExtension.lowercased() == "png") ? "png" : "jpg"
-            let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
+            _ = (trueExt == "jpg") ? "jpeg" : trueExt
             
             let newImageName = String(format: "image_%04d.%@", localIndex + 1, trueExt)
             let destURL = imagesDir.appendingPathComponent(newImageName)
             try item.data.write(to: destURL)
             
-            let properties = (localIndex == 0 && batchIndex == 0) ? "properties=\"cover-image\"" : ""
+            _ = (localIndex == 0 && batchIndex == 0) ? "properties=\"cover-image\"" : ""
             manifestItems.append("<item id=\"img_\\(localIndex+1)\" href=\"images/\\(newImageName)\" media-type=\"image/\\(safeExt)\" \\(properties)/>")
             currentChunkImages.append(newImageName)
             
@@ -368,7 +368,7 @@ class CBZToEPUBConverter {
     }
 
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int? = nil, height: Int? = nil) -> String {
-        let imageElements = images.enumerated().map { i, imageName in
+        _ = images.enumerated().map { i, imageName in
             """
                 <div class="page">
                     <img src="../images/\\(imageName)" class="page-image" alt="Page Image"/>
@@ -464,16 +464,16 @@ class CBZToEPUBConverter {
         Logger.shared.log("Stage 3 Start: Building scripts and metadata", category: "Converter")
         
         let titleStr = metadata.title.isEmpty ? sourceURL.deletingPathExtension().lastPathComponent : metadata.title
-        var authorStr = ""
+        _ = ""
         if let writer = metadata.writer, !writer.isEmpty {
             authorStr = writer
         } else if let author = metadata.author, !author.isEmpty {
             authorStr = author
         }
         
-        let directionStr = settings.mangaMode ? "rtl" : "ltr"
-        let generatedAt = ISO8601DateFormatter().string(from: Date())
-        let sourceFilename = sourceURL.deletingPathExtension().lastPathComponent
+        _ = settings.mangaMode ? "rtl" : "ltr"
+        _ = ISO8601DateFormatter().string(from: Date())
+        _ = sourceURL.deletingPathExtension().lastPathComponent
         
         let metadataJSON = """
         {
@@ -895,3 +895,11 @@ class CBZToEPUBConverter {
     panel navigation as purchased Amazon comics.
     """#
 }
+
+
+
+
+
+
+
+

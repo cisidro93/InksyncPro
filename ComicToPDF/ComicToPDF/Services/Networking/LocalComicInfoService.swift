@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import ZIPFoundation
 
 /// A deterministic local parser for `ComicInfo.xml` structured metadata.
@@ -15,7 +15,7 @@ class LocalComicInfoService {
     
     /// Parses the archive non-destructively, returning the calculated UI string alongside the raw internal tags.
     func fetchNonDestructiveMetadata(from cbzURL: URL) throws -> (displayName: String, parsedSeries: String?, parsedNumber: String?, parsedVolume: String?, parsedTitle: String?) {
-        guard let archive = Archive(url: cbzURL, accessMode: .read) else {
+        guard let archive = try? Archive(url: cbzURL, accessMode: .read, pathEncoding: .utf8) else {
             let errorMsg = "BadZipFile: Could not open archive at \(cbzURL.lastPathComponent)"
             Logger.shared.log(errorMsg, category: "LocalRenamer", type: .error)
             throw NSError(domain: "ZipException", code: 1, userInfo: [NSLocalizedDescriptionKey: errorMsg])
@@ -136,3 +136,4 @@ class LocalRenamerXMLParser: NSObject, XMLParserDelegate {
         currentValue = ""
     }
 }
+

@@ -427,7 +427,7 @@ struct EBookWebReader: UIViewRepresentable {
     }
         private func injectReaderCSS(into html: String, prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
-        let pagedCSS = isPaged ? """
+        _ = isPaged ? """
             /* Paged */
             column-width: calc(100vw - \\(prefs.textMargin * 2)px) !important;
             column-gap: \\(prefs.textMargin * 2)px !important;
@@ -614,6 +614,7 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
+
 
 
 

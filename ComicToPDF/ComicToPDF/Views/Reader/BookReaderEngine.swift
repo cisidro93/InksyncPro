@@ -71,7 +71,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             
             if !self.fileManager.fileExists(atPath: self.tempDir.path) {
                 try? self.fileManager.createDirectory(at: self.tempDir, withIntermediateDirectories: true)
-                guard let archive = try? Archive(url: self.pdf.url, accessMode: .read) else {
+                guard let archive = try? Archive(url: self.pdf.url, accessMode: .read, pathEncoding: .utf8) else {
                     DispatchQueue.main.async { self.isLoading = false }
                     return
                 }
@@ -291,8 +291,7 @@ struct EPUBWebView: UIViewRepresentable {
         webView.scrollView.backgroundColor = webView.backgroundColor
         
         // Setup custom UIMenuController item
-        let highlightMenuItem = UIMenuItem(title: "Highlight", action: #selector(HighlightableWebView.customHighlightAction(_:)))
-        UIMenuController.shared.menuItems = [highlightMenuItem]
+        // UIMenuItem deprecated in iOS 16
         
         webView.onHighlightRequested = {
             webView.evaluateJavaScript("window.applyInksyncHighlight('#ffd700');")
@@ -573,5 +572,7 @@ struct AnnotationListView: View {
         }
     }
 }
+
+
 
 

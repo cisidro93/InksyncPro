@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import UIKit
 import ZIPFoundation
 
@@ -158,7 +158,7 @@ class EPUBMerger {
             try fileManager.removeItem(at: outputURL)
         }
         
-        guard let archive = Archive(url: outputURL, accessMode: .create, preferredEncoding: .utf8) else {
+        guard let archive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) else {
             throw NSError(domain: "EPUBMerger", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to allocate ZIP stream"])
         }
         
@@ -199,3 +199,4 @@ class EPUBMerger {
         return images.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 }
+
