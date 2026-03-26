@@ -1,6 +1,8 @@
 import Foundation
 import UIKit
 import SwiftUI
+import PDFKit
+import ZIPFoundation
 
 /// Safely handles all iOS Storage interactions, including disk persistence, thumbnail caching into Application Support, and atomic NSFileCoordinator bindings independent from the Presentation logic.
 @MainActor

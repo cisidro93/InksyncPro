@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 import PDFKit
 import ZIPFoundation
 import Combine
@@ -1627,7 +1627,7 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
 }
 
 // MARK: - Pre-Flight Validation & Export
-extension ConversionManager {
+
     enum ValidationResult {
         case success
         case warning(String)
@@ -1725,10 +1725,8 @@ extension ConversionManager {
                 if let index = self.collections.firstIndex(where: { $0.id == collectionId }) {
                     self.collections[index].explicitCoverFileID = pdf.id
                     self.saveLibrary()
-                    self.convertedPDFs = self.convertedPDFs
                 }
             }
         }
     }
-
 }

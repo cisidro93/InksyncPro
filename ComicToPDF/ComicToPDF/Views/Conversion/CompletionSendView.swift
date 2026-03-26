@@ -1,4 +1,6 @@
+import SwiftUI
 import SwiftData
+import Foundation
 
 struct CompletionSendView: View {
     @EnvironmentObject var manager: ConversionManager
@@ -183,7 +185,7 @@ struct CompletionSendView: View {
         .padding(.top, 40)
     }
 
-    private func performSend() async {
+    @MainActor private func performSend() async {
         guard let device = targetDevice else { return }
         isSending = true
         errorMessage = nil

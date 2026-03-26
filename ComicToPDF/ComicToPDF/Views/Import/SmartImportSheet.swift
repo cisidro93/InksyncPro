@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 @MainActor
 class SmartImportViewModel: ObservableObject {

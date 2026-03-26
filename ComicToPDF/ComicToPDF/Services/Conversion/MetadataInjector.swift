@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import UIKit
 import ZIPFoundation
 
@@ -9,7 +9,7 @@ final class MetadataInjector {
     
     // Will hold the extracted methods from ConversionManager
     // Helper to generate the <Pages> block
-    private func generatePagesXML(from panelsDict: [String: [SmartPanel]]) -> String {
+    private func generatePagesXML(from panelsDict: [String: [ConversionManager.SmartPanel]]) -> String {
         var xml = "  <Pages>\n"
         
         // Sort keys
@@ -40,7 +40,8 @@ final class MetadataInjector {
     // ✅ NEW: Embed currently saved panels into the source file (EPUB/CBZ)
     func embedPanels(for pdf: ConvertedPDF, manager: ConversionManager) async {
         do {
-            guard let panels = manager.panelOverrides[pdf.id] else {
+            let overrides = await MainActor.run { manager.panelOverrides }
+            guard let panels = overrides[pdf.id] else {
                 await MainActor.run {
                     manager.appAlert = AppAlert(title: "No Edits Found", message: "There are no saved panel edits for this file to embed.")
                 }
@@ -68,9 +69,9 @@ final class MetadataInjector {
         // ---------------------------------------------------------
         
         // 1. Generate ComicInfo.xml
-        var smartPanelsDict: [String: [SmartPanel]] = [:]
+        var smartPanelsDict: [String: [ConversionManager.SmartPanel]] = [:]
         for (index, pagePanels) in panels {
-            let smartPanels = pagePanels.map { SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
+            let smartPanels = pagePanels.map { ConversionManager.SmartPanel(x: $0.boundingBox.minX, y: $0.boundingBox.minY, width: $0.boundingBox.width, height: $0.boundingBox.height) }
             smartPanelsDict["\(index)"] = smartPanels
         }
         
@@ -198,7 +199,8 @@ final class MetadataInjector {
                     }
                     
                     // B. Insert New Tag (CONDITIONAL - Only for Guided View)
-                    if manager.conversionSettings.isGuidedView {
+                    let settings = await MainActor.run { manager.conversionSettings }
+                    if settings.isGuidedView {
                         if let range = opfString.range(of: "</metadata>") {
                              let metaTag = "\n    <meta name=\"inksync-comicinfo\" content=\"\(base64)\"/>"
                              opfString.insert(contentsOf: metaTag, at: range.lowerBound)
@@ -444,11 +446,7 @@ final class MetadataInjector {
                 try archive.addEntry(with: opfPath, type: .file, uncompressedSize: Int64(newData.count), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
                      return newData.subdata(in: Int(position)..<min(Int(position)+size, newData.count))
                 }
-
             }
         }
     }
-}
-
-
 }

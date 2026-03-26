@@ -127,8 +127,7 @@ struct DevicesView: View {
                                 }
                                 .listRowBackground(Color.inkSurface)
                             }
-                        }
-                        }
+                        } // ForEach
                         .onDelete { indexSet in
                             for index in indexSet {
                                 modelContext.delete(savedDevices[index])
