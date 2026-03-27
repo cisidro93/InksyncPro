@@ -4,6 +4,7 @@ import UIKit
 import WebKit
 import PDFKit
 import ZIPFoundation
+import PencilKit
 
 struct ReaderView: View {
     @State var fileURL: URL
@@ -19,6 +20,7 @@ struct ReaderView: View {
     @State private var isToolbarVisible = true
     
     // ✅ Phase 30: Advanced Reader Features
+    @AppStorage("isVerticalScroll") private var isVerticalScroll = false
     @AppStorage("isDoublePageMode") private var isDoublePageMode = false
     @State private var isDrawingMode = false
     @State private var canvasView = PKCanvasView()

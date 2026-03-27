@@ -471,9 +471,9 @@ class CBZToEPUBConverter {
             authorStr = author
         }
         
-        _ = settings.mangaMode ? "rtl" : "ltr"
-        _ = ISO8601DateFormatter().string(from: Date())
-        _ = sourceURL.deletingPathExtension().lastPathComponent
+        let directionStr = settings.mangaMode ? "rtl" : "ltr"
+        let generatedAt = ISO8601DateFormatter().string(from: Date())
+        let sourceFilename = sourceURL.deletingPathExtension().lastPathComponent
         
         let metadataJSON = """
         {

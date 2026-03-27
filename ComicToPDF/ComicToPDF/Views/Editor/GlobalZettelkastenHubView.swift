@@ -19,16 +19,16 @@ struct GlobalZettelkastenHubView: View {
         var filtered = allAnnotations
         if !searchText.isEmpty {
             filtered = filtered.filter { ann in
-                let txt = ann.text?.localizedCaseInsensitiveContains(searchText) ?? false
-                let note = ann.note?.localizedCaseInsensitiveContains(searchText) ?? false
-                let book = (ann.readwiseBookTitle ?? ann.pdfID).localizedCaseInsensitiveContains(searchText)
+                let txt = ann.selectedText?.localizedCaseInsensitiveContains(searchText) ?? false
+                let note = ann.noteText?.localizedCaseInsensitiveContains(searchText) ?? false
+                let book = (ann.readwiseBookTitle ?? ann.pdfID.uuidString).localizedCaseInsensitiveContains(searchText)
                 return txt || note || book
             }
         }
         
         let dict = Dictionary(grouping: filtered) { ann -> String in
             // If it's a Readwise import, group by its explicit title, else group by its PDF ID (which acts as title fallback for now)
-            return ann.readwiseBookTitle ?? ann.pdfID
+            return ann.readwiseBookTitle ?? ann.pdfID.uuidString
         }
         return dict.sorted { $0.key < $1.key }
     }
@@ -141,7 +141,7 @@ struct GlobalZettelkastenHubView: View {
         // For native PDFs, we would dynamically fetch the ConversionManager instance if needed,
         // but since we only have the ID here, we use a simple clean format.
         // A robust app would join the SwiftData `SDConvertedPDF` table.
-        return "Book ID: " + String(ann.pdfID.prefix(8)) 
+        return "Book ID: " + String(ann.pdfID.uuidString.prefix(8)) 
     }
     
     private func handleCSVImport(result: Result<[URL], Error>) {
@@ -179,12 +179,12 @@ struct GlobalHighlightRow: View {
     let annotation: SDAnnotation
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let text = annotation.text, !text.isEmpty {
+            if let text = annotation.selectedText, !text.isEmpty {
                 Text(text)
                     .font(.body)
                     .foregroundColor(.primary)
             }
-            if let note = annotation.note, !note.isEmpty {
+            if let note = annotation.noteText, !note.isEmpty {
                 HStack(alignment: .top) {
                     Divider()
                         .frame(width: 3)

@@ -12,6 +12,8 @@ struct PPLReaderView: View {
     @State private var offset: CGSize = .zero
     @State private var dragOffset: CGSize = .zero
     
+    @AppStorage("isDoublePageMode") private var isDoublePageMode = false
+    
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -23,7 +25,7 @@ struct PPLReaderView: View {
                     // We utilize the preexisting asynchronous buffer predictions (`nextImage`)
                     // instead of synthesizing a merged bitmap, saving 40-70MB of RAM per swap.
                     HStack(spacing: 0) {
-                        if EBookPreferences.shared.isDoublePageMode && geo.size.width > geo.size.height {
+                        if isDoublePageMode && geo.size.width > geo.size.height {
                             if isMangaMode {
                                 // RTL (Manga) -> Next Page is on the Left
                                 if let next = bufferManager.nextImage {
@@ -155,7 +157,7 @@ struct PPLReaderView: View {
     }
     
     private func nextPage(geo: CGSize) {
-        let hopCount = (EBookPreferences.shared.isDoublePageMode && geo.width > geo.height) ? 2 : 1
+        let hopCount = (isDoublePageMode && geo.width > geo.height) ? 2 : 1
         if currentPageIndex + hopCount < pages.count + (hopCount - 1) {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex += hopCount
@@ -163,7 +165,7 @@ struct PPLReaderView: View {
     }
     
     private func prevPage(geo: CGSize) {
-        let hopCount = (EBookPreferences.shared.isDoublePageMode && geo.width > geo.height) ? 2 : 1
+        let hopCount = (isDoublePageMode && geo.width > geo.height) ? 2 : 1
         if currentPageIndex > 0 {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = max(0, currentPageIndex - hopCount)

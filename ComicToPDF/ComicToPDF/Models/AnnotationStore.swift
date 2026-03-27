@@ -164,14 +164,15 @@ class AnnotationStore: ObservableObject {
                 backgroundAnnotation.tags = await self.extractNLPKeywords(from: text)
             }
             
+            let finalAnnotation = backgroundAnnotation
             // Sync final Zettelkasten SDAnnotation to disk
             await MainActor.run {
-                if let index = self.store[backgroundAnnotation.pdfID]?.firstIndex(where: { $0.id == backgroundAnnotation.id }) {
-                    self.store[backgroundAnnotation.pdfID]?[index] = backgroundAnnotation
+                if let index = self.store[finalAnnotation.pdfID]?.firstIndex(where: { $0.id == finalAnnotation.id }) {
+                    self.store[finalAnnotation.pdfID]?[index] = finalAnnotation
                 }
                 
                 if let context = self.modelContext {
-                    let sdModel = SDAnnotation(from: backgroundAnnotation)
+                    let sdModel = SDAnnotation(from: finalAnnotation)
                     context.insert(sdModel)
                     try? context.save()
                 }
@@ -217,9 +218,8 @@ class AnnotationStore: ObservableObject {
         store[annotation.pdfID]?[index] = updated
         
         if let context = modelContext {
-            let idString = annotation.id.uuidString
             // Fetch the specific SDAnnotation
-            var fetchDescriptor = FetchDescriptor<SDAnnotation>()
+            let fetchDescriptor = FetchDescriptor<SDAnnotation>()
             // Simplest way to find specific ID since UUID predicate in SwiftData has quirks
             if let allAnnotations = try? context.fetch(fetchDescriptor),
                let target = allAnnotations.first(where: { $0.id == annotation.id }) {
@@ -233,7 +233,7 @@ class AnnotationStore: ObservableObject {
         store[pdfID]?.removeAll(where: { $0.id == id })
         
         if let context = modelContext {
-            var fetchDescriptor = FetchDescriptor<SDAnnotation>()
+            let fetchDescriptor = FetchDescriptor<SDAnnotation>()
             if let allAnnotations = try? context.fetch(fetchDescriptor),
                let target = allAnnotations.first(where: { $0.id == id }) {
                 context.delete(target)

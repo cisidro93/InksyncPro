@@ -26,7 +26,7 @@ actor ReaderImageFilterEngine {
             // Find bounding box of non-white pixels
             // Leveraging CoreImage to find foreground blocks
             let extent = ciImage.extent
-            if let whiteCropFilter = CIFilter(name: "CIEdgeWork") {
+            if CIFilter(name: "CIEdgeWork") != nil {
                 // To save power, we technically downsample to find the crop box, but
                 // a simple approximation is to shave 5% off the borders instantly if it maps pure white.
                 // For a robust OOM-safe device, we apply an inset heuristic commonly found in Webtoons:
