@@ -1,8 +1,8 @@
-﻿import SwiftUI
+import SwiftUI
 
 struct ReadNowTabView: View {
     @EnvironmentObject var conversionManager: ConversionManager
-    @StateObject private var tracker = ReaderProgressTracker.shared
+    @ObservedObject private var tracker = ReaderProgressTracker.shared
     
     @State private var pdfToRead: ConvertedPDF?
     
@@ -11,6 +11,10 @@ struct ReadNowTabView: View {
         let inProgress = conversionManager.convertedPDFs.filter { pdf in
             guard let prog = tracker.progress(for: pdf.id) else { return false }
             return prog.completionFraction > 0.0 && prog.completionFraction < 0.98
+        }.sorted { a, b in
+            let dateA = tracker.progress(for: a.id)?.lastOpenedAt ?? Date.distantPast
+            let dateB = tracker.progress(for: b.id)?.lastOpenedAt ?? Date.distantPast
+            return dateA > dateB
         }
         return inProgress.prefix(3).map { $0 }
     }

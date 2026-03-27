@@ -12,7 +12,7 @@ struct SettingsView: View {
     @AppStorage("enableBackgroundSync") private var enableBackgroundSync = false
     
     // ✅ NEW: Observe the Brain
-    @StateObject private var aiManager = AdaptiveLearningManager.shared
+    @ObservedObject private var aiManager = AdaptiveLearningManager.shared
     
     @State private var showingAddDevice = false
     @State private var showingDeleteAlert = false

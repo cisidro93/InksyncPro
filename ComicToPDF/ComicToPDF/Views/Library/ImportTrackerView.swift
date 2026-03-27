@@ -2,7 +2,7 @@ import SwiftUI
 import Combine
 
 struct ImportTrackerView: View {
-    @StateObject private var monitor = ImportMonitorManager.shared
+    @ObservedObject private var monitor = ImportMonitorManager.shared
     
     var body: some View {
         VStack {

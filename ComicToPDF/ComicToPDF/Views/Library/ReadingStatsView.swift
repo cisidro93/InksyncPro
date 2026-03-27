@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 
 struct ReadingStatsView: View {
-    @StateObject private var tracker = ReaderProgressTracker.shared
+    @ObservedObject private var tracker = ReaderProgressTracker.shared
     @Environment(\.presentationMode) var presentation
     @EnvironmentObject var conversionManager: ConversionManager
     

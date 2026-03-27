@@ -76,7 +76,7 @@ class PDFToEPUBConverter {
         pdfURL: URL,
         to outputURL: URL,
         options: ConversionOptions = .default,
-        progressHandler: ((ConversionProgress) -> Void)? = nil
+        progressHandler: (@Sendable (ConversionProgress) -> Void)? = nil
     ) async throws -> (URL, Int) {
         
         // Load PDF

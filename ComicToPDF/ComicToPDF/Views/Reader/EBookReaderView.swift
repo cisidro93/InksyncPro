@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 import WebKit
 import ZIPFoundation
 
@@ -9,7 +9,7 @@ struct EBookReaderView: View {
     var onExit: (() -> Void)? = nil
     
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var prefs = EBookPreferences.shared
+    @ObservedObject private var prefs = EBookPreferences.shared
     @Environment(\.colorScheme) var colorScheme
     @State private var showingSettingsPanel = false
     

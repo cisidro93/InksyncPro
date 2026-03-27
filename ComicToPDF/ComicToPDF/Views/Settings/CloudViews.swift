@@ -98,7 +98,7 @@ struct CloudDocumentPicker: UIViewControllerRepresentable {
 struct CloudExportView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var cloudManager = CloudManager.shared
+    @ObservedObject private var cloudManager = CloudManager.shared
     let pdfsToExport: [ConvertedPDF]
     @State private var isExporting = false
     @State private var exportProgress: Double = 0

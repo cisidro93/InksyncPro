@@ -5,9 +5,9 @@ import CoreImage.CIFilterBuiltins
 
 struct WiFiView: View {
     @StateObject private var server = WiFiServer()
-    @StateObject private var peerManager = PeerManager.shared
-    @StateObject private var queueManager = TransferQueueManager.shared
-    @StateObject private var localSendClient = LocalSendClient.shared
+    @ObservedObject private var peerManager = PeerManager.shared
+    @ObservedObject private var queueManager = TransferQueueManager.shared
+    @ObservedObject private var localSendClient = LocalSendClient.shared
     @Environment(\.dismiss) var dismiss
     @State private var qrCodeImage: UIImage?
     

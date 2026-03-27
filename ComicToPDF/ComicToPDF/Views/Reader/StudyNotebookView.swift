@@ -2,7 +2,7 @@ import SwiftUI
 
 struct StudyNotebookView: View {
     let bookID: String
-    @StateObject private var store = StudyNotesStore.shared
+    @ObservedObject private var store = StudyNotesStore.shared
     @Environment(\.colorScheme) var colorScheme
     @FocusState private var isFocused: Bool
     

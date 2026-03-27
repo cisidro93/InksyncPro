@@ -5,7 +5,7 @@ struct PPLReaderView: View {
     @Binding var currentPageIndex: Int
     var isMangaMode: Bool
     var onCenterTap: () -> Void
-    @StateObject private var bufferManager = PageBufferManager.shared
+    @ObservedObject private var bufferManager = PageBufferManager.shared
     
     // High-Frequency Gesture Tracking
     @State private var scale: CGFloat = 1.0

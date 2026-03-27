@@ -326,7 +326,7 @@ struct BookReaderEngine: View {
     var onDismiss: () -> Void
     
     @StateObject private var vm: BookReaderViewModel
-    @StateObject private var tts = TTSManager.shared
+    @ObservedObject private var tts = TTSManager.shared
     @State private var webViewReference: WKWebView?
     @State private var chromeVisible = false
     @State private var showAnnotations = false
@@ -495,7 +495,7 @@ struct AnnotationListView: View {
     let pdfID: UUID
     let documentTitle: String
     
-    @StateObject private var store = AnnotationStore.shared
+    @ObservedObject private var store = AnnotationStore.shared
     @Environment(\.dismiss) var dismiss
     @State private var exportURL: URL?
     

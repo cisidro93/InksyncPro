@@ -103,7 +103,7 @@ private struct GoQuickMergeSheet: View {
 // MARK: - GoConvertView
 struct GoConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
-    @StateObject private var queueManager = ConversionQueueManager.shared
+    @ObservedObject private var queueManager = ConversionQueueManager.shared
     
     @State private var selectedFiles: [URL] = []
     @State private var isTargetingManga = true
