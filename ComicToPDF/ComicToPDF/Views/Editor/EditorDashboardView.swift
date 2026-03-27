@@ -32,6 +32,31 @@ struct EditorDashboardView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 16) {
+                        // ✅ Phase 31 Zettelkasten Hub Anchor
+                        NavigationLink(destination: GlobalZettelkastenHubView()) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Zettelkasten Hub")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                    Text("Global Reading Highlights & Notes")
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                Spacer()
+                                Image(systemName: "sparkles.rectangle.stack.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.white)
+                            }
+                            .padding()
+                            .background(
+                                LinearGradient(colors: [Color.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .cornerRadius(12)
+                            .shadow(color: Color.blue.opacity(0.3), radius: 5, x: 0, y: 3)
+                        }
+                        
+                        // Book Instances
                         ForEach(filteredPDFs) { pdf in
                             EditorRowView(pdf: pdf) {
                                 if pdf.contentType == .book {

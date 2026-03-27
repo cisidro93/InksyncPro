@@ -43,7 +43,7 @@ struct Annotation: Codable, Identifiable {
 
 @Model final class SDAnnotation: Identifiable {
     @Attribute(.unique) var id: UUID
-    var pdfID: UUID
+    var pdfID: UUID // This is uniquely bound or synthesized per book / PDF
     var pageIndex: Int
     var chapterTitle: String?
     var kindRaw: String
@@ -54,6 +54,12 @@ struct Annotation: Codable, Identifiable {
     var noteText: String?
     var tags: [String]?
     
+    // ✅ Phase 31: Readwise Sync Extensions
+    var isReadwiseImport: Bool = false
+    var readwiseBookTitle: String?
+    var readwiseAuthor: String?
+    
+    // Bounding Box
     var boundsX: Double?
     var boundsY: Double?
     var boundsW: Double?
@@ -75,6 +81,27 @@ struct Annotation: Codable, Identifiable {
         self.boundsY = dto.bounds?.y
         self.boundsW = dto.bounds?.width
         self.boundsH = dto.bounds?.height
+        
+        self.isReadwiseImport = false
+    }
+    
+    // ✅ Phase 31 Native Constructor for Readwise Importers
+    init(id: UUID, pdfID: String, pageIndex: Int, text: String?, note: String?, isReadwiseImport: Bool, readwiseBookTitle: String?, readwiseAuthor: String?, createdAt: Date) {
+        self.id = id
+        // Inksync PDF Engine uses UUID heavily, so we hash synthetic titles to UUIDs
+        self.pdfID = UUID(uuidString: pdfID) ?? UUID() 
+        self.pageIndex = pageIndex
+        self.kindRaw = "highlight" // Default to highlight for external notes
+        self.createdAt = createdAt
+        self.modifiedAt = createdAt
+        self.selectedText = text
+        self.noteText = note
+        self.colorHex = "#FFD700"
+        self.tags = []
+        
+        self.isReadwiseImport = isReadwiseImport
+        self.readwiseBookTitle = readwiseBookTitle
+        self.readwiseAuthor = readwiseAuthor
     }
     
     func toDTO() -> Annotation {

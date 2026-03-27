@@ -3,8 +3,8 @@ import CoreImage
 
 /// Phase 30 Customization Engine: Handles Smart Auto-Crop and CoreImage filters (Contrast, Saturation, Warmth).
 /// Adheres to power-saving constraints by only computing once and outputting flattened UIImages.
-actor ImageProcessor {
-    static let shared = ImageProcessor()
+actor ReaderImageFilterEngine {
+    static let shared = ReaderImageFilterEngine()
     private let context = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: false])
     
     // Cache to prevent re-processing identical images (Power Conservation Phase 30)
