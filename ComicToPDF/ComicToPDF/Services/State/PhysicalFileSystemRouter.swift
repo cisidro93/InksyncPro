@@ -147,6 +147,7 @@ class PhysicalFileSystemRouter {
     func loadThumbnailAsync(for pdf: ConvertedPDF, manager: ConversionManager) async {
         if manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil { return }
         
+        var generatedImage: UIImage? = nil
         if let coverURL = self.getCoverURL(for: pdf) {
             let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
             if let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) {
@@ -158,9 +159,14 @@ class PhysicalFileSystemRouter {
                 ] as CFDictionary
                 
                 if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
-                    let image = UIImage(cgImage: cgImage)
-                    await MainActor.run {
-                        manager.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
+                    generatedImage = UIImage(cgImage: cgImage)
+                }
+            }
+        }
+        
+        if let image = generatedImage {
+            await MainActor.run {
+                manager.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
                 manager.objectWillChange.send()
             }
         } else {
@@ -175,6 +181,7 @@ class PhysicalFileSystemRouter {
         let keyStr = pdf.id.uuidString
         if let cached = manager.thumbnailCache.object(forKey: keyStr as NSString) { return cached }
         Task.detached(priority: .userInitiated) {
+            var generatedImage: UIImage? = nil
             if let coverURL = await self.getCoverURL(for: pdf) {
                 let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
                 if let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) {
@@ -186,9 +193,14 @@ class PhysicalFileSystemRouter {
                     ] as CFDictionary
                     
                     if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
-                        let image = UIImage(cgImage: cgImage)
-                        await MainActor.run {
-                            manager.thumbnailCache.setObject(image, forKey: keyStr as NSString)
+                        generatedImage = UIImage(cgImage: cgImage)
+                    }
+                }
+            }
+            
+            if let image = generatedImage {
+                await MainActor.run {
+                    manager.thumbnailCache.setObject(image, forKey: keyStr as NSString)
                     manager.objectWillChange.send()
                 }
             } else {

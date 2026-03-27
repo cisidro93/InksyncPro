@@ -47,7 +47,7 @@ struct LocalFileImage: View {
         let localURL = url
         let decoded = await Task.detached(priority: .userInitiated) { () -> UIImage? in
             guard let data = try? Data(contentsOf: localURL, options: .mappedIfSafe),
-                  var image = UIImage(data: data) else {
+                  let image = UIImage(data: data) else {
                 // Fallback to absolute path
                 return UIImage(contentsOfFile: localURL.path)
             }
