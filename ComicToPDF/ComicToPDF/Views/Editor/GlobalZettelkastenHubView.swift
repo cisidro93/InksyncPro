@@ -89,7 +89,7 @@ struct GlobalZettelkastenHubView: View {
         }
         .fileImporter(
             isPresented: $showingReadwiseImporter,
-            allowedContentTypes: [UTType.commaSeparatedText],
+            allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText, UTType.text, UTType.data],
             allowsMultipleSelection: false
         ) { result in
             handleCSVImport(result: result)

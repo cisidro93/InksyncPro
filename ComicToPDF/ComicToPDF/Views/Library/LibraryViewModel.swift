@@ -32,13 +32,14 @@ class LibraryViewModel: ObservableObject {
     func updateLibraryItemsCache(pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) {
         // Capture context snapshot to safely detach
         let currentSearchText = debouncedSearchText
+        let sortedPDFs = sortPDFs(pdfs, sortOption: sortOption)
         
         Task.detached(priority: .background) {
             var groups: [String: SeriesGroup] = [:]
             var singles: [ConvertedPDF] = []
             var firstAppearanceIndex: [String: Int] = [:]
             
-            for (index, pdf) in pdfs.enumerated() {
+            for (index, pdf) in sortedPDFs.enumerated() {
                 if let seriesName = pdf.metadata.series, !seriesName.isEmpty {
                     let seriesKey = "series_\(seriesName)"
                     if firstAppearanceIndex[seriesKey] == nil { firstAppearanceIndex[seriesKey] = index }
@@ -126,7 +127,18 @@ class LibraryViewModel: ObservableObject {
     func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
         switch sortOption {
         case .dateAdded: return pdfs.reversed() // Returns newest imported first, which places it natively at index 0 and top-left.
-        case .name: return pdfs.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .name: return pdfs.sorted {
+            let s1 = $0.metadata.series ?? ""
+            let s2 = $1.metadata.series ?? ""
+            if !s1.isEmpty && s1 == s2 {
+                // If they belong to the same series, check for manual issue numbers to forcefully sort them correctly
+                if let n1 = $0.metadata.issueNumber, let v1 = Double(n1),
+                   let n2 = $1.metadata.issueNumber, let v2 = Double(n2) {
+                    return v1 < v2
+                }
+            }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
         case .size: return pdfs.sorted { $0.fileSize > $1.fileSize }
         case .favorites:
             return pdfs.sorted {
