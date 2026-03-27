@@ -66,9 +66,10 @@ class EPUBGenerator {
         let totalImages = images.count
         
         for (index, image) in images.enumerated() {
-            let pageNumber = index + 1
-            
-            // Resize logic
+            try? autoreleasepool {
+                let pageNumber = index + 1
+                
+                // Resize logic
             let processedImage = resizeImageIfNeeded(image)
             
             // Compression
@@ -95,9 +96,10 @@ class EPUBGenerator {
             try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlName, width: width, height: height)
             
             accumulatedXhtmlManifestItems += "        <item id=\"page\(pageNumber)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
-            accumulatedSpineItems += "        <itemref idref=\"page\(pageNumber)\"/>\n"
-            
-            progress(Double(index + 1) / Double(totalImages) * 0.9)
+                accumulatedSpineItems += "        <itemref idref=\"page\(pageNumber)\"/>\n"
+                
+                progress(Double(index + 1) / Double(totalImages) * 0.9)
+            }
         }
         
         // 4. Generate Metadata (OPF/NCX)
@@ -141,9 +143,10 @@ class EPUBGenerator {
         
         // Streaming Process
         for (index, url) in imageURLs.enumerated() {
-            let pageNumber = index + 1
-            let imageName = "image\(pageNumber).jpg"
-            let imageDestURL = oebpsDir.appendingPathComponent("images/\(imageName)")
+            try? autoreleasepool {
+                let pageNumber = index + 1
+                let imageName = "image\(pageNumber).jpg"
+                let imageDestURL = oebpsDir.appendingPathComponent("images/\(imageName)")
             
             // Just copy the file if possible to save re-encoding time?
             // PageDeleteView implies we are editing, so we might want to preserve exact data.
@@ -167,8 +170,9 @@ class EPUBGenerator {
             let xhtmlName = "page\(pageNumber).xhtml"
             try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlName, width: imgWidth, height: imgHeight)
             
-            accumulatedXhtmlManifestItems += "        <item id=\"page\(pageNumber)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
-            accumulatedSpineItems += "        <itemref idref=\"page\(pageNumber)\"/>\n"
+                accumulatedXhtmlManifestItems += "        <item id=\"page\(pageNumber)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
+                accumulatedSpineItems += "        <itemref idref=\"page\(pageNumber)\"/>\n"
+            }
         }
         
         try generateMetadataFiles()
