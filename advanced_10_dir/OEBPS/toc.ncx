@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<ncx version="2005-1" xml:lang="en-US" xmlns="http://www.daisy.org/z3986/2005/ncx/">
-<head><meta name="dtb:uid" content="urn:uuid:2b243d83-b01c-45cc-92d4-7e486634d065"/></head>
-<docTitle><text>Test</text></docTitle>
-<navMap><navPoint id="Text"><navLabel><text>Start</text></navLabel><content src="Text/kcc-0000-kcc.xhtml"/></navPoint></navMap>
-</ncx>
