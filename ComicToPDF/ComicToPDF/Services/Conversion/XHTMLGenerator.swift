@@ -14,6 +14,7 @@ class XHTMLGenerator {
             <meta charset="UTF-8"/>
             \(viewport)
             <title>\(imageName)</title>
+            <link rel="stylesheet" type="text/css" href="../style.css"/>
         """
         
         let style = """

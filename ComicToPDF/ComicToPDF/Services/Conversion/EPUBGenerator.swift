@@ -238,11 +238,13 @@ class EPUBGenerator {
         <package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="pub-id" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
         \(hardenedMetadata)
             <manifest>
+                <item id="css" href="style.css" media-type="text/css"/>
                 <item id="toc" href="text/toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+                <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
         \(accumulatedImageManifestItems)
         \(accumulatedXhtmlManifestItems)
             </manifest>
-            <spine page-progression-direction="\(settings.readingDirection.rawValue)">
+            <spine toc="ncx" page-progression-direction="\(settings.readingDirection.rawValue)">
         \(accumulatedSpineItems)
             </spine>
         </package>
@@ -250,6 +252,16 @@ class EPUBGenerator {
         
         let contentURL = tempDirectory.appendingPathComponent("OEBPS/content.opf")
         try contentOPF.write(to: contentURL, atomically: true, encoding: String.Encoding.utf8)
+        
+        // 🚨 CRITICAL 5.19.3 FIX: Explicit global CSS to negate AWS padding overrides
+        let cssContent = """
+        @page { margin: 0; padding: 0; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
+        div { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        svg { margin: 0; padding: 0; display: block; width: 100%; height: 100%; }
+        """
+        try cssContent.write(to: tempDirectory.appendingPathComponent("OEBPS/style.css"), atomically: true, encoding: .utf8)
     }
     
     private func generateTocNCX() throws {

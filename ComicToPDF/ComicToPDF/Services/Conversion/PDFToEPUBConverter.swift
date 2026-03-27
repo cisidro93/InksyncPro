@@ -372,13 +372,22 @@ class PDFToEPUBConverter {
             )
             try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: String.Encoding.utf8)
         
-        // Dropped toc.ncx explicitly because Amazon falls back to standard EPUB non-edge-to-edge when encountered
+        // 🚨 CRITICAL FIX: Amazon 5.19.3 expects toc.ncx, or else throws E013 and strips Fixed-Layout
+        let ncxContent = generateNCX(title: title, bookID: bookID, pageCount: xhtmlFiles.count)
+        try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
         
         // Generate nav.xhtml (EPUB3)
         let navXHTML = generateNavXHTML(title: title, xhtmlFiles: xhtmlFiles)
         try navXHTML.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: String.Encoding.utf8)
         
-        // Dropped style.css generation to enforce inline chunk properties
+        // 🚨 CRITICAL FIX: Generate global style.css overriding Amazon's @page Region padding
+        let cssContent = """
+        @page { margin: 0; padding: 0; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
+        div { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        """
+        try cssContent.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: String.Encoding.utf8)
         
             // Create EPUB (ZIP) file
             let batchOutputURL = outputURL.deletingPathExtension().appendingPathExtension("pt\(batchIndex+1).epub")
@@ -434,12 +443,12 @@ class PDFToEPUBConverter {
                 <meta name="fixed-layout" content="true"/>
                 <meta name="original-resolution" content="1000x1500"/>
                 <meta name="orientation-lock" content="none"/>
-                    <meta name="book-type" content="comic"/>
-                    <meta name="zero-gutter" content="true"/>
-                    <meta name="zero-margin" content="true"/>
-                    <meta name="ke-border-color" content="#000000"/>
-                    <meta name="ke-border-width" content="0"/>
-                    <meta name="cover" content="\(coverMetaID)"/>
+                <meta name="book-type" content="comic"/>
+                <meta name="zero-gutter" content="true"/>
+                <meta name="zero-margin" content="true"/>
+                <meta name="ke-border-color" content="#000000"/>
+                <meta name="ke-border-width" content="0"/>
+                <meta name="cover" content="\(coverMetaID)"/>
                 
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:spread">auto</meta>
@@ -447,15 +456,37 @@ class PDFToEPUBConverter {
             </metadata>
             <manifest>
                 \(manifestItems)
+                <item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>
+                <item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>
             </manifest>
-            <spine page-progression-direction="\(mangaMode ? "rtl" : "ltr")">
+            <spine toc=\"ncx\" page-progression-direction="\(mangaMode ? "rtl" : "ltr")">
                 \(spineItems)
             </spine>
         </package>
         """
     }
     
-        // NCX content removed
+    // AWS Server-Side E013 NCX Compatibility Bridge
+    private func generateNCX(title: String, bookID: String, pageCount: Int) -> String {
+        return """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+            <head>
+                <meta name="dtb:uid" content="urn:uuid:\(bookID)"/>
+                <meta name="dtb:depth" content="1"/>
+                <meta name="dtb:totalPageCount" content="\(pageCount)"/>
+                <meta name="dtb:maxPageNumber" content="\(pageCount)"/>
+            </head>
+            <docTitle><text>\(escapeXML(title))</text></docTitle>
+            <navMap>
+                <navPoint id="navPoint-1" playOrder="1">
+                    <navLabel><text>Start</text></navLabel>
+                    <content src="chunk_0001.xhtml"/>
+                </navPoint>
+            </navMap>
+        </ncx>
+        """
+    }
     
     private func generateNavXHTML(title: String, xhtmlFiles: [String]) -> String {
         // For a single content.xhtml, we'll just have one nav item
@@ -472,6 +503,7 @@ class PDFToEPUBConverter {
         <head>
             <meta charset="utf-8" />
             <title>\(escapeXML(title))</title>
+            <link rel="stylesheet" type="text/css" href="style.css"/>
         </head>
         <body>
             <nav epub:type="toc" id="toc">
@@ -504,9 +536,10 @@ class PDFToEPUBConverter {
         <head>
             <title>\(escapeXML(title))</title>
             <meta name="viewport" content="width=1000, height=1500"/>
+            <link rel="stylesheet" type="text/css" href="style.css"/>
         </head>
-        <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
-            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;">
+        <body>
+            <div>
                 \(imageElements)
             </div>
         </body>
