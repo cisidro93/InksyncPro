@@ -4,22 +4,29 @@ import Combine
 /// Handles uploading large converted EPUB/PDF files directly to WebDAV servers
 /// bypassing Amazon's 200MB Send-to-Kindle limit and allowing direct sync to E-Readers
 /// like BOOX, Supernote, and Kobo (via third-party integrations).
-class WebDAVSyncManager: ObservableObject {
+class WebDAVSyncManager: NSObject, ObservableObject, URLSessionTaskDelegate, URLSessionDataDelegate {
     static let shared = WebDAVSyncManager()
     
     @Published var isSyncing: Bool = false
     @Published var syncProgress: Double = 0.0
     @Published var lastSyncStatus: String = ""
     
-    private var session: URLSession
-    // ✅ PHASE 8: Replaced single pointer with concurrent Task Queue mapping
-    private var activeTasks: [UUID: URLSessionUploadTask] = [:]
+    private var session: URLSession!
+    private var activeTasks: [Int: URLSessionUploadTask] = [:]
+    private var taskContinuations: [Int: CheckedContinuation<Void, Error>] = [:]
+    private var taskFiles: [Int: URL] = [:]
     
-    private init() {
-        let config = URLSessionConfiguration.default
+    private override init() {
+        super.init()
+        // 🚨 COMPETITOR FIX: Enforce background daemon configuration to survive Springboard suspension.
+        let config = URLSessionConfiguration.background(withIdentifier: "com.inksyncpro.webdav.\(UUID().uuidString)")
+        config.isDiscretionary = false // Run immediately, don't wait for WiFi/Power
+        config.sessionSendsLaunchEvents = true
         config.timeoutIntervalForRequest = 300 // 5 minutes for large files
         config.timeoutIntervalForResource = 3600 // 1 hour total
-        self.session = URLSession(configuration: config)
+        
+        // Background sessions require delegate assignment, not closure callbacks.
+        self.session = URLSession(configuration: config, delegate: self, delegateQueue: .main)
     }
     
     /// Starts a WebDAV PUT request to upload a given file to a target server
@@ -57,72 +64,72 @@ class WebDAVSyncManager: ObservableObject {
             request.setValue("application/vnd.comicbook+zip", forHTTPHeaderField: "Content-Type")
         }
         
-        let taskID = UUID() // ✅ Isolate this specific session connection
-        
         return try await withTaskCancellationHandler {
             return try await withCheckedThrowingContinuation { continuation in
-                let task = session.uploadTask(with: request, fromFile: fileURL) { [weak self] data, response, error in
-                    guard let self = self else {
-                        continuation.resume(throwing: CancellationError())
-                        return
-                    }
-                    
-                    Task { @MainActor in
-                        self.activeTasks.removeValue(forKey: taskID)
-                        // If no other tasks are running, disable the syncing flag
-                        if self.activeTasks.isEmpty {
-                            self.isSyncing = false
-                        }
-                    }
-                    
-                    if let error = error {
-                        Task { @MainActor in
-                            if (error as NSError).code == NSURLErrorCancelled {
-                                self.lastSyncStatus = "Upload Cancelled"
-                            } else {
-                                self.lastSyncStatus = "Upload Failed: \(error.localizedDescription)"
-                            }
-                        }
-                        if (error as NSError).code == NSURLErrorCancelled {
-                            continuation.resume(throwing: CancellationError())
-                        } else {
-                            continuation.resume(throwing: error)
-                        }
-                        return
-                    }
-                    
-                    if let httpResponse = response as? HTTPURLResponse {
-                        if (200...299).contains(httpResponse.statusCode) {
-                            Task { @MainActor in
-                                self.syncProgress = 1.0
-                                self.lastSyncStatus = "Successfully uploaded \(fileURL.lastPathComponent)"
-                            }
-                            continuation.resume(returning: ())
-                        } else {
-                            Task { @MainActor in
-                                self.lastSyncStatus = "Server Error: \(httpResponse.statusCode)"
-                            }
-                            continuation.resume(throwing: CloudSyncError.httpError(statusCode: httpResponse.statusCode))
-                        }
-                    } else {
-                        // Crucial: Handle malformed proxy/network interceptors rather than hanging indefinitely.
-                        Task { @MainActor in
-                            self.lastSyncStatus = "Server returned an unrecognizable response."
-                        }
-                        continuation.resume(throwing: URLError(.badServerResponse))
-                    }
-                }
-                
                 Task { @MainActor in
-                    self.activeTasks[taskID] = task
+                    let task = self.session.uploadTask(with: request, fromFile: fileURL)
+                    self.activeTasks[task.taskIdentifier] = task
+                    self.taskContinuations[task.taskIdentifier] = continuation
+                    self.taskFiles[task.taskIdentifier] = fileURL
+                    
+                    task.resume()
                 }
-                
-                task.resume()
             }
         } onCancel: {
-            Task { @MainActor [weak self] in
-                self?.activeTasks[taskID]?.cancel()
-                self?.activeTasks.removeValue(forKey: taskID)
+            Task { @MainActor in
+                self.cancelAllSyncs()
+            }
+        }
+    }
+    
+    // MARK: - URLSession Delegates
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        // Track Background Upload Progress Live
+        let progress = totalBytesExpectedToSend > 0 ? Double(totalBytesSent) / Double(totalBytesExpectedToSend) : 0
+        DispatchQueue.main.async {
+            self.syncProgress = progress
+        }
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        DispatchQueue.main.async {
+            let taskID = task.taskIdentifier
+            let fileURL = self.taskFiles[taskID]
+            
+            defer {
+                self.activeTasks.removeValue(forKey: taskID)
+                self.taskContinuations.removeValue(forKey: taskID)
+                self.taskFiles.removeValue(forKey: taskID)
+                if self.activeTasks.isEmpty {
+                    self.isSyncing = false
+                }
+            }
+            
+            if let error = error {
+                let nsError = error as NSError
+                if nsError.code == NSURLErrorCancelled {
+                    self.lastSyncStatus = "Upload Cancelled"
+                    self.taskContinuations[taskID]?.resume(throwing: CancellationError())
+                } else {
+                    self.lastSyncStatus = "Upload Failed: \(error.localizedDescription)"
+                    self.taskContinuations[taskID]?.resume(throwing: error)
+                }
+                return
+            }
+            
+            if let httpResponse = task.response as? HTTPURLResponse {
+                if (200...299).contains(httpResponse.statusCode) {
+                    self.syncProgress = 1.0
+                    self.lastSyncStatus = fileURL != nil ? "Successfully uploaded \(fileURL!.lastPathComponent)" : "Upload Complete"
+                    self.taskContinuations[taskID]?.resume(returning: ())
+                } else {
+                    self.lastSyncStatus = "Server Error: \(httpResponse.statusCode)"
+                    self.taskContinuations[taskID]?.resume(throwing: CloudSyncError.httpError(statusCode: httpResponse.statusCode))
+                }
+            } else {
+                self.lastSyncStatus = "Server returned an unrecognizable response."
+                self.taskContinuations[taskID]?.resume(throwing: URLError(.badServerResponse))
             }
         }
     }
@@ -134,6 +141,13 @@ class WebDAVSyncManager: ObservableObject {
                 task.cancel()
             }
             activeTasks.removeAll()
+            
+            for cont in taskContinuations.values {
+                cont.resume(throwing: CancellationError())
+            }
+            taskContinuations.removeAll()
+            taskFiles.removeAll()
+            
             isSyncing = false
             syncProgress = 0.0
             lastSyncStatus = "All pending uploads terminated."

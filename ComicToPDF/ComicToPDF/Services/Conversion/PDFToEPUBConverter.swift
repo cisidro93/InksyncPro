@@ -354,7 +354,7 @@ class PDFToEPUBConverter {
             xhtmlFiles.append(chunkFileName)
         }
         
-            let coverMetaContent = (firstBatchCoverData != nil && batches.count > 1) ? "cover-image" : "img1"
+            let coverMetaContent = (firstBatchCoverData != nil && batchDirectories.count > 1) ? "cover-image" : "img1"
 
             // Generate content.opf
             let contentOPF = generateContentOPF(

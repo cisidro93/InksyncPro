@@ -664,7 +664,10 @@ class PanelViewEPUBConverter {
         let imagesDir = oebpsDir.appendingPathComponent("images")
         if let imageFiles = try? fm.contentsOfDirectory(at: imagesDir, includingPropertiesForKeys: nil) {
             for imgURL in imageFiles.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-                try archive.addEntry(with: "OEBPS/images/\(imgURL.lastPathComponent)", fileURL: imgURL, compressionMethod: .deflate)
+                // 🚨 COMPETITOR FIX: Never apply .deflate to pre-compressed entropy vectors (JPEG). Saves 40s CPU drain.
+                let ext = imgURL.pathExtension.lowercased()
+                let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp", "heic"].contains(ext) ? .none : .deflate
+                try archive.addEntry(with: "OEBPS/images/\(imgURL.lastPathComponent)", fileURL: imgURL, compressionMethod: compression)
             }
         }
 

@@ -12,9 +12,8 @@ class SmartImportViewModel: ObservableObject {
     @Published var destinationDevice: SDRegisteredDevice?
     @Published var flaggedPageIndices: [Int] = []
     @Published var overallConfidence: Double = 0.0
-    @Published var isAnalysing: Bool = true
     @Published var extractionError: String? = nil
-    @Published var seriesMemory: SeriesMemory? = nil
+    @Published var seriesMemory: SDSeriesMemory? = nil
     @Published var showAdvanced: Bool = false
     @Published var selectedPipeline: OutputPipeline = .standard
     @Published var userEditedTitle: Bool = false
@@ -34,7 +33,7 @@ class SmartImportViewModel: ObservableObject {
         self.sourceURL = sourceURL
     }
 
-    func analyse(savedDevices: [SDRegisteredDevice], primaryDeviceID: UUID?) async {
+    func analyse(savedDevices: [SDRegisteredDevice], primaryDeviceID: UUID?, context: ModelContext) async {
         // 1. Display name from LocalComicInfoService
         if let xml = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: sourceURL) {
             title = xml.displayName
@@ -55,10 +54,12 @@ class SmartImportViewModel: ObservableObject {
             volumeNumber = detected.issueNumber.map(String.init) ?? ""
         }
 
-        // 3. Series memory
+        // 3. Series memory (SwiftData fetch)
         if !seriesName.isEmpty {
-            seriesMemory = SeriesMemoryStore.shared.memory(for: seriesName)
-            if let mem = seriesMemory {
+            let normalized = seriesName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            let fetch = FetchDescriptor<SDSeriesMemory>(predicate: #Predicate { $0.seriesNameNormalized == normalized })
+            if let mem = try? context.fetch(fetch).first {
+                self.seriesMemory = mem
                 isManga = mem.confirmedMangaRTL ?? isManga
                 if let devID = mem.lastDeviceID {
                     destinationDevice = savedDevices.first { $0.id == devID }
@@ -99,20 +100,26 @@ class SmartImportViewModel: ObservableObject {
         isAnalysing = false
     }
 
-    func confirm(manager: ConversionManager) {
+    func confirm(manager: ConversionManager, context: ModelContext) {
         // Apply pipeline to settings
         ConversionViewModel().applyPipeline(selectedPipeline, to: &manager.conversionSettings)
         manager.conversionSettings.mangaMode = isManga
 
-        // Record to series memory
-        SeriesMemoryStore.shared.record(
-            seriesName: seriesName,
-            deviceID: destinationDevice?.id,
-            isManga: isManga,
-            panelConfidence: overallConfidence,
-            editedPanels: false,
-            editedMetadata: userEditedTitle || userEditedDirection
-        )
+        // Record to SwiftData
+        let normalized = seriesName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let fetch = FetchDescriptor<SDSeriesMemory>(predicate: #Predicate { $0.seriesNameNormalized == normalized })
+        let m = (try? context.fetch(fetch).first) ?? SDSeriesMemory(seriesNameNormalized: normalized)
+        
+        m.conversionCount += 1
+        m.lastDeviceID = destinationDevice?.id
+        m.confirmedMangaRTL = isManga
+        if let e = m.averagePanelConfidence { m.averagePanelConfidence = (e + overallConfidence) / 2 }
+        else { m.averagePanelConfidence = overallConfidence }
+        if userEditedTitle || userEditedDirection { m.hasUserEverEditedMetadata = true }
+        // Note: editedPanels is injected upstream via PageModelStore on edits
+        
+        context.insert(m)
+        try? context.save()
 
         // Route through ImportOrchestrator via processImportedFiles
         Task {
@@ -126,6 +133,7 @@ struct SmartImportSheet: View {
     @StateObject private var vm: SmartImportViewModel
     @EnvironmentObject var manager: ConversionManager
     @Environment(\.dismiss) var dismiss
+    @Environment(\.modelContext) private var context
     
     @Query private var savedDevices: [SDRegisteredDevice]
 
@@ -143,7 +151,7 @@ struct SmartImportSheet: View {
                     AnalysingView()
                 } else if vm.canSkipSheet {
                     SkippedImportView(vm: vm) {
-                        vm.confirm(manager: manager)
+                        vm.confirm(manager: manager, context: context)
                         dismiss()
                     } onChange: {
                         // Don't skip, show full sheet
@@ -151,7 +159,7 @@ struct SmartImportSheet: View {
                     }
                 } else {
                     ImportFormView(vm: vm) {
-                        vm.confirm(manager: manager)
+                        vm.confirm(manager: manager, context: context)
                         dismiss()
                     }
                 }
@@ -165,7 +173,7 @@ struct SmartImportSheet: View {
                 }
             }
         }
-        .task { await vm.analyse(savedDevices: savedDevices, primaryDeviceID: manager.primaryDeviceID) }
+        .task { await vm.analyse(savedDevices: savedDevices, primaryDeviceID: manager.primaryDeviceID, context: context) }
         .alert("Import Failed", isPresented: Binding(
             get: { vm.extractionError != nil },
             set: { if !$0 { dismiss() } }
