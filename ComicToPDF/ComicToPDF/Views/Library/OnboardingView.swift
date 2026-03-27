@@ -1,136 +1,114 @@
 import SwiftUI
 
-struct OnboardingFeatureRow: View {
-    let icon: String
-    let title: String
-    let description: String
-    
-    var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 36, weight: .light))
-                .foregroundColor(Theme.blue)
-                .frame(width: 44, alignment: .center)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundColor(Theme.text)
-                
-                Text(description)
-                    .font(.subheadline)
-                    .foregroundColor(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-}
-
 struct OnboardingView: View {
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     
-    // Animate UI elements on load
+    @State private var currentIndex: Int = 0
     @State private var startAnimation: Bool = false
+    
+    private let totalSlides = 4
     
     var body: some View {
         ZStack {
             // MARK: Premium Glass Background
             Color.black.ignoresSafeArea()
             
-            // Large ambient background blobs
+            // Dynamic Background Blobs bound to currentIndex
             Circle()
-                .fill(LinearGradient(colors: [Theme.blue.opacity(0.3), Color.purple.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .fill(LinearGradient(colors: currentColors(for: currentIndex), startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(width: 400, height: 400)
                 .blur(radius: 100)
-                .offset(x: startAnimation ? -50 : 50, y: startAnimation ? -150 : -200)
-                .animation(.easeInOut(duration: 8).repeatForever(autoreverses: true), value: startAnimation)
+                .offset(
+                    x: startAnimation ? CGFloat(currentIndex * -30) + 50 : 0,
+                    y: startAnimation ? CGFloat(currentIndex * 20) - 150 : -200
+                )
+                .animation(.easeInOut(duration: 4).repeatForever(autoreverses: true), value: startAnimation)
+                .animation(.spring(response: 0.8, dampingFraction: 0.7), value: currentIndex)
             
             Circle()
-                .fill(LinearGradient(colors: [Theme.orange.opacity(0.2), Theme.blue.opacity(0.2)], startPoint: .bottomLeading, endPoint: .topTrailing))
+                .fill(LinearGradient(colors: altColors(for: currentIndex), startPoint: .bottomLeading, endPoint: .topTrailing))
                 .frame(width: 300, height: 300)
                 .blur(radius: 80)
-                .offset(x: startAnimation ? 100 : -50, y: startAnimation ? 200 : 250)
-                .animation(.easeInOut(duration: 6).repeatForever(autoreverses: true), value: startAnimation)
-                
-            ScrollView {
-                VStack(spacing: 40) {
+                .offset(
+                    x: startAnimation ? CGFloat(currentIndex * 40) - 50 : 100,
+                    y: startAnimation ? CGFloat(currentIndex * -20) + 200 : 250
+                )
+                .animation(.easeInOut(duration: 5).repeatForever(autoreverses: true), value: startAnimation)
+                .animation(.spring(response: 0.8, dampingFraction: 0.7), value: currentIndex)
+            
+            VStack(spacing: 0) {
+                // MARK: Paginated Feature Carousel
+                TabView(selection: $currentIndex) {
                     
-                    // MARK: Header
-                    VStack(spacing: 12) {
-                        Image(systemName: "wand.and.stars.inverse")
-                            .font(.system(size: 80))
-                            .foregroundStyle(
-                                LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                            .shadow(color: Theme.blue.opacity(0.5), radius: 20)
-                            .padding(.top, 40)
-                            
-                        Text("Welcome to\nInksync Pro")
-                            .font(.system(size: 42, weight: .bold, design: .rounded))
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.white)
-                            .layoutPriority(1)
-                    }
-                    .opacity(startAnimation ? 1 : 0)
-                    .offset(y: startAnimation ? 0 : 20)
-                    .animation(.easeOut(duration: 0.8).delay(0.1), value: startAnimation)
+                    OnboardingSlideView(
+                        icon: "wand.and.stars.inverse",
+                        title: "WELCOME",
+                        headline: "Inksync Pro",
+                        description: "The ultimate workspace for Manga, Books, and PDFs natively optimized for Apple Silicon.",
+                        colors: [Theme.blue, Color.purple],
+                        index: 0,
+                        currentIndex: $currentIndex
+                    ).tag(0)
                     
-                    // MARK: Feature List
-                    VStack(alignment: .leading, spacing: 32) {
-                        OnboardingFeatureRow(
-                            icon: "wand.and.rays",
-                            title: "Magic Panel Extraction",
-                            description: "Our offline Neural Engine automatically slices your CBZ/PDF comics natively into Guided View EPUBs for Kindle."
-                        )
-                        
-                        OnboardingFeatureRow(
-                            icon: "cpu",
-                            title: "E-Ink Hardware Optimization",
-                            description: "Automatically downsamples, strips color, and boosts contrast to perfectly match your Kobo, Boox, or Scribe resolution."
-                        )
-                        
-                        OnboardingFeatureRow(
-                            icon: "sparkles",
-                            title: "AI & Interactive Planners",
-                            description: "Generate 90-day trackers, calendars, or journals with native hyperlinking using local AI templates."
-                        )
-                        
-                        OnboardingFeatureRow(
-                            icon: "scissors",
-                            title: "Pro Precision Canvas",
-                            description: "Edit bounding boxes, merge split pages, filter margins, and re-order manga directly on your device."
-                        )
-                    }
-                    .padding(.horizontal, 30)
-                    .opacity(startAnimation ? 1 : 0)
-                    .offset(y: startAnimation ? 0 : 30)
-                    .animation(.easeOut(duration: 0.8).delay(0.3), value: startAnimation)
+                    OnboardingSlideView(
+                        icon: "highlighter",
+                        title: "SMART READER",
+                        headline: "Zettelkasten Note-Taking",
+                        description: "Drag native iOS highlights to capture knowledge and instantly sync Tags & Annotations to your Personal Cloud.",
+                        colors: [Theme.orange, Color.red],
+                        index: 1,
+                        currentIndex: $currentIndex
+                    ).tag(1)
                     
-                    Spacer()
+                    OnboardingSlideView(
+                        icon: "sparkles.tv",
+                        title: "NATIVE ENGINE",
+                        headline: "Guided View Extraction",
+                        description: "Our offline Neural Engine automatically slices CBZ/PDF comics directly into edge-to-edge Guided View EPUBs.",
+                        colors: [Theme.blue, Color.teal],
+                        index: 2,
+                        currentIndex: $currentIndex
+                    ).tag(2)
                     
-                    // MARK: Call to Action
-                    Button(action: {
-                        finishOnboarding()
-                    }) {
-                        Text("Start Creating")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(
-                                LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .leading, endPoint: .trailing)
-                            )
-                            .cornerRadius(16)
-                            .shadow(color: Theme.blue.opacity(0.3), radius: 10, y: 5)
-                    }
-                    .padding(.horizontal, 40)
-                    .padding(.bottom, 40)
-                    .opacity(startAnimation ? 1 : 0)
-                    .scaleEffect(startAnimation ? 1 : 0.95)
-                    .animation(.easeOut(duration: 0.8).delay(0.5), value: startAnimation)
+                    OnboardingSlideView(
+                        icon: "paintbrush.pointed",
+                        title: "PRECISION CANVAS",
+                        headline: "Pro Editor Suite",
+                        description: "Merge split spreads, apply E-Ink contrast filters, and seamlessly orchestrate Metadata from local databases.",
+                        colors: [Color.purple, Theme.orange],
+                        index: 3,
+                        currentIndex: $currentIndex
+                    ).tag(3)
+                    
                 }
+                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .always))
+                .animation(.easeInOut, value: currentIndex)
+                
+                // MARK: Persistent Sticky CTA
+                VStack(spacing: 20) {
+                    PremiumCTAButton(
+                        title: currentIndex == totalSlides - 1 ? "Start Creating" : "Continue",
+                        icon: currentIndex == totalSlides - 1 ? "arrow.right.circle.fill" : nil,
+                        colors: currentColors(for: currentIndex),
+                        action: handleCTA
+                    )
+                    
+                    if currentIndex < totalSlides - 1 {
+                        Button("Skip Intro") {
+                            finishOnboarding()
+                        }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Theme.textSecondary)
+                        .padding(.top, 4)
+                    } else {
+                        // Invisible spacer to maintain height
+                        Text("Skip Intro").opacity(0).font(.system(size: 14)).padding(.top, 4)
+                    }
+                }
+                .padding(.bottom, 40)
+                .padding(.top, 20)
             }
         }
         .onAppear {
@@ -138,12 +116,42 @@ struct OnboardingView: View {
         }
     }
     
+    // MARK: - Handlers
+    
+    private func currentColors(for index: Int) -> [Color] {
+        switch index {
+        case 0: return [Theme.blue, Color.purple]
+        case 1: return [Theme.orange, Color.red]
+        case 2: return [Theme.blue, Color.teal]
+        case 3: return [Color.purple, Theme.orange]
+        default: return [Theme.blue, Color.purple]
+        }
+    }
+    
+    private func altColors(for index: Int) -> [Color] {
+        switch index {
+        case 0: return [Theme.orange, Theme.blue]
+        case 1: return [Color.purple, Theme.orange]
+        case 2: return [Color.teal, Color.purple]
+        case 3: return [Theme.blue, Color.red]
+        default: return [Theme.orange, Theme.blue]
+        }
+    }
+    
+    private func handleCTA() {
+        if currentIndex < totalSlides - 1 {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                currentIndex += 1
+            }
+        } else {
+            finishOnboarding()
+        }
+    }
+    
     private func finishOnboarding() {
-        // Run a haptic feedback click
-        let generator = UIImpactFeedbackGenerator(style: .medium)
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
         generator.impactOccurred()
         
-        // 1. Mark as seen
         UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
         withAnimation {
             hasSeenOnboarding = true
