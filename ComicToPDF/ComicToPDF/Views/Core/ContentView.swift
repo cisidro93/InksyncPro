@@ -153,12 +153,18 @@ struct ContentView: View {
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
-                let accessing = url.startAccessingSecurityScopedResource()
-                let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-                try? FileManager.default.removeItem(at: dest)
-                try? FileManager.default.copyItem(at: url, to: dest)
-                if accessing { url.stopAccessingSecurityScopedResource() }
-                selectedTab = 1 // Switch to Import Tab
+                Task.detached(priority: .userInitiated) {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    
+                    let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                    try? FileManager.default.removeItem(at: dest)
+                    try? FileManager.default.copyItem(at: url, to: dest)
+                    
+                    await MainActor.run {
+                        self.selectedTab = 1 // Switch to Import Tab
+                    }
+                }
             }
         }
     }

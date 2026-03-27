@@ -589,7 +589,6 @@ struct PDFKitView: UIViewRepresentable {
                 }
             }
         }
-        }
         return pdfView
     }
 

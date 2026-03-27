@@ -86,19 +86,29 @@ class PhysicalFileSystemRouter {
     }
     
     func deletePDF(_ pdf: ConvertedPDF, manager: ConversionManager) {
-        do {
-            try FileManager.default.removeItem(at: pdf.url)
-            if let coverURL = getCoverURL(for: pdf) {
-                try? FileManager.default.removeItem(at: coverURL)
-            }
-            Logger.shared.log("Deleted File and Cover: \(pdf.name)", category: "Library")
-        } catch {
-            Logger.shared.log("Failed to delete file: \(error)", category: "Library", type: .error)
-        }
-        
+        // 1. Remove from UI state instantly for perceived zero-latency
         if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
             manager.convertedPDFs.remove(at: idx)
             manager.saveLibrary()
+        }
+        
+        // 2. Offload the heavy file destruction to a background task
+        let urlTarget = pdf.url
+        let coverTarget = getCoverURL(for: pdf)
+        let docName = pdf.name
+        
+        Task.detached(priority: .background) {
+            do {
+                if FileManager.default.fileExists(atPath: urlTarget.path) {
+                    try FileManager.default.removeItem(at: urlTarget)
+                }
+                if let coverTarget = coverTarget, FileManager.default.fileExists(atPath: coverTarget.path) {
+                    try? FileManager.default.removeItem(at: coverTarget)
+                }
+                Logger.shared.log("Deleted File and Cover in background: \(docName)", category: "Library")
+            } catch {
+                Logger.shared.log("Failed to delete file in background: \(error)", category: "Library", type: .error)
+            }
         }
     }
     

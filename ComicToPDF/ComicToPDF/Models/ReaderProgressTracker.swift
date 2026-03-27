@@ -18,6 +18,7 @@ class ReaderProgressTracker: ObservableObject {
     static let shared = ReaderProgressTracker()
     
     @Published private var progressMap: [UUID: ReadingProgress] = [:]
+    private var saveTasks: [UUID: Task<Void, Never>] = [:]
     
     private let queue = DispatchQueue(label: "com.inksync.ProgressTracker", qos: .userInitiated)
 // Removed fileManager properties to avoid actor isolation issues
@@ -160,15 +161,23 @@ class ReaderProgressTracker: ObservableObject {
     }
     
     private func save(pdfID: UUID) {
-        guard let progress = progressMap[pdfID] else { return }
-        let fileURL = getProgressDir().appendingPathComponent("\(pdfID.uuidString).json")
+        saveTasks[pdfID]?.cancel()
         
-        queue.async {
-            do {
-                let data = try JSONEncoder().encode(progress)
-                try data.write(to: fileURL, options: .atomic)
-            } catch {
-                print("Failed to save progress for \(pdfID): \(error)")
+        saveTasks[pdfID] = Task { [weak self] in
+            // 2-Second Sliding Window Debouncer
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            
+            guard let self = self, let progress = self.progressMap[pdfID] else { return }
+            let fileURL = self.getProgressDir().appendingPathComponent("\(pdfID.uuidString).json")
+            
+            self.queue.async {
+                do {
+                    let data = try JSONEncoder().encode(progress)
+                    try data.write(to: fileURL, options: .atomic)
+                } catch {
+                    print("Failed to save progress for \(pdfID): \(error)")
+                }
             }
         }
     }
