@@ -147,11 +147,20 @@ class PhysicalFileSystemRouter {
     func loadThumbnailAsync(for pdf: ConvertedPDF, manager: ConversionManager) async {
         if manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil { return }
         
-        if let coverURL = self.getCoverURL(for: pdf),
-           let data = try? Data(contentsOf: coverURL),
-           let image = UIImage(data: data) {
-            await MainActor.run {
-                manager.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
+        if let coverURL = self.getCoverURL(for: pdf) {
+            let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+            if let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) {
+                let downsampleOptions = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 400
+                ] as CFDictionary
+                
+                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
+                    let image = UIImage(cgImage: cgImage)
+                    await MainActor.run {
+                        manager.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
                 manager.objectWillChange.send()
             }
         } else {
@@ -166,11 +175,20 @@ class PhysicalFileSystemRouter {
         let keyStr = pdf.id.uuidString
         if let cached = manager.thumbnailCache.object(forKey: keyStr as NSString) { return cached }
         Task.detached(priority: .userInitiated) {
-            if let coverURL = await self.getCoverURL(for: pdf),
-               let data = try? Data(contentsOf: coverURL),
-               let image = UIImage(data: data) {
-                await MainActor.run {
-                    manager.thumbnailCache.setObject(image, forKey: keyStr as NSString)
+            if let coverURL = await self.getCoverURL(for: pdf) {
+                let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+                if let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) {
+                    let downsampleOptions = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceShouldCacheImmediately: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 400
+                    ] as CFDictionary
+                    
+                    if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
+                        let image = UIImage(cgImage: cgImage)
+                        await MainActor.run {
+                            manager.thumbnailCache.setObject(image, forKey: keyStr as NSString)
                     manager.objectWillChange.send()
                 }
             } else {

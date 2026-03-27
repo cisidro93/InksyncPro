@@ -95,10 +95,17 @@ struct ModernGridFileCell: View {
                 self.localCover = img
             } else if let coverURL = conversionManager.getCoverURL(for: pdf) {
                 let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    if let data = try? Data(contentsOf: coverURL), let image = UIImage(data: data) {
-                        return image
-                    }
-                    return nil
+                    let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+                    guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) else { return nil }
+                    let downsampleOptions = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceShouldCacheImmediately: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 400
+                    ] as CFDictionary
+                    
+                    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
+                    return UIImage(cgImage: cgImage)
                 }.value
                 
                 if let image = generated {
