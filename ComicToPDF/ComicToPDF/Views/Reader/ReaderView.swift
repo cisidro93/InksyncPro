@@ -581,11 +581,14 @@ struct PDFKitView: UIViewRepresentable {
             object: pdfView
         )
 
-        if let document = PDFDocument(url: url) {
-            pdfView.document = document
-            DispatchQueue.main.async {
-                self.totalPages = Array(repeating: url, count: document.pageCount)
+        Task.detached(priority: .userInitiated) {
+            if let document = PDFDocument(url: url) {
+                await MainActor.run {
+                    pdfView.document = document
+                    self.totalPages = Array(repeating: url, count: document.pageCount)
+                }
             }
+        }
         }
         return pdfView
     }

@@ -38,7 +38,7 @@ class ComicImageCache: ObservableObject {
     var pageCount: Int = 0
     let isPDF: Bool
     let isStream: Bool
-    private let pdfDocument: PDFDocument?
+    private var pdfDocument: PDFDocument?
     
     init(pdf: ConvertedPDF) {
         let scheme = pdf.url.scheme?.lowercased() ?? ""
@@ -53,9 +53,16 @@ class ComicImageCache: ObservableObject {
             self.pageCount = 100 // Prototype fallback
             self.isLoading = false
         } else if isPDF {
-            self.pdfDocument = PDFDocument(url: pdf.url)
-            self.pageCount = pdfDocument?.pageCount ?? 0
-            self.isLoading = false
+            self.pdfDocument = nil
+            queue.async { [weak self] in
+                let doc = PDFDocument(url: pdf.url)
+                let count = doc?.pageCount ?? 0
+                DispatchQueue.main.async {
+                    self?.pdfDocument = doc
+                    self?.pageCount = count
+                    self?.isLoading = false
+                }
+            }
         } else {
             self.pdfDocument = nil
             queue.async { [weak self] in
