@@ -166,9 +166,15 @@ class PDFGenerator {
         }
         
         // --- Table of Contents Outline Injection ---
-        // Inject outline metadata AFTER the file is flushed to disk to prevent RAM bloat
-        // Loading an existing PDF via URL is heavily optimized by PDFKit vs manually building thousands of pages
-        if hasValidChapters, let chapterList = chapters, let pdfDocument = PDFDocument(url: outputURL) {
+        // 🚨 COMPETITOR HARDENING FIX: Cap PDFKit injection at 150MB to prevent Jetsam crashes on Omnibus files.
+        let fileAttributes = try? FileManager.default.attributesOfItem(atPath: outputURL.path)
+        let rawFileSize = fileAttributes?[.size] as? Int64 ?? 0
+        let isSafeSize = rawFileSize <= (150 * 1024 * 1024)
+        
+        if hasValidChapters, let chapterList = chapters {
+            if !isSafeSize {
+                Logger.shared.log("⚠️ Skipping PDF ToC Injection: File exceeds safe memory bounds (\(rawFileSize / 1024 / 1024)MB).", category: "PDF", type: .warning)
+            } else if let pdfDocument = PDFDocument(url: outputURL) {
             let outlineRoot = PDFOutline()
             for chapter in chapterList {
                 let actualIndex = mangaMode ? (images.count - 1 - chapter.pageIndex) : chapter.pageIndex
@@ -215,7 +221,8 @@ class PDFGenerator {
             } else {
                 Logger.shared.log("Failed to write PDF with outlines, file size might be 0 bytes.", category: "PDF", type: .error)
             }
-        }
+        }   
+        } // Close outer `if hasValidChapters`
         
         Logger.shared.log("Generated Optimized PDF at \(outputURL.path)", category: "PDF", type: .success)
     }

@@ -24,7 +24,7 @@ struct PageManagerGridItem: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
                         
-                        if conversionManager.panelOverrides[pdf.id]?[item.index] != nil {
+                        if !PageModelStore.shared.getPageModel(for: pdf.id, pageIndex: item.index).panels.isEmpty {
                             HStack(spacing: 2) {
                                 Image(systemName: "wand.and.stars")
                                     .font(.caption2)

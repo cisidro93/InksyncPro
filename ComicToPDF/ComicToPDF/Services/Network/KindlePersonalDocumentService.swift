@@ -79,10 +79,19 @@ struct MailComposeView: UIViewControllerRepresentable {
         vc.setToRecipients([toEmail])
         vc.setSubject("Send to Kindle")
         
-        if let data = try? Data(contentsOf: fileURL) {
+        // 🚨 COMPETITOR HARDENING: Prevent loading a massive payload completely into RAM
+        // Apple Mail and standard SMTP providers cap attachments at ~25MB.
+        let fileAttributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let rawFileSize = fileAttributes?[.size] as? Int64 ?? 0
+        let isSafeSize = rawFileSize <= (25 * 1024 * 1024)
+        
+        if isSafeSize, let data = try? Data(contentsOf: fileURL) {
             let ext = fileURL.pathExtension.lowercased()
             let mimeType = ext == "epub" ? "application/epub+zip" : "application/pdf"
             vc.addAttachmentData(data, mimeType: mimeType, fileName: fileURL.lastPathComponent)
+        } else if !isSafeSize {
+            // Warn the user directly in the email body that the file was too large
+            vc.setMessageBody("⚠️ Error: The file \(fileURL.lastPathComponent) (\(rawFileSize / 1024 / 1024) MB) exceeds the 25MB email attachment limit. Please use the 'Send to Kindle' website for files up to 200MB.", isHTML: false)
         }
         return vc
     }

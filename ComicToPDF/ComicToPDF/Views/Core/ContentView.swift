@@ -97,6 +97,7 @@ struct ContentView: View {
             }
             // Bind legacy memory-cache mapping to active SwiftData context
             AnnotationStore.shared.initialize(with: modelContext)
+            PageModelStore.shared.initialize(with: modelContext)
             
             Task { @MainActor in
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
