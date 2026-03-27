@@ -564,25 +564,31 @@ struct CoverStudioView: View {
         
         // If it's an online URL, we must download and save it to the local app sandbox variant bucket
         if !targetURL.isFileURL {
-            // Download Data
-            // Stream massive external payloads natively to disk to prevent OOM Jetsam crashes
-            if let (tempURL, _) = try? await URLSession.shared.download(from: targetURL),
-               let data = try? Data(contentsOf: tempURL, options: .mappedIfSafe),
-               let image = UIImage(data: data),
-               let jpegData = image.jpegData(compressionQuality: 0.9) {
-                
-                try? FileManager.default.removeItem(at: tempURL)
+            if let (tempURL, _) = try? await URLSession.shared.download(from: targetURL) {
                 let variantID = UUID()
-                let coversDir = ConversionManager.getCoversDirectory()
-                let finalLocalURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")
-                try? jpegData.write(to: finalLocalURL)
+                
+                // 🚨 PHASE 13: Detach massive RAM-bound image buffering from the 120Hz Main Thread Queue
+                let finalLocalURL = await Task.detached(priority: .userInitiated) { () -> URL? in
+                    defer { try? FileManager.default.removeItem(at: tempURL) }
+                    
+                    guard let data = try? Data(contentsOf: tempURL, options: .mappedIfSafe),
+                          let image = UIImage(data: data),
+                          let jpegData = image.jpegData(compressionQuality: 0.9) else { return nil }
+                    
+                    let coversDir = ConversionManager.getCoversDirectory()
+                    let destURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")
+                    try? jpegData.write(to: destURL)
+                    return destURL
+                }.value
                 
                 // Update Metadata & Make Active
-                await MainActor.run {
-                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == livePDF.id }) {
-                        conversionManager.convertedPDFs[idx].metadata.coverVariants[variantID] = finalLocalURL
-                        Task { await conversionManager.setActiveCoverVariant(variantID, for: livePDF) }
-                        previewCoverURL = finalLocalURL // Update preview reference
+                if let destURL = finalLocalURL {
+                    await MainActor.run {
+                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == livePDF.id }) {
+                            conversionManager.convertedPDFs[idx].metadata.coverVariants[variantID] = destURL
+                            Task { await conversionManager.setActiveCoverVariant(variantID, for: livePDF) }
+                            previewCoverURL = destURL // Update preview reference
+                        }
                     }
                 }
             }

@@ -334,7 +334,7 @@ struct MetadataEditorSheet: View {
         // Asynchronously download the high-res cover image without freezing the UI
         if let imageURLStr = info.imageLinks?.bestQualityURL, let url = URL(string: imageURLStr) {
             Task {
-                if let data = try? Data(contentsOf: url) {
+                if let (data, _) = try? await URLSession.shared.data(from: url) {
                     await MainActor.run {
                         conversionManager.saveCoverImage(data, for: pdf)
                         conversionManager.saveLibrary() // Write changes to disk immediately

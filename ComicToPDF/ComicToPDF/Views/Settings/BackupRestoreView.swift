@@ -63,22 +63,31 @@ struct BackupRestoreView: View {
     }
     
     func importBackup(from url: URL) {
-        do {
-            guard url.startAccessingSecurityScopedResource() else { throw NSError(domain: "Permissions", code: 1, userInfo: [NSLocalizedDescriptionKey: "Permission denied"]) }
+        guard url.startAccessingSecurityScopedResource() else {
+            importError = "Permission denied to read backup file."
+            showingAlert = true
+            return
+        }
+        
+        Task.detached(priority: .userInitiated) {
             defer { url.stopAccessingSecurityScopedResource() }
             
-            let data = try Data(contentsOf: url)
-            let backup = try JSONDecoder().decode(BackupData.self, from: data)
-            
-            DispatchQueue.main.async {
-                conversionManager.restoreFromBackup(backup)
-                showingSuccess = true
-                HapticManager.shared.notification(.success)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showingSuccess = false }
+            do {
+                let data = try Data(contentsOf: url)
+                let backup = try JSONDecoder().decode(BackupData.self, from: data)
+                
+                await MainActor.run {
+                    self.conversionManager.restoreFromBackup(backup)
+                    self.showingSuccess = true
+                    HapticManager.shared.notification(.success)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.showingSuccess = false }
+                }
+            } catch {
+                await MainActor.run {
+                    self.importError = "Import failed: \(error.localizedDescription)"
+                    self.showingAlert = true
+                }
             }
-        } catch {
-            importError = "Import failed: \(error.localizedDescription)"
-            showingAlert = true
         }
     }
 }
