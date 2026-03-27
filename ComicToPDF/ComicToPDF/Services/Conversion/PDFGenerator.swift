@@ -23,7 +23,7 @@ class PDFGenerator {
     ///   - mangaMode: If true, reverses page order for RTL reading
     ///   - chapters: Optional list of chapters for Table of Contents generation
     ///   - progress: Progress callback
-    static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, settings: ConversionSettings, progress: ((Double) -> Void)? = nil) throws {
+    static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, settings: ConversionSettings, coverOverrideData: Data? = nil, progress: ((Double) -> Void)? = nil) throws {
         let total = Double(images.count)
         var current = 0.0
         
@@ -40,7 +40,14 @@ class PDFGenerator {
         try renderer.writePDF(to: outputURL) { context in
             for (index, imageURL) in sourceImages.enumerated() {
                 autoreleasepool {
-                    guard let image = UIImage(contentsOfFile: imageURL.path) else {
+                    let image: UIImage?
+                    if index == 0, let overrideImage = coverOverrideData, let uiImage = UIImage(data: overrideImage) {
+                        image = uiImage
+                    } else {
+                        image = UIImage(contentsOfFile: imageURL.path)
+                    }
+                    
+                    guard let safeImage = image else {
                         Logger.shared.log("Skipping bad image: \(imageURL.lastPathComponent)", category: "PDF", type: .warning)
                         return
                     }
@@ -53,7 +60,7 @@ class PDFGenerator {
                     let dither = settings.imageEnhancement.ditheringEnabled
                     
                     let optimizedImage = EInkOptimizer.shared.processImage(
-                        image,
+                        safeImage,
                         for: targetProfile,
                         applyGrayscale: applyEInkFilter,
                         cropMargins: cropMargins,

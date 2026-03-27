@@ -93,6 +93,7 @@ class PanelViewEPUBConverter {
         settings: ConversionSettings,
         panels: [Int: [PanelExtractor.Panel]],
         sourceIsMangaPDF: Bool = false,
+        coverOverrideData: Data? = nil,
         progress: @escaping (Double) -> Void
     ) async throws -> [URL] {
         Logger.shared.log("PanelViewEPUBConverter: Starting. Pages with panels: \(panels.count)", category: "PVConverter")
@@ -171,7 +172,12 @@ class PanelViewEPUBConverter {
                     let pagePanels  = panels[globalIdx] ?? []
                     
                     // Process image → JPEG
-                    let imgData = processImage(srcURL: item.url, settings: settings, isOddPage: globalIdx % 2 == 0)
+                    let imgData: Data
+                    if globalIdx == 0, let override = coverOverrideData {
+                         imgData = override
+                    } else {
+                         imgData = processImage(srcURL: item.url, settings: settings, isOddPage: globalIdx % 2 == 0)
+                    }
                     try? imgData.write(to: imagesDir.appendingPathComponent(imageName))
                     
                     // Resolve actual pixel dimensions per page (may differ from page 1)

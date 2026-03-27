@@ -216,6 +216,8 @@ struct MetadataEditorSheet: View {
                 if let suggested = renameString {
                     newSuggestedCacheName = suggested
                     showingRenamePrompt = true
+                } else if info != nil {
+                    saveChanges()
                 }
             }
         }
@@ -332,15 +334,20 @@ struct MetadataEditorSheet: View {
         editedMetadata.tags.append("Google Books")
         
         // Asynchronously download the high-res cover image without freezing the UI
-        if let imageURLStr = info.imageLinks?.bestQualityURL, let url = URL(string: imageURLStr) {
+        if let imageURLStr = info.imageLinks?.bestQualityURL ?? info.imageLinks?.thumbnail, let url = URL(string: imageURLStr.replacingOccurrences(of: "http://", with: "https://")) {
             Task {
                 if let (data, _) = try? await URLSession.shared.data(from: url) {
                     await MainActor.run {
                         conversionManager.saveCoverImage(data, for: pdf)
                         conversionManager.saveLibrary() // Write changes to disk immediately
+                        saveChanges() 
                     }
+                } else {
+                    await MainActor.run { saveChanges() }
                 }
             }
+        } else {
+            saveChanges()
         }
     }
     
@@ -360,6 +367,7 @@ struct MetadataEditorSheet: View {
                      editedMetadata.publisher = volume.publisher?.name
                      isSearching = false
                      errorMessage = "Could not detect issue number from filename. Applied series info only."
+                     saveChanges()
                  }
              }
             return
@@ -399,6 +407,20 @@ struct MetadataEditorSheet: View {
                         editedMetadata.comicVineID = issue.id
                         isSearching = false
                     }
+                    
+                    if let imageURLStr = issue.image?.original_url ?? issue.image?.medium_url, let url = URL(string: imageURLStr) {
+                        if let (data, _) = try? await URLSession.shared.data(from: url) {
+                            await MainActor.run {
+                                conversionManager.saveCoverImage(data, for: pdf)
+                                conversionManager.saveLibrary()
+                                saveChanges()
+                            }
+                        } else {
+                            await MainActor.run { saveChanges() }
+                        }
+                    } else {
+                        await MainActor.run { saveChanges() }
+                    }
                 } else {
                      await MainActor.run {
                          // Fallback to basic info
@@ -409,6 +431,7 @@ struct MetadataEditorSheet: View {
                          editedMetadata.publisher = volume.publisher?.name
                          isSearching = false
                          errorMessage = "Issue #\(issueNum) not found in volume. Applied series info."
+                         saveChanges()
                      }
                 }
             } catch {

@@ -26,13 +26,18 @@ final class ConversionOrchestrator {
             jobSettings.outputPipeline = .standard
         }
         
+        var coverOverrideData: Data? = nil
+        if let url = await MainActor.run({ manager.getCoverURL(for: pdf) }) {
+            coverOverrideData = try? Data(contentsOf: url)
+        }
+        
         do {
             if jobSettings.outputFormat == .pdf {
                 let fileManager = FileManager.default
                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                 let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
                 let imageURLs = try await manager.extractImageURLs(from: pdf.url)
-                try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings) { progress in
+                try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
@@ -50,7 +55,13 @@ final class ConversionOrchestrator {
                 for (idx, url) in imageURLs.enumerated() {
                     let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
                     let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, ext))
-                    try fileManager.copyItem(at: url, to: dest)
+                    
+                    if idx == 0, let overrideData = coverOverrideData {
+                         try? overrideData.write(to: dest)
+                    } else {
+                         try fileManager.copyItem(at: url, to: dest)
+                    }
+                    
                     let p = Double(idx) / Double(imageURLs.count)
                     await MainActor.run { manager.conversionProgress = p; manager.processingStatus = "Packaging CBZ..." }
                 }
@@ -65,7 +76,7 @@ final class ConversionOrchestrator {
                 await MainActor.run { manager.processingStatus = "Loading Panel Data..." }
                 let combinedManifest = await manager.getCombinedManifest(for: pdf)
                 let pvConverter = PanelViewEPUBConverter()
-                let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest) { progress in
+                let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: pdf.metadata) }
@@ -73,7 +84,7 @@ final class ConversionOrchestrator {
                 Logger.shared.log("PanelView Conversion Successful: \(pdf.name)", category: "Converter")
             } else {
                 let converter = CBZToEPUBConverter()
-                let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: nil) { progress in
+                let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata) }
@@ -106,13 +117,18 @@ final class ConversionOrchestrator {
                 jobSettings.splitWebtoon = true; jobSettings.enablePanelSplit = false; jobSettings.outputPipeline = .standard
             }
             
+            var coverOverrideData: Data? = nil
+            if let url = await MainActor.run({ manager.getCoverURL(for: pdf) }) {
+                coverOverrideData = try? Data(contentsOf: url)
+            }
+            
             do {
                 if jobSettings.outputFormat == .pdf {
                     let fileManager = FileManager.default
                     let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                     let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
                     let imageURLs = try await manager.extractImageURLs(from: pdf.url)
-                    try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings) { p in
+                    try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
                     await MainActor.run { manager.scanLibrary() }
@@ -127,7 +143,11 @@ final class ConversionOrchestrator {
                     for (idx, url) in imageURLs.enumerated() {
                         let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
                         let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, ext))
-                        try fileManager.copyItem(at: url, to: dest)
+                        if idx == 0, let overrideData = coverOverrideData {
+                            try? overrideData.write(to: dest)
+                        } else {
+                            try fileManager.copyItem(at: url, to: dest)
+                        }
                         let p = Double(idx) / Double(imageURLs.count)
                         await MainActor.run { manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
@@ -140,14 +160,14 @@ final class ConversionOrchestrator {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     let combinedManifest = await manager.getCombinedManifest(for: pdf)
                     let pvConverter = PanelViewEPUBConverter()
-                    let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest) { p in
+                    let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
                     for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: pdf.metadata) }
                     await MainActor.run { manager.scanLibrary() }
                 } else {
                     let converter = CBZToEPUBConverter()
-                    let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: nil) { p in
+                    let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
                     for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata) }
@@ -194,7 +214,14 @@ final class ConversionOrchestrator {
                     let chapterTitle = file.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".epub", with: "")
                     let chapter = Chapter(title: chapterTitle, pageIndex: chapterStartIndex)
                     
-                    if firstCoverImageData == nil, let firstImageURL = images.first { firstCoverImageData = try? Data(contentsOf: firstImageURL) }
+                    if firstCoverImageData == nil {
+                        if let url = await MainActor.run({ manager.getCoverURL(for: file) }) {
+                            firstCoverImageData = try? Data(contentsOf: url)
+                        }
+                        if firstCoverImageData == nil, let firstImageURL = images.first { 
+                            firstCoverImageData = try? Data(contentsOf: firstImageURL) 
+                        }
+                    }
                     for imageURL in images { currentBatch.append((url: imageURL, chapter: chapter)) }
                     currentBatchSize += fileSize
                 }
@@ -275,9 +302,14 @@ final class ConversionOrchestrator {
                 if epubSizeLimit != Int64.max && !currentEPUBBatch.isEmpty && (currentEPUBBatchSize + fileSize) > epubSizeLimit { generatedBatches.append(currentEPUBBatch); currentEPUBBatch = []; currentEPUBBatchSize = 0 }
                 
                 if firstEPUBFileCoverData == nil {
-                    if var images = try? await manager.extractImageURLs(from: file.url) {
-                        if file.url.pathExtension.lowercased() == "pdf" && (file.metadata.isManga == true) { images.reverse() }
-                        if let firstImage = images.first { firstEPUBFileCoverData = try? Data(contentsOf: firstImage) }
+                    if let url = await MainActor.run({ manager.getCoverURL(for: file) }) {
+                        firstEPUBFileCoverData = try? Data(contentsOf: url)
+                    }
+                    if firstEPUBFileCoverData == nil {
+                        if var images = try? await manager.extractImageURLs(from: file.url) {
+                            if file.url.pathExtension.lowercased() == "pdf" && (file.metadata.isManga == true) { images.reverse() }
+                            if let firstImage = images.first { firstEPUBFileCoverData = try? Data(contentsOf: firstImage) }
+                        }
                     }
                 }
                 
@@ -287,14 +319,19 @@ final class ConversionOrchestrator {
                 let isMangaPDF = file.url.pathExtension.lowercased() == "pdf" && (file.metadata.isManga == true)
                 let resultingURLs: [URL]
                 
+                var currentCoverOverride: Data? = nil
+                if let url = await MainActor.run({ manager.getCoverURL(for: file) }) {
+                     currentCoverOverride = try? Data(contentsOf: url)
+                }
+                
                 if jobSettings.outputPipeline == .proPanel {
                     let converter = PanelViewEPUBConverter()
-                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: isMangaPDF) { progress in
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride) { progress in
                         Task { @MainActor in manager.conversionProgress = progress }
                     }
                 } else {
                     let converter = CBZToEPUBConverter()
-                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: isMangaPDF) { progress in
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride) { progress in
                         Task { @MainActor in manager.conversionProgress = progress }
                     }
                 }

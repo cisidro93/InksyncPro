@@ -216,12 +216,19 @@ struct ContentView: View {
             .tabItem { Label("Work Area", systemImage: "pencil.and.outline") }
             .tag(3)
             
-            // Tab 5: Settings
+            // Tab 5: Highlights
+            NavigationStack {
+                GlobalZettelkastenHubView()
+            }
+            .tabItem { Label("Highlights", systemImage: "highlighter") }
+            .tag(4)
+            
+            // Tab 6: Settings
             NavigationStack {
                 SettingsView()
             }
             .tabItem { Label("Settings", systemImage: "gear") }
-            .tag(4)
+            .tag(5)
         }
         // ✅ iOS 26 Enhancements
         .ios26_tabBarMinimizeBehavior(.onScrollDown)
@@ -254,6 +261,9 @@ struct ContentView: View {
                     }
                     NavigationLink(value: 3) {
                         Label("Work Area", systemImage: "pencil.and.outline")
+                    }
+                    NavigationLink(value: 4) {
+                        Label("Highlights", systemImage: "highlighter")
                     }
                 }
                 .navigationTitle("Inksync")
@@ -307,6 +317,10 @@ struct ContentView: View {
                     DevicesView()
                 } else if selectedTab == 3 {
                     EditorDashboardView()
+                } else if selectedTab == 4 {
+                    NavigationStack {
+                        GlobalZettelkastenHubView()
+                    }
                 }
             }
             // ✅ iPad Settings Inspector

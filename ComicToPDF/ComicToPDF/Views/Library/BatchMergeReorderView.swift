@@ -134,9 +134,12 @@ struct BatchMergeReorderView: View {
         
         Task {
             // Call the manager to do the work
-            await conversionManager.convertAndMerge(sourceFiles: selectedFiles, outputName: mergedName, mangaMode: mangaMode)
+            let merged = await conversionManager.convertAndMerge(sourceFiles: selectedFiles, outputName: mergedName, mangaMode: mangaMode)
             
             await MainActor.run {
+                if let newBook = merged.first {
+                     NotificationCenter.default.post(name: Notification.Name("OpenMergedBook"), object: newBook)
+                }
                 isProcessing = false
                 dismiss()
             }

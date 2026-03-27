@@ -3,7 +3,7 @@ import ZIPFoundation
 
 class CBZToEPUBConverter {
     
-    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, sourceIsMangaPDF: Bool = false, progress: @escaping (Double) -> Void) async throws -> [URL] {
+    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, sourceIsMangaPDF: Bool = false, coverOverrideData: Data? = nil, progress: @escaping (Double) -> Void) async throws -> [URL] {
         Logger.shared.log("Starting Enterprise Conversion (No TOC). Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
         
         let fileManager = FileManager.default
@@ -35,7 +35,9 @@ class CBZToEPUBConverter {
             let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
             let epubName = baseFilename + partSuffix
             
-            if batchIndex == 0, let firstImage = batch.first {
+            if let coverOverride = coverOverrideData {
+                globalFirstBatchCoverData = coverOverride
+            } else if batchIndex == 0, let firstImage = batch.first {
                 globalFirstBatchCoverData = firstImage.data
             }
             
@@ -45,7 +47,8 @@ class CBZToEPUBConverter {
                 totalBatches: batches.count,
                 baseFilename: epubName,
                 settings: settings,
-                coverData: globalFirstBatchCoverData
+                coverData: globalFirstBatchCoverData,
+                isCoverOverrideActive: coverOverrideData != nil
             )
             
             let outputURL = try await packageEPUB(batchDir: batchDir, outputName: epubName)
@@ -161,7 +164,7 @@ class CBZToEPUBConverter {
     }
 
     // Stage 3 — Build EPUB directory structure...
-    private func buildEPUBDirectory(batch: [(data: Data, sourceURL: URL, index: Int)], batchIndex: Int, totalBatches: Int, baseFilename: String, settings: ConversionSettings, coverData: Data?) async throws -> URL {
+    private func buildEPUBDirectory(batch: [(data: Data, sourceURL: URL, index: Int)], batchIndex: Int, totalBatches: Int, baseFilename: String, settings: ConversionSettings, coverData: Data?, isCoverOverrideActive: Bool = false) async throws -> URL {
         Logger.shared.log("Stage 3 Start: Building EPUB Directory for Part \(batchIndex + 1)", category: "Converter")
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory // Or pass it if needed, but we can generate a unique one
@@ -257,9 +260,12 @@ class CBZToEPUBConverter {
         """
         try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
         
-        let chunkSize = 20
+        let chunkSize = 1
         var currentChunkImages: [String] = []
         var chunkIndex = 0
+        
+        let isManga = settings.mangaMode
+        var globalPageCounter = 1
         
         if batchIndex > 0, let coverData = coverData {
             let coverName = "cover_reused.jpg"
@@ -270,30 +276,53 @@ class CBZToEPUBConverter {
         }
         
         for (localIndex, item) in batch.enumerated() {
+            // ✅ IF COVER OVERRIDE IS ACTIVE, REPLACE THE FIRST IMAGE OF THE FIRST BATCH ENTIRELY
+            let isFirstImageOfBook = (localIndex == 0 && batchIndex == 0)
+            let dataToWrite = (isFirstImageOfBook && isCoverOverrideActive && coverData != nil) ? coverData! : item.data
+            
             let trueExt = (item.sourceURL.pathExtension.lowercased() == "png") ? "png" : "jpg"
-            _ = (trueExt == "jpg") ? "jpeg" : trueExt
+            let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
             
             let newImageName = String(format: "image_%04d.%@", localIndex + 1, trueExt)
             let destURL = imagesDir.appendingPathComponent(newImageName)
-            try item.data.write(to: destURL)
+            try dataToWrite.write(to: destURL)
             
-            _ = (localIndex == 0 && batchIndex == 0) ? "properties=\"cover-image\"" : ""
-            manifestItems.append("<item id=\"img_\\(localIndex+1)\" href=\"images/\\(newImageName)\" media-type=\"image/\\(safeExt)\" \\(properties)/>")
+            let properties = isFirstImageOfBook ? "properties=\"cover-image\"" : ""
+            let propString = properties.isEmpty ? "" : " \(properties)"
+            manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propString)/>")
             currentChunkImages.append(newImageName)
             
-            if currentChunkImages.count >= chunkSize || localIndex == batch.count - 1 {
-                chunkIndex += 1
-                let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
-                    chunkIndex: chunkIndex,
-                    images: currentChunkImages,
-                    title: "Part \\(chunkIndex)"
-                )
-                let chunkName = String(format: "chunk_%04d.xhtml", chunkIndex)
-                try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
-                manifestItems.append("<item id=\"chunk_\\(chunkIndex)\" href=\"text/\\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
-                spineItems.append("<itemref idref=\"chunk_\\(chunkIndex)\"/>")
-                currentChunkImages.removeAll()
+            // Generate DOM Page
+            chunkIndex += 1
+            let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
+                chunkIndex: chunkIndex,
+                images: currentChunkImages,
+                title: "Page \(chunkIndex)"
+            )
+            let chunkName = String(format: "page_%04d.xhtml", chunkIndex)
+            try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
+            manifestItems.append("<item id=\"page_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
+            
+            // Advanced Landscape Spread Tagging (RTL vs LTR)
+            var spreadTag = ""
+            if settings.splitSpreads {
+                if isManga {
+                    // Manga Mode (RTL): Cover is Right (standalone), Page 2 is Left, Page 3 is Right
+                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                } else {
+                    // Comic Mode (LTR): Cover is Right, Page 2 is Left, Page 3 is Right
+                    // LTR e-readers expect: Page-Spread-Right for cover, then Left, then Right.
+                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                }
+            } else {
+                // If the user doesn't enforce synthetic spreads through settings, let reader logic decide automatically
+                spreadTag = ""
             }
+            
+            spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)/>")
+            
+            globalPageCounter += 1
+            currentChunkImages.removeAll()
         }
         
         let opfContent = """
@@ -368,13 +397,13 @@ class CBZToEPUBConverter {
     }
 
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int? = nil, height: Int? = nil) -> String {
-        _ = images.enumerated().map { i, imageName in
+        let imageElements = images.enumerated().map { i, imageName in
             """
                 <div class="page">
-                    <img src="../images/\\(imageName)" class="page-image" alt="Page Image"/>
+                    <img src="../images/\(imageName)" class="page-image" alt="Page Image"/>
                 </div>
             """
-        }.joined(separator: "\\n")
+        }.joined(separator: "\n")
         
         return """
 <?xml version="1.0" encoding="UTF-8"?>
@@ -382,19 +411,20 @@ class CBZToEPUBConverter {
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
     <meta charset="UTF-8"/>
-    <title>\\(title)</title>
+    <meta name="viewport" content="width=100vw, height=100vh"/>
+    <title>\(title)</title>
     <style>
         @page { margin: 0; padding: 0; }
         @media amzn-kf8 { body { margin: 0 !important; padding: 0 !important; } }
-        html, body { margin: 0; padding: 0; background-color: #000000; }
-        .chunk-container { width: 100%; column-gap: 0; -webkit-column-gap: 0; }
-        .page { text-align: center; page-break-inside: avoid; margin: 0; padding: 0; }
-        .page-image { max-width: 100%; max-height: 100vh; height: auto; object-fit: contain; }
+        html, body { margin: 0; padding: 0; background-color: #000000; overflow: hidden; height: 100vh; width: 100vw; }
+        .chunk-container { display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; margin: 0; padding: 0; }
+        .page { display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; margin: 0; padding: 0; }
+        .page-image { max-width: 100vw; max-height: 100vh; height: 100%; width: 100%; object-fit: contain; object-position: center; }
     </style>
 </head>
 <body>
     <div class="chunk-container">
-    \\(imageElements)
+    \(imageElements)
     </div>
 </body>
 </html>

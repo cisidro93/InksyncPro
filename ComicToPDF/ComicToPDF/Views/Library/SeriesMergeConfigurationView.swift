@@ -145,6 +145,7 @@ struct SeriesMergeConfigurationView: View {
                 // If the Engine produced an array, safely pop it to the UI (already explicitly added to ConversionManager)
                 if let newBook = mergedBooks.first {
                     print("Merged Book generated natively: \(newBook.name)")
+                    NotificationCenter.default.post(name: Notification.Name("OpenMergedBook"), object: newBook)
                 }
                 isProcessing = false
                 dismiss()
