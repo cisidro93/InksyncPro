@@ -57,8 +57,18 @@ struct LocalFileImage: View {
             return image
         }.value
         
-        if let decoded = decoded {
-            self.loadedImage = decoded
+        // ✅ Apply Advanced Display Filters & Smart Crop Bounds securely on background thread Actor
+        if let rawDecoded = decoded {
+            let prefs = EBookPreferences.shared
+            let processed = await ImageProcessor.shared.process(
+                url: localURL,
+                image: rawDecoded,
+                isSmartCrop: prefs.isSmartCropEnabled,
+                contrast: prefs.autoContrastLevel,
+                saturation: prefs.saturationLevel,
+                warmth: prefs.warmthLevel
+            )
+            self.loadedImage = processed
         } else {
             self.isFailed = true
         }

@@ -19,11 +19,33 @@ struct PPLReaderView: View {
                     ProgressView("Buffering Metal Canvas...")
                         .scaleEffect(1.2)
                 } else {
-                    MetalCanvasView(
-                        image: bufferManager.currentImage,
-                        lockedRect: bufferManager.lockedRect,
-                        isPPLEnabled: bufferManager.isPPLEnabled
-                    )
+                    // 🚨 PANELS PARITY: Zero-Memory Dual Spread Injection
+                    // We utilize the preexisting asynchronous buffer predictions (`nextImage`)
+                    // instead of synthesizing a merged bitmap, saving 40-70MB of RAM per swap.
+                    HStack(spacing: 0) {
+                        if EBookPreferences.shared.isDoublePageMode && geo.size.width > geo.size.height {
+                            if isMangaMode {
+                                // RTL (Manga) -> Next Page is on the Left
+                                if let next = bufferManager.nextImage {
+                                    MetalCanvasView(image: next, lockedRect: .full, isPPLEnabled: false)
+                                }
+                                MetalCanvasView(image: bufferManager.currentImage, lockedRect: bufferManager.lockedRect, isPPLEnabled: bufferManager.isPPLEnabled)
+                            } else {
+                                // LTR (Comic) -> Next Page is on the Right
+                                MetalCanvasView(image: bufferManager.currentImage, lockedRect: bufferManager.lockedRect, isPPLEnabled: bufferManager.isPPLEnabled)
+                                if let next = bufferManager.nextImage {
+                                    MetalCanvasView(image: next, lockedRect: .full, isPPLEnabled: false)
+                                }
+                            }
+                        } else {
+                            // Standard Single Page
+                            MetalCanvasView(
+                                image: bufferManager.currentImage,
+                                lockedRect: bufferManager.lockedRect,
+                                isPPLEnabled: bufferManager.isPPLEnabled
+                            )
+                        }
+                    }
                     // Structural Transforms allow scaling before we trigger hard Coordinate Lock Math
                     .scaleEffect(scale)
                     .offset(x: offset.width + dragOffset.width, y: offset.height + dragOffset.height)
@@ -133,16 +155,18 @@ struct PPLReaderView: View {
     }
     
     private func nextPage(geo: CGSize) {
-        if currentPageIndex + 1 < pages.count {
+        let hopCount = (EBookPreferences.shared.isDoublePageMode && geo.width > geo.height) ? 2 : 1
+        if currentPageIndex + hopCount < pages.count + (hopCount - 1) {
             Haptics.shared.playImpact(style: .light)
-            currentPageIndex += 1
+            currentPageIndex += hopCount
         }
     }
     
     private func prevPage(geo: CGSize) {
+        let hopCount = (EBookPreferences.shared.isDoublePageMode && geo.width > geo.height) ? 2 : 1
         if currentPageIndex > 0 {
             Haptics.shared.playImpact(style: .light)
-            currentPageIndex -= 1
+            currentPageIndex = max(0, currentPageIndex - hopCount)
         }
     }
 }

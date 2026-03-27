@@ -21,6 +21,12 @@ class EBookPreferences: ObservableObject {
     // Reading Mode
     @AppStorage("ebook_pagination") var paginationMode: String = EBookPaginationMode.paged.rawValue
     
+    // ✅ Phase 30: Advanced Image Reading Filters (Chunky Parity)
+    @AppStorage("ebook_isSmartCropEnabled") var isSmartCropEnabled: Bool = false
+    @AppStorage("ebook_autoContrastLevel") var autoContrastLevel: Double = 1.0
+    @AppStorage("ebook_saturationLevel") var saturationLevel: Double = 1.0
+    @AppStorage("ebook_warmthLevel") var warmthLevel: Double = 0.0
+    
     var activeTheme: EBookTheme { EBookTheme(rawValue: themeRaw) ?? .auto }
 }
 

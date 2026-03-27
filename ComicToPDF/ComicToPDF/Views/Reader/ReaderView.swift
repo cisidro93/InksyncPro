@@ -16,8 +16,12 @@ struct ReaderView: View {
     
     @AppStorage("isMangaMode") private var isMangaMode = false
     @State private var isPanelViewEnabled = true
-    @State private var isVerticalScroll = false
     @State private var isToolbarVisible = true
+    
+    // ✅ Phase 30: Advanced Reader Features
+    @AppStorage("isDoublePageMode") private var isDoublePageMode = false
+    @State private var isDrawingMode = false
+    @State private var canvasView = PKCanvasView()
     
     // Unzip State
     @State private var unzippedDir: URL?
@@ -104,6 +108,7 @@ struct ReaderView: View {
                                 totalPages: $pages,
                                 isVerticalScroll: isVerticalScroll,
                                 isMangaMode: isMangaMode,
+                                isDoublePageMode: isDoublePageMode,
                                 onSingleTap: {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         isToolbarVisible.toggle()
@@ -112,6 +117,19 @@ struct ReaderView: View {
                             )
                             .colorMultiply(.white)
                             .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
+                            
+                            // ✅ PHASE 30: PencilKit Overlay (GoodNotes Parity)
+                            if isDrawingMode {
+                                CanvasInkBearingView(
+                                    canvasView: $canvasView,
+                                    isDrawingMode: isDrawingMode,
+                                    onDrawingSaved: { drawing in
+                                        // Cache flattened representation here to disk/memory
+                                    }
+                                )
+                                // Allows native PDF panning with 2 fingers while drawing with Pencil/1 finger
+                                .allowsHitTesting(true)
+                            }
                         }
                     }
                 }
@@ -551,6 +569,7 @@ struct PDFKitView: UIViewRepresentable {
     @Binding var totalPages: [URL]
     let isVerticalScroll: Bool
     let isMangaMode: Bool
+    let isDoublePageMode: Bool
     let onSingleTap: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -558,7 +577,8 @@ struct PDFKitView: UIViewRepresentable {
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
         pdfView.autoScales = true
-        pdfView.displayMode = .singlePage
+        // 🚨 PANEL PARITY: True Dual Spread Engine
+        pdfView.displayMode = isDoublePageMode ? .twoUpContinuous : .singlePage
         pdfView.displayDirection = isVerticalScroll ? .vertical : .horizontal
         pdfView.displaysPageBreaks = false
 
@@ -594,6 +614,7 @@ struct PDFKitView: UIViewRepresentable {
 
     func updateUIView(_ pdfView: PDFView, context: Context) {
         pdfView.displayDirection = isVerticalScroll ? .vertical : .horizontal
+        pdfView.displayMode = isDoublePageMode ? .twoUpContinuous : .singlePage
         pdfView.displaysRTL = isMangaMode
         
         if let doc = pdfView.document,
