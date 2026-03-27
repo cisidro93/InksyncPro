@@ -82,17 +82,28 @@ class CloudSyncManager: ObservableObject {
         Logger.shared.log("CloudSync: \(filesToProcess.count) file(s) found in inbox — queuing", category: "Cloud")
         for file in filesToProcess {
             let destinationURL = archiveFolder.appendingPathComponent(file.lastPathComponent)
-            do {
-                if FileManager.default.fileExists(atPath: destinationURL.path) {
-                    try FileManager.default.removeItem(at: destinationURL)
+            
+            // 🚨 COMPETITOR FIX: Enforce NSFileCoordinator writing locks on iCloud ubiquitous artifacts to block sync tearing
+            let writeCoordinator = NSFileCoordinator()
+            var coordinateError: NSError?
+            
+            writeCoordinator.coordinate(writingItemAt: file, options: .forMoving, writingItemAt: destinationURL, options: .forReplacing, error: &coordinateError) { safeSource, safeDest in
+                do {
+                    if FileManager.default.fileExists(atPath: safeDest.path) {
+                        try FileManager.default.removeItem(at: safeDest)
+                    }
+                    try FileManager.default.moveItem(at: safeSource, to: safeDest)
+                    
+                    Task { @MainActor in
+                        ConversionQueueManager.shared.enqueue(url: safeDest, settings: finalSettings, mode: .go)
+                    }
+                } catch {
+                    Logger.shared.log("CloudSync: failed to archive \(safeSource.lastPathComponent) — \(error.localizedDescription)", category: "Cloud", type: .error)
                 }
-                try FileManager.default.moveItem(at: file, to: destinationURL)
-                
-                await MainActor.run {
-                    ConversionQueueManager.shared.enqueue(url: destinationURL, settings: finalSettings, mode: .go)
-                }
-            } catch {
-                Logger.shared.log("CloudSync: failed to archive \(file.lastPathComponent) — \(error.localizedDescription)", category: "Cloud", type: .error)
+            }
+            
+            if let error = coordinateError {
+                Logger.shared.log("CloudSync: FileCoordinator refused lock for \(file.lastPathComponent) — \(error.localizedDescription)", category: "Cloud", type: .warning)
             }
         }
         

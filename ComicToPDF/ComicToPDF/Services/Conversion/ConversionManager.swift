@@ -40,7 +40,12 @@ class ConversionManager: ObservableObject {
     
     // MARK: - Internal State
     private let libraryFileName = "library.json"
-    internal var thumbnailCache = NSCache<NSString, UIImage>()
+    internal var thumbnailCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 150
+        cache.totalCostLimit = 1024 * 1024 * 300 // 300MB
+        return cache
+    }()
     
     // MARK: - Editor Session Cache
     // Delegated to EditorSessionManager to prevent "Death Spiral" UI blocking.
