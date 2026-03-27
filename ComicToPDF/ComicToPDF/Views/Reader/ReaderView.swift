@@ -77,16 +77,12 @@ struct ReaderView: View {
                     // ✅ READER CONTENT
                     if isVerticalScroll {
                         // VERTICAL WEBTOON MODE
+                        // 🚨 COMPETITOR FIX: Native SwiftUI AsyncImage poisons Jetsam thresholds over 300 pages.
+                        // Replacing with custom mapping bounds using LocalFileImage
                         ScrollView {
                             LazyVStack(spacing: 0) {
                                 ForEach(pages, id: \.self) { pageURL in
-                                    AsyncImage(url: pageURL) { phase in
-                                        if let image = phase.image {
-                                            image.resizable().aspectRatio(contentMode: .fit)
-                                        } else {
-                                            Color.gray.opacity(0.1).frame(height: 300)
-                                        }
-                                    }
+                                    LocalFileImage(url: pageURL)
                                 }
                             }
                         }

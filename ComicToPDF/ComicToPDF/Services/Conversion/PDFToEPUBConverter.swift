@@ -127,12 +127,28 @@ class PDFToEPUBConverter {
         """
         try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
-        // 1. Prepare Batches for Splitting
-        var batches: [[(name: String, data: Data)]] = []
-        var currentBatch: [(name: String, data: Data)] = []
+        // 1. Prepare Batches for Streaming Disk IO (🚨 COMPETITOR FIX)
+        var batchDirectories: [URL] = []
+        var batchImageManifests: [[String]] = []
+        
+        var currentBatchIndex = 0
+        var currentBatchImages: [String] = []
         var currentBatchSize: Int64 = 0
+        
         let limit = options.settings?.splitMode.limit ?? FileSizeSplitMode.none.limit
         var firstBatchCoverData: Data? = nil
+        
+        // Helper to setup a batch directory immediately upon creation
+        func createBatchDir(index: Int) throws -> URL {
+            let batchDir = tempDir.appendingPathComponent("EPUB_Part_\(index)")
+            let oebpsDir = batchDir.appendingPathComponent("OEBPS")
+            let imagesDir = oebpsDir.appendingPathComponent("images")
+            try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+            return batchDir
+        }
+        
+        var currentBatchDir = try createBatchDir(index: 0)
+        batchDirectories.append(currentBatchDir)
         
         // Extract pages as images
         for pageIndex in 0..<pageCount {
@@ -220,41 +236,50 @@ class PDFToEPUBConverter {
                 let itemSize = Int64(finalData.count)
                 let overheadBuffer: Int64 = 500 * 1024
                 
-                if limit != Int64.max && (currentBatchSize + itemSize + overheadBuffer) > limit && !currentBatch.isEmpty {
-                    batches.append(currentBatch)
-                    currentBatch = []
+                // Splitting boundary check
+                if limit != Int64.max && (currentBatchSize + itemSize + overheadBuffer) > limit && !currentBatchImages.isEmpty {
+                    // Close out the old batch
+                    batchImageManifests.append(currentBatchImages)
+                    
+                    // Startup the new batch
+                    currentBatchIndex += 1
+                    currentBatchDir = try createBatchDir(index: currentBatchIndex)
+                    batchDirectories.append(currentBatchDir)
+                    
+                    currentBatchImages = []
                     currentBatchSize = 0
                 }
+                
+                // 🚨 COMPETITOR FIX: Instant Direct IO Writing (Zero Byte Retention)
+                let imageWriteURL = currentBatchDir.appendingPathComponent("OEBPS/images").appendingPathComponent(imageName)
+                try? finalData.write(to: imageWriteURL)
                 
                 if pageIndex == 0 {
                     firstBatchCoverData = finalData
                 }
                 
-                currentBatch.append((name: imageName, data: finalData))
+                currentBatchImages.append(imageName)
                 currentBatchSize += itemSize
             }
         }
         
-        if !currentBatch.isEmpty {
-            batches.append(currentBatch)
+        if !currentBatchImages.isEmpty {
+            batchImageManifests.append(currentBatchImages)
         }
         
         var generatedFiles: [URL] = []
         
-        // 2. Build EPUBs for each Batch
-        for (batchIndex, batch) in batches.enumerated() {
-            let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
+        // 2. Build EPUBs for each Batch Directory
+        for (batchIndex, batchDir) in batchDirectories.enumerated() {
+            let partSuffix = batchDirectories.count > 1 ? " (pt \(batchIndex + 1))" : ""
             let baseName = title + partSuffix
+            let imageFiles = batchImageManifests[batchIndex]
             
-            let batchDir = tempDir.appendingPathComponent("EPUB_Part_\(batchIndex)")
             let oebpsDir = batchDir.appendingPathComponent("OEBPS")
             let metaInfDir = batchDir.appendingPathComponent("META-INF")
             let imagesDir = oebpsDir.appendingPathComponent("images")
             
-            try? FileManager.default.removeItem(at: batchDir)
-            try FileManager.default.createDirectory(at: oebpsDir, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
             
             // Write mimetype
             try "application/epub+zip".write(to: batchDir.appendingPathComponent("mimetype"), atomically: true, encoding: String.Encoding.utf8)
@@ -270,24 +295,15 @@ class PDFToEPUBConverter {
             """
             try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: String.Encoding.utf8)
             
-            var imageFiles: [String] = []
-            
-            // Write chunk images
-            for item in batch {
-                let imageURL = imagesDir.appendingPathComponent(item.name)
-                try item.data.write(to: imageURL)
-                imageFiles.append(item.name)
-            }
-            
             // coverHtmlRef removed
             var coverManifestItem = ""
             var coverSpineItem = ""
             
             // ✅ Dynamic Cover Generation for Split Volumes
-            if let coverData = firstBatchCoverData, batches.count > 1 {
-                print("🎨 PDF dynamically generating Cover Badge for Part \(batchIndex + 1) of \(batches.count)")
+            if let coverData = firstBatchCoverData, batchDirectories.count > 1 {
+                print("🎨 PDF dynamically generating Cover Badge for Part \(batchIndex + 1) of \(batchDirectories.count)")
                 
-                let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batches.count)
+                let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batchDirectories.count)
                 let coverFilename = "badged_cover.jpg"
                 try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
                 coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
