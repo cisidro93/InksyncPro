@@ -12,6 +12,7 @@ class SmartImportViewModel: ObservableObject {
     @Published var destinationDevice: SDRegisteredDevice?
     @Published var flaggedPageIndices: [Int] = []
     @Published var overallConfidence: Double = 0.0
+    @Published var isAnalysing: Bool = true
     @Published var extractionError: String? = nil
     @Published var seriesMemory: SDSeriesMemory? = nil
     @Published var showAdvanced: Bool = false
