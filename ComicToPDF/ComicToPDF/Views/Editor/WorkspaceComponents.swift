@@ -575,7 +575,7 @@ struct CoverStudioView: View {
                           let image = UIImage(data: data),
                           let jpegData = image.jpegData(compressionQuality: 0.9) else { return nil }
                     
-                    let coversDir = ConversionManager.getCoversDirectory()
+                    let coversDir = await ConversionManager.getCoversDirectory()
                     let destURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")
                     try? jpegData.write(to: destURL)
                     return destURL

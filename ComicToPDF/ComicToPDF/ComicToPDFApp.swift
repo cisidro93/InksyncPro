@@ -16,7 +16,6 @@ struct InksyncProApp: App {
     var body: some Scene {
         WindowGroup { 
             ContentView()
-                .environmentObject(ConversionManager())
                 // ✅ SwiftData Engine Attachment
                 .modelContainer(for: [SDConvertedPDF.self, SDPDFCollection.self, SDRegisteredDevice.self, SDAnnotation.self, SDPageModel.self, SDSeriesMemory.self])
                 .onAppear {
