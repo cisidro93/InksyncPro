@@ -127,22 +127,33 @@ class AnnotationStore: ObservableObject {
     func add(_ annotation: Annotation) {
         var newAnnotation = annotation
         
-        // Pre-run lightweight NLP tagging
-        if let text = newAnnotation.selectedText, newAnnotation.kind == .highlight, newAnnotation.tags == nil {
-            newAnnotation.tags = extractNLPKeywords(from: text)
-        }
-        
+        // Optimistically insert into the active binding array immediately
         store[newAnnotation.pdfID, default: []].append(newAnnotation)
         
-        if let context = modelContext {
-            let sdModel = SDAnnotation(from: newAnnotation)
-            context.insert(sdModel)
-            try? context.save()
+        // Execute heavy NLP Lexical Tagging asynchronously to prevent Main Thread 120Hz lockups
+        Task.detached(priority: .background) {
+            var backgroundAnnotation = newAnnotation
+            if let text = backgroundAnnotation.selectedText, backgroundAnnotation.kind == .highlight, backgroundAnnotation.tags == nil {
+                backgroundAnnotation.tags = await self.extractNLPKeywords(from: text)
+            }
+            
+            // Sync final Zettelkasten SDAnnotation to disk
+            await MainActor.run {
+                if let index = self.store[backgroundAnnotation.pdfID]?.firstIndex(where: { $0.id == backgroundAnnotation.id }) {
+                    self.store[backgroundAnnotation.pdfID]?[index] = backgroundAnnotation
+                }
+                
+                if let context = self.modelContext {
+                    let sdModel = SDAnnotation(from: backgroundAnnotation)
+                    context.insert(sdModel)
+                    try? context.save()
+                }
+            }
         }
     }
     
-    /// Executes Apple's deep lexical and entity extraction algorithms to surface contextual tags
-    private func extractNLPKeywords(from text: String) -> [String] {
+    /// Executes Apple's deep lexical and entity extraction algorithms to surface contextual tags (Nonisolated to execute safely off-actor)
+    nonisolated private func extractNLPKeywords(from text: String) async -> [String] {
         let tagger = NLTagger(tagSchemes: [.lexicalClass, .nameType])
         tagger.string = text
         
