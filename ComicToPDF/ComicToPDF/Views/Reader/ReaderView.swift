@@ -605,6 +605,14 @@ struct PDFKitView: UIViewRepresentable {
             }
         }
     }
+    
+    // ✅ PHASE 24: CoreGraphics Memory Severance
+    // Explicitly destroys the CGPDFDocument bridge when SwiftUI collapses the representable,
+    // permanently ending the dreaded iPadOS backend Memory leak.
+    static func dismantleUIView(_ uiView: PDFView, coordinator: Coordinator) {
+        uiView.document = nil
+        uiView.removeFromSuperview()
+    }
 
     class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var parent: PDFKitView
