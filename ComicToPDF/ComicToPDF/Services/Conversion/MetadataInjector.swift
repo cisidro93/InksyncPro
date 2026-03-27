@@ -149,35 +149,10 @@ final class MetadataInjector {
                         }
                     }
                     
-                    // 2. Original Resolution Check (Removed Fixed-Layout requirements)
-                    // We only inject the detected resolution to help kindle scale natively without letterbox framing.
-                    if !opfString.contains("<meta name=\"original-resolution\"") {
-                         if let range = opfString.range(of: "</metadata>") {
-                             
-                             // ✅ RESOLUTION EXTRACTION: Find first image to set correct original-resolution
-                             var resolutionTag = ""
-                             if let imageEntry = sourceArchive.makeIterator().first(where: { 
-                                 $0.path.contains("images") && 
-                                 ($0.path.hasSuffix(".jpg") || $0.path.hasSuffix(".jpeg") || $0.path.hasSuffix(".png")) 
-                             }) {
-                                 var imageData = Data()
-                                 _ = try? sourceArchive.extract(imageEntry) { imageData.append($0) }
-                                 if let image = UIImage(data: imageData) {
-                                     let w = Int(image.size.width)
-                                     let h = Int(image.size.height)
-                                     resolutionTag = "\n    <meta name=\"original-resolution\" content=\"\(w)x\(h)\"/>"
-                                     Logger.shared.log("Detected Key Resolution: \(w)x\(h)", category: "Injection")
-                                 }
-                             }
-                             
-                             let tag = """
-\(resolutionTag)
-"""
-                             opfString.insert(contentsOf: tag, at: range.lowerBound)
-                             modified = true
-                             Logger.shared.log("Injected Fallback Resolution", category: "Injection")
-                         }
-                    }
+                    // 2. Hardware Clamping Removal
+                    // We intentionally NO LONGER inject a hard-coded original-resolution based on physical image pixel dimensions.
+                    // Doing so forces the Kindle Scribe's proprietary renderer to hardware clamp its output canvas to those
+                    // exact dimensions, completely breaking dynamic 100vw/100vh SVG scaling and introducing Death Margins.
                     
                     // 3. Embed ComicInfo as Base64 (Zero Footprint)
                     // Kindle rejects valid XML files if they aren't in the Manifest, and rejects them IN the manifest if they aren't core types.

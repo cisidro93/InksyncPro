@@ -38,16 +38,10 @@ struct ImageProcessor {
             let targetSize = (settings.optimizeForDevice ? settings.targetDeviceProfile.resolution : defaultSize) ?? defaultSize
             
             // Use vImage for high-performance resizing
+            // Downsampling only. We do NOT forcefully burn in letterbox/pillarbox padding here anymore.
+            // SVG 'preserveAspectRatio' will handle dynamic viewport centering at the presentation layer.
             if let resized = resize(image: finalImage, toFit: targetSize) {
                 finalImage = resized
-            }
-            
-            // 1.5. Force Full-Bleed (KCC Aspect Ratio Padding Trick)
-            // We only do this trick if they explicitly want to optimize for an E-Reader screen
-            if settings.optimizeForDevice {
-                if let padded = pad(image: finalImage, toFitAspectOf: targetSize, isManga: settings.mangaMode) {
-                    finalImage = padded
-                }
             }
         }
         

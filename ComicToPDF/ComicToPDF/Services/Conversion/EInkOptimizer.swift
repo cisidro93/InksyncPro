@@ -253,9 +253,9 @@ class EInkOptimizer {
             return cgImage
         }
         
-        // Add a slight 2% padding back so it's not literally touching the edge
-        let paddingX = Int(Double(width) * 0.02)
-        let paddingY = Int(Double(height) * 0.02)
+        // True Edge-to-Edge: 0% padding
+        let paddingX = 0
+        let paddingY = 0
         
         let finalX = max(0, minX - paddingX)
         let finalY = max(0, minY - paddingY)
