@@ -27,7 +27,7 @@ final class ConversionOrchestrator {
         }
         
         var coverOverrideData: Data? = nil
-        if let url = await MainActor.run({ manager.getCoverURL(for: pdf) }) {
+        if let url = await MainActor.run(body: { manager.getCoverURL(for: pdf) }) {
             coverOverrideData = try? Data(contentsOf: url)
         }
         
@@ -118,7 +118,7 @@ final class ConversionOrchestrator {
             }
             
             var coverOverrideData: Data? = nil
-            if let url = await MainActor.run({ manager.getCoverURL(for: pdf) }) {
+            if let url = await MainActor.run(body: { manager.getCoverURL(for: pdf) }) {
                 coverOverrideData = try? Data(contentsOf: url)
             }
             
@@ -215,7 +215,7 @@ final class ConversionOrchestrator {
                     let chapter = Chapter(title: chapterTitle, pageIndex: chapterStartIndex)
                     
                     if firstCoverImageData == nil {
-                        if let url = await MainActor.run({ manager.getCoverURL(for: file) }) {
+                        if let url = await MainActor.run(body: { manager.getCoverURL(for: file) }) {
                             firstCoverImageData = try? Data(contentsOf: url)
                         }
                         if firstCoverImageData == nil, let firstImageURL = images.first { 
@@ -302,7 +302,7 @@ final class ConversionOrchestrator {
                 if epubSizeLimit != Int64.max && !currentEPUBBatch.isEmpty && (currentEPUBBatchSize + fileSize) > epubSizeLimit { generatedBatches.append(currentEPUBBatch); currentEPUBBatch = []; currentEPUBBatchSize = 0 }
                 
                 if firstEPUBFileCoverData == nil {
-                    if let url = await MainActor.run({ manager.getCoverURL(for: file) }) {
+                    if let url = await MainActor.run(body: { manager.getCoverURL(for: file) }) {
                         firstEPUBFileCoverData = try? Data(contentsOf: url)
                     }
                     if firstEPUBFileCoverData == nil {
@@ -320,7 +320,7 @@ final class ConversionOrchestrator {
                 let resultingURLs: [URL]
                 
                 var currentCoverOverride: Data? = nil
-                if let url = await MainActor.run({ manager.getCoverURL(for: file) }) {
+                if let url = await MainActor.run(body: { manager.getCoverURL(for: file) }) {
                      currentCoverOverride = try? Data(contentsOf: url)
                 }
                 

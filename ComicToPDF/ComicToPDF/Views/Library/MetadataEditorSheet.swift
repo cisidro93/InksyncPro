@@ -216,7 +216,7 @@ struct MetadataEditorSheet: View {
                 if let suggested = renameString {
                     newSuggestedCacheName = suggested
                     showingRenamePrompt = true
-                } else if info != nil {
+                } else if parsedInfo != nil {
                     saveChanges()
                 }
             }

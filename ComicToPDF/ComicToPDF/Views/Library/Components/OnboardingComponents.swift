@@ -8,23 +8,28 @@ struct OnboardingSlideView: View {
     let colors: [Color]
     let index: Int
     @Binding var currentIndex: Int
+    @Environment(\.horizontalSizeClass) var sizeClass
     
     @State private var isVisible = false
     
+    private var isPad: Bool {
+        sizeClass == .regular || UIDevice.current.userInterfaceIdiom == .pad
+    }
+    
     var body: some View {
-        VStack(spacing: 30) {
-            Spacer().frame(height: 40)
+        VStack(spacing: isPad ? 50 : 30) {
+            Spacer().frame(height: isPad ? 80 : 40)
             
             // Hero Icon
             ZStack {
                 Circle()
                     .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 140, height: 140)
-                    .blur(radius: 20)
+                    .frame(width: isPad ? 240 : 140, height: isPad ? 240 : 140)
+                    .blur(radius: isPad ? 40 : 20)
                     .opacity(isVisible ? 0.6 : 0)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 70, weight: .light))
+                    .font(.system(size: isPad ? 110 : 70, weight: .light))
                     .foregroundStyle(LinearGradient(colors: [.white, colors.first ?? .white], startPoint: .top, endPoint: .bottom))
                     .shadow(color: colors.last?.opacity(0.5) ?? .clear, radius: 10, y: 5)
                     .scaleEffect(isVisible ? 1 : 0.5)
@@ -33,9 +38,9 @@ struct OnboardingSlideView: View {
             .padding(.bottom, 20)
             
             // Typography
-            VStack(spacing: 16) {
+            VStack(spacing: isPad ? 24 : 16) {
                 Text(title)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.system(size: isPad ? 18 : 14, weight: .bold, design: .rounded))
                     .tracking(2)
                     .foregroundColor(colors.first)
                     .textCase(.uppercase)
@@ -43,18 +48,18 @@ struct OnboardingSlideView: View {
                     .opacity(isVisible ? 1 : 0)
                 
                 Text(headline)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .font(.system(size: isPad ? 56 : 34, weight: .bold, design: .rounded))
                     .multilineTextAlignment(.center)
                     .foregroundColor(.white)
                     .offset(y: isVisible ? 0 : 20)
                     .opacity(isVisible ? 1 : 0)
                 
                 Text(description)
-                    .font(.system(size: 16, weight: .regular, design: .rounded))
+                    .font(.system(size: isPad ? 24 : 16, weight: .regular, design: .rounded))
                     .multilineTextAlignment(.center)
                     .foregroundColor(Theme.textSecondary)
-                    .padding(.horizontal, 32)
-                    .lineSpacing(4)
+                    .padding(.horizontal, isPad ? 80 : 32)
+                    .lineSpacing(isPad ? 8 : 4)
                     .offset(y: isVisible ? 0 : 20)
                     .opacity(isVisible ? 1 : 0)
             }
@@ -86,6 +91,11 @@ struct PremiumCTAButton: View {
     let icon: String?
     let colors: [Color]
     let action: () -> Void
+    @Environment(\.horizontalSizeClass) var sizeClass
+    
+    private var isPad: Bool {
+        sizeClass == .regular || UIDevice.current.userInterfaceIdiom == .pad
+    }
     
     var body: some View {
         Button(action: {
@@ -93,17 +103,17 @@ struct PremiumCTAButton: View {
             generator.impactOccurred()
             action()
         }) {
-            HStack(spacing: 8) {
+            HStack(spacing: isPad ? 12 : 8) {
                 Text(title)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: isPad ? 22 : 18, weight: .bold, design: .rounded))
                 if let ic = icon {
                     Image(systemName: ic)
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: isPad ? 22 : 18, weight: .bold))
                 }
             }
             .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 56)
+            .frame(maxWidth: isPad ? 400 : .infinity)
+            .frame(height: isPad ? 68 : 56)
             .background(
                 LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
             )
