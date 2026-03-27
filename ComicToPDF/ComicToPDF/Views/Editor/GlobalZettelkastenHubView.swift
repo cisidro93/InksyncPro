@@ -147,12 +147,19 @@ struct GlobalZettelkastenHubView: View {
     private func handleCSVImport(result: Result<[URL], Error>) {
         if case .success(let urls) = result, let url = urls.first {
             isImporting = true
+            
+            // Unpack SwiftData Container securely for background Actor injection
+            let container = self.modelContext.container
+            
             Task.detached(priority: .userInitiated) {
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 
                 do {
-                    let count = try await ReadwiseImportService.shared.importReadwiseCSV(from: url, context: self.modelContext)
+                    // Phase 32 Fix: Initialize an isolated context off the MainActor
+                    let backgroundContext = ModelContext(container)
+                    let count = try await ReadwiseImportService.shared.importReadwiseCSV(from: url, context: backgroundContext)
+                    
                     await MainActor.run {
                         self.isImporting = false
                         self.importMessage = "Successfully imported \(count) highlights from Readwise."
