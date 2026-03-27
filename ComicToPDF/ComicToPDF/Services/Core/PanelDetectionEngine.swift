@@ -35,9 +35,10 @@ protocol PanelProvider {
 class EnsemblePanelDetector {
     private let visionProvider = VisionPanelProvider()
     private let deepScanProvider = DeepScanPanelProvider()
+    private static let sharedContext = CIContext(options: [.useSoftwareRenderer: false])
     
     func detect(in image: UIImage) async -> [PanelCandidate] {
-        let context = CIContext()
+        let context = Self.sharedContext
         
         // 1. Run Vision Baseline (Fast, Saliency-Aware, and creates Virtual Text bounds)
         var candidates = await visionProvider.detectPanels(in: image, context: context)

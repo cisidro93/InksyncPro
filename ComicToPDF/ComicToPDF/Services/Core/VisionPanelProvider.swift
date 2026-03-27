@@ -7,10 +7,11 @@ class VisionPanelProvider: PanelProvider {
         guard let cgImage = image.cgImage else { return [] }
         
         return await withCheckedContinuation { continuation in
-            var requests: [VNRequest] = []
-            
-            // 1. Rectangle Request (Baseline)
-            let rectRequest = VNDetectRectanglesRequest()
+            autoreleasepool {
+                var requests: [VNRequest] = []
+                
+                // 1. Rectangle Request (Baseline)
+                let rectRequest = VNDetectRectanglesRequest()
             rectRequest.minimumConfidence = 0.6
             rectRequest.minimumSize = 0.1
             rectRequest.minimumAspectRatio = 0.1 // Task 1 Requirement
@@ -104,6 +105,7 @@ class VisionPanelProvider: PanelProvider {
             } catch {
                 print("❌ [VisionProvider] Request failed: \(error)")
                 continuation.resume(returning: [])
+            }
             }
         }
     }

@@ -8,7 +8,8 @@ class DeepScanPanelProvider: PanelProvider {
         guard let cgImage = image.cgImage else { return [] }
         
         return await withCheckedContinuation { continuation in
-            let request = VNDetectContoursRequest { request, error in
+            autoreleasepool {
+                let request = VNDetectContoursRequest { request, error in
                 guard let results = request.results as? [VNContoursObservation], error == nil else {
                     continuation.resume(returning: [])
                     return
@@ -73,6 +74,7 @@ class DeepScanPanelProvider: PanelProvider {
             } catch {
                 print("❌ [DeepScan] Contour Request failed: \(error)")
                 continuation.resume(returning: [])
+            }
             }
         }
     }
