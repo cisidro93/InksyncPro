@@ -33,11 +33,12 @@ struct ZipUtilities {
                         if let document = PDFDocument(url: sourceURL) {
                             let pageCount = document.pageCount
                             for i in 0..<pageCount {
-                                if let page = document.page(at: i) {
-                                    // Render full page
-                                    let pageRect = page.bounds(for: .mediaBox)
-                                    let renderer = UIGraphicsImageRenderer(size: pageRect.size)
-                                    let image = renderer.image { ctx in
+                                try autoreleasepool {
+                                    if let page = document.page(at: i) {
+                                        // Render full page
+                                        let pageRect = page.bounds(for: .mediaBox)
+                                        let renderer = UIGraphicsImageRenderer(size: pageRect.size)
+                                        let image = renderer.image { ctx in
                                         UIColor.white.set()
                                         ctx.fill(pageRect)
                                         ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
@@ -48,9 +49,10 @@ struct ZipUtilities {
                                     // Save
                                     let pageName = String(format: "%04d.jpg", i)
                                     let fileURL = tempDir.appendingPathComponent(pageName)
-                                    if let data = image.jpegData(compressionQuality: 0.9) {
-                                        try data.write(to: fileURL)
-                                        extractedFiles.append(fileURL)
+                                        if let data = image.jpegData(compressionQuality: 0.9) {
+                                            try data.write(to: fileURL)
+                                            extractedFiles.append(fileURL)
+                                        }
                                     }
                                 }
                             }
