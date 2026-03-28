@@ -376,61 +376,7 @@ class ConversionManager: ObservableObject {
     ///   - pdf: The ConvertedPDF object to modify
     ///   - pageIndices: Set of 0-based page indices to remove
     func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>) async throws {
-        guard !pageIndices.isEmpty else { return }
-        
-        await MainActor.run { processingStatus = "Deleting \(pageIndices.count) pages..." }
-        
-        // 1. Extract CBZ to Temp Directory
-        let result = try await ZipUtilities.extractComic(from: pdf.url)
-        let tempDir = result.workingDir
-        let imageFiles = result.imageURLs
-        
-        // Ensure cleanup even on error
-        defer { 
-            try? FileManager.default.removeItem(at: tempDir)
-            Task { await MainActor.run { processingStatus = "" } }
-        }
-
-        // 2. Delete Selected Files
-        let sortedIndices = pageIndices.sorted(by: >)
-        var deletedCount = 0
-        
-        for index in sortedIndices {
-            if index < imageFiles.count {
-                let fileURL = imageFiles[index]
-                try FileManager.default.removeItem(at: fileURL)
-                deletedCount += 1
-            }
-        }
-        
-        guard deletedCount > 0 else { return }
-        
-        // 3. Re-Create CBZ Archive
-        let newCBZURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
-        try await ZipUtilities.zipDirectory(tempDir, to: newCBZURL)
-        
-        // 4. Atomically Swap Files
-        if FileManager.default.fileExists(atPath: pdf.url.path) {
-            try FileManager.default.removeItem(at: pdf.url)
-        }
-        try FileManager.default.moveItem(at: newCBZURL, to: pdf.url)
-        
-        // 5. Update Metadata
-        let attr = try FileManager.default.attributesOfItem(atPath: pdf.url.path)
-        let newSize = attr[.size] as? Int64 ?? 0
-        
-        await MainActor.run {
-            if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                convertedPDFs[idx].pageCount -= deletedCount
-                convertedPDFs[idx].fileSize = newSize
-                
-                // Remove associated data
-                WorkspaceSessionManager.shared.panelOverrides[pdf.id] = nil
-                
-                saveLibrary()
-            }
-            Logger.shared.log("Deleted \(deletedCount) pages from \(pdf.name)", category: "Edit")
-        }
+        try await ArchiveMutatorService.shared.deletePages(from: pdf, pageIndices: pageIndices, manager: self)
     }
     
     func addConvertedPDF(url: URL, pageCount: Int = 0, fileSize: Int64 = 0, duration: TimeInterval = 0) {
@@ -670,6 +616,9 @@ class ConversionManager: ObservableObject {
     }
     
     func extractSmartPanels(from url: URL) async throws -> [Int: [PanelExtractor.Panel]]? {
+        return try await SmartPanelService.shared.extractSmartPanels(from: url)
+    }
+/*
         await MainActor.run { processingStatus = "Reading Source Panels..." } // Re-assert status
         
         Logger.shared.log("Inspection Started: \(url.lastPathComponent)", category: "SmartPanels")
@@ -834,6 +783,7 @@ class ConversionManager: ObservableObject {
         // Prevent overwriting with empty data if ComicInfo exists but has no panels
         return result.isEmpty ? nil : result
     }
+*/
     
     // Helpers
     func autoOrganize() {}
@@ -914,6 +864,9 @@ class ConversionManager: ObservableObject {
     }
     
     func reorderPages(_ pdf: ConvertedPDF, newOrder: [Int]) async throws -> URL {
+        return try await ArchiveMutatorService.shared.reorderPages(pdf, newOrder: newOrder, manager: self)
+    }
+/*
         // Physical Reorder: We create a new CBZ with files renamed to match the new order.
         let fileManager = FileManager.default
         let url = pdf.url
@@ -985,9 +938,13 @@ class ConversionManager: ObservableObject {
         
         return url
     }
+*/
     
     // MARK: - Trimming Logic
     func trimPages(from pdf: ConvertedPDF, pageIndices: Set<Int>, trim: (top: Double, bottom: Double, left: Double, right: Double)) async throws {
+        try await ArchiveMutatorService.shared.trimPages(from: pdf, pageIndices: pageIndices, trim: trim, manager: self)
+    }
+/*
         // Validate type: Must be an archive
         let ext = pdf.url.pathExtension.lowercased()
         guard ["cbz", "zip", "epub"].contains(ext) else {
@@ -1110,9 +1067,13 @@ class ConversionManager: ObservableObject {
             }
         }
     }
+*/
     
     // MARK: - Advanced Cover Studio
     func extractCoverVariant(from pdf: ConvertedPDF, pageIndex: Int) async throws {
+        try await ArchiveMutatorService.shared.extractCoverVariant(from: pdf, pageIndex: pageIndex, manager: self)
+    }
+/*
         let fileManager = FileManager.default
         
         // Ensure "Covers" sandbox directory exists
@@ -1161,6 +1122,7 @@ class ConversionManager: ObservableObject {
             }
         }
     }
+*/
     
     func setActiveCoverVariant(_ variantID: UUID?, for pdf: ConvertedPDF) async {
         await MainActor.run {
@@ -1219,6 +1181,9 @@ class ConversionManager: ObservableObject {
     
     // Split / Extract Logic
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool) async throws -> URL {
+        return try await ArchiveMutatorService.shared.extractPages(from: pdf, pageIndices: pageIndices, asImages: asImages, manager: self)
+    }
+/*
         let fileManager = FileManager.default
         let newName = "\(pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: ""))_Split"
         let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("\(newName).cbz")
@@ -1285,6 +1250,7 @@ class ConversionManager: ObservableObject {
         
         return outputURL
     }
+*/
     
     func extractPages(from pdf: ConvertedPDF, pageIndices: Range<Int>, asImages: Bool) async throws -> URL {
         return try await extractPages(from: pdf, pageIndices: Array(pageIndices), asImages: asImages)
@@ -1293,6 +1259,9 @@ class ConversionManager: ObservableObject {
     // MARK: - Comic Vault Export
     // Renamed to clarify intent: We are creating a NEW export file with embedded metadata
     func exportForCloudSync(_ pdf: ConvertedPDF) async -> URL? {
+        return await ExportOrchestrator.shared.exportForCloudSync(pdf, manager: self)
+    }
+/*
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
         
@@ -1399,9 +1368,13 @@ class ConversionManager: ObservableObject {
             return nil
         }
     }
+*/
     
     // MARK: - KFX Export
     func exportForKFX(_ pdf: ConvertedPDF) async -> URL? {
+        return await ExportOrchestrator.shared.exportForKFX(pdf, manager: self)
+    }
+/*
         isConverting = true
         processingStatus = "Building KFX Package..."
         statusMessage = "Extracting images and scripts..."
@@ -1424,12 +1397,16 @@ class ConversionManager: ObservableObject {
             )
             return outputURL
         } catch {
-            Logger.shared.log("❌ KFX Export Failed: \\(error.localizedDescription)", category: "Export", type: .error)
+            Logger.shared.log("❌ KFX Export Failed: \(error.localizedDescription)", category: "Export", type: .error)
             return nil
         }
     }
+*/
     
     func exportForLocalSideload(_ pdf: ConvertedPDF) async -> URL? {
+        return await ExportOrchestrator.shared.exportForLocalSideload(pdf, manager: self)
+    }
+/*
         // Track 2: Local High-Quality
         let fileManager = FileManager.default
         let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -1499,6 +1476,7 @@ class ConversionManager: ObservableObject {
             return nil
         }
     }
+*/
     
     func embedPanels(for pdf: ConvertedPDF) async {
         await MetadataInjector.shared.embedPanels(for: pdf, manager: self)
@@ -1507,6 +1485,7 @@ class ConversionManager: ObservableObject {
     func injectMetadata(into archiveURL: URL, panels: [Int: [PanelExtractor.Panel]], metadata: PDFMetadata) async throws {
         try await MetadataInjector.shared.injectMetadata(into: archiveURL, panels: panels, metadata: metadata, manager: self)
     }
+/*
 // MARK: - Sidecar Models (Internal Use)
 struct SmartPanel: Codable {
     let x: Double
@@ -1612,6 +1591,7 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
         }
     }
 }
+*/
 
 // MARK: - Pre-Flight Validation & Export
 
