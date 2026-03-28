@@ -111,8 +111,22 @@ class AdaptiveLearningManager: ObservableObject {
         return try? JSONEncoder().encode(state)
     }
     
-    func importState(from data: Data) throws {
+    enum ImportResult {
+        case success
+        case identical
+    }
+    
+    func importState(from data: Data) throws -> ImportResult {
         let state = try JSONDecoder().decode(EngineStateDTO.self, from: data)
+        
+        let isIdentical = state.baseConfidence == self.currentBaseConfidence &&
+                          state.minimumSize == self.currentMinimumSize &&
+                          state.deletedPanels == self.deletedPanelsCount &&
+                          state.addedPanels == self.addedPanelsCount &&
+                          state.resizedPanels == self.resizedPanelsCount
+                          
+        if isIdentical { return .identical }
+        
         DispatchQueue.main.async {
             self.currentBaseConfidence = state.baseConfidence
             self.currentMinimumSize = state.minimumSize
@@ -121,5 +135,6 @@ class AdaptiveLearningManager: ObservableObject {
             self.resizedPanelsCount = state.resizedPanels
             Logger.shared.log("AI: Successfully imported Engine State. Conf:\(state.baseConfidence), MinSize:\(state.minimumSize)", category: "AI", type: .success)
         }
+        return .success
     }
 }
