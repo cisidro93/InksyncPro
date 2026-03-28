@@ -23,6 +23,10 @@ actor LibraryScanner {
         if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
             while let fileURL = enumerator.nextObject() as? URL {
                 await Task.yield()
+                
+                // 🚨 PHASE 8 QUARANTINE: Ignore the Vault!
+                if fileURL.path.contains("Recovered_Vault") { continue }
+                
                 let ext = fileURL.pathExtension.lowercased()
                 if ["pdf", "cbz", "zip", "epub"].contains(ext) {
                     if !pathSet.contains(fileURL.lastPathComponent) {

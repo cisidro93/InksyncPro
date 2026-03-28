@@ -85,6 +85,10 @@ struct ModernLibraryView: View {
                         onVaultToggle: handleVaultToggle,
                         onSelectAll: handleSelectAll
                     )
+                    
+                    // 🚨 iCloud Recovery System
+                    LibraryRecoveryBannerView()
+                        .environmentObject(conversionManager)
 
                     // MARK: - Discrete Layout Layers
                     if viewStyle == .list {
@@ -193,6 +197,8 @@ struct ModernLibraryView: View {
         case .batchMetadata(let pdfs): BatchMetadataEditorView(selectedPDFs: pdfs)
         case .cognitiveBatchRenamer(let pdfs):
             BatchLocalRenamerView(pdfs: pdfs).environmentObject(conversionManager)
+        case .duplicates:
+            DuplicateResolutionView().environmentObject(conversionManager)
         case .seriesAssignment(let pdf, let isBatch, let selection):
             CollectionEditorSheet { name, icon, color in
                 if let singlePDF = pdf, !name.trimmingCharacters(in: .whitespaces).isEmpty {

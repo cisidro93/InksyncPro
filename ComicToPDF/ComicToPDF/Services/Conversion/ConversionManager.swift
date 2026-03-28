@@ -81,7 +81,12 @@ class ConversionManager: ObservableObject {
     
     init() {
         loadLibrary()
-        scanLibrary()
+        
+        Task {
+            await QuarantineManager.shared.assessFirstLaunchOrphans()
+            await MainActor.run { self.scanLibrary() }
+        }
+        
         createWelcomeFile()
         performStartupOptimization()
         Task { await MainActor.run { self.migrateCoversToDisk() } }

@@ -226,6 +226,7 @@ struct LibraryHeaderView: View {
                             onVaultToggle() 
                         }
                         ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }
+                        ActionPill(title: "Duplicates", icon: "square.on.square.dashed", color: Theme.red) { onSheetTrigger(.duplicates) }
                     }
                     
                     // 3. Selection / Batch
