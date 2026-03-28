@@ -220,6 +220,13 @@ class ImportOrchestrator {
                         smartMetadata.series = xmlData.parsedSeries
                         smartMetadata.issueNumber = xmlData.parsedNumber
                         smartMetadata.tags.append("Auto XML Scrape")
+                    } else {
+                        // Inherit original directory logically if no XML is present
+                        let originalParent = url.deletingLastPathComponent().lastPathComponent
+                        let invalidOriginals = ["downloads", "documents", "inbox", "tmp", "temp", "comics"]
+                        if !invalidOriginals.contains(originalParent.lowercased()) {
+                            smartMetadata.series = originalParent
+                        }
                     }
                     
                     var pdf = ConvertedPDF(
@@ -257,28 +264,31 @@ class ImportOrchestrator {
             let noBrackets = regex?.stringByReplacingMatches(in: name as String, options: [], range: NSRange(location: 0, length: name.length), withTemplate: "") ?? pdf.name
             
             let withoutExt = (noBrackets as NSString).deletingPathExtension
-            var seriesName = withoutExt.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
+            var extractedName = withoutExt.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
             
             if let range = withoutExt.range(of: "\\s*(v|vol|volume|c|ch|chapter|issue)?\\s*\\d+.*$", options: [.regularExpression, .caseInsensitive]) {
-                seriesName = String(withoutExt[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
+                extractedName = String(withoutExt[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
             }
             
-            if seriesName.count < 3 {
-                seriesName = pdf.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? "Ungrouped"
-                
-                if seriesName == "Ungrouped" || seriesName.count < 3 {
-                    await manager.generateCoverThumbnail(for: pdf)
-                    if let coverURL = manager.getOriginalCoverURL(for: pdf) as URL?,
-                       let aiDetectedTitle = await CoverVisionAnalyzer.detectTitle(from: coverURL) {
-                        seriesName = aiDetectedTitle
-                        Logger.shared.log("Vision AI clustered '\(pdf.name)' into '\(aiDetectedTitle)'", category: "AI")
-                    } else {
-                        seriesName = "Ungrouped"
-                    }
+            var seriesName = ""
+            // 1. Prefer metadata series (XML or Scraped Parent Folder)
+            if let metaSeries = pdf.metadata.series, !metaSeries.isEmpty, metaSeries != "Ungrouped" {
+                seriesName = metaSeries
+            } else if extractedName.count >= 3 {
+                // 2. Use Regex extracted name
+                seriesName = extractedName
+            } else {
+                // 3. Fallback to Vision AI (Heavy)
+                await manager.generateCoverThumbnail(for: pdf)
+                if let coverURL = manager.getOriginalCoverURL(for: pdf) as URL?,
+                   let aiDetectedTitle = await CoverVisionAnalyzer.detectTitle(from: coverURL) {
+                    seriesName = aiDetectedTitle
+                    Logger.shared.log("Vision AI clustered '\(pdf.name)' into '\(aiDetectedTitle)'", category: "AI")
+                } else {
+                    seriesName = "Ungrouped"
                 }
             }
             
-            if seriesName.isEmpty { seriesName = "Ungrouped" }
             clusters[seriesName, default: []].append(pdf)
         }
         
@@ -296,9 +306,12 @@ class ImportOrchestrator {
             }
             
             manager.saveLibrary()
-            
+        }
+        
+        // Background Queue to safely serialize thumbnail generation
+        Task.detached(priority: .background) {
             for pdf in importedPDFs {
-                Task { await manager.generateCoverThumbnail(for: pdf) }
+                await manager.generateCoverThumbnail(for: pdf)
             }
         }
     }
