@@ -86,12 +86,66 @@ class EnsemblePanelDetector {
         
         // 4. Final Cleanup
         // Filter out raw Text Anchors that served their purpose or are explicitly covered now
-        let finalPanels = candidates.filter { $0.method != .textAnchor }
+        let structuralPanelsFinal = candidates.filter { $0.method != .textAnchor }
+        
+        // Phase 1: Aggressive Consolidation
+        let finalPanels = consolidateOverlappingPanels(structuralPanelsFinal)
         
         // Adaptive Logging (Debugging)
-        Logger.shared.log("AI Ensemble: \(finalPanels.count) panels detected. \(AdaptiveLearningManager.shared.diagnosticString)", category: "AI")
+        Logger.shared.log("AI Ensemble: \(finalPanels.count) composite panels detected using aggressive NMS consolidation. \(AdaptiveLearningManager.shared.diagnosticString)", category: "AI")
         
         return finalPanels
+    }
+    
+    /// Aggressively merges disjointed bounding boxes that geometrically intersect by more than 30% of their area, preventing fractured Guided View panels.
+    private func consolidateOverlappingPanels(_ candidates: [PanelCandidate]) -> [PanelCandidate] {
+        var merged = [PanelCandidate]()
+        
+        // Sort by confidence (strongest anchors naturally define the primary row/block bounds)
+        var pool = candidates.sorted { $0.confidence > $1.confidence }
+        
+        while !pool.isEmpty {
+            let anchor = pool.removeFirst()
+            var currentMergedBounds = anchor.boundingBox
+            var currentBaseConfidence = anchor.confidence
+            var currentMethod = anchor.method
+            var containsTextAccumulated = anchor.containsText
+            
+            var remainingPool = [PanelCandidate]()
+            
+            for candidate in pool {
+                let intersection = currentMergedBounds.intersection(candidate.boundingBox)
+                if intersection.isNull {
+                    remainingPool.append(candidate)
+                    continue
+                }
+                
+                // Calculate percentage of area overlap strictly relative to the smaller bounding box fragment
+                let intersectionArea = intersection.width * intersection.height
+                let minArea = min(currentMergedBounds.width * currentMergedBounds.height, candidate.boundingBox.width * candidate.boundingBox.height)
+                
+                // Critical NMS Fusion: If fragments share 30% spatial volume, they are guaranteed to belong to the same parent panel.
+                if minArea > 0 && intersectionArea > (minArea * 0.3) {
+                    currentMergedBounds = currentMergedBounds.union(candidate.boundingBox)
+                    // Mutate the parent parameters to reflect the absorption
+                    currentBaseConfidence = min(1.0, currentBaseConfidence * 1.05)
+                    containsTextAccumulated = containsTextAccumulated || candidate.containsText
+                } else {
+                    remainingPool.append(candidate)
+                }
+            }
+            
+            pool = remainingPool
+            
+            merged.append(PanelCandidate(
+                boundingBox: currentMergedBounds,
+                confidence: currentBaseConfidence,
+                method: currentMethod,
+                containsText: containsTextAccumulated
+            ))
+        }
+        
+        return merged
     }
 }
 

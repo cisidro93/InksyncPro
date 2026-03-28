@@ -78,24 +78,6 @@ class VisionPanelProvider: PanelProvider {
                                 method: .textAnchor,
                                 containsText: true
                             ))
-                            
-                            // NEW: Spawn a "Virtual Boundary" around the text bubble.
-                            // If the Ensemble fails to find a structural panel here, it will use this as a fallback panel!
-                            let virtualPadding: CGFloat = 0.05
-                            let virtualBounds = CGRect(
-                                x: max(0, obs.boundingBox.minX - virtualPadding),
-                                y: max(0, obs.boundingBox.minY - virtualPadding),
-                                width: min(1, obs.boundingBox.width + (virtualPadding * 2)),
-                                height: min(1, obs.boundingBox.height + (virtualPadding * 2))
-                            )
-                            
-                            // We tag this as deepScanContour so the Orchestrator knows it's a fallback structural suggestion
-                            candidates.append(PanelCandidate(
-                                boundingBox: virtualBounds,
-                                confidence: 0.8,
-                                method: .deepScanContour,
-                                containsText: true
-                            ))
                         }
                     }
                 }
