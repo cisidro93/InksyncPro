@@ -142,12 +142,7 @@ struct PrecisionCanvasView: View {
                                     context.fill(Path(rect), with: .color(.green.opacity(0.3)))
                                     context.stroke(Path(rect), with: .color(.green), lineWidth: 2)
                                     
-                                    let textString = "\(Int(rect.width)) x \(Int(rect.height))"
-                                    let text = Text(textString).font(.caption).foregroundColor(.white)
-                                    _ = context.resolve(text)
-                                    // Simplified for compiler check
-                                    _ = CGRect(x: rect.midX - 25, y: rect.maxY + 10, width: 50, height: 20)
-                                    // context.draw(resolvedText, at: ...)
+                                    // Removed broken text resolver that was erroring during layout passes
                                 }
                             }
                         }
@@ -165,6 +160,15 @@ struct PrecisionCanvasView: View {
                     }
                 }
                 .edgesIgnoringSafeArea(.top) // Allow canvas to go behind status bar
+                .onPencilDoubleTap { _ in
+                    if selectedTool == .anchor {
+                        selectedTool = .edit
+                        editorState.log("Switched to Edit Placement")
+                    } else {
+                        selectedTool = .anchor
+                        editorState.log("Switched to Add Panel")
+                    }
+                }
             } else {
                 ProgressView("Loading Page...")
                     .foregroundColor(.white)
@@ -208,11 +212,13 @@ struct PrecisionCanvasView: View {
                         Image(systemName: "arrow.uturn.backward")
                     }
                     .disabled(!editorState.canUndo)
+                    .keyboardShortcut("z", modifiers: .command)
                     
                     Button(action: { withAnimation { editorState.redo() } }) {
                         Image(systemName: "arrow.uturn.forward")
                     }
                     .disabled(!editorState.canRedo)
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
                     
                     if let index = editorState.selectedPanelIndex {
                         Button(role: .destructive, action: {
@@ -282,6 +288,17 @@ struct PrecisionCanvasView: View {
                 Spacer()
             }
         }
+        .background(
+            // Hidden Keyboard Shortcuts
+            Group {
+                Button("") { if pageIndex > 0 { PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id); pageIndex -= 1 } }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                    .opacity(0)
+                Button("") { if pageIndex < totalCount - 1 { PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id); pageIndex += 1 } }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+                    .opacity(0)
+            }
+        )
         .task {
             loadPage()
         }
@@ -319,7 +336,7 @@ struct PrecisionCanvasView: View {
     @State private var activeSnapGuides: [SnapGuide] = []
     
     // Resize State
-    enum ResizeHandle { case topLeft, topRight, bottomLeft, bottomRight }
+    enum ResizeHandle { case topLeft, topEdge, topRight, rightEdge, bottomRight, bottomEdge, bottomLeft, leftEdge }
     @State private var activeHandle: ResizeHandle? = nil
 
     // MARK: - Logic
@@ -376,6 +393,7 @@ struct PrecisionCanvasView: View {
                 editorState.pageModel.proposedPanels = normalized
                 editorState.pageModel.coordinateSystem = .normalized // ✅ Tag as Trusted
                 editorState.isProcessing = false
+                selectedTool = .scan // Change state so the user can immediately see the green proposed panels!
                 editorState.log("AI Scan: Found \(normalized.count) panels")
             }
         }
@@ -512,22 +530,30 @@ struct PreviewMaskShape: Shape {
     
     // MARK: - Helper for Handles
     private func getHandleRects(for rect: CGRect) -> [CGRect] {
-        let size: CGFloat = 16
+        let size: CGFloat = 32 // Tripped size for explicit Pencil touch grabbing
         return [
-            CGRect(x: rect.minX - size/2, y: rect.minY - size/2, width: size, height: size), // TopLeft
-            CGRect(x: rect.maxX - size/2, y: rect.minY - size/2, width: size, height: size), // TopRight
-            CGRect(x: rect.minX - size/2, y: rect.maxY - size/2, width: size, height: size), // BottomLeft
-            CGRect(x: rect.maxX - size/2, y: rect.maxY - size/2, width: size, height: size)  // BottomRight
+            CGRect(x: rect.minX - size/2, y: rect.minY - size/2, width: size, height: size), // TopLeft 0
+            CGRect(x: rect.midX - size/2, y: rect.minY - size/2, width: size, height: size), // TopEdge 1
+            CGRect(x: rect.maxX - size/2, y: rect.minY - size/2, width: size, height: size), // TopRight 2
+            CGRect(x: rect.maxX - size/2, y: rect.midY - size/2, width: size, height: size), // RightEdge 3
+            CGRect(x: rect.maxX - size/2, y: rect.maxY - size/2, width: size, height: size),  // BottomRight 4
+            CGRect(x: rect.midX - size/2, y: rect.maxY - size/2, width: size, height: size), // BottomEdge 5
+            CGRect(x: rect.minX - size/2, y: rect.maxY - size/2, width: size, height: size), // BottomLeft 6
+            CGRect(x: rect.minX - size/2, y: rect.midY - size/2, width: size, height: size) // LeftEdge 7
         ]
     }
     
     private func hitTestHandle(at point: CGPoint, for rect: CGRect) -> ResizeHandle? {
         let handles = getHandleRects(for: rect)
-        // Order matches enum: TL, TR, BL, BR
+        // Hit-testing in reverse order might be useful for overlaps, but list is explicit
         if handles[0].contains(point) { return .topLeft }
-        if handles[1].contains(point) { return .topRight }
-        if handles[2].contains(point) { return .bottomLeft }
-        if handles[3].contains(point) { return .bottomRight }
+        if handles[1].contains(point) { return .topEdge }
+        if handles[2].contains(point) { return .topRight }
+        if handles[3].contains(point) { return .rightEdge }
+        if handles[4].contains(point) { return .bottomRight }
+        if handles[5].contains(point) { return .bottomEdge }
+        if handles[6].contains(point) { return .bottomLeft }
+        if handles[7].contains(point) { return .leftEdge }
         return nil
     }
 
@@ -646,17 +672,27 @@ struct PreviewMaskShape: Shape {
                                  targetRect.origin.y += totalDy
                                  targetRect.size.width -= totalDx
                                  targetRect.size.height -= totalDy
+                             case .topEdge:
+                                 targetRect.origin.y += totalDy
+                                 targetRect.size.height -= totalDy
                              case .topRight:
                                  targetRect.origin.y += totalDy
                                  targetRect.size.width += totalDx
                                  targetRect.size.height -= totalDy
+                             case .rightEdge:
+                                 targetRect.size.width += totalDx
                              case .bottomLeft:
                                  targetRect.origin.x += totalDx
                                  targetRect.size.width -= totalDx
                                  targetRect.size.height += totalDy
+                             case .bottomEdge:
+                                 targetRect.size.height += totalDy
                              case .bottomRight:
                                  targetRect.size.width += totalDx
                                  targetRect.size.height += totalDy
+                             case .leftEdge:
+                                 targetRect.origin.x += totalDx
+                                 targetRect.size.width -= totalDx
                              }
                              
                              // Resolve negative sizes
