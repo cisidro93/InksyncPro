@@ -178,17 +178,15 @@ class MigrationService {
     // ✅ NEW: Native SwiftData Read Bridge
     // Replaces `inksync_pro_library.json` loading array bloat from Phase 1.
     func fetchSwiftDataLegacyBridge() async throws -> ([SDConvertedPDF], [SDPDFCollection]) {
-        return try await Task.detached(priority: .userInitiated) {
-             let container = try ModelContainer(for: SDConvertedPDF.self, SDPDFCollection.self)
-             let context = ModelContext(container)
-             
-             let docDesc = FetchDescriptor<SDConvertedPDF>()
-             let colDesc = FetchDescriptor<SDPDFCollection>()
-             
-             let docs = try context.fetch(docDesc)
-             let cols = try context.fetch(colDesc)
-             
-             return (docs, cols)
-        }.value
+         let container = try ModelContainer(for: SDConvertedPDF.self, SDPDFCollection.self)
+         let context = container.mainContext
+         
+         let docDesc = FetchDescriptor<SDConvertedPDF>()
+         let colDesc = FetchDescriptor<SDPDFCollection>()
+         
+         let docs = try context.fetch(docDesc)
+         let cols = try context.fetch(colDesc)
+         
+         return (docs, cols)
     }
 }

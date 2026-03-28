@@ -10,7 +10,6 @@ class ConversionManager: ObservableObject {
     @Published var conversionPresets: [ConversionPreset] = []
     @Published var kindleDevices: [KindleDevice] = []
     @Published var sendHistory: [ConvertedPDF] = []
-    @Published var activeTasks: [AppBackgroundTask] = []
     @Published var conversionSettings = ConversionSettings()
     
     // ✅ NEW: Persistent Watched Folders
@@ -56,6 +55,22 @@ class ConversionManager: ObservableObject {
     
     // ✅ Session Vault State
     @Published var isVaultUnlocked: Bool = false
+    
+    // MARK: - Panel Editor State
+    @Published var isPresentingPanelEditor: Bool = false
+    @Published var currentEditorImage: UIImage? = nil
+    @Published var currentEditorPanels: [CGRect] = []
+    
+    // Non-published continuation for async waiting
+    private var panelEditorContinuation: CheckedContinuation<[CGRect], Never>?
+    
+    func submitPanelEdits(_ rects: [CGRect]) {
+        isPresentingPanelEditor = false
+        currentEditorImage = nil
+        currentEditorPanels = []
+        panelEditorContinuation?.resume(returning: rects)
+        panelEditorContinuation = nil
+    }
     
     var visiblePDFs: [ConvertedPDF] {
         convertedPDFs.filter { $0.isPrivate == isVaultUnlocked }
@@ -320,7 +335,7 @@ class ConversionManager: ObservableObject {
     
     // ✅ NEW: Centralized manifest logic to fix panel loss
     func getCombinedManifest(for pdf: ConvertedPDF) async -> [Int: [PanelExtractor.Panel]] {
-        var combined = panelOverrides[pdf.id] ?? [:]
+        var combined = WorkspaceSessionManager.shared.panelOverrides[pdf.id] ?? [:]
         Logger.shared.log("Building Manifest for \(pdf.name) (ID: \(pdf.id))", category: "Manifest")
         
         // Merge with source panels if available
@@ -1352,7 +1367,7 @@ class ConversionManager: ObservableObject {
                             let detected = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: conversionSettings.mangaMode)
                             if !detected.isEmpty {
                                 // Suspend and present PanelEditorView
-                                let editedRects = await withCheckedContinuation { continuation in
+                                let editedRects = await withCheckedContinuation { (continuation: CheckedContinuation<[CGRect], Never>) in
                                     Task { @MainActor in
                                         self.currentEditorImage = image
                                         self.currentEditorPanels = detected.map { $0.boundingBox }
