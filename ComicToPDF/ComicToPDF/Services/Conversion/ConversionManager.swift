@@ -254,8 +254,15 @@ class ConversionManager: ObservableObject {
     func cleanupMemory() { thumbnailCache.removeAllObjects() }
     
     // MARK: - Persistence Façade
+    private var saveTask: Task<Void, Never>?
+    
     func saveLibrary() {
-        Task { @MainActor in
+        saveTask?.cancel()
+        saveTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            // 0.5s Debounce to prevent massive MainActor stalling during intensive loops
+            try? await Task.sleep(nanoseconds: 500_000_000) 
+            guard !Task.isCancelled else { return }
             LibraryPersistenceManager.shared.save(manager: self)
         }
     }

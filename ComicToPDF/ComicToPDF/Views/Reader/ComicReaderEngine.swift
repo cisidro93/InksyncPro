@@ -1,6 +1,7 @@
 import SwiftUI
 import ZIPFoundation
 import PDFKit
+import ImageIO
 
 extension View {
     @ViewBuilder
@@ -26,8 +27,9 @@ enum ComicReadingMode: String, CaseIterable, Codable {
 class ComicImageCache: ObservableObject {
     private var cache = NSCache<NSNumber, UIImage>()
     private var accessQueue: [Int] = []
-    private let maxCacheSize = 7
-    private let queue = DispatchQueue(label: "com.inksync.ComicImageCache")
+    private var fetchingQueue: Set<Int> = [] // Track pending extractions
+    private let maxCacheSize = 7 // Can hold about ~15MB of images in memory depending on screen size
+    private let queue = DispatchQueue(label: "com.inksync.ComicImageCache", attributes: .concurrent)
     
     // For CBZ extraction
     private var cbzArchive: Archive?
@@ -96,34 +98,50 @@ class ComicImageCache: ObservableObject {
             return cachedImage
         }
         
+        // 2. Prevent redundant fetching
+        if fetchingQueue.contains(index) { return nil }
+        
         if isStream {
-            // Async HTTP Fetch to prevent blocking Main Thread
             fetchStreamImage(at: index)
-            prefetchSurrounding(index: index)
-            return nil // UI will render ProgressView until network completes
+        } else {
+            // ✅ PROFESSIONAL ASYNC STREAMING (Eliminates UI Stutter/Main Thread lockups)
+            fetchLocalImageAsync(at: index)
         }
         
-        // 2. Local Extraction (Synchronous for smooth UX without layout popping)
-        let image = extractOrRenderImage(at: index)
-        if let img = image {
-            cache.setObject(img, forKey: NSNumber(value: index))
-            updateLRU(index)
-        }
-        
-        // Background extraction of surrounding pages (Prefetch window ±3)
+        // Prefetch surrounding pages (Prefetch window ±2)
         prefetchSurrounding(index: index)
         
-        return image
+        return nil // Always return heavily operations asynchronously. UI uses a ProgressView block.
+    }
+    
+    private func fetchLocalImageAsync(at index: Int) {
+        fetchingQueue.insert(index)
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            if let img = self.extractOrRenderImage(at: index) {
+                self.cache.setObject(img, forKey: NSNumber(value: index))
+                self.updateLRU(index)
+                
+                DispatchQueue.main.async {
+                    self.fetchingQueue.remove(index)
+                    self.cacheUpdatedTick += 1 // Force UI redraw to pop the newly loaded image
+                }
+            } else {
+                DispatchQueue.main.async {
+                    self.fetchingQueue.remove(index)
+                }
+            }
+        }
     }
     
     private func updateLRU(_ index: Int) {
-        queue.async {
+        DispatchQueue.main.async {
             if let pos = self.accessQueue.firstIndex(of: index) {
                 self.accessQueue.remove(at: pos)
             }
             self.accessQueue.append(index)
             
-            // Evict if over maxCacheSize (7)
+            // Evict if over maxCacheSize
             while self.accessQueue.count > self.maxCacheSize {
                 let evictIndex = self.accessQueue.removeFirst()
                 self.cache.removeObject(forKey: NSNumber(value: evictIndex))
@@ -159,7 +177,28 @@ class ComicImageCache: ObservableObject {
                 _ = try archive.extract(entry, bufferSize: 32768) { chunk in
                     data.append(chunk)
                 }
-                return UIImage(data: data)
+                
+                // Extremely safe downsampling to prevent OOM on 4K CBZ images (ImageIO trick)
+                let options: [CFString: Any] = [
+                    kCGImageSourceShouldCache: false
+                ]
+                guard let imageSource = CGImageSourceCreateWithData(data as CFData, options as CFDictionary) else {
+                    return UIImage(data: data) // Fallback
+                }
+                
+                let maxPixelSize = max(UIScreen.main.bounds.width, UIScreen.main.bounds.height) * UIScreen.main.scale
+                let downsampleOptions: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                ]
+                
+                guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions as CFDictionary) else {
+                    return UIImage(data: data) // Fallback
+                }
+                
+                return UIImage(cgImage: downsampledImage)
             } catch {
                 return nil
             }
@@ -167,16 +206,14 @@ class ComicImageCache: ObservableObject {
     }
     
     private func prefetchSurrounding(index: Int) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            let range = max(0, index - 2)...min(self.pageCount - 1, index + 3)
-            for i in range {
-                if i == index { continue }
-                if self.cache.object(forKey: NSNumber(value: i)) == nil {
-                    if let img = self.extractOrRenderImage(at: i) {
-                        self.cache.setObject(img, forKey: NSNumber(value: i))
-                        self.updateLRU(i)
-                    }
+        let range = max(0, index - 2)...min(pageCount - 1, index + 2)
+        for i in range {
+            if i == index { continue }
+            if self.cache.object(forKey: NSNumber(value: i)) == nil && !self.fetchingQueue.contains(i) {
+                if isStream {
+                    fetchStreamImage(at: i)
+                } else {
+                    fetchLocalImageAsync(at: i)
                 }
             }
         }
@@ -241,7 +278,8 @@ struct ComicReaderEngine: View {
                         // Standard Horizontal or RTL Mode
                         TabView(selection: $currentIndex) {
                             ForEach(0..<cache.pageCount, id: \.self) { index in
-                                ComicPageView(image: cache.getImage(at: index))
+                                // We inject `cache.cacheUpdatedTick` merely to force SwiftUI to redraw this specific view when background fetch succeeds.
+                                ComicPageView(image: cache.getImage(at: index), forceRedrawTick: cache.cacheUpdatedTick)
                                     .applyComicEnhancements(isEnhanced: isEnhanced)
                                     .tag(index)
                                     .rotation3DEffect(.degrees(readingMode == .mangaRTL ? 180 : 0), axis: (x: 0, y: 1, z: 0))
@@ -308,6 +346,7 @@ struct ComicReaderEngine: View {
                     panels: panelsForPage,
                     masterIndex: $currentIndex,
                     totalPages: cache.pageCount,
+                    forceRedrawTick: cache.cacheUpdatedTick,
                     onTapChrome: { chromeVisible.toggle() }
                 )
                 .applyComicEnhancements(isEnhanced: isEnhanced)
@@ -328,8 +367,13 @@ struct ComicReaderEngine: View {
                             .aspectRatio(contentMode: .fill)
                             .padding(.bottom, 2)
                             .onAppear { currentIndex = index }
+                            .id("webtoon_img_\(index)_\(cache.cacheUpdatedTick)") // Async trigger
                     } else {
-                        Color.black.frame(height: 500)
+                        ZStack {
+                            Color.black.frame(height: 500)
+                            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                        }
+                        .id("webtoon_place_\(index)_\(cache.cacheUpdatedTick)") // Async trigger
                     }
                 }
             }
@@ -347,12 +391,19 @@ struct ComicReaderEngine: View {
                 HStack(spacing: 0) {
                     if let img1 = cache.getImage(at: index1) {
                         Image(uiImage: img1).resizable().applyComicEnhancements(isEnhanced: isEnhanced).aspectRatio(contentMode: .fit)
+                    } else {
+                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5))).frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    if index2 < cache.pageCount, let img2 = cache.getImage(at: index2) {
-                        Image(uiImage: img2).resizable().applyComicEnhancements(isEnhanced: isEnhanced).aspectRatio(contentMode: .fit)
+                    if index2 < cache.pageCount {
+                        if let img2 = cache.getImage(at: index2) {
+                            Image(uiImage: img2).resizable().applyComicEnhancements(isEnhanced: isEnhanced).aspectRatio(contentMode: .fit)
+                        } else {
+                            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5))).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
                 }
                 .tag(index1)
+                .id(cache.cacheUpdatedTick) // Async trigger
             }
         }
         .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
@@ -362,6 +413,7 @@ struct ComicReaderEngine: View {
 // Wrap Image to support pinch-to-zoom (Basic implementation)
 struct ComicPageView: View {
     let image: UIImage?
+    let forceRedrawTick: Int?
     @State private var currentScale: CGFloat = 1.0
     
     var body: some View {
@@ -370,7 +422,6 @@ struct ComicPageView: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: geo.size.width, height: geo.size.width * (image.size.height / image.size.width))
                     .frame(width: geo.size.width, height: geo.size.height)
                     .scaleEffect(currentScale)
                     .gesture(
@@ -380,7 +431,13 @@ struct ComicPageView: View {
                     )
             }
         } else {
-            Color.black
+            // Elegant placeholder for async-streaming
+            ZStack {
+                Color.black
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                    .scaleEffect(1.5)
+            }
         }
     }
 }
@@ -391,6 +448,7 @@ struct ComicGuidedPageView: View {
     let panels: [PanelExtractor.Panel]
     @Binding var masterIndex: Int
     let totalPages: Int
+    let forceRedrawTick: Int?
     var onTapChrome: () -> Void
     
     @State private var currentPanelIndex: Int = -1 // -1 means Zoomed Out
@@ -418,7 +476,10 @@ struct ComicGuidedPageView: View {
                         }
                     }
             } else {
-                Color.black
+                ZStack {
+                    Color.black
+                    ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                }
             }
         }
         .onAppear {
