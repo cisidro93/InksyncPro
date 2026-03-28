@@ -26,15 +26,32 @@ struct ModernFileRow: View {
                         .foregroundColor(Theme.textSecondary)
                 }
             }
-            .frame(width: 40, height: 56)
+            .frame(width: 44, height: 66)
+            .aspectRatio(0.66, contentMode: .fit)
             .cornerRadius(4)
             .clipped()
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(pdf.name)
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(Theme.text)
                     .lineLimit(1)
+                
+                // Reading Progress Bar
+                GeometryReader { geo in
+                    let progress = pdf.metadata.readingProgress ?? 0.0
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.1))
+                        Capsule().fill(Theme.orange)
+                            .frame(width: max(0, geo.size.width * CGFloat(progress)))
+                    }
+                }
+                .frame(width: 120, height: 3)
                 
                 // ✅ Show Fetched Metadata Context
                 if let series = pdf.metadata.series, !series.isEmpty {
@@ -109,10 +126,24 @@ struct ModernSeriesRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
+            ZStack(alignment: .bottom) {
                 // Stack effect
                 if group.count > 1 {
-                    RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated).frame(width: 40, height: 56).offset(x: 3, y: -3)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Theme.surface.opacity(0.8))
+                        .aspectRatio(0.66, contentMode: .fit)
+                        .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                        .rotationEffect(.degrees(-3))
+                        .scaleEffect(0.9)
+                        .offset(y: -4)
+                    
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Theme.surfaceElevated.opacity(0.9))
+                        .aspectRatio(0.66, contentMode: .fit)
+                        .shadow(color: .black.opacity(0.4), radius: 3, y: 2)
+                        .rotationEffect(.degrees(2))
+                        .scaleEffect(0.95)
+                        .offset(y: -2)
                 }
                 
                 if let uuid = group.coverIssueID, let directCacheImg = conversionManager.thumbnailCache.object(forKey: uuid.uuidString as NSString) {
@@ -129,9 +160,15 @@ struct ModernSeriesRow: View {
                         .foregroundColor(Theme.textSecondary)
                 }
             }
-            .frame(width: 40, height: 56)
+            .frame(width: 44, height: 66)
+            .aspectRatio(0.66, contentMode: .fit)
             .cornerRadius(4)
             .clipped()
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(group.title)

@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 
 struct SeriesDetailView: View {
     let series: SeriesGroup
@@ -34,11 +34,18 @@ struct SeriesDetailView: View {
         }
         return sorted
     }
+    
+    @State private var localIssues: [ConvertedPDF] = []
+    
+    var isCollection: Bool {
+        guard let id = UUID(uuidString: series.id) else { return false }
+        return conversionManager.collections.contains(where: { $0.id == id })
+    }
 
     var body: some View {
         List {
             Section(header: headerView) {
-                ForEach(sortedIssues) { pdf in
+                ForEach(localIssues) { pdf in
                     if isSelectionMode {
                         Button {
                             if selection.contains(pdf.id) {
@@ -78,8 +85,21 @@ struct SeriesDetailView: View {
                         .contextMenu { contextMenuContent(pdf) }
                     }
                     }
+                    .onMove { source, destination in
+                        if isCollection {
+                            localIssues.move(fromOffsets: source, toOffset: destination)
+                            // Save to backend
+                            if let colID = UUID(uuidString: series.id) {
+                                conversionManager.updateCollectionOrder(collectionID: colID, newOrderIDs: localIssues.map { $0.id })
+                            }
+                        }
+                    }
             }
         }
+        .onAppear {
+            localIssues = sortedIssues
+        }
+        .onChange(of: sortOrder) { localIssues = sortedIssues }
         .listStyle(InsetGroupedListStyle())
         .navigationTitle(series.title)
         .toolbar {
@@ -110,6 +130,10 @@ struct SeriesDetailView: View {
                             }
                         } label: {
                             Image(systemName: "arrow.up.arrow.down")
+                        }
+                        
+                        if isCollection {
+                            EditButton()
                         }
                     }
                 }

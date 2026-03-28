@@ -228,6 +228,7 @@ struct PDFCollection: Identifiable, Codable, Equatable, Sendable {
     var color: String
     var creationDate: Date
     var explicitCoverFileID: UUID?
+    var manualSortOrder: [UUID]? = nil // ENFORCED reading order
 }
 
 func colorFor(_ name: String) -> Color {

@@ -262,6 +262,14 @@ class ConversionManager: ObservableObject {
     
     func savePDFs() { saveLibrary() }
     
+    // ✅ NEW: Custom Event Reordering
+    func updateCollectionOrder(collectionID: UUID, newOrderIDs: [UUID]) {
+        if let idx = collections.firstIndex(where: { $0.id == collectionID }) {
+            collections[idx].manualSortOrder = newOrderIDs
+            saveLibrary()
+        }
+    }
+    
     func loadLibrary() {
         LibraryPersistenceManager.shared.load(manager: self)
     }

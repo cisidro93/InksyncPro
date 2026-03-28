@@ -39,7 +39,22 @@ struct ModernLibraryView: View {
 
     var body: some View {
         Group {
-            Group {
+            ZStack(alignment: .top) {
+                // Background Depth
+                Color.black.ignoresSafeArea()
+                
+                // Ambient Header Glow
+                GeometryReader { geo in
+                    Circle()
+                        .fill(
+                            RadialGradient(gradient: Gradient(colors: [Theme.purple.opacity(0.4), Theme.blue.opacity(0.1), .clear]), center: .top, startRadius: 10, endRadius: 300)
+                        )
+                        .frame(width: geo.size.width * 1.5, height: 400)
+                        .position(x: geo.size.width / 2, y: -50)
+                        .blur(radius: 60)
+                        .ignoresSafeArea()
+                }
+                
                 VStack(spacing: 0) {
                     // MARK: - Dedicated Header Component
                     LibraryHeaderView(
@@ -88,7 +103,7 @@ struct ModernLibraryView: View {
                         batchBottomToolbar.transition(.move(edge: .bottom))
                     }
                 }
-                .background(Color.black.ignoresSafeArea())
+                // Removed redundant background to let ZStack ambient glow show through
                 // Ã¢Å“â€¦ MVVM Unified Navigation Router
                 .fullScreenCover(item: $viewModel.activeFullScreen) { dest in
                     switch dest {
@@ -125,11 +140,11 @@ struct ModernLibraryView: View {
         }
         .onAppear {
             conversionManager.backfillMissingThumbnails()
-            viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption)
+            viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, collections: conversionManager.collections, sortOption: sortOption)
         }
-        .onChange(of: conversionManager.visiblePDFs) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption) }
-        .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption) }
-        .onChange(of: conversionManager.collections.count) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, sortOption: sortOption) }
+        .onChange(of: conversionManager.visiblePDFs) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, collections: conversionManager.collections, sortOption: sortOption) }
+        .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, collections: conversionManager.collections, sortOption: sortOption) }
+        .onChange(of: conversionManager.collections.count) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, collections: conversionManager.collections, sortOption: sortOption) }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenMergedBook"))) { notification in
             if let newBook = notification.object as? ConvertedPDF {
                 // Ensure the view hierarchy processes the dismissal first, then throw up the full screen cover.
@@ -146,6 +161,7 @@ struct ModernLibraryView: View {
         switch item {
         case .stats: ReadingStatsView()
         case .importer: ImportQueueView()
+        case .smartListImporter: SmartListImporterView().environmentObject(conversionManager)
         case .wifi: WiFiView()
         case .merge: FileMergeView()
         case .cloud: ImportQueueView() // Same underlying view as legacy cloud trigger

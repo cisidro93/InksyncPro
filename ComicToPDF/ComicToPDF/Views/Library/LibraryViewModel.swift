@@ -29,7 +29,7 @@ class LibraryViewModel: ObservableObject {
     }
     
     // MARK: - Core Cache System
-    func updateLibraryItemsCache(pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) {
+    func updateLibraryItemsCache(pdfs: [ConvertedPDF], collections: [PDFCollection], sortOption: ModernLibraryView.SortOption) {
         // Capture context snapshot to safely detach
         let currentSearchText = debouncedSearchText
         let sortedPDFs = sortPDFs(pdfs, sortOption: sortOption)
@@ -40,27 +40,72 @@ class LibraryViewModel: ObservableObject {
             var firstAppearanceIndex: [String: Int] = [:]
             
             for (index, pdf) in sortedPDFs.enumerated() {
+                var inAnyGroup = false
+                
+                // 1. Process standard Publisher Series
                 if let seriesName = pdf.metadata.series, !seriesName.isEmpty {
                     let seriesKey = "series_\(seriesName)"
                     if firstAppearanceIndex[seriesKey] == nil { firstAppearanceIndex[seriesKey] = index }
                     
-                    if groups[seriesName] == nil {
-                        groups[seriesName] = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: pdf.id, count: 0, issues: [])
+                    if groups[seriesKey] == nil {
+                        groups[seriesKey] = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: pdf.id, count: 0, issues: [])
                     }
-                    groups[seriesName]!.issues.append(pdf)
-                    groups[seriesName]!.count += 1
-                } else {
+                    groups[seriesKey]!.issues.append(pdf)
+                    groups[seriesKey]!.count += 1
+                    inAnyGroup = true
+                }
+                
+                // 2. Process Custom Collections (Events)
+                if let cid = pdf.collectionId, let collection = collections.first(where: { $0.id == cid }) {
+                    let colKey = "col_\(collection.id.uuidString)"
+                    if firstAppearanceIndex[colKey] == nil { firstAppearanceIndex[colKey] = index }
+                    
+                    if groups[colKey] == nil {
+                        // Use explicit cover if specified, otherwise the first generated
+                        let coverID = collection.explicitCoverFileID ?? pdf.id
+                        groups[colKey] = SeriesGroup(id: collection.id.uuidString, title: collection.name, coverIssueID: coverID, count: 0, issues: [])
+                    }
+                    groups[colKey]!.issues.append(pdf)
+                    groups[colKey]!.count += 1
+                    inAnyGroup = true
+                }
+                
+                // 3. Fallback to Singles if not in ANY group
+                if !inAnyGroup {
                     let singleKey = "single_\(pdf.id)"
                     if firstAppearanceIndex[singleKey] == nil { firstAppearanceIndex[singleKey] = index }
                     singles.append(pdf)
                 }
             }
             
+            // Post-Process Collections to apply manual sorting
+            for collection in collections {
+                let colKey = "col_\(collection.id.uuidString)"
+                if var group = groups[colKey], let manualOrder = collection.manualSortOrder, !manualOrder.isEmpty {
+                    // Create a lookup dictionary for fast indexing
+                    let orderDict = Dictionary(uniqueKeysWithValues: manualOrder.enumerated().map { ($0.element, $0.offset) })
+                    // Sort the issues array based on the manual order. If not in the list, push to back
+                    group.issues.sort { pdf1, pdf2 in
+                        let idx1 = orderDict[pdf1.id] ?? Int.max
+                        let idx2 = orderDict[pdf2.id] ?? Int.max
+                        if idx1 == idx2 {
+                            return pdf1.name.localizedStandardCompare(pdf2.name) == .orderedAscending
+                        }
+                        return idx1 < idx2
+                    }
+                    // Update the cover to the first item of the manually sorted list unless explicitly overridden
+                    if collection.explicitCoverFileID == nil, let firstID = group.issues.first?.id {
+                        group.coverIssueID = firstID
+                    }
+                    groups[colKey] = group
+                }
+            }
+            
             var items: [(Int, LibraryListItem)] = []
             
-            for (_, group) in groups {
+            for (key, group) in groups {
                 let item = LibraryListItem.series(group)
-                items.append((firstAppearanceIndex["series_\(group.id)"] ?? 0, item))
+                items.append((firstAppearanceIndex[key] ?? 0, item))
             }
             
             for single in singles {

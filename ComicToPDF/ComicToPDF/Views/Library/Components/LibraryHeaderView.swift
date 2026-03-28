@@ -185,15 +185,25 @@ struct LibraryHeaderView: View {
                     
                     // 3. Action Pills
                     Group {
-                        ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }
-                        ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.orange) {
-                            onSheetTrigger(.importer)
-                        }
+                        ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.green) { onSheetTrigger(.importer) }
+                        ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
                         ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
                         ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { onSheetTrigger(.cloud) }
                     }
+                    
+                    // Divider
+                    Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
+                    
                     Group {
-                        ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.blue) { onSheetTrigger(.merge) }
+                        ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {
+                            if multiSelection.count >= 1 {
+                                showCognitiveBatchRenamer = true
+                            } else {
+                                withAnimation { isBatchMode = true }
+                                conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.")
+                            }
+                        })
+                        ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.purple) { onSheetTrigger(.merge) }
                         ActionPill(title: "Convert & Merge", icon: "doc.on.doc.fill", color: Theme.purple, action: {
                             if multiSelection.count >= 2 {
                                 batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
@@ -203,17 +213,16 @@ struct LibraryHeaderView: View {
                                 conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.")
                             }
                         })
-                        ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {
-                            if multiSelection.count >= 1 {
-                                showCognitiveBatchRenamer = true
-                            } else {
-                                withAnimation { isBatchMode = true }
-                                conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.")
-                            }
-                        })
-                        ActionPill(title: "Vault", icon: conversionManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: conversionManager.isVaultUnlocked ? Theme.orange : Theme.blue) { 
+                    }
+                    
+                    // Divider
+                    Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
+                    
+                    Group {
+                        ActionPill(title: "Vault", icon: conversionManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: conversionManager.isVaultUnlocked ? Theme.orange : Theme.textSecondary) { 
                             onVaultToggle() 
                         }
+                        ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }
                     }
                     
                     // 3. Selection / Batch

@@ -12,6 +12,7 @@ struct Theme {
     static let orange = Color(red: 1, green: 159/255, blue: 10/255) // #FF9F0A
     static let blue = Color(red: 10/255, green: 132/255, blue: 255/255) // #0A84FF
     static let purple = Color(red: 191/255, green: 90/255, blue: 242/255) // #BF5AF2 
+    static let green = Color(red: 48/255, green: 209/255, blue: 88/255) // #30D158
     static let text = Color.white
     static let textSecondary = Color(red: 142/255, green: 142/255, blue: 147/255) // #8E8E93
     static let textTertiary = Color(red: 99/255, green: 99/255, blue: 102/255) // #636366
