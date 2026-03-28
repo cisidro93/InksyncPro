@@ -290,3 +290,19 @@ struct LogsView: View {
         }
     }
 }
+
+// ✅ NEW: Document wrapper for native Swift File Exporter
+struct AIDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+    var data: Data
+    
+    init(data: Data) { self.data = data }
+    init(configuration: ReadConfiguration) throws {
+        if let data = configuration.file.regularFileContents { self.data = data }
+        else { throw CocoaError(.fileReadCorruptFile) }
+    }
+    
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        return FileWrapper(regularFileWithContents: data)
+    }
+}
