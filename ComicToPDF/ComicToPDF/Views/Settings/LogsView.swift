@@ -277,10 +277,9 @@ struct LogsView: View {
         }
     }
     
-    private func handleAIImport(result: Result<[URL], Error>) {
+    private func handleAIImport(result: Result<URL, Error>) {
         switch result {
-        case .success(let rawURLs):
-            guard let rawURL = rawURLs.first else { return }
+        case .success(let rawURL):
             // FileProvider URLs must be security-scoped
             let accessing = rawURL.startAccessingSecurityScopedResource()
             defer { if accessing { rawURL.stopAccessingSecurityScopedResource() } }
@@ -290,12 +289,12 @@ struct LogsView: View {
                     let status = try AdaptiveLearningManager.shared.importState(from: data)
                     switch status {
                     case .success:
-                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "AI Diagnostics loaded perfectly.", "category": "Success"])
+                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), object: nil, userInfo: ["message": "AI Diagnostics loaded perfectly.", "category": "Success"])
                     case .identical:
-                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "The system is already running this exact AI Engine version. No changes made.", "category": "System"])
+                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), object: nil, userInfo: ["message": "The system is already running this exact AI Engine version. No changes made.", "category": "System"])
                     }
                 } catch {
-                    NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "Invalid or corrupted AI Configuration file.", "category": "System"])
+                    NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), object: nil, userInfo: ["message": "Invalid or corrupted AI Configuration file.", "category": "System"])
                 }
             }
         case .failure(let error):
