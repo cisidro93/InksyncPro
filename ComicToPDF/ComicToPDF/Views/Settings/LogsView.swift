@@ -39,6 +39,35 @@ struct LogsView: View {
     }
     
     var body: some View {
+        mainContent
+            .navigationTitle("Flight Recorder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { toolbarContent }
+            .overlay(copiedAlertOverlay)
+            .sheet(isPresented: $isSharing) {
+                if let url = smartLogURL {
+                    ShareSheet(activityItems: [url])
+                }
+            }
+            .sheet(isPresented: $isShowingMailView) {
+                mailSheetContent
+            }
+            .fileExporter(isPresented: $showingAIExport, document: aiDocumentToExport, contentType: .json, defaultFilename: "inksync_ai_settings") { result in
+                handleAIExport(result: result)
+            }
+            .fileImporter(isPresented: $showingAIImport, allowedContentTypes: [.json]) { result in
+                handleAIImport(result: result)
+            }
+            .alert("Cannot Send Email", isPresented: $showingMailErrorAlert) {
+                 Button("OK", role: .cancel) { }
+            } message: {
+                 Text("Please ensure the Apple Mail app is configured on this device, or email us directly with your logs at support@inksyncpro.app")
+            }
+    }
+    
+    // MARK: - View Subcomponents
+    
+    private var mainContent: some View {
         VStack(spacing: 0) {
             // ✅ Status Header
             HStack {
@@ -130,147 +159,147 @@ struct LogsView: View {
             }
             .listStyle(.plain)
         }
-        .navigationTitle("Flight Recorder")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("Done") { dismiss() }
+    }
+    
+    @ViewBuilder
+    private var copiedAlertOverlay: some View {
+        Group {
+            if showingCopiedAlert {
+                VStack {
+                    Text("Copied to Clipboard")
+                        .font(.caption)
+                        .padding()
+                        .background(Color.secondary.opacity(0.8))
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                }
+                .transition(.opacity)
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button {
-                        let filterCategories = selectedCategory == nil ? nil : [selectedCategory!]
-                        let filterTypes: [LogType]? = showErrorsOnly ? [.error, .warning] : nil
-                        
-                        if let smartURL = logger.generateSmartLog(categories: filterCategories, types: filterTypes) {
-                            self.smartLogURL = smartURL
-                            if MFMailComposeViewController.canSendMail() {
-                                isShowingMailView = true
-                            } else {
-                                showingMailErrorAlert = true
-                            }
+        }
+    }
+    
+    @ViewBuilder
+    private var mailSheetContent: some View {
+        if let targetURL = self.smartLogURL, let targetData = try? Data(contentsOf: targetURL) {
+            MailView(
+                subject: "Inksync Pro Support Request" + (selectedCategory != nil ? " [\(selectedCategory!)]" : ""),
+                recipients: ["support@inksyncpro.app"],
+                messageBody: getDeviceInfo(),
+                isHTML: false,
+                attachments: [(targetData, "text/plain", targetURL.lastPathComponent)],
+                isShowing: $isShowingMailView,
+                result: $mailResult
+            )
+            .ignoresSafeArea()
+        } else {
+            VStack(spacing: 20) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.red)
+                Text("Error generating logs for email.").font(.headline)
+                Button("Dismiss") { isShowingMailView = false }
+            }
+        }
+    }
+    
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button("Done") { dismiss() }
+        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Menu {
+                Button {
+                    var filterCategories: [String]? = nil
+                    if let cat = selectedCategory { filterCategories = [cat] }
+                    var filterTypes: [LogType]? = nil
+                    if showErrorsOnly { filterTypes = [.error, .warning] }
+                    
+                    if let smartURL = logger.generateSmartLog(categories: filterCategories, types: filterTypes) {
+                        self.smartLogURL = smartURL
+                        if MFMailComposeViewController.canSendMail() {
+                            isShowingMailView = true
                         } else {
                             showingMailErrorAlert = true
                         }
-                    } label: { Label("Email Support", systemImage: "envelope") }
-                    
-                    Button(action: { 
-                        let filterCategories = selectedCategory == nil ? nil : [selectedCategory!]
-                        let filterTypes: [LogType]? = showErrorsOnly ? [.error, .warning] : nil
-                        
-                        if let smartURL = logger.generateSmartLog(categories: filterCategories, types: filterTypes) {
-                            self.smartLogURL = smartURL
-                            isSharing = true 
-                        }
-                    }) {
-                        Label("Share Visible Logs", systemImage: "square.and.arrow.up")
+                    } else {
+                        showingMailErrorAlert = true
                     }
-                    Button(action: copyToClipboard) {
-                        Label("Copy All", systemImage: "doc.on.doc")
-                    }
-                    
-                    Divider()
-                    
-                    Button {
-                        if let data = AdaptiveLearningManager.shared.exportState() {
-                            aiDocumentToExport = AIDocument(data: data)
-                            showingAIExport = true
-                        }
-                    } label: { Label("Backup AI Settings", systemImage: "brain.head.profile") }
-                    
-                    Button {
-                        showingAIImport = true
-                    } label: { Label("Restore AI Settings", systemImage: "square.and.arrow.down.on.square") }
-                    
-                    Divider()
-                    
-                    Button(role: .destructive, action: logger.clearLogs) {
-                        Label("Clear Logs", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-            }
-        }
-        .overlay(
-            Group {
-                if showingCopiedAlert {
-                    VStack {
-                        Text("Copied to Clipboard")
-                            .font(.caption)
-                            .padding()
-                            .background(Color.secondary.opacity(0.8))
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                    }
-                    .transition(.opacity)
-                }
-            }
-        )
-        .sheet(isPresented: $isSharing) {
-             if let url = smartLogURL {
-                 ShareSheet(activityItems: [url])
-             }
-        }
-        .sheet(isPresented: $isShowingMailView) {
-            if let targetURL = self.smartLogURL, let targetData = try? Data(contentsOf: targetURL) {
-                MailView(
-                    subject: "Inksync Pro Support Request" + (selectedCategory != nil ? " [\(selectedCategory!)]" : ""),
-                    recipients: ["support@inksyncpro.app"],
-                    messageBody: getDeviceInfo(),
-                    isHTML: false,
-                    attachments: [
-                        (targetData, "text/plain", targetURL.lastPathComponent)
-                    ],
-                    isShowing: $isShowingMailView,
-                    result: $mailResult
-                )
-                .ignoresSafeArea()
-            } else {
-                VStack(spacing: 20) {
-                    Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.red)
-                    Text("Error generating logs for email.").font(.headline)
-                    Button("Dismiss") { isShowingMailView = false }
-                }
-            }
-        }
-        .fileExporter(isPresented: $showingAIExport, document: aiDocumentToExport, contentType: .json, defaultFilename: "inksync_ai_settings") { result in
-            switch result {
-            case .success(let url):
-                logger.log("Successfully Backed Up AI configuration JSON to \(url.lastPathComponent)", category: "System", type: .success)
-            case .failure(let error):
-                logger.log("Backup Failed: \(error.localizedDescription)", category: "System", type: .error)
-            }
-        }
-        .fileImporter(isPresented: $showingAIImport, allowedContentTypes: [.json]) { result in
-            switch result {
-            case .success(let rawURLs):
-                guard let rawURL = rawURLs.first else { return }
-                // FileProvider URLs must be security-scoped
-                let accessing = rawURL.startAccessingSecurityScopedResource()
-                defer { if accessing { rawURL.stopAccessingSecurityScopedResource() } }
+                } label: { Label("Email Support", systemImage: "envelope") }
                 
-                if let data = try? Data(contentsOf: rawURL) {
-                    do {
-                        let status = try AdaptiveLearningManager.shared.importState(from: data)
-                        switch status {
-                        case .success:
-                            NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "AI Diagnostics loaded perfectly.", "category": "Success"])
-                        case .identical:
-                            NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "The system is already running this exact AI Engine version. No changes made.", "category": "System"])
-                        }
-                    } catch {
-                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "Invalid or corrupted AI Configuration file.", "category": "System"])
+                Button(action: { 
+                    var filterCategories: [String]? = nil
+                    if let cat = selectedCategory { filterCategories = [cat] }
+                    var filterTypes: [LogType]? = nil
+                    if showErrorsOnly { filterTypes = [.error, .warning] }
+                    
+                    if let smartURL = logger.generateSmartLog(categories: filterCategories, types: filterTypes) {
+                        self.smartLogURL = smartURL
+                        isSharing = true 
                     }
+                }) {
+                    Label("Share Visible Logs", systemImage: "square.and.arrow.up")
                 }
-            case .failure(let error):
-                logger.log("Import Failed: \(error.localizedDescription)", category: "System", type: .error)
+                Button(action: copyToClipboard) {
+                    Label("Copy All", systemImage: "doc.on.doc")
+                }
+                
+                Divider()
+                
+                Button {
+                    if let data = AdaptiveLearningManager.shared.exportState() {
+                        aiDocumentToExport = AIDocument(data: data)
+                        showingAIExport = true
+                    }
+                } label: { Label("Backup AI Settings", systemImage: "brain.head.profile") }
+                
+                Button {
+                    showingAIImport = true
+                } label: { Label("Restore AI Settings", systemImage: "square.and.arrow.down.on.square") }
+                
+                Divider()
+                
+                Button(role: .destructive, action: logger.clearLogs) {
+                    Label("Clear Logs", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
         }
-        .alert("Cannot Send Email", isPresented: $showingMailErrorAlert) {
-             Button("OK", role: .cancel) { }
-        } message: {
-             Text("Please ensure the Apple Mail app is configured on this device, or email us directly with your logs at support@inksyncpro.app")
+    }
+    
+    // MARK: - Handlers
+    
+    private func handleAIExport(result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            logger.log("Successfully Backed Up AI configuration JSON to \(url.lastPathComponent)", category: "System", type: .success)
+        case .failure(let error):
+            logger.log("Backup Failed: \(error.localizedDescription)", category: "System", type: .error)
+        }
+    }
+    
+    private func handleAIImport(result: Result<[URL], Error>) {
+        switch result {
+        case .success(let rawURLs):
+            guard let rawURL = rawURLs.first else { return }
+            // FileProvider URLs must be security-scoped
+            let accessing = rawURL.startAccessingSecurityScopedResource()
+            defer { if accessing { rawURL.stopAccessingSecurityScopedResource() } }
+            
+            if let data = try? Data(contentsOf: rawURL) {
+                do {
+                    let status = try AdaptiveLearningManager.shared.importState(from: data)
+                    switch status {
+                    case .success:
+                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "AI Diagnostics loaded perfectly.", "category": "Success"])
+                    case .identical:
+                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "The system is already running this exact AI Engine version. No changes made.", "category": "System"])
+                    }
+                } catch {
+                    NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "Invalid or corrupted AI Configuration file.", "category": "System"])
+                }
+            }
+        case .failure(let error):
+            logger.log("Import Failed: \(error.localizedDescription)", category: "System", type: .error)
         }
     }
     
