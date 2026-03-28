@@ -244,7 +244,8 @@ struct LogsView: View {
         }
         .fileImporter(isPresented: $showingAIImport, allowedContentTypes: [.json]) { result in
             switch result {
-            case .success(let rawURL):
+            case .success(let rawURLs):
+                guard let rawURL = rawURLs.first else { return }
                 // FileProvider URLs must be security-scoped
                 let accessing = rawURL.startAccessingSecurityScopedResource()
                 defer { if accessing { rawURL.stopAccessingSecurityScopedResource() } }
