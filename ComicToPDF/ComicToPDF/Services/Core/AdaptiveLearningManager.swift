@@ -89,4 +89,37 @@ class AdaptiveLearningManager: ObservableObject {
     var diagnosticString: String {
         return "Confidence: \(String(format: "%.2f", currentBaseConfidence)) | Min Size: \(String(format: "%.0f", currentMinimumSize * 100))%"
     }
+    
+    // MARK: - Import / Export File Methods
+    
+    struct EngineStateDTO: Codable {
+        let baseConfidence: Double
+        let minimumSize: Double
+        let deletedPanels: Int
+        let addedPanels: Int
+        let resizedPanels: Int
+    }
+    
+    func exportState() -> Data? {
+        let state = EngineStateDTO(
+            baseConfidence: currentBaseConfidence,
+            minimumSize: currentMinimumSize,
+            deletedPanels: deletedPanelsCount,
+            addedPanels: addedPanelsCount,
+            resizedPanels: resizedPanelsCount
+        )
+        return try? JSONEncoder().encode(state)
+    }
+    
+    func importState(from data: Data) throws {
+        let state = try JSONDecoder().decode(EngineStateDTO.self, from: data)
+        DispatchQueue.main.async {
+            self.currentBaseConfidence = state.baseConfidence
+            self.currentMinimumSize = state.minimumSize
+            self.deletedPanelsCount = state.deletedPanels
+            self.addedPanelsCount = state.addedPanels
+            self.resizedPanelsCount = state.resizedPanels
+            Logger.shared.log("AI: Successfully imported Engine State. Conf:\(state.baseConfidence), MinSize:\(state.minimumSize)", category: "AI", type: .success)
+        }
+    }
 }

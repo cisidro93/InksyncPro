@@ -23,6 +23,11 @@ struct SettingsView: View {
     @State private var customPresetName = "Custom Base"
     @Environment(\.dismiss) var dismiss
     
+    // ✅ NEW: AI State File Export
+    @State private var showingAIExport = false
+    @State private var showingAIImport = false
+    @State private var aiExportDocument: JSONFileDocument?
+    
     // ✅ NEW: API Key Verification State
     @State private var isVerifying = false
     @State private var verificationStatus: KeyStatus = .none
@@ -114,6 +119,24 @@ struct SettingsView: View {
                 conversionManager.savePreset(newPreset)
             }
         } message: { Text("Enter a name for your custom export configuration.") }
+        .fileExporter(isPresented: $showingAIExport, document: aiExportDocument, contentType: .json, defaultFilename: "Inksync_AI_Profile.json") { result in
+            switch result {
+            case .success(let url): print("Saved AI State to \(url)")
+            case .failure(let error): print("Failed to save AI State: \(error)")
+            }
+        }
+        .fileImporter(isPresented: $showingAIImport, allowedContentTypes: [.json]) { result in
+            switch result {
+            case .success(let url):
+                if url.startAccessingSecurityScopedResource() {
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    if let data = try? Data(contentsOf: url) {
+                        try? aiManager.importState(from: data)
+                    }
+                }
+            case .failure(let error): print("Failed to import AI State: \(error)")
+            }
+        }
     }
     
     // MARK: - Extracted Sections
@@ -443,6 +466,37 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
             }
             
+            HStack(spacing: 12) {
+                Button(action: { showingAIImport = true }) {
+                    Label("Import Config", systemImage: "square.and.arrow.down")
+                        .font(.caption)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                
+                Button(action: {
+                    if let data = aiManager.exportState() {
+                        aiExportDocument = JSONFileDocument(data: data)
+                        showingAIExport = true
+                    }
+                }) {
+                    Label("Export Config", systemImage: "square.and.arrow.up")
+                        .font(.caption)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 4)
+            
         } header: { Text("AI Dashboard") }
     }
     
@@ -586,5 +640,27 @@ struct SettingsView: View {
                 }
             }
         } header: { Text("Legal") }
+    }
+}
+
+import UniformTypeIdentifiers
+struct JSONFileDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+    var data: Data
+
+    init(data: Data = Data()) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        if let fileData = configuration.file.regularFileContents {
+            data = fileData
+        } else {
+            data = Data()
+        }
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        return FileWrapper(regularFileWithContents: data)
     }
 }
