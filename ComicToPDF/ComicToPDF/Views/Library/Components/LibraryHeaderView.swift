@@ -105,8 +105,6 @@ struct LibraryHeaderView: View {
             // Row 2: Cohesive Action Center (Scrollable Pills)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    
-                HStack(spacing: 12) {
                     Group {
                         // 1. Target Selector Pill (Fixed & Prominent)
                         Menu {
