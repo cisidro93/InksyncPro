@@ -83,6 +83,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     var collectionId: UUID?
     var isFavorite: Bool = false
     var isPrivate: Bool = false // ✅ NEW: Privacy Flag
+    var isExplicitSeriesCover: Bool = false
     var coverImageData: Data?
     var contentType: ContentType = .comic  // ✅ NEW: Track content type
     var chapters: [Chapter] = [] // ✅ NEW: Detected Chapters
@@ -117,6 +118,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         self.collectionId = collectionId
         self.isFavorite = isFavorite
         self.isPrivate = isPrivate
+        self.isExplicitSeriesCover = false
         self.coverImageData = coverImageData
         self.contentType = contentType
         self.chapters = chapters
