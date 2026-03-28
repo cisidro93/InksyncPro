@@ -87,12 +87,10 @@ struct GlobalZettelkastenHubView: View {
                 }
             }
         }
-        .fileImporter(
-            isPresented: $showingReadwiseImporter,
-            allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText, UTType.text, UTType.data],
-            allowsMultipleSelection: false
-        ) { result in
-            handleCSVImport(result: result)
+        .sheet(isPresented: $showingReadwiseImporter) {
+            SmartListFileWrapper { urls in
+                handleCSVImport(result: .success(urls))
+            }
         }
         .overlay {
             if isImporting {

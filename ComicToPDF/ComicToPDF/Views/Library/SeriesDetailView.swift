@@ -5,8 +5,7 @@ struct SeriesDetailView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Binding var selectedPDF: ConvertedPDF?
     var useNavigationStack: Bool
-    
-    @State private var sortOrder: SortOrder = .ascending
+    @AppStorage("defaultSeriesSort") private var sortOption: SeriesSortOption = .issueNumber
     @State private var headerCover: UIImage? = nil
     
     // Batch Selection
@@ -24,11 +23,50 @@ struct SeriesDetailView: View {
     @State private var assignSeriesText = ""
     @State private var pdfToRead: ConvertedPDF? // Added for Reader
 
-    enum SortOrder { case ascending, descending }
+    enum SeriesSortOption: String, CaseIterable, Identifiable {
+        case manual = "Custom Order"
+        case issueNumber = "Issue Number"
+        case titleAsc = "Title (A-Z)"
+        case titleDesc = "Title (Z-A)"
+        case dateNewest = "Date Added (Newest)"
+        case dateOldest = "Date Added (Oldest)"
+        case sizeLargest = "Size (Largest)"
+        case sizeSmallest = "Size (Smallest)"
+        var id: String { rawValue }
+    }
+    
     @State private var showBookmarksOnly = false // Added for filtering
 
     var sortedIssues: [ConvertedPDF] {
-        let sorted = sortOrder == .ascending ? series.issues : series.issues.reversed()
+        var sorted = series.issues
+        
+        switch sortOption {
+        case .manual:
+            break // Retain the natively generated sequence passed from LibraryViewModel
+        case .issueNumber:
+            sorted.sort {
+                let n1 = Double($0.metadata.issueNumber ?? "")
+                let n2 = Double($1.metadata.issueNumber ?? "")
+                if let v1 = n1, let v2 = n2 { return v1 < v2 }
+                if n1 != nil && n2 == nil { return true }
+                if n1 == nil && n2 != nil { return false }
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+        case .titleAsc:
+            sorted.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .titleDesc:
+            sorted.sort { $0.name.localizedStandardCompare($1.name) == .orderedDescending }
+        case .dateNewest:
+            sorted.removeAll() // We can't trust original appending sequence chronologically due to bulk processing imports
+            sorted = series.issues.reversed() // Fallback to inverted addition (approximating dateNewest for legacy items)
+        case .dateOldest:
+            break // Native loop append order is Date Added
+        case .sizeLargest:
+            sorted.sort { $0.fileSize > $1.fileSize }
+        case .sizeSmallest:
+            sorted.sort { $0.fileSize < $1.fileSize }
+        }
+        
         if showBookmarksOnly {
             return sorted.filter { !$0.metadata.bookmarkedPages.isEmpty }
         }
@@ -99,7 +137,7 @@ struct SeriesDetailView: View {
         .onAppear {
             localIssues = sortedIssues
         }
-        .onChange(of: sortOrder) { localIssues = sortedIssues }
+        .onChange(of: sortOption) { _ in localIssues = sortedIssues }
         .listStyle(InsetGroupedListStyle())
         .navigationTitle(series.title)
         .toolbar {
@@ -124,9 +162,13 @@ struct SeriesDetailView: View {
                         }
 
                         Menu {
-                            Picker("Sort", selection: $sortOrder) {
-                                Text("Oldest First").tag(SortOrder.ascending)
-                                Text("Newest First").tag(SortOrder.descending)
+                            Picker("Sort By", selection: $sortOption) {
+                                if isCollection {
+                                    Text(SeriesSortOption.manual.rawValue).tag(SeriesSortOption.manual)
+                                }
+                                ForEach(SeriesSortOption.allCases.filter { $0 != .manual }) { option in
+                                    Text(option.rawValue).tag(option)
+                                }
                             }
                         } label: {
                             Image(systemName: "arrow.up.arrow.down")

@@ -83,11 +83,24 @@ struct AdvancedWorkspaceView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Done") {
+                    Button(action: {
                         Task {
                             viewModel.cleanup()
                             dismiss()
                         }
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "xmark.circle.fill")
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundColor(.secondary)
+                            Text("Close Workspace")
+                                .font(.subheadline.bold())
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color(UIColor.tertiarySystemFill))
+                        .clipShape(Capsule())
                     }
                 }
                 
