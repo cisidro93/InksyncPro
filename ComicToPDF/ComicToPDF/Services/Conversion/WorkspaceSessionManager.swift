@@ -85,6 +85,6 @@ class WorkspaceSessionManager: ObservableObject {
         }
         
         // Tell Persistence Manager to save globally
-        Task { await MainActor.run { ConversionManager.sharedIfAvailable?.saveLibrary() } }
+        NotificationCenter.default.post(name: NSNotification.Name("LibraryNeedsSave"), object: nil)
     }
 }

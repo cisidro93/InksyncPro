@@ -104,6 +104,11 @@ class ConversionManager: ObservableObject {
                 self?.scanLibrary(addedByMode: mode)
             }
         }
+        
+        // ✅ Subscribe to external state changes that require library serialization
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("LibraryNeedsSave"), object: nil, queue: .main) { [weak self] _ in
+            self?.saveLibrary()
+        }
     }
     
     private func handleEngineEvent(_ event: ConversionProgressEvent) {

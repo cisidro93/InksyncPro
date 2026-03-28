@@ -34,7 +34,7 @@ class TaskEngine: ObservableObject {
         case .completed(_, _):
             self.isConverting = false
             self.processingStatus = ""
-            Task { await MainActor.run { ConversionManager.sharedIfAvailable?.scanLibrary() } }
+            NotificationCenter.default.post(name: NSNotification.Name("LibraryNeedsRescan"), object: nil, userInfo: nil)
         case .failed(let url, let error):
             self.isConverting = false
             self.appAlert = AppAlert(title: "Conversion Failed", message: error.localizedDescription)
