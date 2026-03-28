@@ -103,13 +103,15 @@ struct SmartListImporterView: View {
                 eventName = selectedFile.deletingPathExtension().lastPathComponent
             }
             
-            // Request security scoping since it's an external file
-            guard selectedFile.startAccessingSecurityScopedResource() else {
-                errorMessage = "Permission denied to read this file."
+            // Handle security scoping flexibly for local copies
+            let isAccessing = selectedFile.startAccessingSecurityScopedResource()
+            defer { if isAccessing { selectedFile.stopAccessingSecurityScopedResource() } }
+            
+            // Validate read access physically to ensure non-scoping works
+            if !FileManager.default.isReadableFile(atPath: selectedFile.path) {
+                errorMessage = "The file exists securely but physical file-system read permission is denied. Try moving the file to 'On My iPhone'."
                 return
             }
-            
-            defer { selectedFile.stopAccessingSecurityScopedResource() }
             
             let ext = selectedFile.pathExtension.lowercased()
             let cleanFilename = selectedFile.deletingPathExtension().lastPathComponent
