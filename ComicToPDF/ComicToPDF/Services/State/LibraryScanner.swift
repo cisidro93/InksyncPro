@@ -75,6 +75,7 @@ actor LibraryScanner {
             }
         }
         
+        let allPDFs = await MainActor.run { manager.convertedPDFs }
         let missingIDs = allPDFs.filter { !fileManager.fileExists(atPath: $0.url.path) && !fileManager.fileExists(atPath: docDir.appendingPathComponent($0.url.lastPathComponent).path) }.map { $0.id }
         
         // Let's also enforce deduplication on memory so duplicates already created are pruned for the user

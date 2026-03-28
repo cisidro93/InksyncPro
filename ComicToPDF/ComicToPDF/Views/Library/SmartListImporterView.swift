@@ -107,12 +107,19 @@ struct SmartListImporterView: View {
             defer { selectedFile.stopAccessingSecurityScopedResource() }
             
             let ext = selectedFile.pathExtension.lowercased()
+            let cleanFilename = selectedFile.deletingPathExtension().lastPathComponent
+                .replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "-", with: " ")
+                .capitalized
+            
             var requests: [RequestedComicItem] = []
             
             if ext == "cbl" || ext == "xml" {
                 requests = try SmartListImporter.shared.parseCBL(from: selectedFile)
+            } else if ext == "csv" {
+                requests = try SmartListImporter.shared.parseCSVList(from: selectedFile, defaultSeriesName: cleanFilename)
             } else {
-                requests = try SmartListImporter.shared.parseTextList(from: selectedFile)
+                requests = try SmartListImporter.shared.parseTextList(from: selectedFile, defaultSeriesName: cleanFilename)
             }
             
             if requests.isEmpty {
