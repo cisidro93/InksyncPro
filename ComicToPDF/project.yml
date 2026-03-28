@@ -43,3 +43,20 @@ targets:
         UIRequiresFullScreen: true
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        UIBackgroundModes: [audio]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: public.comma-separated-values-text
+            UTTypeDescription: CSV File
+            UTTypeConformsTo: [public.text]
+            UTTypeTagSpecification:
+              public.filename-extension: [csv]
+          - UTTypeIdentifier: net.daringfireball.markdown
+            UTTypeDescription: Markdown Document
+            UTTypeConformsTo: [public.text]
+            UTTypeTagSpecification:
+              public.filename-extension: [md, markdown]
+          - UTTypeIdentifier: com.macromates.textpad.snippet
+            UTTypeDescription: Text File
+            UTTypeConformsTo: [public.text]
+            UTTypeTagSpecification:
+              public.filename-extension: [txt]

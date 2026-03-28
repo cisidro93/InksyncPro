@@ -87,8 +87,10 @@ struct SmartListImporterView: View {
                     }
                 }
             }
-        .fileImporter(isPresented: $showingFilePicker, allowedContentTypes: allowedTypes, allowsMultipleSelection: false) { result in
-            handleImport(result: result)
+        .sheet(isPresented: $showingFilePicker) {
+            SmartListFileWrapper { urls in
+                handleImport(result: .success(urls))
+            }
         }
     }
     
@@ -139,6 +141,49 @@ struct SmartListImporterView: View {
             
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Bulletproof Picker Wrapper
+struct SmartListFileWrapper: UIViewControllerRepresentable {
+    var onPicked: ([URL]) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let textTypes: [UTType] = [
+            .plainText,
+            .text,
+            .commaSeparatedText,
+            .tabSeparatedText,
+            .sourceCode,
+            .json,
+            .item,
+            .data,
+            .content,
+            UTType("public.plain-text") ?? .plainText,
+            UTType("public.comma-separated-values-text") ?? .commaSeparatedText,
+            UTType(filenameExtension: "cbl") ?? .xml,
+            UTType(filenameExtension: "csv") ?? .commaSeparatedText,
+            UTType(filenameExtension: "md") ?? .plainText,
+            UTType(filenameExtension: "txt") ?? .plainText
+        ].compactMap { $0 }
+        
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: textTypes, asCopy: true)
+        picker.allowsMultipleSelection = false
+        picker.shouldShowFileExtensions = true
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        var parent: SmartListFileWrapper
+        init(_ parent: SmartListFileWrapper) { self.parent = parent }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            parent.onPicked(urls)
         }
     }
 }
