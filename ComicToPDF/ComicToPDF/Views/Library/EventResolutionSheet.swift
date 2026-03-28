@@ -15,11 +15,11 @@ struct EventResolutionSheet: View {
     var missing: [ResolvedEventItem] { resolvedItems.filter { if case .missing = $0.resolution { return true }; return false } }
     
     var omnibusTotalMB: Int {
-        let bytes = resolvedItems.compactMap { item -> Int? in
-            if case .matched(let p) = item.resolution { return p.sizeInBytes }
+        let bytes = resolvedItems.compactMap { item -> Int64? in
+            if case .matched(let p) = item.resolution { return p.fileSize }
             return nil
         }.reduce(0, +)
-        return bytes / 1024 / 1024
+        return Int(bytes / 1024 / 1024)
     }
     
     var body: some View {

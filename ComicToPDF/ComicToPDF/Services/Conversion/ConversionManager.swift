@@ -251,10 +251,12 @@ class ConversionManager: ObservableObject {
                                 id: UUID(),
                                 name: fileURL.deletingPathExtension().lastPathComponent,
                                 url: fileURL,
-                                sizeInBytes: size,
-                                contentType: .book,
-                                originalFormat: settings.outputFormat == .epub ? "epub" : "pdf"
+                                pageCount: 0,
+                                fileSize: size,
+                                metadata: PDFMetadata(title: fileURL.deletingPathExtension().lastPathComponent),
+                                contentType: .book
                             )
+                            newPDF.lastOutputFormat = settings.outputFormat
                             newPDF.coverImageData = startCover
                             self.convertedPDFs.append(newPDF)
                         } catch {}
