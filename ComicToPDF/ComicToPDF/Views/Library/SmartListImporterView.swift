@@ -12,13 +12,16 @@ struct SmartListImporterView: View {
     
     // Support .cbl, .csv, .md, .txt
     let allowedTypes: [UTType] = [
+        .item, // Unrestricted generic
+        .content, // Any content
+        .data, // Generic raw data
+        .plainText,
+        .commaSeparatedText,
+        .text,
         UTType(filenameExtension: "cbl") ?? .xml,
         UTType(filenameExtension: "csv") ?? .commaSeparatedText,
         UTType(filenameExtension: "md") ?? .plainText,
-        .commaSeparatedText,
-        .plainText,
-        .text,
-        .data // Fallback catch-all for unknown generic texts provided by AI tools
+        UTType(filenameExtension: "txt") ?? .plainText
     ]
     
     var body: some View {

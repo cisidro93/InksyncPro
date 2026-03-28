@@ -101,6 +101,22 @@ class LibraryViewModel: ObservableObject {
                 }
             }
             
+            // 4. Deduplication Pass for Identical Collections and Series
+            // If a user imports a Folder "Batman", and the Metadata parsed is also "Batman",
+            // the UI will double-render the series item if both exist. We prefer the collection group.
+            var keysToRemove: [String] = []
+            for (key, group) in groups {
+                if key.starts(with: "col_") {
+                    let overlappingSeriesKey = "series_\(group.title)"
+                    if groups[overlappingSeriesKey] != nil {
+                        keysToRemove.append(overlappingSeriesKey)
+                    }
+                }
+            }
+            for k in keysToRemove {
+                groups.removeValue(forKey: k)
+            }
+            
             var items: [(Int, LibraryListItem)] = []
             
             for (key, group) in groups {
