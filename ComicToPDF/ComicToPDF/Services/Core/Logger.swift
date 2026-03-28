@@ -142,6 +142,61 @@ class Logger: ObservableObject {
         log("Logs Cleared", category: "SYSTEM", type: .system)
     }
     
+    // ✅ NEW: Dynamic Domain Tracker
+    // Scans memory array to figure out which domains are currently actively failing or reporting.
+    var availableCategories: [String] {
+        let uniqueCategories = Set(parsedLogs.map { $0.category })
+        return Array(uniqueCategories).sorted()
+    }
+    
+    // ✅ NEW: Smart Domain/Level Targeted Exporter
+    // Generates a tailored textual stack-trace based heavily on what the user explicitly selects.
+    func generateSmartLog(categories: [String]? = nil, types: [LogType]? = nil) -> URL? {
+        var filteredLogs = parsedLogs
+        
+        if let targetTypes = types {
+            filteredLogs = filteredLogs.filter { targetTypes.contains($0.type) }
+        }
+        
+        if let targetCategories = categories {
+            filteredLogs = filteredLogs.filter { targetCategories.contains($0.category) }
+        }
+        
+        var logString = "--- Inksync Pro Smart Forensic Log ---\n"
+        let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .medium)
+        logString += "Generated: \(timestamp)\n"
+        
+        if let filters = categories {
+            logString += "Domains: \(filters.joined(separator: ", "))\n"
+        } else {
+            logString += "Domains: All\n"
+        }
+        
+        if let types = types {
+            logString += "Levels: \(types.map { $0.rawValue }.joined(separator: ", "))\n"
+        } else {
+            logString += "Levels: All\n"
+        }
+        logString += "--------------------------------------\n\n"
+        
+        for entry in filteredLogs.reversed() { // Newest first
+            let time = DateFormatter.localizedString(from: entry.timestamp, dateStyle: .none, timeStyle: .medium)
+            logString += "[\(time)] [\(entry.type.rawValue)] [\(entry.category)] \(entry.message)\n"
+        }
+        
+        let tempDir = FileManager.default.temporaryDirectory
+        let safeName = (categories?.first ?? "System").replacingOccurrences(of: " ", with: "_").lowercased()
+        let smartLogURL = tempDir.appendingPathComponent("inksync_\(safeName)_diagnostic.txt")
+        
+        do {
+            try logString.write(to: smartLogURL, atomically: true, encoding: .utf8)
+            return smartLogURL
+        } catch {
+            log("Failed to write smart log file to disk.", category: "System", type: .error)
+            return nil
+        }
+    }
+    
     // ✅ NEW: Generate a condensed error log for email support
     func generateErrorLogFile() -> URL? {
         let errorEntries = parsedLogs.filter { $0.type == .error || $0.type == .warning }

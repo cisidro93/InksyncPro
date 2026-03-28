@@ -818,9 +818,48 @@ extension View {
     @ViewBuilder
     func supportPencilDoubleTap(action: @escaping () -> Void) -> some View {
         if #available(iOS 17.5, *) {
-            self.onPencilDoubleTap { _ in action() }
+            self.onPencilDoubleTap { _ in
+                Logger.shared.log("Pencil Double-Tap Handled (iOS 17.5+ Native Swift)", category: "Interaction")
+                action() 
+            }
         } else {
-            self
+            self.background(PencilDoubleTapResponder(action: action))
+        }
+    }
+}
+
+// MARK: - Legacy Apple Pencil Support (< iOS 17.5)
+struct PencilDoubleTapResponder: UIViewRepresentable {
+    var action: () -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = true // Required to receive touches/interactions
+        
+        let interaction = UIPencilInteraction()
+        interaction.delegate = context.coordinator
+        view.addInteraction(interaction)
+        
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    class Coordinator: NSObject, UIPencilInteractionDelegate {
+        var action: () -> Void
+        
+        init(action: @escaping () -> Void) {
+            self.action = action
+        }
+        
+        func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+            Logger.shared.log("Pencil Double-Tap Handled (iOS <17.5 UIKit Bridge)", category: "Interaction")
+            action()
         }
     }
 }

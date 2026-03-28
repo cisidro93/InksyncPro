@@ -50,13 +50,24 @@ class VisionPanelProvider: PanelProvider {
                 // Process Rects
                 if let rects = rectRequest.results {
                     for obs in rects {
-                        guard obs.confidence >= Float(currentConfidence) else { continue }
-                        let area = obs.boundingBox.width * obs.boundingBox.height
-                        guard area >= CGFloat(currentMinSize) else { continue }
+                        guard obs.confidence >= Float(currentConfidence) else { 
+                            Logger.shared.log("AI Vision [Drop]: Panel rejected due to confidence (\(String(format: "%.2f", obs.confidence)) < \(currentConfidence)).", category: "AI_Verbose")
+                            continue 
+                        }
+                        
+                        // Fix: Using Fractional Side Bounds instead of absolute Area.
+                        let isWideEnough = obs.boundingBox.width >= CGFloat(currentMinSize)
+                        let isTallEnough = obs.boundingBox.height >= CGFloat(currentMinSize)
+                        
+                        guard isWideEnough && isTallEnough else { 
+                            Logger.shared.log("AI Vision [Drop]: Panel rejected due to microscopic bounds (w: \(String(format: "%.2f", obs.boundingBox.width)), h: \(String(format: "%.2f", obs.boundingBox.height))).", category: "AI_Verbose")
+                            continue 
+                        }
                         
                         // Saliency Check: Does this rectangle contain anything a human would look at?
                         let hasSaliency = salientRects.contains { $0.intersects(obs.boundingBox) }
                         let boostedConfidence = hasSaliency ? obs.confidence * 1.2 : obs.confidence // Boost if it holds attention
+
                         
                         candidates.append(PanelCandidate(
                             boundingBox: obs.boundingBox,
@@ -82,6 +93,7 @@ class VisionPanelProvider: PanelProvider {
                     }
                 }
                 
+                Logger.shared.log("AI Vision: Extracted \(candidates.count) structural candidate arrays from image boundaries.", category: "AI", type: .success)
                 continuation.resume(returning: candidates)
                 
             } catch {

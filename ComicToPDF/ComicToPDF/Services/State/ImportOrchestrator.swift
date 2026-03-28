@@ -221,12 +221,8 @@ class ImportOrchestrator {
                         smartMetadata.issueNumber = xmlData.parsedNumber
                         smartMetadata.tags.append("Auto XML Scrape")
                     } else {
-                        // Inherit original directory logically if no XML is present
-                        let originalParent = url.deletingLastPathComponent().lastPathComponent
-                        let invalidOriginals = ["downloads", "documents", "inbox", "tmp", "temp", "comics"]
-                        if !invalidOriginals.contains(originalParent.lowercased()) {
-                            smartMetadata.series = originalParent
-                        }
+                        // REVERT to 5e6efb9: Do NOT aggressively assign parent folder to XML series metadata
+                        // This prevents pollution inside the clustering logic.
                     }
                     
                     var pdf = ConvertedPDF(
@@ -271,23 +267,30 @@ class ImportOrchestrator {
             }
             
             var seriesName = ""
-            // 1. Prefer metadata series (XML or Scraped Parent Folder)
+            // 1. Prefer pristine metadata series (only populated if XML succeeded)
             if let metaSeries = pdf.metadata.series, !metaSeries.isEmpty, metaSeries != "Ungrouped" {
                 seriesName = metaSeries
-            } else if extractedName.count >= 3 {
-                // 2. Use Regex extracted name
-                seriesName = extractedName
             } else {
-                // 3. Fallback to Vision AI (Heavy)
-                await manager.generateCoverThumbnail(for: pdf)
-                if let coverURL = manager.getOriginalCoverURL(for: pdf) as URL?,
-                   let aiDetectedTitle = await CoverVisionAnalyzer.detectTitle(from: coverURL) {
-                    seriesName = aiDetectedTitle
-                    Logger.shared.log("Vision AI clustered '\(pdf.name)' into '\(aiDetectedTitle)'", category: "AI")
-                } else {
-                    seriesName = "Ungrouped"
+                // 2. Fallback to Restored Pure Regex Logic from 5e6efb9
+                seriesName = extractedName
+                
+                if seriesName.count < 3 || seriesName == "Ungrouped" {
+                    seriesName = pdf.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? "Ungrouped"
+                    
+                    if seriesName == "Ungrouped" || seriesName.count < 3 {
+                        await manager.generateCoverThumbnail(for: pdf)
+                        if let coverURL = manager.getOriginalCoverURL(for: pdf) as URL?,
+                           let aiDetectedTitle = await CoverVisionAnalyzer.detectTitle(from: coverURL) {
+                            seriesName = aiDetectedTitle
+                            Logger.shared.log("Vision AI clustered '\(pdf.name)' into '\(aiDetectedTitle)'", category: "AI")
+                        } else {
+                            seriesName = "Ungrouped"
+                        }
+                    }
                 }
             }
+            
+            if seriesName.isEmpty { seriesName = "Ungrouped" }
             
             clusters[seriesName, default: []].append(pdf)
         }
@@ -306,12 +309,10 @@ class ImportOrchestrator {
             }
             
             manager.saveLibrary()
-        }
-        
-        // Background Queue to safely serialize thumbnail generation
-        Task.detached(priority: .background) {
+            
+            // Generate Thumbnails safely for all imported instances now that group IDs exist securely
             for pdf in importedPDFs {
-                await manager.generateCoverThumbnail(for: pdf)
+                Task { await manager.generateCoverThumbnail(for: pdf) }
             }
         }
     }

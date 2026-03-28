@@ -17,25 +17,42 @@ class ReadwiseImportService {
         let rows = parseCSV(content)
         guard rows.count > 1 else { return 0 } // No headers or data
         
-        let headers = rows[0].map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
+        // Sanitize headers heavily: Strip Byte-Order Marks (\uFEFF) explicitly
+        let headers = rows[0].map { 
+            let bomStripped = $0.replacingOccurrences(of: "\u{FEFF}", with: "")
+            return bomStripped.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) 
+        }
+        
+        Logger.shared.log("Readwise Sync: Parsed \(rows.count - 1) total rows. Found Headers: \(headers.joined(separator: ", "))", category: "Import")
+        
         guard let highlightIdx = headers.firstIndex(of: "highlight") ?? headers.firstIndex(of: "highlights"),
               let titleIdx = headers.firstIndex(of: "title") ?? headers.firstIndex(of: "book title") else {
+            Logger.shared.log("Readwise Sync [ERROR]: Could not find 'highlight' or 'title' columns in CSV. Raw headers: \(headers)", category: "Import", type: .error)
             throw NSError(domain: "ReadwiseImport", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid Readwise CSV Format. Missing 'highlight' or 'title' columns."])
         }
         
         let noteIdx = headers.firstIndex(of: "note") ?? headers.firstIndex(of: "notes")
         let authorIdx = headers.firstIndex(of: "author") ?? headers.firstIndex(of: "book author")
+        Logger.shared.log("Readwise Sync: Column Indexes mapped successfully [Highlight: \(highlightIdx), Title: \(titleIdx)]", category: "Import", type: .success)
         
         var importedCount = 0
         
         // Background loop ingestion
+        var skippedCount = 0
         for i in 1..<rows.count {
             let row = rows[i]
-            if row.count <= max(highlightIdx, titleIdx) { continue }
+            if row.count <= max(highlightIdx, titleIdx) { 
+                skippedCount += 1
+                continue 
+            }
             
             let highlightText = row[highlightIdx].trimmingCharacters(in: .whitespacesAndNewlines)
             let bookTitle = row[titleIdx].trimmingCharacters(in: .whitespacesAndNewlines)
-            if highlightText.isEmpty || bookTitle.isEmpty { continue }
+            
+            if highlightText.isEmpty || bookTitle.isEmpty { 
+                skippedCount += 1
+                continue 
+            }
             
             let noteText = (noteIdx != nil && row.count > noteIdx!) ? row[noteIdx!].trimmingCharacters(in: .whitespacesAndNewlines) : ""
             let author = (authorIdx != nil && row.count > authorIdx!) ? row[authorIdx!].trimmingCharacters(in: .whitespacesAndNewlines) : ""
@@ -60,6 +77,7 @@ class ReadwiseImportService {
         }
         
         try context.save()
+        Logger.shared.log("Readwise Sync: Successfully imported \(importedCount) records. Skipped \(skippedCount) malformed rows.", category: "Import", type: .success)
         return importedCount
     }
     

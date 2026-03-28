@@ -9,6 +9,8 @@ struct LogsView: View {
     @State private var showingCopiedAlert = false
     @State private var isSharing = false
     @State private var showErrorsOnly = false
+    @State private var selectedCategory: String? = nil
+    @State private var smartLogURL: URL? = nil
     
     // ✅ NEW: Mail State
     @State private var showingMailErrorAlert = false
@@ -20,10 +22,14 @@ struct LogsView: View {
     }
     
     var filteredLogs: [LogEntry] {
+        var logs = logger.parsedLogs
         if showErrorsOnly {
-            return logger.parsedLogs.filter { $0.type == .error || $0.type == .warning }
+            logs = logs.filter { $0.type == .error || $0.type == .warning }
         }
-        return logger.parsedLogs
+        if let cat = selectedCategory {
+            logs = logs.filter { $0.category == cat }
+        }
+        return logs
     }
     
     var body: some View {
@@ -53,6 +59,35 @@ struct LogsView: View {
             }
             .padding()
             .background(Color(UIColor.secondarySystemBackground))
+            
+            Divider()
+            
+            // ✅ Category Isolation Pills
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Button(action: { selectedCategory = nil }) {
+                        Text("All")
+                            .font(.caption).bold()
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(selectedCategory == nil ? Color.blue : Color.secondary.opacity(0.2))
+                            .foregroundColor(selectedCategory == nil ? .white : .primary)
+                            .cornerRadius(12)
+                    }
+                    
+                    ForEach(logger.availableCategories, id: \.self) { cat in
+                        Button(action: { selectedCategory = cat }) {
+                            Text(cat)
+                                .font(.caption).bold()
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(selectedCategory == cat ? Color.blue : Color.secondary.opacity(0.2))
+                                .foregroundColor(selectedCategory == cat ? .white : .primary)
+                                .cornerRadius(12)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+            }
             
             Divider()
             
@@ -98,15 +133,31 @@ struct LogsView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button {
-                        if MFMailComposeViewController.canSendMail() {
-                            isShowingMailView = true
+                        let filterCategories = selectedCategory == nil ? nil : [selectedCategory!]
+                        let filterTypes: [LogType]? = showErrorsOnly ? [.error, .warning] : nil
+                        
+                        if let smartURL = logger.generateSmartLog(categories: filterCategories, types: filterTypes) {
+                            self.smartLogURL = smartURL
+                            if MFMailComposeViewController.canSendMail() {
+                                isShowingMailView = true
+                            } else {
+                                showingMailErrorAlert = true
+                            }
                         } else {
                             showingMailErrorAlert = true
                         }
                     } label: { Label("Email Support", systemImage: "envelope") }
                     
-                    Button(action: { isSharing = true }) {
-                        Label("Share Log File", systemImage: "square.and.arrow.up")
+                    Button(action: { 
+                        let filterCategories = selectedCategory == nil ? nil : [selectedCategory!]
+                        let filterTypes: [LogType]? = showErrorsOnly ? [.error, .warning] : nil
+                        
+                        if let smartURL = logger.generateSmartLog(categories: filterCategories, types: filterTypes) {
+                            self.smartLogURL = smartURL
+                            isSharing = true 
+                        }
+                    }) {
+                        Label("Share Visible Logs", systemImage: "square.and.arrow.up")
                     }
                     Button(action: copyToClipboard) {
                         Label("Copy All", systemImage: "doc.on.doc")
@@ -135,20 +186,19 @@ struct LogsView: View {
             }
         )
         .sheet(isPresented: $isSharing) {
-             ShareSheet(activityItems: [logger.logFileURL])
+             if let url = smartLogURL {
+                 ShareSheet(activityItems: [url])
+             }
         }
         .sheet(isPresented: $isShowingMailView) {
-            if let errorLogURL = logger.generateErrorLogFile(),
-               let fullLogData = try? Data(contentsOf: logger.logFileURL),
-               let errorLogData = try? Data(contentsOf: errorLogURL) {
+            if let targetURL = self.smartLogURL, let targetData = try? Data(contentsOf: targetURL) {
                 MailView(
-                    subject: "Inksync Pro Support Request",
+                    subject: "Inksync Pro Support Request" + (selectedCategory != nil ? " [\(selectedCategory!)]" : ""),
                     recipients: ["support@inksyncpro.app"],
                     messageBody: getDeviceInfo(),
                     isHTML: false,
                     attachments: [
-                        (fullLogData, "text/plain", "debug.log"),
-                        (errorLogData, "text/plain", "inksync_error_log.txt")
+                        (targetData, "text/plain", targetURL.lastPathComponent)
                     ],
                     isShowing: $isShowingMailView,
                     result: $mailResult

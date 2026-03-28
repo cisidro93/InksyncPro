@@ -45,6 +45,7 @@ struct ContentView: View {
     // ✅ PHASE 8: Universal Alerts
     @State private var showingGlobalError = false
     @State private var globalErrorMessage = ""
+    @State private var globalErrorCategory = "System"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -128,19 +129,21 @@ struct ContentView: View {
                 )
             }
         }
-        // ✅ PHASE 8: Universal Alert Trap
+        // ✅ PHASE 8: Educational Alert Trap
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("GlobalErrorTriggered"))) { notification in
             if let userInfo = notification.userInfo,
                let message = userInfo["message"] as? String,
                let category = userInfo["category"] as? String {
-                self.globalErrorMessage = "[\(category)]\n\(message)"
+                self.globalErrorCategory = category
+                self.globalErrorMessage = message
                 self.showingGlobalError = true
             }
         }
-        .alert("System Error", isPresented: $showingGlobalError) {
+        .alert("\(globalErrorCategory) Component Failure", isPresented: $showingGlobalError) {
+            Button("Copy Diagnostic Code") { UIPasteboard.general.string = "[\(globalErrorCategory)] \(globalErrorMessage)" }
             Button("Dismiss", role: .cancel) { }
         } message: {
-            Text(globalErrorMessage)
+            Text("\(globalErrorMessage)\n\nA trace has been recorded. Navigate to Settings ➔ Logs and filter by '\(globalErrorCategory)' to export the failure context to Support.")
         }
         // ✅ Hardware Shortcuts
         .modifier(iPadKeyboardShortcuts(
