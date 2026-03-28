@@ -10,13 +10,15 @@ struct SmartListImporterView: View {
     @State private var errorMessage: String? = nil
     @State private var eventName: String = "Imported Event"
     
-    // Support .cbl, .csv, and standard txt
+    // Support .cbl, .csv, .md, .txt
     let allowedTypes: [UTType] = [
         UTType(filenameExtension: "cbl") ?? .xml,
-        .xml,
+        UTType(filenameExtension: "csv") ?? .commaSeparatedText,
+        UTType(filenameExtension: "md") ?? .plainText,
         .commaSeparatedText,
         .plainText,
-        .text
+        .text,
+        .data // Fallback catch-all for unknown generic texts provided by AI tools
     ]
     
     var body: some View {

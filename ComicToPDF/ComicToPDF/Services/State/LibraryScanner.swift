@@ -15,7 +15,7 @@ actor LibraryScanner {
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
         
         let currentPaths = await MainActor.run {
-            manager.convertedPDFs.map { $0.url.standardizedFileURL.path }
+            manager.convertedPDFs.map { $0.url.lastPathComponent }
         }
         
         let pathSet = Set(currentPaths)
@@ -25,7 +25,7 @@ actor LibraryScanner {
                 await Task.yield()
                 let ext = fileURL.pathExtension.lowercased()
                 if ["pdf", "cbz", "zip", "epub"].contains(ext) {
-                    if !pathSet.contains(fileURL.standardizedFileURL.path) {
+                    if !pathSet.contains(fileURL.lastPathComponent) {
                         let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                         let sourceMode = addedByMode ?? .pro
                         var newPDF = ConvertedPDF(name: fileURL.lastPathComponent, url: fileURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: fileURL.lastPathComponent))
@@ -75,13 +75,25 @@ actor LibraryScanner {
             }
         }
         
-        let allPDFs = await MainActor.run { manager.convertedPDFs }
-        let missingIDs = allPDFs.filter { !fileManager.fileExists(atPath: $0.url.path) }.map { $0.id }
+        let missingIDs = allPDFs.filter { !fileManager.fileExists(atPath: $0.url.path) && !fileManager.fileExists(atPath: docDir.appendingPathComponent($0.url.lastPathComponent).path) }.map { $0.id }
         
-        if !missingIDs.isEmpty {
+        // Let's also enforce deduplication on memory so duplicates already created are pruned for the user
+        var uniquePDFs: [ConvertedPDF] = []
+        var seenNames = Set<String>()
+        for pdf in allPDFs {
+            if !seenNames.contains(pdf.url.lastPathComponent) {
+                seenNames.insert(pdf.url.lastPathComponent)
+                uniquePDFs.append(pdf)
+            }
+        }
+        
+        let requiresPrune = !missingIDs.isEmpty || uniquePDFs.count != allPDFs.count
+        
+        if requiresPrune {
             await MainActor.run {
+                manager.convertedPDFs = uniquePDFs
                 manager.convertedPDFs.removeAll { missingIDs.contains($0.id) }
-                Logger.shared.log("Removed \(missingIDs.count) missing files from library", category: "Library")
+                Logger.shared.log("Library Pruned: Removed duplicates or sandbox-shifted files", category: "Library")
                 manager.saveLibrary()
             }
         }
