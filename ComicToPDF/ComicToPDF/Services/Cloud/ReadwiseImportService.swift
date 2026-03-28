@@ -18,13 +18,13 @@ class ReadwiseImportService {
         guard rows.count > 1 else { return 0 } // No headers or data
         
         let headers = rows[0].map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
-        guard let highlightIdx = headers.firstIndex(of: "highlight"),
-              let titleIdx = headers.firstIndex(of: "title") else {
+        guard let highlightIdx = headers.firstIndex(of: "highlight") ?? headers.firstIndex(of: "highlights"),
+              let titleIdx = headers.firstIndex(of: "title") ?? headers.firstIndex(of: "book title") else {
             throw NSError(domain: "ReadwiseImport", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid Readwise CSV Format. Missing 'highlight' or 'title' columns."])
         }
         
-        let noteIdx = headers.firstIndex(of: "note")
-        let authorIdx = headers.firstIndex(of: "author")
+        let noteIdx = headers.firstIndex(of: "note") ?? headers.firstIndex(of: "notes")
+        let authorIdx = headers.firstIndex(of: "author") ?? headers.firstIndex(of: "book author")
         
         var importedCount = 0
         
