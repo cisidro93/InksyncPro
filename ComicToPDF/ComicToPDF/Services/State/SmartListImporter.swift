@@ -44,28 +44,43 @@ class SmartListImporter {
         var items: [RequestedComicItem] = []
         let lines = text.components(separatedBy: .newlines)
         var headers: [String] = []
+        var hasHeaders = false
         
         for (idx, line) in lines.enumerated() {
             let row = line.trimmingCharacters(in: .whitespaces)
             if row.isEmpty { continue }
             
+            // Simple split for basic CSV reading
             let columns = row.components(separatedBy: ",")
+            
             if idx == 0 {
-                // Parse headers
-                headers = columns.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
-                continue
+                let testHeaders = columns.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+                if testHeaders.contains(where: { $0.contains("chapter") || $0.contains("start") || $0.contains("end") || $0.contains("issue") || $0.contains("series") || $0.contains("title") }) {
+                    headers = testHeaders
+                    hasHeaders = true
+                    continue
+                } else {
+                    // No recognizable headers: fallback to basic text processing below
+                    break
+                }
             }
             
             var volInfo: String? = nil
             var startChap: Int? = nil
             var endChap: Int? = nil
+            var parsedSeries: String? = nil
+            var parsedIssue: String? = nil
             
             for (colIdx, value) in columns.enumerated() {
                 guard colIdx < headers.count else { continue }
                 let header = headers[colIdx]
                 let cleanVal = value.trimmingCharacters(in: .whitespaces)
                 
-                if header.contains("volume") || header.contains("vol") {
+                if header.contains("series") || header == "title" || header == "book" || header.contains("name") {
+                    parsedSeries = cleanVal
+                } else if header == "issue" || header.contains("issue") || header == "number" || header == "#" {
+                    parsedIssue = cleanVal
+                } else if header.contains("volume") || header.contains("vol") {
                     volInfo = cleanVal
                 } else if header == "start_chapter" || header == "chapter" || header == "start" {
                     startChap = Int(cleanVal)
@@ -74,17 +89,23 @@ class SmartListImporter {
                 }
             }
             
-            if let start = startChap {
-                let end = endChap ?? start
-                for chap in start...end {
-                    items.append(RequestedComicItem(
-                        series: defaultSeriesName,
-                        issueNumber: "\(chap)",
-                        volume: volInfo,
-                        originalText: "Vol \(volInfo ?? "?"), Ch \(chap)"
-                    ))
+            if let series = parsedSeries ?? (defaultSeriesName.isEmpty ? nil : defaultSeriesName) {
+                if let issue = parsedIssue {
+                    items.append(RequestedComicItem(series: series, issueNumber: issue, volume: volInfo, originalText: row))
+                } else if let start = startChap {
+                    let end = endChap ?? start
+                    for chap in start...end {
+                        items.append(RequestedComicItem(series: series, issueNumber: "\(chap)", volume: volInfo, originalText: "Vol \(volInfo ?? "?"), Ch \(chap)"))
+                    }
+                } else {
+                    items.append(RequestedComicItem(series: series, issueNumber: nil, volume: volInfo, originalText: row))
                 }
             }
+        }
+        
+        // If CSV has no recognizable table headers, evaluate it as an explicit newline text document
+        if !hasHeaders && items.isEmpty {
+            return try parseTextList(from: url, defaultSeriesName: defaultSeriesName)
         }
         
         return items
@@ -175,7 +196,16 @@ class SmartListImporter {
             
             // Garbage collection check (strips typical AI rambling sentences "Note: this may vary")
             if ["note:", "this", "these", "note", "the"].contains(series.lowercased()) || (series.count > 40 && issue == nil) { continue }
-            if series.count < 2 && issue == nil { continue }
+            
+            if series.count <= 3 && issue == nil {
+                // If a line is just a bare number and we have an inherited context
+                if let num = Int(series), !currentSeriesContext.isEmpty {
+                    issue = "\(num)"
+                    series = currentSeriesContext
+                } else if series.count < 2 {
+                    continue
+                }
+            }
             
             items.append(RequestedComicItem(series: series, issueNumber: issue, volume: currentVolumeContext, originalText: row))
         }
@@ -204,13 +234,17 @@ class SmartListImporter {
                 
                 var score = 0
                 
-                // 1. Series matches heavily
-                if !pdfSeriesClean.isEmpty && (reqSeriesClean.contains(pdfSeriesClean) || pdfSeriesClean.contains(reqSeriesClean)) {
-                    score += 50
-                    // Exact series
-                    if reqSeriesClean == pdfSeriesClean { score += 20 }
-                } else if pdfNameClean.contains(reqSeriesClean) {
-                    score += 40
+                // 1. Precise Series matches
+                if !pdfSeriesClean.isEmpty {
+                    if reqSeriesClean == pdfSeriesClean { 
+                        score += 50
+                    } else if reqSeriesClean.hasPrefix(pdfSeriesClean) || pdfSeriesClean.hasPrefix(reqSeriesClean) {
+                        score += 30
+                    }
+                }
+                
+                if score < 50 && pdfNameClean.contains(reqSeriesClean) {
+                    score += 20
                 }
                 
                 // Advanced Context: Volume Matches!
@@ -222,16 +256,25 @@ class SmartListImporter {
                     }
                 }
                 
-                // 2. Issue Number Matching
+                // 2. Strict Issue Number Matching
                 if let reqIssue = req.issueNumber, !reqIssue.isEmpty {
                     let pdfIssue = pdf.metadata.issueNumber ?? ""
                     if reqIssue == pdfIssue {
                         score += 50
-                    } else if pdfNameClean.contains(reqIssue) || pdfNameClean.contains("issue \(reqIssue)") || pdfNameClean.contains("vol \(reqIssue)") {
-                        score += 30
-                    } else if !pdfIssue.isEmpty {
-                        // Penalty for wrong issue number if the series matched
-                        score -= 50
+                    } else {
+                        // Word-boundary testing to prevent "1" matching "10"
+                        let paddedName = " \(pdfNameClean.replacingOccurrences(of: ".", with: " ").replacingOccurrences(of: "-", with: " ")) "
+                        let paddedIssue1 = " \(reqIssue) "
+                        let paddedIssue2 = " #\(reqIssue) "
+                        let paddedIssue3 = " issue \(reqIssue) "
+                        let paddedIssue4 = " ch \(reqIssue) "
+                        
+                        if paddedName.contains(paddedIssue1) || paddedName.contains(paddedIssue2) || paddedName.contains(paddedIssue3) || paddedName.contains(paddedIssue4) {
+                            score += 40
+                        } else if !pdfIssue.isEmpty {
+                            // Heavy Penalty for wrong issue number inside matched series
+                            score -= 60
+                        }
                     }
                 }
                 
