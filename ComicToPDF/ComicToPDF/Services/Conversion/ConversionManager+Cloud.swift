@@ -2,6 +2,14 @@ import SwiftUI
 import ZIPFoundation
 
 extension ConversionManager {
+    // MARK: - Sidecar Models
+    struct SmartPanel: Codable {
+        let x: Double
+        let y: Double
+        let width: Double
+        let height: Double
+    }
+
     // MARK: - Pre-Flight Validation & Export
     
     enum ValidationResult {

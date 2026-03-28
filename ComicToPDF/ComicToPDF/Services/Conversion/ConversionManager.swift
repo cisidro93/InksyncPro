@@ -56,6 +56,10 @@ class ConversionManager: ObservableObject {
     // Non-published continuation for async waiting
     private var panelEditorContinuation: CheckedContinuation<[CGRect], Never>?
     
+    func setPanelEditorContinuation(_ continuation: CheckedContinuation<[CGRect], Never>) {
+        self.panelEditorContinuation = continuation
+    }
+    
     func submitPanelEdits(_ rects: [CGRect]) {
         isPresentingPanelEditor = false
         currentEditorImage = nil
@@ -91,28 +95,13 @@ class ConversionManager: ObservableObject {
         }
         
         NotificationCenter.default.addObserver(forName: NSNotification.Name("LibraryNeedsSave"), object: nil, queue: .main) { [weak self] _ in
-            self?.saveLibrary()
+            Task { @MainActor [weak self] in
+                self?.saveLibrary()
+            }
         }
     }
     
-    private func handleEngineEvent(_ event: ConversionProgressEvent) {
-        switch event {
-        case .started(let file):
-            self.isConverting = true
-            self.processingStatus = "Starting: \(file.lastPathComponent)"
-        case .progress(_, let current, let total, let message):
-            self.conversionProgress = Double(current) / Double(total)
-            self.processingStatus = message
-        case .completed(_, _):
-            self.isConverting = false
-            self.processingStatus = ""
-            self.scanLibrary()
-        case .failed(let url, let error):
-            self.isConverting = false
-            Logger.shared.log("Conversion Failed [\(url.lastPathComponent)]: \(error.localizedDescription)", category: "Engine", type: .error)
-            self.appAlert = AppAlert(title: "Conversion Failed", message: error.localizedDescription)
-        }
-    }
+    
     
     private func performStartupOptimization() {
         let key = "hasRunStartupOptimization"

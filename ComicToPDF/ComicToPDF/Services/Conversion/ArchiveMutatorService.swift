@@ -13,7 +13,7 @@ class ArchiveMutatorService {
         
         let result = try await EditorSessionManager.shared.extractImageFiles(from: pdf.url)
         let tempDir = result.workingDir
-        let imageFiles = result.images
+        let imageFiles = result.files
         
         defer { 
             try? FileManager.default.removeItem(at: tempDir)
