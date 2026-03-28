@@ -102,8 +102,20 @@ struct EventResolutionSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Build Event") {
-                        buildEventCollection()
+                    Menu("Complete Build") {
+                        Button {
+                            buildEventCollection()
+                        } label: {
+                            Label("Create Playlist Folder", systemImage: "folder.fill")
+                        }
+                        
+                        let totalMB = resolvedItems.compactMap { if case .matched(let p) = $0.resolution { return p.sizeInBytes }; return nil }.reduce(0, +) / 1024 / 1024
+                        
+                        Button {
+                            buildOmnibusSequence()
+                        } label: {
+                            Label("Compile Kindle Omnibus (\(totalMB)MB)", systemImage: "books.vertical.fill")
+                        }
                     }
                     .font(.headline)
                     .disabled(autoMatched.isEmpty)
@@ -157,6 +169,18 @@ struct EventResolutionSheet: View {
         conversionManager.saveLibrary()
         
         isProcessing = false
+        dismiss()
+    }
+    
+    private func buildOmnibusSequence() {
+        let matchedPDFs = resolvedItems.compactMap { item -> ConvertedPDF? in
+            if case .matched(let pdf) = item.resolution { return pdf }
+            return nil
+        }
+        guard !matchedPDFs.isEmpty else { return }
+        
+        // Delegate to background Omnibus processor
+        conversionManager.enqueueOmnibus(name: eventName, sourceFiles: matchedPDFs)
         dismiss()
     }
 }

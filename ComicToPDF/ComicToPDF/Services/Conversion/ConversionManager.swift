@@ -217,6 +217,61 @@ class ConversionManager: ObservableObject {
         }
     }
     
+    // MARK: - Omnibus Construction
+    @MainActor
+    func enqueueOmnibus(name: String, sourceFiles: [ConvertedPDF]) {
+        let task = AppBackgroundTask(title: "Building Omnibus: \(name)", progress: 0.0)
+        activeTasks.append(task)
+        
+        let urls = sourceFiles.map { $0.url }
+        let startCover = sourceFiles.first?.coverImageData
+        let settings = self.conversionSettings
+        let saveDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        
+        Task.detached(priority: .userInitiated) {
+            do {
+                let generatedFiles = try await EPUBMerger().mergeWithSmartSplit(
+                    sourceURLs: urls,
+                    baseOutputName: name,
+                    targetDir: saveDir,
+                    settings: settings,
+                    overrideCoverData: startCover,
+                    progressCallback: { progress in
+                        Task { @MainActor in task.progress = progress }
+                    }
+                )
+                
+                Task { @MainActor in
+                    for fileURL in generatedFiles {
+                        do {
+                            let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+                            let size = attrs[.size] as? Int64 ?? 0
+                            
+                            var newPDF = ConvertedPDF(
+                                id: UUID(),
+                                name: fileURL.deletingPathExtension().lastPathComponent,
+                                url: fileURL,
+                                sizeInBytes: size,
+                                contentType: .book,
+                                originalFormat: settings.outputFormat == .epub ? "epub" : "pdf"
+                            )
+                            newPDF.coverImageData = startCover
+                            self.convertedPDFs.append(newPDF)
+                        } catch {}
+                    }
+                    self.saveLibrary()
+                    self.activeTasks.removeAll(where: { $0.id == task.id })
+                    self.appAlert = AppAlert(title: "Omnibus Complete", message: "Successfully created \(generatedFiles.count) volumes for \(name)")
+                }
+            } catch {
+                Task { @MainActor in
+                    self.activeTasks.removeAll(where: { $0.id == task.id })
+                    self.appAlert = AppAlert(title: "Omnibus Failed", message: error.localizedDescription)
+                }
+            }
+        }
+    }
+    
     // Legacy Init Continuation...
     
     private func performStartupOptimization() {

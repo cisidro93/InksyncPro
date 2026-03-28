@@ -215,7 +215,7 @@ class SmartListImporter {
                 
                 // Advanced Context: Volume Matches!
                 if let reqVol = req.volume, !reqVol.isEmpty {
-                    if let pdfVol = pdf.metadata.volumeNumber, pdfVol == reqVol {
+                    if let pdfVol = pdf.metadata.volume, pdfVol == reqVol {
                         score += 30
                     } else if pdfNameClean.contains("v\(reqVol)") || pdfNameClean.contains("vol \(reqVol)") || pdfNameClean.contains("volume \(reqVol)") || pdfNameClean.contains("v0\(reqVol)") {
                         score += 30

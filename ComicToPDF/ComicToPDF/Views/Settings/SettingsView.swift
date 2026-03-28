@@ -88,6 +88,7 @@ struct SettingsView: View {
             generalUISection
             sendToKindleSection
             exportDefaultsSection
+            omnibusSection
             processingEngineSection
             
             imageFiltersSection
@@ -240,6 +241,42 @@ struct SettingsView: View {
             }
             
         } header: { Text("Export & Conversion") }
+    }
+    
+    @ViewBuilder
+    private var omnibusSection: some View {
+        Section {
+            HStack {
+                settingsIcon("books.vertical.fill", color: .purple)
+                Picker("Split Omnibus at Size", selection: $conversionManager.conversionSettings.omnibusSplitThresholdMB) {
+                    Text("100 MB").tag(100)
+                    Text("200 MB (Kindle Safe)").tag(200)
+                    Text("500 MB").tag(500)
+                    Text("Infinite / Disable Split").tag(99999)
+                }
+                .pickerStyle(.menu)
+            }
+            
+            HStack {
+                settingsIcon("seal.fill", color: .pink)
+                Picker("Cover Badge Placement", selection: $conversionManager.conversionSettings.omnibusBadgePlacement) {
+                    ForEach(CoverBadgePlacement.allCases) { placement in
+                        Text(placement.rawValue).tag(placement)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Omnibus Builder")
+                    .font(.caption).bold()
+                Text("The EPUB Omnibus Engine aggregates multiple single issues into massive single-file Volumes. If you set a size limit, the engine will non-destructively split the volume *exactly* between chapters so you never lose your place mid-issue, automatically embedding 'Part 2' stickers on the cover art!")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.vertical, 4)
+            
+        } header: { Text("Omnibus Engine") }
     }
     
     @ViewBuilder

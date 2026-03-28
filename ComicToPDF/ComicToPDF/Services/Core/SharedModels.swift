@@ -425,6 +425,17 @@ enum AIVendor: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+enum CoverBadgePlacement: String, Codable, CaseIterable, Identifiable {
+    case topLeft = "Top Left"
+    case topRight = "Top Right"
+    case bottomLeft = "Bottom Left"
+    case bottomRight = "Bottom Right"
+    case center = "Center"
+    case hidden = "Hidden"
+    
+    var id: String { rawValue }
+}
+
 struct ConversionSettings: Codable, Equatable, Sendable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
@@ -441,6 +452,10 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var panelEditorMode: PanelEditorPresentationMode = .sheet
     var bindingMarginOffset: Int = 0             // ✅ NEW: Asymmetric Margin Padding
     var bindingMarginSide: BindingMarginSide = .none // ✅ NEW: Asymmetric Margin Side
+    
+    // ✅ NEW: Omnibus Settings
+    var omnibusSplitThresholdMB: Int = 200
+    var omnibusBadgePlacement: CoverBadgePlacement = .bottomRight
     
     // Debugger Visibility
     var showEditorDebug: Bool = false

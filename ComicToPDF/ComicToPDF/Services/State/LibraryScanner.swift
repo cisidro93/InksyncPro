@@ -91,8 +91,9 @@ actor LibraryScanner {
         let requiresPrune = !missingIDs.isEmpty || uniquePDFs.count != allPDFs.count
         
         if requiresPrune {
+            let finalUnique = uniquePDFs // Prevent concurrent capture warning
             await MainActor.run {
-                manager.convertedPDFs = uniquePDFs
+                manager.convertedPDFs = finalUnique
                 manager.convertedPDFs.removeAll { missingIDs.contains($0.id) }
                 Logger.shared.log("Library Pruned: Removed duplicates or sandbox-shifted files", category: "Library")
                 manager.saveLibrary()
