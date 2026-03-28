@@ -14,6 +14,14 @@ struct EventResolutionSheet: View {
     var suggested: [ResolvedEventItem] { resolvedItems.filter { if case .suggested = $0.resolution { return true }; return false } }
     var missing: [ResolvedEventItem] { resolvedItems.filter { if case .missing = $0.resolution { return true }; return false } }
     
+    var omnibusTotalMB: Int {
+        let bytes = resolvedItems.compactMap { item -> Int? in
+            if case .matched(let p) = item.resolution { return p.sizeInBytes }
+            return nil
+        }.reduce(0, +)
+        return bytes / 1024 / 1024
+    }
+    
     var body: some View {
         NavigationStack {
             List {
@@ -109,12 +117,10 @@ struct EventResolutionSheet: View {
                             Label("Create Playlist Folder", systemImage: "folder.fill")
                         }
                         
-                        let totalMB = resolvedItems.compactMap { if case .matched(let p) = $0.resolution { return p.sizeInBytes }; return nil }.reduce(0, +) / 1024 / 1024
-                        
                         Button {
                             buildOmnibusSequence()
                         } label: {
-                            Label("Compile Kindle Omnibus (\(totalMB)MB)", systemImage: "books.vertical.fill")
+                            Label("Compile Kindle Omnibus (\(omnibusTotalMB)MB)", systemImage: "books.vertical.fill")
                         }
                     }
                     .font(.headline)

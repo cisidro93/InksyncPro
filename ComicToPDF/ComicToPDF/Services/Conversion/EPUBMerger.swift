@@ -187,6 +187,9 @@ class EPUBMerger {
                     try? archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
                 }
             }
+        }
+    }
+    
     // MARK: - Smart Omnibus Parsing
     func mergeWithSmartSplit(sourceURLs: [URL], baseOutputName: String, targetDir: URL, settings: ConversionSettings, overrideCoverData: Data? = nil, progressCallback: @escaping (Double) -> Void) async throws -> [URL] {
         let fileManager = FileManager.default
@@ -237,7 +240,7 @@ class EPUBMerger {
             let finalURL = targetDir.appendingPathComponent(vTitle)
             
             if fileManager.fileExists(atPath: finalURL.path) { try fileManager.removeItem(at: finalURL) }
-            guard let archive = try Archive(url: finalURL, accessMode: .create, pathEncoding: .utf8) else { throw NSError(domain: "Zip", code: 1, userInfo: nil) }
+            guard let archive = try? Archive(url: finalURL, accessMode: .create, pathEncoding: .utf8) else { throw NSError(domain: "Zip", code: 1, userInfo: nil) }
             
             let mimetypePath = dirURL.appendingPathComponent("mimetype")
             try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
@@ -263,7 +266,7 @@ class EPUBMerger {
             return finalURL
         }
         
-        let injectCover = { (targetImagesDir: URL, targetOESPSDir: URL, partNumber: Int, destManifest: inout [String], destSpine: inout [String]) throws -> Int {
+        let injectCover = { (targetImagesDir: URL, targetOESPSDir: URL, partNumber: Int, destManifest: inout [String], destSpine: inout [String]) throws -> Int in
             if let baseCover = overrideCoverData {
                 let badgedData = self.createBadgedCover(from: baseCover, partNumber: partNumber, placement: settings.omnibusBadgePlacement) ?? baseCover
                 
