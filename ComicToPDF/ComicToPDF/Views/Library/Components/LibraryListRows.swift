@@ -44,7 +44,7 @@ struct ModernFileRow: View {
                 
                 // Reading Progress Bar
                 GeometryReader { geo in
-                    let progress = pdf.metadata.readingProgress ?? 0.0
+                    let progress = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.1))
                         Capsule().fill(Theme.orange)

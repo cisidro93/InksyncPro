@@ -59,7 +59,7 @@ struct ModernGridFileCell: View {
                 
                 // Reading Progress Bar
                 GeometryReader { geo in
-                    let progress = pdf.metadata.readingProgress ?? 0.0
+                    let progress = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.1))
                         Capsule().fill(Theme.orange)
@@ -70,12 +70,13 @@ struct ModernGridFileCell: View {
                 .padding(.top, 2)
                 
                 HStack {
-                    if pdf.metadata.isRead ?? false {
+                    if pdf.metadata.lastReadPage == pdf.pageCount && pdf.pageCount > 0 {
                         Text("Read")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(Theme.textSecondary)
-                    } else if (pdf.metadata.readingProgress ?? 0.0) > 0 {
-                        Text("\(Int((pdf.metadata.readingProgress ?? 0.0) * 100))%")
+                    } else if let lastRead = pdf.metadata.lastReadPage, lastRead > 0 {
+                        let progress = Double(lastRead) / Double(max(pdf.pageCount, 1))
+                        Text("\(Int(progress * 100))%")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(Theme.textSecondary)
                     } else {

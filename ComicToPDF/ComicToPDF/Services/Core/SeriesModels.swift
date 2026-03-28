@@ -35,7 +35,7 @@ enum LibraryListItem: Identifiable, Hashable {
 struct SeriesGroup: Identifiable, Hashable {
     let id: String
     let title: String
-    let coverIssueID: UUID?
+    var coverIssueID: UUID?
     var count: Int
     var issues: [ConvertedPDF] // Mutable to support drag-and-drop
     
