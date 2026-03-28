@@ -160,7 +160,7 @@ struct PrecisionCanvasView: View {
                     }
                 }
                 .edgesIgnoringSafeArea(.top) // Allow canvas to go behind status bar
-                .onPencilDoubleTap { _ in
+                .supportPencilDoubleTap {
                     if selectedTool == .anchor {
                         selectedTool = .edit
                         editorState.log("Switched to Edit Placement")
@@ -628,38 +628,9 @@ struct PreviewMaskShape: Shape {
                          
                          // Determine mode: Resize or Move
                          if let handle = activeHandle {
-                             // Resizing Logic
-                             var newRect = currentRect
-                             
-                             let dx = point.x - start.x
-                             let dy = point.y - start.y
-                             
-                             // Simple unconstrained resize first
-                             switch handle {
-                             case .topLeft:
-                                 newRect.origin.x += dx
-                                 newRect.origin.y += dy
-                                 newRect.size.width -= dx
-                                 newRect.size.height -= dy
-                             case .topRight:
-                                 newRect.origin.y += dy
-                                 newRect.size.width += dx
-                                 newRect.size.height -= dy
-                             case .bottomLeft:
-                                 newRect.origin.x += dx
-                                 newRect.size.width -= dx
-                                 newRect.size.height += dy
-                             case .bottomRight:
-                                 newRect.size.width += dx
-                                 newRect.size.height += dy
-                             }
-                             
-                             // Update dragStart for delta calculation in next frame?
-                             // No, dragGesture provides cumulative translation, but we are using point-start logic.
-                             // Actually, using point (location) is absolute.
-                             // Issue: `point` is current location. `start` is start location. `dx` is total delta.
-                             // If we apply `dx` to `currentRect` (which we might be updating incorrectly), it fails.
-                             // We should apply to `original` panel state.
+                             // Determining mode: Resize or Move
+                             // We should apply to `original` panel state to prevent cumulative delta drifting
+
                              let original = editorState.pageModel.panels[index]
                              var targetRect = original
                              
@@ -842,5 +813,14 @@ struct PreviewMaskShape: Shape {
 extension View {
     func invertedMask() -> some View {
         return self // Placeholder
+    }
+    
+    @ViewBuilder
+    func supportPencilDoubleTap(action: @escaping () -> Void) -> some View {
+        if #available(iOS 17.5, *) {
+            self.onPencilDoubleTap { _ in action() }
+        } else {
+            self
+        }
     }
 }
