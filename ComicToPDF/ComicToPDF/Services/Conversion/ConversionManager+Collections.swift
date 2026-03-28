@@ -32,22 +32,5 @@ extension ConversionManager {
         }
     }
     
-    func setExplicitSeriesCover(for pdf: ConvertedPDF) {
-        guard let collectionID = pdf.collectionId,
-              let pdfIdx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }),
-              let colIdx = collections.firstIndex(where: { $0.id == collectionID }) else { return }
-        
-        // Remove from all others
-        for i in 0..<convertedPDFs.count {
-            if convertedPDFs[i].collectionId == collectionID {
-                convertedPDFs[i].isExplicitSeriesCover = false
-            }
-        }
-        
-        convertedPDFs[pdfIdx].isExplicitSeriesCover = true
-        collections[colIdx].explicitCoverPDFId = pdf.id
-        
-        self.saveLibrary()
-        self.objectWillChange.send()
-    }
+    
 }

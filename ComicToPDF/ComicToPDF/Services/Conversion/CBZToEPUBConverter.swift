@@ -216,7 +216,6 @@ class CBZToEPUBConverter {
         let ncxContent = EPUBManifestBuilder.buildNCXContent(bookUUID: bookUUID, baseFilename: baseFilename)
         try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
         
-        let chunkSize = 1
         var currentChunkImages: [String] = []
         var chunkIndex = 0
         
@@ -422,13 +421,13 @@ class CBZToEPUBConverter {
         
         let metadataJSON = """
         {
-          "title": "\\(titleStr.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))",
-          "author": "\\(authorStr.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))",
-          "reading_direction": "\\(directionStr)",
-          "page_count": \\(globalImageIndex),
-          "source_filename": "\\(sourceFilename.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))",
+          "title": "\(titleStr.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))",
+          "author": "\(authorStr.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))",
+          "reading_direction": "\(directionStr)",
+          "page_count": \(globalImageIndex),
+          "source_filename": "\(sourceFilename.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))",
           "inksync_version": "1.0",
-          "generated_at": "\\(generatedAt)"
+          "generated_at": "\(generatedAt)"
         }
         """
         

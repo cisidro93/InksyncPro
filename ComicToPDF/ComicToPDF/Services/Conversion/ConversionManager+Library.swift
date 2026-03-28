@@ -10,6 +10,23 @@ extension ConversionManager {
          saveLibrary()
          Task { await self.generateCoverThumbnail(for: pdf) }
      }
+     
+    // MARK: - Thumbnails & Helpers
+    func generateCoverThumbnail(for pdf: ConvertedPDF) async {
+        await PhysicalFileSystemRouter.shared.generateCoverThumbnail(for: pdf, manager: self)
+    }
+    
+    func backfillMissingThumbnails() {
+        PhysicalFileSystemRouter.shared.backfillMissingThumbnails(manager: self)
+    }
+    
+    func loadThumbnailAsync(for pdf: ConvertedPDF) async {
+        await PhysicalFileSystemRouter.shared.loadThumbnailAsync(for: pdf, manager: self)
+    }
+    
+    func getThumbnail(for pdf: ConvertedPDF) -> UIImage? {
+        PhysicalFileSystemRouter.shared.getThumbnail(for: pdf, manager: self)
+    }
     
     func processImportedFiles(urls: [URL]) async {
         let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

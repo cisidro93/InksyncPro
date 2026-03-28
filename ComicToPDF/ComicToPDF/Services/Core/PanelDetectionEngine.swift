@@ -108,7 +108,7 @@ class EnsemblePanelDetector {
             let anchor = pool.removeFirst()
             var currentMergedBounds = anchor.boundingBox
             var currentBaseConfidence = anchor.confidence
-            var currentMethod = anchor.method
+            let currentMethod = anchor.method
             var containsTextAccumulated = anchor.containsText
             
             var remainingPool = [PanelCandidate]()

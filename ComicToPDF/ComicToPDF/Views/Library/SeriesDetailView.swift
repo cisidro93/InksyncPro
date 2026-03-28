@@ -137,7 +137,7 @@ struct SeriesDetailView: View {
         .onAppear {
             localIssues = sortedIssues
         }
-        .onChange(of: sortOption) { _ in localIssues = sortedIssues }
+        .onChange(of: sortOption) { localIssues = sortedIssues }
         .listStyle(InsetGroupedListStyle())
         .navigationTitle(series.title)
         .toolbar {
