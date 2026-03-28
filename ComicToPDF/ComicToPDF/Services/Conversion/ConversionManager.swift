@@ -22,13 +22,7 @@ class ConversionManager: ObservableObject {
     @Published var watchedFolders: [WatchedFolder] = []
     
     // MARK: - Device Registry (Deep Module UX)
-    @Published var registeredDevices: [RegisteredDevice] = []
-    @Published var primaryDeviceID: UUID?
-
-    var primaryDevice: RegisteredDevice? {
-        registeredDevices.first { $0.id == primaryDeviceID }
-            ?? registeredDevices.first
-    }
+    // ✅ MOVED to DeviceRegistry.swift
     
     // MARK: - Series Grouping Prompt (Layer 3)
     struct PendingSeriesGroup: Identifiable {
@@ -48,113 +42,17 @@ class ConversionManager: ObservableObject {
     }()
     
     // MARK: - Editor Session Cache
-    // Delegated to EditorSessionManager to prevent "Death Spiral" UI blocking.
+    // ✅ MOVED to WorkspaceSessionManager
     
-    // Guided View Data
-    @Published var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]] = [:]
+    // ✅ Moved pageModel extraction and saving to WorkspaceSessionManager
     
-    // Panel Editor State
-    @Published var isPresentingPanelEditor: Bool = false
-    @Published var currentEditorImage: UIImage? = nil
-    @Published var currentEditorPanels: [CGRect] = []
-    var panelEditorContinuation: CheckedContinuation<[CGRect], Never>?
-    
-    // Panel Editor submission
-    func submitPanelEdits(_ panels: [CGRect]) {
-        if let continuation = panelEditorContinuation {
-            continuation.resume(returning: panels)
-            panelEditorContinuation = nil
-        }
-        isPresentingPanelEditor = false
-    }
-    
-    // ✅ NEW: Precision Canvas Models (Normalized Coordinates)
-    @Published var pageModels: [UUID: [Int: PageModel]] = [:]  
-    
-    // ✅ Helper to get or create PageModel
-    func getPageModel(for pdfID: UUID, pageIndex: Int) -> PageModel {
-        if let model = pageModels[pdfID]?[pageIndex] {
-            return model
-        }
-        
-        var newModel = PageModel(pageIndex: pageIndex)
-        
-        // Check legacy overrides and migrate if needed
-        if let legacyPanels = panelOverrides[pdfID]?[pageIndex] {
-             var allNormalized = true
-             newModel.panels = legacyPanels.map { panel in
-                let rect = panel.boundingBox
-                // Heuristic: If values are small (strictly <= 1.1), normalize them (Vision 0-1).
-                // If larger, assume they are already normalized (0-1000) or pixels.
-                if rect.maxX <= 1.1 && rect.maxY <= 1.1 {
-                     return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
-                } else {
-                     // Large Values -> Could be 0-1000 (good) or Pixels (bad)
-                     allNormalized = false
-                     return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
-                }
-            }
-            
-            // If we migrated legacy panels, ONLY check if ALL were 0-1 (Vision)
-            if !newModel.panels.isEmpty && allNormalized {
-                 newModel.coordinateSystem = .normalized
-            } else {
-                 newModel.coordinateSystem = .unknown // Force validation in Editor
-            }
-        }
-        return newModel
-    }
-    
-    func savePageModel(_ model: PageModel, for pdfID: UUID) {
-        if pageModels[pdfID] == nil { pageModels[pdfID] = [:] }
-        // Ensure we save the coordinate system state
-        var modelToSave = model
-        if modelToSave.coordinateSystem == .unknown {
-            // If saving an unknown model that has panels, assume it is now normalized? 
-            // No, only if we actually validated it. 
-            // But if it came from the editor, it's likely been validated or edited.
-            // Let's safe-guard: if it has panels and we are saving, it's likely been touched.
-            if !modelToSave.panels.isEmpty {
-                modelToSave.coordinateSystem = .normalized
-            }
-        }
-        pageModels[pdfID]?[model.pageIndex] = modelToSave
-        
-        // Sync back to legacy panelOverrides for Export/Injection compatibility
-        // Convert NormalizedRect (0-1000 Top-Left) -> Vision Rect (0-1 Bottom-Left)
-        let legacyPanels = model.panels.map { rect -> PanelExtractor.Panel in
-            let x = rect.origin.x / 1000.0
-            let y = rect.origin.y / 1000.0
-            let w = rect.width / 1000.0
-            let h = rect.height / 1000.0
-            
-            // Flip Y back to Vision (Bottom-Left)
-            // y_vision = 1.0 - y_top_left - height
-            let yVision = 1.0 - y - h
-            
-            let visionRect = CGRect(x: x, y: yVision, width: w, height: h)
-            return PanelExtractor.Panel(boundingBox: visionRect)
-        }
-        
-        if legacyPanels.isEmpty {
-            panelOverrides[pdfID]?[model.pageIndex] = nil // Destroy empty node
-        } else {
-            if panelOverrides[pdfID] == nil {
-                panelOverrides[pdfID] = [:]
-            }
-            panelOverrides[pdfID]?[model.pageIndex] = legacyPanels
-        }
-        
-        // Auto-save library changes
-        saveLibrary()
-    }
-    
-    // UI State
-    @Published var isConverting = false
-    @Published var conversionProgress: Double = 0.0
-    @Published var processingStatus = ""
-    @Published var statusMessage: String?
-    @Published var appAlert: AppAlert?
+    // UI State (Forwarded to TaskEngine)
+    var isConverting: Bool { get { TaskEngine.shared.isConverting } set { TaskEngine.shared.isConverting = newValue } }
+    var conversionProgress: Double { get { TaskEngine.shared.conversionProgress } set { TaskEngine.shared.conversionProgress = newValue } }
+    var processingStatus: String { get { TaskEngine.shared.processingStatus } set { TaskEngine.shared.processingStatus = newValue } }
+    var statusMessage: String? { get { TaskEngine.shared.statusMessage } set { TaskEngine.shared.statusMessage = newValue } }
+    var appAlert: AppAlert? { get { TaskEngine.shared.appAlert } set { TaskEngine.shared.appAlert = newValue } }
+    var activeTasks: [AppBackgroundTask] { get { TaskEngine.shared.activeTasks } set { TaskEngine.shared.activeTasks = newValue } }
     
     // ✅ Session Vault State
     @Published var isVaultUnlocked: Bool = false
@@ -181,12 +79,7 @@ class ConversionManager: ObservableObject {
         performStartupOptimization()
         Task { await MainActor.run { self.migrateCoversToDisk() } }
         
-        // Subscribe to Engine
-        progressSubscription = ConversionEngine.shared.progressSubject
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] event in
-                self?.handleEngineEvent(event)
-            }
+        // Engine tracking delegated to TaskEngine.shared
         
         // ✅ Subscribe to Go-mode queue completion so files are correctly tagged
         NotificationCenter.default.addObserver(forName: NSNotification.Name("LibraryNeedsRescan"), object: nil, queue: .main) { [weak self] notification in
@@ -339,18 +232,15 @@ class ConversionManager: ObservableObject {
     }
     
     func savePanelOverrides(for pdfID: UUID, pageIndex: Int, panels: [PanelExtractor.Panel]) async {
-        if panelOverrides[pdfID] == nil { panelOverrides[pdfID] = [:] }
-        panelOverrides[pdfID]?[pageIndex] = panels
-        
-        // FIX: Persist immediately to prevent data loss on app suspend or scanLibrary reload
+        if WorkspaceSessionManager.shared.panelOverrides[pdfID] == nil { WorkspaceSessionManager.shared.panelOverrides[pdfID] = [:] }
+        WorkspaceSessionManager.shared.panelOverrides[pdfID]?[pageIndex] = panels
         saveLibrary() 
     }
     
     // ✅ NEW: Bulk Save
     func savePanelOverrides(for pdfID: UUID, panels: [Int: [PanelExtractor.Panel]]) {
-        self.panelOverrides[pdfID] = panels
+        WorkspaceSessionManager.shared.panelOverrides[pdfID] = panels
         self.saveLibrary()
-
     }
     
     // MARK: - Cover Image Management (Memory Optimization)
@@ -514,9 +404,9 @@ class ConversionManager: ObservableObject {
                 convertedPDFs[idx].pageCount -= deletedCount
                 convertedPDFs[idx].fileSize = newSize
                 
-                if convertedPDFs[idx].contentType != .book {
-                     panelOverrides[pdf.id] = nil
-                }
+                // Remove associated data
+                WorkspaceSessionManager.shared.panelOverrides[pdf.id] = nil
+                
                 saveLibrary()
             }
             Logger.shared.log("Deleted \(deletedCount) pages from \(pdf.name)", category: "Edit")
@@ -1068,7 +958,7 @@ class ConversionManager: ObservableObject {
         
         // ✅ NEW: Update overrides and inject metdata
         await MainActor.run {
-            self.panelOverrides[pdf.id] = newPanels
+            WorkspaceSessionManager.shared.panelOverrides[pdf.id] = newPanels
             self.saveLibrary()
         }
         try? await injectMetadata(into: url, panels: newPanels, metadata: pdf.metadata)
@@ -1365,7 +1255,7 @@ class ConversionManager: ObservableObject {
         
         // ✅ NEW: Apply Panel Overrides to the newly created file (In Memory)
         if let newPDF = convertedPDFs.first(where: { $0.url.standardizedFileURL.path == outputURL.standardizedFileURL.path }) {
-            self.panelOverrides[newPDF.id] = newFileOverrides
+            WorkspaceSessionManager.shared.panelOverrides[newPDF.id] = newFileOverrides
             saveLibrary()
         }
         
@@ -1716,7 +1606,7 @@ class ComicInfoPanelParser: NSObject, XMLParserDelegate {
         
         // 1. Check for Panels (if Guided View is active)
         if conversionSettings.isGuidedView {
-            let panels = panelOverrides[pdf.id] ?? [:]
+            let panels = WorkspaceSessionManager.shared.panelOverrides[pdf.id] ?? [:]
             if panels.isEmpty {
                 return .warning("Guided View is enabled, but no panels were detected. The EPUB will export with default full-page views.")
             }

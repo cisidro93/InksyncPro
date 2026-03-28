@@ -80,8 +80,8 @@ struct AddDeviceSheet: View {
                             kindleEmail: kindleEmail.isEmpty ? nil : kindleEmail
                         )
                         modelContext.insert(device)
-                        if manager.primaryDeviceID == nil {
-                            manager.primaryDeviceID = device.id
+                        if DeviceRegistry.shared.primaryDeviceID == nil {
+                            DeviceRegistry.shared.primaryDeviceID = device.id
                             manager.saveLibrary()
                         }
                         try? modelContext.save()

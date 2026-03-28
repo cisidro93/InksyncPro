@@ -25,16 +25,16 @@ class LibraryPersistenceManager {
     @MainActor
     func save(manager: ConversionManager) {
         let index = LibraryIndex(
-            files: manager.convertedPDFs,
-            collections: manager.collections,
+            files: [], // ✅ Deprecated: Unshackled from JSON Monolith (Handled by SwiftData Native)
+            collections: [], // ✅ Deprecated: Migrated to SDPDFCollection
             settings: manager.conversionSettings,
             history: manager.sendHistory,
             devices: manager.kindleDevices,
-            panelOverrides: manager.panelOverrides,
+            panelOverrides: WorkspaceSessionManager.shared.panelOverrides,
             watchedFolders: manager.watchedFolders,
             presets: manager.conversionPresets,
-            registeredDevices: manager.registeredDevices,
-            primaryDeviceID: manager.primaryDeviceID
+            registeredDevices: DeviceRegistry.shared.registeredDevices,
+            primaryDeviceID: DeviceRegistry.shared.primaryDeviceID
         )
         
         let syncPDFs = manager.convertedPDFs
@@ -65,26 +65,37 @@ class LibraryPersistenceManager {
         guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName) else { return }
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         
+        // Unshackled from legacy filesystem array extraction, natively bridge from ModelContainer
         Task.detached(priority: .userInitiated) {
             do {
-                let data = try Data(contentsOf: url)
-                let index = try JSONDecoder().decode(LibraryIndex.self, from: data)
+                let (sdPdfs, sdCols) = try await MigrationService.shared.fetchSwiftDataLegacyBridge()
+                
+                let legacyPDFs = sdPdfs.map { $0.toDTO() }
+                let legacyCols = sdCols.map { $0.toDTO() }
                 
                 await MainActor.run {
-                    manager.convertedPDFs = index.files
-                    manager.collections = index.collections
-                    manager.conversionSettings = index.settings
-                    manager.sendHistory = index.history
-                    manager.kindleDevices = index.devices
-                    manager.panelOverrides = index.panelOverrides ?? [:]
-                    manager.watchedFolders = index.watchedFolders ?? []
-                    manager.conversionPresets = index.presets ?? []
-                    manager.registeredDevices = index.registeredDevices ?? []
-                    manager.primaryDeviceID = index.primaryDeviceID
+                    manager.convertedPDFs = legacyPDFs
+                    manager.collections = legacyCols
+                    
+                    // We only load Settings/History from JSON now
+                    if let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName),
+                       FileManager.default.fileExists(atPath: url.path),
+                       let data = try? Data(contentsOf: url),
+                       let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) {
+                        
+                        manager.conversionSettings = index.settings
+                        manager.sendHistory = index.history
+                        manager.kindleDevices = index.devices
+                        WorkspaceSessionManager.shared.panelOverrides = index.panelOverrides ?? [:]
+                        manager.watchedFolders = index.watchedFolders ?? []
+                        manager.conversionPresets = index.presets ?? []
+                        DeviceRegistry.shared.registeredDevices = index.registeredDevices ?? []
+                        DeviceRegistry.shared.primaryDeviceID = index.primaryDeviceID
+                    }
                 }
             } catch {
                 await MainActor.run {
-                    Logger.shared.log("Critical Boot Error: JSON Decode failed. \(error.localizedDescription)", category: "Library", type: .error)
+                    Logger.shared.log("Critical Boot Error: Bridge Load Failed. \(error.localizedDescription)", category: "Library", type: .error)
                 }
             }
         }

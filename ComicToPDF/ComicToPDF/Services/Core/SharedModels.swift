@@ -952,6 +952,22 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         self.isOnDevice = false
         self.lastTransferFailed = false
     }
+    
+    // Bridge to Legacy Architecture during Phase 2 transitions
+    func toDTO() -> ConvertedPDF {
+        var pdf = ConvertedPDF(id: self.id, name: self.name, url: self.url, pageCount: self.pageCount, fileSize: self.fileSize, metadata: self.metadata, collectionId: self.collectionId, isFavorite: self.isFavorite, isPrivate: self.isPrivate, coverImageData: self.coverImageData)
+        pdf.contentType = self.contentType
+        pdf.chapters = self.chapters
+        pdf.addedByMode = self.addedByMode
+        pdf.contentKind = self.contentKind
+        pdf.documentSubtype = self.documentSubtype
+        pdf.isOnDevice = self.isOnDevice
+        pdf.lastTransferFailed = self.lastTransferFailed
+        pdf.lastOutputFormat = self.lastOutputFormat
+        pdf.lastConversionDate = self.lastConversionDate
+        pdf.panelConfidenceScore = self.panelConfidenceScore
+        return pdf
+    }
 }
 
 @Model final class SDPDFCollection: Identifiable {
@@ -969,5 +985,9 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         self.color = color
         self.creationDate = creationDate
         self.explicitCoverFileID = explicitCoverFileID
+    }
+    
+    func toDTO() -> PDFCollection {
+        PDFCollection(id: self.id, name: self.name, icon: self.icon, color: self.color, creationDate: self.creationDate, explicitCoverFileID: self.explicitCoverFileID)
     }
 }

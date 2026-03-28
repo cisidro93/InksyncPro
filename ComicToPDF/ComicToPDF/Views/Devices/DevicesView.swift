@@ -4,6 +4,7 @@ import SwiftData
 struct DevicesView: View {
     @EnvironmentObject var manager: ConversionManager
     @EnvironmentObject var peerManager: PeerManager
+    @ObservedObject var registry = DeviceRegistry.shared
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var showAddDevice = false
@@ -107,10 +108,10 @@ struct DevicesView: View {
                                 NavigationLink(value: device.id) {
                                     DeviceRow(
                                         device: device,
-                                        isPrimary: device.id == manager.primaryDeviceID,
+                                        isPrimary: device.id == registry.primaryDeviceID,
                                         isOnline: peerManager.isReachable(deviceName: device.name)
                                     ) {
-                                        manager.primaryDeviceID = device.id
+                                        registry.primaryDeviceID = device.id
                                         manager.saveLibrary()
                                     }
                                 }
@@ -119,10 +120,10 @@ struct DevicesView: View {
                                 // iPhone: traditional action row
                                 DeviceRow(
                                     device: device,
-                                    isPrimary: device.id == manager.primaryDeviceID,
+                                    isPrimary: device.id == registry.primaryDeviceID,
                                     isOnline: peerManager.isReachable(deviceName: device.name)
                                 ) {
-                                    manager.primaryDeviceID = device.id
+                                    registry.primaryDeviceID = device.id
                                     manager.saveLibrary()
                                 }
                                 .listRowBackground(Color.inkSurface)

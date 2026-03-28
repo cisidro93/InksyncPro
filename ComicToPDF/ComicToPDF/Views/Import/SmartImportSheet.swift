@@ -174,7 +174,7 @@ struct SmartImportSheet: View {
                 }
             }
         }
-        .task { await vm.analyse(savedDevices: savedDevices, primaryDeviceID: manager.primaryDeviceID, context: context) }
+        .task { await vm.analyse(savedDevices: savedDevices, primaryDeviceID: DeviceRegistry.shared.primaryDeviceID, context: context) }
         .alert("Import Failed", isPresented: Binding(
             get: { vm.extractionError != nil },
             set: { if !$0 { dismiss() } }

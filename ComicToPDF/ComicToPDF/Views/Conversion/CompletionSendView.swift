@@ -18,7 +18,7 @@ struct CompletionSendView: View {
         if let id = selectedDeviceID {
             return savedDevices.first { $0.id == id }
         }
-        return savedDevices.first { $0.id == manager.primaryDeviceID } ?? savedDevices.first
+        return savedDevices.first { $0.id == DeviceRegistry.shared.primaryDeviceID } ?? savedDevices.first
     }
 
     var body: some View {
@@ -118,7 +118,7 @@ struct CompletionSendView: View {
                     ForEach(savedDevices) { device in
                         DeviceSelectCard(
                             device: device,
-                            isSelected: (selectedDeviceID ?? manager.primaryDeviceID) == device.id
+                            isSelected: (selectedDeviceID ?? DeviceRegistry.shared.primaryDeviceID) == device.id
                         ) {
                             selectedDeviceID = device.id
                         }

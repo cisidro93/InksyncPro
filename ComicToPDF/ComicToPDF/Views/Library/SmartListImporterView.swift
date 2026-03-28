@@ -107,11 +107,8 @@ struct SmartListImporterView: View {
             let isAccessing = selectedFile.startAccessingSecurityScopedResource()
             defer { if isAccessing { selectedFile.stopAccessingSecurityScopedResource() } }
             
-            // Validate read access physically to ensure non-scoping works
-            if !FileManager.default.isReadableFile(atPath: selectedFile.path) {
-                errorMessage = "The file exists securely but physical file-system read permission is denied. Try moving the file to 'On My iPhone'."
-                return
-            }
+            // Removed rigorous readability check here since UIDocumentPicker with 'asCopy: true' gives guaranteed local copies in temp.
+            // On iOS, checking `isReadableFile` on newly copied temp documents can erroneously return false due to POSIX attribute delays.
             
             let ext = selectedFile.pathExtension.lowercased()
             let cleanFilename = selectedFile.deletingPathExtension().lastPathComponent
@@ -155,22 +152,12 @@ struct SmartListFileWrapper: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let textTypes: [UTType] = [
-            .plainText,
-            .text,
-            .commaSeparatedText,
-            .tabSeparatedText,
-            .sourceCode,
-            .json,
             .item,
-            .data,
             .content,
+            .data,
             UTType("public.plain-text") ?? .plainText,
-            UTType("public.comma-separated-values-text") ?? .commaSeparatedText,
-            UTType(filenameExtension: "cbl") ?? .xml,
-            UTType(filenameExtension: "csv") ?? .commaSeparatedText,
-            UTType(filenameExtension: "md") ?? .plainText,
-            UTType(filenameExtension: "txt") ?? .plainText
-        ].compactMap { $0 }
+            UTType("public.comma-separated-values-text") ?? .commaSeparatedText
+        ]
         
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: textTypes, asCopy: true)
         picker.allowsMultipleSelection = false

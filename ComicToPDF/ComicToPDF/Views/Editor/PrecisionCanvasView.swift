@@ -30,7 +30,7 @@ struct PrecisionCanvasView: View {
         self._pageIndex = pageIndex
         self.totalCount = totalCount
         
-        let initialModel = conversionManager.getPageModel(for: pdf.id, pageIndex: pageIndex.wrappedValue)
+        let initialModel = PageModelStore.shared.getPageModel(for: pdf.id, pageIndex: pageIndex.wrappedValue)
         let undoManager = UndoManager()
         _editorState = StateObject(wrappedValue: PageEditorState(pageModel: initialModel, undoManager: undoManager))
     }
@@ -189,7 +189,7 @@ struct PrecisionCanvasView: View {
                 HStack(spacing: 16) {
                     if pageIndex > 0 {
                         Button(action: {
-                            conversionManager.savePageModel(editorState.pageModel, for: pdf.id)
+                            PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
                             pageIndex -= 1
                         }) {
                             Image(systemName: "chevron.left")
@@ -197,7 +197,7 @@ struct PrecisionCanvasView: View {
                     }
                     if pageIndex < totalCount - 1 {
                         Button(action: {
-                            conversionManager.savePageModel(editorState.pageModel, for: pdf.id)
+                            PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
                             pageIndex += 1
                         }) {
                             Image(systemName: "chevron.right")
@@ -287,7 +287,7 @@ struct PrecisionCanvasView: View {
         }
         .onChange(of: pageIndex) { _, newIndex in
             // When page traversing, instantly load new page without destroying view
-            let newModel = conversionManager.getPageModel(for: pdf.id, pageIndex: newIndex)
+            let newModel = PageModelStore.shared.getPageModel(for: pdf.id, pageIndex: newIndex)
             editorState.pageModel = newModel
             editorState.selectedPanelIndex = nil
             currentDragRect = nil
@@ -309,7 +309,7 @@ struct PrecisionCanvasView: View {
         }
         .onDisappear {
             // ✅ Auto-save changes when leaving the page
-            conversionManager.savePageModel(editorState.pageModel, for: pdf.id)
+            PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
             // ✅ Clean up temporary files when closing editor
             conversionManager.endSession()
         }
@@ -353,7 +353,7 @@ struct PrecisionCanvasView: View {
     }
     
     private func saveAndExit() {
-        conversionManager.savePageModel(editorState.pageModel, for: pdf.id)
+        PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
         dismiss()
     }
     

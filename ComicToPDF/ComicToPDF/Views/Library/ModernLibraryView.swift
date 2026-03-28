@@ -1,10 +1,14 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import Combine
+import SwiftData
 
 struct ModernLibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @StateObject private var viewModel = LibraryViewModel()
+    
+    @Query(sort: \SDConvertedPDF.lastModified, order: .reverse) private var swiftDataPDFs: [SDConvertedPDF]
+    @Query private var swiftDataCollections: [SDPDFCollection]
     
     @Binding var selectedPDF: ConvertedPDF?
     @Binding var isBatchMode: Bool
@@ -36,6 +40,16 @@ struct ModernLibraryView: View {
         var id: String { rawValue }
     }
     @State private var sortOption: SortOption = .dateAdded
+    
+    // Ã¢Å“â€¦ NEW: SwiftData Native Resolvers
+    private var nativeVisiblePDFs: [ConvertedPDF] {
+        let mapped = swiftDataPDFs.map { $0.toDTO() }
+        return conversionManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
+    }
+    
+    private var nativeCollections: [PDFCollection] {
+        swiftDataCollections.map { $0.toDTO() }
+    }
 
     var body: some View {
         Group {
@@ -59,7 +73,7 @@ struct ModernLibraryView: View {
                     // MARK: - Dedicated Header Component
                     LibraryHeaderView(
                         searchText: $viewModel.searchText,
-                        sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(conversionManager.visiblePDFs, sortOption: $0) }),
+                        sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(nativeVisiblePDFs, sortOption: $0) }),
                         viewStyle: $viewStyle,
                         tapAction: $tapAction,
                         onSheetTrigger: { dest in viewModel.activeSheet = dest },
@@ -140,11 +154,11 @@ struct ModernLibraryView: View {
         }
         .onAppear {
             conversionManager.backfillMissingThumbnails()
-            viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, collections: conversionManager.collections, sortOption: sortOption)
+            viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
         }
-        .onChange(of: conversionManager.visiblePDFs) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, collections: conversionManager.collections, sortOption: sortOption) }
-        .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, collections: conversionManager.collections, sortOption: sortOption) }
-        .onChange(of: conversionManager.collections.count) { viewModel.updateLibraryItemsCache(pdfs: conversionManager.visiblePDFs, collections: conversionManager.collections, sortOption: sortOption) }
+        .onChange(of: swiftDataPDFs) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+        .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+        .onChange(of: swiftDataCollections) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenMergedBook"))) { notification in
             if let newBook = notification.object as? ConvertedPDF {
                 // Ensure the view hierarchy processes the dismissal first, then throw up the full screen cover.
