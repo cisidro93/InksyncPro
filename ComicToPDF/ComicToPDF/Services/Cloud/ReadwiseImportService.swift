@@ -17,16 +17,21 @@ class ReadwiseImportService {
         let rows = parseCSV(content)
         guard rows.count > 1 else { return 0 } // No headers or data
         
-        // Sanitize headers heavily: Strip Byte-Order Marks (\uFEFF) explicitly
+        // Sanitize headers heavily: Strip Byte-Order Marks (\uFEFF) and stray Quotes explicitly
         let headers = rows[0].map { 
-            let bomStripped = $0.replacingOccurrences(of: "\u{FEFF}", with: "")
-            return bomStripped.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) 
+            let sanitized = $0.replacingOccurrences(of: "\u{FEFF}", with: "")
+                              .replacingOccurrences(of: "\"", with: "")
+                              .trimmingCharacters(in: .whitespacesAndNewlines)
+            return sanitized.lowercased()
         }
         
         Logger.shared.log("Readwise Sync: Parsed \(rows.count - 1) total rows. Found Headers: \(headers.joined(separator: ", "))", category: "Import")
         
-        guard let highlightIdx = headers.firstIndex(of: "highlight") ?? headers.firstIndex(of: "highlights"),
-              let titleIdx = headers.firstIndex(of: "title") ?? headers.firstIndex(of: "book title") else {
+        // Attempt to find column by multiple standardized alias strings
+        let mappedHighlightIdx = headers.firstIndex(of: "highlight") ?? headers.firstIndex(of: "highlights") ?? headers.firstIndex(of: "text")
+        let mappedTitleIdx = headers.firstIndex(of: "title") ?? headers.firstIndex(of: "book title")
+        
+        guard let highlightIdx = mappedHighlightIdx, let titleIdx = mappedTitleIdx else {
             Logger.shared.log("Readwise Sync [ERROR]: Could not find 'highlight' or 'title' columns in CSV. Raw headers: \(headers)", category: "Import", type: .error)
             throw NSError(domain: "ReadwiseImport", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid Readwise CSV Format. Missing 'highlight' or 'title' columns."])
         }

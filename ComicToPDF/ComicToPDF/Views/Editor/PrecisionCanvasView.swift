@@ -380,7 +380,8 @@ struct PrecisionCanvasView: View {
         editorState.log("Starting AI Scan...")
         
         Task {
-             let detected = await PanelExtractor.detectPanels(in: image)
+             let detector = EnsemblePanelDetector()
+             let detected = await detector.detect(in: image)
              let normalized = detected.map { panel -> NormalizedRect in
                  // Vision (0,0 Bottom-Left) -> Normalized (0-1000 Top-Left)
                  let r = panel.boundingBox
@@ -823,7 +824,12 @@ extension View {
                 action() 
             }
         } else {
-            self.background(PencilDoubleTapResponder(action: action))
+            // Apply as an invisible OVERLAY so it intercepts the hardware delegate priority 
+            // BEFORE PencilKit consumes the gesture at the bottom of the ZStack.
+            self.overlay(
+                PencilDoubleTapResponder(action: action)
+                    .allowsHitTesting(false) // Do not block physical finger touch inputs
+            )
         }
     }
 }

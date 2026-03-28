@@ -221,8 +221,16 @@ class ImportOrchestrator {
                         smartMetadata.issueNumber = xmlData.parsedNumber
                         smartMetadata.tags.append("Auto XML Scrape")
                     } else {
-                        // REVERT to 5e6efb9: Do NOT aggressively assign parent folder to XML series metadata
-                        // This prevents pollution inside the clustering logic.
+                        // Safe Parent Folder Series Fallback:
+                        // Only use parent directory name if it's an actual user folder, not an iOS Sandbox bucket.
+                        let parentName = url.deletingLastPathComponent().lastPathComponent
+                        let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads"]
+                        
+                        if !invalidParents.contains(parentName.lowercased()) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
+                            smartMetadata.series = parentName
+                            smartMetadata.tags.append("Folder Auto-Group")
+                            Logger.shared.log("Import: Sourced series name '\(parentName)' from parent folder for \(fileName)", category: "Import", type: .info)
+                        }
                     }
                     
                     var pdf = ConvertedPDF(
@@ -273,19 +281,12 @@ class ImportOrchestrator {
             } else {
                 // 2. Fallback to Restored Pure Regex Logic from 5e6efb9
                 seriesName = extractedName
-                
                 if seriesName.count < 3 || seriesName == "Ungrouped" {
+                    // Try stripping numbers to find a root anchor word (e.g. 'Vol 1' -> 'Vol')
                     seriesName = pdf.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? "Ungrouped"
                     
-                    if seriesName == "Ungrouped" || seriesName.count < 3 {
-                        await manager.generateCoverThumbnail(for: pdf)
-                        if let coverURL = manager.getOriginalCoverURL(for: pdf) as URL?,
-                           let aiDetectedTitle = await CoverVisionAnalyzer.detectTitle(from: coverURL) {
-                            seriesName = aiDetectedTitle
-                            Logger.shared.log("Vision AI clustered '\(pdf.name)' into '\(aiDetectedTitle)'", category: "AI")
-                        } else {
-                            seriesName = "Ungrouped"
-                        }
+                    if seriesName.isEmpty || seriesName.count < 2 {
+                        seriesName = "Ungrouped"
                     }
                 }
             }
