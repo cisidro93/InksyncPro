@@ -214,22 +214,29 @@ class ImportOrchestrator {
                     var smartDisplayName = fileName
                     var smartMetadata = PDFMetadata(title: fileName)
                     
+                    // Always calculate the Safe Parent Folder fallback
+                    let parentName = url.deletingLastPathComponent().lastPathComponent
+                    let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads"]
+                    var validParentFolder: String? = nil
+                    
+                    if !invalidParents.contains(parentName.lowercased()) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
+                        validParentFolder = parentName
+                    }
+                    
+                    // 1. Attempt XML Parse
                     if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
                         smartDisplayName = xmlData.displayName
                         smartMetadata.title = xmlData.parsedTitle ?? smartDisplayName
-                        smartMetadata.series = xmlData.parsedSeries
+                        // 2. Cascade Priority: XML Series -> Parent Folder -> nil
+                        smartMetadata.series = xmlData.parsedSeries ?? validParentFolder
                         smartMetadata.issueNumber = xmlData.parsedNumber
                         smartMetadata.tags.append("Auto XML Scrape")
                     } else {
-                        // Safe Parent Folder Series Fallback:
-                        // Only use parent directory name if it's an actual user folder, not an iOS Sandbox bucket.
-                        let parentName = url.deletingLastPathComponent().lastPathComponent
-                        let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads"]
-                        
-                        if !invalidParents.contains(parentName.lowercased()) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
-                            smartMetadata.series = parentName
+                        // 3. Fallback to Parent Folder if no XML exists
+                        smartMetadata.series = validParentFolder
+                        if validParentFolder != nil {
                             smartMetadata.tags.append("Folder Auto-Group")
-                            Logger.shared.log("Import: Sourced series name '\(parentName)' from parent folder for \(fileName)", category: "Import", type: .info)
+                            Logger.shared.log("Import: Sourced series name '\(validParentFolder!)' from parent folder for \(fileName)", category: "Import", type: .info)
                         }
                     }
                     
