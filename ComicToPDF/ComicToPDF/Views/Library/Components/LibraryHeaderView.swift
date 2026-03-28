@@ -106,96 +106,99 @@ struct LibraryHeaderView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     
-                    // 1. Target Selector Pill (Fixed & Prominent)
-                    Menu {
-                        Section("Standard Formats") {
-                            Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
-                                ForEach(OutputFormat.allCases) { format in
-                                    Label(format.rawValue, systemImage: format.icon).tag(format)
-                                }
-                            }
-                        }
-                        
-                        if !conversionManager.conversionPresets.isEmpty {
-                            Section("Custom Profiles") {
-                                ForEach(conversionManager.conversionPresets) { preset in
-                                    Button {
-                                        conversionManager.conversionSettings = preset.settings
-                                    } label: {
-                                        Label(preset.name, systemImage: "list.clipboard.fill")
+                HStack(spacing: 12) {
+                    Group {
+                        // 1. Target Selector Pill (Fixed & Prominent)
+                        Menu {
+                            Section("Standard Formats") {
+                                Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                                    ForEach(OutputFormat.allCases) { format in
+                                        Label(format.rawValue, systemImage: format.icon).tag(format)
                                     }
                                 }
                             }
+                            
+                            if !conversionManager.conversionPresets.isEmpty {
+                                Section("Custom Profiles") {
+                                    ForEach(conversionManager.conversionPresets) { preset in
+                                        Button {
+                                            conversionManager.conversionSettings = preset.settings
+                                        } label: {
+                                            Label(preset.name, systemImage: "list.clipboard.fill")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("TARGET")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(Theme.textSecondary)
+                                    .tracking(1)
+                                
+                                // Separator
+                                Rectangle().fill(Theme.textSecondary.opacity(0.3)).frame(width: 1, height: 12)
+                                
+                                // Value
+                                Text(conversionManager.conversionSettings.outputFormat.rawValue)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(Theme.orange)
+                                    .fixedSize() // Prevent truncation
+                                
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.thickMaterial)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
                         }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text("TARGET")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(Theme.textSecondary)
-                                .tracking(1)
-                            
-                            // Separator
-                            Rectangle().fill(Theme.textSecondary.opacity(0.3)).frame(width: 1, height: 12)
-                            
-                            // Value
-                            Text(conversionManager.conversionSettings.outputFormat.rawValue)
-                                .font(.system(size: 15, weight: .semibold))
+                        
+                        // Divider
+                        Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
+                        
+                        // 2. Action Pick
+                        Menu {
+                            Picker("Tap Action", selection: $tapAction) {
+                                ForEach(LibraryTapAction.allCases, id: \.self) { action in
+                                    Text(action.rawValue).tag(action)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("TAP ACTION:")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(Theme.textSecondary)
+                                    .tracking(1)
+                                
+                                HStack(spacing: 4) {
+                                    Text(tapAction.rawValue)
+                                        .font(.system(size: 14, weight: .semibold))
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.system(size: 10))
+                                }
                                 .foregroundColor(Theme.orange)
-                                .fixedSize() // Prevent truncation
-                            
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(Theme.textSecondary)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(.thickMaterial)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
-                    }
-                    
-                    // Divider
-                    Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
-                    
-                    // 2. Action Pick
-                    Menu {
-                        Picker("Tap Action", selection: $tapAction) {
-                            ForEach(LibraryTapAction.allCases, id: \.self) { action in
-                                Text(action.rawValue).tag(action)
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.thickMaterial)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
                         }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text("TAP ACTION:")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(Theme.textSecondary)
-                                .tracking(1)
-                            
-                            HStack(spacing: 4) {
-                                Text(tapAction.rawValue)
-                                    .font(.system(size: 14, weight: .semibold))
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 10))
-                            }
-                            .foregroundColor(Theme.orange)
+                        
+                        // 3. Action Pills
+                        Group {
+                            ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.green) { onSheetTrigger(.importer) }
+                            ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
+                            ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
+                            ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { onSheetTrigger(.cloud) }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(.thickMaterial)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
+                        
+                        // Divider
+                        Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
                     }
-                    
-                    // 3. Action Pills
-                    Group {
-                        ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.green) { onSheetTrigger(.importer) }
-                        ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
-                        ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
-                        ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { onSheetTrigger(.cloud) }
-                    }
-                    
-                    // Divider
-                    Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
                     
                     Group {
                         ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {

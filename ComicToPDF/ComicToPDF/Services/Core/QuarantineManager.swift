@@ -145,7 +145,7 @@ class QuarantineManager: ObservableObject {
             Logger.shared.log("Vault Restored \(copiedFiles.count) files. Executing deep library ingest...", category: "System")
             
             // Trigger LibraryScanner manually since files are now physically in root
-            await LibraryScanner.shared.scanLibrary(addedByMode: .system, manager: manager)
+            await LibraryScanner.shared.scanLibrary(addedByMode: .pro, manager: manager)
             
         } catch {
             Logger.shared.log("Failed to restore Vault: \(error.localizedDescription)", category: "System", type: .error)
