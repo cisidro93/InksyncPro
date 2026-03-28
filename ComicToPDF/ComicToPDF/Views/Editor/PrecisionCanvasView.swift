@@ -824,12 +824,9 @@ extension View {
                 action() 
             }
         } else {
-            // Apply as an invisible OVERLAY so it intercepts the hardware delegate priority 
-            // BEFORE PencilKit consumes the gesture at the bottom of the ZStack.
-            self.overlay(
-                PencilDoubleTapResponder(action: action)
-                    .allowsHitTesting(false) // Do not block physical finger touch inputs
-            )
+            // Apply as a structural background that injects its delegate implicitly into the Root Window 
+            // bypassing localized ZStack touch absorption.
+            self.background(PencilDoubleTapResponder(action: action))
         }
     }
 }
@@ -841,11 +838,15 @@ struct PencilDoubleTapResponder: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = UIView(frame: .zero)
         view.backgroundColor = .clear
-        view.isUserInteractionEnabled = true // Required to receive touches/interactions
+        view.isUserInteractionEnabled = false // We don't need this view itself to absorb touches
         
-        let interaction = UIPencilInteraction()
-        interaction.delegate = context.coordinator
-        view.addInteraction(interaction)
+        // Attach to the top-level View Controller/Window asynchronously to bypass SwiftUI's localized view hierarchy boundaries
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            let interaction = UIPencilInteraction()
+            interaction.delegate = context.coordinator
+            window.addInteraction(interaction)
+        }
         
         return view
     }

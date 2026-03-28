@@ -1,6 +1,7 @@
 import SwiftUI
 import MessageUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct LogsView: View {
     @ObservedObject var logger = Logger.shared
@@ -16,6 +17,11 @@ struct LogsView: View {
     @State private var showingMailErrorAlert = false
     @State private var isShowingMailView = false
     @State private var mailResult: Result<MFMailComposeResult, Error>? = nil
+    
+    // ✅ NEW: AI State Management
+    @State private var showingAIExport = false
+    @State private var showingAIImport = false
+    @State private var aiDocumentToExport: AIDocument?
     
     var errorCount: Int {
         logger.parsedLogs.filter { $0.type == .error }.count
@@ -162,6 +168,22 @@ struct LogsView: View {
                     Button(action: copyToClipboard) {
                         Label("Copy All", systemImage: "doc.on.doc")
                     }
+                    
+                    Divider()
+                    
+                    Button {
+                        if let data = AdaptiveLearningManager.shared.exportState() {
+                            aiDocumentToExport = AIDocument(data: data)
+                            showingAIExport = true
+                        }
+                    } label: { Label("Backup AI Settings", systemImage: "brain.head.profile") }
+                    
+                    Button {
+                        showingAIImport = true
+                    } label: { Label("Restore AI Settings", systemImage: "square.and.arrow.down.on.square") }
+                    
+                    Divider()
+                    
                     Button(role: .destructive, action: logger.clearLogs) {
                         Label("Clear Logs", systemImage: "trash")
                     }
@@ -210,6 +232,38 @@ struct LogsView: View {
                     Text("Error generating logs for email.").font(.headline)
                     Button("Dismiss") { isShowingMailView = false }
                 }
+            }
+        }
+        .fileExporter(isPresented: $showingAIExport, document: aiDocumentToExport, contentType: .json, defaultFilename: "inksync_ai_settings") { result in
+            switch result {
+            case .success(let url):
+                logger.log("Successfully Backed Up AI configuration JSON to \(url.lastPathComponent)", category: "System", type: .success)
+            case .failure(let error):
+                logger.log("Backup Failed: \(error.localizedDescription)", category: "System", type: .error)
+            }
+        }
+        .fileImporter(isPresented: $showingAIImport, allowedContentTypes: [.json]) { result in
+            switch result {
+            case .success(let rawURL):
+                // FileProvider URLs must be security-scoped
+                let accessing = rawURL.startAccessingSecurityScopedResource()
+                defer { if accessing { rawURL.stopAccessingSecurityScopedResource() } }
+                
+                if let data = try? Data(contentsOf: rawURL) {
+                    do {
+                        let status = try AdaptiveLearningManager.shared.importState(from: data)
+                        switch status {
+                        case .success:
+                            NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "AI Diagnostics loaded perfectly.", "category": "Success"])
+                        case .identical:
+                            NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "The system is already running this exact AI Engine version. No changes made.", "category": "System"])
+                        }
+                    } catch {
+                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), userInfo: ["message": "Invalid or corrupted AI Configuration file.", "category": "System"])
+                    }
+                }
+            case .failure(let error):
+                logger.log("Import Failed: \(error.localizedDescription)", category: "System", type: .error)
             }
         }
         .alert("Cannot Send Email", isPresented: $showingMailErrorAlert) {
