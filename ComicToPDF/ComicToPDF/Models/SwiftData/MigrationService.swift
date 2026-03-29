@@ -167,6 +167,24 @@ class MigrationService {
                         context.insert(doc)
                     }
                 }
+                // 3. Prune Deleted or Orphaned Duplicates
+                let validPDFIds = Set(pdfs.map { $0.id })
+                if let allExisting = try? context.fetch(FetchDescriptor<SDConvertedPDF>()) {
+                    for existing in allExisting {
+                        if !validPDFIds.contains(existing.id) {
+                            context.delete(existing)
+                        }
+                    }
+                }
+                
+                let validColIds = Set(collections.map { $0.id })
+                if let allExistingCols = try? context.fetch(FetchDescriptor<SDPDFCollection>()) {
+                    for existingCol in allExistingCols {
+                        if !validColIds.contains(existingCol.id) {
+                            context.delete(existingCol)
+                        }
+                    }
+                }
                 
                 try context.save()
             } catch {

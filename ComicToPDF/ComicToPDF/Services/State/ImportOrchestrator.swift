@@ -56,7 +56,7 @@ class ImportOrchestrator {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Folder Sync..." }
         defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
         
-        let existingNames = await MainActor.run { Set(manager.convertedPDFs.map { $0.name }) }
+        let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
 
         let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let accessing = folderURL.startAccessingSecurityScopedResource()
@@ -102,7 +102,7 @@ class ImportOrchestrator {
                 let fileName = fileURL.lastPathComponent
                 let destURL = documentsDir.appendingPathComponent(fileName)
                 
-                if existingNames.contains(fileName) || newlyImported.contains(where: { $0.name == fileName }) { continue }
+                if existingPaths.contains(fileName) || newlyImported.contains(where: { $0.url.lastPathComponent == fileName }) { continue }
                 
                 do {
                     await MainActor.run { manager.processingStatus = "Importing \(fileName)..." }
@@ -179,7 +179,7 @@ class ImportOrchestrator {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Import..." }
         defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
         
-        let existingNames = await MainActor.run { Set(manager.convertedPDFs.map { $0.name }) }
+        let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
         let isVaultUnlocked = await MainActor.run { !SecurityManager.shared.isVaultLocked }
 
         await MainActor.run { ImportMonitorManager.shared.startImport(totalCount: urls.count) }
@@ -196,7 +196,7 @@ class ImportOrchestrator {
                 let fileName = url.lastPathComponent
                 let destURL = documentsDir.appendingPathComponent(fileName)
                 
-                if existingNames.contains(fileName) || newPDFs.contains(where: { $0.name == fileName }) {
+                if existingPaths.contains(fileName) || newPDFs.contains(where: { $0.url.lastPathComponent == fileName }) {
                     await ImportMonitorManager.shared.incrementSuccess()
                     continue
                 }
@@ -378,7 +378,7 @@ class ImportOrchestrator {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Background Folder Sync..." }
         defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
         
-        let existingNames = await MainActor.run { Set(manager.convertedPDFs.map { $0.name }) }
+        let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
         
         let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let fileManager = FileManager.default
@@ -421,7 +421,7 @@ class ImportOrchestrator {
                         let fileName = fileURL.lastPathComponent
                         let destURL = documentsDir.appendingPathComponent(fileName)
                         
-                        if existingNames.contains(fileName) || newlyImported.contains(where: { $0.name == fileName }) { continue }
+                        if existingPaths.contains(fileName) || newlyImported.contains(where: { $0.url.lastPathComponent == fileName }) { continue }
                         
                         do {
                             await MainActor.run { manager.processingStatus = "Syncing \(fileName)..." }
