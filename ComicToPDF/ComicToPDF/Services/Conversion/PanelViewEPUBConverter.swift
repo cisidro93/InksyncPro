@@ -99,7 +99,7 @@ class PanelViewEPUBConverter {
         Logger.shared.log("PanelViewEPUBConverter: Starting. Pages with panels: \(panels.count)", category: "PVConverter")
 
         let fileManager = FileManager.default
-        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let docs = AppStorageContext.shared.vaultURL
 
         // ── Strip all extensions from filename ────────────────────────────────
         var baseFilename = sourceURL.lastPathComponent

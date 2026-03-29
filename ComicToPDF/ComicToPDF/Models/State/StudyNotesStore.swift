@@ -8,7 +8,7 @@ class StudyNotesStore: ObservableObject {
     private var currentBookID: String?
     
     private func getNotesURL(for bookID: String) -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let docs = AppStorageContext.shared.vaultURL
         let studyDir = docs.appendingPathComponent("StudyNotes", isDirectory: true)
         if !FileManager.default.fileExists(atPath: studyDir.path) {
             try? FileManager.default.createDirectory(at: studyDir, withIntermediateDirectories: true)

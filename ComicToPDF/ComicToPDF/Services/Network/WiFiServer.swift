@@ -366,7 +366,7 @@ class WiFiServer: ObservableObject {
     private func setupUpload(context: ConnectionContext) -> Bool {
         context.isHeaderParsed = true
         
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let docDir = AppStorageContext.shared.vaultURL
         var destURL: URL
         
         if let relPathString = context.relativePath, !relPathString.isEmpty {
@@ -457,7 +457,7 @@ class WiFiServer: ObservableObject {
     // MARK: - Handlers
     
     private func handleGetRequest(path: String, connection: NWConnection) {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let docDir = AppStorageContext.shared.vaultURL
         
 
         
@@ -569,7 +569,7 @@ class WiFiServer: ObservableObject {
     // MARK: - HTML Generator
     
     private func generateHTML() -> String {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].resolvingSymlinksInPath()
+        let docDir = AppStorageContext.shared.vaultURL.resolvingSymlinksInPath()
         
         // Relies on FileManager enumerator for recursive scan
         var fileLinks: [String] = []

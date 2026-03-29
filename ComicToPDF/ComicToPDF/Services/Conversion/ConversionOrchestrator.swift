@@ -35,7 +35,7 @@ final class ConversionOrchestrator {
             if jobSettings.outputFormat == .pdf {
                 let fileManager = FileManager.default
                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
-                let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
+                let outputURL = AppStorageContext.shared.vaultURL.appendingPathComponent(pName)
                 let imageURLs = try await manager.extractImageURLs(from: pdf.url)
                 try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
@@ -45,7 +45,7 @@ final class ConversionOrchestrator {
             } else if jobSettings.outputFormat == .cbz {
                 let fileManager = FileManager.default
                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
-                let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
+                let outputURL = AppStorageContext.shared.vaultURL.appendingPathComponent(pName)
                 
                 await MainActor.run { manager.processingStatus = "Extracting Images..." }
                 let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -126,7 +126,7 @@ final class ConversionOrchestrator {
                 if jobSettings.outputFormat == .pdf {
                     let fileManager = FileManager.default
                     let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
-                    let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
+                    let outputURL = AppStorageContext.shared.vaultURL.appendingPathComponent(pName)
                     let imageURLs = try await manager.extractImageURLs(from: pdf.url)
                     try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
@@ -135,7 +135,7 @@ final class ConversionOrchestrator {
                 } else if jobSettings.outputFormat == .cbz {
                     let fileManager = FileManager.default
                     let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
-                    let outputURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(pName)
+                    let outputURL = AppStorageContext.shared.vaultURL.appendingPathComponent(pName)
                     let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
                     
@@ -188,7 +188,7 @@ final class ConversionOrchestrator {
         var newMergedPDFs: [ConvertedPDF] = []
         
         let fileManager = FileManager.default
-        let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let documentsDir = AppStorageContext.shared.vaultURL
         var jobSettings = await MainActor.run { manager.conversionSettings }
         jobSettings.mangaMode = mangaMode
         
