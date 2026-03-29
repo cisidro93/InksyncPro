@@ -11,6 +11,12 @@ struct WiFiView: View {
     @Environment(\.dismiss) var dismiss
     @State private var qrCodeImage: UIImage?
     
+    // ✅ NEW: Sync Architecture
+    @StateObject private var syncCoordinator = SyncCoordinator.shared
+    @State private var showingSyncAlert = false
+    @State private var syncPin = ""
+    @State private var selectedSyncPeer: Peer?
+    
     private func settingsIcon(_ systemName: String, color: Color) -> some View {
         Image(systemName: systemName)
             .font(.system(size: 14, weight: .semibold))
@@ -98,7 +104,29 @@ struct WiFiView: View {
                             }
                         }
                     }
-                    .disabled(localSendClient.isTransferring)
+                    .disabled(localSendClient.isTransferring || syncCoordinator.isSyncing)
+                    
+                    // ✅ NEW: P2P Database Sync Button
+                    Button(action: {
+                        selectedSyncPeer = peer
+                        syncPin = ""
+                        showingSyncAlert = true
+                    }) {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Sync Database State")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                Text("Import reading progress from \(peer.name)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    .disabled(localSendClient.isTransferring || syncCoordinator.isSyncing)
                 }
             }
         }
@@ -264,6 +292,40 @@ struct WiFiView: View {
                 set: { _ in server.errorMessage = nil }
             )) { wrapper in
                 Alert(title: Text("Server Error"), message: Text(wrapper.message), dismissButton: .default(Text("OK")))
+            }
+            .alert("Database Sync", isPresented: $showingSyncAlert) {
+                TextField("4-Digit PIN", text: $syncPin)
+                    .keyboardType(.numberPad)
+                Button("Cancel", role: .cancel) {}
+                Button("Sync Now") {
+                    guard let peer = selectedSyncPeer, syncPin.count == 4 else { return }
+                    Task {
+                        do {
+                            try await syncCoordinator.fetchAndMerge(from: peer.ipAddress, pin: syncPin, manager: ConversionManager.shared)
+                        } catch {
+                            server.errorMessage = "Sync Error: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            } message: {
+                Text("Enter the 4-Digit Security PIN shown on \(selectedSyncPeer?.name ?? "the other device") to sync reading progress.")
+            }
+            .overlay {
+                if syncCoordinator.isSyncing {
+                    ZStack {
+                        Color(.systemBackground).opacity(0.85).ignoresSafeArea()
+                        VStack(spacing: 20) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text(syncCoordinator.syncStatus)
+                                .font(.headline)
+                        }
+                        .padding(30)
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(16)
+                        .shadow(radius: 10)
+                    }
+                }
             }
         }
     }

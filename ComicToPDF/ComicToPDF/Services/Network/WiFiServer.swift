@@ -238,9 +238,14 @@ class WiFiServer: ObservableObject {
         
         // 3. Enforce Auth for everything else
         guard context.isAuthenticated else {
-            // Serve Login Page
-            let html = generateLoginPage()
-            sendResponse(connection, 200, html, contentType: "text/html")
+            // Distinguish between API requests and Browser fallback requests
+            if path.hasPrefix("/api/") {
+                sendResponse(connection, 401, "{\"error\": \"Unauthorized. PIN required.\"}", contentType: "application/json")
+            } else {
+                // Serve Login Page to Web Browsers
+                let html = generateLoginPage()
+                sendResponse(connection, 200, html, contentType: "text/html")
+            }
             return
         }
         
@@ -464,6 +469,21 @@ class WiFiServer: ObservableObject {
         if path == "/" {
             let html = generateHTML()
             sendResponse(connection, 200, html, contentType: "text/html")
+        } else if path == "/api/sync" {
+            // ✅ NEW: Full P2P SwiftData Cross-Device Payload Export
+            Task { @MainActor in
+                do {
+                    // Extract monolithic SwiftData array into memory safely
+                    let payload = try SyncCoordinator.shared.exportDatabase(manager: ConversionManager.shared)
+                    let data = try JSONEncoder().encode(payload)
+                    
+                    // Route bytes directly to client
+                    self.sendResponse(connection, 200, data: data, contentType: "application/json", filename: "Inksync_Database.json")
+                } catch {
+                    Logger.shared.log("WiFi Transfer - Sync API Crash: \(error.localizedDescription)", category: "Network", type: .error)
+                    self.sendResponse(connection, 500, "Internal Sync Formatting Error")
+                }
+            }
         } else if path == "/queue.zip" {
             // ✅ NEW: Hybrid P2P On-The-Fly ZIP Streaming
             let stagedFiles = TransferQueueManager.shared.stagedFiles
