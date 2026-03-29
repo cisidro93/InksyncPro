@@ -15,7 +15,7 @@ struct WiFiView: View {
     @StateObject private var syncCoordinator = SyncCoordinator.shared
     @State private var showingSyncAlert = false
     @State private var syncPin = ""
-    @State private var selectedSyncPeer: Peer?
+    @State private var selectedSyncPeer: PeerNode?
     
     private func settingsIcon(_ systemName: String, color: Color) -> some View {
         Image(systemName: systemName)
@@ -301,7 +301,7 @@ struct WiFiView: View {
                     guard let peer = selectedSyncPeer, syncPin.count == 4 else { return }
                     Task {
                         do {
-                            try await syncCoordinator.fetchAndMerge(from: peer.ipAddress, pin: syncPin, manager: ConversionManager.shared)
+                            try await syncCoordinator.fetchAndMerge(from: peer.ipAddress, pin: syncPin)
                         } catch {
                             server.errorMessage = "Sync Error: \(error.localizedDescription)"
                         }

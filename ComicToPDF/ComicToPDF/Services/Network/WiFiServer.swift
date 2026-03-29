@@ -474,7 +474,7 @@ class WiFiServer: ObservableObject {
             Task { @MainActor in
                 do {
                     // Extract monolithic SwiftData array into memory safely
-                    let payload = try SyncCoordinator.shared.exportDatabase(manager: ConversionManager.shared)
+                    let payload = try SyncCoordinator.shared.exportDatabase()
                     let data = try JSONEncoder().encode(payload)
                     
                     // Route bytes directly to client

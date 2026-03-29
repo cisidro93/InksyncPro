@@ -18,15 +18,19 @@ class SyncCoordinator: ObservableObject {
     
     private init() {}
     
-    /// Exports the monolithic library state directly out of ConversionManager into a secure network-ready JSON container.
-    func exportDatabase(manager: ConversionManager) throws -> SyncPayload {
-        let pdfs = manager.convertedPDFs
-        let collections = manager.collections
+    /// Exports the monolithic library state directly out of SwiftData into a secure network-ready JSON container.
+    func exportDatabase() throws -> SyncPayload {
+        let container = try ModelContainer(for: SDConvertedPDF.self, SDPDFCollection.self)
+        let context = ModelContext(container)
+        
+        let pdfs = try context.fetch(FetchDescriptor<SDConvertedPDF>()).map { $0.toDTO() }
+        let collections = try context.fetch(FetchDescriptor<SDPDFCollection>()).map { $0.toDTO() }
+        
         return SyncPayload(pdfs: pdfs, collections: collections, exportDate: Date())
     }
     
     /// Bypasses the local ConversionManager loop to surgically merge incoming P2P records directly into SwiftData.
-    func mergeIncomingPayload(data: Data, manager: ConversionManager) async throws -> [String] {
+    func mergeIncomingPayload(data: Data) async throws -> [String] {
         self.isSyncing = true
         self.syncStatus = "Parsing Database Payload..."
         defer { self.isSyncing = false }
@@ -108,15 +112,15 @@ class SyncCoordinator: ObservableObject {
         
         try context.save()
         
-        // Safely re-hydrate Main Layer UI arrays so the user natively sees their synced progress instantly
+        // Notify the UI to rebuild its groups and arrays
         self.syncStatus = "Reloading Library..."
-        manager.loadLibrary()
+        NotificationCenter.default.post(name: NSNotification.Name("LibraryNeedsRescan"), object: nil)
         
         return missingFiles
     }
     
     /// Establishes an authenticated P2P connection to securely stream the Database payload and trigger a merge.
-    func fetchAndMerge(from peerIP: String, pin: String, manager: ConversionManager) async throws {
+    func fetchAndMerge(from peerIP: String, pin: String) async throws {
         self.isSyncing = true
         self.syncStatus = "Authenticating with \(peerIP)..."
         defer { self.isSyncing = false }
@@ -156,7 +160,7 @@ class SyncCoordinator: ObservableObject {
             
             if httpResponse.statusCode == 200 {
                 // Pass directly to the merge engine
-                let missingFiles = try await mergeIncomingPayload(data: data, manager: manager)
+                let missingFiles = try await mergeIncomingPayload(data: data)
                 
                 // Fetch missing physical payloads in background!
                 if !missingFiles.isEmpty {
