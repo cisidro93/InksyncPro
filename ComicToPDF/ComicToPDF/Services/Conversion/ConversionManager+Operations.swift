@@ -11,7 +11,7 @@ extension ConversionManager {
         let urls = sourceFiles.map { $0.url }
         let startCover = sourceFiles.first?.coverImageData
         let settings = self.conversionSettings
-        let saveDir = AppStorageContext.shared.vaultURL
+        let saveDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         
         Task.detached(priority: .userInitiated) {
             do {
@@ -131,7 +131,7 @@ extension ConversionManager {
     // MARK: - Merge & Convert
     func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String, mangaMode: Bool) async {
         isConverting = true; processingStatus = "Merging..."; statusMessage = "Starting merge..."
-        let fileManager = FileManager.default; let docDir = AppStorageContext.shared.vaultURL
+        let fileManager = FileManager.default; let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let safeName = outputName.isEmpty ? "Merged Collection" : outputName; let outputURL = docDir.appendingPathComponent("\(safeName).epub")
         let merger = EPUBMerger(); let sourceURLs = pdfs.map { $0.url }
         var inheritedCover: UIImage?

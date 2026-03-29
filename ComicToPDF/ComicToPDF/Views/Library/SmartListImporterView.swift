@@ -9,6 +9,7 @@ struct SmartListImporterView: View {
     @State private var resolvedItems: [ResolvedEventItem]? = nil
     @State private var errorMessage: String? = nil
     @State private var eventName: String = "Imported Event"
+    @State private var pastedText: String = ""
     
     // Support .cbl, .csv, .md, .txt
     let allowedTypes: [UTType] = [
@@ -54,21 +55,76 @@ struct SmartListImporterView: View {
                             .background(Color(.secondarySystemBackground))
                             .cornerRadius(12)
                             
+                            HStack(spacing: 16) {
+                                Button(action: {
+                                    let template = "Volume,Start_Chapter,End_Chapter\n1,1,7\n2,8,14\n3,15,21"
+                                    UIPasteboard.general.string = template
+                                    conversionManager.appAlert = AppAlert(title: "Copied!", message: "CSV Template copied to clipboard. You can paste this to AI to format your lists.")
+                                }) {
+                                    Label("Copy CSV Template", systemImage: "doc.on.doc")
+                                        .font(.caption).bold()
+                                        .padding(.horizontal, 12).padding(.vertical, 8)
+                                        .background(Color.blue.opacity(0.2))
+                                        .foregroundColor(.blue)
+                                        .cornerRadius(8)
+                                }
+                                
+                                Button(action: {
+                                    let template = "# Series Name\n## Volume 1\nCh 1-7\n## Volume 2\nCh 8-14"
+                                    UIPasteboard.general.string = template
+                                    conversionManager.appAlert = AppAlert(title: "Copied!", message: "Text Template copied to clipboard. You can paste this to AI to format your lists.")
+                                }) {
+                                    Label("Copy Text Template", systemImage: "doc.on.doc")
+                                        .font(.caption).bold()
+                                        .padding(.horizontal, 12).padding(.vertical, 8)
+                                        .background(Color.green.opacity(0.2))
+                                        .foregroundColor(.green)
+                                        .cornerRadius(8)
+                                }
+                            }
+                            
                             TextField("Event Name", text: $eventName)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .padding(.horizontal, 40)
                             
-                            Button {
-                                showingFilePicker = true
-                            } label: {
-                                Label("Select List File", systemImage: "folder.fill")
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                                    .padding()
-                                    .frame(maxWidth: .infinity)
-                                    .background(Color.purple)
-                                    .cornerRadius(12)
-                                    .padding(.horizontal, 40)
+                            
+                            Text("Or paste your list directly:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            TextEditor(text: $pastedText)
+                                .frame(height: 120)
+                                .padding(8)
+                                .background(Color(.secondarySystemBackground))
+                                .cornerRadius(8)
+                                .padding(.horizontal, 40)
+                            
+                            if !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Button {
+                                    handlePastedText()
+                                } label: {
+                                    Label("Parse Pasted List", systemImage: "doc.text.magnifyingglass")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.green)
+                                        .cornerRadius(12)
+                                        .padding(.horizontal, 40)
+                                }
+                            } else {
+                                Button {
+                                    showingFilePicker = true
+                                } label: {
+                                    Label("Select List File", systemImage: "folder.fill")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.purple)
+                                        .cornerRadius(12)
+                                        .padding(.horizontal, 40)
+                                }
                             }
                             
                             if let err = errorMessage {
@@ -140,6 +196,22 @@ struct SmartListImporterView: View {
             
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+    
+    private func handlePastedText() {
+        let clean = pastedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.isEmpty { return }
+        
+        let safeName = eventName.isEmpty || eventName == "Imported Event" ? "Pasted Event" : eventName
+        self.eventName = safeName // make sure UI reflects this
+        
+        do {
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).csv")
+            try clean.write(to: tempURL, atomically: true, encoding: .utf8)
+            handleImport(result: .success([tempURL]))
+        } catch {
+            errorMessage = "Failed to process text."
         }
     }
 }

@@ -85,7 +85,7 @@ class Logger: ObservableObject {
     }
     
     var logFileURL: URL {
-        let docDir = AppStorageContext.shared.logsURL
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return docDir.appendingPathComponent(logFileName)
     }
     

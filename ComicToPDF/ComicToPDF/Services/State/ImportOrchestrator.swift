@@ -76,7 +76,7 @@ class ImportOrchestrator {
             }
             
             let fileManager = FileManager.default
-            let documentsDir = AppStorageContext.shared.vaultURL
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             var newlyImported: [ConvertedPDF] = []
             
             await MainActor.run { manager.processingStatus = "Scanning \(folderURL.lastPathComponent)..." }
@@ -186,7 +186,7 @@ class ImportOrchestrator {
         
         let importedPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let fileManager = FileManager.default
-            let documentsDir = AppStorageContext.shared.vaultURL
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             var newPDFs: [ConvertedPDF] = []
             
             for url in urls {
@@ -382,7 +382,7 @@ class ImportOrchestrator {
         
         let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let fileManager = FileManager.default
-            let documentsDir = AppStorageContext.shared.vaultURL
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             var newlyImported: [ConvertedPDF] = []
             var staleBookmarkIndices: [Int] = []
             
@@ -622,7 +622,7 @@ class ImportOrchestrator {
                     }
                     
                     let cbzName = fileName + ".cbz"
-                    let docDir = AppStorageContext.shared.vaultURL
+                    let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
                     let cbzURL = docDir.appendingPathComponent(cbzName)
                     
                     if FileManager.default.fileExists(atPath: cbzURL.path) {
@@ -636,7 +636,7 @@ class ImportOrchestrator {
             
             let contentType = detectContentType(from: url, manager: manager)
             
-            let docDir = AppStorageContext.shared.vaultURL
+            let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             let cbzName = fileName + ".cbz"
             let cbzURL = docDir.appendingPathComponent(cbzName)
             let attributes = try FileManager.default.attributesOfItem(atPath: cbzURL.path)

@@ -23,7 +23,7 @@ class ReaderProgressTracker: ObservableObject {
     private let queue = DispatchQueue(label: "com.inksync.ProgressTracker", qos: .userInitiated)
 // Removed fileManager properties to avoid actor isolation issues
     private nonisolated func getProgressDir() -> URL {
-        let docs = AppStorageContext.shared.vaultURL
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let dir = docs.appendingPathComponent("progress")
         if !FileManager.default.fileExists(atPath: dir.path) {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

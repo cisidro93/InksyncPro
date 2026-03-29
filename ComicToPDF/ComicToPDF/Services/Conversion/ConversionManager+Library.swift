@@ -29,7 +29,7 @@ extension ConversionManager {
     }
     
     func processImportedFiles(urls: [URL]) async {
-        let documentsDir = AppStorageContext.shared.vaultURL
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         var skippedFiles: [String] = []
         var filesToProcess: [URL] = []
         
@@ -65,7 +65,7 @@ extension ConversionManager {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             let ext = url.pathExtension.lowercased()
-            let documentsDir = AppStorageContext.shared.vaultURL
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
 
             if ext == "pdf" {
                 Task {
@@ -111,7 +111,7 @@ extension ConversionManager {
             
             do {
                 let fileName = url.lastPathComponent
-                let docDir = AppStorageContext.shared.vaultURL
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
                 let destURL = docDir.appendingPathComponent(fileName)
                 try FileManager.default.copyItem(at: url, to: destURL)
             } catch { 
@@ -157,7 +157,7 @@ extension ConversionManager {
         guard !cleanName.isEmpty, cleanName != pdf.name else { return }
         
         let fileManager = FileManager.default
-        let docDir = AppStorageContext.shared.vaultURL
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         
         let newURL = docDir.appendingPathComponent(cleanName)
         

@@ -82,11 +82,7 @@ class ConversionManager: ObservableObject {
     init() {
         loadLibrary()
         
-        // Phase 4: Evacuate exposed documents into the iCloud-immune Vault
-        LibraryVaultMigrator.shared.executeVaultEvacuation(manager: self)
-        
         Task {
-            await QuarantineManager.shared.assessFirstLaunchOrphans()
             await MainActor.run { self.scanLibrary() }
         }
         

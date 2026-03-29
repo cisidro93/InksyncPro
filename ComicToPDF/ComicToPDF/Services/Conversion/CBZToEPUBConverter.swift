@@ -306,7 +306,7 @@ class CBZToEPUBConverter {
         }.joined()
         
         let outputFilename = (safeName.isEmpty ? "comic" : safeName) + ".epub"
-        let outputURL = AppStorageContext.shared.vaultURL.appendingPathComponent(outputFilename)
+        let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(outputFilename)
         if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
         
         do {
@@ -449,7 +449,7 @@ class CBZToEPUBConverter {
         }.joined()
         
         let outputFilename = (safeName.isEmpty ? "comic" : safeName) + ".inksync"
-        let outputURL = AppStorageContext.shared.vaultURL.appendingPathComponent(outputFilename)
+        let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(outputFilename)
         if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
         
         do {

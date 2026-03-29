@@ -9,9 +9,7 @@ actor LibraryScanner {
     
     func scanLibrary(addedByMode: AppUIMode? = nil, manager: ConversionManager) async {
         let fileManager = FileManager.default
-        let docDir = AppStorageContext.shared.inboxURL
-        let vaultURL = AppStorageContext.shared.vaultURL
-        
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
         
@@ -21,55 +19,18 @@ actor LibraryScanner {
         
         let pathSet = Set(currentPaths)
         
-        // 1. Scan Public Inbox & Evacuate to Vault
+        // 1. Scan Documents directory natively
         if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
             while let fileURL = enumerator.nextObject() as? URL {
                 await Task.yield()
                 
-                // Ignore our Quarantine system if it exists
+                // Ignore recovered vault folders from previous tests
                 if fileURL.path.contains("Recovered_Vault") || fileURL.path.contains("LibraryVault") { continue }
                 
                 let ext = fileURL.pathExtension.lowercased()
                 if ["pdf", "cbz", "zip", "epub"].contains(ext) {
                     let filename = fileURL.lastPathComponent
-                    let secureVaultPath = vaultURL.appendingPathComponent(filename)
-                    
                     if !pathSet.contains(filename) {
-                        do {
-                            if fileManager.fileExists(atPath: secureVaultPath.path) {
-                                try fileManager.removeItem(at: secureVaultPath)
-                            }
-                            try fileManager.moveItem(at: fileURL, to: secureVaultPath)
-                            
-                            let fileSize = (try? secureVaultPath.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-                            var newPDF = ConvertedPDF(name: filename, url: secureVaultPath, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: filename))
-                            newPDF.addedByMode = addedByMode ?? .pro
-                            newPDFs.append(newPDF)
-                        } catch {
-                            Logger.shared.log("LibraryScanner failed to secure inbox file: \(error)", category: "System", type: .warning)
-                        }
-                    } else {
-                        // DB already knows this explicit file, which means it was dragged in via USB over an existing asset.
-                        // Overwrite the vault file to ensure parity and delete the inbox footprint.
-                        do {
-                            if fileManager.fileExists(atPath: secureVaultPath.path) {
-                                try fileManager.removeItem(at: secureVaultPath)
-                            }
-                            try fileManager.moveItem(at: fileURL, to: secureVaultPath)
-                        } catch { }
-                    }
-                }
-            }
-        }
-        
-        // 2. Scan Vault directly for intra-app transfers or manual script placements
-        if let enumerator = fileManager.enumerator(at: vaultURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
-            while let fileURL = enumerator.nextObject() as? URL {
-                await Task.yield()
-                let ext = fileURL.pathExtension.lowercased()
-                if ["pdf", "cbz", "zip", "epub"].contains(ext) {
-                    let filename = fileURL.lastPathComponent
-                    if !pathSet.contains(filename) && !newPDFs.contains(where: { $0.name == filename }) {
                         let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                         var newPDF = ConvertedPDF(name: filename, url: fileURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: filename))
                         newPDF.addedByMode = addedByMode ?? .pro

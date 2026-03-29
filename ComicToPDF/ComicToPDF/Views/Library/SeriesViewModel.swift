@@ -32,7 +32,7 @@ class SeriesViewModel: ObservableObject {
         }
 
         var result: [SeriesGroup] = []
-        let docs = AppStorageContext.shared.vaultURL
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
 
         for (seriesName, issues) in groups {
             // Sort by issue number → filename
