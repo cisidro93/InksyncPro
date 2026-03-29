@@ -121,8 +121,7 @@ class MigrationService {
     func syncToSwiftData(pdfs: [ConvertedPDF], collections: [PDFCollection]) {
         Task.detached(priority: .background) {
             do {
-                let container = try ModelContainer(for: SDConvertedPDF.self, SDPDFCollection.self)
-                let context = ModelContext(container)
+                let context = ModelContext(InksyncProApp.sharedModelContainer)
                 
                 // 1. Sync Collections
                 for col in collections {
@@ -196,8 +195,7 @@ class MigrationService {
     // ✅ NEW: Native SwiftData Read Bridge
     // Replaces `inksync_pro_library.json` loading array bloat from Phase 1.
     func fetchSwiftDataLegacyBridge() async throws -> ([SDConvertedPDF], [SDPDFCollection]) {
-         let container = try ModelContainer(for: SDConvertedPDF.self, SDPDFCollection.self)
-         let context = container.mainContext
+         let context = InksyncProApp.sharedModelContainer.mainContext
          
          let docDesc = FetchDescriptor<SDConvertedPDF>()
          let colDesc = FetchDescriptor<SDPDFCollection>()

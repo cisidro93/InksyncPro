@@ -6,6 +6,24 @@ import SwiftData
 struct InksyncProApp: App {
     @Environment(\.scenePhase) private var scenePhase
     
+    // ✅ Global Thread-Safe Model Container
+    static let sharedModelContainer: ModelContainer = {
+        let schema = Schema([
+            SDConvertedPDF.self,
+            SDPDFCollection.self,
+            SDRegisteredDevice.self,
+            SDAnnotation.self,
+            SDPageModel.self,
+            SDSeriesMemory.self
+        ])
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        do {
+            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+        } catch {
+            fatalError("Could not create ModelContainer: \(error)")
+        }
+    }()
+    
     init() {
         // Register Background Task for Auto-Sync
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.antigravity.InksyncPro.autosync", using: nil) { task in
@@ -16,8 +34,8 @@ struct InksyncProApp: App {
     var body: some Scene {
         WindowGroup { 
             ContentView()
-                // ✅ SwiftData Engine Attachment
-                .modelContainer(for: [SDConvertedPDF.self, SDPDFCollection.self, SDRegisteredDevice.self, SDAnnotation.self, SDPageModel.self, SDSeriesMemory.self])
+                // ✅ SwiftData Engine Attachment (Injected globally)
+                .modelContainer(InksyncProApp.sharedModelContainer)
                 .onAppear {
                     // Trigger Migration asynchronously if on iOS 18 simulator
                     Task { @MainActor in

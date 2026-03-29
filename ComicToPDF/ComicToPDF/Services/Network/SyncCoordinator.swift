@@ -20,8 +20,7 @@ class SyncCoordinator: ObservableObject {
     
     /// Exports the monolithic library state directly out of SwiftData into a secure network-ready JSON container.
     func exportDatabase() throws -> SyncPayload {
-        let container = try ModelContainer(for: SDConvertedPDF.self, SDPDFCollection.self)
-        let context = ModelContext(container)
+        let context = InksyncProApp.sharedModelContainer.mainContext
         
         let pdfs = try context.fetch(FetchDescriptor<SDConvertedPDF>()).map { $0.toDTO() }
         let collections = try context.fetch(FetchDescriptor<SDPDFCollection>()).map { $0.toDTO() }
@@ -39,8 +38,7 @@ class SyncCoordinator: ObservableObject {
         self.syncStatus = "Matching Incoming PDF Metadata..."
         
         // Ensure Database Context is ready
-        let container = try ModelContainer(for: SDConvertedPDF.self, SDPDFCollection.self)
-        let context = ModelContext(container)
+        let context = InksyncProApp.sharedModelContainer.mainContext
         
         // 1. Map Existing SwiftData Items to LastPathComponent Identity Check
         let existingPDFs = try context.fetch(FetchDescriptor<SDConvertedPDF>())
@@ -203,7 +201,7 @@ class SyncCoordinator: ObservableObject {
                 // Update SwiftData context to flip `isOnDevice` securely
                 await MainActor.run {
                     do {
-                        let context = try ModelContext(ModelContainer(for: SDConvertedPDF.self, SDPDFCollection.self))
+                        let context = InksyncProApp.sharedModelContainer.mainContext
                         let fetchDescriptor = FetchDescriptor<SDConvertedPDF>()
                         let allPDFs = try context.fetch(fetchDescriptor)
                         
