@@ -70,11 +70,9 @@ actor LibraryScanner {
                         }
                     }
                     
-                    if let validPanels = try? await manager.extractSmartPanels(from: pdf.url) {
-                        await MainActor.run {
-                            manager.savePanelOverrides(for: pdf.id, panels: validPanels)
-                        }
-                    }
+                    // ⚠️ OOM CRASH FIX: We absolutely CANNOT call `extractSmartPanels` during library scanning.
+                    // Doing so unpacks 150+ ultra-high resolution images into RAM synchronously for every new comic added.
+                    // This creates an immediate 2GB+ memory spike, causing iOS to hard-crash the app via Jetsam.
                 }
             }
         }
