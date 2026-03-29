@@ -11,6 +11,7 @@ enum LibrarySheetDestination: Identifiable {
     case directShare(ConvertedPDF)
     case details(ConvertedPDF)
     case searchMetadata(ConvertedPDF)
+    case reviewMetadata
     case editMetadata(ConvertedPDF)
     case batchMetadata([ConvertedPDF])
     case cognitiveBatchRenamer([ConvertedPDF])
@@ -29,6 +30,7 @@ enum LibrarySheetDestination: Identifiable {
         case .directShare(let p): return "directShare_\(p.id)"
         case .details(let p): return "details_\(p.id)"
         case .searchMetadata(let p): return "searchMeta_\(p.id)"
+        case .reviewMetadata: return "reviewMetadata"
         case .editMetadata(let p): return "editMeta_\(p.id)"
         case .batchMetadata: return "batchMeta"
         case .cognitiveBatchRenamer: return "batchRenamer"

@@ -214,6 +214,7 @@ struct PDFMetadata: Codable, Equatable, Hashable, Sendable {
     var isManga: Bool? // Overrides global setting if present
     var isWebtoon: Bool? // For vertical scroll support
     var bookmarkedPages: [Int] = [] // Stores indices of dog-eared pages
+    var autoMatchFailed: Bool? = false
 }
 
 // ✅ NEW: Chapter Structure

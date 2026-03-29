@@ -190,6 +190,7 @@ struct ModernLibraryView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         case .searchMetadata(let pdf): MetadataSearchSheet(pdf: pdf)
+        case .reviewMetadata: BatchMetadataFetchView(pdfs: conversionManager.failedMetadataPDFs, conversionManager: conversionManager)
         case .editMetadata(let pdf): AdvancedMetadataEditorView(pdf: pdf)
         case .batchMetadata(let pdfs): BatchMetadataEditorView(selectedPDFs: pdfs)
         case .cognitiveBatchRenamer(let pdfs):

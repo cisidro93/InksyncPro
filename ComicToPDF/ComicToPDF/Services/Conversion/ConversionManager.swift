@@ -48,6 +48,9 @@ class ConversionManager: ObservableObject {
     // ✅ Session Vault State
     @Published var isVaultUnlocked: Bool = false
     
+    // ✅ NEW: Background Metadata State
+    @Published var failedMetadataPDFs: [ConvertedPDF] = []
+    
     // MARK: - Panel Editor State
     @Published var isPresentingPanelEditor: Bool = false
     @Published var currentEditorImage: UIImage? = nil
