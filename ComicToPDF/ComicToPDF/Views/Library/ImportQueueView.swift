@@ -121,13 +121,19 @@ struct ImportQueueView: View {
                     }
                 }
             }
-            // 🚀 ISOLATED PRESENTATION: Forces UIDocumentPicker onto an isolated UIWindow layer to prevent 
-            // the notorious iOS 15+ nested `.sheet` auto-dismiss teardown bug!
-            .fullScreenCover(isPresented: $showingPicker) {
-                DocumentPicker(onDocumentsPicked: { newURLs in
-                    processSelectedFiles(newURLs: newURLs)
-                })
-                .ignoresSafeArea()
+            // 🚀 NATIVE iOS 15+ PRESENTATION: Use SwiftUI's native fileImporter instead of a custom UIViewControllerRepresentable 
+            // inside a fullScreenCover avoiding iOS 16/17 structural teardown view hierarchy collisions!
+            .fileImporter(
+                isPresented: $showingPicker,
+                allowedContentTypes: [.pdf, .zip, .epub, .folder, UTType(filenameExtension: "cbz")!, UTType(filenameExtension: "cbr")!, UTType(filenameExtension: "cb7")!],
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    processSelectedFiles(newURLs: urls)
+                case .failure(let error):
+                    Logger.shared.log("File Importer Error: \(error.localizedDescription)", category: "Preflight", type: .error)
+                }
             }
         }
         .interactiveDismissDisabled(!stagedItems.isEmpty)
