@@ -111,8 +111,12 @@ struct ConvertView: View {
                 }
                 .pickerStyle(.segmented)
                 .disabled(conversionManager.isConverting)
+                
+                Toggle("Synthesize 2-Page Landscape Spreads", isOn: $conversionManager.conversionSettings.splitSpreads)
+                    .disabled(conversionManager.isConverting)
             } header: { Text("Layout") } footer: {
-                Text(viewModel.isMangaMode ? "Panels ordered Right-to-Left." : "Panels ordered Left-to-Right.")
+                Text(viewModel.isMangaMode ? "Panels ordered Right-to-Left. " : "Panels ordered Left-to-Right. ") +
+                Text("Synthesizing spreads tells the e-reader to merge two portrait pages into a single horizontal landscape screen automatically.")
             }
 
             // MARK: - Convert Button

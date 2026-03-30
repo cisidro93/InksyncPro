@@ -83,7 +83,10 @@ public struct EPUBManifestBuilder {
                 <dc:title>\(baseFilename.xmlEscaped())</dc:title>
                 <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(modified)</meta>
+                <meta property="rendition:layout">pre-paginated</meta>
+                <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">landscape</meta>
+                <meta name="fixed-layout" content="true"/>
                 <meta name="cover" content="\(coverMeta)"/>
             </metadata>
             <manifest>
