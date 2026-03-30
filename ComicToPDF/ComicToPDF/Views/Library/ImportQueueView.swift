@@ -145,50 +145,51 @@ struct ImportQueueView: View {
             securedURLs.append((url, url.startAccessingSecurityScopedResource()))
         }
         
-        Task {
-            // 🚀 BACKGROUND COPY AND METADATA EXTRACT
-            // Physically copying GB-sized CBZ files from the security sandbox to our local
-            // Staging Vault on the Main Thread causes Watchdog Timer application crashes.
-            // We offload both the physical file I/O and the XML parsing to a detached Task.
-            let newItems = await Task.detached(priority: .userInitiated) { () -> [StagedImportItem] in
-                let fileManager = FileManager.default
-                let allowedExtensions: Set<String> = ["pdf", "cbz", "cbr", "cb7", "zip", "epub"]
-                var extractedItems: [(url: URL, originalParent: String)] = []
-                var pendingStagedItems: [StagedImportItem] = []
-                
-                let stagingDir = fileManager.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-                try? fileManager.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-                
-                for (url, secured) in securedURLs {
-                    defer { if secured { url.stopAccessingSecurityScopedResource() } }
-                    
-                    var isDirectory: ObjCBool = false
-                    if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
-                        if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
-                            for case let fileURL as URL in enumerator {
-                                if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
-                                    let localStagedURL = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                                    try? fileManager.copyItem(at: fileURL, to: localStagedURL)
-                                    
-                                    // Capture original folder name before it was restaged into UUID tmp
-                                    let originalParent = url.lastPathComponent
-                                    extractedItems.append((localStagedURL, originalParent))
-                                }
-                            }
-                        }
-                    } else {
-                        if allowedExtensions.contains(url.pathExtension.lowercased()) {
-                            let localStagedURL = stagingDir.appendingPathComponent(url.lastPathComponent)
-                            try? fileManager.copyItem(at: url, to: localStagedURL)
-                            
-                            let originalParent = url.deletingLastPathComponent().lastPathComponent
-                            extractedItems.append((localStagedURL, originalParent))
+        let fileManager = FileManager.default
+        let allowedExtensions: Set<String> = ["pdf", "cbz", "cbr", "cb7", "zip", "epub"]
+        var fastExtractedItems: [(url: URL, originalParent: String)] = []
+        
+        let stagingDir = fileManager.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+        try? fileManager.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        
+        // 🚀 O(1) SYNCHRONOUS INODE MOVE
+        // Because `DocumentPicker` sets `asCopy: true`, iOS places clones in our `/tmp/` folder.
+        // It violently deletes them the instant this delegate function returns.
+        // We cannot defer file operations to a background queue because the files will vanish!
+        // To prevent Watchdog crashes from synchronous multi-GB copies, we instead MOVE the files.
+        // Moving on APFS takes ~0ms regardless of filesize.
+        for (url, secured) in securedURLs {
+            defer { if secured { url.stopAccessingSecurityScopedResource() } }
+            
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
+                    for case let fileURL as URL in enumerator {
+                        if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
+                            let localStagedURL = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
+                            try? fileManager.moveItem(at: fileURL, to: localStagedURL)
+                            fastExtractedItems.append((localStagedURL, url.lastPathComponent))
                         }
                     }
                 }
+            } else {
+                if allowedExtensions.contains(url.pathExtension.lowercased()) {
+                    let localStagedURL = stagingDir.appendingPathComponent(url.lastPathComponent)
+                    try? fileManager.moveItem(at: url, to: localStagedURL)
+                    fastExtractedItems.append((localStagedURL, url.deletingLastPathComponent().lastPathComponent))
+                }
+            }
+        }
+        
+        Task {
+            // 🚀 BACKGROUND METADATA EXTRACT
+            // Now that the GB XML CBZ files are safely moved out of UIDocumentPicker's volatile
+            // grasp into our permanent App-Staging block, we detach XML parsing to avoid UI stutter.
+            let newItems = await Task.detached(priority: .userInitiated) { () -> [StagedImportItem] in
+                var pendingStagedItems: [StagedImportItem] = []
                 
                 // Generate Metadata objects asynchronously
-                for item in extractedItems {
+                for item in fastExtractedItems {
                     let fileURL = item.url
                     var title = fileURL.lastPathComponent
                     var series = item.originalParent
