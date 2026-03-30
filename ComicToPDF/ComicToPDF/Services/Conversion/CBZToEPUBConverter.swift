@@ -94,6 +94,13 @@ class CBZToEPUBConverter {
                     imagesToProcess = slices
                     isSliced = true
                 }
+            } else if let rawImage = UIImage(contentsOfFile: srcURL.path), rawImage.size.width > rawImage.size.height * 1.1 {
+                // Automatically slice massive double-page spreads into two separate portraits for Kindle!
+                let slices = ImageProcessor.sliceSpread(image: rawImage, isManga: settings.mangaMode)
+                if slices.count > 1 {
+                    imagesToProcess = slices
+                    isSliced = true
+                }
             }
             
             // B. Evaluate Processing Needs

@@ -356,7 +356,7 @@ enum TargetDeviceProfile: String, CaseIterable, Codable, Identifiable {
         case .original: return nil
             
         // Kindle
-        case .scribeColorsoft: return CGSize(width: 1980, height: 2640)
+        case .scribeColorsoft: return CGSize(width: 1860, height: 2480)
         case .paperwhite2024: return CGSize(width: 1264, height: 1680)
         case .scribe: return CGSize(width: 1860, height: 2480)
         case .paperwhite11: return CGSize(width: 1236, height: 1648)

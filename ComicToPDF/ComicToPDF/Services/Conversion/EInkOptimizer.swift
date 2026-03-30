@@ -38,7 +38,14 @@ class EInkOptimizer {
         if let targetSize = profile.resolution {
             let originalSize = workingImage.size
             if originalSize.width > targetSize.width || originalSize.height > targetSize.height {
-                workingImage = scale(workingImage, toFit: targetSize)
+                var safeTargetSize = targetSize
+                // Dynamic Orientation-Aware Scaling!
+                // If the original image is naturally a landscape spread, we flip the 
+                // device hardware limits horizontally to avoid crushing max width to portrait constraints!
+                if originalSize.width > originalSize.height {
+                    safeTargetSize = CGSize(width: max(targetSize.width, targetSize.height), height: min(targetSize.width, targetSize.height))
+                }
+                workingImage = scale(workingImage, toFit: safeTargetSize)
             }
         }
         
