@@ -131,6 +131,10 @@ struct ImportQueueView: View {
             let fileManager = FileManager.default
             let allowedExtensions: Set<String> = ["pdf", "cbz", "cbr", "cb7", "zip", "epub"]
             
+            // ✅ NEW: Secure Staging Vault to prevent UIKit UIDocumentPicker from auto-deleting the files
+            let stagingDir = fileManager.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+            try? fileManager.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+            
             for url in newURLs {
                 let secured = url.startAccessingSecurityScopedResource()
                 var isDirectory: ObjCBool = false
@@ -138,13 +142,17 @@ struct ImportQueueView: View {
                     if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
                         for case let fileURL as URL in enumerator {
                             if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
-                                extractedURLs.append(fileURL)
+                                let localStagedURL = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
+                                try? fileManager.copyItem(at: fileURL, to: localStagedURL)
+                                extractedURLs.append(localStagedURL)
                             }
                         }
                     }
                 } else {
                     if allowedExtensions.contains(url.pathExtension.lowercased()) {
-                        extractedURLs.append(url)
+                        let localStagedURL = stagingDir.appendingPathComponent(url.lastPathComponent)
+                        try? fileManager.copyItem(at: url, to: localStagedURL)
+                        extractedURLs.append(localStagedURL)
                     }
                 }
                 if secured { url.stopAccessingSecurityScopedResource() }
