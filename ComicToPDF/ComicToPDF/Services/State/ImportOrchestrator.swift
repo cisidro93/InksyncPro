@@ -174,7 +174,7 @@ class ImportOrchestrator {
         }
     }
     
-    func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [URL: PDFMetadata] = [:]) async {
+    func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [String: PDFMetadata] = [:]) async {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Import..." }
         defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
         
@@ -221,7 +221,7 @@ class ImportOrchestrator {
                     }
                     
                     // 1. Attempt XML Parse or Pre-Flight Override
-                    if let overrideMeta = overrides[url] {
+                    if let overrideMeta = overrides[fileName] {
                         smartDisplayName = overrideMeta.title
                         smartMetadata = overrideMeta
                     } else if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {

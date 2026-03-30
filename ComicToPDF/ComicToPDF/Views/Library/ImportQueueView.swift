@@ -188,10 +188,10 @@ struct ImportQueueView: View {
         guard !stagedItems.isEmpty else { return }
         isImporting = true
         
-        var overrides: [URL: PDFMetadata] = [:]
+        var overrides: [String: PDFMetadata] = [:]
         var urlsToProcess: [URL] = []
         for item in stagedItems {
-            overrides[item.url] = item.metadata
+            overrides[item.url.lastPathComponent] = item.metadata
             urlsToProcess.append(item.url)
         }
         
