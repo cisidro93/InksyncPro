@@ -202,7 +202,13 @@ class ImportOrchestrator {
                 
                 do {
                     if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-                    try fileManager.copyItem(at: url, to: destURL)
+                    
+                    // 🚀 NEW: Aggressive APFS Inode Optimization (Move instead of Copy for Staged Items)
+                    if url.path.contains("InksyncStaging_") {
+                        try fileManager.moveItem(at: url, to: destURL)
+                    } else {
+                        try fileManager.copyItem(at: url, to: destURL)
+                    }
                     let attr = try fileManager.attributesOfItem(atPath: destURL.path)
                     let size = attr[.size] as? Int64 ?? 0
                     

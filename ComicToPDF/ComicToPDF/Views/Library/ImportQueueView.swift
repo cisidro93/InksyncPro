@@ -123,6 +123,17 @@ struct ImportQueueView: View {
                 })
             }
         }
+        .onDisappear {
+            // 🚀 NEW: Sandbox Garbage Collection hooks to purge Staging Dirs if user cancels UI
+            DispatchQueue.global(qos: .background).async {
+                let fm = FileManager.default
+                if let contents = try? fm.contentsOfDirectory(at: fm.temporaryDirectory, includingPropertiesForKeys: nil) {
+                    contents.filter { $0.lastPathComponent.hasPrefix("InksyncStaging_") }.forEach {
+                        try? fm.removeItem(at: $0)
+                    }
+                }
+            }
+        }
     }
     
     private func processSelectedFiles(newURLs: [URL]) {
