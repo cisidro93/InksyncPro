@@ -272,9 +272,11 @@ struct ImportQueueView: View {
                         if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: fileURL) {
                             title = xmlData.parsedTitle ?? title
                             series = xmlData.parsedSeries ?? series
-                        }
-                        if let parsedInfo = ComicInfoParser.parse(from: fileURL) {
-                            isManga = parsedInfo.manga
+                            
+                            // Only run the deep XML structural parser if we mathematically verified ComicInfo exists
+                            if let parsedInfo = ComicInfoParser.parse(from: fileURL) {
+                                isManga = parsedInfo.manga
+                            }
                         }
                         
                         let metadata = PDFMetadata(title: title, series: series, isManga: isManga)
@@ -287,14 +289,18 @@ struct ImportQueueView: View {
                 return pendingStagedItems
             }.value
             
-            // ✅ Safely mutate @State on the explicit @MainActor context
+            // ✅ Safely mutate @State on the explicit @MainActor context using structural bypass
             await MainActor.run {
+                var currentUIState = self.stagedItems
                 for item in newItems {
-                    if !self.stagedItems.contains(where: { $0.url == item.url }) {
-                        self.stagedItems.append(item)
+                    if !currentUIState.contains(where: { $0.url == item.url }) {
+                        currentUIState.append(item)
                     }
-                    Logger.shared.log("Staged items UI array count is now \(self.stagedItems.count)", category: "Preflight", type: .info)
                 }
+                
+                // Forcing an absolute reference swap triggers aggressive SwiftUI view invalidation!
+                self.stagedItems = currentUIState
+                Logger.shared.log("Staged items UI array count is now \(self.stagedItems.count)", category: "Preflight", type: .info)
             }
         }
     }
@@ -429,6 +435,8 @@ struct StagedItemRow: View {
         .listRowBackground(Theme.surface)
     }
 }
+
+
 
 
 
