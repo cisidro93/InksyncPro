@@ -283,6 +283,7 @@ struct ImportQueueView: View {
                     }
                 }
                 
+                Logger.shared.log("Metadata Parsing Matrix completed for \(pendingStagedItems.count) files.", category: "Preflight", type: .info)
                 return pendingStagedItems
             }.value
             
@@ -292,6 +293,7 @@ struct ImportQueueView: View {
                     if !self.stagedItems.contains(where: { $0.url == item.url }) {
                         self.stagedItems.append(item)
                     }
+                    Logger.shared.log("Staged items UI array count is now \(self.stagedItems.count)", category: "Preflight", type: .info)
                 }
             }
         }
@@ -427,3 +429,6 @@ struct StagedItemRow: View {
         .listRowBackground(Theme.surface)
     }
 }
+
+
+
