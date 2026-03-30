@@ -137,14 +137,6 @@ struct ImportQueueView: View {
     }
     
     private func processSelectedFiles(newURLs: [URL]) {
-        // 🚀 SECURE LEASE ACQUISITION ON CALLER THREAD
-        // UIDocumentPicker URLs are security-scoped. We must lock them to our app's process
-        // synchronously to prevent the system from terminating access when this function returns.
-        var securedURLs: [(url: URL, secured: Bool)] = []
-        for url in newURLs {
-            securedURLs.append((url, url.startAccessingSecurityScopedResource()))
-        }
-        
         let fileManager = FileManager.default
         let allowedExtensions: Set<String> = ["pdf", "cbz", "cbr", "cb7", "zip", "epub"]
         var fastExtractedItems: [(url: URL, originalParent: String)] = []
@@ -152,44 +144,82 @@ struct ImportQueueView: View {
         let stagingDir = fileManager.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
         try? fileManager.createDirectory(at: stagingDir, withIntermediateDirectories: true)
         
-        // 🚀 O(1) SYNCHRONOUS INODE MOVE
-        // Because `DocumentPicker` sets `asCopy: true`, iOS places clones in our `/tmp/` folder.
-        // It violently deletes them the instant this delegate function returns.
-        // We cannot defer file operations to a background queue because the files will vanish!
-        // To prevent Watchdog crashes from synchronous multi-GB copies, we instead MOVE the files.
-        // Moving on APFS takes ~0ms regardless of filesize.
-        for (url, secured) in securedURLs {
-            defer { if secured { url.stopAccessingSecurityScopedResource() } }
+        var externalURLs: [(url: URL, secured: Bool)] = []
+        
+        // 🚀 HYBRID I/O ROUTING
+        // 1. If the URL is inside Apple's ephemeral 'tmp' cache (e.g. from `asCopy: true`), we MUST physically O(1) move it 
+        // instantly on the Caller Thread. Otherwise iOS violently deletes it the moment this delegate returns.
+        // 2. If the URL is external (Real iCloud Folder / USB) from `asCopy: false`, moving it deletes the user's root data and causes cross-volume Watchdog crashes! We keep the lease ACTIVE and pass it safely to the background.
+        // 3. We use UUID subdirectories to prevent fatal file name collisions across bulk folders!
+        for url in newURLs {
+            let secured = url.startAccessingSecurityScopedResource()
             
-            var isDirectory: ObjCBool = false
-            if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
-                if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
-                    for case let fileURL as URL in enumerator {
-                        if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
-                            let localStagedURL = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                            try? fileManager.moveItem(at: fileURL, to: localStagedURL)
-                            fastExtractedItems.append((localStagedURL, url.lastPathComponent))
+            if url.path.contains("tmp/") || url.path.contains("tmp/DocumentPicker") {
+                defer { if secured { url.stopAccessingSecurityScopedResource() } }
+                
+                let uniqueFolder = stagingDir.appendingPathComponent(UUID().uuidString)
+                try? fileManager.createDirectory(at: uniqueFolder, withIntermediateDirectories: true)
+                
+                var isDirectory: ObjCBool = false
+                if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                    if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
+                        for case let fileURL as URL in enumerator {
+                            if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
+                                let targetURL = uniqueFolder.appendingPathComponent(fileURL.lastPathComponent)
+                                try? fileManager.moveItem(at: fileURL, to: targetURL)
+                                fastExtractedItems.append((targetURL, url.lastPathComponent))
+                            }
                         }
+                    }
+                } else {
+                    if allowedExtensions.contains(url.pathExtension.lowercased()) {
+                        let targetURL = uniqueFolder.appendingPathComponent(url.lastPathComponent)
+                        try? fileManager.moveItem(at: url, to: targetURL)
+                        fastExtractedItems.append((targetURL, url.deletingLastPathComponent().lastPathComponent))
                     }
                 }
             } else {
-                if allowedExtensions.contains(url.pathExtension.lowercased()) {
-                    let localStagedURL = stagingDir.appendingPathComponent(url.lastPathComponent)
-                    try? fileManager.moveItem(at: url, to: localStagedURL)
-                    fastExtractedItems.append((localStagedURL, url.deletingLastPathComponent().lastPathComponent))
-                }
+                externalURLs.append((url, secured))
             }
         }
         
         Task {
             // 🚀 BACKGROUND METADATA EXTRACT
-            // Now that the GB XML CBZ files are safely moved out of UIDocumentPicker's volatile
-            // grasp into our permanent App-Staging block, we detach XML parsing to avoid UI stutter.
             let newItems = await Task.detached(priority: .userInitiated) { () -> [StagedImportItem] in
+                var backgroundItems: [(url: URL, originalParent: String)] = []
+                
+                // Background Cross-Volume Copy for external items
+                for (url, secured) in externalURLs {
+                    defer { if secured { url.stopAccessingSecurityScopedResource() } }
+                    
+                    let uniqueFolder = stagingDir.appendingPathComponent(UUID().uuidString)
+                    try? fileManager.createDirectory(at: uniqueFolder, withIntermediateDirectories: true)
+                    
+                    var isDirectory: ObjCBool = false
+                    if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                        if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
+                            for case let fileURL as URL in enumerator {
+                                if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
+                                    let targetURL = uniqueFolder.appendingPathComponent(fileURL.lastPathComponent)
+                                    try? fileManager.copyItem(at: fileURL, to: targetURL)
+                                    backgroundItems.append((targetURL, url.lastPathComponent))
+                                }
+                            }
+                        }
+                    } else {
+                        if allowedExtensions.contains(url.pathExtension.lowercased()) {
+                            let targetURL = uniqueFolder.appendingPathComponent(url.lastPathComponent)
+                            try? fileManager.copyItem(at: url, to: targetURL)
+                            backgroundItems.append((targetURL, url.deletingLastPathComponent().lastPathComponent))
+                        }
+                    }
+                }
+                
+                let allItems = fastExtractedItems + backgroundItems
                 var pendingStagedItems: [StagedImportItem] = []
                 
                 // Generate Metadata objects asynchronously
-                for item in fastExtractedItems {
+                for item in allItems {
                     let fileURL = item.url
                     var title = fileURL.lastPathComponent
                     var series = item.originalParent
