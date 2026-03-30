@@ -119,9 +119,10 @@ class MigrationService {
     // ✅ NEW: Dual-Write Background Sync
     // Silently builds the SwiftData database while legacy monolithic arrays are still being used by the UI layer.
     func syncToSwiftData(pdfs: [ConvertedPDF], collections: [PDFCollection]) {
+        let container = InksyncProApp.sharedModelContainer
         Task.detached(priority: .background) {
             do {
-                let context = ModelContext(InksyncProApp.sharedModelContainer)
+                let context = ModelContext(container)
                 
                 // O(1) Bulk Fetch Collections
                 let allExistingCols = (try? context.fetch(FetchDescriptor<SDPDFCollection>())) ?? []

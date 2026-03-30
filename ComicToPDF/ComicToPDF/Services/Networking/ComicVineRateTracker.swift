@@ -5,7 +5,7 @@ final class ComicVineRateTracker: Sendable {
     static let shared = ComicVineRateTracker()
     
     private let maxRequestsPerHour = 199
-    private let defaults = UserDefaults.standard
+    private var defaults: UserDefaults { .standard }
     
     private let keyWindowStart = "comicVine_hourlyWindowStart"
     private let keyRequestCount = "comicVine_requestsThisHour"
