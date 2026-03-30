@@ -299,8 +299,12 @@ struct ImportQueueView: View {
                 }
                 
                 // Forcing an absolute reference swap triggers aggressive SwiftUI view invalidation!
-                self.stagedItems = currentUIState
-                Logger.shared.log("Staged items UI array count is now \(self.stagedItems.count)", category: "Preflight", type: .info)
+                // ?? DELAYED INJECTION: We must wait exactly 0.5s to allow the UIDocumentPickerViewController teardown animation 
+                // to formally release its lock on the View Hierarchy! Otherwise SwiftUI permanently corrupts the diff engine!
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    self.stagedItems = currentUIState
+                    Logger.shared.log("Staged items UI array successfully injected into stable hierarchy!", category: "Preflight", type: .info)
+                }
             }
         }
     }
@@ -435,6 +439,7 @@ struct StagedItemRow: View {
         .listRowBackground(Theme.surface)
     }
 }
+
 
 
 
