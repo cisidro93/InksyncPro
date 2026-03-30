@@ -137,10 +137,13 @@ struct ImportQueueView: View {
     }
     
     private func processSelectedFiles(newURLs: [URL]) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            var extractedURLs: [URL] = []
-            let fileManager = FileManager.default
-            let allowedExtensions: Set<String> = ["pdf", "cbz", "cbr", "cb7", "zip", "epub"]
+        // 🚀 SYNCHRONOUS FILE SECURE VAULT
+        // We MUST lock these volatile files into our staging directory before returning from the delegate,
+        // otherwise iOS will aggressively garbage collect `tmp/` before the background thread parses the metadata.
+        var extractedURLs: [URL] = []
+        let fileManager = FileManager.default
+        let allowedExtensions: Set<String> = ["pdf", "cbz", "cbr", "cb7", "zip", "epub"]
+
             
             // ✅ NEW: Secure Staging Vault to prevent UIKit UIDocumentPicker from auto-deleting the files
             let stagingDir = fileManager.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
@@ -169,8 +172,12 @@ struct ImportQueueView: View {
                 if secured { url.stopAccessingSecurityScopedResource() }
             }
             
-            // Generate Metadata objects
-            for fileURL in extractedURLs {
+            // 🚀 ASYNCHRONOUS METADATA PARSING
+            // Now that the physical files are safely duplicated into `InksyncStaging_`, we detach
+            // the sluggish XML parsing workload to the background queue so the UI doesn't stutter.
+            DispatchQueue.global(qos: .userInitiated).async {
+                // Generate Metadata objects
+                for fileURL in extractedURLs {
                 let secured = fileURL.startAccessingSecurityScopedResource()
                 
                 var title = fileURL.lastPathComponent
@@ -292,6 +299,8 @@ struct StagedItemRow: View {
                         Text("Title").font(.caption).foregroundColor(Theme.textSecondary).frame(width: 50, alignment: .leading)
                         TextField("Document Title", text: $item.metadata.title)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .submitLabel(.done)
+                            .onSubmit { }
                     }
                     HStack {
                         Text("Series").font(.caption).foregroundColor(Theme.textSecondary).frame(width: 50, alignment: .leading)
@@ -300,6 +309,8 @@ struct StagedItemRow: View {
                             set: { item.metadata.series = $0 }
                         ))
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .submitLabel(.done)
+                        .onSubmit { }
                     }
                     
                     HStack {
