@@ -159,32 +159,49 @@ struct ImportQueueView: View {
                 
                 let uniqueFolder = stagingDir.appendingPathComponent(UUID().uuidString)
                 try? fileManager.createDirectory(at: uniqueFolder, withIntermediateDirectories: true)
+                Logger.shared.log("Initiating Volatile Sandbox Enumeration for \(url.lastPathComponent)", category: "Preflight", type: .info)
                 
                 var isDirectory: ObjCBool = false
                 if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
                     if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
                         for case let fileURL as URL in enumerator {
                             if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
-                                let targetURL = uniqueFolder.appendingPathComponent(fileURL.lastPathComponent)
-                                try? fileManager.moveItem(at: fileURL, to: targetURL)
-                                fastExtractedItems.append((targetURL, url.lastPathComponent))
+                                do {
+                                    let safeFolder = uniqueFolder.appendingPathComponent(UUID().uuidString)
+                                    try fileManager.createDirectory(at: safeFolder, withIntermediateDirectories: true)
+                                    let targetURL = safeFolder.appendingPathComponent(fileURL.lastPathComponent)
+                                    try fileManager.moveItem(at: fileURL, to: targetURL)
+                                    fastExtractedItems.append((targetURL, url.lastPathComponent))
+                                    Logger.shared.log("Preflight APFS Move Success: \(fileURL.lastPathComponent)", category: "Preflight", type: .info)
+                                } catch {
+                                    Logger.shared.log("Preflight MoveItem Exception on Volatile Staging: \(error.localizedDescription) - File: \(fileURL.lastPathComponent)", category: "Preflight", type: .error)
+                                }
                             }
                         }
                     }
                 } else {
                     if allowedExtensions.contains(url.pathExtension.lowercased()) {
-                        let targetURL = uniqueFolder.appendingPathComponent(url.lastPathComponent)
-                        try? fileManager.moveItem(at: url, to: targetURL)
-                        fastExtractedItems.append((targetURL, url.deletingLastPathComponent().lastPathComponent))
+                        do {
+                            let safeFolder = uniqueFolder.appendingPathComponent(UUID().uuidString)
+                            try fileManager.createDirectory(at: safeFolder, withIntermediateDirectories: true)
+                            let targetURL = safeFolder.appendingPathComponent(url.lastPathComponent)
+                            try fileManager.moveItem(at: url, to: targetURL)
+                            fastExtractedItems.append((targetURL, url.deletingLastPathComponent().lastPathComponent))
+                            Logger.shared.log("Preflight APFS Move Success: \(url.lastPathComponent)", category: "Preflight", type: .info)
+                        } catch {
+                            Logger.shared.log("Preflight MoveItem Exception on Volatile Staging: \(error.localizedDescription) - File: \(url.lastPathComponent)", category: "Preflight", type: .error)
+                        }
                     }
                 }
             } else {
+                Logger.shared.log("Queueing External Volume Directory for Background Transfer: \(url.lastPathComponent)", category: "Preflight", type: .info)
                 externalURLs.append((url, secured))
             }
         }
         
         Task {
             // 🚀 BACKGROUND METADATA EXTRACT
+            Logger.shared.log("Dispatching Background Metadata Extraction and External Volume Traversals", category: "Preflight", type: .info)
             let newItems = await Task.detached(priority: .userInitiated) { () -> [StagedImportItem] in
                 var backgroundItems: [(url: URL, originalParent: String)] = []
                 
@@ -200,42 +217,59 @@ struct ImportQueueView: View {
                         if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
                             for case let fileURL as URL in enumerator {
                                 if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
-                                    let targetURL = uniqueFolder.appendingPathComponent(fileURL.lastPathComponent)
-                                    try? fileManager.copyItem(at: fileURL, to: targetURL)
-                                    backgroundItems.append((targetURL, url.lastPathComponent))
+                                    do {
+                                        let safeFolder = uniqueFolder.appendingPathComponent(UUID().uuidString)
+                                        try fileManager.createDirectory(at: safeFolder, withIntermediateDirectories: true)
+                                        let targetURL = safeFolder.appendingPathComponent(fileURL.lastPathComponent)
+                                        try fileManager.copyItem(at: fileURL, to: targetURL)
+                                        backgroundItems.append((targetURL, url.lastPathComponent))
+                                        Logger.shared.log("Preflight Cross-Volume Copy Success: \(fileURL.lastPathComponent)", category: "Preflight", type: .info)
+                                    } catch {
+                                        Logger.shared.log("Preflight CopyItem Exception on Dataless URL: \(error.localizedDescription) - File: \(fileURL.lastPathComponent)", category: "Preflight", type: .error)
+                                    }
                                 }
                             }
                         }
                     } else {
                         if allowedExtensions.contains(url.pathExtension.lowercased()) {
-                            let targetURL = uniqueFolder.appendingPathComponent(url.lastPathComponent)
-                            try? fileManager.copyItem(at: url, to: targetURL)
-                            backgroundItems.append((targetURL, url.deletingLastPathComponent().lastPathComponent))
+                            do {
+                                let safeFolder = uniqueFolder.appendingPathComponent(UUID().uuidString)
+                                try fileManager.createDirectory(at: safeFolder, withIntermediateDirectories: true)
+                                let targetURL = safeFolder.appendingPathComponent(url.lastPathComponent)
+                                try fileManager.copyItem(at: url, to: targetURL)
+                                backgroundItems.append((targetURL, url.deletingLastPathComponent().lastPathComponent))
+                                Logger.shared.log("Preflight Cross-Volume Copy Success: \(url.lastPathComponent)", category: "Preflight", type: .info)
+                            } catch {
+                                Logger.shared.log("Preflight CopyItem Exception on Dataless URL: \(error.localizedDescription) - File: \(url.lastPathComponent)", category: "Preflight", type: .error)
+                            }
                         }
                     }
                 }
                 
                 let allItems = fastExtractedItems + backgroundItems
+                Logger.shared.log("Preflight IO Assembly Complete. Launching Metadata Parsing Matrix for \(allItems.count) files...", category: "Preflight", type: .info)
                 var pendingStagedItems: [StagedImportItem] = []
                 
-                // Generate Metadata objects asynchronously
+                // Generate Metadata objects asynchronously with Native ARC Boundary
                 for item in allItems {
-                    let fileURL = item.url
-                    var title = fileURL.lastPathComponent
-                    var series = item.originalParent
-                    var isManga = false
-                    
-                    if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: fileURL) {
-                        title = xmlData.parsedTitle ?? title
-                        series = xmlData.parsedSeries ?? series
+                    autoreleasepool {
+                        let fileURL = item.url
+                        var title = fileURL.lastPathComponent
+                        var series = item.originalParent
+                        var isManga = false
+                        
+                        if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: fileURL) {
+                            title = xmlData.parsedTitle ?? title
+                            series = xmlData.parsedSeries ?? series
+                        }
+                        if let parsedInfo = ComicInfoParser.parse(from: fileURL) {
+                            isManga = parsedInfo.manga
+                        }
+                        
+                        let metadata = PDFMetadata(title: title, series: series, isManga: isManga)
+                        let stagedItem = StagedImportItem(url: fileURL, metadata: metadata)
+                        pendingStagedItems.append(stagedItem)
                     }
-                    if let parsedInfo = ComicInfoParser.parse(from: fileURL) {
-                        isManga = parsedInfo.manga
-                    }
-                    
-                    let metadata = PDFMetadata(title: title, series: series, isManga: isManga)
-                    let stagedItem = StagedImportItem(url: fileURL, metadata: metadata)
-                    pendingStagedItems.append(stagedItem)
                 }
                 
                 return pendingStagedItems
