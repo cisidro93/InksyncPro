@@ -84,80 +84,82 @@ class CBZToEPUBConverter {
         var globalImageIndex = 0
         
         for (originalIndex, srcURL) in imageURLs.enumerated() {
-            // A. Check for Webtoon Slicing
-            var imagesToProcess: [UIImage] = []
-            var isSliced = false
-            
-            if settings.splitWebtoon, let rawImage = UIImage(contentsOfFile: srcURL.path) {
-                let slices = ImageProcessor.sliceWebtoon(image: rawImage, targetAspectRatio: 1.33)
-                if slices.count > 1 {
-                    imagesToProcess = slices
-                    isSliced = true
-                }
-            } else if let rawImage = UIImage(contentsOfFile: srcURL.path), rawImage.size.width > rawImage.size.height * 1.1 {
-                // Automatically slice massive double-page spreads into two separate portraits for Kindle!
-                let slices = ImageProcessor.sliceSpread(image: rawImage, isManga: settings.mangaMode)
-                if slices.count > 1 {
-                    imagesToProcess = slices
-                    isSliced = true
-                }
-            }
-            
-            // B. Evaluate Processing Needs
-            let ext = srcURL.pathExtension.lowercased()
-            let isUnsafeFormat = !["jpg", "jpeg", "png"].contains(ext)
-            let needsCompression = settings.compressionQuality != .high
-            let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
-            
-            let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat
-            
-            let appendToBatch = { (data: Data, indexToUse: Int) in
-                let itemSize = Int64(data.count)
-                let overheadBuffer: Int64 = 500 * 1024 
+            autoreleasepool {
+                // A. Check for Webtoon Slicing
+                var imagesToProcess: [UIImage] = []
+                var isSliced = false
                 
-                let isNoLimit = limit == Int64.max
-                let exceedsLimit = (currentBatchSize + itemSize + overheadBuffer) > limit
-                
-                if !isNoLimit && exceedsLimit && !currentBatch.isEmpty {
-                    Logger.shared.log("ΓÜá∩╕Å Auto-Splitting at \(currentBatchSize) bytes (Image: \(indexToUse))", category: "Converter")
-                    batches.append(currentBatch)
-                    currentBatch = []
-                    currentBatchSize = 0
+                if settings.splitWebtoon, let rawImage = UIImage(contentsOfFile: srcURL.path) {
+                    let slices = ImageProcessor.sliceWebtoon(image: rawImage, targetAspectRatio: 1.33)
+                    if slices.count > 1 {
+                        imagesToProcess = slices
+                        isSliced = true
+                        }
+                } else if let rawImage = UIImage(contentsOfFile: srcURL.path), rawImage.size.width > rawImage.size.height * 1.1 {
+                    // Automatically slice massive double-page spreads into two separate portraits for Kindle!
+                    let slices = ImageProcessor.sliceSpread(image: rawImage, isManga: settings.mangaMode)
+                    if slices.count > 1 {
+                        imagesToProcess = slices
+                        isSliced = true
+                    }
                 }
                 
-                currentBatch.append((url: srcURL, index: indexToUse, data: data))
-                currentBatchSize += itemSize
-                globalImageIndex += 1
-            }
-            
-            // C. Process and Append
-            if isSliced {
-                for slice in imagesToProcess {
+                // B. Evaluate Processing Needs
+                let ext = srcURL.pathExtension.lowercased()
+                let isUnsafeFormat = !["jpg", "jpeg", "png"].contains(ext)
+                let needsCompression = settings.compressionQuality != .high
+                let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
+                
+                let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat
+                
+                let appendToBatch = { (data: Data, indexToUse: Int) in
+                    let itemSize = Int64(data.count)
+                    let overheadBuffer: Int64 = 500 * 1024 
+                    
+                    let isNoLimit = limit == Int64.max
+                    let exceedsLimit = (currentBatchSize + itemSize + overheadBuffer) > limit
+                    
+                    if !isNoLimit && exceedsLimit && !currentBatch.isEmpty {
+                        Logger.shared.log("ΓÜá∩╕Å Auto-Splitting at \(currentBatchSize) bytes (Image: \(indexToUse))", category: "Converter")
+                        batches.append(currentBatch)
+                        currentBatch = []
+                        currentBatchSize = 0
+                    }
+                    
+                    currentBatch.append((url: srcURL, index: indexToUse, data: data))
+                    currentBatchSize += itemSize
+                    globalImageIndex += 1
+                }
+                
+                // C. Process and Append
+                if isSliced {
+                    for slice in imagesToProcess {
+                        var finalData: Data
+                        if needsProcessing {
+                            let processedImage = ImageProcessor.process(image: slice, settings: settings) ?? slice
+                            finalData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
+                        } else {
+                            finalData = slice.jpegData(compressionQuality: 1.0) ?? Data()
+                        }
+                        appendToBatch(finalData, globalImageIndex)
+                    }
+                } else {
                     var finalData: Data
                     if needsProcessing {
-                        let processedImage = ImageProcessor.process(image: slice, settings: settings) ?? slice
-                        finalData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
+                        if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
+                            let quality = settings.compressionQuality.value
+                            finalData = processedImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
+                        } else {
+                            finalData = (try? Data(contentsOf: srcURL)) ?? Data()
+                        }
                     } else {
-                        finalData = slice.jpegData(compressionQuality: 1.0) ?? Data()
+                         finalData = (try? Data(contentsOf: srcURL)) ?? Data()
                     }
                     appendToBatch(finalData, globalImageIndex)
                 }
-            } else {
-                var finalData: Data
-                if needsProcessing {
-                    if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
-                        let quality = settings.compressionQuality.value
-                        finalData = processedImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
-                    } else {
-                        finalData = (try? Data(contentsOf: srcURL)) ?? Data()
-                    }
-                } else {
-                     finalData = (try? Data(contentsOf: srcURL)) ?? Data()
-                }
-                appendToBatch(finalData, globalImageIndex)
+                
+                progress(0.1 + (0.4 * Double(originalIndex) / totalCount))
             }
-            
-            progress(0.1 + (0.4 * Double(originalIndex) / totalCount))
         }
         
         if !currentBatch.isEmpty {
@@ -378,31 +380,33 @@ class CBZToEPUBConverter {
         var globalImageIndex = 0
         
         for (originalIndex, srcURL) in extractionResult.imageURLs.enumerated() {
-            let ext = srcURL.pathExtension.lowercased()
-            let isUnsafeFormat = !["jpg", "jpeg", "png"].contains(ext)
-            let needsCompression = settings.compressionQuality != .high
-            let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
-            
-            let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat
-            
-            var processedData: Data?
-            if needsProcessing {
-                if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
-                    processedData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value)
+            try autoreleasepool {
+                let ext = srcURL.pathExtension.lowercased()
+                let isUnsafeFormat = !["jpg", "jpeg", "png"].contains(ext)
+                let needsCompression = settings.compressionQuality != .high
+                let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
+                
+                let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat
+                
+                var processedData: Data?
+                if needsProcessing {
+                    if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
+                        processedData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value)
+                    }
+                } else {
+                    processedData = try? Data(contentsOf: srcURL)
                 }
-            } else {
-                processedData = try? Data(contentsOf: srcURL)
+                
+                guard let data = processedData else { return }
+                
+                let trueExt = (ext == "png" && !needsProcessing) ? "png" : "jpg"
+                let newImageName = String(format: "page_%04d.%@", globalImageIndex + 1, trueExt)
+                let destURL = imagesDir.appendingPathComponent(newImageName)
+                try data.write(to: destURL)
+                
+                globalImageIndex += 1
+                progress(0.1 + (0.7 * Double(originalIndex) / totalCount))
             }
-            
-            guard let data = processedData else { continue }
-            
-            let trueExt = (ext == "png" && !needsProcessing) ? "png" : "jpg"
-            let newImageName = String(format: "page_%04d.%@", globalImageIndex + 1, trueExt)
-            let destURL = imagesDir.appendingPathComponent(newImageName)
-            try data.write(to: destURL)
-            
-            globalImageIndex += 1
-            progress(0.1 + (0.7 * Double(originalIndex) / totalCount))
         }
         Logger.shared.log("Stage 2 End: Processed \\(globalImageIndex) images", category: "Converter")
         

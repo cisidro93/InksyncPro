@@ -81,26 +81,28 @@ class ArchiveMutatorService {
         }
         
         for (newIndex, originalIndex) in newOrder.enumerated() {
-            guard originalIndex < imageEntries.count else { continue }
-            let entry = imageEntries[originalIndex]
-            
-            if let panels = combinedManifest[originalIndex] {
-                newPanels[newIndex] = panels
+            try autoreleasepool {
+                guard originalIndex < imageEntries.count else { return }
+                let entry = imageEntries[originalIndex]
+                
+                if let panels = combinedManifest[originalIndex] {
+                    newPanels[newIndex] = panels
+                }
+                
+                let ext = (entry.path as NSString).pathExtension.lowercased()
+                let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
+                _ = try sourceArchive.extract(entry, to: tempFile)
+                
+                let newName = "page_\(String(format: "%05d", newIndex)).\(ext)"
+                
+                try destArchive.addEntry(with: newName, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                    let fileHandle = try? FileHandle(forReadingFrom: tempFile)
+                    try? fileHandle?.seek(toOffset: UInt64(position))
+                    return fileHandle?.readData(ofLength: size) ?? Data()
+                }
+                
+                try? fileManager.removeItem(at: tempFile)
             }
-            
-            let ext = (entry.path as NSString).pathExtension.lowercased()
-            let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
-            _ = try sourceArchive.extract(entry, to: tempFile)
-            
-            let newName = "page_\(String(format: "%05d", newIndex)).\(ext)"
-            
-            try destArchive.addEntry(with: newName, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
-                let fileHandle = try? FileHandle(forReadingFrom: tempFile)
-                try? fileHandle?.seek(toOffset: UInt64(position))
-                return fileHandle?.readData(ofLength: size) ?? Data()
-            }
-            
-            try? fileManager.removeItem(at: tempFile)
         }
         
         if fileManager.fileExists(atPath: url.path) { try fileManager.removeItem(at: url) }
@@ -145,49 +147,51 @@ class ArchiveMutatorService {
             var imageIndexCounter = 0
             
             for entry in sortedEntries {
-                let isImage = ["jpg", "jpeg", "png", "webp"].contains((entry.path as NSString).pathExtension.lowercased()) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
-                
-                let currentImageIndex = isImage ? imageIndexCounter : -1
-                if isImage { imageIndexCounter += 1 }
-                
-                let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
-                _ = try sourceArchive.extract(entry, to: tempFile)
-                
-                var fileToRead = tempFile
-                var shouldCleanupCrops = false
-                
-                if isImage && pageIndices.contains(currentImageIndex) {
-                    if let image = UIImage(contentsOfFile: tempFile.path), let cgImage = image.cgImage {
-                        let width = Double(cgImage.width)
-                        let height = Double(cgImage.height)
-                        let x = width * trim.left
-                        let y = height * trim.top
-                        let newWidth = width * (1.0 - trim.left - trim.right)
-                        let newHeight = height * (1.0 - trim.top - trim.bottom)
-                        
-                        if let croppedCG = cgImage.cropping(to: CGRect(x: x, y: y, width: newWidth, height: newHeight)) {
-                            let croppedImage = UIImage(cgImage: croppedCG)
-                            let croppedFile = tempDir.appendingPathComponent("cropped_" + tempFile.lastPathComponent)
-                            if let data = croppedImage.jpegData(compressionQuality: 0.8) {
-                                try data.write(to: croppedFile)
-                                fileToRead = croppedFile
-                                shouldCleanupCrops = true
+                try autoreleasepool {
+                    let isImage = ["jpg", "jpeg", "png", "webp"].contains((entry.path as NSString).pathExtension.lowercased()) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
+                    
+                    let currentImageIndex = isImage ? imageIndexCounter : -1
+                    if isImage { imageIndexCounter += 1 }
+                    
+                    let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
+                    _ = try sourceArchive.extract(entry, to: tempFile)
+                    
+                    var fileToRead = tempFile
+                    var shouldCleanupCrops = false
+                    
+                    if isImage && pageIndices.contains(currentImageIndex) {
+                        if let image = UIImage(contentsOfFile: tempFile.path), let cgImage = image.cgImage {
+                            let width = Double(cgImage.width)
+                            let height = Double(cgImage.height)
+                            let x = width * trim.left
+                            let y = height * trim.top
+                            let newWidth = width * (1.0 - trim.left - trim.right)
+                            let newHeight = height * (1.0 - trim.top - trim.bottom)
+                            
+                            if let croppedCG = cgImage.cropping(to: CGRect(x: x, y: y, width: newWidth, height: newHeight)) {
+                                let croppedImage = UIImage(cgImage: croppedCG)
+                                let croppedFile = tempDir.appendingPathComponent("cropped_" + tempFile.lastPathComponent)
+                                if let data = croppedImage.jpegData(compressionQuality: 0.8) {
+                                    try data.write(to: croppedFile)
+                                    fileToRead = croppedFile
+                                    shouldCleanupCrops = true
+                                }
                             }
                         }
                     }
+                    
+                    let attr = try fileManager.attributesOfItem(atPath: fileToRead.path)
+                    let fileSize = attr[.size] as? Int64 ?? 0
+                    
+                    try destArchive.addEntry(with: entry.path, type: entry.type, uncompressedSize: fileSize, modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                        let fileHandle = try? FileHandle(forReadingFrom: fileToRead)
+                        try? fileHandle?.seek(toOffset: UInt64(position))
+                        return fileHandle?.readData(ofLength: size) ?? Data()
+                    }
+                    
+                    try? fileManager.removeItem(at: tempFile)
+                    if shouldCleanupCrops { try? fileManager.removeItem(at: fileToRead) }
                 }
-                
-                let attr = try fileManager.attributesOfItem(atPath: fileToRead.path)
-                let fileSize = attr[.size] as? Int64 ?? 0
-                
-                try destArchive.addEntry(with: entry.path, type: entry.type, uncompressedSize: fileSize, modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
-                    let fileHandle = try? FileHandle(forReadingFrom: fileToRead)
-                    try? fileHandle?.seek(toOffset: UInt64(position))
-                    return fileHandle?.readData(ofLength: size) ?? Data()
-                }
-                
-                try? fileManager.removeItem(at: tempFile)
-                if shouldCleanupCrops { try? fileManager.removeItem(at: fileToRead) }
             }
             
             if fileManager.fileExists(atPath: sourceURL.path) { try fileManager.removeItem(at: sourceURL) }
@@ -288,25 +292,27 @@ class ArchiveMutatorService {
             }
             
             for (newIndex, originalIndex) in pageIndices.enumerated() {
-                guard originalIndex < imageEntries.count else { continue }
-                let entry = imageEntries[originalIndex]
-                
-                if let panels = combinedManifest[originalIndex] {
-                    newFileOverrides[newIndex] = panels
+                try autoreleasepool {
+                    guard originalIndex < imageEntries.count else { return }
+                    let entry = imageEntries[originalIndex]
+                    
+                    if let panels = combinedManifest[originalIndex] {
+                        newFileOverrides[newIndex] = panels
+                    }
+                    
+                    let ext = (entry.path as NSString).pathExtension.lowercased()
+                    let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
+                    _ = try sourceArchive.extract(entry, to: tempFile)
+                    
+                    let newPageName = "page_\(String(format: "%05d", newIndex)).\(ext)"
+                    
+                    try destArchive.addEntry(with: newPageName, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
+                        let fileHandle = try? FileHandle(forReadingFrom: tempFile)
+                        try? fileHandle?.seek(toOffset: UInt64(position))
+                        return fileHandle?.readData(ofLength: size) ?? Data()
+                    }
+                    try? fileManager.removeItem(at: tempFile)
                 }
-                
-                let ext = (entry.path as NSString).pathExtension.lowercased()
-                let tempFile = tempDir.appendingPathComponent(entry.path.components(separatedBy: "/").last ?? "temp")
-                _ = try sourceArchive.extract(entry, to: tempFile)
-                
-                let newPageName = "page_\(String(format: "%05d", newIndex)).\(ext)"
-                
-                try destArchive.addEntry(with: newPageName, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: Date(), permissions: 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
-                    let fileHandle = try? FileHandle(forReadingFrom: tempFile)
-                    try? fileHandle?.seek(toOffset: UInt64(position))
-                    return fileHandle?.readData(ofLength: size) ?? Data()
-                }
-                try? fileManager.removeItem(at: tempFile)
             }
         }()
         
