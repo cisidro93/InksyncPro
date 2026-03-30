@@ -146,7 +146,6 @@ struct ImportQueueView: View {
             }
         }
     }
-    }
     
     private func processSelectedFiles(newURLs: [URL]) {
         let fileManager = FileManager.default
