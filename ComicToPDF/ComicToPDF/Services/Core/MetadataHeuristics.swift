@@ -38,6 +38,23 @@ struct MetadataHeuristics {
         }
         return nil
     }
+    
+    /// Intelligently routes manga vs western comics based on heuristic file names
+    static func detectAsymmetricContentType(url: URL) -> ContentType {
+        let ext = url.pathExtension.lowercased()
+        if ext == "pdf" || ext == "epub" { return .book }
+        
+        // Scanlation signatures
+        let nameLower = url.lastPathComponent.lowercased()
+        let parentLower = url.deletingLastPathComponent().lastPathComponent.lowercased()
+        let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin"]
+        
+        if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) {
+            return .manga
+        }
+        
+        return .comic
+    }
 }
 
 // MARK: - BookVine (Google Books API) Services

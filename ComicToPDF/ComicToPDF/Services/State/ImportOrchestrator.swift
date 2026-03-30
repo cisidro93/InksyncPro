@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import ZIPFoundation
 import SwiftUI
 
@@ -8,7 +8,7 @@ class ImportOrchestrator {
     static let shared = ImportOrchestrator()
     private init() {}
     
-    // ✅ NEW: Unified Reader Format Heuristics
+    // âœ… NEW: Unified Reader Format Heuristics
     private func hasComicIndicators(url: URL) -> Bool {
         let name = url.lastPathComponent.lowercased()
         let comicKeywords = ["vol", "issue", "chapter", "ch", "#", "manga", "tankobon"]
@@ -117,9 +117,7 @@ class ImportOrchestrator {
                     var smartMetadata = PDFMetadata(title: fileName)
                     smartMetadata.series = seriesName
                     
-                    let contentExt = destURL.pathExtension.lowercased()
-                    var cType: ContentType = .book
-                    if contentExt == "pdf" || contentExt == "epub" { cType = .book } else { cType = .comic }
+                    let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
                     
                     if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
                         smartDisplayName = xmlData.displayName
@@ -207,9 +205,7 @@ class ImportOrchestrator {
                     let attr = try fileManager.attributesOfItem(atPath: destURL.path)
                     let size = attr[.size] as? Int64 ?? 0
                     
-                    var cType: ContentType = .book
-                    let ext = destURL.pathExtension.lowercased()
-                    if ext == "pdf" || ext == "epub" { cType = .book } else { cType = .comic }
+                    let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
                     
                     var smartDisplayName = fileName
                     var smartMetadata = PDFMetadata(title: fileName)
@@ -458,9 +454,7 @@ class ImportOrchestrator {
                                 metadata.tags.append("Auto XML Folder Scrape")
                             }
                             
-                            let contentExt = destURL.pathExtension.lowercased()
-                            var cType: ContentType = .book
-                            if contentExt == "pdf" || contentExt == "epub" { cType = .book } else { cType = .comic }
+                            let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
                             
                             var pdf = ConvertedPDF(
                                 name: smartDisplayName,
@@ -672,4 +666,5 @@ class ImportOrchestrator {
         }
     }
 }
+
 

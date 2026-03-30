@@ -123,15 +123,13 @@ class MigrationService {
             do {
                 let context = ModelContext(InksyncProApp.sharedModelContainer)
                 
+                // O(1) Bulk Fetch Collections
+                let allExistingCols = (try? context.fetch(FetchDescriptor<SDPDFCollection>())) ?? []
+                let colDict = Dictionary(grouping: allExistingCols, by: { $0.id }).compactMapValues { $0.first }
+                
                 // 1. Sync Collections
                 for col in collections {
-                    let colId = col.id
-                    let predicate = #Predicate<SDPDFCollection> { $0.id == colId }
-                    var existing: SDPDFCollection?
-                    if let fetchRes = try? context.fetch(FetchDescriptor(predicate: predicate)), let match = fetchRes.first {
-                        existing = match
-                    }
-                    if let existing = existing {
+                    if let existing = colDict[col.id] {
                         existing.name = col.name
                         existing.icon = col.icon
                         existing.color = col.color
@@ -142,16 +140,13 @@ class MigrationService {
                     }
                 }
                 
+                // O(1) Bulk Fetch PDFs
+                let allExistingPdfs = (try? context.fetch(FetchDescriptor<SDConvertedPDF>())) ?? []
+                let pdfDict = Dictionary(grouping: allExistingPdfs, by: { $0.id }).compactMapValues { $0.first }
+                
                 // 2. Sync PDFs
                 for pdf in pdfs {
-                    let pdfId = pdf.id
-                    let predicate = #Predicate<SDConvertedPDF> { $0.id == pdfId }
-                    var existingDoc: SDConvertedPDF?
-                    if let fetchRes = try? context.fetch(FetchDescriptor(predicate: predicate)), let match = fetchRes.first {
-                        existingDoc = match
-                    }
-                    
-                    if let existing = existingDoc {
+                    if let existing = pdfDict[pdf.id] {
                         existing.name = pdf.name
                         existing.pageCount = pdf.pageCount
                         existing.fileSize = pdf.fileSize
@@ -166,22 +161,19 @@ class MigrationService {
                         context.insert(doc)
                     }
                 }
+                
                 // 3. Prune Deleted or Orphaned Duplicates
                 let validPDFIds = Set(pdfs.map { $0.id })
-                if let allExisting = try? context.fetch(FetchDescriptor<SDConvertedPDF>()) {
-                    for existing in allExisting {
-                        if !validPDFIds.contains(existing.id) {
-                            context.delete(existing)
-                        }
+                for existing in allExistingPdfs {
+                    if !validPDFIds.contains(existing.id) {
+                        context.delete(existing)
                     }
                 }
                 
                 let validColIds = Set(collections.map { $0.id })
-                if let allExistingCols = try? context.fetch(FetchDescriptor<SDPDFCollection>()) {
-                    for existingCol in allExistingCols {
-                        if !validColIds.contains(existingCol.id) {
-                            context.delete(existingCol)
-                        }
+                for existingCol in allExistingCols {
+                    if !validColIds.contains(existingCol.id) {
+                        context.delete(existingCol)
                     }
                 }
                 

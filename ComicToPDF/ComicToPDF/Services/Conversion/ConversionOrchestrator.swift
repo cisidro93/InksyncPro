@@ -356,7 +356,7 @@ final class ConversionOrchestrator {
                 var overrideCover: Data? = nil
                 if let baseCover = firstEPUBFileCoverData, generatedBatches.count > 1 { overrideCover = CoverGenerator.generateCover(from: baseCover, partNumber: batchIndex + 1, totalParts: generatedBatches.count) }
                 
-                try await merger.mergeEPUBs(sourceURLs: batch, outputURL: finalOutputURL, settings: jobSettings, overrideCoverData: overrideCover)
+                try await merger.mergeEPUBs(sourceURLs: batch, outputURL: finalOutputURL, settings: jobSettings, overrideCoverData: overrideCover, sourceMetadata: sourceFiles.first?.metadata)
                 
                 let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                 let outputURL = finalOutputURL

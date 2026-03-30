@@ -58,18 +58,23 @@ class ComicVineService {
         return false
     }
     
-    private func waitForRateLimit() async {
+    private func waitForRateLimit() async throws {
+        // Enforce absolute limits to protect the developer API key
+        try ComicVineRateTracker.shared.registerRequestAttempt()
+        
         let now = Date()
         let timeSinceLast = now.timeIntervalSince(lastRequestTime)
-        if timeSinceLast < 1.1 { // Buffer slightly over 1s
-            let waitTime = 1.1 - timeSinceLast
-             try? await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
+        let goldStandardBuffer: TimeInterval = 3.0 // 3 seconds spacing to prevent IP bans
+        
+        if timeSinceLast < goldStandardBuffer {
+            let waitTime = goldStandardBuffer - timeSinceLast
+            try? await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
         }
         lastRequestTime = Date()
     }
     
     func searchVolumes(query: String, apiKey: String) async throws -> [ComicVineVolume] {
-        await waitForRateLimit()
+        try await waitForRateLimit()
         
         guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
              throw ComicVineError.invalidURL
@@ -103,7 +108,7 @@ class ComicVineService {
     
     // Find specific issue in a volume
     func getIssue(volumeID: Int, issueNumber: String, apiKey: String) async throws -> ComicVineIssueDetails? {
-        await waitForRateLimit()
+        try await waitForRateLimit()
         
         let urlString = "https://comicvine.gamespot.com/api/issues/?api_key=\(apiKey)&format=json&filter=volume:\(volumeID),issue_number:\(issueNumber)&limit=1"
         guard let url = URL(string: urlString) else { throw ComicVineError.invalidURL }
@@ -124,7 +129,7 @@ class ComicVineService {
     }
 
     func getIssueDetails(issueID: Int, apiKey: String) async throws -> ComicVineIssueDetails {
-        await waitForRateLimit()
+        try await waitForRateLimit()
         
         let urlString = "https://comicvine.gamespot.com/api/issue/4000-\(issueID)/?api_key=\(apiKey)&format=json"
         guard let url = URL(string: urlString) else { throw ComicVineError.invalidURL }
