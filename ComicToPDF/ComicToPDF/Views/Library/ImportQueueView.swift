@@ -86,7 +86,6 @@ struct ImportQueueView: View {
                     .shadow(radius: 20)
                 }
             }
-            }
             .navigationTitle("Import Inspector")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -146,6 +145,7 @@ struct ImportQueueView: View {
                 }
             }
         }
+    }
     }
     
     private func processSelectedFiles(newURLs: [URL]) {
