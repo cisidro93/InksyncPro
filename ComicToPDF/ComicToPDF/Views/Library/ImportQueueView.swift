@@ -286,10 +286,12 @@ struct ImportQueueView: View {
                 return pendingStagedItems
             }.value
             
-            // ✅ Safely mutate @State on the inherited @MainActor context
-            for item in newItems {
-                if !self.stagedItems.contains(where: { $0.url == item.url }) {
-                    self.stagedItems.append(item)
+            // ✅ Safely mutate @State on the explicit @MainActor context
+            await MainActor.run {
+                for item in newItems {
+                    if !self.stagedItems.contains(where: { $0.url == item.url }) {
+                        self.stagedItems.append(item)
+                    }
                 }
             }
         }
