@@ -144,7 +144,19 @@ struct ConvertView: View {
         )
         .navigationTitle("Convert Comic")
         .onAppear {
-            viewModel.isMangaMode = pdf.metadata.isManga ?? conversionManager.conversionSettings.mangaMode
+            if let explicitManga = pdf.metadata.isManga {
+                viewModel.isMangaMode = explicitManga
+            } else {
+                // Smart Fallback Detection if no XML exists
+                let lowerName = pdf.name.lowercased()
+                if lowerName.contains("manga") || lowerName.contains("chapter") || lowerName.contains("ch.") || lowerName.contains("raw") {
+                    viewModel.isMangaMode = true
+                } else if lowerName.contains("issue") || lowerName.contains("comic") || lowerName.contains("marvel") || lowerName.contains("dc") {
+                    viewModel.isMangaMode = false
+                } else {
+                    viewModel.isMangaMode = conversionManager.conversionSettings.mangaMode
+                }
+            }
             viewModel.selectedPipeline = conversionManager.conversionSettings.outputPipeline
         }
         .sheet(isPresented: $viewModel.showingPreview) {
