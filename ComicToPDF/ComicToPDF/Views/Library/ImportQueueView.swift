@@ -19,6 +19,7 @@ struct ImportQueueView: View {
     @State private var stagedItems: [StagedImportItem] = []
     @State private var showingPicker = false
     @State private var isImporting = false
+    @State private var isLeaving = false
     
     var body: some View {
         NavigationView {
@@ -85,11 +86,15 @@ struct ImportQueueView: View {
                     .shadow(radius: 20)
                 }
             }
+            }
             .navigationTitle("Import Inspector")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { 
+                        isLeaving = true
+                        dismiss() 
+                    }
                         .disabled(isImporting)
                 }
                 
@@ -117,19 +122,26 @@ struct ImportQueueView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingPicker) {
+            // 🚀 ISOLATED PRESENTATION: Forces UIDocumentPicker onto an isolated UIWindow layer to prevent 
+            // the notorious iOS 15+ nested `.sheet` auto-dismiss teardown bug!
+            .fullScreenCover(isPresented: $showingPicker) {
                 DocumentPicker(onDocumentsPicked: { newURLs in
                     processSelectedFiles(newURLs: newURLs)
                 })
+                .ignoresSafeArea()
             }
         }
+        .interactiveDismissDisabled(!stagedItems.isEmpty)
         .onDisappear {
-            // 🚀 NEW: Sandbox Garbage Collection hooks to purge Staging Dirs if user cancels UI
-            DispatchQueue.global(qos: .background).async {
-                let fm = FileManager.default
-                if let contents = try? fm.contentsOfDirectory(at: fm.temporaryDirectory, includingPropertiesForKeys: nil) {
-                    contents.filter { $0.lastPathComponent.hasPrefix("InksyncStaging_") }.forEach {
-                        try? fm.removeItem(at: $0)
+            // 🚀 PROTECTED GC: Only wipe Staging Dirs if the user explicitly commanded an exit!
+            // If the view merely disappeared to overlay a DocumentPicker, we MUST NOT destroy the user's queued staging volumes!
+            if isLeaving {
+                DispatchQueue.global(qos: .background).async {
+                    let fm = FileManager.default
+                    if let contents = try? fm.contentsOfDirectory(at: fm.temporaryDirectory, includingPropertiesForKeys: nil) {
+                        contents.filter { $0.lastPathComponent.hasPrefix("InksyncStaging_") }.forEach {
+                            try? fm.removeItem(at: $0)
+                        }
                     }
                 }
             }
