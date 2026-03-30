@@ -174,7 +174,7 @@ class ImportOrchestrator {
         }
     }
     
-    func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [String: PDFMetadata] = [:]) async {
+    func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [URL: PDFMetadata] = [:]) async {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Import..." }
         defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
         
@@ -192,18 +192,31 @@ class ImportOrchestrator {
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 
-                let fileName = url.lastPathComponent
-                let destURL = documentsDir.appendingPathComponent(fileName)
+                var fileName = url.lastPathComponent
+                var destURL = documentsDir.appendingPathComponent(fileName)
+                let overrideMeta = overrides[url]
                 
+                // 🚀 PREVENT DESTRUCTIVE COLLISION: Instead of destructively dropping chapters named "1.cbz", 
+                // we inject their validated Series Name mapping into the physical Document namespace!
                 if existingPaths.contains(fileName) || newPDFs.contains(where: { $0.url.lastPathComponent == fileName }) {
-                    await ImportMonitorManager.shared.incrementSuccess()
-                    continue
+                    if let seriesPrefix = overrideMeta?.series, !seriesPrefix.isEmpty {
+                        fileName = "\(seriesPrefix) - \(fileName)"
+                        destURL = documentsDir.appendingPathComponent(fileName)
+                    }
+                    
+                    // Failsafe Random UUID extension if multiple duplicate nested series exist!
+                    while existingPaths.contains(fileName) || newPDFs.contains(where: { $0.url.lastPathComponent == fileName }) || fileManager.fileExists(atPath: destURL.path) {
+                        let nameWithoutExt = (fileName as NSString).deletingPathExtension
+                        let ext = (fileName as NSString).pathExtension
+                        fileName = "\(nameWithoutExt)_\(UUID().uuidString.prefix(6)).\(ext)"
+                        destURL = documentsDir.appendingPathComponent(fileName)
+                    }
                 }
                 
                 do {
                     if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
                     
-                    // 🚀 NEW: Aggressive APFS Inode Optimization (Move instead of Copy for Staged Items)
+                    // Aggressive APFS Inode Optimization (Move instead of Copy for Staged Items)
                     if url.path.contains("InksyncStaging_") {
                         try fileManager.moveItem(at: url, to: destURL)
                     } else {
@@ -227,9 +240,9 @@ class ImportOrchestrator {
                     }
                     
                     // 1. Attempt XML Parse or Pre-Flight Override
-                    if let overrideMeta = overrides[fileName] {
-                        smartDisplayName = overrideMeta.title
-                        smartMetadata = overrideMeta
+                    if let meta = overrideMeta {
+                        smartDisplayName = meta.title
+                        smartMetadata = meta
                     } else if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
                         smartDisplayName = xmlData.displayName
                         smartMetadata.title = xmlData.parsedTitle ?? smartDisplayName

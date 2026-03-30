@@ -126,7 +126,7 @@ extension ConversionManager {
         await ImportOrchestrator.shared.importFolderStructure(from: folderURL, manager: self)
     }
 
-    func importFilesAsSeries(urls: [URL], overrides: [String: PDFMetadata] = [:]) async {
+    func importFilesAsSeries(urls: [URL], overrides: [URL: PDFMetadata] = [:]) async {
         await ImportOrchestrator.shared.importFilesAsSeries(urls: urls, manager: self, overrides: overrides)
     }
 

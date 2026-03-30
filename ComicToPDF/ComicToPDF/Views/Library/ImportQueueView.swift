@@ -243,7 +243,7 @@ struct ImportQueueView: View {
             
             // ✅ Safely mutate @State on the inherited @MainActor context
             for item in newItems {
-                if !self.stagedItems.contains(where: { $0.url.lastPathComponent == item.url.lastPathComponent }) {
+                if !self.stagedItems.contains(where: { $0.url == item.url }) {
                     self.stagedItems.append(item)
                 }
             }
@@ -258,10 +258,10 @@ struct ImportQueueView: View {
         guard !stagedItems.isEmpty else { return }
         isImporting = true
         
-        var overrides: [String: PDFMetadata] = [:]
+        var overrides: [URL: PDFMetadata] = [:]
         var urlsToProcess: [URL] = []
         for item in stagedItems {
-            overrides[item.url.lastPathComponent] = item.metadata
+            overrides[item.url] = item.metadata
             urlsToProcess.append(item.url)
         }
         
