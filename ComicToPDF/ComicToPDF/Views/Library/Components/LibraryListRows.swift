@@ -140,6 +140,10 @@ struct ModernSeriesRow: View {
     // ✅ NEW: Isolated State for smooth List scrolling
     @State private var localCover: UIImage? = nil
     
+    // ✅ PHASE 7: Dynamic User Aesthetic Colors
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
+    
     var body: some View {
         HStack(spacing: 12) {
             ZStack(alignment: .bottom) {
