@@ -9,6 +9,10 @@ struct ModernFileRow: View {
     // ✅ NEW: Isolated State for smooth List scrolling
     @State private var localCover: UIImage? = nil
     
+    // ✅ PHASE 7: Dynamic User Aesthetic Colors
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
+    
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
@@ -83,6 +87,18 @@ struct ModernFileRow: View {
                             .padding(.vertical, 2)
                             .background(Color.gray.opacity(0.3))
                             .foregroundColor(.white)
+                            .cornerRadius(4)
+                    }
+                    
+                    // ✅ NEW: Manga / Comic Badge
+                    if pdf.contentType == .comic {
+                        let isManga = pdf.metadata.isManga ?? false
+                        Text(isManga ? "MANGA" : "COMIC")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex).opacity(0.2))
+                            .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
                             .cornerRadius(4)
                     }
                     
@@ -188,6 +204,17 @@ struct ModernSeriesRow: View {
                     .background(Theme.blue.opacity(0.2))
                     .foregroundColor(Theme.blue)
                     .cornerRadius(4)
+                    
+                    if let first = group.issues.first(where: { $0.contentType == .comic }) {
+                        let isManga = first.metadata.isManga ?? false
+                        Text(isManga ? "MANGA" : "COMIC")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex).opacity(0.2))
+                            .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
+                            .cornerRadius(4)
+                    }
                     
                     Text("\(group.count) Issues")
                         .font(.caption)

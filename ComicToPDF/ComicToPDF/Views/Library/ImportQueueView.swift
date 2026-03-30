@@ -1,11 +1,22 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct StagedImportItem: Identifiable, Equatable {
+    let id = UUID()
+    let url: URL
+    var metadata: PDFMetadata
+    var localCover: UIImage? = nil
+    
+    static func == (lhs: StagedImportItem, rhs: StagedImportItem) -> Bool {
+        return lhs.url == rhs.url
+    }
+}
+
 struct ImportQueueView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     
-    @State private var stagedURLs: [URL] = []
+    @State private var stagedItems: [StagedImportItem] = []
     @State private var showingPicker = false
     @State private var isImporting = false
     
@@ -14,17 +25,17 @@ struct ImportQueueView: View {
             ZStack {
                 Theme.bg.ignoresSafeArea()
                 
-                if stagedURLs.isEmpty {
+                if stagedItems.isEmpty {
                     VStack(alignment: .center, spacing: 16) {
-                        Image(systemName: "square.and.arrow.down.on.square")
-                            .font(.system(size: 64))
-                            .foregroundColor(Theme.orange)
+                        Image(systemName: "checklist.checked")
+                            .font(.system(size: 80))
+                            .foregroundColor(Theme.blue)
                             
-                        Text("Staging Queue Is Empty")
+                        Text("Pre-Flight Inspector")
                             .font(.title2).bold()
                             .foregroundColor(Theme.text)
                             
-                        Text("Add comics from different folders into this queue. Once you've selected everything, tap 'Import All' to process them together.")
+                        Text("Add files to staging. You can review and manually fix any bad metadata tags or missing titles right here before permanently importing them into your library.")
                             .multilineTextAlignment(.center)
                             .font(.subheadline)
                             .foregroundColor(Theme.textSecondary)
@@ -33,11 +44,11 @@ struct ImportQueueView: View {
                         Button {
                             showingPicker = true
                         } label: {
-                            Label("Add Files", systemImage: "plus")
+                            Label("Add Files to Staging", systemImage: "plus")
                                 .font(.headline)
                                 .foregroundColor(.white)
                                 .padding()
-                                .frame(maxWidth: 200)
+                                .frame(maxWidth: 250)
                                 .background(Theme.blue)
                                 .cornerRadius(12)
                         }
@@ -46,16 +57,12 @@ struct ImportQueueView: View {
                     .padding()
                 } else {
                     List {
-                        ForEach(stagedURLs, id: \.self) { url in
-                            HStack {
-                                Image(systemName: "doc.fill")
-                                    .foregroundColor(Theme.blue)
-                                Text(url.lastPathComponent)
-                                    .foregroundColor(Theme.text)
+                        Section(header: Text("Staged Files ready for Review").foregroundColor(Theme.textSecondary)) {
+                            ForEach($stagedItems) { $item in
+                                StagedItemRow(item: $item)
                             }
-                            .listRowBackground(Theme.surface)
+                            .onDelete(perform: deleteFiles)
                         }
-                        .onDelete(perform: deleteFiles)
                     }
                     .listStyle(InsetGroupedListStyle())
                     .scrollContentBackground(.hidden)
@@ -63,40 +70,40 @@ struct ImportQueueView: View {
                 
                 // Processing Overlay
                 if isImporting {
-                    Color.black.opacity(0.6).ignoresSafeArea()
+                    Color.black.opacity(0.8).ignoresSafeArea()
                     VStack(spacing: 16) {
                         ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .progressViewStyle(CircularProgressViewStyle(tint: Theme.orange))
                             .scaleEffect(1.5)
-                        Text("Importing \(stagedURLs.count) files...")
+                        Text("Importing \(stagedItems.count) files...")
                             .foregroundColor(.white)
                             .font(.headline)
                     }
                     .padding(32)
                     .background(Theme.surfaceElevated)
                     .cornerRadius(16)
-                    .shadow(radius: 10)
+                    .shadow(radius: 20)
                 }
             }
-            .navigationTitle("Import Queue")
+            .navigationTitle("Import Inspector")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close") { dismiss() }
+                    Button("Cancel") { dismiss() }
                         .disabled(isImporting)
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Import All") {
+                    Button("Confirm & Import All") {
                         startImport()
                     }
                     .font(.headline)
                     .foregroundColor(Theme.orange)
-                    .disabled(stagedURLs.isEmpty || isImporting)
+                    .disabled(stagedItems.isEmpty || isImporting)
                 }
                 
                 ToolbarItem(placement: .bottomBar) {
-                    if !stagedURLs.isEmpty {
+                    if !stagedItems.isEmpty {
                         Button {
                             showingPicker = true
                         } label: {
@@ -112,68 +119,190 @@ struct ImportQueueView: View {
             }
             .sheet(isPresented: $showingPicker) {
                 DocumentPicker(onDocumentsPicked: { newURLs in
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        var extractedURLs: [URL] = []
-                        let fileManager = FileManager.default
-                        let allowedExtensions: Set<String> = ["pdf", "cbz", "zip", "epub"]
-                        
-                        for url in newURLs {
-                            // Request security access to read outside the sandbox
-                            let secured = url.startAccessingSecurityScopedResource()
-                            
-                            var isDirectory: ObjCBool = false
-                            if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
-                                // Recursively search the directory
-                                if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
-                                    for case let fileURL as URL in enumerator {
-                                        if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
-                                            extractedURLs.append(fileURL)
-                                        }
-                                    }
-                                }
-                            } else {
-                                // It's a standard single file selection
-                                if allowedExtensions.contains(url.pathExtension.lowercased()) {
-                                    extractedURLs.append(url)
-                                }
-                            }
-                            
-                            if secured {
-                                url.stopAccessingSecurityScopedResource()
-                            }
-                        }
-                        
-                        DispatchQueue.main.async {
-                            // Append extracted URLs while avoiding exact duplicates
-                            for url in extractedURLs {
-                                if !self.stagedURLs.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
-                                    self.stagedURLs.append(url)
-                                }
-                            }
-                        }
-                    }
+                    processSelectedFiles(newURLs: newURLs)
                 })
             }
         }
     }
     
+    private func processSelectedFiles(newURLs: [URL]) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            var extractedURLs: [URL] = []
+            let fileManager = FileManager.default
+            let allowedExtensions: Set<String> = ["pdf", "cbz", "cbr", "cb7", "zip", "epub"]
+            
+            for url in newURLs {
+                let secured = url.startAccessingSecurityScopedResource()
+                var isDirectory: ObjCBool = false
+                if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                    if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
+                        for case let fileURL as URL in enumerator {
+                            if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
+                                extractedURLs.append(fileURL)
+                            }
+                        }
+                    }
+                } else {
+                    if allowedExtensions.contains(url.pathExtension.lowercased()) {
+                        extractedURLs.append(url)
+                    }
+                }
+                if secured { url.stopAccessingSecurityScopedResource() }
+            }
+            
+            // Generate Metadata objects
+            for fileURL in extractedURLs {
+                let secured = fileURL.startAccessingSecurityScopedResource()
+                
+                var title = fileURL.lastPathComponent
+                var series = fileURL.deletingLastPathComponent().lastPathComponent
+                var isManga = false
+                
+                if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: fileURL) {
+                    title = xmlData.parsedTitle ?? title
+                    series = xmlData.parsedSeries ?? series
+                }
+                if let parsedInfo = ComicInfoParser.parse(from: fileURL) {
+                    isManga = parsedInfo.manga
+                }
+                
+                if secured { fileURL.stopAccessingSecurityScopedResource() }
+                
+                let metadata = PDFMetadata(title: title, series: series, isManga: isManga)
+                let item = StagedImportItem(url: fileURL, metadata: metadata)
+                
+                DispatchQueue.main.async {
+                    if !self.stagedItems.contains(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) {
+                        self.stagedItems.append(item)
+                    }
+                }
+            }
+        }
+    }
+    
     private func deleteFiles(at offsets: IndexSet) {
-        stagedURLs.remove(atOffsets: offsets)
+        stagedItems.remove(atOffsets: offsets)
     }
     
     private func startImport() {
-        guard !stagedURLs.isEmpty else { return }
+        guard !stagedItems.isEmpty else { return }
         isImporting = true
         
-        let urlsToProcess = stagedURLs
+        var overrides: [URL: PDFMetadata] = [:]
+        var urlsToProcess: [URL] = []
+        for item in stagedItems {
+            overrides[item.url] = item.metadata
+            urlsToProcess.append(item.url)
+        }
         
         Task {
-            await conversionManager.importFilesAsSeries(urls: urlsToProcess)
-            
+            await conversionManager.importFilesAsSeries(urls: urlsToProcess, overrides: overrides)
             await MainActor.run {
                 isImporting = false
                 dismiss()
             }
         }
+    }
+}
+
+// MARK: - Editable Queue Row
+struct StagedItemRow: View {
+    @Binding var item: StagedImportItem
+    @State private var showingQuickEdit = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation {
+                    showingQuickEdit.toggle()
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "doc.text.fill")
+                        .font(.title2)
+                        .foregroundColor(Theme.blue)
+                        
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.metadata.title)
+                            .font(.headline)
+                            .foregroundColor(Theme.text)
+                            .lineLimit(1)
+                        if let s = item.metadata.series, !s.isEmpty {
+                            Text("\(s) \(item.metadata.issueNumber.map { "#\($0)" } ?? "")")
+                                .font(.caption)
+                                .foregroundColor(Theme.textSecondary)
+                        } else {
+                            Text(item.url.lastPathComponent)
+                                .font(.caption)
+                                .foregroundColor(Theme.textTertiary)
+                                .lineLimit(1)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    if item.metadata.isManga ?? false {
+                        Text("MANGA")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.green.opacity(0.2))
+                            .foregroundColor(Theme.green)
+                            .cornerRadius(4)
+                    } else {
+                        Text("COMIC")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.blue.opacity(0.2))
+                            .foregroundColor(Theme.blue)
+                            .cornerRadius(4)
+                    }
+                    
+                    Image(systemName: showingQuickEdit ? "chevron.up" : "pencil")
+                        .foregroundColor(Theme.orange)
+                        .font(.caption)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if showingQuickEdit {
+                Divider().background(Theme.surfaceElevated)
+                VStack(spacing: 12) {
+                    HStack {
+                        Text("Title").font(.caption).foregroundColor(Theme.textSecondary).frame(width: 50, alignment: .leading)
+                        TextField("Document Title", text: $item.metadata.title)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
+                    HStack {
+                        Text("Series").font(.caption).foregroundColor(Theme.textSecondary).frame(width: 50, alignment: .leading)
+                        TextField("Series Name", text: Binding(
+                            get: { item.metadata.series ?? "" },
+                            set: { item.metadata.series = $0 }
+                        ))
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
+                    
+                    HStack {
+                        Button {
+                            item.metadata.isManga?.toggle()
+                            if item.metadata.isManga == nil { item.metadata.isManga = true }
+                        } label: {
+                            Text(item.metadata.isManga == true ? "Mode: Right-to-Left (Manga)" : "Mode: Left-to-Right (Comic)")
+                                .font(.caption).bold()
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(item.metadata.isManga == true ? Theme.green.opacity(0.2) : Theme.blue.opacity(0.2))
+                                .foregroundColor(item.metadata.isManga == true ? Theme.green : Theme.blue)
+                                .cornerRadius(8)
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+                .transition(.opacity)
+            }
+        }
+        .padding(.vertical, 4)
+        .listRowBackground(Theme.surface)
     }
 }

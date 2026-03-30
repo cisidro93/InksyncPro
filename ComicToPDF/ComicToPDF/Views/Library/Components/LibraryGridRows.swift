@@ -9,6 +9,10 @@ struct ModernGridFileCell: View {
     // ✅ NEW: Isolated Image State for Lazy Loading
     @State private var localCover: UIImage? = nil
     
+    // ✅ PHASE 7: Dynamic User Aesthetic Colors
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Cover Image Setup
@@ -85,9 +89,16 @@ struct ModernGridFileCell: View {
                             .foregroundColor(Theme.blue)
                     }
                     Spacer()
-                    Text(pdf.fileExtensionString.uppercased())
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(Theme.textTertiary)
+                    if pdf.contentType == .comic {
+                        let isManga = pdf.metadata.isManga ?? false
+                        Text(isManga ? "MANGA" : "COMIC")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
+                    } else {
+                        Text(pdf.fileExtensionString.uppercased())
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(Theme.textTertiary)
+                    }
                 }
             }
         }
@@ -133,6 +144,10 @@ struct ModernGridSeriesCell: View {
     
     // ✅ NEW: Isolated Image State
     @State private var localCover: UIImage? = nil
+    
+    // ✅ PHASE 7: Dynamic User Aesthetic Colors
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -187,6 +202,13 @@ struct ModernGridSeriesCell: View {
                 HStack(spacing: 4) {
                     Image(systemName: "books.vertical.fill").font(.system(size: 10))
                     Text("\(group.count) Issues").font(.system(size: 10, weight: .bold))
+                    
+                    if let first = group.issues.first(where: { $0.contentType == .comic }) {
+                        let isManga = first.metadata.isManga ?? false
+                        Text("· \(isManga ? "MANGA" : "COMIC")")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
+                    }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)

@@ -119,7 +119,22 @@ class LibraryViewModel: ObservableObject {
             
             var items: [(Int, LibraryListItem)] = []
             
-            for (key, group) in groups {
+            for (key, var group) in groups {
+                // ✅ PHASE 4: Chronological Cover Assigner
+                if key.starts(with: "series_") {
+                    let trueCover = group.issues.min { a, b in
+                        let aNumStr = a.metadata.issueNumber ?? ""
+                        let bNumStr = b.metadata.issueNumber ?? ""
+                        if !aNumStr.isEmpty && !bNumStr.isEmpty, let aNum = Double(aNumStr), let bNum = Double(bNumStr) {
+                            return aNum < bNum
+                        }
+                        return a.name.localizedStandardCompare(b.name) == .orderedAscending
+                    }
+                    if let cover = trueCover {
+                        group.coverIssueID = cover.id
+                    }
+                }
+                
                 let item = LibraryListItem.series(group)
                 items.append((firstAppearanceIndex[key] ?? 0, item))
             }

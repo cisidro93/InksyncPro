@@ -11,6 +11,10 @@ struct SettingsView: View {
     // ✅ NEW: Background Auto-Sync
     @AppStorage("enableBackgroundSync") private var enableBackgroundSync = false
     
+    // ✅ PHASE 7: Library Typography Themes
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
+    
     // ✅ NEW: Observe the Brain
     @ObservedObject private var aiManager = AdaptiveLearningManager.shared
     
@@ -209,6 +213,23 @@ struct SettingsView: View {
                 Text("When enabled, exporting files will enter a background queue instead of blocking the screen, allowing you to continue using the app.")
                     .font(.caption)
                     .foregroundColor(.secondary)
+            }
+            
+            // ✅ PHASE 7: User-Managed Overlay Aesthetic
+            HStack {
+                settingsIcon("paintpalette.fill", color: .pink)
+                ColorPicker("Manga Badge Background", selection: Binding(
+                    get: { Color(hex: mangaBadgeColorHex) },
+                    set: { mangaBadgeColorHex = $0.toHex() ?? "#2dd4a0" }
+                ))
+            }
+            
+            HStack {
+                settingsIcon("paintpalette", color: .pink)
+                ColorPicker("Comic Badge Background", selection: Binding(
+                    get: { Color(hex: comicBadgeColorHex) },
+                    set: { comicBadgeColorHex = $0.toHex() ?? "#3d6fff" }
+                ))
             }
         } header: { Text("General UI") }
     }

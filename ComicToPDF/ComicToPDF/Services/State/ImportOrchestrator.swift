@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import ZIPFoundation
 import SwiftUI
 
@@ -130,6 +130,7 @@ class ImportOrchestrator {
                         smartMetadata.writer = parsedInfo.writer
                         smartMetadata.publisher = parsedInfo.publisher
                         smartMetadata.summary = parsedInfo.summary
+                        smartMetadata.isManga = parsedInfo.manga
                         if let year = parsedInfo.year {
                             var comps = DateComponents()
                             comps.year = year; comps.month = 1; comps.day = 1
@@ -173,7 +174,7 @@ class ImportOrchestrator {
         }
     }
     
-    func importFilesAsSeries(urls: [URL], manager: ConversionManager) async {
+    func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [URL: PDFMetadata] = [:]) async {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Import..." }
         defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
         
@@ -219,14 +220,22 @@ class ImportOrchestrator {
                         validParentFolder = parentName
                     }
                     
-                    // 1. Attempt XML Parse
-                    if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
+                    // 1. Attempt XML Parse or Pre-Flight Override
+                    if let overrideMeta = overrides[url] {
+                        smartDisplayName = overrideMeta.title
+                        smartMetadata = overrideMeta
+                    } else if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
                         smartDisplayName = xmlData.displayName
                         smartMetadata.title = xmlData.parsedTitle ?? smartDisplayName
                         // 2. Cascade Priority: XML Series -> Parent Folder -> nil
                         smartMetadata.series = xmlData.parsedSeries ?? validParentFolder
                         smartMetadata.issueNumber = xmlData.parsedNumber
                         smartMetadata.tags.append("Auto XML Scrape")
+                        
+                        // Parse full metadata to extract Manga layout
+                        if let parsedInfo = ComicInfoParser.parse(from: destURL) {
+                            smartMetadata.isManga = parsedInfo.manga
+                        }
                     } else {
                         // 3. Fallback to Parent Folder if no XML exists
                         smartMetadata.series = validParentFolder
