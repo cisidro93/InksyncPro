@@ -26,38 +26,40 @@ struct ImportQueueView: View {
             ZStack {
                 Theme.bg.ignoresSafeArea()
                 
-                if stagedItems.isEmpty {
-                    VStack(alignment: .center, spacing: 16) {
-                        Image(systemName: "checklist.checked")
-                            .font(.system(size: 80))
-                            .foregroundColor(Theme.blue)
-                            
-                        Text("Pre-Flight Inspector")
-                            .font(.title2).bold()
-                            .foregroundColor(Theme.text)
-                            
-                        Text("Add files to staging. You can review and manually fix any bad metadata tags or missing titles right here before permanently importing them into your library.")
-                            .multilineTextAlignment(.center)
-                            .font(.subheadline)
-                            .foregroundColor(Theme.textSecondary)
-                            .padding(.horizontal, 32)
-                            
-                        Button {
-                            showingPicker = true
-                        } label: {
-                            Label("Add Files to Staging", systemImage: "plus")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding()
-                                .frame(maxWidth: 250)
-                                .background(Theme.blue)
-                                .cornerRadius(12)
+                List {
+                    if stagedItems.isEmpty {
+                        VStack(alignment: .center, spacing: 16) {
+                            Image(systemName: "checklist.checked")
+                                .font(.system(size: 80))
+                                .foregroundColor(Theme.blue)
+                                
+                            Text("Pre-Flight Inspector")
+                                .font(.title2).bold()
+                                .foregroundColor(Theme.text)
+                                
+                            Text("Add files to staging. You can review and manually fix any bad metadata tags or missing titles right here before permanently importing them into your library.")
+                                .multilineTextAlignment(.center)
+                                .font(.subheadline)
+                                .foregroundColor(Theme.textSecondary)
+                                .padding(.horizontal, 32)
+                                
+                            Button {
+                                showingPicker = true
+                            } label: {
+                                Label("Add Files to Staging", systemImage: "plus")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .frame(maxWidth: 250)
+                                    .background(Theme.blue)
+                                    .cornerRadius(12)
+                            }
+                            .padding(.top, 20)
                         }
-                        .padding(.top, 20)
-                    }
-                    .padding()
-                } else {
-                    List {
+                        .padding(.vertical, 40)
+                        .listRowBackground(Theme.bg)
+                        .listRowSeparator(.hidden)
+                    } else {
                         Section(header: Text("Staged Files ready for Review").foregroundColor(Theme.textSecondary)) {
                             ForEach($stagedItems) { $item in
                                 StagedItemRow(item: $item)
@@ -65,9 +67,9 @@ struct ImportQueueView: View {
                             .onDelete(perform: deleteFiles)
                         }
                     }
-                    .listStyle(InsetGroupedListStyle())
-                    .scrollContentBackground(.hidden)
                 }
+                .listStyle(InsetGroupedListStyle())
+                .scrollContentBackground(.hidden)
                 
                 // Processing Overlay
                 if isImporting {
