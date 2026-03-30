@@ -266,8 +266,14 @@ class CBZToEPUBConverter {
             manifestItems.append("<item id=\"page_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
             
             // Universally Apply Advanced Landscape Spread Tagging (RTL vs LTR)
-            // LTR & RTL e-readers naturally expect: Page-Spread-Right for standalone cover, then alternating Left, Right.
-            let spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+            let spreadTag: String
+            if isManga {
+                // RTL Manga Sequence: Cover is Left, Page 2 is Right, Page 3 is Left
+                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+            } else {
+                // LTR Western Sequence: Cover is Right, Page 2 is Left, Page 3 is Right
+                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+            }
             
             spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)/>")
             

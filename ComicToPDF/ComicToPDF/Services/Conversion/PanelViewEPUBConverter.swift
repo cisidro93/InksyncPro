@@ -360,13 +360,13 @@ class PanelViewEPUBConverter {
             for (idx, entry) in pageCatalog.enumerated() {
                 let idref = "page\(entry.paddedNum)"
                 let isFirstPair = (idx < 2)
-                let isEvenSlot  = (idx % 2 == 0) // even index = right page in RTL (0 -> right, 1 -> left)
+                let isEvenSlot  = (idx % 2 == 0) // RTL Manga: Cover (0) is Left
 
                 if isFirstPair {
-                    let prop = isEvenSlot ? "facing-page-right" : "facing-page-left"
+                    let prop = isEvenSlot ? "facing-page-left" : "facing-page-right"
                     items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
                 } else {
-                    let prop = isEvenSlot ? "page-spread-right" : "page-spread-left"
+                    let prop = isEvenSlot ? "page-spread-left" : "page-spread-right"
                     items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
                 }
             }
@@ -374,10 +374,10 @@ class PanelViewEPUBConverter {
                 items.append(#"<itemref idref="page-blank" properties="layout-blank"/>"#)
             }
         } else {
-            // Western: alternating left/right (0 -> left, 1 -> right)
+            // Western LTR: Cover (0) is Right
             for (idx, entry) in pageCatalog.enumerated() {
                 let idref = "page\(entry.paddedNum)"
-                let prop = (idx % 2 == 0) ? "page-spread-left" : "page-spread-right"
+                let prop = (idx % 2 == 0) ? "page-spread-right" : "page-spread-left"
                 items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
             }
         }
