@@ -261,9 +261,10 @@ struct ModernLibraryView: View {
                 viewStyle: $viewStyle,
                 tapAction: $tapAction,
                 onSheetTrigger: { dest in 
-                    if dest == .importer || dest == .cloud {
+                    switch dest {
+                    case .importer, .cloud:
                         showingNativeImporter = true
-                    } else {
+                    default:
                         viewModel.activeSheet = dest 
                     }
                 },

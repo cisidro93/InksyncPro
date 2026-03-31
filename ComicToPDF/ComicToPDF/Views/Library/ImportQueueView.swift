@@ -190,7 +190,7 @@ struct ImportQueueView: View {
         Task {
             // 🚀 BACKGROUND METADATA EXTRACT
             Logger.shared.log("Dispatching Background Metadata Extraction and External Volume Traversals", category: "Preflight", type: .info)
-            let newItems = await Task.detached(priority: .userInitiated) { () -> [StagedImportItem] in
+            let newItems = await Task.detached(priority: .userInitiated) { () -> ([StagedImportItem], [URL]) in
                 var backgroundItems: [(url: URL, originalParent: String)] = []
                 
                 // Background Cross-Volume Copy for external items
