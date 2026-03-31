@@ -42,16 +42,22 @@ struct ModernLibraryView: View {
     @State private var sortOption: SortOption = .dateAdded
     
     // ✅ NEW: Native Importer Bypass State
-    @State private var showingNativeImporter = false
+    @State private var showingImportMenu = false
+    @State private var showingNativeFileImporter = false
+    @State private var showingNativeFolderImporter = false
     
-    // ✅ NEW: Precomputed Types for Swift 6 Parser Speed
-    private var allowedImportTypes: [UTType] {
+    // ✅ NEW: Strict Split UTIs to prevent iOS 16/17 `.folder` threading bugs
+    private var fileImportTypes: [UTType] {
         return [
-            .folder, .pdf, .zip, .epub,
+            .pdf, .zip, .epub,
             UTType(filenameExtension: "cbz")!,
             UTType(filenameExtension: "cbr")!,
             UTType(filenameExtension: "cb7")!
         ]
+    }
+    
+    private var folderImportTypes: [UTType] {
+        return [.folder]
     }
     
     // Ã¢Å“â€¦ NEW: SwiftData Native Resolvers
@@ -129,18 +135,28 @@ struct ModernLibraryView: View {
             loadFiles(from: providers)
             return true
         }
+        .confirmationDialog(
+            "Select Import Mode",
+            isPresented: $showingImportMenu,
+            titleVisibility: .visible
+        ) {
+            Button("Import Files (Comics & Archives)") { showingNativeFileImporter = true }
+            Button("Import Folder (Recursive Sync)") { showingNativeFolderImporter = true }
+            Button("Cancel", role: .cancel) { }
+        } message: { Text("Select what you want to import into your library.") }
         .fileImporter(
-            isPresented: $showingNativeImporter,
-            allowedContentTypes: allowedImportTypes,
+            isPresented: $showingNativeFileImporter,
+            allowedContentTypes: fileImportTypes,
             allowsMultipleSelection: true
         ) { result in
-            switch result {
-            case .success(let urls):
-                // Push perfectly to Preflight Staging Queue cleanly
-                viewModel.activeSheet = .importer(urls)
-            case .failure(let error):
-                Logger.shared.log("Native Import Failed: \(error.localizedDescription)", category: "Import", type: .error)
-            }
+            handleImportResult(result)
+        }
+        .fileImporter(
+            isPresented: $showingNativeFolderImporter,
+            allowedContentTypes: folderImportTypes,
+            allowsMultipleSelection: false // 🚨 REQUIRED: Must be false to completely avert iOS infinite spinning!
+        ) { result in
+            handleImportResult(result)
         }
         .onAppear {
             conversionManager.backfillMissingThumbnails()
@@ -156,6 +172,20 @@ struct ModernLibraryView: View {
                     viewModel.activeFullScreen = .read(newBook)
                 }
             }
+        }
+    }
+    
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            // 🚀 PROTECTED DISPATCH: Wait exactly 0.35 seconds for the current Full-Screen FileImporter 
+            // modal to completely despawn before dynamically injecting the next `.sheet` state!
+            // If we rapidly overlap these, SwiftUI drops the transition natively causing the UI to become unresponsive.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                viewModel.activeSheet = .importer(urls)
+            }
+        case .failure(let error):
+            Logger.shared.log("Native Import Failed: \(error.localizedDescription)", category: "Import", type: .error)
         }
     }
     
@@ -263,7 +293,7 @@ struct ModernLibraryView: View {
                 onSheetTrigger: { dest in 
                     switch dest {
                     case .importer, .cloud:
-                        showingNativeImporter = true
+                        showingImportMenu = true
                     default:
                         viewModel.activeSheet = dest 
                     }
@@ -288,7 +318,7 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { showingNativeImporter = true }
+                    onImport: { showingImportMenu = true }
                 )
             } else {
                 LibraryGridView(
@@ -299,7 +329,7 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { showingNativeImporter = true }
+                    onImport: { showingImportMenu = true }
                 )
             }
         }
