@@ -234,7 +234,7 @@ struct ImportQueueView: View {
                     var isDirectory: ObjCBool = false
                     if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
                         if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
-                            for case let fileURL as URL in enumerator {
+                            while let fileURL = enumerator.nextObject() as? URL {
                                 if allowedExtensions.contains(fileURL.pathExtension.lowercased()) {
                                     do {
                                         let safeFolder = uniqueFolder.appendingPathComponent(UUID().uuidString)

@@ -44,6 +44,16 @@ struct ModernLibraryView: View {
     // ✅ NEW: Native Importer Bypass State
     @State private var showingNativeImporter = false
     
+    // ✅ NEW: Precomputed Types for Swift 6 Parser Speed
+    private var allowedImportTypes: [UTType] {
+        return [
+            .folder, .pdf, .zip, .epub,
+            UTType(filenameExtension: "cbz")!,
+            UTType(filenameExtension: "cbr")!,
+            UTType(filenameExtension: "cb7")!
+        ]
+    }
+    
     // Ã¢Å“â€¦ NEW: SwiftData Native Resolvers
     private var nativeVisiblePDFs: [ConvertedPDF] {
         let mapped = swiftDataPDFs.map { $0.toDTO() }
@@ -164,7 +174,7 @@ struct ModernLibraryView: View {
         }
         .fileImporter(
             isPresented: $showingNativeImporter,
-            allowedContentTypes: [.folder, .pdf, .zip, .epub, UTType(filenameExtension: "cbz")!, UTType(filenameExtension: "cbr")!, UTType(filenameExtension: "cb7")!],
+            allowedContentTypes: allowedImportTypes,
             allowsMultipleSelection: true
         ) { result in
             switch result {
