@@ -41,6 +41,9 @@ struct ModernLibraryView: View {
     }
     @State private var sortOption: SortOption = .dateAdded
     
+    // ✅ NEW: Native Importer Bypass State
+    @State private var showingNativeImporter = false
+    
     // Ã¢Å“â€¦ NEW: SwiftData Native Resolvers
     private var nativeVisiblePDFs: [ConvertedPDF] {
         let mapped = swiftDataPDFs.map { $0.toDTO() }
@@ -76,7 +79,13 @@ struct ModernLibraryView: View {
                         sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(nativeVisiblePDFs, sortOption: $0) }),
                         viewStyle: $viewStyle,
                         tapAction: $tapAction,
-                        onSheetTrigger: { dest in viewModel.activeSheet = dest },
+                        onSheetTrigger: { dest in 
+                            if dest == .importer || dest == .cloud {
+                                showingNativeImporter = true
+                            } else {
+                                viewModel.activeSheet = dest 
+                            }
+                        },
                         isBatchMode: $isBatchMode,
                         multiSelection: $multiSelection,
                         batchMergeItems: $batchMergeItems,
@@ -97,7 +106,7 @@ struct ModernLibraryView: View {
                             tapAction: $tapAction,
                             selectedPDF: $selectedPDF,
                             onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                            onImport: { viewModel.activeSheet = .importer }
+                            onImport: { showingNativeImporter = true }
                         )
                     } else {
                         LibraryGridView(
@@ -108,7 +117,7 @@ struct ModernLibraryView: View {
                             tapAction: $tapAction,
                             selectedPDF: $selectedPDF,
                             onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                            onImport: { viewModel.activeSheet = .importer }
+                            onImport: { showingNativeImporter = true }
                         )
                     }
                 }
@@ -153,6 +162,21 @@ struct ModernLibraryView: View {
             loadFiles(from: providers)
             return true
         }
+        .fileImporter(
+            isPresented: $showingNativeImporter,
+            allowedContentTypes: [.folder, .pdf, .zip, .epub, UTType(filenameExtension: "cbz")!, UTType(filenameExtension: "cbr")!, UTType(filenameExtension: "cb7")!],
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls):
+                Task {
+                    // Instantly trigger background ingestion without Preflight UI
+                    await conversionManager.processImportedFiles(urls: urls)
+                }
+            case .failure(let error):
+                Logger.shared.log("Native Import Failed: \(error.localizedDescription)", category: "Import", type: .error)
+            }
+        }
         .onAppear {
             conversionManager.backfillMissingThumbnails()
             viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
@@ -175,11 +199,11 @@ struct ModernLibraryView: View {
     private func destinationSheet(for item: LibrarySheetDestination) -> some View {
         switch item {
         case .stats: ReadingStatsView()
-        case .importer: ImportQueueView()
+        case .importer: EmptyView()
         case .smartListImporter: SmartListImporterView().environmentObject(conversionManager)
         case .wifi: WiFiView()
         case .merge: FileMergeView()
-        case .cloud: ImportQueueView() // Same underlying view as legacy cloud trigger
+        case .cloud: EmptyView()
         case .cloudSync(let pdf): CloudSyncView(targetPDF: pdf)
         case .export(let pdf): DualExportView(pdf: pdf)
         case .directShare(let pdf): ShareSheet(activityItems: [pdf.url])
