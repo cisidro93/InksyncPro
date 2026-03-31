@@ -42,7 +42,10 @@ public struct EPUBManifestBuilder {
     <!DOCTYPE html>
     <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
     <head><title>Navigation</title><meta charset="utf-8" /></head>
-    <body><nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="text/page_0001.xhtml">Start Reading</a></li></ol></nav></body>
+    <body>
+        <nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="text/page_0001.xhtml">Start Reading</a></li></ol></nav>
+        <nav epub:type="landmarks"><h1>Landmarks</h1><ol><li><a epub:type="cover" href="text/page_0001.xhtml">Cover</a></li><li><a epub:type="bodymatter" href="text/page_0001.xhtml">Start</a></li></ol></nav>
+    </body>
     </html>
     """
 
@@ -95,6 +98,10 @@ public struct EPUBManifestBuilder {
             <spine toc="ncx" page-progression-direction="\(direction)">
                 \(spineItems.joined(separator: "\n        "))
             </spine>
+            <guide>
+                <reference type="cover" title="Cover" href="text/page_0001.xhtml"/>
+                <reference type="text" title="Text" href="text/page_0001.xhtml"/>
+            </guide>
         </package>
         """
     }

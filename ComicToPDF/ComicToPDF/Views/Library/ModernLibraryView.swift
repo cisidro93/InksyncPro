@@ -60,6 +60,21 @@ struct ModernLibraryView: View {
         return conversionManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
     }
     
+    // ✅ NEW: Extracted to relieve compiler timeout
+    @ViewBuilder
+    private var ambientGlow: some View {
+        GeometryReader { geo in
+            Circle()
+                .fill(
+                    RadialGradient(gradient: Gradient(colors: [Theme.purple.opacity(0.4), Theme.blue.opacity(0.1), .clear]), center: .top, startRadius: 10, endRadius: 300)
+                )
+                .frame(width: geo.size.width * 1.5, height: 400)
+                .position(x: geo.size.width / 2, y: -50)
+                .blur(radius: 60)
+                .ignoresSafeArea()
+        }
+    }
+    
     private var nativeCollections: [PDFCollection] {
         swiftDataCollections.map { $0.toDTO() }
     }
@@ -71,67 +86,9 @@ struct ModernLibraryView: View {
                 Color.black.ignoresSafeArea()
                 
                 // Ambient Header Glow
-                GeometryReader { geo in
-                    Circle()
-                        .fill(
-                            RadialGradient(gradient: Gradient(colors: [Theme.purple.opacity(0.4), Theme.blue.opacity(0.1), .clear]), center: .top, startRadius: 10, endRadius: 300)
-                        )
-                        .frame(width: geo.size.width * 1.5, height: 400)
-                        .position(x: geo.size.width / 2, y: -50)
-                        .blur(radius: 60)
-                        .ignoresSafeArea()
-                }
+                ambientGlow
                 
-                VStack(spacing: 0) {
-                    // MARK: - Dedicated Header Component
-                    LibraryHeaderView(
-                        searchText: $viewModel.searchText,
-                        sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(nativeVisiblePDFs, sortOption: $0) }),
-                        viewStyle: $viewStyle,
-                        tapAction: $tapAction,
-                        onSheetTrigger: { dest in 
-                            if dest == .importer || dest == .cloud {
-                                showingNativeImporter = true
-                            } else {
-                                viewModel.activeSheet = dest 
-                            }
-                        },
-                        isBatchMode: $isBatchMode,
-                        multiSelection: $multiSelection,
-                        batchMergeItems: $batchMergeItems,
-                        showingBatchMergeReorder: $showingBatchMergeReorder,
-                        showCognitiveBatchRenamer: .constant(false), // Handled by Router
-                        onVaultToggle: handleVaultToggle,
-                        onSelectAll: handleSelectAll
-                    )
-                    
-
-                    // MARK: - Discrete Layout Layers
-                    if viewStyle == .list {
-                        LibraryListView(
-                            items: viewModel.cachedLibraryItems,
-                            isBatchMode: $isBatchMode,
-                            multiSelection: $multiSelection,
-                            useNavigationStack: useNavigationStack,
-                            tapAction: $tapAction,
-                            selectedPDF: $selectedPDF,
-                            onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                            onImport: { showingNativeImporter = true }
-                        )
-                    } else {
-                        LibraryGridView(
-                            items: viewModel.cachedLibraryItems,
-                            isBatchMode: $isBatchMode,
-                            multiSelection: $multiSelection,
-                            useNavigationStack: useNavigationStack,
-                            tapAction: $tapAction,
-                            selectedPDF: $selectedPDF,
-                            onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                            onImport: { showingNativeImporter = true }
-                        )
-                    }
-                }
-                .overlay(ImportTrackerView())
+                libraryContent
                 .safeAreaInset(edge: .bottom) {
                     if isBatchMode {
                         batchBottomToolbar.transition(.move(edge: .bottom))
@@ -179,10 +136,8 @@ struct ModernLibraryView: View {
         ) { result in
             switch result {
             case .success(let urls):
-                Task {
-                    // Instantly trigger background ingestion without Preflight UI
-                    await conversionManager.processImportedFiles(urls: urls)
-                }
+                // Push perfectly to Preflight Staging Queue cleanly
+                viewModel.activeSheet = .importer(urls)
             case .failure(let error):
                 Logger.shared.log("Native Import Failed: \(error.localizedDescription)", category: "Import", type: .error)
             }
@@ -209,7 +164,7 @@ struct ModernLibraryView: View {
     private func destinationSheet(for item: LibrarySheetDestination) -> some View {
         switch item {
         case .stats: ReadingStatsView()
-        case .importer: EmptyView()
+        case .importer(let urls): ImportQueueView(prepickedURLs: urls)
         case .smartListImporter: SmartListImporterView().environmentObject(conversionManager)
         case .wifi: WiFiView()
         case .merge: FileMergeView()
@@ -294,6 +249,60 @@ struct ModernLibraryView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var libraryContent: some View {
+        VStack(spacing: 0) {
+            // MARK: - Dedicated Header Component
+            LibraryHeaderView(
+                searchText: $viewModel.searchText,
+                sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(nativeVisiblePDFs, sortOption: $0) }),
+                viewStyle: $viewStyle,
+                tapAction: $tapAction,
+                onSheetTrigger: { dest in 
+                    if dest == .importer || dest == .cloud {
+                        showingNativeImporter = true
+                    } else {
+                        viewModel.activeSheet = dest 
+                    }
+                },
+                isBatchMode: $isBatchMode,
+                multiSelection: $multiSelection,
+                batchMergeItems: $batchMergeItems,
+                showingBatchMergeReorder: $showingBatchMergeReorder,
+                showCognitiveBatchRenamer: .constant(false), // Handled by Router
+                onVaultToggle: handleVaultToggle,
+                onSelectAll: handleSelectAll
+            )
+            
+
+            // MARK: - Discrete Layout Layers
+            if viewStyle == .list {
+                LibraryListView(
+                    items: viewModel.cachedLibraryItems,
+                    isBatchMode: $isBatchMode,
+                    multiSelection: $multiSelection,
+                    useNavigationStack: useNavigationStack,
+                    tapAction: $tapAction,
+                    selectedPDF: $selectedPDF,
+                    onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
+                    onImport: { showingNativeImporter = true }
+                )
+            } else {
+                LibraryGridView(
+                    items: viewModel.cachedLibraryItems,
+                    isBatchMode: $isBatchMode,
+                    multiSelection: $multiSelection,
+                    useNavigationStack: useNavigationStack,
+                    tapAction: $tapAction,
+                    selectedPDF: $selectedPDF,
+                    onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
+                    onImport: { showingNativeImporter = true }
+                )
+            }
+        }
+        .overlay(ImportTrackerView())
     }
 
     @ViewBuilder private var batchBottomToolbar: some View {

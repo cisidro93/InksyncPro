@@ -16,10 +16,11 @@ struct ImportQueueView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     
+    var prepickedURLs: [URL]
     @State private var stagedItems: [StagedImportItem] = []
-    @State private var showingPicker = false
     @State private var isImporting = false
     @State private var isLeaving = false
+    @State private var hasInitialized = false
     
     var body: some View {
         NavigationView {
@@ -33,28 +34,18 @@ struct ImportQueueView: View {
                                 .font(.system(size: 80))
                                 .foregroundColor(Theme.blue)
                                 
-                            Text("Pre-Flight Inspector")
+                            Text("Processing Queue...")
                                 .font(.title2).bold()
                                 .foregroundColor(Theme.text)
                                 
-                            Text("Add files to staging. You can review and manually fix any bad metadata tags or missing titles right here before permanently importing them into your library.")
+                            Text("Hang tight while we analyze the files you just imported.")
                                 .multilineTextAlignment(.center)
                                 .font(.subheadline)
                                 .foregroundColor(Theme.textSecondary)
                                 .padding(.horizontal, 32)
                                 
-                            Button {
-                                showingPicker = true
-                            } label: {
-                                Label("Add Files to Staging", systemImage: "plus")
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                                    .padding()
-                                    .frame(maxWidth: 250)
-                                    .background(Theme.blue)
-                                    .cornerRadius(12)
-                            }
-                            .padding(.top, 20)
+                            ProgressView()
+                                .padding(.top, 20)
                         }
                         .padding(.vertical, 40)
                         .listRowBackground(Theme.bg)
@@ -108,37 +99,15 @@ struct ImportQueueView: View {
                     .disabled(stagedItems.isEmpty || isImporting)
                 }
                 
-                ToolbarItem(placement: .bottomBar) {
-                    if !stagedItems.isEmpty {
-                        Button {
-                            showingPicker = true
-                        } label: {
-                            HStack {
-                                Image(systemName: "plus.circle.fill")
-                                Text("Add More Files")
-                            }
-                            .font(.headline)
-                        }
-                        .disabled(isImporting)
-                    }
-                }
             }
-            // 🚀 NATIVE iOS 15+ PRESENTATION: Use SwiftUI's native fileImporter instead of a custom UIViewControllerRepresentable 
-            // inside a fullScreenCover avoiding iOS 16/17 structural teardown view hierarchy collisions!
-            .fileImporter(
-                isPresented: $showingPicker,
-                allowedContentTypes: [.pdf, .zip, .epub, .folder, UTType(filenameExtension: "cbz")!, UTType(filenameExtension: "cbr")!, UTType(filenameExtension: "cb7")!],
-                allowsMultipleSelection: true
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    processSelectedFiles(newURLs: urls)
-                case .failure(let error):
-                    Logger.shared.log("File Importer Error: \(error.localizedDescription)", category: "Preflight", type: .error)
+            .onAppear {
+                if !hasInitialized {
+                    hasInitialized = true
+                    processSelectedFiles(newURLs: prepickedURLs)
                 }
             }
         }
-        .interactiveDismissDisabled(!stagedItems.isEmpty)
+        .interactiveDismissDisabled(!stagedItems.isEmpty && !isLeaving)
         .onDisappear {
             // 🚀 PROTECTED GC: Only wipe Staging Dirs if the user explicitly commanded an exit!
             // If the view merely disappeared to overlay a DocumentPicker, we MUST NOT destroy the user's queued staging volumes!
@@ -268,6 +237,7 @@ struct ImportQueueView: View {
                 let allItems = fastExtractedItems + backgroundItems
                 Logger.shared.log("Preflight IO Assembly Complete. Launching Metadata Parsing Matrix for \(allItems.count) files...", category: "Preflight", type: .info)
                 var pendingStagedItems: [StagedImportItem] = []
+                var bypassURLs: [URL] = []
                 
                 // Generate Metadata objects asynchronously with Native ARC Boundary
                 for item in allItems {
@@ -277,7 +247,9 @@ struct ImportQueueView: View {
                         var series = item.originalParent
                         var isManga = false
                         
+                        // ✅ SMART BYPASS FILTER
                         if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: fileURL) {
+                            // Good Lane: Populate Inspector safely
                             title = xmlData.parsedTitle ?? title
                             series = xmlData.parsedSeries ?? series
                             
@@ -285,22 +257,41 @@ struct ImportQueueView: View {
                             if let parsedInfo = ComicInfoParser.parse(from: fileURL) {
                                 isManga = parsedInfo.manga
                             }
+                            
+                            let metadata = PDFMetadata(title: title, series: series, isManga: isManga)
+                            let stagedItem = StagedImportItem(url: fileURL, metadata: metadata)
+                            pendingStagedItems.append(stagedItem)
+                        } else {
+                            // Bad Lane (Missing/Broken XML): Instantly bypass to library securely!
+                            bypassURLs.append(fileURL)
                         }
-                        
-                        let metadata = PDFMetadata(title: title, series: series, isManga: isManga)
-                        let stagedItem = StagedImportItem(url: fileURL, metadata: metadata)
-                        pendingStagedItems.append(stagedItem)
                     }
                 }
                 
-                Logger.shared.log("Metadata Parsing Matrix completed for \(pendingStagedItems.count) files.", category: "Preflight", type: .info)
-                return pendingStagedItems
+                Logger.shared.log("Metadata Parsing Matrix completed. Queueing \(pendingStagedItems.count) for Staging. Bypassing \(bypassURLs.count) dynamically to Vault.", category: "Preflight", type: .info)
+                return (pendingStagedItems, bypassURLs)
             }.value
+            
+            // ✅ BACKGROUND BYPASS LAUNCH
+            if !newItems.1.isEmpty {
+                // Pipe the bad metadata files into the Library invisibly!
+                Task.detached(priority: .background) {
+                    await conversionManager.processImportedFiles(urls: newItems.1)
+                }
+            }
             
             // ✅ Safely mutate @State on the explicit @MainActor context using structural bypass
             await MainActor.run {
+                if newItems.0.isEmpty {
+                    // If EVERYTHING successfully bypassed the queue because nothing had valid XML!
+                    // Automatically shut the queue, their library is populated!
+                    self.isLeaving = true
+                    self.dismiss()
+                    return
+                }
+                
                 var currentUIState = self.stagedItems
-                for item in newItems {
+                for item in newItems.0 {
                     if !currentUIState.contains(where: { $0.url == item.url }) {
                         currentUIState.append(item)
                     }

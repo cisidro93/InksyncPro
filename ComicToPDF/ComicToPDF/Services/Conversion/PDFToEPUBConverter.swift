@@ -462,6 +462,10 @@ class PDFToEPUBConverter {
             <spine toc=\"ncx\" page-progression-direction="\(mangaMode ? "rtl" : "ltr")">
                 \(spineItems)
             </spine>
+            <guide>
+                <reference type="cover" title="Cover" href="chunk_0001.xhtml"/>
+                <reference type="text" title="Text" href="chunk_0001.xhtml"/>
+            </guide>
         </package>
         """
     }
@@ -513,7 +517,9 @@ class PDFToEPUBConverter {
                 </ol>
             </nav>
             <nav epub:type="landmarks">
+                <h1>Landmarks</h1>
                 <ol>
+                    <li><a epub:type="cover" href="\(firstFile)">Cover</a></li>
                     <li><a epub:type="bodymatter" href="\(firstFile)">Start</a></li>
                 </ol>
             </nav>

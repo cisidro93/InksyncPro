@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 import ZIPFoundation
 
 class CBZToEPUBConverter {
@@ -241,7 +241,14 @@ class CBZToEPUBConverter {
                 <nav epub:type="toc" id="toc">
                     <h1>Table of Contents</h1>
                     <ol>
-                        <li><a href="text/page_0001.xhtml">Start Reading</a></li>
+                        <li><a href="text/chunk_0001.xhtml">Start Reading</a></li>
+                    </ol>
+                </nav>
+                <nav epub:type="landmarks">
+                    <h1>Landmarks</h1>
+                    <ol>
+                        <li><a epub:type="cover" href="text/chunk_0001.xhtml">Cover</a></li>
+                        <li><a epub:type="bodymatter" href="text/chunk_0001.xhtml">Start</a></li>
                     </ol>
                 </nav>
             </body>
@@ -258,7 +265,7 @@ class CBZToEPUBConverter {
                 <navMap>
                     <navPoint id="navPoint-1" playOrder="1">
                         <navLabel><text>Start</text></navLabel>
-                        <content src="text/page_0001.xhtml"/>
+                        <content src="text/chunk_0001.xhtml"/>
                     </navPoint>
                 </navMap>
             </ncx>
@@ -360,6 +367,10 @@ class CBZToEPUBConverter {
                 <spine page-progression-direction="\(settings.mangaMode ? "rtl" : "ltr")">
                     \(spineItems.joined(separator: "\n        "))
                 </spine>
+                <guide>
+                    <reference type="cover" title="Cover" href="text/chunk_0001.xhtml"/>
+                    <reference type="text" title="Text" href="text/chunk_0001.xhtml"/>
+                </guide>
             </package>
             """
             
