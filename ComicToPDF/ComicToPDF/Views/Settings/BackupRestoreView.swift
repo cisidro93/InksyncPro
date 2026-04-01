@@ -35,12 +35,14 @@ struct BackupRestoreView: View {
         }
         .navigationTitle("Backup & Restore")
         .fileExporter(isPresented: $showingExporter, document: backupDocument, contentType: .json, defaultFilename: "InksyncPro_Backup.json") { result in
-             switch result {
-             case .success:
-                 HapticManager.shared.notification(.success)
-             case .failure(let error):
-                 importError = error.localizedDescription
-                 showingAlert = true
+             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                 switch result {
+                 case .success:
+                     HapticManager.shared.notification(.success)
+                 case .failure(let error):
+                     importError = error.localizedDescription
+                     showingAlert = true
+                 }
              }
         }
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item]) { result in
@@ -48,8 +50,10 @@ struct BackupRestoreView: View {
             case .success(let url):
                 importBackup(from: url)
             case .failure(let error):
-                importError = error.localizedDescription
-                showingAlert = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    importError = error.localizedDescription
+                    showingAlert = true
+                }
             }
         }
         .alert("Status", isPresented: $showingAlert) { Button("OK", role: .cancel) { } } message: { Text(importError ?? "Unknown error") }
@@ -64,8 +68,10 @@ struct BackupRestoreView: View {
     
     func importBackup(from url: URL) {
         guard url.startAccessingSecurityScopedResource() else {
-            importError = "Permission denied to read backup file."
-            showingAlert = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                importError = "Permission denied to read backup file."
+                showingAlert = true
+            }
             return
         }
         
@@ -76,6 +82,9 @@ struct BackupRestoreView: View {
                 let data = try Data(contentsOf: url)
                 let backup = try JSONDecoder().decode(BackupData.self, from: data)
                 
+                // Enforce 0.5s native modal teardown window
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                
                 await MainActor.run {
                     self.conversionManager.restoreFromBackup(backup)
                     self.showingSuccess = true
@@ -83,6 +92,7 @@ struct BackupRestoreView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.showingSuccess = false }
                 }
             } catch {
+                try? await Task.sleep(nanoseconds: 500_000_000)
                 await MainActor.run {
                     self.importError = "Import failed: \(error.localizedDescription)"
                     self.showingAlert = true

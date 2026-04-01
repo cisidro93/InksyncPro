@@ -280,21 +280,32 @@ struct LogsView: View {
     private func handleAIImport(result: Result<URL, Error>) {
         switch result {
         case .success(let rawURL):
-            // FileProvider URLs must be security-scoped
-            let accessing = rawURL.startAccessingSecurityScopedResource()
-            defer { if accessing { rawURL.stopAccessingSecurityScopedResource() } }
-            
-            if let data = try? Data(contentsOf: rawURL) {
-                do {
-                    let status = try AdaptiveLearningManager.shared.importState(from: data)
-                    switch status {
-                    case .success:
-                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), object: nil, userInfo: ["message": "AI Diagnostics loaded perfectly.", "category": "Success"])
-                    case .identical:
-                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), object: nil, userInfo: ["message": "The system is already running this exact AI Engine version. No changes made.", "category": "System"])
+            Task.detached(priority: .userInitiated) {
+                // FileProvider URLs must be security-scoped
+                let accessing = rawURL.startAccessingSecurityScopedResource()
+                defer { if accessing { rawURL.stopAccessingSecurityScopedResource() } }
+                
+                let parsedData = try? Data(contentsOf: rawURL)
+                
+                // Allow UI to dismiss without dropping frames
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                
+                await MainActor.run {
+                    if let data = parsedData {
+                        do {
+                            let status = try AdaptiveLearningManager.shared.importState(from: data)
+                            switch status {
+                            case .success:
+                                NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), object: nil, userInfo: ["message": "AI Diagnostics loaded perfectly.", "category": "Success"])
+                            case .identical:
+                                NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), object: nil, userInfo: ["message": "The system is already running this exact AI Engine version. No changes made.", "category": "System"])
+                            }
+                        } catch {
+                            NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), object: nil, userInfo: ["message": "Invalid or corrupted AI Configuration file.", "category": "System"])
+                        }
+                    } else {
+                        NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), object: nil, userInfo: ["message": "Unable to interact with the selected file access.", "category": "System"])
                     }
-                } catch {
-                    NotificationCenter.default.post(name: NSNotification.Name("GlobalErrorTriggered"), object: nil, userInfo: ["message": "Invalid or corrupted AI Configuration file.", "category": "System"])
                 }
             }
         case .failure(let error):

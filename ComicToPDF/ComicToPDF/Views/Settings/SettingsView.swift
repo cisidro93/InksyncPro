@@ -130,49 +130,63 @@ struct SettingsView: View {
             Button("OK", role: .cancel) { }
         } message: { Text(aiFeedbackMessage) }
         .fileExporter(isPresented: $showingAIExport, document: aiExportDocument, contentType: .json, defaultFilename: "Inksync_AI_Profile.json") { result in
-            switch result {
-            case .success(_):
-                aiFeedbackTitle = "Engine Exported"
-                aiFeedbackMessage = "Your Neural Engine profile was successfully exported."
-                showingAIFeedbackAlert = true
-            case .failure(let error):
-                aiFeedbackTitle = "Export Failed"
-                aiFeedbackMessage = error.localizedDescription
-                showingAIFeedbackAlert = true
+            // Enforce a 0.5s modal teardown window so the new alert doesn't present over the closing picker
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                switch result {
+                case .success(_):
+                    aiFeedbackTitle = "Engine Exported"
+                    aiFeedbackMessage = "Your Neural Engine profile was successfully exported."
+                    showingAIFeedbackAlert = true
+                case .failure(let error):
+                    aiFeedbackTitle = "Export Failed"
+                    aiFeedbackMessage = error.localizedDescription
+                    showingAIFeedbackAlert = true
+                }
             }
         }
         .fileImporter(isPresented: $showingAIImport, allowedContentTypes: [.json]) { result in
             switch result {
             case .success(let url):
-                if url.startAccessingSecurityScopedResource() {
-                    defer { url.stopAccessingSecurityScopedResource() }
-                    if let data = try? Data(contentsOf: url) {
-                        do {
-                            let importResult = try aiManager.importState(from: data)
-                            switch importResult {
-                            case .success:
-                                aiFeedbackTitle = "Engine Synced"
-                                aiFeedbackMessage = "The AI Panel Generator profile has been updated!"
-                            case .identical:
-                                aiFeedbackTitle = "Up to Date"
-                                aiFeedbackMessage = "You are already using this exact AI Configuration Profile."
+                Task.detached(priority: .userInitiated) {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    
+                    let parsedData = try? Data(contentsOf: url)
+                    
+                    // Allow UI to dismiss without dropping frames
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    
+                    await MainActor.run {
+                        if let data = parsedData {
+                            do {
+                                let importResult = try aiManager.importState(from: data)
+                                switch importResult {
+                                case .success:
+                                    aiFeedbackTitle = "Engine Synced"
+                                    aiFeedbackMessage = "The AI Panel Generator profile has been updated!"
+                                case .identical:
+                                    aiFeedbackTitle = "Up to Date"
+                                    aiFeedbackMessage = "You are already using this exact AI Configuration Profile."
+                                }
+                                showingAIFeedbackAlert = true
+                            } catch {
+                                aiFeedbackTitle = "Invalid Config File"
+                                aiFeedbackMessage = "The file you selected is not a valid Inksync AI Profile."
+                                showingAIFeedbackAlert = true
                             }
-                            showingAIFeedbackAlert = true
-                        } catch {
-                            aiFeedbackTitle = "Invalid Config File"
-                            aiFeedbackMessage = "The file you selected is not a valid Inksync AI Profile."
+                        } else {
+                            aiFeedbackTitle = "Import Error"
+                            aiFeedbackMessage = "File unreadable or inaccessible."
                             showingAIFeedbackAlert = true
                         }
-                    } else {
-                        aiFeedbackTitle = "Import Error"
-                        aiFeedbackMessage = "File unreadable or inaccessible."
-                        showingAIFeedbackAlert = true
                     }
                 }
             case .failure(let error):
-                aiFeedbackTitle = "Import Error"
-                aiFeedbackMessage = error.localizedDescription
-                showingAIFeedbackAlert = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    aiFeedbackTitle = "Import Error"
+                    aiFeedbackMessage = error.localizedDescription
+                    showingAIFeedbackAlert = true
+                }
             }
         }
     }
