@@ -134,6 +134,7 @@ struct ModernLibraryView: View {
             allowedContentTypes: allowedImportTypes,
             allowsMultipleSelection: true
         ) { result in
+            showingNativeImporter = false
             switch result {
             case .success(let urls):
                 let scopes = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }

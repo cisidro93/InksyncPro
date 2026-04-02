@@ -56,7 +56,13 @@ final class FolderImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         Logger.shared.log("FolderImportCoordinator: didPickDocumentsAt — \(urls.count) file(s) selected.", category: "System")
-        finish(with: urls)
+        guard !urls.isEmpty else {
+            finish(with: [])
+            return
+        }
+        controller.dismiss(animated: true) {
+            self.finish(with: urls)
+        }
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {

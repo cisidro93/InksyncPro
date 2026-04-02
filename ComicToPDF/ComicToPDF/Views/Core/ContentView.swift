@@ -155,6 +155,7 @@ struct ContentView: View {
             allowedContentTypes: [.item],
             allowsMultipleSelection: false
         ) { result in
+            showingWebExport = false
             if case .success(let urls) = result, let url = urls.first {
                 let accessing = url.startAccessingSecurityScopedResource()
                 

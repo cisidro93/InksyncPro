@@ -60,6 +60,7 @@ struct ImportTriggerView: View {
             allowedContentTypes: [.pdf, .epub, .zip, UTType(filenameExtension: "cbz") ?? .archive, UTType(filenameExtension: "cbr") ?? .archive, UTType(filenameExtension: "cb7") ?? .archive],
             allowsMultipleSelection: false
         ) { result in
+            isPresenting = false
             if case .success(let urls) = result, let url = urls.first {
                 let accessing = url.startAccessingSecurityScopedResource()
                 
