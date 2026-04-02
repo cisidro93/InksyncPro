@@ -143,10 +143,13 @@ struct SmartListImporterView: View {
                     }
                 }
             }
-        .sheet(isPresented: $showingFilePicker) {
-            SmartListFileWrapper { urls in
-                handleImport(result: .success(urls))
-            }
+        .fileImporter(
+            isPresented: $showingFilePicker,
+            allowedContentTypes: allowedTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            showingFilePicker = false
+            handleImport(result: result)
         }
     }
     
@@ -216,35 +219,4 @@ struct SmartListImporterView: View {
     }
 }
 
-// MARK: - Bulletproof Picker Wrapper
-struct SmartListFileWrapper: UIViewControllerRepresentable {
-    var onPicked: ([URL]) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let textTypes: [UTType] = [
-            .item,
-            .content,
-            .data,
-            UTType("public.plain-text") ?? .plainText,
-            UTType("public.comma-separated-values-text") ?? .commaSeparatedText
-        ]
-        
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: textTypes, asCopy: true)
-        picker.allowsMultipleSelection = false
-        picker.shouldShowFileExtensions = true
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-
-    class Coordinator: NSObject, UIDocumentPickerDelegate {
-        var parent: SmartListFileWrapper
-        init(_ parent: SmartListFileWrapper) { self.parent = parent }
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            parent.onPicked(urls)
-        }
-    }
-}
