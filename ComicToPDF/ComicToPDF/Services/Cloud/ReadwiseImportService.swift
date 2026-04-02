@@ -14,18 +14,20 @@ class ReadwiseImportService {
         }
         
         // Broadly support Windows and Mac encodings natively exported by browsers
-        guard let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? String(data: data, encoding: .windowsCP1252) else {
-            throw NSError(domain: "ReadwiseImport", code: 1, userInfo: [NSLocalizedDescriptionKey: "Malformed Text-Encoding. Expected UTF-8 or standard ISO format."])
+        var content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? String(data: data, encoding: .windowsCP1252) ?? ""
+        if content.hasPrefix("\u{FEFF}") { content.removeFirst() }
+        
+        guard !content.isEmpty else {
+            throw NSError(domain: "ReadwiseImport", code: 1, userInfo: [NSLocalizedDescriptionKey: "Malformed Text-Encoding or Empty File."])
         }
         
         // Simple synchronous CSV block parser to avoid external package dependencies
         let rows = parseCSV(content)
         guard rows.count > 1 else { return 0 } // No headers or data
         
-        // Sanitize headers heavily: Strip Byte-Order Marks (\uFEFF) and stray Quotes explicitly
+        // Sanitize headers heavily: Strip stray Quotes explicitly
         let headers = rows[0].map { 
-            let sanitized = $0.replacingOccurrences(of: "\u{FEFF}", with: "")
-                              .replacingOccurrences(of: "\"", with: "")
+            let sanitized = $0.replacingOccurrences(of: "\"", with: "")
                               .trimmingCharacters(in: .whitespacesAndNewlines)
             return sanitized.lowercased()
         }
@@ -114,6 +116,11 @@ class ReadwiseImportService {
         
         while i < characters.count {
             let char = characters[i]
+            
+            if (char == " " || char == "\t") && !inQuotes && currentField.isEmpty {
+                i += 1
+                continue
+            }
             
             if char == "\"" {
                 if currentField.isEmpty && !inQuotes {
