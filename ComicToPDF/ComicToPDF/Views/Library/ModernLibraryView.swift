@@ -157,9 +157,10 @@ struct ModernLibraryView: View {
                     
                     try? await Task.sleep(nanoseconds: 500_000_000)
                     
+                    let finalURLs = safeURLs
                     await MainActor.run {
-                        if !safeURLs.isEmpty {
-                            viewModel.activeSheet = .importer(safeURLs)
+                        if !finalURLs.isEmpty {
+                            viewModel.activeSheet = .importer(finalURLs)
                         }
                     }
                 }

@@ -411,9 +411,11 @@ struct SeriesDetailView: View {
         
         Button {
             withAnimation {
-                pdf.isPrivate.toggle()
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].isPrivate.toggle()
+                    conversionManager.saveLibrary()
+                }
             }
-            conversionManager.saveState()
         } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }
         Button {
             pdfToSearchMetadata = pdf

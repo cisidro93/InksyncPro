@@ -294,8 +294,9 @@ struct LogsView: View {
                 // Allow UI to dismiss without dropping frames
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 
+                let finalData = parsedData
                 await MainActor.run {
-                    if let data = parsedData {
+                    if let data = finalData {
                         do {
                             let status = try AdaptiveLearningManager.shared.importState(from: data)
                             switch status {

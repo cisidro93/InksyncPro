@@ -161,8 +161,9 @@ struct SettingsView: View {
                     // Allow UI to dismiss without dropping frames
                     try? await Task.sleep(nanoseconds: 500_000_000)
                     
+                    let finalData = parsedData
                     await MainActor.run {
-                        if let data = parsedData {
+                        if let data = finalData {
                             do {
                                 let importResult = try aiManager.importState(from: data)
                                 switch importResult {
