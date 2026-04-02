@@ -280,12 +280,16 @@ struct LogsView: View {
     private func handleAIImport(result: Result<URL, Error>) {
         switch result {
         case .success(let rawURL):
+            let accessing = rawURL.startAccessingSecurityScopedResource()
+            
             Task.detached(priority: .userInitiated) {
-                // FileProvider URLs must be security-scoped
-                let accessing = rawURL.startAccessingSecurityScopedResource()
                 defer { if accessing { rawURL.stopAccessingSecurityScopedResource() } }
                 
-                let parsedData = try? Data(contentsOf: rawURL)
+                var parsedData: Data?
+                var coordError: NSError?
+                NSFileCoordinator().coordinate(readingItemAt: rawURL, options: .withoutChanges, error: &coordError) { safeURL in
+                    parsedData = try? Data(contentsOf: safeURL)
+                }
                 
                 // Allow UI to dismiss without dropping frames
                 try? await Task.sleep(nanoseconds: 500_000_000)

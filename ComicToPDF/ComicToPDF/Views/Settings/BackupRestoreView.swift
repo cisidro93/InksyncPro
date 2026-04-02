@@ -79,7 +79,13 @@ struct BackupRestoreView: View {
             defer { url.stopAccessingSecurityScopedResource() }
             
             do {
-                let data = try Data(contentsOf: url)
+                var rawData: Data?
+                var coordError: NSError?
+                NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
+                    rawData = try? Data(contentsOf: safeURL)
+                }
+                
+                guard let data = rawData else { throw CocoaError(.fileReadUnknown) }
                 let backup = try JSONDecoder().decode(BackupData.self, from: data)
                 
                 // Enforce 0.5s native modal teardown window

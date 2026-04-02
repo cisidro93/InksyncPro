@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import CryptoKit
 
 /// Phase 31: Native Readwise CSV Parsing Engine
 /// Reads Readwise export CSVs (Highlight, Title, Author, URL, Note) into native `SDAnnotation` records.
@@ -8,9 +9,13 @@ class ReadwiseImportService {
     
     /// Parses a standard Readwise highlights CSV and injects it securely into the active SwiftData context.
     func importReadwiseCSV(from url: URL, context: ModelContext) async throws -> Int {
-        guard let data = try? Data(contentsOf: url),
-              let content = String(data: data, encoding: .utf8) else {
-            throw NSError(domain: "ReadwiseImport", code: 1, userInfo: [NSLocalizedDescriptionKey: "Malformed Text-Encoding. Expected UTF-8."])
+        guard let data = try? Data(contentsOf: url) else {
+            throw NSError(domain: "ReadwiseImport", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to access file data."])
+        }
+        
+        // Broadly support Windows and Mac encodings natively exported by browsers
+        guard let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? String(data: data, encoding: .windowsCP1252) else {
+            throw NSError(domain: "ReadwiseImport", code: 1, userInfo: [NSLocalizedDescriptionKey: "Malformed Text-Encoding. Expected UTF-8 or standard ISO format."])
         }
         
         // Simple synchronous CSV block parser to avoid external package dependencies
@@ -62,12 +67,22 @@ class ReadwiseImportService {
             let noteText = (noteIdx != nil && row.count > noteIdx!) ? row[noteIdx!].trimmingCharacters(in: .whitespacesAndNewlines) : ""
             let author = (authorIdx != nil && row.count > authorIdx!) ? row[authorIdx!].trimmingCharacters(in: .whitespacesAndNewlines) : ""
             
-            // Generate a synthetic PDF ID acting as the aggregate bucket for this external book.
-            let syntheticPDFID = "readwise_\(bookTitle.hashValue)"
+            // Generate a deterministic 16-byte UUID from the book title using MD5 hashing
+            // This guarantees all 900 individual highlights for matching book titles are aggregated into the SAME virtual book
+            let hash = Insecure.MD5.hash(data: Data(bookTitle.utf8))
+            let syntheticPDFID = hash.withUnsafeBytes { ptr -> UUID in
+                let bytes = ptr.bindMemory(to: UInt8.self).baseAddress!
+                return UUID(uuid: (
+                    bytes[0], bytes[1], bytes[2], bytes[3],
+                    bytes[4], bytes[5], bytes[6], bytes[7],
+                    bytes[8], bytes[9], bytes[10], bytes[11],
+                    bytes[12], bytes[13], bytes[14], bytes[15]
+                ))
+            }
             
             let annotation = SDAnnotation(
                 id: UUID(),
-                pdfID: syntheticPDFID,
+                pdfID: syntheticPDFID.uuidString,
                 pageIndex: 0,
                 text: highlightText,
                 note: noteText.isEmpty ? nil : noteText,
@@ -86,12 +101,13 @@ class ReadwiseImportService {
         return importedCount
     }
     
-    /// A robust native CSV tokenizer handling quoted commas
+    /// A robust native CSV tokenizer handling quoted commas and inline stray literal quotes
     private func parseCSV(_ text: String) -> [[String]] {
         var result: [[String]] = []
         var currentRow: [String] = []
         var currentField = ""
         var inQuotes = false
+        var fieldStartedWithQuote = false
         
         let characters = Array(text)
         var i = 0
@@ -100,16 +116,27 @@ class ReadwiseImportService {
             let char = characters[i]
             
             if char == "\"" {
-                if inQuotes && i + 1 < characters.count && characters[i + 1] == "\"" {
-                    // Escaped quote
-                    currentField.append("\"")
-                    i += 1
+                if currentField.isEmpty && !inQuotes {
+                    // Safe Start of a fully quoted explicit field
+                    inQuotes = true
+                    fieldStartedWithQuote = true
+                } else if inQuotes {
+                    if i + 1 < characters.count && characters[i + 1] == "\"" {
+                        // Escaped double quote specifically inside a quoted field
+                        currentField.append("\"")
+                        i += 1
+                    } else {
+                        // Formal End of a quoted field
+                        inQuotes = false
+                    }
                 } else {
-                    inQuotes.toggle()
+                    // Stray literal quote inside an unquoted sentence (e.g. He said "No!")
+                    currentField.append("\"")
                 }
             } else if char == "," && !inQuotes {
                 currentRow.append(currentField)
                 currentField = ""
+                fieldStartedWithQuote = false
             } else if (char == "\r" || char == "\n") && !inQuotes {
                 if char == "\r" && i + 1 < characters.count && characters[i + 1] == "\n" {
                     i += 1
@@ -118,6 +145,7 @@ class ReadwiseImportService {
                 result.append(currentRow)
                 currentRow = []
                 currentField = ""
+                fieldStartedWithQuote = false
             } else {
                 currentField.append(char)
             }

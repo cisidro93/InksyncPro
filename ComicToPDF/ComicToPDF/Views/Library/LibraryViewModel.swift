@@ -191,7 +191,16 @@ class LibraryViewModel: ObservableObject {
                 self.activeSheet = .seriesAssignment(pdf, isBatch: false, selection: [])
             case .favorite:
                 if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    conversionManager.convertedPDFs[index].isFavorite.toggle()
+                    withAnimation {
+                        conversionManager.convertedPDFs[index].isFavorite.toggle()
+                    }
+                }
+            case .toggleVault:
+                if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        conversionManager.convertedPDFs[index].isPrivate.toggle()
+                    }
+                    conversionManager.saveLibrary()
                 }
             case .delete:
                 conversionManager.deletePDF(pdf)

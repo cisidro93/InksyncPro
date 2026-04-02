@@ -34,14 +34,19 @@ struct ImportTriggerView: View {
         .dropDestination(for: URL.self) { items, _ in
             guard let first = items.first else { return false }
             
+            let accessing = first.startAccessingSecurityScopedResource()
+            
             Task.detached(priority: .userInitiated) {
-                let accessing = first.startAccessingSecurityScopedResource()
                 defer { if accessing { first.stopAccessingSecurityScopedResource() } }
                 
                 let dest = FileManager.default.temporaryDirectory
                     .appendingPathComponent(first.lastPathComponent)
                 try? FileManager.default.removeItem(at: dest)
-                try? FileManager.default.copyItem(at: first, to: dest)
+                
+                var coordError: NSError?
+                NSFileCoordinator().coordinate(readingItemAt: first, options: .withoutChanges, error: &coordError) { safeURL in
+                    try? FileManager.default.copyItem(at: safeURL, to: dest)
+                }
                 
                 await MainActor.run {
                     importedURL = dest
@@ -56,14 +61,19 @@ struct ImportTriggerView: View {
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
+                let accessing = url.startAccessingSecurityScopedResource()
+                
                 Task.detached(priority: .userInitiated) {
-                    let accessing = url.startAccessingSecurityScopedResource()
                     defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                     
                     let dest = FileManager.default.temporaryDirectory
                         .appendingPathComponent(url.lastPathComponent)
                     try? FileManager.default.removeItem(at: dest)
-                    try? FileManager.default.copyItem(at: url, to: dest)
+                    
+                    var coordError: NSError?
+                    NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
+                        try? FileManager.default.copyItem(at: safeURL, to: dest)
+                    }
                     
                     // Allow the UIDocumentPickerViewController to fully dismantle itself globally
                     try? await Task.sleep(nanoseconds: 500_000_000)

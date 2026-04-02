@@ -147,11 +147,16 @@ struct SettingsView: View {
         .fileImporter(isPresented: $showingAIImport, allowedContentTypes: [.json]) { result in
             switch result {
             case .success(let url):
+                let accessing = url.startAccessingSecurityScopedResource()
+                
                 Task.detached(priority: .userInitiated) {
-                    let accessing = url.startAccessingSecurityScopedResource()
                     defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                     
-                    let parsedData = try? Data(contentsOf: url)
+                    var parsedData: Data?
+                    var coordError: NSError?
+                    NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
+                        parsedData = try? Data(contentsOf: safeURL)
+                    }
                     
                     // Allow UI to dismiss without dropping frames
                     try? await Task.sleep(nanoseconds: 500_000_000)

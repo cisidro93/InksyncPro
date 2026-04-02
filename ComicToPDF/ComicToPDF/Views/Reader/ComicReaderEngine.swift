@@ -5,13 +5,27 @@ import ImageIO
 
 extension View {
     @ViewBuilder
-    func applyComicEnhancements(isEnhanced: Bool) -> some View {
-        if isEnhanced {
+    func applyFilterPreset(_ preset: ReadingFilterPreset) -> some View {
+        switch preset {
+        case .original:
             self
-                .contrast(1.25)
-                .saturation(1.35)
-        } else {
+        case .vintage:
             self
+                .contrast(0.9)
+                .saturation(0.7)
+                .colorMultiply(Color(red: 1.0, green: 0.95, blue: 0.9)) // Warm tone
+        case .eink:
+            self
+                .contrast(1.4)
+                .saturation(0.0) // Grayscale
+        case .vibrant:
+            self
+                .contrast(1.1)
+                .saturation(1.4)
+        case .dark:
+            self
+                .colorInvert()
+                .hueRotation(.degrees(180)) // Invert colors preserving hue
         }
     }
 }
@@ -251,7 +265,8 @@ struct ComicReaderEngine: View {
     @State private var chromeVisible = false
     @State private var currentIndex: Int = 0
     @State private var readingMode: ComicReadingMode = .pageHorizontal
-    @State private var isEnhanced: Bool = false
+    @State private var activeFilterPreset: ReadingFilterPreset = .original
+    @State private var showingFilterHUD = false
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void) {
         self.pdf = pdf
@@ -280,7 +295,7 @@ struct ComicReaderEngine: View {
                             ForEach(0..<cache.pageCount, id: \.self) { index in
                                 // We inject `cache.cacheUpdatedTick` merely to force SwiftUI to redraw this specific view when background fetch succeeds.
                                 ComicPageView(image: cache.getImage(at: index), forceRedrawTick: cache.cacheUpdatedTick)
-                                    .applyComicEnhancements(isEnhanced: isEnhanced)
+                                    .applyFilterPreset(activeFilterPreset)
                                     .tag(index)
                                     .rotation3DEffect(.degrees(readingMode == .mangaRTL ? 180 : 0), axis: (x: 0, y: 1, z: 0))
                             }
@@ -326,9 +341,21 @@ struct ComicReaderEngine: View {
                     set: { currentIndex = Int($0 * Double(max(1, cache.pageCount - 1))) }
                 ),
                 totalPages: cache.pageCount,
-                isEnhanced: isEnhanced,
-                onEnhanceToggle: { isEnhanced.toggle() }
+                isEnhanced: activeFilterPreset != .original,
+                onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } }
             )
+            
+            if showingFilterHUD {
+                VStack {
+                    Spacer()
+                    FilterHUDView(activePreset: $activeFilterPreset, onDismiss: {
+                        withAnimation(.easeInOut) { showingFilterHUD = false }
+                    })
+                    .padding(.bottom, 80) // Stay above the scrub bar
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(10)
+            }
         }
         .onAppear {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
@@ -349,7 +376,7 @@ struct ComicReaderEngine: View {
                     forceRedrawTick: cache.cacheUpdatedTick,
                     onTapChrome: { chromeVisible.toggle() }
                 )
-                .applyComicEnhancements(isEnhanced: isEnhanced)
+                .applyFilterPreset(activeFilterPreset)
                 .tag(index)
             }
         }
@@ -363,7 +390,7 @@ struct ComicReaderEngine: View {
                     if let image = cache.getImage(at: index) {
                         Image(uiImage: image)
                             .resizable()
-                            .applyComicEnhancements(isEnhanced: isEnhanced)
+                            .applyFilterPreset(activeFilterPreset)
                             .aspectRatio(contentMode: .fill)
                             .padding(.bottom, 2)
                             .onAppear { currentIndex = index }
@@ -390,13 +417,13 @@ struct ComicReaderEngine: View {
                 
                 HStack(spacing: 0) {
                     if let img1 = cache.getImage(at: index1) {
-                        Image(uiImage: img1).resizable().applyComicEnhancements(isEnhanced: isEnhanced).aspectRatio(contentMode: .fit)
+                        Image(uiImage: img1).resizable().applyFilterPreset(activeFilterPreset).aspectRatio(contentMode: .fit)
                     } else {
                         ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5))).frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     if index2 < cache.pageCount {
                         if let img2 = cache.getImage(at: index2) {
-                            Image(uiImage: img2).resizable().applyComicEnhancements(isEnhanced: isEnhanced).aspectRatio(contentMode: .fit)
+                            Image(uiImage: img2).resizable().applyFilterPreset(activeFilterPreset).aspectRatio(contentMode: .fit)
                         } else {
                             ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5))).frame(maxWidth: .infinity, maxHeight: .infinity)
                         }

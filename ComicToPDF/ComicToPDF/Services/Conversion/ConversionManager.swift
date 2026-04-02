@@ -72,12 +72,12 @@ class ConversionManager: ObservableObject {
     }
     
     var visiblePDFs: [ConvertedPDF] {
-        convertedPDFs.filter { $0.isPrivate == isVaultUnlocked }
+        convertedPDFs.filter { isVaultUnlocked ? true : !$0.isPrivate }
     }
     
     /// Only Pro-mode files — used by the Pro Library to exclude Go conversions.
     var proLibraryPDFs: [ConvertedPDF] {
-        convertedPDFs.filter { $0.isPrivate == isVaultUnlocked && $0.addedByMode == .pro }
+        convertedPDFs.filter { (isVaultUnlocked ? true : !$0.isPrivate) && $0.addedByMode == .pro }
     }
     
     private var progressSubscription: AnyCancellable?

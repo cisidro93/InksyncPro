@@ -175,7 +175,12 @@ struct LibraryGridView: View {
         } label: { Label("Embed Panels", systemImage: "flame") }
         
         Button(role: .destructive) { onAction(.delete, pdf) } label: { Label("Delete", systemImage: "trash") }
+        
         Divider()
+        
+        Button {
+            onAction(.toggleVault, pdf)
+        } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }
         
         Button {
             onAction(.editMetadata, pdf)

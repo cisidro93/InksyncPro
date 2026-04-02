@@ -136,9 +136,32 @@ struct ModernLibraryView: View {
         ) { result in
             switch result {
             case .success(let urls):
-                // Push perfectly to Preflight Staging Queue cleanly
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    viewModel.activeSheet = .importer(urls)
+                let scopes = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
+                
+                Task.detached(priority: .userInitiated) {
+                    var safeURLs: [URL] = []
+                    
+                    for (url, accessing) in scopes {
+                        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                        
+                        let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                        try? FileManager.default.removeItem(at: dest)
+                        
+                        var coordError: NSError?
+                        NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
+                            if (try? FileManager.default.copyItem(at: safeURL, to: dest)) != nil {
+                                safeURLs.append(dest)
+                            }
+                        }
+                    }
+                    
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    
+                    await MainActor.run {
+                        if !safeURLs.isEmpty {
+                            viewModel.activeSheet = .importer(safeURLs)
+                        }
+                    }
                 }
             case .failure(let error):
                 Logger.shared.log("Native Import Failed: \(error.localizedDescription)", category: "Import", type: .error)

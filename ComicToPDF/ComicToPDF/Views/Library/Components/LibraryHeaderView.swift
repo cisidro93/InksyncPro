@@ -231,7 +231,7 @@ struct LibraryHeaderView: View {
                     Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
                     
                     Group {
-                        ActionPill(title: "Vault", icon: conversionManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: conversionManager.isVaultUnlocked ? Theme.orange : Theme.textSecondary) { 
+                        ActionPill(title: conversionManager.isVaultUnlocked ? "Vault Unlocked" : "Vault", icon: conversionManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: conversionManager.isVaultUnlocked ? Theme.red : Theme.textSecondary) { 
                             onVaultToggle() 
                         }
                         ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }

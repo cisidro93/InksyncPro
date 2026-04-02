@@ -40,8 +40,7 @@ struct ReaderChrome: View {
                         .font(.body.weight(.semibold))
                         .foregroundColor(.white)
                         .padding(12)
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(Circle())
+                        .background(.ultraThinMaterial, in: Circle())
                 }
                 
                 Spacer()
@@ -52,8 +51,7 @@ struct ReaderChrome: View {
                     .lineLimit(1)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(16)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
                 
                 Spacer()
                     if isPDF {
@@ -62,8 +60,7 @@ struct ReaderChrome: View {
                                 .font(.body.weight(.semibold))
                                 .foregroundColor(isReflowActive ? .black : .white)
                                 .padding(12)
-                                .background(isReflowActive ? Color.white : Color.black.opacity(0.6))
-                                .clipShape(Circle())
+                                .background(isReflowActive ? AnyShapeStyle(Color.white) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
                         }
                         
                         Button(action: { onCropToggle?() }) {
@@ -71,8 +68,7 @@ struct ReaderChrome: View {
                                 .font(.body.weight(.semibold))
                                 .foregroundColor(.white)
                                 .padding(12)
-                                .background(Color.black.opacity(0.6))
-                                .clipShape(Circle())
+                                .background(.ultraThinMaterial, in: Circle())
                         }
                     }
                     if onEnhanceToggle != nil {
@@ -81,8 +77,7 @@ struct ReaderChrome: View {
                                 .font(.body.weight(.semibold))
                                 .foregroundColor(isEnhanced ? .black : .white)
                                 .padding(12)
-                                .background(isEnhanced ? Color.yellow : Color.black.opacity(0.6))
-                                .clipShape(Circle())
+                                .background(isEnhanced ? AnyShapeStyle(Color.yellow) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
                         }
                     }
                     Button(action: onAnnotationsToggle) {
@@ -90,16 +85,14 @@ struct ReaderChrome: View {
                             .font(.body.weight(.semibold))
                             .foregroundColor(.white)
                             .padding(12)
-                            .background(Color.black.opacity(0.6))
-                            .clipShape(Circle())
+                            .background(.ultraThinMaterial, in: Circle())
                     }
                     Button(action: onSettingsToggle) {
                         Image(systemName: "ellipsis")
                             .font(.body.weight(.semibold))
                             .foregroundColor(.white)
                             .padding(12)
-                            .background(Color.black.opacity(0.6))
-                            .clipShape(Circle())
+                            .background(.ultraThinMaterial, in: Circle())
                     }
                 }
             .padding(.horizontal)
@@ -130,8 +123,7 @@ struct ReaderChrome: View {
                             .font(.body.weight(.semibold))
                             .foregroundColor(.white)
                             .padding(12)
-                            .background(Color.black.opacity(0.6))
-                            .clipShape(Circle())
+                            .background(.ultraThinMaterial, in: Circle())
                     }
                     
                     if hasTTS {
@@ -140,8 +132,7 @@ struct ReaderChrome: View {
                                 .font(.body.weight(.semibold))
                                 .foregroundColor(.white)
                                 .padding(12)
-                                .background(isSpeaking ? Color.orange : Color.black.opacity(0.6))
-                                .clipShape(Circle())
+                                .background(isSpeaking ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
                         }
                     }
                     
@@ -152,8 +143,7 @@ struct ReaderChrome: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 6)
-                        .background(Color.black.opacity(0.7))
-                        .cornerRadius(12)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                     
                     Spacer()
                     
@@ -162,16 +152,18 @@ struct ReaderChrome: View {
                             .font(.body.weight(.semibold))
                             .foregroundColor(.white)
                             .padding(12)
-                            .background(Color.black.opacity(0.6))
-                            .clipShape(Circle())
+                            .background(.ultraThinMaterial, in: Circle())
                     }
                 }
             }
             .padding(.horizontal)
             .padding(.bottom, 24)
             .background(
-                LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
-                    .edgesIgnoringSafeArea(.bottom)
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black.opacity(0.3)], startPoint: .top, endPoint: .bottom)
+                    Rectangle().fill(.ultraThinMaterial)
+                }
+                .edgesIgnoringSafeArea(.bottom)
             )
         }
         .opacity(isVisible ? 1 : 0)

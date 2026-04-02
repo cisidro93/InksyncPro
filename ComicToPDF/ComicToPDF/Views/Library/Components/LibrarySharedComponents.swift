@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum LibraryRowAction {
-    case read, covers, fetchMetadata, editMetadata, export, share, sync, rename, addToSeries, delete, favorite, details
+    case read, covers, fetchMetadata, editMetadata, export, share, sync, rename, addToSeries, delete, favorite, details, toggleVault
 }
 
 // MARK: - Theme Colors
@@ -23,26 +23,27 @@ struct Theme {
 struct ActionPill: View {
     let title: String
     let icon: String
-    let color: Color
+    let color: Color // Used to tint the icon in the new Liquid Glass look
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 14))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(color)
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
             }
-            .foregroundColor(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(.thinMaterial)
-            .clipShape(Capsule())
+            .background(.ultraThinMaterial, in: Capsule())
             .overlay(
                 Capsule()
-                    .stroke(.white.opacity(0.1), lineWidth: 1)
+                    .stroke(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.0)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
             )
+            .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         }
     }
 }

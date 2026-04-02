@@ -406,7 +406,15 @@ struct SeriesDetailView: View {
         } label: { Label("Embed Panels", systemImage: "flame") }
         
         Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+        
         Divider()
+        
+        Button {
+            withAnimation {
+                pdf.isPrivate.toggle()
+            }
+            conversionManager.saveState()
+        } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }
         Button {
             pdfToSearchMetadata = pdf
         } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
