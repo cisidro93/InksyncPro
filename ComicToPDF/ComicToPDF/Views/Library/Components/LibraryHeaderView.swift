@@ -193,6 +193,11 @@ struct LibraryHeaderView: View {
                                     Task { await conversionManager.importFilesAsSeries(urls: urls) }
                                 }
                             }
+                            ActionPill(title: "Folders", icon: "folder.badge.plus", color: Theme.green) {
+                                ImportCoordinator.present(type: .folder) { urls in
+                                    Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                                }
+                            }
                             ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
                             ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) { 
                                 Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
