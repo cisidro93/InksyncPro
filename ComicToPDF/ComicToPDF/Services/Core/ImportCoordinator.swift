@@ -55,15 +55,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             ]
         }
         
-        let picker: UIDocumentPickerViewController
-        if type == .folder {
-            picker = UIDocumentPickerViewController(documentTypes: ["public.folder"], in: .open)
-            picker.allowsMultipleSelection = true
-        } else {
-            let asCopy = type == .files || type == .json || type == .smartList
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
-            picker.allowsMultipleSelection = (type == .files)
-        }
+        let asCopy = type == .files || type == .json || type == .smartList
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
+        picker.allowsMultipleSelection = (type == .files)
         picker.delegate = coordinator
         picker.shouldShowFileExtensions = true
 
