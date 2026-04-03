@@ -70,7 +70,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             picker.allowsMultipleSelection = false
         } else if type == .unified {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-            picker.allowsMultipleSelection = true
+            picker.allowsMultipleSelection = false
         } else {
             let asCopy = type == .files || type == .json || type == .smartList
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
@@ -111,7 +111,18 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
                             allFound.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
                         } else {
-                            allFound.append(url)
+                            // Manually copy singular files to staging since asCopy is false explicitly for folder survival
+                            let fm = FileManager.default
+                            let tempDir = fm.temporaryDirectory.appendingPathComponent("Unified_File_Ingest_\(UUID().uuidString)")
+                            try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                            let destURL = tempDir.appendingPathComponent(url.lastPathComponent)
+                            do {
+                                if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+                                try fm.copyItem(at: url, to: destURL)
+                                allFound.append(destURL)
+                            } catch {
+                                Logger.shared.log("ImportCoordinator: Failed to localized external file: \(error)", category: "System", type: .error)
+                            }
                         }
                         if isAccessing { url.stopAccessingSecurityScopedResource() }
                     }
