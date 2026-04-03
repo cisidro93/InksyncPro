@@ -41,6 +41,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "cbr") ?? .archive,
                 UTType(filenameExtension: "cb7") ?? .archive,
                 .epub, .pdf, .zip, .archive
+            ]
         case .unified:
             supportedTypes = [
                 UTType(filenameExtension: "cbz") ?? .zip,
