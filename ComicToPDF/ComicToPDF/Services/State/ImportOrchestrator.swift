@@ -188,7 +188,12 @@ class ImportOrchestrator {
             let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             var newPDFs: [ConvertedPDF] = []
             
+            var loopIndex = 0
             for url in urls {
+                loopIndex += 1
+                if loopIndex % 10 == 0 {
+                    await Task.yield()
+                }
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 
