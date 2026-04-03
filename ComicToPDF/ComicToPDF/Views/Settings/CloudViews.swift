@@ -69,7 +69,18 @@ struct CloudImportView: View {
                     if !importedFiles.isEmpty { Button("Import \(importedFiles.count)") { completeImport() }.fontWeight(.semibold) }
                 }
             }
-            .sheet(isPresented: $showingFilePicker) { CloudDocumentPicker(selectedFiles: $importedFiles) }
+            .fileImporter(
+                isPresented: $showingFilePicker,
+                allowedContentTypes: [.zip, .archive, UTType(filenameExtension: "cbz") ?? .zip],
+                allowsMultipleSelection: true
+            ) { result in
+                showingFilePicker = false
+                if case .success(let urls) = result {
+                    for url in urls where !self.importedFiles.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
+                        self.importedFiles.append(url)
+                    }
+                }
+            }
             .alert(alertTitle, isPresented: $showingAlert) { Button("OK") { if alertTitle == "Success" { dismiss() } } } message: { Text(alertMessage) }
         }
     }
@@ -78,20 +89,6 @@ struct CloudImportView: View {
         alertTitle = "Success"
         alertMessage = "Successfully imported \(importedFiles.count) file(s). Return to the Library to begin processing."
         showingAlert = true
-    }
-}
-
-struct CloudDocumentPicker: UIViewControllerRepresentable {
-    @Binding var selectedFiles: [URL]
-    @Environment(\.dismiss) private var dismiss
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController { let supportedTypes: [UTType] = [.zip, .archive, UTType(filenameExtension: "cbz") ?? .zip]; let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true); picker.allowsMultipleSelection = true; picker.shouldShowFileExtensions = true; picker.delegate = context.coordinator; return picker }
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-    class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let parent: CloudDocumentPicker
-        init(_ parent: CloudDocumentPicker) { self.parent = parent }
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { let validExtensions = ["cbz", "zip", "epub"]; for url in urls { let ext = url.pathExtension.lowercased(); if validExtensions.contains(ext) { if !parent.selectedFiles.contains(where: { $0.lastPathComponent == url.lastPathComponent }) { parent.selectedFiles.append(url) } } } }
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {}
     }
 }
 
@@ -174,8 +171,21 @@ struct CloudExportView: View {
             .navigationTitle("Export to Cloud")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() }.fontWeight(.semibold) } }
-            .sheet(isPresented: $showingFilePicker) { ExportDocumentPicker(urls: pdfsToExport.map { $0.url }) { success in if success { alertTitle = "Success"; alertMessage = "Files exported successfully!"; showingAlert = true } } }
             .alert(alertTitle, isPresented: $showingAlert) { Button("OK") { if alertTitle == "Success" { dismiss() } } } message: { Text(alertMessage) }
+            .onChange(of: showingFilePicker) { showing in
+                if showing {
+                    showingFilePicker = false
+                    if let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {
+                        ExternalStorageManager.shared.exportMultipleToExternalStorage(fileURLs: pdfsToExport.map { $0.url }, from: rootVC) { success in
+                            if success {
+                                alertTitle = "Success"
+                                alertMessage = "Files exported successfully!"
+                                showingAlert = true
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     
@@ -188,13 +198,4 @@ struct CloudExportView: View {
     }
     
     private func shareFiles() { let urls = pdfsToExport.map { $0.url }; let activityVC = UIActivityViewController(activityItems: urls, applicationActivities: nil); if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootViewController = windowScene.windows.first?.rootViewController { if let popover = activityVC.popoverPresentationController { popover.sourceView = rootViewController.view; popover.sourceRect = CGRect(x: rootViewController.view.bounds.midX, y: rootViewController.view.bounds.midY, width: 0, height: 0); popover.permittedArrowDirections = [] }; rootViewController.present(activityVC, animated: true) } }
-}
-
-struct ExportDocumentPicker: UIViewControllerRepresentable {
-    let urls: [URL]
-    let completion: (Bool) -> Void
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController { let picker = UIDocumentPickerViewController(forExporting: urls, asCopy: true); picker.delegate = context.coordinator; return picker }
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator(completion: completion) }
-    class Coordinator: NSObject, UIDocumentPickerDelegate { let completion: (Bool) -> Void; init(completion: @escaping (Bool) -> Void) { self.completion = completion }; func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { completion(true) }; func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { completion(false) } }
 }

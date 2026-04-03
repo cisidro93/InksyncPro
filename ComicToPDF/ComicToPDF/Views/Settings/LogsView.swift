@@ -56,6 +56,7 @@ struct LogsView: View {
                 handleAIExport(result: result)
             }
             .fileImporter(isPresented: $showingAIImport, allowedContentTypes: [.json]) { result in
+                showingAIImport = false
                 handleAIImport(result: result)
             }
             .alert("Cannot Send Email", isPresented: $showingMailErrorAlert) {

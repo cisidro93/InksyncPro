@@ -109,7 +109,9 @@ struct GoConvertView: View {
     @State private var isTargetingManga = true
     @State private var useLiquidEInk = true
     @State private var compressionQuality: CompressionPreset = .high
+    @State private var showingActionSheet = false
     @State private var showingFilePicker = false
+    @State private var showingFolderPicker = false
     @State private var shareItems: [URL] = []
     @State private var showingShareSheet = false
     @State private var pdfToRename: ConvertedPDF? = nil
@@ -138,7 +140,7 @@ struct GoConvertView: View {
                     .font(.largeTitle).bold().padding(.top, 40)
                 
                 // MARK: Drop Zone
-                Button { showingFilePicker = true } label: {
+                Button { showingActionSheet = true } label: {
                     ZStack {
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
                             .strokeBorder(Color.blue.opacity(0.5), style: StrokeStyle(lineWidth: 3, dash: [10]))
@@ -166,8 +168,32 @@ struct GoConvertView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 200)
                 .padding(.horizontal, 32)
-                .sheet(isPresented: $showingFilePicker) {
-                    DocumentPicker(onDocumentsPicked: { self.selectedFiles = $0 })
+                .confirmationDialog("Import Source", isPresented: $showingActionSheet) {
+                    Button("Select Files") { showingFilePicker = true }
+                    Button("Select Folder") { showingFolderPicker = true }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("Select individual files or an entire folder to import.")
+                }
+                .fileImporter(
+                    isPresented: $showingFilePicker,
+                    allowedContentTypes: [.pdf, .epub, .zip, UTType(filenameExtension: "cbz") ?? .archive, UTType(filenameExtension: "cbr") ?? .archive, UTType(filenameExtension: "cb7") ?? .archive],
+                    allowsMultipleSelection: true
+                ) { result in
+                    showingFilePicker = false
+                    if case .success(let urls) = result {
+                        self.processPickedFiles(urls)
+                    }
+                }
+                .fileImporter(
+                    isPresented: $showingFolderPicker,
+                    allowedContentTypes: [.folder, .directory],
+                    allowsMultipleSelection: false
+                ) { result in
+                    showingFolderPicker = false
+                    if case .success(let urls) = result, let folderURL = urls.first {
+                        self.processPickedFolder(folderURL)
+                    }
                 }
                 
                 // MARK: Settings
@@ -369,6 +395,34 @@ struct GoConvertView: View {
             renameError = msg
         }
         pdfToRename = nil
+    }
+    
+    private func processPickedFiles(_ urls: [URL]) {
+        for url in urls {
+            if !self.selectedFiles.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
+                self.selectedFiles.append(url)
+            }
+        }
+    }
+    
+    private func processPickedFolder(_ folderURL: URL) {
+        let isAccessing = folderURL.startAccessingSecurityScopedResource()
+        defer { if isAccessing { folderURL.stopAccessingSecurityScopedResource() } }
+        
+        var foundURLs: [URL] = []
+        let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+        
+        if let enumerator = FileManager.default.enumerator(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                if validExts.contains(fileURL.pathExtension.lowercased()) {
+                    foundURLs.append(fileURL)
+                }
+            }
+        }
+        
+        DispatchQueue.main.async {
+            self.processPickedFiles(foundURLs)
+        }
     }
     
     private func startGoConversion() {

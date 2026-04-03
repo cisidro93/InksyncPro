@@ -145,6 +145,7 @@ struct SettingsView: View {
             }
         }
         .fileImporter(isPresented: $showingAIImport, allowedContentTypes: [.json]) { result in
+            showingAIImport = false
             switch result {
             case .success(let url):
                 let accessing = url.startAccessingSecurityScopedResource()

@@ -46,6 +46,7 @@ struct BackupRestoreView: View {
              }
         }
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item]) { result in
+            showingImporter = false
             switch result {
             case .success(let url):
                 importBackup(from: url)
