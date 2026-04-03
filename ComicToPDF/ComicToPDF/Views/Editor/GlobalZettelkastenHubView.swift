@@ -146,10 +146,13 @@ struct GlobalZettelkastenHubView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingReadwiseImporter) {
-            SmartListFileWrapper { urls in
-                handleCSVImport(result: .success(urls))
-            }
+        .fileImporter(
+            isPresented: $showingReadwiseImporter,
+            allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText, .data],
+            allowsMultipleSelection: false
+        ) { result in
+            showingReadwiseImporter = false
+            handleCSVImport(result: result)
         }
         .fileExporter(isPresented: $showingExporterDialog, document: exportDocument, contentType: .zip, defaultFilename: "MindPalace_Export") { result in
             switch result {
