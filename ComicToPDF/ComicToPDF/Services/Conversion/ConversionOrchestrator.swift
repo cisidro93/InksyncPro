@@ -33,7 +33,6 @@ final class ConversionOrchestrator {
         
         do {
             if jobSettings.outputFormat == .pdf {
-                let fileManager = FileManager.default
                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                 let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(pName)
                 let imageURLs = try await manager.extractImageURLs(from: pdf.url)
@@ -124,7 +123,6 @@ final class ConversionOrchestrator {
             
             do {
                 if jobSettings.outputFormat == .pdf {
-                    let fileManager = FileManager.default
                     let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                     let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(pName)
                     let imageURLs = try await manager.extractImageURLs(from: pdf.url)

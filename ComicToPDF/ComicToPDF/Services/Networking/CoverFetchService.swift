@@ -44,7 +44,7 @@ class CoverFetchService {
         let fetchQuery = queryStr.trimmingCharacters(in: .whitespaces)
         
         // Broaden the search query for comics to hit trade paperbacks that contain variant galleries
-        let isComic = (metadata.series != nil || metadata.issueNumber != nil || metadata.writer != nil || metadata.comicVineID != nil)
+        let isComic = (metadata.series != nil || metadata.issueNumber != nil || metadata.writer != nil || metadata.universalIssueID != nil)
         let searchVariantQuery = isComic ? "\(fetchQuery) comic variant" : fetchQuery
         
         // Concurrent fetching
@@ -62,7 +62,7 @@ class CoverFetchService {
             if isComic { group.addTask { await self.fetchOpenLibraryCovers(query: searchVariantQuery, limit: limit) } }
             
             // 4. Existing ComicVine Fallback (If Metadata contains ID)
-            if let volID = metadata.seriesID, let issueNum = metadata.issueNumber {
+            if let volIDStr = metadata.universalSeriesID, let volID = Int(volIDStr), let issueNum = metadata.issueNumber {
                 group.addTask { await self.fetchComicVineIssueCover(volumeID: volID, issueNumber: issueNum) }
             }
             

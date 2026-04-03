@@ -150,7 +150,7 @@ struct ContentView: View {
             selectedTab: $selectedTab,
             showImport: $showingWebExport
         ))
-        .onChange(of: showingWebExport) { showing in
+        .onChange(of: showingWebExport) { _, showing in
             if showing {
                 showingWebExport = false
                 ImportCoordinator.present(type: .files) { urls in
@@ -191,7 +191,7 @@ struct ContentView: View {
                     batchMergeItems: $batchMergeItems,
                     useNavigationStack: true,
                     onFolderImport: {
-                        FolderImportCoordinator.present { urls in
+                        ImportCoordinator.present(type: .folder) { urls in
                             guard !urls.isEmpty else { return }
                             Task { await conversionManager.importFilesAsSeries(urls: urls) }
                         }
@@ -303,7 +303,7 @@ struct ContentView: View {
                         batchMergeItems: $batchMergeItems,
                         useNavigationStack: false, // Handle selection manually in detail if needed, but since we are the detail, maybe we DO want navigation stack inside it for reader? Actually, ModernLibraryView already handles `useNavigationStack: false` by setting `selectedPDF`.
                         onFolderImport: {
-                            FolderImportCoordinator.present { urls in
+                            ImportCoordinator.present(type: .folder) { urls in
                                 guard !urls.isEmpty else { return }
                                 Task { await conversionManager.importFilesAsSeries(urls: urls) }
                             }

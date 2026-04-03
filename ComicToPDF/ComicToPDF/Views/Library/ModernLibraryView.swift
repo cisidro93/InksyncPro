@@ -150,7 +150,7 @@ struct ModernLibraryView: View {
     private func destinationSheet(for item: LibrarySheetDestination) -> some View {
         switch item {
         case .stats: ReadingStatsView()
-        case .importer(let urls): ImportQueueView(prepickedURLs: urls)
+
         case .smartListImporter: SmartListImporterView().environmentObject(conversionManager)
         case .wifi: WiFiView()
         case .merge: FileMergeView()

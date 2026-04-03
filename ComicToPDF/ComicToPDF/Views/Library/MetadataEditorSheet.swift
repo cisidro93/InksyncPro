@@ -160,7 +160,7 @@ struct MetadataEditorSheet: View {
     @ViewBuilder
     private func systemSection() -> some View {
         Section(header: Text("System")) {
-            if let id = editedMetadata.comicVineID {
+            if let id = editedMetadata.universalIssueID {
                 HStack { Text("ComicVine ID"); Spacer(); Text("\(id)").foregroundColor(.secondary) }
             }
             Picker("Content Type", selection: $pdf.contentType) {
@@ -362,7 +362,7 @@ struct MetadataEditorSheet: View {
              Task {
                  await MainActor.run {
                      editedMetadata.series = volume.name
-                     editedMetadata.seriesID = volume.id
+                     editedMetadata.universalSeriesID = "\(volume.id)"
                      editedMetadata.volume = volume.name
                      editedMetadata.publisher = volume.publisher?.name
                      isSearching = false
@@ -381,7 +381,7 @@ struct MetadataEditorSheet: View {
                     await MainActor.run {
                         // Populate Fields
                         editedMetadata.series = volume.name
-                        editedMetadata.seriesID = volume.id
+                        editedMetadata.universalSeriesID = "\(volume.id)"
                         editedMetadata.volume = volume.name // Often Volume maps to Series Name in comics
                         editedMetadata.issueNumber = "\(issueNum)"
                         editedMetadata.publisher = volume.publisher?.name
@@ -404,7 +404,7 @@ struct MetadataEditorSheet: View {
                             editedMetadata.penciller = pencillers.joined(separator: ", ")
                         }
                         
-                        editedMetadata.comicVineID = issue.id
+                        editedMetadata.universalIssueID = "\(issue.id)"
                         isSearching = false
                     }
                     
@@ -425,7 +425,7 @@ struct MetadataEditorSheet: View {
                      await MainActor.run {
                          // Fallback to basic info
                          editedMetadata.series = volume.name
-                         editedMetadata.seriesID = volume.id
+                         editedMetadata.universalSeriesID = "\(volume.id)"
                          editedMetadata.volume = volume.name
                          editedMetadata.issueNumber = "\(issueNum)"
                          editedMetadata.publisher = volume.publisher?.name

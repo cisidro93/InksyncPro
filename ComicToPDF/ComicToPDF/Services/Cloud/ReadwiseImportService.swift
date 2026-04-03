@@ -109,7 +109,7 @@ class ReadwiseImportService {
         var currentRow: [String] = []
         var currentField = ""
         var inQuotes = false
-        var fieldStartedWithQuote = false
+
         
         let characters = Array(text)
         var i = 0
@@ -126,7 +126,7 @@ class ReadwiseImportService {
                 if currentField.isEmpty && !inQuotes {
                     // Safe Start of a fully quoted explicit field
                     inQuotes = true
-                    fieldStartedWithQuote = true
+
                 } else if inQuotes {
                     if i + 1 < characters.count && characters[i + 1] == "\"" {
                         // Escaped double quote specifically inside a quoted field
@@ -143,7 +143,7 @@ class ReadwiseImportService {
             } else if char == "," && !inQuotes {
                 currentRow.append(currentField)
                 currentField = ""
-                fieldStartedWithQuote = false
+
             } else if (char == "\r" || char == "\n") && !inQuotes {
                 if char == "\r" && i + 1 < characters.count && characters[i + 1] == "\n" {
                     i += 1
@@ -152,7 +152,7 @@ class ReadwiseImportService {
                 result.append(currentRow)
                 currentRow = []
                 currentField = ""
-                fieldStartedWithQuote = false
+
             } else {
                 currentField.append(char)
             }

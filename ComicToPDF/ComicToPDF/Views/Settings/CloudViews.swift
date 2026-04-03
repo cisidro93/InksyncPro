@@ -167,7 +167,7 @@ struct CloudExportView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() }.fontWeight(.semibold) } }
             .alert(alertTitle, isPresented: $showingAlert) { Button("OK") { if alertTitle == "Success" { dismiss() } } } message: { Text(alertMessage) }
-            .onChange(of: showingFilePicker) { showing in
+            .onChange(of: showingFilePicker) { _, showing in
                 if showing {
                     showingFilePicker = false
                     if let rootVC = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController {

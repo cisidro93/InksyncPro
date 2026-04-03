@@ -624,7 +624,7 @@ struct PreviewMaskShape: Shape {
                                  currentDragRect = nil
                                  activeHandle = nil
                              }
-                         } else if let index = editorState.selectedPanelIndex, let start = dragStart, let currentRect = currentDragRect {
+                         } else if let index = editorState.selectedPanelIndex, let start = dragStart, currentDragRect != nil {
                          
                          
                          // Determine mode: Resize or Move

@@ -5,11 +5,12 @@ struct InboxReviewView: View {
     
     // Derived subset of Library: Items lacking series or author (meaning they likely need review)
     var reviewItems: [ConvertedPDF] {
-        manager.convertedPDFs.filter { pdf in
-            pdf.series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            pdf.author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            pdf.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }.sorted { $0.dateAdded.compare($1.dateAdded) == .orderedDescending }
+        manager.convertedPDFs.filter { (pdf: ConvertedPDF) -> Bool in
+            let seriesEmpty = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+            let authorEmpty = pdf.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+            let titleEmpty = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return seriesEmpty || authorEmpty || titleEmpty
+        }.sorted { $0.lastModified > $1.lastModified }
     }
     
     var body: some View {
@@ -76,7 +77,7 @@ struct InboxReviewView: View {
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.title.isEmpty ? item.originalFileName : item.title)
+                                    Text(item.metadata.title.isEmpty ? item.name : item.metadata.title)
                                         .font(.headline)
                                         .foregroundColor(.primary)
                                         .lineLimit(1)
@@ -110,9 +111,9 @@ struct InboxReviewView: View {
     
     private func missingTags(for item: ConvertedPDF) -> String {
         var missing: [String] = []
-        if item.series.trimmingCharacters(in: .whitespaces).isEmpty { missing.append("Series") }
-        if item.author.trimmingCharacters(in: .whitespaces).isEmpty { missing.append("Creator") }
-        if item.title.trimmingCharacters(in: .whitespaces).isEmpty { missing.append("Title") }
+        if (item.metadata.series?.trimmingCharacters(in: .whitespaces).isEmpty ?? true) { missing.append("Series") }
+        if (item.metadata.author?.trimmingCharacters(in: .whitespaces).isEmpty ?? true) { missing.append("Creator") }
+        if item.metadata.title.trimmingCharacters(in: .whitespaces).isEmpty { missing.append("Title") }
         return missing.joined(separator: ", ")
     }
 }

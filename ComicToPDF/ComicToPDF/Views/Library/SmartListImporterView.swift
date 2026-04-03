@@ -133,8 +133,7 @@ struct SmartListImporterView: View {
                 }
             }
         }
-    }
-    
+        
     private func handleImport(result: Result<[URL], Error>) {
         do {
             guard let selectedFile: URL = try result.get().first else { return }

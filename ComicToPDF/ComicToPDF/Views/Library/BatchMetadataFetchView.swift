@@ -244,7 +244,7 @@ struct BatchMetadataFetchView: View {
                 }
             }
             .interactiveDismissDisabled(fetcher.currentPhase == .executing)
-            .onChange(of: fetcher.currentPhase) { newPhase in
+            .onChange(of: fetcher.currentPhase) { _, newPhase in
                 if newPhase == .finished && !fetcher.aggregatedErrors.isEmpty {
                     showingErrorSummary = true
                 }
