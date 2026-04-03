@@ -73,13 +73,29 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
         
+        let secures = urls.map { (url: $0, isAccessing: $0.startAccessingSecurityScopedResource()) }
+        
         controller.dismiss(animated: true) { [weak self] in
             guard let self = self else { return }
             
-            if self.currentType == .folder {
-                self.processFolderSpider(url: urls.first!)
-            } else {
-                self.finish(with: urls)
+            DispatchQueue.global(qos: .userInitiated).async {
+                if self.currentType == .folder {
+                    var allFound: [URL] = []
+                    for resource in secures {
+                        allFound.append(contentsOf: self.processFolderSpiderSync(url: resource.url))
+                        if resource.isAccessing { resource.url.stopAccessingSecurityScopedResource() }
+                    }
+                    DispatchQueue.main.async {
+                        self.finish(with: allFound)
+                    }
+                } else {
+                    for resource in secures {
+                        if resource.isAccessing { resource.url.stopAccessingSecurityScopedResource() }
+                    }
+                    DispatchQueue.main.async {
+                        self.finish(with: urls)
+                    }
+                }
             }
         }
     }
@@ -91,10 +107,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     // MARK: - Private Methods
     
-    private func processFolderSpider(url: URL) {
-        let isAccessing = url.startAccessingSecurityScopedResource()
-        defer { if isAccessing { url.stopAccessingSecurityScopedResource() } }
-        
+    private func processFolderSpiderSync(url: URL) -> [URL] {
         var foundURLs: [URL] = []
         let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
         let fm = FileManager.default
@@ -117,7 +130,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 }
             }
         }
-        finish(with: foundURLs)
+        return foundURLs
     }
 
     private func finish(with urls: [URL]) {
