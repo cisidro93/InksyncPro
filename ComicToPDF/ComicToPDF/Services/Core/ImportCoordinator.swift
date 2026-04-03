@@ -42,7 +42,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 .epub, .pdf, .zip, .archive
             ]
         case .folder:
-            supportedTypes = [.folder, .directory]
+            supportedTypes = [.folder]
         case .json:
             supportedTypes = [.json]
         case .smartList:
@@ -58,7 +58,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         let asCopy = type == .files || type == .json || type == .smartList
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
         picker.delegate = coordinator
-        picker.allowsMultipleSelection = (type == .files)
+        picker.allowsMultipleSelection = (type == .files || type == .folder)
         picker.shouldShowFileExtensions = true
 
         Logger.shared.log("ImportCoordinator: Presenting \(type) picker", category: "System")
