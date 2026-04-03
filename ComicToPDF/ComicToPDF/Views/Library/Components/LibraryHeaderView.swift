@@ -192,16 +192,10 @@ struct LibraryHeaderView: View {
                         Menu {
                             Section("Local & Cloud Transfer") {
                                 Button(action: {
-                                    ImportCoordinator.present(type: .files) { urls in
+                                    ImportCoordinator.present(type: .unified) { urls in
                                         Task { await conversionManager.importFilesAsSeries(urls: urls) }
                                     }
-                                }) { Label("Add Files & Cloud Items", systemImage: "doc.badge.plus") }
-                                
-                                Button(action: {
-                                    ImportCoordinator.present(type: .folder) { urls in
-                                        Task { await conversionManager.importFilesAsSeries(urls: urls) }
-                                    }
-                                }) { Label("Add Entire Folders", systemImage: "folder.badge.plus") }
+                                }) { Label("Select Files or Folders", systemImage: "folder.badge.plus") }
                             }
                             
                             Section("Network Routing") {
