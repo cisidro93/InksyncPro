@@ -10,7 +10,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         case folder
         case json // For settings/exports
         case smartList // For cbl, csv, md, txt
-        case unified // Universal hybrid file and folder picker
     }
 
     private static var live: ImportCoordinator?
@@ -41,13 +40,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "cbr") ?? .archive,
                 UTType(filenameExtension: "cb7") ?? .archive,
                 .epub, .pdf, .zip, .archive
-        case .unified:
-            supportedTypes = [
-                UTType(filenameExtension: "cbz") ?? .zip,
-                UTType(filenameExtension: "cbr") ?? .archive,
-                UTType(filenameExtension: "cb7") ?? .archive,
-                .epub, .pdf, .zip, .archive,
-                .folder, .directory
             ]
         case .folder:
             supportedTypes = [.folder]
@@ -68,9 +60,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             let folderTypes: [UTType] = [.folder, .directory]
             picker = UIDocumentPickerViewController(forOpeningContentTypes: folderTypes, asCopy: false)
             picker.allowsMultipleSelection = false
-        } else if type == .unified {
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-            picker.allowsMultipleSelection = true
         } else {
             let asCopy = type == .files || type == .json || type == .smartList
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
@@ -102,20 +91,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                         allFound.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
                         if isAccessing { url.stopAccessingSecurityScopedResource() }
                     }
-                    DispatchQueue.main.async { self.finish(with: allFound) }
-                } else if self.currentType == .unified {
-                    var allFound: [URL] = []
-                    for url in urls {
-                        let isAccessing = url.startAccessingSecurityScopedResource()
-                        var isDir: ObjCBool = false
-                        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                            allFound.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                        } else {
-                            allFound.append(url)
-                        }
-                        if isAccessing { url.stopAccessingSecurityScopedResource() }
+                    DispatchQueue.main.async {
+                        self.finish(with: allFound)
                     }
-                    DispatchQueue.main.async { self.finish(with: allFound) }
                 } else {
                     DispatchQueue.main.async {
                         self.finish(with: urls)
