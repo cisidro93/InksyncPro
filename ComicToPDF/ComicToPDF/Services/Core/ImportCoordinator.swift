@@ -57,7 +57,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         
         let asCopy = type == .files || type == .json || type == .smartList
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
-        picker.allowsMultipleSelection = (type == .files)
+        picker.allowsMultipleSelection = true
         picker.delegate = coordinator
         picker.shouldShowFileExtensions = true
 
@@ -81,7 +81,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     var allFound: [URL] = []
                     for url in urls {
                         let isAccessing = url.startAccessingSecurityScopedResource()
-                        allFound.append(contentsOf: self.processFolderSpiderSync(url: url))
+                        allFound.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
                         if isAccessing { url.stopAccessingSecurityScopedResource() }
                     }
                     DispatchQueue.main.async {
@@ -103,7 +103,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     // MARK: - Private Methods
     
-    private func processFolderSpiderSync(url: URL) -> [URL] {
+    static func processFolderSpiderSync(url: URL) -> [URL] {
         var foundURLs: [URL] = []
         let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
         let fm = FileManager.default
