@@ -116,21 +116,28 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
-        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
-            for case let fileURL as URL in enumerator {
-                if validExts.contains(fileURL.pathExtension.lowercased()) {
-                    let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
-                    do {
-                        if fm.fileExists(atPath: destURL.path) {
-                            try fm.removeItem(at: destURL)
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        
+        coordinator.coordinate(readingItemAt: url, options: [.withoutChanges], error: &coordinationError) { mappedURL in
+            if let enumerator = fm.enumerator(at: mappedURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+                for case let fileURL as URL in enumerator {
+                    if validExts.contains(fileURL.pathExtension.lowercased()) {
+                        let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
+                        do {
+                            if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+                            try fm.copyItem(at: fileURL, to: destURL)
+                            foundURLs.append(destURL)
+                        } catch {
+                            Logger.shared.log("ImportCoordinator: Failed to copy spidered file \(fileURL.lastPathComponent): \(error)", category: "System", type: .error)
                         }
-                        try fm.copyItem(at: fileURL, to: destURL)
-                        foundURLs.append(destURL)
-                    } catch {
-                        Logger.shared.log("ImportCoordinator: Failed to copy spidered file \(fileURL.lastPathComponent): \(error)", category: "System", type: .error)
                     }
                 }
             }
+        }
+        
+        if let error = coordinationError {
+            Logger.shared.log("ImportCoordinator: Coordination Error: \(error.localizedDescription)", category: "System", type: .error)
         }
         return foundURLs
     }
