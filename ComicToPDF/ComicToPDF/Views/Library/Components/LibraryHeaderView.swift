@@ -188,48 +188,28 @@ struct LibraryHeaderView: View {
                             .overlay(Capsule().stroke(Theme.text.opacity(0.1), lineWidth: 1))
                         }
                         
-                        // 3. Centralized Import Architecture
-                        Menu {
-                            Section("Local & Cloud Transfer") {
-                                Button(action: {
-                                    ImportCoordinator.present(type: .files) { urls in
-                                        Task { await conversionManager.importFilesAsSeries(urls: urls) }
-                                    }
-                                }) { Label("Add Files & Cloud Items", systemImage: "doc.badge.plus") }
-                                
-                                Button(action: {
-                                    ImportCoordinator.present(type: .folder) { urls in
-                                        Task { await conversionManager.importFilesAsSeries(urls: urls) }
-                                    }
-                                }) { Label("Add Entire Folders", systemImage: "folder.badge.plus") }
+                        // 3. One-Click Unified Importer
+                        Button(action: {
+                            ImportCoordinator.present(type: .unified) { urls in
+                                Task { await conversionManager.importFilesAsSeries(urls: urls) }
                             }
-                            
-                            Section("Network Routing") {
-                                Button(action: {
-                                    onSheetTrigger(.smartListImporter)
-                                }) { Label("Sync Smart List (.csv)", systemImage: "list.star") }
-                                
-                                Button(action: {
-                                    onSheetTrigger(.wifi)
-                                }) { Label("Wi-Fi Web Transfer", systemImage: "wifi") }
-                            }
-                        } label: {
+                        }) {
                             HStack(spacing: 8) {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.white)
-                                Text("Add to Library")
+                                Text("Import")
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.white)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.white.opacity(0.8))
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 12)
                             .background(Theme.blue)
                             .clipShape(Capsule())
                         }
+                        
+                        ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
+                        ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
                         
                         // Metadata Engine State
                         Group {
