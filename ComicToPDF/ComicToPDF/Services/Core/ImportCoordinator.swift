@@ -97,11 +97,23 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         
         var foundURLs: [URL] = []
         let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
-        if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
             for case let fileURL as URL in enumerator {
                 if validExts.contains(fileURL.pathExtension.lowercased()) {
-                    foundURLs.append(fileURL)
+                    let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
+                    do {
+                        if fm.fileExists(atPath: destURL.path) {
+                            try fm.removeItem(at: destURL)
+                        }
+                        try fm.copyItem(at: fileURL, to: destURL)
+                        foundURLs.append(destURL)
+                    } catch {
+                        Logger.shared.log("ImportCoordinator: Failed to copy spidered file \(fileURL.lastPathComponent): \(error)", category: "System", type: .error)
+                    }
                 }
             }
         }
