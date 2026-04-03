@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 struct CloudImportView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) private var dismiss
-    @State private var showingFilePicker = false
+
     @State private var showingAlert = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
@@ -27,7 +27,13 @@ struct CloudImportView: View {
         NavigationView {
             Form {
                 Section {
-                    Button(action: { showingFilePicker = true }) {
+                    Button(action: { 
+                        ImportCoordinator.present(type: .files) { urls in
+                            for url in urls where !self.importedFiles.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
+                                self.importedFiles.append(url)
+                            }
+                        }
+                    }) {
                         HStack(spacing: 16) {
                             settingsIcon("folder.fill", color: .blue)
                             VStack(alignment: .leading, spacing: 4) {
@@ -69,18 +75,7 @@ struct CloudImportView: View {
                     if !importedFiles.isEmpty { Button("Import \(importedFiles.count)") { completeImport() }.fontWeight(.semibold) }
                 }
             }
-            .fileImporter(
-                isPresented: $showingFilePicker,
-                allowedContentTypes: [.zip, .archive, UTType(filenameExtension: "cbz") ?? .zip],
-                allowsMultipleSelection: true
-            ) { result in
-                showingFilePicker = false
-                if case .success(let urls) = result {
-                    for url in urls where !self.importedFiles.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
-                        self.importedFiles.append(url)
-                    }
-                }
-            }
+
             .alert(alertTitle, isPresented: $showingAlert) { Button("OK") { if alertTitle == "Success" { dismiss() } } } message: { Text(alertMessage) }
         }
     }

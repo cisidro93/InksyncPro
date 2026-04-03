@@ -20,7 +20,7 @@ struct LogsView: View {
     
     // ✅ NEW: AI State Management
     @State private var showingAIExport = false
-    @State private var showingAIImport = false
+
     @State private var aiDocumentToExport: AIDocument?
     
     var errorCount: Int {
@@ -55,10 +55,7 @@ struct LogsView: View {
             .fileExporter(isPresented: $showingAIExport, document: aiDocumentToExport, contentType: .json, defaultFilename: "inksync_ai_settings") { result in
                 handleAIExport(result: result)
             }
-            .fileImporter(isPresented: $showingAIImport, allowedContentTypes: [.json]) { result in
-                showingAIImport = false
-                handleAIImport(result: result)
-            }
+
             .alert("Cannot Send Email", isPresented: $showingMailErrorAlert) {
                  Button("OK", role: .cancel) { }
             } message: {
@@ -253,7 +250,11 @@ struct LogsView: View {
                 } label: { Label("Backup AI Settings", systemImage: "brain.head.profile") }
                 
                 Button {
-                    showingAIImport = true
+                    ImportCoordinator.present(type: .json) { urls in
+                        if let first = urls.first {
+                            handleAIImport(result: .success(first))
+                        }
+                    }
                 } label: { Label("Restore AI Settings", systemImage: "square.and.arrow.down.on.square") }
                 
                 Divider()

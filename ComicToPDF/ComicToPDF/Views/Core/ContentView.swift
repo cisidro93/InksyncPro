@@ -150,28 +150,28 @@ struct ContentView: View {
             selectedTab: $selectedTab,
             showImport: $showingWebExport
         ))
-        .fileImporter(
-            isPresented: $showingWebExport, // re-using this binding to pop our global root importer
-            allowedContentTypes: [.item],
-            allowsMultipleSelection: false
-        ) { result in
-            showingWebExport = false
-            if case .success(let urls) = result, let url = urls.first {
-                let accessing = url.startAccessingSecurityScopedResource()
-                
-                Task.detached(priority: .userInitiated) {
-                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                    
-                    let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-                    try? FileManager.default.removeItem(at: dest)
-                    
-                    var coordError: NSError?
-                    NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
-                        try? FileManager.default.copyItem(at: safeURL, to: dest)
-                    }
-                    
-                    await MainActor.run {
-                        self.selectedTab = 1 // Switch to Import Tab
+        .onChange(of: showingWebExport) { showing in
+            if showing {
+                showingWebExport = false
+                ImportCoordinator.present(type: .files) { urls in
+                    if let url = urls.first {
+                        let accessing = url.startAccessingSecurityScopedResource()
+                        
+                        Task.detached(priority: .userInitiated) {
+                            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                            
+                            let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                            try? FileManager.default.removeItem(at: dest)
+                            
+                            var coordError: NSError?
+                            NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
+                                try? FileManager.default.copyItem(at: safeURL, to: dest)
+                            }
+                            
+                            await MainActor.run {
+                                self.selectedTab = 1 // Switch to Inbox Tab
+                            }
+                        }
                     }
                 }
             }
@@ -206,11 +206,11 @@ struct ContentView: View {
             .tabItem { Label("Library", systemImage: "books.vertical") }
             .tag(0)
             
-            // Tab 2: Import
+            // Tab 2: Inbox Room
             NavigationStack {
-                ImportTriggerView()
+                InboxReviewView()
             }
-            .tabItem { Label("Import", systemImage: "arrow.down.circle.fill") }
+            .tabItem { Label("Inbox", systemImage: "tray.full.fill") }
             .tag(1)
             
             // Tab 3: Devices
@@ -263,7 +263,7 @@ struct ContentView: View {
                         Label("Library", systemImage: "books.vertical.fill")
                     }
                     NavigationLink(value: 1) {
-                        Label("Import", systemImage: "arrow.down.circle.fill")
+                        Label("Inbox", systemImage: "tray.full.fill")
                     }
                     NavigationLink(value: 2) {
                         Label("Devices", systemImage: "ipad.and.iphone")
@@ -321,7 +321,7 @@ struct ContentView: View {
                         }
                     }
                 } else if selectedTab == 1 {
-                    ImportTriggerView()
+                    InboxReviewView()
                 } else if selectedTab == 2 {
                     DevicesView()
                 } else if selectedTab == 3 {

@@ -1,7 +1,6 @@
 import SwiftUI
 
 enum LibrarySheetDestination: Identifiable {
-    case importer([URL])
     case smartListImporter
     case wifi
     case merge
@@ -20,7 +19,6 @@ enum LibrarySheetDestination: Identifiable {
     
     var id: String {
         switch self {
-        case .importer(let urls): return "importer_\(urls.hashValue)"
         case .smartListImporter: return "smartList"
         case .wifi: return "wifi"
         case .merge: return "merge"

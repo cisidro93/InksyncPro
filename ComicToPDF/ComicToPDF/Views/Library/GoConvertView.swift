@@ -110,8 +110,6 @@ struct GoConvertView: View {
     @State private var useLiquidEInk = true
     @State private var compressionQuality: CompressionPreset = .high
     @State private var showingActionSheet = false
-    @State private var showingFilePicker = false
-    @State private var showingFolderPicker = false
     @State private var shareItems: [URL] = []
     @State private var showingShareSheet = false
     @State private var pdfToRename: ConvertedPDF? = nil
@@ -169,31 +167,15 @@ struct GoConvertView: View {
                 .frame(maxWidth: .infinity, minHeight: 200)
                 .padding(.horizontal, 32)
                 .confirmationDialog("Import Source", isPresented: $showingActionSheet) {
-                    Button("Select Files") { showingFilePicker = true }
-                    Button("Select Folder") { showingFolderPicker = true }
+                    Button("Select Files") { 
+                        ImportCoordinator.present(type: .files) { urls in processPickedFiles(urls) }
+                    }
+                    Button("Select Folder") { 
+                        ImportCoordinator.present(type: .folder) { urls in processPickedFiles(urls) }
+                    }
                     Button("Cancel", role: .cancel) { }
                 } message: {
                     Text("Select individual files or an entire folder to import.")
-                }
-                .fileImporter(
-                    isPresented: $showingFilePicker,
-                    allowedContentTypes: [.pdf, .epub, .zip, UTType(filenameExtension: "cbz") ?? .archive, UTType(filenameExtension: "cbr") ?? .archive, UTType(filenameExtension: "cb7") ?? .archive],
-                    allowsMultipleSelection: true
-                ) { result in
-                    showingFilePicker = false
-                    if case .success(let urls) = result {
-                        self.processPickedFiles(urls)
-                    }
-                }
-                .fileImporter(
-                    isPresented: $showingFolderPicker,
-                    allowedContentTypes: [.folder, .directory],
-                    allowsMultipleSelection: false
-                ) { result in
-                    showingFolderPicker = false
-                    if case .success(let urls) = result, let folderURL = urls.first {
-                        self.processPickedFolder(folderURL)
-                    }
                 }
                 
                 // MARK: Settings

@@ -41,9 +41,7 @@ struct ModernLibraryView: View {
     }
     @State private var sortOption: SortOption = .dateAdded
     
-    // ✅ NEW: Native Importer Bypass State
-    @State private var showingNativeImporter = false
-    
+    // 🗑 Removed Native Importer Bypass State
     // ✅ NEW: Precomputed Types for Swift 6 Parser Speed
     private var allowedImportTypes: [UTType] {
         return [
@@ -129,46 +127,7 @@ struct ModernLibraryView: View {
             loadFiles(from: providers)
             return true
         }
-        .fileImporter(
-            isPresented: $showingNativeImporter,
-            allowedContentTypes: allowedImportTypes,
-            allowsMultipleSelection: true
-        ) { result in
-            showingNativeImporter = false
-            switch result {
-            case .success(let urls):
-                let scopes = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
-                
-                Task.detached(priority: .userInitiated) {
-                    var safeURLs: [URL] = []
-                    
-                    for (url, accessing) in scopes {
-                        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                        
-                        let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-                        try? FileManager.default.removeItem(at: dest)
-                        
-                        var coordError: NSError?
-                        NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
-                            if (try? FileManager.default.copyItem(at: safeURL, to: dest)) != nil {
-                                safeURLs.append(dest)
-                            }
-                        }
-                    }
-                    
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    
-                    let finalURLs = safeURLs
-                    await MainActor.run {
-                        if !finalURLs.isEmpty {
-                            viewModel.activeSheet = .importer(finalURLs)
-                        }
-                    }
-                }
-            case .failure(let error):
-                Logger.shared.log("Native Import Failed: \(error.localizedDescription)", category: "Import", type: .error)
-            }
-        }
+
         .onAppear {
             conversionManager.backfillMissingThumbnails()
             viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
@@ -288,12 +247,7 @@ struct ModernLibraryView: View {
                 viewStyle: $viewStyle,
                 tapAction: $tapAction,
                 onSheetTrigger: { dest in 
-                    switch dest {
-                    case .importer, .cloud:
-                        showingNativeImporter = true
-                    default:
-                        viewModel.activeSheet = dest 
-                    }
+                    viewModel.activeSheet = dest 
                 },
                 isBatchMode: $isBatchMode,
                 multiSelection: $multiSelection,
@@ -315,7 +269,7 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { showingNativeImporter = true }
+                    onImport: { ImportCoordinator.present(type: .files) { urls in Task { await conversionManager.importFilesAsSeries(urls: urls) } } }
                 )
             } else {
                 LibraryGridView(
@@ -326,7 +280,7 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { showingNativeImporter = true }
+                    onImport: { ImportCoordinator.present(type: .files) { urls in Task { await conversionManager.importFilesAsSeries(urls: urls) } } }
                 )
             }
         }

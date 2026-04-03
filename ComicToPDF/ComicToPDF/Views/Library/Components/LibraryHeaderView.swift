@@ -188,7 +188,11 @@ struct LibraryHeaderView: View {
                         
                         // 3. Action Pills
                         Group {
-                            ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.green) { onSheetTrigger(.importer([])) }
+                            ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.green) {
+                                ImportCoordinator.present(type: .files) { urls in
+                                    Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                                }
+                            }
                             ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
                             ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) { 
                                 Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
@@ -199,7 +203,11 @@ struct LibraryHeaderView: View {
                                 }
                             }
                             ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
-                            ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) { onSheetTrigger(.cloud) }
+                            ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) {
+                                ImportCoordinator.present(type: .files) { urls in
+                                    Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                                }
+                            }
                         }
                         
                         // Divider

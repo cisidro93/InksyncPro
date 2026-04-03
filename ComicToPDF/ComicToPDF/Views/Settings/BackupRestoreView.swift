@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 struct BackupRestoreView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var showingExporter = false
-    @State private var showingImporter = false
+
     @State private var backupDocument: BackupDocument?
     @State private var importError: String?
     @State private var showingAlert = false
@@ -22,7 +22,13 @@ struct BackupRestoreView: View {
             }
             
             Section(header: Text("Restore")) {
-                Button(action: { showingImporter = true }) {
+                Button(action: { 
+                    ImportCoordinator.present(type: .json) { urls in
+                        if let first = urls.first {
+                            importBackup(from: first)
+                        }
+                    }
+                }) {
                     HStack {
                         Image(systemName: "square.and.arrow.down")
                         Text("Import Backup File")
@@ -45,18 +51,7 @@ struct BackupRestoreView: View {
                  }
              }
         }
-        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item]) { result in
-            showingImporter = false
-            switch result {
-            case .success(let url):
-                importBackup(from: url)
-            case .failure(let error):
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    importError = error.localizedDescription
-                    showingAlert = true
-                }
-            }
-        }
+
         .alert("Status", isPresented: $showingAlert) { Button("OK", role: .cancel) { } } message: { Text(importError ?? "Unknown error") }
         .overlay(Group { if showingSuccess { SuccessCheckmarkView() } })
     }

@@ -17,7 +17,7 @@ struct GlobalZettelkastenHubView: View {
     @State private var viewMode: ZettelViewMode = .list
     @State private var filterMode: ZettelFilterMode = .all
     
-    @State private var showingReadwiseImporter = false
+
     @State private var isImporting = false
     @State private var isExporting = false
     @State private var importMessage: String? = nil
@@ -135,7 +135,13 @@ struct GlobalZettelkastenHubView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Button(action: { showingReadwiseImporter.toggle() }) {
+                    Button(action: { 
+                        ImportCoordinator.present(type: .smartList) { urls in
+                            if let first = urls.first {
+                                handleCSVImport(result: .success([first]))
+                            }
+                        }
+                    }) {
                         Label("Import Readwise", systemImage: "arrow.down.doc")
                     }
                     Button(action: triggerExport) {
@@ -146,14 +152,7 @@ struct GlobalZettelkastenHubView: View {
                 }
             }
         }
-        .fileImporter(
-            isPresented: $showingReadwiseImporter,
-            allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText, .data],
-            allowsMultipleSelection: false
-        ) { result in
-            showingReadwiseImporter = false
-            handleCSVImport(result: result)
-        }
+
         .fileExporter(isPresented: $showingExporterDialog, document: exportDocument, contentType: .zip, defaultFilename: "MindPalace_Export") { result in
             switch result {
             case .success(let url): print("Mind Palace successfully exported to \(url)")
@@ -188,7 +187,13 @@ struct GlobalZettelkastenHubView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             
-            Button(action: { showingReadwiseImporter.toggle() }) {
+            Button(action: { 
+                ImportCoordinator.present(type: .smartList) { urls in
+                    if let first = urls.first {
+                        handleCSVImport(result: .success([first]))
+                    }
+                }
+            }) {
                 Text("Import from Readwise")
                     .font(.headline)
                     .foregroundColor(.white)

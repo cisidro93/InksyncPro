@@ -5,26 +5,11 @@ struct SmartListImporterView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     
-    @State private var showingFilePicker = false
     @State private var resolvedItems: [ResolvedEventItem]? = nil
     @State private var errorMessage: String? = nil
     @State private var eventName: String = "Imported Event"
     @State private var pastedText: String = ""
-    
-    // Support .cbl, .csv, .md, .txt
-    let allowedTypes: [UTType] = [
-        .item, // Unrestricted generic
-        .content, // Any content
-        .data, // Generic raw data
-        .plainText,
-        .commaSeparatedText,
-        .text,
-        UTType(filenameExtension: "cbl") ?? .xml,
-        UTType(filenameExtension: "csv") ?? .commaSeparatedText,
-        UTType(filenameExtension: "md") ?? .plainText,
-        UTType(filenameExtension: "txt") ?? .plainText
-    ]
-    
+
     var body: some View {
             Group {
                 if let items = resolvedItems {
@@ -114,7 +99,11 @@ struct SmartListImporterView: View {
                                 }
                             } else {
                                 Button {
-                                    showingFilePicker = true
+                                    ImportCoordinator.present(type: .smartList) { urls in
+                                        if let first = urls.first {
+                                            handleImport(result: .success([first]))
+                                        }
+                                    }
                                 } label: {
                                     Label("Select List File", systemImage: "folder.fill")
                                         .font(.headline)
@@ -143,13 +132,6 @@ struct SmartListImporterView: View {
                     }
                 }
             }
-        .fileImporter(
-            isPresented: $showingFilePicker,
-            allowedContentTypes: allowedTypes,
-            allowsMultipleSelection: false
-        ) { result in
-            showingFilePicker = false
-            handleImport(result: result)
         }
     }
     
