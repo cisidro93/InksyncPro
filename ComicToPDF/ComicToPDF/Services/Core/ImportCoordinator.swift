@@ -79,25 +79,21 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
         
-        let secures = urls.map { (url: $0, isAccessing: $0.startAccessingSecurityScopedResource()) }
-        
         controller.dismiss(animated: true) { [weak self] in
             guard let self = self else { return }
             
             DispatchQueue.global(qos: .userInitiated).async {
                 if self.currentType == .folder {
                     var allFound: [URL] = []
-                    for resource in secures {
-                        allFound.append(contentsOf: self.processFolderSpiderSync(url: resource.url))
-                        if resource.isAccessing { resource.url.stopAccessingSecurityScopedResource() }
+                    for url in urls {
+                        let isAccessing = url.startAccessingSecurityScopedResource()
+                        allFound.append(contentsOf: self.processFolderSpiderSync(url: url))
+                        if isAccessing { url.stopAccessingSecurityScopedResource() }
                     }
                     DispatchQueue.main.async {
                         self.finish(with: allFound)
                     }
                 } else {
-                    for resource in secures {
-                        if resource.isAccessing { resource.url.stopAccessingSecurityScopedResource() }
-                    }
                     DispatchQueue.main.async {
                         self.finish(with: urls)
                     }
