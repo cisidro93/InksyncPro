@@ -188,54 +188,57 @@ struct LibraryHeaderView: View {
                             .overlay(Capsule().stroke(Theme.text.opacity(0.1), lineWidth: 1))
                         }
                         
-                        // 3. Action Pills
-                        Group {
-                            // Unified Import Menu Pill
-                            Menu {
+                        // 3. Centralized Import Architecture
+                        Menu {
+                            Section("Local & Cloud Transfer") {
                                 Button(action: {
                                     ImportCoordinator.present(type: .files) { urls in
                                         Task { await conversionManager.importFilesAsSeries(urls: urls) }
                                     }
-                                }) { Label("Import Files", systemImage: "doc.badge.plus") }
+                                }) { Label("Add Files & Cloud Items", systemImage: "doc.badge.plus") }
                                 
                                 Button(action: {
                                     ImportCoordinator.present(type: .folder) { urls in
                                         Task { await conversionManager.importFilesAsSeries(urls: urls) }
                                     }
-                                }) { Label("Import Folders", systemImage: "folder.badge.plus") }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(Theme.green)
-                                    Text("Import")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(Theme.text)
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundColor(Theme.text.opacity(0.7))
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(.ultraThinMaterial, in: Capsule())
-                                .overlay(
-                                    Capsule()
-                                        .stroke(LinearGradient(colors: [Theme.text.opacity(0.4), Theme.text.opacity(0.0)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-                                )
+                                }) { Label("Add Entire Folders", systemImage: "folder.badge.plus") }
                             }
-                            ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
+                            
+                            Section("Network Routing") {
+                                Button(action: {
+                                    onSheetTrigger(.smartListImporter)
+                                }) { Label("Sync Smart List (.csv)", systemImage: "list.star") }
+                                
+                                Button(action: {
+                                    onSheetTrigger(.wifi)
+                                }) { Label("Wi-Fi Web Transfer", systemImage: "wifi") }
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                Text("Add to Library")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 12)
+                            .background(Theme.blue)
+                            .clipShape(Capsule())
+                        }
+                        
+                        // Metadata Engine State
+                        Group {
                             ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) { 
                                 Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
                             }
                             if !conversionManager.failedMetadataPDFs.isEmpty {
-                                ActionPill(title: "Review Unmatched", icon: "exclamationmark.triangle.fill", color: Theme.red) {
+                                ActionPill(title: "Review Missing", icon: "exclamationmark.triangle.fill", color: Theme.red) {
                                     onSheetTrigger(.reviewMetadata)
-                                }
-                            }
-                            ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
-                            ActionPill(title: "Cloud", icon: "icloud", color: Theme.blue) {
-                                ImportCoordinator.present(type: .files) { urls in
-                                    Task { await conversionManager.importFilesAsSeries(urls: urls) }
                                 }
                             }
                         }
