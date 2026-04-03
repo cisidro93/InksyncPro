@@ -31,7 +31,7 @@ struct LibraryHeaderView: View {
                          .foregroundStyle(Theme.orange.gradient)
                      Text("Library")
                          .font(.system(size: 28, weight: .bold))
-                         .foregroundColor(.white)
+                         .foregroundColor(Theme.text)
                          .fixedSize(horizontal: true, vertical: false)
                 }
                 
@@ -45,7 +45,7 @@ struct LibraryHeaderView: View {
                     
                     TextField("Search Collection...", text: $searchText)
                         .font(.system(size: 17))
-                        .foregroundColor(.white)
+                        .foregroundColor(Theme.text)
                         .tint(Theme.orange)
                     
                     if !searchText.isEmpty {
@@ -61,7 +61,7 @@ struct LibraryHeaderView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(.white.opacity(0.1), lineWidth: 1)
+                        .stroke(Theme.text.opacity(0.1), lineWidth: 1)
                 )
                 .frame(maxWidth: 400) // Constrain width on large screens
                 
@@ -77,7 +77,7 @@ struct LibraryHeaderView: View {
                         .frame(width: 44, height: 44)
                         .background(.ultraThinMaterial)
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.1), lineWidth: 1))
+                        .overlay(Circle().stroke(Theme.text.opacity(0.1), lineWidth: 1))
                 }
                 
                 // ✅ Grid / List Toggle
@@ -92,7 +92,7 @@ struct LibraryHeaderView: View {
                         .frame(width: 44, height: 44)
                         .background(.ultraThinMaterial)
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.1), lineWidth: 1))
+                        .overlay(Circle().stroke(Theme.text.opacity(0.1), lineWidth: 1))
                 }
                 
                 // ✅ Background Task Tracker
@@ -151,11 +151,11 @@ struct LibraryHeaderView: View {
                             .padding(.vertical, 10)
                             .background(.thickMaterial)
                             .clipShape(Capsule())
-                            .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
+                            .overlay(Capsule().stroke(Theme.text.opacity(0.1), lineWidth: 1))
                         }
                         
                         // Divider
-                        Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
+                        Rectangle().fill(Theme.text.opacity(0.1)).frame(width: 1, height: 24)
                         
                         // 2. Action Pick
                         Menu {
@@ -183,7 +183,7 @@ struct LibraryHeaderView: View {
                             .padding(.vertical, 10)
                             .background(.thickMaterial)
                             .clipShape(Capsule())
-                            .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 1))
+                            .overlay(Capsule().stroke(Theme.text.opacity(0.1), lineWidth: 1))
                         }
                         
                         // 3. Action Pills
@@ -208,17 +208,17 @@ struct LibraryHeaderView: View {
                                         .foregroundColor(Theme.green)
                                     Text("Import")
                                         .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(Theme.text)
                                     Image(systemName: "chevron.down")
                                         .font(.system(size: 10, weight: .bold))
-                                        .foregroundColor(.white.opacity(0.7))
+                                        .foregroundColor(Theme.text.opacity(0.7))
                                 }
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
                                 .background(.ultraThinMaterial, in: Capsule())
                                 .overlay(
                                     Capsule()
-                                        .stroke(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.0)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                                        .stroke(LinearGradient(colors: [Theme.text.opacity(0.4), Theme.text.opacity(0.0)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
                                 )
                             }
                             ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
@@ -239,7 +239,7 @@ struct LibraryHeaderView: View {
                         }
                         
                         // Divider
-                        Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
+                        Rectangle().fill(Theme.text.opacity(0.1)).frame(width: 1, height: 24)
                     }
                     
                     Group {
@@ -264,7 +264,7 @@ struct LibraryHeaderView: View {
                     }
                     
                     // Divider
-                    Rectangle().fill(.white.opacity(0.1)).frame(width: 1, height: 24)
+                    Rectangle().fill(Theme.text.opacity(0.1)).frame(width: 1, height: 24)
                     
                     Group {
                         ActionPill(title: conversionManager.isVaultUnlocked ? "Vault Unlocked" : "Vault", icon: conversionManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: conversionManager.isVaultUnlocked ? Theme.red : Theme.textSecondary) { 
@@ -286,7 +286,7 @@ struct LibraryHeaderView: View {
                             Text(isBatchMode ? "Done" : "Select")
                         }
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isBatchMode ? .white : Theme.text)
+                        .foregroundColor(isBatchMode ? Theme.text : Theme.text)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .background(isBatchMode ? AnyShapeStyle(Theme.orange) : AnyShapeStyle(.thickMaterial))
@@ -302,7 +302,7 @@ struct LibraryHeaderView: View {
                                 Text("All")
                             }
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(Theme.text)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                             .background(Theme.blue)
@@ -315,7 +315,7 @@ struct LibraryHeaderView: View {
             .padding(.bottom, 16)
         }
         .overlay(
-            Rectangle().frame(height: 1).foregroundColor(.white.opacity(0.05)),
+            Rectangle().frame(height: 1).foregroundColor(Theme.text.opacity(0.05)),
             alignment: .bottom
         )
     }

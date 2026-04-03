@@ -81,7 +81,7 @@ struct ModernLibraryView: View {
         Group {
             ZStack(alignment: .top) {
                 // Background Depth
-                Color.black.ignoresSafeArea()
+                Theme.bg.ignoresSafeArea()
                 
                 // Ambient Header Glow
                 ambientGlow
@@ -289,7 +289,7 @@ struct ModernLibraryView: View {
 
     @ViewBuilder private var batchBottomToolbar: some View {
         VStack(spacing: 0) {
-            Divider().background(Color.white.opacity(0.1))
+            Divider().background(Theme.text.opacity(0.1))
             HStack {
                 Button(role: .destructive) {
                     let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
@@ -356,7 +356,7 @@ struct ModernLibraryView: View {
             .padding(.horizontal, 30)
             .padding(.vertical, 12)
             .background(.ultraThinMaterial)
-            .foregroundColor(.white)
+            .foregroundColor(Theme.text)
             .environment(\.colorScheme, .dark)
         }
     }

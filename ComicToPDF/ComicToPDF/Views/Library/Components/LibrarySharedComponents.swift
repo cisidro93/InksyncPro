@@ -6,17 +6,17 @@ enum LibraryRowAction {
 
 // MARK: - Theme Colors
 struct Theme {
-    static let bg = Color.black
-    static let surface = Color(red: 28/255, green: 28/255, blue: 30/255)
-    static let surfaceElevated = Color(red: 58/255, green: 58/255, blue: 60/255)
-    static let orange = Color(red: 1, green: 159/255, blue: 10/255) // #FF9F0A
-    static let blue = Color(red: 10/255, green: 132/255, blue: 255/255) // #0A84FF
-    static let purple = Color(red: 191/255, green: 90/255, blue: 242/255) // #BF5AF2 
-    static let green = Color(red: 48/255, green: 209/255, blue: 88/255) // #30D158
-    static let red = Color(red: 255/255, green: 69/255, blue: 58/255) // #FF453A
-    static let text = Color.white
-    static let textSecondary = Color(red: 142/255, green: 142/255, blue: 147/255) // #8E8E93
-    static let textTertiary = Color(red: 99/255, green: 99/255, blue: 102/255) // #636366
+    static let bg = Color(UIColor.systemBackground)
+    static let surface = Color(UIColor.secondarySystemGroupedBackground)
+    static let surfaceElevated = Color(UIColor.tertiarySystemGroupedBackground)
+    static let orange = Color.orange
+    static let blue = Color.blue
+    static let purple = Color.purple
+    static let green = Color.green
+    static let red = Color.red
+    static let text = Color.primary
+    static let textSecondary = Color.secondary
+    static let textTertiary = Color(UIColor.tertiaryLabel)
 }
 
 // MARK: - Action Pill Component
@@ -34,16 +34,16 @@ struct ActionPill: View {
                     .foregroundColor(color)
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(Theme.text)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(.regularMaterial, in: Capsule())
             .overlay(
                 Capsule()
-                    .stroke(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.0)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                    .stroke(LinearGradient(colors: [Theme.text.opacity(0.4), Theme.text.opacity(0.0)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+            .shadow(color: Color(UIColor.systemBackground).opacity(0.15), radius: 8, y: 4)
         }
     }
 }

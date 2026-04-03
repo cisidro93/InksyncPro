@@ -47,14 +47,22 @@ class ReadwiseImportService {
         let authorIdx = headers.firstIndex(of: "author") ?? headers.firstIndex(of: "book author")
         Logger.shared.log("Readwise Sync: Column Indexes mapped successfully [Highlight: \(highlightIdx), Title: \(titleIdx)]", category: "Import", type: .success)
         
+        let dateIdx = headers.firstIndex(of: "highlight date") ?? headers.firstIndex(of: "date") ?? headers.firstIndex(of: "created_at") ?? headers.firstIndex(of: "created") ?? headers.firstIndex(of: "added")
         var importedCount = 0
+        var skippedCount = 0
+        
+        let formatters: [DateFormatter] = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy", "MMM d, yyyy", "yyyy-MM-dd'T'HH:mm:ssZ"].map { fmt in
+            let df = DateFormatter()
+            df.dateFormat = fmt
+            return df
+        }
         
         // Background loop ingestion
-        var skippedCount = 0
         for i in 1..<rows.count {
             let row = rows[i]
             if row.count <= max(highlightIdx, titleIdx) { 
                 skippedCount += 1
+                Logger.shared.log("Readwise Sync: Skipped row \(i) due to column count mismatch.", category: "Import", type: .warning)
                 continue 
             }
             
@@ -68,9 +76,23 @@ class ReadwiseImportService {
             
             let noteText = (noteIdx != nil && row.count > noteIdx!) ? row[noteIdx!].trimmingCharacters(in: .whitespacesAndNewlines) : ""
             let author = (authorIdx != nil && row.count > authorIdx!) ? row[authorIdx!].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            let dateStr = (dateIdx != nil && row.count > dateIdx!) ? row[dateIdx!].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            
+            var parsedDate = Date()
+            if !dateStr.isEmpty {
+                if let iso = ISO8601DateFormatter().date(from: dateStr) {
+                    parsedDate = iso
+                } else {
+                    for df in formatters {
+                        if let d = df.date(from: dateStr) {
+                            parsedDate = d
+                            break
+                        }
+                    }
+                }
+            }
             
             // Generate a deterministic 16-byte UUID from the book title using MD5 hashing
-            // This guarantees all 900 individual highlights for matching book titles are aggregated into the SAME virtual book
             let hash = Insecure.MD5.hash(data: Data(bookTitle.utf8))
             let syntheticPDFID = hash.withUnsafeBytes { ptr -> UUID in
                 let bytes = ptr.bindMemory(to: UInt8.self).baseAddress!
@@ -91,7 +113,7 @@ class ReadwiseImportService {
                 isReadwiseImport: true,
                 readwiseBookTitle: bookTitle,
                 readwiseAuthor: author,
-                createdAt: Date()
+                createdAt: parsedDate
             )
             
             context.insert(annotation)
