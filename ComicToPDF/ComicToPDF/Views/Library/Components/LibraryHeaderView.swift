@@ -19,7 +19,7 @@ struct LibraryHeaderView: View {
     var onVaultToggle: () -> Void
     var onSelectAll: (() -> Void)? = nil
     
-    @State private var showFolderPicker = false
+
     
     var body: some View {
         VStack(spacing: 16) {
@@ -199,7 +199,9 @@ struct LibraryHeaderView: View {
                                 }) { Label("Import Files", systemImage: "doc.badge.plus") }
                                 
                                 Button(action: {
-                                    showFolderPicker = true
+                                    ImportCoordinator.present(type: .folder) { urls in
+                                        Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                                    }
                                 }) { Label("Import Folders", systemImage: "folder.badge.plus") }
                             } label: {
                                 HStack(spacing: 6) {
@@ -318,23 +320,5 @@ struct LibraryHeaderView: View {
             Rectangle().frame(height: 1).foregroundColor(Theme.text.opacity(0.05)),
             alignment: .bottom
         )
-        .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder], allowsMultipleSelection: true) { result in
-            switch result {
-            case .success(let urls):
-                guard !urls.isEmpty else { return }
-                Task {
-                    var allFound: [URL] = []
-                    for url in urls {
-                        let isAccessing = url.startAccessingSecurityScopedResource()
-                        let spidered = ImportCoordinator.processFolderSpiderSync(url: url)
-                        allFound.append(contentsOf: spidered)
-                        if isAccessing { url.stopAccessingSecurityScopedResource() }
-                    }
-                    await conversionManager.importFilesAsSeries(urls: allFound)
-                }
-            case .failure(let error):
-                Logger.shared.log("Folder Importer Failed: \(error.localizedDescription)", category: "System", type: .error)
-            }
-        }
     }
 }
