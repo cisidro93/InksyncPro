@@ -188,15 +188,38 @@ struct LibraryHeaderView: View {
                         
                         // 3. Action Pills
                         Group {
-                            ActionPill(title: "Import", icon: "doc.badge.plus", color: Theme.green) {
-                                ImportCoordinator.present(type: .files) { urls in
-                                    Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                            // Unified Import Menu Pill
+                            Menu {
+                                Button(action: {
+                                    ImportCoordinator.present(type: .files) { urls in
+                                        Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                                    }
+                                }) { Label("Import Files", systemImage: "doc.badge.plus") }
+                                
+                                Button(action: {
+                                    ImportCoordinator.present(type: .folder) { urls in
+                                        Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                                    }
+                                }) { Label("Import Folders", systemImage: "folder.badge.plus") }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(Theme.green)
+                                    Text("Import")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.white)
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.white.opacity(0.7))
                                 }
-                            }
-                            ActionPill(title: "Folders", icon: "folder.badge.plus", color: Theme.green) {
-                                ImportCoordinator.present(type: .folder) { urls in
-                                    Task { await conversionManager.importFilesAsSeries(urls: urls) }
-                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.0)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                                )
                             }
                             ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
                             ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) { 
