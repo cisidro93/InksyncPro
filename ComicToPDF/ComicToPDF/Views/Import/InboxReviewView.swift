@@ -61,8 +61,8 @@ struct InboxReviewView: View {
                     List {
                         ForEach(reviewItems) { item in
                             HStack(spacing: 12) {
-                                if let thumbnailPath = item.thumbnailPath,
-                                   let uiImage = UIImage(contentsOfFile: thumbnailPath) {
+                                if let coverURL = manager.getCoverURL(for: item),
+                                   let uiImage = UIImage(contentsOfFile: coverURL.path) {
                                     Image(uiImage: uiImage)
                                         .resizable()
                                         .scaledToFill()
