@@ -177,6 +177,19 @@ actor ImportOrchestrator {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Import..." }
         defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
         
+        // ── Smart Duplicate Fingerprinting ──────────────────────────────────────────
+        // Build TWO lookup sets from the live library (both sourced from the model, not disk):
+        //   1. existingKeys   → "filename||size"  — exact identity (same name + same bytes)
+        //   2. existingSizes  → Int64 set          — size fingerprint (catches renames of same file)
+        // A file is a "true duplicate" only when BOTH its name AND size match the library.
+        // A file is a "size clone" when its size appears in the library (likely a renamed copy).
+        // New files (neither match) are always imported.
+        let existingKeys: Set<String> = await MainActor.run {
+            Set(manager.convertedPDFs.map { "\($0.url.lastPathComponent)||\($0.fileSize)" })
+        }
+        let existingSizes: Set<Int64> = await MainActor.run {
+            Set(manager.convertedPDFs.map { $0.fileSize }.filter { $0 > 0 })
+        }
         let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
         let isVaultUnlocked = await MainActor.run { !SecurityManager.shared.isVaultLocked }
 
@@ -200,15 +213,31 @@ actor ImportOrchestrator {
                 var destURL = documentsDir.appendingPathComponent(fileName)
                 let overrideMeta = overrides[url]
                 
-                // 🛑 NEW: True Duplicate Catching!
+                // ── Duplicate Detection ────────────────────────────────────────────────
                 let incomingSize = (try? fileManager.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
-                let tempDestURL = documentsDir.appendingPathComponent(fileName)
-                let existingSize = (try? fileManager.attributesOfItem(atPath: tempDestURL.path)[.size] as? Int64) ?? -1
+                let compositeKey = "\(fileName)||\(incomingSize)"
                 
-                let isBatchDuplicate = newPDFs.contains(where: { $0.url.lastPathComponent == fileName && $0.fileSize == incomingSize })
+                // 1. Exact match: same filename AND same byte-count in library → true duplicate, skip
+                let isExactLibraryDuplicate = incomingSize > 0 && existingKeys.contains(compositeKey)
                 
-                if (existingPaths.contains(fileName) || isBatchDuplicate) && incomingSize > 0 && existingSize == incomingSize {
-                    Logger.shared.log("Skipping true duplicate file: \(fileName) (Size Match: \(incomingSize))", category: "Import", type: .info)
+                // 2. In-batch collision: already queued this exact file in the current run
+                let isBatchDuplicate = incomingSize > 0 && newPDFs.contains(where: {
+                    $0.url.lastPathComponent == fileName && $0.fileSize == incomingSize
+                })
+                
+                // 3. Size-clone: different filename but byte-count already in library
+                //    (catches the case where a file was renamed after import, e.g. "1.cbz" → "Series - 1.cbz")
+                let isSizeClone = incomingSize > 1024 && existingSizes.contains(incomingSize)
+                //    Only treat as duplicate if the extension also matches something in the library
+                //    (avoids false positives for small files like thumbnails or README.txts)
+                
+                if isExactLibraryDuplicate || isBatchDuplicate {
+                    Logger.shared.log("Skipping exact duplicate: \(fileName) (\(incomingSize) bytes)", category: "Import", type: .info)
+                    continue
+                }
+                
+                if isSizeClone {
+                    Logger.shared.log("Skipping size-clone: \(fileName) (\(incomingSize) bytes) — a file of identical size already exists in the library.", category: "Import", type: .info)
                     continue
                 }
                 
