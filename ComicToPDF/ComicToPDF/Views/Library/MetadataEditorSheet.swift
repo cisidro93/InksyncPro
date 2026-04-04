@@ -12,6 +12,7 @@ extension Binding where Value == String? {
 struct MetadataEditorSheet: View {
     @Binding var pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @Environment(\.dismiss) var dismiss
     
     // Local State for editing (so we can cancel)
@@ -98,13 +99,13 @@ struct MetadataEditorSheet: View {
     @ViewBuilder
     private func autoFillSection() -> some View {
         Section(header: Text("Auto-Fill")) {
-            if conversionManager.conversionSettings.comicVineAPIKey.isEmpty && conversionManager.conversionSettings.openAIAPIKey.isEmpty {
+            if settingsManager.conversionSettings.comicVineAPIKey.isEmpty && settingsManager.conversionSettings.openAIAPIKey.isEmpty {
                 Text("⚠️ Add API Keys in Settings to enable Auto-Fill or AI Extraction")
                     .font(.caption)
                     .foregroundColor(.orange)
             } else {
                 HStack(spacing: 16) {
-                    if !conversionManager.conversionSettings.comicVineAPIKey.isEmpty && pdf.contentType != .book {
+                    if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty && pdf.contentType != .book {
                         Button(action: searchComicVine) {
                             Label("Fetch ComicVine", systemImage: "network")
                         }.disabled(isSearching)
@@ -243,7 +244,7 @@ struct MetadataEditorSheet: View {
     }
     
     func searchComicVine() {
-        guard !conversionManager.conversionSettings.comicVineAPIKey.isEmpty else { return }
+        guard !settingsManager.conversionSettings.comicVineAPIKey.isEmpty else { return }
         
         isSearching = true
         errorMessage = nil
@@ -252,7 +253,7 @@ struct MetadataEditorSheet: View {
         
         Task {
             do {
-                let key = conversionManager.conversionSettings.comicVineAPIKey
+                let key = settingsManager.conversionSettings.comicVineAPIKey
                 let results = try await ComicVineService.shared.searchVolumes(query: query, apiKey: key)
                 
                 await MainActor.run {
@@ -375,7 +376,7 @@ struct MetadataEditorSheet: View {
         
         Task {
             do {
-                let key = conversionManager.conversionSettings.comicVineAPIKey
+                let key = settingsManager.conversionSettings.comicVineAPIKey
                 if let issue = try await ComicVineService.shared.getIssue(volumeID: volume.id, issueNumber: "\(issueNum)", apiKey: key) {
                     
                     await MainActor.run {

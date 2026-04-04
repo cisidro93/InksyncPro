@@ -4,6 +4,7 @@ import MessageUI
 struct DualExportView: View {
     let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @Environment(\.presentationMode) var presentationMode
     
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
@@ -39,17 +40,17 @@ struct DualExportView: View {
                         .foregroundStyle(.secondary)
                     
                     HStack {
-                        Text("Format: \(conversionManager.conversionSettings.outputFormat.rawValue)")
+                        Text("Format: \(settingsManager.conversionSettings.outputFormat.rawValue)")
                         Spacer()
-                        Text("Quality: \(conversionManager.conversionSettings.compressionQuality.rawValue)")
+                        Text("Quality: \(settingsManager.conversionSettings.compressionQuality.rawValue)")
                     }
                     .font(.caption2)
                     
-                    if conversionManager.conversionSettings.optimizeForDevice {
-                        Text("Target Device: \(conversionManager.conversionSettings.targetDeviceProfile.rawValue)")
+                    if settingsManager.conversionSettings.optimizeForDevice {
+                        Text("Target Device: \(settingsManager.conversionSettings.targetDeviceProfile.rawValue)")
                             .font(.caption2)
                     }
-                    if conversionManager.conversionSettings.imageEnhancement.grayscale || conversionManager.conversionSettings.imageEnhancement.autoContrast {
+                    if settingsManager.conversionSettings.imageEnhancement.grayscale || settingsManager.conversionSettings.imageEnhancement.autoContrast {
                         Text("Filters: E-Ink Optimized")
                             .font(.caption2)
                             .foregroundStyle(.green)

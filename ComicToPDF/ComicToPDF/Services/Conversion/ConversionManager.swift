@@ -7,18 +7,7 @@ import Combine
 class ConversionManager: ObservableObject {
     @Published var convertedPDFs: [ConvertedPDF] = []
     @Published var collections: [PDFCollection] = []
-    @Published var conversionPresets: [ConversionPreset] = []
-    @Published var kindleDevices: [KindleDevice] = []
-    @Published var sendHistory: [ConvertedPDF] = []
-    @Published var conversionSettings = ConversionSettings()
-    
-    // ✅ NEW: Persistent Watched Folders
-    struct WatchedFolder: Codable, Identifiable, Equatable {
-        var id: UUID = UUID()
-        var name: String
-        var bookmarkData: Data
-    }
-    @Published var watchedFolders: [WatchedFolder] = []
+    // MARK: - App Config Shifted to AppSettingsManager
     
     // MARK: - Series Grouping Prompt (Layer 3)
     struct PendingSeriesGroup: Identifiable {
@@ -45,8 +34,7 @@ class ConversionManager: ObservableObject {
     var appAlert: AppAlert? { get { TaskEngine.shared.appAlert } set { TaskEngine.shared.appAlert = newValue } }
     var activeTasks: [AppBackgroundTask] { get { TaskEngine.shared.activeTasks } set { TaskEngine.shared.activeTasks = newValue } }
     
-    // ✅ Session Vault State
-    @Published var isVaultUnlocked: Bool = false
+    // Vault State now in AppSettingsManager
     
     // ✅ NEW: Background Metadata State
     @Published var failedMetadataPDFs: [ConvertedPDF] = []
@@ -72,12 +60,12 @@ class ConversionManager: ObservableObject {
     }
     
     var visiblePDFs: [ConvertedPDF] {
-        convertedPDFs.filter { isVaultUnlocked ? true : !$0.isPrivate }
+        convertedPDFs.filter { AppSettingsManager.shared.isVaultUnlocked ? true : !$0.isPrivate }
     }
     
     /// Only Pro-mode files — used by the Pro Library to exclude Go conversions.
     var proLibraryPDFs: [ConvertedPDF] {
-        convertedPDFs.filter { (isVaultUnlocked ? true : !$0.isPrivate) && $0.addedByMode == .pro }
+        convertedPDFs.filter { (AppSettingsManager.shared.isVaultUnlocked ? true : !$0.isPrivate) && $0.addedByMode == .pro }
     }
     
     private var progressSubscription: AnyCancellable?
@@ -118,15 +106,15 @@ class ConversionManager: ObservableObject {
         let ramGB = Double(memory) / 1024.0 / 1024.0 / 1024.0
         
         if ramGB > 5.5 {
-            conversionSettings.compressionQuality = .high
+            AppSettingsManager.shared.conversionSettings.compressionQuality = .high
         } else if ramGB < 3.5 {
-            conversionSettings.compressionQuality = .compact
+            AppSettingsManager.shared.conversionSettings.compressionQuality = .compact
         } else {
-            conversionSettings.compressionQuality = .balanced
+            AppSettingsManager.shared.conversionSettings.compressionQuality = .balanced
         }
         
         UserDefaults.standard.set(true, forKey: key)
-        saveSettings()
+        AppSettingsManager.shared.save()
     }
     
     private func createWelcomeFile() {

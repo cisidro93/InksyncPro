@@ -4,6 +4,7 @@ import PhotosUI
 // MARK: - Canvas View
 struct WorkspaceCanvasView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     let pdf: ConvertedPDF
     @ObservedObject var viewModel: PageEditorViewModel
     @Binding var selectedPages: Set<Int>
@@ -119,6 +120,7 @@ struct WorkspaceCanvasView: View {
 // MARK: - Floating Tool Palette
 struct WorkspaceToolPalette: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     let pdf: ConvertedPDF
     @ObservedObject var viewModel: PageEditorViewModel
     @Binding var selectedPages: Set<Int>
@@ -310,6 +312,7 @@ struct WorkspaceInspectorView: View {
 // MARK: - Cover Studio (The "Cover House")
 struct CoverStudioView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     let pdf: ConvertedPDF
     
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
@@ -536,7 +539,7 @@ struct CoverStudioView: View {
         
         Task {
             // Check for BYOK AI Key
-            let aiKey = conversionManager.conversionSettings.openAIAPIKey
+            let aiKey = settingsManager.conversionSettings.openAIAPIKey
             
             let results = await CoverFetchService.shared.fetchCovers(for: livePDF.metadata, openAIKey: aiKey.isEmpty ? nil : aiKey, limit: fetchLimit)
 

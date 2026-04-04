@@ -3,6 +3,7 @@ import SwiftUI
 struct BatchMergeReorderView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
 
     // Binding to parent state
@@ -37,22 +38,22 @@ struct BatchMergeReorderView: View {
                         Section {
                             Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
                             
-                            Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
+                            Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
                                 ForEach(TargetDeviceProfile.allCases) { device in
                                     Text(device.rawValue).tag(device)
                                 }
                             }
                             .pickerStyle(.menu)
                             
-                            Toggle("E-Ink High Contrast Filter", isOn: $conversionManager.conversionSettings.optimizeForDevice)
+                            Toggle("E-Ink High Contrast Filter", isOn: $settingsManager.conversionSettings.optimizeForDevice)
                             
-                            Picker("Image Quality", selection: $conversionManager.conversionSettings.compressionQuality) {
+                            Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases, id: \.self) { preset in
                                     Text(preset.rawValue).tag(preset)
                                 }
                             }
                             
-                            Picker("Smart File Splitting", selection: $conversionManager.conversionSettings.splitMode) {
+                            Picker("Smart File Splitting", selection: $settingsManager.conversionSettings.splitMode) {
                                 ForEach(FileSizeSplitMode.allCases) { mode in
                                     Text(mode.rawValue).tag(mode)
                                 }

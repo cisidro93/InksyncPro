@@ -3,12 +3,13 @@ import SwiftUI
 // MARK: - AdvancedOptionsView
 struct AdvancedOptionsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     var body: some View {
         Form {
             Section {
                 // Fixed header syntax:
-                Toggle(isOn: $conversionManager.conversionSettings.enablePanelSplit) {
+                Toggle(isOn: $settingsManager.conversionSettings.enablePanelSplit) {
                     Text("Enable Panel Split")
                 }
             } header: {
@@ -22,19 +23,20 @@ struct AdvancedOptionsView: View {
 // MARK: - ConversionPresetsView
 struct ConversionPresetsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @State private var showingAddPreset = false
     
     var body: some View {
         List {
             // ✅ Fix: Use indices to create bindings safely
-            ForEach($conversionManager.conversionPresets) { $preset in
+            ForEach($settingsManager.conversionPresets) { $preset in
                 NavigationLink(destination: Text("Edit Preset: \(preset.name)")) {
                     Text(preset.name)
                 }
             }
             .onDelete { indexSet in
                 for index in indexSet {
-                    let preset = conversionManager.conversionPresets[index]
+                    let preset = settingsManager.conversionPresets[index]
                     conversionManager.deletePreset(preset)
                 }
             }
@@ -49,6 +51,7 @@ struct ConversionPresetsView: View {
 // MARK: - StorageManagerView
 struct StorageManagerView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @State private var storageInfo: StorageInfo?
     
     var body: some View {
@@ -73,6 +76,7 @@ struct StorageManagerView: View {
 struct AutoOrganizeView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     var body: some View {
         VStack(spacing: 20) {
@@ -107,15 +111,16 @@ struct AutoOrganizeView: View {
 // MARK: - SendHistoryView
 struct SendHistoryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     var body: some View {
         List {
-            if conversionManager.sendHistory.isEmpty {
+            if settingsManager.sendHistory.isEmpty {
                 Text("No history yet.")
                     .foregroundColor(.secondary)
             } else {
                 // ✅ Fix: Direct iteration, no binding needed for display
-                ForEach(conversionManager.sendHistory) { pdf in
+                ForEach(settingsManager.sendHistory) { pdf in
                     HStack {
                         VStack(alignment: .leading) {
                             Text(pdf.name)
@@ -137,7 +142,7 @@ struct SendHistoryView: View {
                 Button("Clear") {
                     conversionManager.clearSendHistory()
                 }
-                .disabled(conversionManager.sendHistory.isEmpty)
+                .disabled(settingsManager.sendHistory.isEmpty)
             }
         }
     }

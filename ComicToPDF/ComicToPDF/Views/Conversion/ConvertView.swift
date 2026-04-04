@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @StateObject private var viewModel = ConversionViewModel()
     let pdf: ConvertedPDF
 
@@ -11,7 +12,7 @@ struct ConvertView: View {
             Section {
                 HStack { Text("File Name"); Spacer(); Text(pdf.name).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle) }
                 HStack { Text("File Size"); Spacer(); Text(pdf.formattedSize).foregroundColor(.secondary) }
-                Picker("Auto-Split", selection: $conversionManager.conversionSettings.splitMode) {
+                Picker("Auto-Split", selection: $settingsManager.conversionSettings.splitMode) {
                     ForEach(FileSizeSplitMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
                 }
                 .pickerStyle(.menu)
@@ -19,20 +20,20 @@ struct ConvertView: View {
 
             // MARK: - Output Target
             Section {
-                Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                Picker("Target Format", selection: $settingsManager.conversionSettings.outputFormat) {
                     ForEach(OutputFormat.allCases) { format in
                         Label(format.rawValue, systemImage: format.icon).tag(format)
                     }
                 }
                 .pickerStyle(.menu)
-                .onChange(of: conversionManager.conversionSettings.outputFormat) { _, newFormat in
+                .onChange(of: settingsManager.conversionSettings.outputFormat) { _, newFormat in
                     if newFormat != .epub {
                         viewModel.selectedPipeline = .standard
-                        viewModel.applyPipeline(.standard, to: &conversionManager.conversionSettings)
+                        viewModel.applyPipeline(.standard, to: &settingsManager.conversionSettings)
                     }
                 }
                 
-                Picker("Image Quality", selection: $conversionManager.conversionSettings.compressionQuality) {
+                Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                     ForEach(CompressionPreset.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.menu)
@@ -40,20 +41,20 @@ struct ConvertView: View {
             
             // MARK: - Hardware Optimization
             Section {
-                Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
+                Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
                     ForEach(TargetDeviceProfile.allCases) { device in
                         Text(device.rawValue).tag(device)
                     }
                 }
                 .pickerStyle(.menu)
                 
-                Toggle("E-Ink High Contrast Filter", isOn: $conversionManager.conversionSettings.optimizeForDevice)
+                Toggle("E-Ink High Contrast Filter", isOn: $settingsManager.conversionSettings.optimizeForDevice)
             } header: { Text("Hardware Optimization") } footer: {
                 Text("Select your specific e-reader to perfectly scale images and prevent device lag. Enable the high contrast filter to maximize readability on grayscale e-ink displays.")
             }
 
             // MARK: - Export Pipeline
-            if conversionManager.conversionSettings.outputFormat == .epub {
+            if settingsManager.conversionSettings.outputFormat == .epub {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("EPUB Export Mode")
@@ -62,11 +63,11 @@ struct ConvertView: View {
                             .foregroundColor(.primary)
 
                         ForEach(OutputPipeline.allCases) { pipeline in
-                            let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: conversionManager.conversionSettings.outputFormat)
+                            let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: settingsManager.conversionSettings.outputFormat)
                             Button(action: {
                                 if !isDisabled {
                                     viewModel.selectedPipeline = pipeline
-                                    viewModel.applyPipeline(pipeline, to: &conversionManager.conversionSettings)
+                                    viewModel.applyPipeline(pipeline, to: &settingsManager.conversionSettings)
                                 }
                             }) {
                                 PipelineCardView(
@@ -74,7 +75,7 @@ struct ConvertView: View {
                                     isDisabled: isDisabled,
                                     isSelected: viewModel.selectedPipeline == pipeline,
                                     viewModel: viewModel,
-                                    currentFormat: conversionManager.conversionSettings.outputFormat
+                                    currentFormat: settingsManager.conversionSettings.outputFormat
                                 )
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -119,7 +120,7 @@ struct ConvertView: View {
             Section {
                 Button(action: {
                     Task {
-                        viewModel.applyPipeline(viewModel.selectedPipeline, to: &conversionManager.conversionSettings)
+                        viewModel.applyPipeline(viewModel.selectedPipeline, to: &settingsManager.conversionSettings)
                         await conversionManager.convertComic(pdf, mangaMode: viewModel.isMangaMode)
                     }
                 }) {
@@ -154,10 +155,10 @@ struct ConvertView: View {
                 } else if lowerName.contains("issue") || lowerName.contains("comic") || lowerName.contains("marvel") || lowerName.contains("dc") {
                     viewModel.isMangaMode = false
                 } else {
-                    viewModel.isMangaMode = conversionManager.conversionSettings.mangaMode
+                    viewModel.isMangaMode = settingsManager.conversionSettings.mangaMode
                 }
             }
-            viewModel.selectedPipeline = conversionManager.conversionSettings.outputPipeline
+            viewModel.selectedPipeline = settingsManager.conversionSettings.outputPipeline
         }
         .sheet(isPresented: $viewModel.showingPreview) {
             PrecisionCanvasView(pdf: pdf, pageIndex: .constant(3), totalCount: pdf.pageCount, conversionManager: conversionManager)

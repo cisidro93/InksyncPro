@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     // ✅ Observe Global Layout Setting
     @AppStorage("useSidebar") private var useSidebar = true
     
@@ -70,7 +71,7 @@ struct SettingsView: View {
     }
     
     func verifyAPIKey() {
-        let key = conversionManager.conversionSettings.comicVineAPIKey
+        let key = settingsManager.conversionSettings.comicVineAPIKey
         guard !key.isEmpty else { return }
         
         isVerifying = true
@@ -115,14 +116,14 @@ struct SettingsView: View {
                 Button(action: { dismiss() }) { Text("Done").bold() }
             }
         }
-        .onChange(of: conversionManager.conversionSettings) {
-            conversionManager.saveSettings()
+        .onChange(of: settingsManager.conversionSettings) {
+            settingsManager.save()
         }
         .alert("Save Custom Preset", isPresented: $showingPresetAlert) {
             TextField("Preset Name", text: $customPresetName)
             Button("Cancel", role: .cancel) { }
             Button("Save") {
-                let newPreset = ConversionPreset(name: customPresetName.isEmpty ? "Custom Mode" : customPresetName, settings: conversionManager.conversionSettings)
+                let newPreset = ConversionPreset(name: customPresetName.isEmpty ? "Custom Mode" : customPresetName, settings: settingsManager.conversionSettings)
                 conversionManager.savePreset(newPreset)
             }
         } message: { Text("Enter a name for your custom export configuration.") }
@@ -154,7 +155,7 @@ struct SettingsView: View {
         Section {
             HStack {
                 settingsIcon("textformat.size", color: .blue)
-                Picker("App Text Size", selection: $conversionManager.conversionSettings.textSize) {
+                Picker("App Text Size", selection: $settingsManager.conversionSettings.textSize) {
                     ForEach(AppTextSize.allCases) { size in Text(size.rawValue).tag(size) }
                 }
                 .pickerStyle(.menu)
@@ -162,7 +163,7 @@ struct SettingsView: View {
             
             HStack {
                 settingsIcon("uiwindow.split.2x1", color: .blue)
-                Picker("Editor Interface", selection: $conversionManager.conversionSettings.panelEditorMode) {
+                Picker("Editor Interface", selection: $settingsManager.conversionSettings.panelEditorMode) {
                     ForEach(PanelEditorPresentationMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
                 }
                 .pickerStyle(.menu)
@@ -170,7 +171,7 @@ struct SettingsView: View {
             
             HStack {
                 settingsIcon("book.fill", color: .purple)
-                Toggle("Default Manga Mode (RTL)", isOn: $conversionManager.conversionSettings.mangaMode)
+                Toggle("Default Manga Mode (RTL)", isOn: $settingsManager.conversionSettings.mangaMode)
             }
             
             HStack {
@@ -179,7 +180,7 @@ struct SettingsView: View {
             }
 
             VStack(alignment: .leading) {
-                Toggle("Async Background Conversions", isOn: $conversionManager.conversionSettings.enableBackgroundQueue)
+                Toggle("Async Background Conversions", isOn: $settingsManager.conversionSettings.enableBackgroundQueue)
                 Text("When enabled, exporting files will enter a background queue instead of blocking the screen, allowing you to continue using the app.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -222,14 +223,14 @@ struct SettingsView: View {
         Section {
             HStack {
                 settingsIcon("doc.zipper", color: .orange)
-                Picker("Default Output Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                Picker("Default Output Format", selection: $settingsManager.conversionSettings.outputFormat) {
                     ForEach(OutputFormat.allCases) { format in 
                         Text(format.rawValue).tag(format) 
                     }
                 }
                 .pickerStyle(.menu)
-                .onChange(of: conversionManager.conversionSettings.outputFormat) {
-                    if conversionManager.conversionSettings.outputFormat != .epub { conversionManager.conversionSettings.outputPipeline = .standard }
+                .onChange(of: settingsManager.conversionSettings.outputFormat) {
+                    if settingsManager.conversionSettings.outputFormat != .epub { settingsManager.conversionSettings.outputPipeline = .standard }
                 }
             }
             
@@ -241,26 +242,26 @@ struct SettingsView: View {
                 }
             }
             
-            if conversionManager.conversionSettings.outputFormat == .epub {
+            if settingsManager.conversionSettings.outputFormat == .epub {
                 HStack {
                     settingsIcon("rectangle.grid.1x2.fill", color: .indigo)
-                    Picker("EPUB Conversion Mode", selection: $conversionManager.conversionSettings.outputPipeline) {
+                    Picker("EPUB Conversion Mode", selection: $settingsManager.conversionSettings.outputPipeline) {
                         ForEach(OutputPipeline.allCases) { pipeline in Text(pipeline.rawValue).tag(pipeline) }
                     }
                     .pickerStyle(.menu)
                 }
                 
-                if conversionManager.conversionSettings.outputPipeline == .proPanel {
+                if settingsManager.conversionSettings.outputPipeline == .proPanel {
                     HStack {
                         settingsIcon("eye.fill", color: .indigo)
-                        Toggle("Guided View: Show Full Page First", isOn: $conversionManager.conversionSettings.epubSettings.includeFullPage)
+                        Toggle("Guided View: Show Full Page First", isOn: $settingsManager.conversionSettings.epubSettings.includeFullPage)
                     }
                 }
             }
             
             HStack {
                 settingsIcon("scissors", color: .orange)
-                Picker("Auto Split Oversized Files", selection: $conversionManager.conversionSettings.splitMode) {
+                Picker("Auto Split Oversized Files", selection: $settingsManager.conversionSettings.splitMode) {
                     ForEach(FileSizeSplitMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
                 }
                 .pickerStyle(.menu)
@@ -268,13 +269,13 @@ struct SettingsView: View {
             
             HStack {
                 settingsIcon("kindle", color: .black)
-                Toggle("Optimize for E-Readers", isOn: $conversionManager.conversionSettings.optimizeForDevice)
+                Toggle("Optimize for E-Readers", isOn: $settingsManager.conversionSettings.optimizeForDevice)
             }
             
-            if conversionManager.conversionSettings.optimizeForDevice {
+            if settingsManager.conversionSettings.optimizeForDevice {
                 HStack {
                     settingsIcon("display", color: .gray)
-                    Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
+                    Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
                         ForEach(TargetDeviceProfile.allCases) { device in
                             Text(device.rawValue).tag(device)
                         }
@@ -285,7 +286,7 @@ struct SettingsView: View {
             
             HStack {
                 settingsIcon("list.bullet.rectangle.portrait", color: .gray)
-                Toggle("Build Table of Contents", isOn: $conversionManager.conversionSettings.epubSettings.includeTableOfContents)
+                Toggle("Build Table of Contents", isOn: $settingsManager.conversionSettings.epubSettings.includeTableOfContents)
             }
             
         } header: { Text("Export & Conversion") }
@@ -296,7 +297,7 @@ struct SettingsView: View {
         Section {
             HStack {
                 settingsIcon("books.vertical.fill", color: .purple)
-                Picker("Split Omnibus at Size", selection: $conversionManager.conversionSettings.omnibusSplitThresholdMB) {
+                Picker("Split Omnibus at Size", selection: $settingsManager.conversionSettings.omnibusSplitThresholdMB) {
                     Text("100 MB").tag(100)
                     Text("200 MB (Kindle Safe)").tag(200)
                     Text("500 MB").tag(500)
@@ -307,7 +308,7 @@ struct SettingsView: View {
             
             HStack {
                 settingsIcon("seal.fill", color: .pink)
-                Picker("Cover Badge Placement", selection: $conversionManager.conversionSettings.omnibusBadgePlacement) {
+                Picker("Cover Badge Placement", selection: $settingsManager.conversionSettings.omnibusBadgePlacement) {
                     ForEach(CoverBadgePlacement.allCases) { placement in
                         Text(placement.rawValue).tag(placement)
                     }
@@ -334,7 +335,7 @@ struct SettingsView: View {
             
             HStack {
                 settingsIcon("crop", color: .green)
-                Toggle("Smart Border Trimming", isOn: $conversionManager.conversionSettings.trimMargins)
+                Toggle("Smart Border Trimming", isOn: $settingsManager.conversionSettings.trimMargins)
             }
             
         } header: { Text("Processing Engine") }
@@ -345,33 +346,33 @@ struct SettingsView: View {
         Section {
             HStack {
                 settingsIcon("swatchpalette.fill", color: .teal)
-                Toggle("Convert to Grayscale", isOn: $conversionManager.conversionSettings.imageEnhancement.grayscale)
+                Toggle("Convert to Grayscale", isOn: $settingsManager.conversionSettings.imageEnhancement.grayscale)
             }
             HStack {
                 settingsIcon("circle.lefthalf.filled", color: .teal)
-                Toggle("Auto-Levels (Histogram Stretch)", isOn: $conversionManager.conversionSettings.imageEnhancement.autoContrast)
+                Toggle("Auto-Levels (Histogram Stretch)", isOn: $settingsManager.conversionSettings.imageEnhancement.autoContrast)
             }
             HStack {
                 settingsIcon("moon.stars.fill", color: .teal)
-                Toggle("Invert Colors (Dark Mode)", isOn: $conversionManager.conversionSettings.imageEnhancement.invertColors)
+                Toggle("Invert Colors (Dark Mode)", isOn: $settingsManager.conversionSettings.imageEnhancement.invertColors)
             }
             
-            if !conversionManager.conversionSettings.imageEnhancement.grayscale {
+            if !settingsManager.conversionSettings.imageEnhancement.grayscale {
                 VStack(alignment: .leading) {
                     Text("Brightness").font(.caption)
-                    Slider(value: $conversionManager.conversionSettings.imageEnhancement.brightness, in: -0.5...0.5)
+                    Slider(value: $settingsManager.conversionSettings.imageEnhancement.brightness, in: -0.5...0.5)
                 }
                 VStack(alignment: .leading) {
-                    HStack { Text("Sharpness (E-Ink Clarity)").font(.caption); Spacer(); Text(String(format: "%.1f", conversionManager.conversionSettings.imageEnhancement.sharpness)).font(.caption).monospacedDigit() }
-                    Slider(value: $conversionManager.conversionSettings.imageEnhancement.sharpness, in: 0.0...1.0)
+                    HStack { Text("Sharpness (E-Ink Clarity)").font(.caption); Spacer(); Text(String(format: "%.1f", settingsManager.conversionSettings.imageEnhancement.sharpness)).font(.caption).monospacedDigit() }
+                    Slider(value: $settingsManager.conversionSettings.imageEnhancement.sharpness, in: 0.0...1.0)
                 }
                 VStack(alignment: .leading) {
-                    HStack { Text("Color Vibrance (Colorsoft/Kaleido)").font(.caption); Spacer(); Text(String(format: "%.2f", conversionManager.conversionSettings.imageEnhancement.vibrance)).font(.caption).monospacedDigit() }
-                    Slider(value: $conversionManager.conversionSettings.imageEnhancement.vibrance, in: 0.0...1.0)
+                    HStack { Text("Color Vibrance (Colorsoft/Kaleido)").font(.caption); Spacer(); Text(String(format: "%.2f", settingsManager.conversionSettings.imageEnhancement.vibrance)).font(.caption).monospacedDigit() }
+                    Slider(value: $settingsManager.conversionSettings.imageEnhancement.vibrance, in: 0.0...1.0)
                 }
                 VStack(alignment: .leading) {
-                    HStack { Text("Gamma").font(.caption); Spacer(); Text(String(format: "%.1f", conversionManager.conversionSettings.imageEnhancement.gamma)).font(.caption).monospacedDigit() }
-                    Slider(value: $conversionManager.conversionSettings.imageEnhancement.gamma, in: 0.5...2.5)
+                    HStack { Text("Gamma").font(.caption); Spacer(); Text(String(format: "%.1f", settingsManager.conversionSettings.imageEnhancement.gamma)).font(.caption).monospacedDigit() }
+                    Slider(value: $settingsManager.conversionSettings.imageEnhancement.gamma, in: 0.5...2.5)
                 }
             }
         } header: { Text("Image Filters") }
@@ -380,10 +381,10 @@ struct SettingsView: View {
     @ViewBuilder
     private var aiSection: some View {
         Section {
-            if conversionManager.conversionSettings.outputFormat == .epub && conversionManager.conversionSettings.outputPipeline == .proPanel {
+            if settingsManager.conversionSettings.outputFormat == .epub && settingsManager.conversionSettings.outputPipeline == .proPanel {
                 HStack {
                     settingsIcon("viewfinder", color: .cyan)
-                    Picker("Vision Sensitivity", selection: $conversionManager.conversionSettings.epubSettings.panelDetectionMode) {
+                    Picker("Vision Sensitivity", selection: $settingsManager.conversionSettings.epubSettings.panelDetectionMode) {
                         Text("Standard Flow").tag(PanelExtractor.ExtractionMode.automatic)
                         Text("Deep Scan").tag(PanelExtractor.ExtractionMode.aggressive)
                         Text("Conservative").tag(PanelExtractor.ExtractionMode.conservative)
@@ -536,13 +537,13 @@ struct SettingsView: View {
         Section {
             HStack {
                 settingsIcon("server.rack", color: .indigo)
-                SecureField("ComicVine API Key", text: $conversionManager.conversionSettings.comicVineAPIKey)
+                SecureField("ComicVine API Key", text: $settingsManager.conversionSettings.comicVineAPIKey)
                     .textContentType(.password)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
             }
             
-            if !conversionManager.conversionSettings.comicVineAPIKey.isEmpty {
+            if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
                 Button(action: verifyAPIKey) {
                     HStack {
                         Text(verificationStatus.title)
@@ -559,7 +560,7 @@ struct SettingsView: View {
                 
             Divider()
             
-            Picker("AI Provider (Pro Mode)", selection: $conversionManager.conversionSettings.aiVendor) {
+            Picker("AI Provider (Pro Mode)", selection: $settingsManager.conversionSettings.aiVendor) {
                 ForEach(AIVendor.allCases) { vendor in
                     Text(vendor.rawValue).tag(vendor)
                 }
@@ -568,31 +569,31 @@ struct SettingsView: View {
             HStack {
                 settingsIcon("brain", color: .purple)
                 
-                switch conversionManager.conversionSettings.aiVendor {
+                switch settingsManager.conversionSettings.aiVendor {
                 case .openRouter:
-                    SecureField("OpenRouter API Key", text: $conversionManager.conversionSettings.openRouterAPIKey)
+                    SecureField("OpenRouter API Key", text: $settingsManager.conversionSettings.openRouterAPIKey)
                         .textContentType(.password)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 case .openAI:
-                    SecureField("OpenAI API Key", text: $conversionManager.conversionSettings.openAIAPIKey)
+                    SecureField("OpenAI API Key", text: $settingsManager.conversionSettings.openAIAPIKey)
                         .textContentType(.password)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 case .anthropic:
-                    SecureField("Anthropic API Key", text: $conversionManager.conversionSettings.anthropicAPIKey)
+                    SecureField("Anthropic API Key", text: $settingsManager.conversionSettings.anthropicAPIKey)
                         .textContentType(.password)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 case .gemini:
-                    SecureField("Gemini API Key", text: $conversionManager.conversionSettings.geminiAPIKey)
+                    SecureField("Gemini API Key", text: $settingsManager.conversionSettings.geminiAPIKey)
                         .textContentType(.password)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 }
             }
             
-            if conversionManager.conversionSettings.aiVendor == .openRouter {
+            if settingsManager.conversionSettings.aiVendor == .openRouter {
                 Text("OpenRouter is a unified gateway that lets you access top models like Claude 3.5, GPT-4o, and Gemini 1.5 using a single account/balance without managing separate provider keys. InksyncPro's native integration routes to Google Gemini via OpenRouter for high-speed reliable JSON streaming.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -600,13 +601,13 @@ struct SettingsView: View {
                 
                 Link("Get OpenRouter Key", destination: URL(string: "https://openrouter.ai/keys")!)
                     .font(.caption).foregroundColor(.blue)
-            } else if conversionManager.conversionSettings.aiVendor == .openAI {
+            } else if settingsManager.conversionSettings.aiVendor == .openAI {
                 Link("Get OpenAI Key", destination: URL(string: "https://platform.openai.com/api-keys")!)
                     .font(.caption).foregroundColor(.blue)
-            } else if conversionManager.conversionSettings.aiVendor == .anthropic {
+            } else if settingsManager.conversionSettings.aiVendor == .anthropic {
                 Link("Get Anthropic Key", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
                     .font(.caption).foregroundColor(.blue)
-            } else if conversionManager.conversionSettings.aiVendor == .gemini {
+            } else if settingsManager.conversionSettings.aiVendor == .gemini {
                 Link("Get Google Gemini Key", destination: URL(string: "https://aistudio.google.com/app/apikey")!)
                     .font(.caption).foregroundColor(.blue)
             }
@@ -638,7 +639,7 @@ struct SettingsView: View {
                 }
             }
             
-            Toggle(isOn: $conversionManager.conversionSettings.showEditorDebug) {
+            Toggle(isOn: $settingsManager.conversionSettings.showEditorDebug) {
                 HStack {
                     settingsIcon("ladybug.fill", color: .red)
                     Text("Enable Developer Tools")

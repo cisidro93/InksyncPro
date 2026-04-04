@@ -3,6 +3,7 @@ import PencilKit
 
 struct PlannerEditorView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @Binding var project: PlannerProject
     @State private var selectedPageIndex: Int = 0
     @State private var canvasView = PKCanvasView()
@@ -285,13 +286,13 @@ struct PlannerEditorView: View {
     }
     
     private func generateAILayout(prompt: String) {
-        let vendor = conversionManager.conversionSettings.aiVendor
+        let vendor = settingsManager.conversionSettings.aiVendor
         let apiKey: String
         switch vendor {
-        case .openRouter: apiKey = conversionManager.conversionSettings.openRouterAPIKey
-        case .openAI: apiKey = conversionManager.conversionSettings.openAIAPIKey
-        case .anthropic: apiKey = conversionManager.conversionSettings.anthropicAPIKey
-        case .gemini: apiKey = conversionManager.conversionSettings.geminiAPIKey
+        case .openRouter: apiKey = settingsManager.conversionSettings.openRouterAPIKey
+        case .openAI: apiKey = settingsManager.conversionSettings.openAIAPIKey
+        case .anthropic: apiKey = settingsManager.conversionSettings.anthropicAPIKey
+        case .gemini: apiKey = settingsManager.conversionSettings.geminiAPIKey
         }
         
         guard !apiKey.isEmpty else {

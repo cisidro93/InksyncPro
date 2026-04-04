@@ -103,6 +103,7 @@ private struct GoQuickMergeSheet: View {
 // MARK: - GoConvertView
 struct GoConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @ObservedObject private var queueManager = ConversionQueueManager.shared
     
     @State private var selectedFiles: [URL] = []
@@ -181,7 +182,7 @@ struct GoConvertView: View {
                     
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Target Device").font(.headline)
-                        Picker("Target Device", selection: $conversionManager.conversionSettings.targetDeviceProfile) {
+                        Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
                             ForEach(TargetDeviceProfile.allCases) { profile in Text(profile.rawValue).tag(profile) }
                         }
                         .pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
@@ -400,7 +401,7 @@ struct GoConvertView: View {
     
     private func startGoConversion() {
         guard !selectedFiles.isEmpty else { return }
-        var settingsForGo = conversionManager.conversionSettings
+        var settingsForGo = settingsManager.conversionSettings
         settingsForGo.mangaMode = isTargetingManga
         settingsForGo.optimizeForDevice = true
         settingsForGo.compressionQuality = compressionQuality

@@ -23,7 +23,7 @@ class ExportOrchestrator {
             }
         }
         
-        if manager.conversionSettings.outputFormat == .pdf {
+        if AppSettingsManager.shared.conversionSettings.outputFormat == .pdf {
             let exportName = pdf.name.replacingOccurrences(of: ".cbz", with: ".pdf")
             let exportURL = tempDir.appendingPathComponent(exportName)
             
@@ -35,7 +35,7 @@ class ExportOrchestrator {
             
             do {
                 let imageURLs = try await EditorSessionManager.shared.extractImageURLs(from: pdf.url)
-                try PDFGenerator.generate(from: imageURLs, to: exportURL, mangaMode: manager.conversionSettings.mangaMode, chapters: pdf.chapters, settings: manager.conversionSettings) { progress in
+                try PDFGenerator.generate(from: imageURLs, to: exportURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { progress in
                     Task { @MainActor in TaskEngine.shared.processingStatus = "Processing \(Int(progress * 100))%" }
                 }
                 return exportURL
@@ -61,14 +61,14 @@ class ExportOrchestrator {
             try fileManager.copyItem(at: pdf.url, to: exportURL)
             
             var panelsToInject = [Int: [PanelExtractor.Panel]]()
-            if manager.conversionSettings.isGuidedView {
+            if AppSettingsManager.shared.conversionSettings.isGuidedView {
                 panelsToInject = await manager.getCombinedManifest(for: pdf)
                 let files = try await EditorSessionManager.shared.extractImageURLs(from: pdf.url)
                 
                 for (index, fileURL) in files.enumerated() {
-                    if panelsToInject[index] == nil && manager.conversionSettings.enablePanelSplit {
+                    if panelsToInject[index] == nil && AppSettingsManager.shared.conversionSettings.enablePanelSplit {
                          if let image = UIImage(contentsOfFile: fileURL.path) {
-                            let detected = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: manager.conversionSettings.mangaMode)
+                            let detected = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode)
                             if !detected.isEmpty {
                                 let editedRects = await withCheckedContinuation { (continuation: CheckedContinuation<[CGRect], Never>) in
                                     Task { @MainActor in
@@ -111,7 +111,7 @@ class ExportOrchestrator {
             let converter = CBZToEPUBConverter()
             let outputURL = try await converter.buildKFXPackage(
                 sourceURL: pdf.url,
-                settings: manager.conversionSettings,
+                settings: AppSettingsManager.shared.conversionSettings,
                 metadata: pdf.metadata,
                 progress: { progress in
                     Task { @MainActor in TaskEngine.shared.conversionProgress = progress }
@@ -146,7 +146,7 @@ class ExportOrchestrator {
             }
         }
         
-        if manager.conversionSettings.outputFormat == .pdf {
+        if AppSettingsManager.shared.conversionSettings.outputFormat == .pdf {
             TaskEngine.shared.isConverting = true; TaskEngine.shared.processingStatus = "Generating PDF..."
             defer { TaskEngine.shared.isConverting = false; Task { @MainActor in TaskEngine.shared.processingStatus = "" } }
             
@@ -156,7 +156,7 @@ class ExportOrchestrator {
                 try? fileManager.removeItem(at: pdfURL)
                 
                 let imageURLs = try await EditorSessionManager.shared.extractImageURLs(from: pdf.url)
-                try PDFGenerator.generate(from: imageURLs, to: pdfURL, mangaMode: manager.conversionSettings.mangaMode, chapters: pdf.chapters, settings: manager.conversionSettings) { progress in
+                try PDFGenerator.generate(from: imageURLs, to: pdfURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { progress in
                     Task { @MainActor in TaskEngine.shared.processingStatus = "Processing \(Int(progress * 100))%" }
                 }
                 return pdfURL
@@ -167,7 +167,7 @@ class ExportOrchestrator {
         
         do {
             manager.saveLibrary()
-            let finalEPUB = try await ConversionEngine.shared.process(url: pdf.url, settings: manager.conversionSettings)
+            let finalEPUB = try await ConversionEngine.shared.process(url: pdf.url, settings: AppSettingsManager.shared.conversionSettings)
             let finalName = finalEPUB.lastPathComponent
             let destURL = exportDir.appendingPathComponent(finalName)
             if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }

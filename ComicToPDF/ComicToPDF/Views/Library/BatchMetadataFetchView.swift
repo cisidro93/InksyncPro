@@ -45,8 +45,8 @@ class BatchMetadataFetcher: ObservableObject {
     
     func startExecution() async {
         currentPhase = .executing
-        let apiKey = conversionManager.conversionSettings.comicVineAPIKey
-        let deepFetch = conversionManager.conversionSettings.deepFetchComicVineIssues
+        let apiKey = settingsManager.conversionSettings.comicVineAPIKey
+        let deepFetch = settingsManager.conversionSettings.deepFetchComicVineIssues
         
         // Cache to prevent repetitive API calls for volume searches
         var volumeCache: [String: ComicVineVolume] = [:]
@@ -204,6 +204,7 @@ struct BatchMetadataFetchView: View {
     let pdfs: [ConvertedPDF]
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     @StateObject private var fetcher: BatchMetadataFetcher
     @State private var showingErrorSummary = false

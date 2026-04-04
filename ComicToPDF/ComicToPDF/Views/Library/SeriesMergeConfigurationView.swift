@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SeriesMergeConfigurationView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     // Initial configuration
     let sourceFiles: [ConvertedPDF]
@@ -34,13 +35,13 @@ struct SeriesMergeConfigurationView: View {
                             TextField("New Volume Name (e.g., Volume 1)", text: $outputName)
                             Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
                             
-                            Picker("Image Quality", selection: $conversionManager.conversionSettings.compressionQuality) {
+                            Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases, id: \.self) { preset in
                                     Text(preset.rawValue).tag(preset)
                                 }
                             }
                             
-                            Picker("Smart File Splitting", selection: $conversionManager.conversionSettings.splitMode) {
+                            Picker("Smart File Splitting", selection: $settingsManager.conversionSettings.splitMode) {
                                 ForEach(FileSizeSplitMode.allCases) { mode in
                                     Text(mode.rawValue).tag(mode)
                                 }

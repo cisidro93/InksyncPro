@@ -3,6 +3,7 @@ import SwiftUI
 struct MetadataSearchSheet: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     let pdf: ConvertedPDF
     // Service is now a singleton
@@ -38,7 +39,7 @@ struct MetadataSearchSheet: View {
                 .padding()
                 
                 // API Key Warning (Only pertinent to ComicVine)
-                if !isBookMode && conversionManager.conversionSettings.comicVineAPIKey.isEmpty {
+                if !isBookMode && settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
                     Text("⚠️ Please set ComicVine API Key in Settings")
                         .font(.caption)
                         .foregroundColor(.red)
@@ -146,7 +147,7 @@ struct MetadataSearchSheet: View {
             return
         }
         
-        let key = conversionManager.conversionSettings.comicVineAPIKey
+        let key = settingsManager.conversionSettings.comicVineAPIKey
         guard !key.isEmpty else {
             isLoading = false
             return
@@ -206,7 +207,7 @@ struct MetadataSearchSheet: View {
         isLoading = true
         let originalSeries = pdf.metadata.series // Capture original to identify siblings
         Task {
-            let key = conversionManager.conversionSettings.comicVineAPIKey
+            let key = settingsManager.conversionSettings.comicVineAPIKey
             do {
                 // Try to guess issue number
                 if let issueNum = extractIssueNumber(from: pdf.name) {
@@ -300,7 +301,7 @@ struct MetadataSearchSheet: View {
         }
         guard !relatedFiles.isEmpty else { return }
         
-        let apiKey = conversionManager.conversionSettings.comicVineAPIKey
+        let apiKey = settingsManager.conversionSettings.comicVineAPIKey
         let managerInfo = conversionManager // Explicit capture for the Task
         
         Task.detached(priority: .background) {

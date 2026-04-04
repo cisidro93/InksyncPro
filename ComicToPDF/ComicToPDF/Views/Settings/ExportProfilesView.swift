@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ExportProfilesView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @State private var showingAddPreset = false
     @State private var newPresetName = ""
     @State private var newPresetSettings = ConversionSettings()
@@ -9,13 +10,13 @@ struct ExportProfilesView: View {
     var body: some View {
         List {
             Section(header: Text("Saved Profiles")) {
-                if conversionManager.conversionPresets.isEmpty {
+                if settingsManager.conversionPresets.isEmpty {
                     Text("No custom profiles saved yet. Tap + to create one based on your current settings.")
                         .foregroundColor(.secondary)
                         .font(.callout)
                         .padding(.vertical, 8)
                 } else {
-                    ForEach(conversionManager.conversionPresets) { preset in
+                    ForEach(settingsManager.conversionPresets) { preset in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(preset.name)
                                 .font(.headline)
@@ -34,7 +35,7 @@ struct ExportProfilesView: View {
                         .padding(.vertical, 4)
                     }
                     .onDelete { indexSet in
-                        conversionManager.conversionPresets.remove(atOffsets: indexSet)
+                        settingsManager.conversionPresets.remove(atOffsets: indexSet)
                         conversionManager.saveLibrary()
                     }
                 }
@@ -43,7 +44,7 @@ struct ExportProfilesView: View {
             Section {
                 Button(action: {
                     newPresetName = ""
-                    newPresetSettings = conversionManager.conversionSettings // Default to current global settings
+                    newPresetSettings = settingsManager.conversionSettings // Default to current global settings
                     showingAddPreset = true
                 }) {
                     Label("Create New Profile", systemImage: "plus.circle.fill")
@@ -92,7 +93,7 @@ struct ExportProfilesView: View {
                         Button("Save") {
                             let finalName = newPresetName.trimmingCharacters(in: .whitespaces).isEmpty ? "Custom Profile" : newPresetName
                             let preset = ConversionPreset(name: finalName, settings: newPresetSettings)
-                            conversionManager.conversionPresets.append(preset)
+                            settingsManager.conversionPresets.append(preset)
                             conversionManager.saveLibrary()
                             showingAddPreset = false
                         }

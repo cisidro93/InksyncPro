@@ -3,8 +3,7 @@ import ZIPFoundation
 import SwiftUI
 
 /// A dedicated Orchestrator that natively extracts and inherits the incredibly heavy background operations required to parse multi-gigabyte ZIP/CBZ streams and PDF pages cleanly without tying up the Application's main Presentation state object.
-@MainActor
-class ImportOrchestrator {
+actor ImportOrchestrator {
     static let shared = ImportOrchestrator()
     private init() {}
     
@@ -65,10 +64,10 @@ class ImportOrchestrator {
             do {
                 let bookmarkData = try folderURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
                 await MainActor.run {
-                    if !manager.watchedFolders.contains(where: { $0.bookmarkData == bookmarkData }) {
+                    if !AppSettingsManager.shared.watchedFolders.contains(where: { $0.bookmarkData == bookmarkData }) {
                         let watched = ConversionManager.WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
-                        manager.watchedFolders.append(watched)
-                        manager.saveLibrary()
+                        AppSettingsManager.shared.watchedFolders.append(watched)
+                        AppSettingsManager.shared.save()
                     }
                 }
             } catch {
@@ -386,7 +385,7 @@ class ImportOrchestrator {
     }
     
     func syncWatchedFolders(manager: ConversionManager) async {
-        let localFolders = await MainActor.run { manager.watchedFolders }
+        let localFolders = await MainActor.run { AppSettingsManager.shared.watchedFolders }
         guard !localFolders.isEmpty else { return }
         
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Background Folder Sync..." }
@@ -499,8 +498,8 @@ class ImportOrchestrator {
             if !staleBookmarkIndices.isEmpty {
                 let finalStale = staleBookmarkIndices
                 await MainActor.run {
-                    for i in finalStale.sorted(by: >) { manager.watchedFolders.remove(at: i) }
-                    manager.saveLibrary()
+                    for i in finalStale.sorted(by: >) { AppSettingsManager.shared.watchedFolders.remove(at: i) }
+                    AppSettingsManager.shared.save()
                 }
             }
             return newlyImported
@@ -534,7 +533,7 @@ class ImportOrchestrator {
         if mangaKeywords.contains(where: { filename.contains($0) }) { return .manga }
         
         switch ext {
-        case "cbz", "zip": return manager.conversionSettings.mangaMode ? .manga : .comic
+        case "cbz", "zip": return AppSettingsManager.shared.conversionSettings.mangaMode ? .manga : .comic
         case "pdf":
             let importer = PDFImporter()
             return importer.hasTextContent(url: url) ? .book : .hybrid
@@ -576,7 +575,7 @@ class ImportOrchestrator {
             defer { try? FileManager.default.removeItem(at: tempPDFURL) }
             
             let importer = PDFImporter()
-            let settings = manager.conversionSettings
+            let settings = AppSettingsManager.shared.conversionSettings
             
             let (extractedCount, newCoverData) = try await Task.detached(priority: .userInitiated) { () -> (Int, Data?) in
                 let pageCount = importer.getPageCount(url: tempPDFURL)

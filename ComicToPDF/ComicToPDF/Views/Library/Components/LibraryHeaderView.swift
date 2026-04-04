@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LibraryHeaderView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     // Bindings to parent view
     @Binding var searchText: String
@@ -111,18 +112,18 @@ struct LibraryHeaderView: View {
                         // 1. Target Selector Pill (Fixed & Prominent)
                         Menu {
                             Section("Standard Formats") {
-                                Picker("Target Format", selection: $conversionManager.conversionSettings.outputFormat) {
+                                Picker("Target Format", selection: $settingsManager.conversionSettings.outputFormat) {
                                     ForEach(OutputFormat.allCases) { format in
                                         Label(format.rawValue, systemImage: format.icon).tag(format)
                                     }
                                 }
                             }
                             
-                            if !conversionManager.conversionPresets.isEmpty {
+                            if !settingsManager.conversionPresets.isEmpty {
                                 Section("Custom Profiles") {
-                                    ForEach(conversionManager.conversionPresets) { preset in
+                                    ForEach(settingsManager.conversionPresets) { preset in
                                         Button {
-                                            conversionManager.conversionSettings = preset.settings
+                                            settingsManager.conversionSettings = preset.settings
                                         } label: {
                                             Label(preset.name, systemImage: "list.clipboard.fill")
                                         }
@@ -140,7 +141,7 @@ struct LibraryHeaderView: View {
                                 Rectangle().fill(Theme.textSecondary.opacity(0.3)).frame(width: 1, height: 12)
                                 
                                 // Value
-                                Text(conversionManager.conversionSettings.outputFormat.rawValue)
+                                Text(settingsManager.conversionSettings.outputFormat.rawValue)
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundColor(Theme.orange)
                                     .fixedSize() // Prevent truncation
@@ -252,7 +253,7 @@ struct LibraryHeaderView: View {
                     Rectangle().fill(Theme.text.opacity(0.1)).frame(width: 1, height: 24)
                     
                     Group {
-                        ActionPill(title: conversionManager.isVaultUnlocked ? "Vault Unlocked" : "Vault", icon: conversionManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: conversionManager.isVaultUnlocked ? Theme.red : Theme.textSecondary) { 
+                        ActionPill(title: settingsManager.isVaultUnlocked ? "Vault Unlocked" : "Vault", icon: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: settingsManager.isVaultUnlocked ? Theme.red : Theme.textSecondary) { 
                             onVaultToggle() 
                         }
                         ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }

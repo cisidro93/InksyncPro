@@ -9,8 +9,8 @@ final class ConversionOrchestrator {
         await MainActor.run {
             manager.isConverting = true; manager.conversionProgress = 0.0; manager.processingStatus = "Converting..."; manager.statusMessage = "Starting..."
         }
-        let isMangaMode = await MainActor.run { mangaMode ?? pdf.metadata.isManga ?? manager.conversionSettings.mangaMode }
-        var jobSettings = await MainActor.run { manager.conversionSettings }
+        let isMangaMode = await MainActor.run { mangaMode ?? pdf.metadata.isManga ?? AppSettingsManager.shared.conversionSettings.mangaMode }
+        var jobSettings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
         jobSettings.mangaMode = isMangaMode
         
         if pdf.contentType == .book {
@@ -108,7 +108,7 @@ final class ConversionOrchestrator {
             
             await MainActor.run { manager.processingStatus = "Converting \(currentNum) of \(total)"; manager.statusMessage = "Processing \(pdf.name)..."; manager.conversionProgress = 0.0 }
             
-            var jobSettings = await MainActor.run { manager.conversionSettings }
+            var jobSettings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
             if pdf.contentType == .book {
                 jobSettings.mangaMode = false; jobSettings.enablePanelSplit = false; jobSettings.outputPipeline = .standard; jobSettings.splitWebtoon = false
             }
@@ -187,7 +187,7 @@ final class ConversionOrchestrator {
         
         let fileManager = FileManager.default
         let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        var jobSettings = await MainActor.run { manager.conversionSettings }
+        var jobSettings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
         jobSettings.mangaMode = mangaMode
         
         do {

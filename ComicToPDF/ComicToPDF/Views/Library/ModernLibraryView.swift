@@ -5,6 +5,7 @@ import SwiftData
 
 struct ModernLibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @StateObject private var viewModel = LibraryViewModel()
     
     @Query(sort: \SDConvertedPDF.lastModified, order: .reverse) private var swiftDataPDFs: [SDConvertedPDF]
@@ -55,7 +56,7 @@ struct ModernLibraryView: View {
     // Ã¢Å“â€¦ NEW: SwiftData Native Resolvers
     private var nativeVisiblePDFs: [ConvertedPDF] {
         let mapped = swiftDataPDFs.map { $0.toDTO() }
-        return conversionManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
+        return settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
     }
     
     // ✅ NEW: Extracted to relieve compiler timeout
@@ -212,12 +213,12 @@ struct ModernLibraryView: View {
     }
 
     private func handleVaultToggle() {
-        if conversionManager.isVaultUnlocked {
-            withAnimation { conversionManager.isVaultUnlocked = false }
+        if settingsManager.isVaultUnlocked {
+            withAnimation { settingsManager.isVaultUnlocked = false }
         } else {
             Task {
                 if await SecurityManager.shared.authenticate() {
-                    await MainActor.run { withAnimation { conversionManager.isVaultUnlocked = true } }
+                    await MainActor.run { withAnimation { settingsManager.isVaultUnlocked = true } }
                 }
             }
         }

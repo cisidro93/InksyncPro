@@ -11,12 +11,7 @@ class LibraryPersistenceManager {
     struct LibraryIndex: Codable {
         let files: [ConvertedPDF]
         let collections: [PDFCollection]
-        let settings: ConversionSettings
-        let history: [ConvertedPDF]
-        let devices: [KindleDevice]
         var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]]? = nil
-        var watchedFolders: [ConversionManager.WatchedFolder]? = nil
-        var presets: [ConversionPreset]? = nil
         var registeredDevices: [RegisteredDevice]? = nil
         var primaryDeviceID: UUID? = nil
     }
@@ -27,12 +22,7 @@ class LibraryPersistenceManager {
         let index = LibraryIndex(
             files: [], // ✅ Deprecated: Unshackled from JSON Monolith (Handled by SwiftData Native)
             collections: [], // ✅ Deprecated: Migrated to SDPDFCollection
-            settings: manager.conversionSettings,
-            history: manager.sendHistory,
-            devices: manager.kindleDevices,
             panelOverrides: WorkspaceSessionManager.shared.panelOverrides,
-            watchedFolders: manager.watchedFolders,
-            presets: manager.conversionPresets,
             registeredDevices: DeviceRegistry.shared.registeredDevices,
             primaryDeviceID: DeviceRegistry.shared.primaryDeviceID
         )
@@ -83,12 +73,7 @@ class LibraryPersistenceManager {
                        let data = try? Data(contentsOf: url),
                        let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) {
                         
-                        manager.conversionSettings = index.settings
-                        manager.sendHistory = index.history
-                        manager.kindleDevices = index.devices
                         WorkspaceSessionManager.shared.panelOverrides = index.panelOverrides ?? [:]
-                        manager.watchedFolders = index.watchedFolders ?? []
-                        manager.conversionPresets = index.presets ?? []
                         DeviceRegistry.shared.registeredDevices = index.registeredDevices ?? []
                         DeviceRegistry.shared.primaryDeviceID = index.primaryDeviceID
                     }

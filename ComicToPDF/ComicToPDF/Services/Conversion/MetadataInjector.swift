@@ -174,7 +174,7 @@ final class MetadataInjector {
                     }
                     
                     // B. Insert New Tag (CONDITIONAL - Only for Guided View)
-                    let settings = await MainActor.run { manager.conversionSettings }
+                    let settings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
                     if settings.isGuidedView {
                         if let range = opfString.range(of: "</metadata>") {
                              let metaTag = "\n    <meta name=\"inksync-comicinfo\" content=\"\(base64)\"/>"
