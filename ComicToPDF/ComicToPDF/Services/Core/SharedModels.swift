@@ -146,6 +146,9 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         hasher.combine(isFavorite)
         hasher.combine(pageCount)
         hasher.combine(fileSize)
+        hasher.combine(isPrivate)
+        hasher.combine(metadata.series)
+        hasher.combine(lastReadPage)
     }
 
     static func == (lhs: ConvertedPDF, rhs: ConvertedPDF) -> Bool {
@@ -154,7 +157,10 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
                lhs.name == rhs.name &&
                lhs.isFavorite == rhs.isFavorite &&
                lhs.pageCount == rhs.pageCount &&
-               lhs.fileSize == rhs.fileSize 
+               lhs.fileSize == rhs.fileSize &&
+               lhs.isPrivate == rhs.isPrivate &&
+               lhs.metadata.series == rhs.metadata.series &&
+               lhs.lastReadPage == rhs.lastReadPage
     }
 }
 

@@ -460,7 +460,7 @@ struct ReaderView: View {
                 .ignoresSafeArea()
             
             HStack(spacing: 0) {
-                Color.black.opacity(0.001)
+                Color.clear.contentShape(Rectangle())
                     .frame(width: max(30, geo.size.width * 0.08))
                     .gesture(
                         DragGesture(minimumDistance: 15)
@@ -473,7 +473,7 @@ struct ReaderView: View {
                 
                 Spacer()
                 
-                Color.black.opacity(0.001)
+                Color.clear.contentShape(Rectangle())
                     .frame(width: max(30, geo.size.width * 0.08))
                     .gesture(
                         DragGesture(minimumDistance: 15)
@@ -603,9 +603,11 @@ struct PDFKitView: UIViewRepresentable {
             object: pdfView
         )
 
-        Task.detached(priority: .userInitiated) {
+        context.coordinator.loadTask = Task.detached(priority: .userInitiated) {
             if let document = PDFDocument(url: url) {
+                if Task.isCancelled { return }
                 await MainActor.run {
+                    if Task.isCancelled { return }
                     pdfView.document = document
                     self.totalPages = Array(repeating: url, count: document.pageCount)
                 }
@@ -633,12 +635,14 @@ struct PDFKitView: UIViewRepresentable {
     // Explicitly destroys the CGPDFDocument bridge when SwiftUI collapses the representable,
     // permanently ending the dreaded iPadOS backend Memory leak.
     static func dismantleUIView(_ uiView: PDFView, coordinator: Coordinator) {
+        coordinator.loadTask?.cancel()
         uiView.document = nil
         uiView.removeFromSuperview()
     }
 
     class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var parent: PDFKitView
+        var loadTask: Task<Void, Never>?
         
         init(_ parent: PDFKitView) { self.parent = parent }
         
@@ -726,13 +730,7 @@ struct ReaderScrubber: View {
             // Floating Thumbnail Preview
             if let activeIndex = dragIndex, activeIndex >= 0 && activeIndex < pages.count {
                 VStack(spacing: 4) {
-                    AsyncImage(url: pages[activeIndex]) { phase in
-                        if let image = phase.image {
-                            image.resizable().aspectRatio(contentMode: .fit)
-                        } else {
-                            Color.black.opacity(0.8)
-                        }
-                    }
+                    LocalFileImage(url: pages[activeIndex])
                     .frame(width: 90, height: 130)
                     .cornerRadius(8)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))

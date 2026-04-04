@@ -46,10 +46,10 @@ struct ModernLibraryView: View {
     private var allowedImportTypes: [UTType] {
         return [
             .folder, .pdf, .zip, .epub,
-            UTType(filenameExtension: "cbz")!,
-            UTType(filenameExtension: "cbr")!,
-            UTType(filenameExtension: "cb7")!
-        ]
+            UTType(filenameExtension: "cbz"),
+            UTType(filenameExtension: "cbr"),
+            UTType(filenameExtension: "cb7")
+        ].compactMap { $0 }
     }
     
     // Ã¢Å“â€¦ NEW: SwiftData Native Resolvers

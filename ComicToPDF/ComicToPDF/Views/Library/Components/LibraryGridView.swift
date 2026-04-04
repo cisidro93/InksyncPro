@@ -149,7 +149,8 @@ struct LibraryGridView: View {
                 case .series(let group): title = group.title
                 case .single(let pdf): title = pdf.name
                 }
-                return title.first?.isNumber == true || !title.first!.isLetter
+                guard let firstChar = title.first else { return false }
+                return firstChar.isNumber || !firstChar.isLetter
             }?.id
         }
         

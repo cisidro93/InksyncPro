@@ -89,18 +89,31 @@ class CBZToEPUBConverter {
                 var imagesToProcess: [UIImage] = []
                 var isSliced = false
                 
-                if settings.splitWebtoon, let rawImage = UIImage(contentsOfFile: srcURL.path) {
-                    let slices = ImageProcessor.sliceWebtoon(image: rawImage, targetAspectRatio: 1.33)
-                    if slices.count > 1 {
-                        imagesToProcess = slices
-                        isSliced = true
+                // Retrieve native dimensions without decompressing the UIImage to save RAM
+                var width: CGFloat = 0
+                var height: CGFloat = 0
+                if let source = CGImageSourceCreateWithURL(srcURL as CFURL, nil),
+                   let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                    width = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+                    height = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                }
+                
+                if settings.splitWebtoon && height > width * 1.5 {
+                    if let rawImage = UIImage(contentsOfFile: srcURL.path) {
+                        let slices = ImageProcessor.sliceWebtoon(image: rawImage, targetAspectRatio: 1.33)
+                        if slices.count > 1 {
+                            imagesToProcess = slices
+                            isSliced = true
                         }
-                } else if let rawImage = UIImage(contentsOfFile: srcURL.path), rawImage.size.width > rawImage.size.height * 1.1 {
+                    }
+                } else if width > height * 1.1 {
                     // Automatically slice massive double-page spreads into two separate portraits for Kindle!
-                    let slices = ImageProcessor.sliceSpread(image: rawImage, isManga: settings.mangaMode)
-                    if slices.count > 1 {
-                        imagesToProcess = slices
-                        isSliced = true
+                    if let rawImage = UIImage(contentsOfFile: srcURL.path) {
+                        let slices = ImageProcessor.sliceSpread(image: rawImage, isManga: settings.mangaMode)
+                        if slices.count > 1 {
+                            imagesToProcess = slices
+                            isSliced = true
+                        }
                     }
                 }
                 
@@ -424,19 +437,39 @@ class CBZToEPUBConverter {
         let generatedAt = ISO8601DateFormatter().string(from: Date())
         let sourceFilename = sourceURL.deletingPathExtension().lastPathComponent
         
-        let metadataJSON = """
-        {
-          "title": "\(titleStr.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))",
-          "author": "\(authorStr.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))",
-          "reading_direction": "\(directionStr)",
-          "page_count": \(globalImageIndex),
-          "source_filename": "\(sourceFilename.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))",
-          "inksync_version": "1.0",
-          "generated_at": "\(generatedAt)"
+        struct InksyncMetadata: Codable {
+            let title: String
+            let author: String
+            let readingDirection: String
+            let pageCount: Int
+            let sourceFilename: String
+            let inksyncVersion: String
+            let generatedAt: String
+            
+            enum CodingKeys: String, CodingKey {
+                case title, author
+                case readingDirection = "reading_direction"
+                case pageCount = "page_count"
+                case sourceFilename = "source_filename"
+                case inksyncVersion = "inksync_version"
+                case generatedAt = "generated_at"
+            }
         }
-        """
         
-        try metadataJSON.write(to: packageDir.appendingPathComponent("metadata.json"), atomically: true, encoding: .utf8)
+        let metaObj = InksyncMetadata(
+            title: titleStr,
+            author: authorStr,
+            readingDirection: directionStr,
+            pageCount: globalImageIndex,
+            sourceFilename: sourceFilename,
+            inksyncVersion: "1.0",
+            generatedAt: generatedAt
+        )
+        
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let metadataJSONData = try encoder.encode(metaObj)
+        try metadataJSONData.write(to: packageDir.appendingPathComponent("metadata.json"), options: .atomic)
         try KFXScriptProvider.convertShContent.write(to: packageDir.appendingPathComponent("convert.sh"), atomically: true, encoding: .utf8)
         try KFXScriptProvider.convertBatContent.write(to: packageDir.appendingPathComponent("convert.bat"), atomically: true, encoding: .utf8)
         try KFXScriptProvider.buildEpubPyContent.write(to: packageDir.appendingPathComponent("build_epub.py"), atomically: true, encoding: .utf8)

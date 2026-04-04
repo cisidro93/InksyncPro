@@ -829,16 +829,8 @@ class WiFiServer: ObservableObject {
         let browser = NWBrowser(for: .bonjour(type: "_http._tcp", domain: nil), using: params)
         browser.start(queue: .global())
         
-        // 3. UDP Multicast Trigger (Most Reliable)
-        // Sending a packet to a multicast address (224.0.0.1) forces the OS to check Local Network permissions immediately.
-        let multicastAddress = NWEndpoint.Host("224.0.0.1")
-        guard let multicastPort = try? NWEndpoint.Port(rawValue: 9999) else { return }
-        
-        let udpConnection = NWConnection(host: multicastAddress, port: multicastPort, using: .udp)
-        udpConnection.start(queue: .global())
-        udpConnection.send(content: "Trigger".data(using: .utf8), completion: .contentProcessed { _ in
-            udpConnection.cancel()
-        })
+        // Removed UDP multicast trigger due to App Store Rejections 
+        // regarding unsolicited local network scanning without explicit intent.
         
         // Cleanup
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) {

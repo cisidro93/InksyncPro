@@ -201,6 +201,18 @@ class ImportOrchestrator {
                 var destURL = documentsDir.appendingPathComponent(fileName)
                 let overrideMeta = overrides[url]
                 
+                // 🛑 NEW: True Duplicate Catching!
+                let incomingSize = (try? fileManager.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+                let tempDestURL = documentsDir.appendingPathComponent(fileName)
+                let existingSize = (try? fileManager.attributesOfItem(atPath: tempDestURL.path)[.size] as? Int64) ?? -1
+                
+                let isBatchDuplicate = newPDFs.contains(where: { $0.url.lastPathComponent == fileName && $0.fileSize == incomingSize })
+                
+                if (existingPaths.contains(fileName) || isBatchDuplicate) && incomingSize > 0 && existingSize == incomingSize {
+                    Logger.shared.log("Skipping true duplicate file: \(fileName) (Size Match: \(incomingSize))", category: "Import", type: .info)
+                    continue
+                }
+                
                 // 🚀 PREVENT DESTRUCTIVE COLLISION: Instead of destructively dropping chapters named "1.cbz", 
                 // we inject their validated Series Name mapping into the physical Document namespace!
                 if existingPaths.contains(fileName) || newPDFs.contains(where: { $0.url.lastPathComponent == fileName }) {
@@ -269,10 +281,12 @@ class ImportOrchestrator {
                         }
                     }
                     
+                    let dynamicPageCount = await PhysicalFileSystemRouter.getPageCountStatic(from: destURL)
+                    
                     var pdf = ConvertedPDF(
                         name: smartDisplayName,
                         url: destURL,
-                        pageCount: 0,
+                        pageCount: dynamicPageCount,
                         fileSize: size,
                         metadata: smartMetadata,
                         contentType: cType
@@ -299,36 +313,7 @@ class ImportOrchestrator {
         var clusters: [String: [ConvertedPDF]] = [:]
         
         for pdf in importedPDFs {
-            let name = pdf.name as NSString
-            let regex = try? NSRegularExpression(pattern: "\\[.*?\\]|\\(.*?\\)", options: [])
-            let noBrackets = regex?.stringByReplacingMatches(in: name as String, options: [], range: NSRange(location: 0, length: name.length), withTemplate: "") ?? pdf.name
-            
-            let withoutExt = (noBrackets as NSString).deletingPathExtension
-            var extractedName = withoutExt.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
-            
-            if let range = withoutExt.range(of: "\\s*(v|vol|volume|c|ch|chapter|issue)?\\s*\\d+.*$", options: [.regularExpression, .caseInsensitive]) {
-                extractedName = String(withoutExt[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_.")))
-            }
-            
-            var seriesName = ""
-            // 1. Prefer pristine metadata series (only populated if XML succeeded)
-            if let metaSeries = pdf.metadata.series, !metaSeries.isEmpty, metaSeries != "Ungrouped" {
-                seriesName = metaSeries
-            } else {
-                // 2. Fallback to Restored Pure Regex Logic from 5e6efb9
-                seriesName = extractedName
-                if seriesName.count < 3 || seriesName == "Ungrouped" {
-                    // Try stripping numbers to find a root anchor word (e.g. 'Vol 1' -> 'Vol')
-                    seriesName = pdf.name.components(separatedBy: CharacterSet.decimalDigits).first?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-_."))) ?? "Ungrouped"
-                    
-                    if seriesName.isEmpty || seriesName.count < 2 {
-                        seriesName = "Ungrouped"
-                    }
-                }
-            }
-            
-            if seriesName.isEmpty { seriesName = "Ungrouped" }
-            
+            let seriesName = (pdf.metadata.series?.isEmpty == false) ? pdf.metadata.series! : "Ungrouped"
             clusters[seriesName, default: []].append(pdf)
         }
         

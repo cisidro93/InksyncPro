@@ -54,13 +54,12 @@ actor LibraryScanner {
         }
         
         if !pdfsToProcess.isEmpty {
-            for pdf in pdfsToProcess {
-                Task {
+            Task.detached(priority: .background) {
+                for pdf in pdfsToProcess {
+                    await Task.yield()
                     await manager.generateCoverThumbnail(for: pdf)
                     
-                    let count = await Task.detached(priority: .background) {
-                        return PhysicalFileSystemRouter.getPageCountStatic(from: pdf.url)
-                    }.value
+                    let count = PhysicalFileSystemRouter.getPageCountStatic(from: pdf.url)
                     
                     if count > 0 {
                         await MainActor.run {
@@ -69,10 +68,6 @@ actor LibraryScanner {
                             }
                         }
                     }
-                    
-                    // ⚠️ OOM CRASH FIX: We absolutely CANNOT call `extractSmartPanels` during library scanning.
-                    // Doing so unpacks 150+ ultra-high resolution images into RAM synchronously for every new comic added.
-                    // This creates an immediate 2GB+ memory spike, causing iOS to hard-crash the app via Jetsam.
                 }
             }
         }

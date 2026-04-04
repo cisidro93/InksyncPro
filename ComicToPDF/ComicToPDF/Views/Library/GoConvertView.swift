@@ -138,7 +138,9 @@ struct GoConvertView: View {
                     .font(.largeTitle).bold().padding(.top, 40)
                 
                 // MARK: Drop Zone
-                Button { showingActionSheet = true } label: {
+                Button { 
+                    ImportCoordinator.present(type: .unified) { urls in processPickedFiles(urls) }
+                } label: {
                     ZStack {
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
                             .strokeBorder(Color.blue.opacity(0.5), style: StrokeStyle(lineWidth: 3, dash: [10]))
@@ -166,17 +168,6 @@ struct GoConvertView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 200)
                 .padding(.horizontal, 32)
-                .confirmationDialog("Import Source", isPresented: $showingActionSheet) {
-                    Button("Select Files") { 
-                        ImportCoordinator.present(type: .files) { urls in processPickedFiles(urls) }
-                    }
-                    Button("Select Folder") { 
-                        ImportCoordinator.present(type: .folder) { urls in processPickedFiles(urls) }
-                    }
-                    Button("Cancel", role: .cancel) { }
-                } message: {
-                    Text("Select individual files or an entire folder to import.")
-                }
                 
                 // MARK: Settings
                 VStack(spacing: 16) {
