@@ -38,7 +38,7 @@ struct ModernFileRow: View {
                 RoundedRectangle(cornerRadius: 4)
                     .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
             )
-            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+            .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 4, y: 2)
             
             VStack(alignment: .leading, spacing: 6) {
                 Text(pdf.name)
@@ -50,7 +50,7 @@ struct ModernFileRow: View {
                 GeometryReader { geo in
                     let progress = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.1))
+                        Capsule().fill(Color(.secondarySystemFill))
                         Capsule().fill(Theme.orange)
                             .frame(width: max(0, geo.size.width * CGFloat(progress)))
                     }
@@ -152,7 +152,7 @@ struct ModernSeriesRow: View {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Theme.surface.opacity(0.8))
                         .aspectRatio(0.66, contentMode: .fit)
-                        .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                        .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.2), radius: 2, y: 1)
                         .rotationEffect(.degrees(-3))
                         .scaleEffect(0.9)
                         .offset(y: -4)
@@ -160,7 +160,7 @@ struct ModernSeriesRow: View {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Theme.surfaceElevated.opacity(0.9))
                         .aspectRatio(0.66, contentMode: .fit)
-                        .shadow(color: .black.opacity(0.4), radius: 3, y: 2)
+                        .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 3, y: 2)
                         .rotationEffect(.degrees(2))
                         .scaleEffect(0.95)
                         .offset(y: -2)
@@ -188,7 +188,7 @@ struct ModernSeriesRow: View {
                 RoundedRectangle(cornerRadius: 4)
                     .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
             )
-            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+            .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 4, y: 2)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(group.title)
@@ -220,7 +220,7 @@ struct ModernSeriesRow: View {
                             .cornerRadius(4)
                     }
                     
-                    Text("\(group.count) Issues")
+                    Text("\(group.count) \(group.count == 1 ? "Issue" : "Issues")")
                         .font(.caption)
                         .foregroundColor(Theme.textSecondary)
                 }

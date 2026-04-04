@@ -50,8 +50,8 @@ class LibraryViewModel: ObservableObject {
                     if groups[seriesKey] == nil {
                         groups[seriesKey] = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: pdf.id, count: 0, issues: [])
                     }
-                    groups[seriesKey]!.issues.append(pdf)
-                    groups[seriesKey]!.count += 1
+                    groups[seriesKey]?.issues.append(pdf)
+                    groups[seriesKey]?.count += 1
                     inAnyGroup = true
                 }
                 
@@ -65,8 +65,8 @@ class LibraryViewModel: ObservableObject {
                         let coverID = collection.explicitCoverFileID ?? pdf.id
                         groups[colKey] = SeriesGroup(id: collection.id.uuidString, title: collection.name, coverIssueID: coverID, count: 0, issues: [])
                     }
-                    groups[colKey]!.issues.append(pdf)
-                    groups[colKey]!.count += 1
+                    groups[colKey]?.issues.append(pdf)
+                    groups[colKey]?.count += 1
                     inAnyGroup = true
                 }
                 
@@ -148,8 +148,12 @@ class LibraryViewModel: ObservableObject {
             if !currentSearchText.isEmpty {
                 items = items.filter { tuple in
                     switch tuple.1 {
-                    case .single(let pdf): return pdf.name.localizedCaseInsensitiveContains(currentSearchText)
-                    case .series(let group): return group.title.localizedCaseInsensitiveContains(currentSearchText)
+                    case .single(let pdf): 
+                        return pdf.name.localizedCaseInsensitiveContains(currentSearchText) ||
+                               pdf.metadata.title.localizedCaseInsensitiveContains(currentSearchText) ||
+                               (pdf.metadata.series?.localizedCaseInsensitiveContains(currentSearchText) == true)
+                    case .series(let group): 
+                        return group.title.localizedCaseInsensitiveContains(currentSearchText)
                     }
                 }
             }

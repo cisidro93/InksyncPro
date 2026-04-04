@@ -77,8 +77,8 @@ struct ModernGridFileCell: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
             )
-            .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
-            .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
+            .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 8, x: 0, y: 4)
+            .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.15), radius: 16, x: 0, y: 8)
             
             // Text Details & Kindle-Style Progress
             VStack(alignment: .leading, spacing: 4) {
@@ -93,7 +93,7 @@ struct ModernGridFileCell: View {
                 GeometryReader { geo in
                     let progress = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.1))
+                        Capsule().fill(Color(.secondarySystemFill))
                         Capsule().fill(Theme.orange)
                             .frame(width: max(0, geo.size.width * CGFloat(progress)))
                     }
@@ -194,7 +194,7 @@ struct ModernGridSeriesCell: View {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Theme.surface.opacity(0.8))
                             .aspectRatio(0.66, contentMode: .fit)
-                            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                            .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.2), radius: 4, y: 2)
                             .rotationEffect(.degrees(-3))
                             .scaleEffect(0.9)
                             .offset(y: -8)
@@ -202,7 +202,7 @@ struct ModernGridSeriesCell: View {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Theme.surfaceElevated.opacity(0.9))
                             .aspectRatio(0.66, contentMode: .fit)
-                            .shadow(color: .black.opacity(0.4), radius: 5, y: 3)
+                            .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 5, y: 3)
                             .rotationEffect(.degrees(2))
                             .scaleEffect(0.95)
                             .offset(y: -4)
@@ -230,13 +230,13 @@ struct ModernGridSeriesCell: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
                 )
-                .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
-                .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
+                .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 8, x: 0, y: 4)
+                .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.15), radius: 16, x: 0, y: 8)
                 
                 // Floating Glass Series Badge
                 HStack(spacing: 4) {
                     Image(systemName: "books.vertical.fill").font(.system(size: 10))
-                    Text("\(group.count) Issues").font(.system(size: 10, weight: .bold))
+                    Text("\(group.count) \(group.count == 1 ? "Issue" : "Issues")").font(.system(size: 10, weight: .bold))
                     
                     if let first = group.issues.first(where: { $0.contentType == .comic }) {
                         let isManga = first.metadata.isManga ?? false
