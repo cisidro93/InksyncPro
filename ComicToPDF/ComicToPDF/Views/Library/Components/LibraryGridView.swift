@@ -20,9 +20,10 @@ struct LibraryGridView: View {
     @State private var pendingSeriesName: String = ""
     
     var body: some View {
-        if conversionManager.visiblePDFs.isEmpty {
-            ModernEmptyState(onImport: onImport, onFolderImport: nil)
-        } else {
+        Group {
+            if conversionManager.visiblePDFs.isEmpty {
+                ModernEmptyState(onImport: onImport, onFolderImport: nil)
+            } else {
             ScrollViewReader { proxy in
                 ScrollView {
                 // Adaptive grid sizing: roughly 3 columns on phone, 5-6 on iPad
@@ -113,6 +114,7 @@ struct LibraryGridView: View {
                 .padding(.trailing, 2)
             }
             } // End ScrollViewReader
+            }
         }
         .alert("Rename Series", isPresented: Binding<Bool>(
             get: { renamingGroup != nil },
