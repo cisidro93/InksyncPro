@@ -47,8 +47,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "cbz") ?? .zip,
                 UTType(filenameExtension: "cbr") ?? .archive,
                 UTType(filenameExtension: "cb7") ?? .archive,
-                .epub, .pdf, .zip, .archive,
-                .folder, .directory
+                .epub, .pdf, .zip, .archive
             ]
         case .folder:
             supportedTypes = [.folder]
@@ -70,7 +69,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: folderTypes, asCopy: false)
             picker.allowsMultipleSelection = false
         } else if type == .unified {
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
+            // asCopy: true is required so iOS safely materializes each file into our sandbox.
+            // allowsMultipleSelection: true lets the user select all files in a folder at once.
+            // This exactly matches the FolderImportCoordinator that worked in build 5556dd2.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
             picker.allowsMultipleSelection = true
         } else {
             let asCopy = type == .files || type == .json || type == .smartList
@@ -105,28 +107,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     }
                     DispatchQueue.main.async { self.finish(with: allFound) }
                 } else if self.currentType == .unified {
-                    var allFound: [URL] = []
-                    for url in urls {
-                        let isAccessing = url.startAccessingSecurityScopedResource()
-                        var isDir: ObjCBool = false
-                        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                            allFound.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                        } else {
-                            let fm = FileManager.default
-                            let tempDir = fm.temporaryDirectory.appendingPathComponent("Unified_File_Ingest_\(UUID().uuidString)")
-                            try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                            let destURL = tempDir.appendingPathComponent(url.lastPathComponent)
-                            do {
-                                if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
-                                try fm.copyItem(at: url, to: destURL)
-                                allFound.append(destURL)
-                            } catch {
-                                Logger.shared.log("ImportCoordinator: Failed to localize single file: \(error)", category: "System", type: .warning)
-                            }
-                        }
-                        if isAccessing { url.stopAccessingSecurityScopedResource() }
-                    }
-                    DispatchQueue.main.async { self.finish(with: allFound) }
+                    // asCopy: true means iOS already materialized safe copies of each file.
+                    // No spidering needed — just pass them straight through.
+                    DispatchQueue.main.async { self.finish(with: urls) }
                 } else {
                     DispatchQueue.main.async {
                         self.finish(with: urls)
