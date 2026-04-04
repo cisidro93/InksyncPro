@@ -263,7 +263,7 @@ actor ImportOrchestrator {
                     
                     // Always calculate the Safe Parent Folder fallback
                     let parentName = url.deletingLastPathComponent().lastPathComponent
-                    let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads", "inksyncstaging_"]
+                    let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads", "inksyncstaging_", "folder_spider_", "folderspider_"]
                     var validParentFolder: String? = nil
                     
                     if !invalidParents.contains(where: { parentName.lowercased().hasPrefix($0) }) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
