@@ -18,7 +18,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
     private static var live: ImportCoordinator?
     private var completion: (([URL]) -> Void)?
     private var currentType: ImportType = .files
-    private var isProcessing = false // iPad can fire the delegate twice; process only once.
 
     private override init() {}
 
@@ -103,9 +102,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
     // MARK: - UIDocumentPickerDelegate
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard !isProcessing else { return }
-        isProcessing = true
-
         guard !urls.isEmpty else {
             finish(with: [])
             return
