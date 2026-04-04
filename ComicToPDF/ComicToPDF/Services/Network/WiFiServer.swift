@@ -140,6 +140,8 @@ class WiFiServer: ObservableObject {
             switch state {
             case .cancelled, .failed:
                 DispatchQueue.main.async { self?.activeConnections = max(0, (self?.activeConnections ?? 1) - 1) }
+                self?.cleanup(context: context)
+                DispatchQueue.main.async { self?.endBackgroundTask() }
             default: break
             }
         }
@@ -169,9 +171,15 @@ class WiFiServer: ObservableObject {
         }
     }
     
-    private func processData(_ data: Data, connection: NWConnection, context: ConnectionContext) {
         if !context.isHeaderParsed {
             context.buffer.append(data)
+            
+            // SECURITY: Limit headers to 32KB to prevent memory exhaustion DoS
+            guard context.buffer.count <= 32768 else {
+                Logger.shared.log("Connection Terminated - Header Payload Too Large", category: "Network", type: .warning)
+                connection.cancel()
+                return
+            }
             
             // Look for Double CRLF (End of Headers)
             if let range = context.buffer.range(of: Data("\r\n\r\n".utf8)) {
@@ -371,12 +379,18 @@ class WiFiServer: ObservableObject {
     private func setupUpload(context: ConnectionContext) -> Bool {
         context.isHeaderParsed = true
         
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.standardizedFileURL
         var destURL: URL
         
         if let relPathString = context.relativePath, !relPathString.isEmpty {
             // Reconstruct the nested folder structure
-            destURL = docDir.appendingPathComponent(relPathString)
+            destURL = docDir.appendingPathComponent(relPathString).standardizedFileURL
+            
+            guard destURL.path.hasPrefix(docDir.path) else {
+                Logger.shared.log("WiFi Transfer - Rejected Traversal Upload Attempt: \(relPathString)", category: "Network", type: .error)
+                return false
+            }
+            
             let directoryURL = destURL.deletingLastPathComponent()
             do {
                 try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
@@ -384,7 +398,8 @@ class WiFiServer: ObservableObject {
                 Logger.shared.log("Failed to create intermediate P2P directory: \(error.localizedDescription)", category: "Network", type: .error)
             }
         } else {
-            destURL = docDir.appendingPathComponent(context.filename)
+            let sanitizedFileName = URL(fileURLWithPath: context.filename).lastPathComponent
+            destURL = docDir.appendingPathComponent(sanitizedFileName).standardizedFileURL
         }
         
         context.destinationURL = destURL
@@ -498,14 +513,18 @@ class WiFiServer: ObservableObject {
                 let tempZipURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip")
                 defer { try? FileManager.default.removeItem(at: tempZipURL) }
                 
-                guard let archive = Archive(url: tempZipURL, accessMode: .create) else {
+                var archive: Archive? = Archive(url: tempZipURL, accessMode: .create)
+                guard let validArchive = archive else {
                     sendResponse(connection, 500, "Failed to create archive stream.")
                     return
                 }
                 
                 for file in stagedFiles {
-                    try archive.addEntry(with: file.name, relativeTo: file.url.deletingLastPathComponent())
+                    try validArchive.addEntry(with: file.name, relativeTo: file.url.deletingLastPathComponent())
                 }
+                
+                // FLUSH ZIP FOOTERS TO DISK!
+                archive = nil
                 
                 let zipData = try Data(contentsOf: tempZipURL, options: .mappedIfSafe)
                 sendResponse(connection, 200, data: zipData, contentType: "application/zip", filename: "Inksync_Queue.zip")
@@ -519,7 +538,13 @@ class WiFiServer: ObservableObject {
             let rawFileName = String(path.dropFirst())
             let fileName = rawFileName.removingPercentEncoding ?? rawFileName
             
-            let fileURL = docDir.appendingPathComponent(fileName)
+            let fileURL = docDir.appendingPathComponent(fileName).standardizedFileURL
+            
+            guard fileURL.path.hasPrefix(docDir.standardizedFileURL.path) else {
+                Logger.shared.log("WiFi Transfer - Rejected GET Path Traversal: \(path)", category: "Network", type: .error)
+                sendResponse(connection, 403, "Forbidden")
+                return
+            }
             
             if FileManager.default.fileExists(atPath: fileURL.path) {
                 // Standard Content Type Strategy
