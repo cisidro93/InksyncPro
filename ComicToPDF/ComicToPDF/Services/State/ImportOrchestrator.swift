@@ -193,9 +193,6 @@ actor ImportOrchestrator {
         let existingKeys: Set<String> = await MainActor.run {
             Set(manager.convertedPDFs.map { "\($0.url.lastPathComponent)||\($0.fileSize)" })
         }
-        let existingSizes: Set<Int64> = await MainActor.run {
-            Set(manager.convertedPDFs.map { $0.fileSize }.filter { $0 > 0 })
-        }
         let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
         let isVaultUnlocked = await MainActor.run { !SecurityManager.shared.isVaultLocked }
 
@@ -231,19 +228,8 @@ actor ImportOrchestrator {
                     $0.url.lastPathComponent == fileName && $0.fileSize == incomingSize
                 })
                 
-                // 3. Size-clone: different filename but byte-count already in library
-                //    (catches the case where a file was renamed after import, e.g. "1.cbz" → "Series - 1.cbz")
-                let isSizeClone = incomingSize > 1024 && existingSizes.contains(incomingSize)
-                //    Only treat as duplicate if the extension also matches something in the library
-                //    (avoids false positives for small files like thumbnails or README.txts)
-                
                 if isExactLibraryDuplicate || isBatchDuplicate {
-                    Logger.shared.log("Skipping exact duplicate: \(fileName) (\(incomingSize) bytes)", category: "Import", type: .info)
-                    continue
-                }
-                
-                if isSizeClone {
-                    Logger.shared.log("Skipping size-clone: \(fileName) (\(incomingSize) bytes) — a file of identical size already exists in the library.", category: "Import", type: .info)
+                    Logger.shared.log("Skipping duplicate: \(fileName) (\(incomingSize) bytes)", category: "Import", type: .info)
                     continue
                 }
                 
