@@ -269,7 +269,7 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { ImportCoordinator.present(type: .files) { urls in Task { await conversionManager.importFilesAsSeries(urls: urls) } } }
+                    onImport: { ImportCoordinator.present(type: .unified) { urls in Task { await conversionManager.importFilesAsSeries(urls: urls) } } }
                 )
             } else {
                 LibraryGridView(
@@ -280,7 +280,7 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { ImportCoordinator.present(type: .files) { urls in Task { await conversionManager.importFilesAsSeries(urls: urls) } } }
+                    onImport: { ImportCoordinator.present(type: .unified) { urls in Task { await conversionManager.importFilesAsSeries(urls: urls) } } }
                 )
             }
         }
