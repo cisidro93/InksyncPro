@@ -136,6 +136,8 @@ class WiFiServer: ObservableObject {
         Logger.shared.log("New Connection from \(connection.endpoint)", category: "Network")
         
         // Track Connection End
+        let context = ConnectionContext()
+        
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .cancelled, .failed:
@@ -146,7 +148,6 @@ class WiFiServer: ObservableObject {
             }
         }
         
-        let context = ConnectionContext()
         connection.start(queue: .global(qos: .default))
         receive(on: connection, context: context)
     }
