@@ -263,10 +263,10 @@ actor ImportOrchestrator {
                     
                     // Always calculate the Safe Parent Folder fallback
                     let parentName = url.deletingLastPathComponent().lastPathComponent
-                    let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads"]
+                    let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads", "inksyncstaging_"]
                     var validParentFolder: String? = nil
                     
-                    if !invalidParents.contains(parentName.lowercased()) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
+                    if !invalidParents.contains(where: { parentName.lowercased().hasPrefix($0) }) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
                         validParentFolder = parentName
                     }
                     
@@ -295,12 +295,10 @@ actor ImportOrchestrator {
                         }
                     }
                     
-                    let dynamicPageCount = PhysicalFileSystemRouter.getPageCountStatic(from: destURL)
-                    
                     var pdf = ConvertedPDF(
                         name: smartDisplayName,
                         url: destURL,
-                        pageCount: dynamicPageCount,
+                        pageCount: 0,
                         fileSize: size,
                         metadata: smartMetadata,
                         contentType: cType
