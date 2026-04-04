@@ -71,7 +71,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         let picker: UIDocumentPickerViewController
 
         if type == .folder {
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
+            // asCopy:true → iOS copies the folder into the app's Documents/Inbox before the
+            // delegate fires. No security scope, no spider needed — we get direct sandbox URLs.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: true)
             picker.allowsMultipleSelection = false
 
         } else if type == .unified {
@@ -117,11 +119,37 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             switch self.currentType {
 
             case .folder:
+                // asCopy:true delivers a copied folder URL directly in the app's Inbox/.
+                // Enumerate it for comic files — no security scope required.
                 var found: [URL] = []
+                let fm = FileManager.default
+                let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
                 for url in urls {
-                    let accessing = url.startAccessingSecurityScopedResource()
-                    found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                    if accessing { url.stopAccessingSecurityScopedResource() }
+                    var isDir: ObjCBool = false
+                    if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                        // Folder — enumerate and copy to staging so orchestrator can move them
+                        let stagingDir = fm.temporaryDirectory
+                            .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+                        try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+                        if let enumerator = fm.enumerator(at: url,
+                                                           includingPropertiesForKeys: [.isDirectoryKey],
+                                                           options: [.skipsHiddenFiles]) {
+                            for case let fileURL as URL in enumerator {
+                                if validExts.contains(fileURL.pathExtension.lowercased()) {
+                                    let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
+                                    do {
+                                        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                                        try fm.copyItem(at: fileURL, to: dest)
+                                        found.append(dest)
+                                    } catch {
+                                        Logger.shared.log("ImportCoordinator[folder]: copy failed (\(fileURL.lastPathComponent)): \(error)", category: "System", type: .warning)
+                                    }
+                                }
+                            }
+                        }
+                    } else if validExts.contains(url.pathExtension.lowercased()) {
+                        found.append(url) // single copied file
+                    }
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
 

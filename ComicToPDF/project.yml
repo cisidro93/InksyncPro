@@ -37,8 +37,8 @@ targets:
     info:
       path: ComicToPDF/Info.plist
       properties:
-        CFBundleVersion: "1"
-        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "2"
+        CFBundleShortVersionString: "1.0.1"
         UILaunchStoryboardName: LaunchScreen
         UIRequiresFullScreen: true
         UIFileSharingEnabled: true
@@ -60,3 +60,13 @@ targets:
             UTTypeConformsTo: [public.text]
             UTTypeTagSpecification:
               public.filename-extension: [txt]
+          - UTTypeIdentifier: com.antigravity.cbz-archive
+            UTTypeDescription: Comic Book Archive
+            UTTypeConformsTo: [public.zip-archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [cbz]
+          - UTTypeIdentifier: com.antigravity.cbr-archive
+            UTTypeDescription: Comic Book RAR Archive
+            UTTypeConformsTo: [public.archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [cbr]
