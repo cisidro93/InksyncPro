@@ -217,12 +217,12 @@ struct PDFMetadata: Codable, Equatable, Hashable, Sendable {
     var externalIssueID: String?
     
     var universalSeriesID: String? {
-        get { externalSeriesID ?? universalSeriesID.map(String.init) }
+        get { externalSeriesID ?? universalSeriesID }
         set { externalSeriesID = newValue }
     }
     
     var universalIssueID: String? {
-        get { externalIssueID ?? universalIssueID.map(String.init) }
+        get { externalIssueID ?? universalIssueID }
         set { externalIssueID = newValue }
     }
     

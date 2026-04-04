@@ -145,7 +145,7 @@ class BackgroundMetadataEngine: ObservableObject {
     private func applyPartialMatch(to fileID: UUID, manager: ConversionManager, volume: ComicVineVolume, issueNum: Int?) {
         if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == fileID }) {
             manager.convertedPDFs[idx].metadata.series = volume.name
-            manager.convertedPDFs[idx].metadata.universalSeriesID = volume.id
+            manager.convertedPDFs[idx].metadata.universalSeriesID = String(volume.id)
             manager.convertedPDFs[idx].metadata.volume = volume.name
             manager.convertedPDFs[idx].metadata.publisher = volume.publisher?.name
             if let num = issueNum {
@@ -157,11 +157,11 @@ class BackgroundMetadataEngine: ObservableObject {
     private func applyFullMatch(to fileID: UUID, manager: ConversionManager, volume: ComicVineVolume, issue: ComicVineIssueDetails, issueNum: Int) {
         if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == fileID }) {
             manager.convertedPDFs[idx].metadata.series = volume.name
-            manager.convertedPDFs[idx].metadata.universalSeriesID = volume.id
+            manager.convertedPDFs[idx].metadata.universalSeriesID = String(volume.id)
             manager.convertedPDFs[idx].metadata.volume = volume.name
             manager.convertedPDFs[idx].metadata.issueNumber = "\(issueNum)"
             manager.convertedPDFs[idx].metadata.publisher = volume.publisher?.name
-            manager.convertedPDFs[idx].metadata.universalIssueID = issue.id
+            manager.convertedPDFs[idx].metadata.universalIssueID = String(issue.id)
             
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
