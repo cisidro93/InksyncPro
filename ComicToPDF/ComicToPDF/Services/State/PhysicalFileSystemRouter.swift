@@ -141,7 +141,12 @@ class PhysicalFileSystemRouter {
             return !FileManager.default.fileExists(atPath: coverURL.path)
         }
         guard !pdfsNeedingCovers.isEmpty else { return }
-        for pdf in pdfsNeedingCovers { Task(priority: .background) { await generateCoverThumbnail(for: pdf, manager: manager) } }
+        // Process sequentially in a single background task to avoid I/O saturation
+        Task(priority: .background) {
+            for pdf in pdfsNeedingCovers {
+                await generateCoverThumbnail(for: pdf, manager: manager)
+            }
+        }
     }
     
     func loadThumbnailAsync(for pdf: ConvertedPDF, manager: ConversionManager) async {

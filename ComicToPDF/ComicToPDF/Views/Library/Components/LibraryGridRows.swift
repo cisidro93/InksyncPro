@@ -1,5 +1,33 @@
 import SwiftUI
 
+// MARK: - Thumbnail Concurrency Gate
+// Limits simultaneous disk-decode operations to prevent I/O saturation on large libraries.
+// 4 concurrent jobs gives full pipeline utilization without hammering the NAND on first scroll.
+private let thumbnailSemaphore = AsyncSemaphore(limit: 4)
+
+/// Lightweight cooperative semaphore for Swift concurrency.
+actor AsyncSemaphore {
+    private let limit: Int
+    private var count = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    
+    init(limit: Int) { self.limit = limit }
+    
+    func wait() async {
+        if count < limit { count += 1; return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    
+    func signal() {
+        if let next = waiters.first {
+            waiters.removeFirst()
+            next.resume()
+        } else {
+            count = max(0, count - 1)
+        }
+    }
+}
+
 struct ModernGridFileCell: View {
     let pdf: ConvertedPDF
     let isSelected: Bool
@@ -107,30 +135,37 @@ struct ModernGridFileCell: View {
         .cornerRadius(12)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
-        // ✅ PHASE 13: Background Thread Isolation
-        // Detaches heavy synchronous IO (reading megabytes of JPEG Data) off the 120Hz Main Actor rendering queue.
+        // Throttled background thumbnail loader — acquires semaphore before hitting disk
         .task(id: pdf.id) {
-            if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
-                self.localCover = img
-            } else if let coverURL = conversionManager.getCoverURL(for: pdf) {
-                let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-                    guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) else { return nil }
-                    let downsampleOptions = [
-                        kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceShouldCacheImmediately: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 400
-                    ] as CFDictionary
-                    
-                    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
-                    return UIImage(cgImage: cgImage)
-                }.value
-                
-                if let image = generated {
-                    conversionManager.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
-                    await MainActor.run { self.localCover = image }
-                }
+            let key = pdf.id.uuidString as NSString
+            // Fast path: already in memory cache
+            if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                self.localCover = cached; return
+            }
+            guard let coverURL = conversionManager.getCoverURL(for: pdf),
+                  FileManager.default.fileExists(atPath: coverURL.path) else {
+                // Cover not on disk yet — let the import pipeline generate it
+                return
+            }
+            await thumbnailSemaphore.wait()
+            defer { Task { await thumbnailSemaphore.signal() } }
+            
+            let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) else { return nil }
+                let downsampleOptions = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 360
+                ] as CFDictionary
+                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
+                return UIImage(cgImage: cgImage)
+            }.value
+            
+            if let image = generated {
+                conversionManager.thumbnailCache.setObject(image, forKey: key)
+                self.localCover = image
             }
         }
     }
@@ -250,11 +285,36 @@ struct ModernGridSeriesCell: View {
         .cornerRadius(12)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
-        // ✅ NEW: Lazy Asynchronous Fetch with Cancellation
+        // Throttled loader — gets the cover of the series' issue #1
         .task(id: group.id) {
-            if let issueID = group.coverIssueID,
-               let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) {
-                await conversionManager.loadThumbnailAsync(for: pdf)
+            guard let issueID = group.coverIssueID,
+                  let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) else { return }
+            let key = issueID.uuidString as NSString
+            if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                self.localCover = cached; return
+            }
+            guard let coverURL = conversionManager.getCoverURL(for: pdf),
+                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
+            
+            await thumbnailSemaphore.wait()
+            defer { Task { await thumbnailSemaphore.signal() } }
+            
+            let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) else { return nil }
+                let downsampleOptions = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 360
+                ] as CFDictionary
+                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
+                return UIImage(cgImage: cgImage)
+            }.value
+            
+            if let image = generated {
+                conversionManager.thumbnailCache.setObject(image, forKey: key)
+                self.localCover = image
             }
         }
     }

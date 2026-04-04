@@ -15,6 +15,10 @@ struct LibraryGridView: View {
     let onAction: (LibraryRowAction, ConvertedPDF) -> Void
     let onImport: () -> Void
     
+    // Series rename state — driven by SeriesViewModel which lives in parent
+    @State private var renamingGroup: SeriesGroup? = nil
+    @State private var pendingSeriesName: String = ""
+    
     var body: some View {
         if conversionManager.visiblePDFs.isEmpty {
             ModernEmptyState(onImport: onImport, onFolderImport: nil)
@@ -45,6 +49,13 @@ struct LibraryGridView: View {
                                 }
                                 .buttonStyle(PlainButtonStyle())
                                 .contextMenu {
+                                    Button {
+                                        pendingSeriesName = group.title
+                                        renamingGroup = group
+                                    } label: { Label("Rename Series", systemImage: "pencil") }
+                                    
+                                    Divider()
+                                    
                                     Button(role: .destructive) {
                                         for issue in group.issues { conversionManager.deletePDF(issue) }
                                     } label: { Label("Delete Series", systemImage: "trash") }
@@ -102,6 +113,28 @@ struct LibraryGridView: View {
                 .padding(.trailing, 2)
             }
             } // End ScrollViewReader
+        }
+        .alert("Rename Series", isPresented: Binding<Bool>(
+            get: { renamingGroup != nil },
+            set: { if !$0 { renamingGroup = nil } }
+        )) {
+            TextField("Series Name", text: $pendingSeriesName)
+                .autocorrectionDisabled()
+            Button("Rename") {
+                guard let group = renamingGroup else { return }
+                let newName = pendingSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !newName.isEmpty, newName != group.title else { renamingGroup = nil; return }
+                for pdf in group.issues {
+                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        conversionManager.convertedPDFs[idx].metadata.series = newName
+                    }
+                }
+                conversionManager.saveLibrary()
+                renamingGroup = nil
+            }
+            Button("Cancel", role: .cancel) { renamingGroup = nil }
+        } message: {
+            Text("This will rename all \(renamingGroup?.count ?? 0) issues in this series.")
         }
     }
     
