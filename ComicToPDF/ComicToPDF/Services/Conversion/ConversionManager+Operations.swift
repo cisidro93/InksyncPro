@@ -10,7 +10,7 @@ extension ConversionManager {
         
         let urls = sourceFiles.map { $0.url }
         let startCover = sourceFiles.first?.coverImageData
-        let settings = self.conversionSettings
+        let settings = AppSettingsManager.shared.conversionSettings
         let saveDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         
         Task.detached(priority: .userInitiated) {

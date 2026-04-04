@@ -143,7 +143,7 @@ extension ConversionManager {
     }
 
     func detectContentType(from url: URL) -> ContentType {
-        return ImportOrchestrator.shared.detectContentType(from: url, manager: self)
+        return ImportOrchestrator.shared.detectContentType(from: url, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode)
     }
 
     func importPDF(url: URL) async {

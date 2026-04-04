@@ -280,7 +280,7 @@ actor ImportOrchestrator {
                         }
                     }
                     
-                    let dynamicPageCount = await PhysicalFileSystemRouter.getPageCountStatic(from: destURL)
+                    let dynamicPageCount = PhysicalFileSystemRouter.getPageCountStatic(from: destURL)
                     
                     var pdf = ConvertedPDF(
                         name: smartDisplayName,
@@ -359,31 +359,31 @@ actor ImportOrchestrator {
             for var pdf in pdfs {
                 pdf.collectionId = targetCollection.id
                 pdf.metadata.series = seriesName
-                await MainActor.run {
-                    manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
-                    manager.convertedPDFs.append(pdf)
-                    manager.saveLibrary()
-                }
+                manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
+                manager.convertedPDFs.append(pdf)
+                manager.saveLibrary()
             }
         }
         for pdf in pdfs { Task { await manager.generateCoverThumbnail(for: pdf) } }
     }
     
-    nonisolated @MainActor func assignToSeries(_ pdf: ConvertedPDF, seriesName: String, manager: ConversionManager) {
-        let targetCollection: PDFCollection
-        if let existing = manager.collections.first(where: { $0.name == seriesName }) {
-            targetCollection = existing
-        } else {
-            let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "books.vertical", color: "orange", creationDate: Date())
-            manager.collections.append(newCol)
-            targetCollection = newCol
+    nonisolated func assignToSeries(_ pdf: ConvertedPDF, seriesName: String, manager: ConversionManager) {
+        Task { @MainActor in
+            let targetCollection: PDFCollection
+            if let existing = manager.collections.first(where: { $0.name == seriesName }) {
+                targetCollection = existing
+            } else {
+                let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "books.vertical", color: "orange", creationDate: Date())
+                manager.collections.append(newCol)
+                targetCollection = newCol
+            }
+            
+            if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                manager.convertedPDFs[index].collectionId = targetCollection.id
+                manager.convertedPDFs[index].metadata.series = seriesName
+            }
+            manager.saveLibrary()
         }
-        
-        if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-            manager.convertedPDFs[index].collectionId = targetCollection.id
-            manager.convertedPDFs[index].metadata.series = seriesName
-        }
-        manager.saveLibrary()
     }
     
     func syncWatchedFolders(manager: ConversionManager) async {
@@ -527,7 +527,7 @@ actor ImportOrchestrator {
         for pdf in newPDFs { Task { await manager.generateCoverThumbnail(for: pdf) } }
     }
     
-    nonisolated @MainActor func detectContentType(from url: URL, manager: ConversionManager) -> ContentType {
+    nonisolated func detectContentType(from url: URL, mangaMode: Bool) -> ContentType {
         let ext = url.pathExtension.lowercased()
         let filename = url.deletingPathExtension().lastPathComponent.lowercased()
         
@@ -535,7 +535,7 @@ actor ImportOrchestrator {
         if mangaKeywords.contains(where: { filename.contains($0) }) { return .manga }
         
         switch ext {
-        case "cbz", "zip": return await AppSettingsManager.shared.conversionSettings.mangaMode ? .manga : .comic
+        case "cbz", "zip": return mangaMode ? .manga : .comic
         case "pdf":
             let importer = PDFImporter()
             return importer.hasTextContent(url: url) ? .book : .hybrid
@@ -647,7 +647,8 @@ actor ImportOrchestrator {
                 }
             }.value
             
-            let contentType = await detectContentType(from: url, manager: manager)
+            let mangaMode = await AppSettingsManager.shared.conversionSettings.mangaMode
+            let contentType = detectContentType(from: url, mangaMode: mangaMode)
             
             let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             let cbzName = fileName + ".cbz"

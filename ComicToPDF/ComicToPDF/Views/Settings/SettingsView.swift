@@ -124,7 +124,7 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) { }
             Button("Save") {
                 let newPreset = ConversionPreset(name: customPresetName.isEmpty ? "Custom Mode" : customPresetName, settings: settingsManager.conversionSettings)
-                conversionManager.savePreset(newPreset)
+                settingsManager.savePreset(newPreset)
             }
         } message: { Text("Enter a name for your custom export configuration.") }
         .alert(aiFeedbackTitle, isPresented: $showingAIFeedbackAlert) {
