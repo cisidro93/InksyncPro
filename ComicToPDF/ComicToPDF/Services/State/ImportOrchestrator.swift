@@ -65,7 +65,7 @@ actor ImportOrchestrator {
                 let bookmarkData = try folderURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
                 await MainActor.run {
                     if !AppSettingsManager.shared.watchedFolders.contains(where: { $0.bookmarkData == bookmarkData }) {
-                        let watched = ConversionManager.WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
+                        let watched = AppSettingsManager.WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
                         AppSettingsManager.shared.watchedFolders.append(watched)
                         AppSettingsManager.shared.save()
                     }
@@ -359,15 +359,17 @@ actor ImportOrchestrator {
             for var pdf in pdfs {
                 pdf.collectionId = targetCollection.id
                 pdf.metadata.series = seriesName
-                manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
-                manager.convertedPDFs.append(pdf)
+                await MainActor.run {
+                    manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
+                    manager.convertedPDFs.append(pdf)
+                    manager.saveLibrary()
+                }
             }
-            manager.saveLibrary()
         }
         for pdf in pdfs { Task { await manager.generateCoverThumbnail(for: pdf) } }
     }
     
-    func assignToSeries(_ pdf: ConvertedPDF, seriesName: String, manager: ConversionManager) {
+    nonisolated @MainActor func assignToSeries(_ pdf: ConvertedPDF, seriesName: String, manager: ConversionManager) {
         let targetCollection: PDFCollection
         if let existing = manager.collections.first(where: { $0.name == seriesName }) {
             targetCollection = existing
@@ -525,7 +527,7 @@ actor ImportOrchestrator {
         for pdf in newPDFs { Task { await manager.generateCoverThumbnail(for: pdf) } }
     }
     
-    func detectContentType(from url: URL, manager: ConversionManager) -> ContentType {
+    nonisolated @MainActor func detectContentType(from url: URL, manager: ConversionManager) -> ContentType {
         let ext = url.pathExtension.lowercased()
         let filename = url.deletingPathExtension().lastPathComponent.lowercased()
         
@@ -533,7 +535,7 @@ actor ImportOrchestrator {
         if mangaKeywords.contains(where: { filename.contains($0) }) { return .manga }
         
         switch ext {
-        case "cbz", "zip": return AppSettingsManager.shared.conversionSettings.mangaMode ? .manga : .comic
+        case "cbz", "zip": return await AppSettingsManager.shared.conversionSettings.mangaMode ? .manga : .comic
         case "pdf":
             let importer = PDFImporter()
             return importer.hasTextContent(url: url) ? .book : .hybrid
@@ -575,7 +577,7 @@ actor ImportOrchestrator {
             defer { try? FileManager.default.removeItem(at: tempPDFURL) }
             
             let importer = PDFImporter()
-            let settings = AppSettingsManager.shared.conversionSettings
+            let settings = await AppSettingsManager.shared.conversionSettings
             
             let (extractedCount, newCoverData) = try await Task.detached(priority: .userInitiated) { () -> (Int, Data?) in
                 let pageCount = importer.getPageCount(url: tempPDFURL)
@@ -645,7 +647,7 @@ actor ImportOrchestrator {
                 }
             }.value
             
-            let contentType = detectContentType(from: url, manager: manager)
+            let contentType = await detectContentType(from: url, manager: manager)
             
             let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             let cbzName = fileName + ".cbz"
@@ -664,11 +666,12 @@ actor ImportOrchestrator {
             }
             
             if let coverData = newCoverData {
-                manager.saveCoverImage(coverData, for: newPDF)
+                await manager.saveCoverImage(coverData, for: newPDF)
             }
             
+            let finalPDF = newPDF
             await MainActor.run {
-                manager.convertedPDFs.append(newPDF)
+                manager.convertedPDFs.append(finalPDF)
                 manager.saveLibrary()
                 manager.processingStatus = ""
             }

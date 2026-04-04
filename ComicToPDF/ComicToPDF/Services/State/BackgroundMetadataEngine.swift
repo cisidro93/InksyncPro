@@ -27,7 +27,7 @@ class BackgroundMetadataEngine: ObservableObject {
         isRunning = true
         isCancelled = false
         
-        let apiKey = manager.conversionSettings.comicVineAPIKey
+        let apiKey = AppSettingsManager.shared.conversionSettings.comicVineAPIKey
         if apiKey.isEmpty {
             isRunning = false
             return

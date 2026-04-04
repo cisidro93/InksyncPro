@@ -17,8 +17,13 @@ class AppSettingsManager: ObservableObject {
     // Aesthetic & Library State
     @Published var isVaultUnlocked: Bool = false
     
-    // Global User Overrides
-    @Published var watchedFolders: [ConversionManager.WatchedFolder] = []
+    // ✅ Persistent Watched Folders
+    struct WatchedFolder: Codable, Identifiable, Equatable {
+        var id: UUID = UUID()
+        var name: String
+        var bookmarkData: Data
+    }
+    @Published var watchedFolders: [WatchedFolder] = []
     
     private let settingsURL: URL
     
@@ -39,7 +44,7 @@ class AppSettingsManager: ObservableObject {
         let presets: [ConversionPreset]
         let devices: [KindleDevice]
         let history: [ConvertedPDF]
-        let watchedFolders: [ConversionManager.WatchedFolder]?
+        let watchedFolders: [WatchedFolder]?
     }
     
     func load() {
@@ -71,4 +76,13 @@ class AppSettingsManager: ObservableObject {
             }
         }
     }
+    
+    // MARK: - Legacy Mutators
+    func clearSendHistory() { sendHistory.removeAll(); save() }
+    func deletePreset(_ preset: ConversionPreset) { conversionPresets.removeAll { $0.id == preset.id }; save() }
+    func savePreset(_ preset: ConversionPreset) { conversionPresets.append(preset); save() }
+    func addKindleDevice(_ device: KindleDevice) { kindleDevices.append(device); save() }
+    func removeKindleDevice(_ device: KindleDevice) { kindleDevices.removeAll { $0.id == device.id }; save() }
+    func updateKindleDevice(_ device: KindleDevice) { if let idx = kindleDevices.firstIndex(where: { $0.id == device.id }) { kindleDevices[idx] = device; save() } }
+    func setDefaultKindleDevice(_ device: KindleDevice) { for i in 0..<kindleDevices.count { kindleDevices[i].isDefault = (kindleDevices[i].id == device.id) }; save() }
 }

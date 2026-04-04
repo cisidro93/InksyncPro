@@ -37,7 +37,7 @@ struct ConversionPresetsView: View {
             .onDelete { indexSet in
                 for index in indexSet {
                     let preset = settingsManager.conversionPresets[index]
-                    conversionManager.deletePreset(preset)
+                    settingsManager.deletePreset(preset)
                 }
             }
         }
@@ -140,7 +140,7 @@ struct SendHistoryView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Clear") {
-                    conversionManager.clearSendHistory()
+                    settingsManager.clearSendHistory()
                 }
                 .disabled(settingsManager.sendHistory.isEmpty)
             }

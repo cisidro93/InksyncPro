@@ -16,7 +16,7 @@ class SeriesViewModel: ObservableObject {
         self.manager = manager
 
         // Rebuild groups any time the library or Vault state changes
-        Publishers.CombineLatest(manager.$convertedPDFs, manager.$isVaultUnlocked)
+        Publishers.CombineLatest(manager.$convertedPDFs, AppSettingsManager.shared.$isVaultUnlocked)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] pdfs, isUnlocked in 
                 let visible = pdfs.filter { $0.isPrivate == isUnlocked }

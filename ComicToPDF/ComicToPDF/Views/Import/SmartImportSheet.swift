@@ -103,8 +103,8 @@ class SmartImportViewModel: ObservableObject {
 
     func confirm(manager: ConversionManager, context: ModelContext) {
         // Apply pipeline to settings
-        ConversionViewModel().applyPipeline(selectedPipeline, to: &manager.conversionSettings)
-        manager.conversionSettings.mangaMode = isManga
+        ConversionViewModel().applyPipeline(selectedPipeline, to: &AppSettingsManager.shared.conversionSettings)
+        AppSettingsManager.shared.conversionSettings.mangaMode = isManga
 
         // Record to SwiftData
         let normalized = seriesName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)

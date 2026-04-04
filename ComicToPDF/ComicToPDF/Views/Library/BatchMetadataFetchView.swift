@@ -45,8 +45,8 @@ class BatchMetadataFetcher: ObservableObject {
     
     func startExecution() async {
         currentPhase = .executing
-        let apiKey = settingsManager.conversionSettings.comicVineAPIKey
-        let deepFetch = settingsManager.conversionSettings.deepFetchComicVineIssues
+        let apiKey = AppSettingsManager.shared.conversionSettings.comicVineAPIKey
+        let deepFetch = AppSettingsManager.shared.conversionSettings.deepFetchComicVineIssues
         
         // Cache to prevent repetitive API calls for volume searches
         var volumeCache: [String: ComicVineVolume] = [:]

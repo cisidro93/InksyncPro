@@ -21,7 +21,7 @@ extension ConversionManager {
     func validateForExport(_ pdf: ConvertedPDF) -> ValidationResult {
         Logger.shared.log("Running Pre-Flight Check for: \(pdf.name)", category: "Validation")
         
-        if conversionSettings.isGuidedView {
+        if AppSettingsManager.shared.conversionSettings.isGuidedView {
             let panels = WorkspaceSessionManager.shared.panelOverrides[pdf.id] ?? [:]
             if panels.isEmpty {
                 return .warning("Guided View is enabled, but no panels were detected. The EPUB will export with default full-page views.")
