@@ -71,9 +71,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         let picker: UIDocumentPickerViewController
 
         if type == .folder {
-            // asCopy:true → iOS copies the folder into the app's Documents/Inbox before the
-            // delegate fires. No security scope, no spider needed — we get direct sandbox URLs.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: true)
+            // asCopy:false → Open button stays ACTIVE while user is navigated inside a folder.
+            // The delegate receives a security-scoped URL for the chosen folder.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
             picker.allowsMultipleSelection = false
 
         } else if type == .unified {
@@ -119,37 +119,45 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             switch self.currentType {
 
             case .folder:
-                // asCopy:true delivers a copied folder URL directly in the app's Inbox/.
-                // Enumerate it for comic files — no security scope required.
+                // asCopy:false gives us a security-scoped URL for the selected folder.
+                // NSFileCoordinator is the correct iOS API for reading security-scoped URLs
+                // delivered by UIDocumentPickerViewController.
                 var found: [URL] = []
-                let fm = FileManager.default
-                let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+                let fm2 = FileManager.default
+                let validExts2 = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
                 for url in urls {
-                    var isDir: ObjCBool = false
-                    if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                        // Folder — enumerate and copy to staging so orchestrator can move them
-                        let stagingDir = fm.temporaryDirectory
-                            .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-                        try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-                        if let enumerator = fm.enumerator(at: url,
-                                                           includingPropertiesForKeys: [.isDirectoryKey],
-                                                           options: [.skipsHiddenFiles]) {
-                            for case let fileURL as URL in enumerator {
-                                if validExts.contains(fileURL.pathExtension.lowercased()) {
-                                    let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                                    do {
-                                        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                                        try fm.copyItem(at: fileURL, to: dest)
-                                        found.append(dest)
-                                    } catch {
-                                        Logger.shared.log("ImportCoordinator[folder]: copy failed (\(fileURL.lastPathComponent)): \(error)", category: "System", type: .warning)
-                                    }
-                                }
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    let stagingDir = fm2.temporaryDirectory
+                        .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+                    try? fm2.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+
+                    var coordError: NSError?
+                    NSFileCoordinator().coordinate(
+                        readingItemAt: url,
+                        options: .withoutChanges,
+                        error: &coordError
+                    ) { coordURL in
+                        guard let enumerator = fm2.enumerator(
+                            at: coordURL,
+                            includingPropertiesForKeys: [.isDirectoryKey],
+                            options: [.skipsHiddenFiles]
+                        ) else { return }
+                        for case let fileURL as URL in enumerator {
+                            guard validExts2.contains(fileURL.pathExtension.lowercased()) else { continue }
+                            let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
+                            do {
+                                if fm2.fileExists(atPath: dest.path) { try fm2.removeItem(at: dest) }
+                                try fm2.copyItem(at: fileURL, to: dest)
+                                found.append(dest)
+                            } catch {
+                                Logger.shared.log("ImportCoordinator[coord]: copy failed (\(fileURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
                             }
                         }
-                    } else if validExts.contains(url.pathExtension.lowercased()) {
-                        found.append(url) // single copied file
                     }
+                    if let e = coordError {
+                        Logger.shared.log("ImportCoordinator[coord]: coordinator error: \(e.localizedDescription)", category: "System", type: .error)
+                    }
+                    if accessing { url.stopAccessingSecurityScopedResource() }
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
 
