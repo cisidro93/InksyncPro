@@ -70,8 +70,8 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: folderTypes, asCopy: false)
             picker.allowsMultipleSelection = false
         } else if type == .unified {
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
-            picker.allowsMultipleSelection = false
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
+            picker.allowsMultipleSelection = true
         } else {
             let asCopy = type == .files || type == .json || type == .smartList
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
@@ -112,7 +112,17 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
                             allFound.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
                         } else {
-                            allFound.append(url)
+                            let fm = FileManager.default
+                            let tempDir = fm.temporaryDirectory.appendingPathComponent("Unified_File_Ingest_\(UUID().uuidString)")
+                            try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                            let destURL = tempDir.appendingPathComponent(url.lastPathComponent)
+                            do {
+                                if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+                                try fm.copyItem(at: url, to: destURL)
+                                allFound.append(destURL)
+                            } catch {
+                                Logger.shared.log("ImportCoordinator: Failed to localize single file: \(error)", category: "System", type: .warning)
+                            }
                         }
                         if isAccessing { url.stopAccessingSecurityScopedResource() }
                     }
@@ -137,11 +147,20 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         var foundURLs: [URL] = []
         let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
         let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent("Folder_Spider_\(UUID().uuidString)")
+        try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
         if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
             for case let fileURL as URL in enumerator {
                 if validExts.contains(fileURL.pathExtension.lowercased()) {
-                    foundURLs.append(fileURL)
+                    let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
+                    do {
+                        if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+                        try fm.copyItem(at: fileURL, to: destURL)
+                        foundURLs.append(destURL)
+                    } catch {
+                        Logger.shared.log("ImportCoordinator: Spider Copy Failed for \(fileURL.lastPathComponent): \(error)", category: "System", type: .warning)
+                    }
                 }
             }
         }
