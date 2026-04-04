@@ -69,11 +69,12 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: folderTypes, asCopy: false)
             picker.allowsMultipleSelection = false
         } else if type == .unified {
-            // asCopy: true is required so iOS safely materializes each file into our sandbox.
-            // allowsMultipleSelection: true lets the user select all files in a folder at once.
-            // This exactly matches the FolderImportCoordinator that worked in build 5556dd2.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
-            picker.allowsMultipleSelection = true
+            // Matches the FolderPicker from 5556dd2 exactly:
+            // asCopy:false + allowsMultipleSelection:false + .folder in types.
+            // This is what causes iOS to show an active "Open" button when the
+            // user is browsing inside a folder — without needing to select anything.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
+            picker.allowsMultipleSelection = false
         } else {
             let asCopy = type == .files || type == .json || type == .smartList
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
@@ -107,27 +108,42 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     }
                     DispatchQueue.main.async { self.finish(with: allFound) }
                 } else if self.currentType == .unified {
-                    // For each URL: if it's a folder, spider it for all valid files.
-                    // If it's a file, pass it straight through. asCopy:true means iOS
-                    // already gave us safe sandbox copies — no additional scoping needed.
+                    // asCopy:false means we hold the security scope and must copy files
+                    // to our own staging dir before releasing it.
                     var allFound: [URL] = []
                     let fm = FileManager.default
                     let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+                    let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+                    try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+                    
                     for url in urls {
                         let accessing = url.startAccessingSecurityScopedResource()
                         var isDir: ObjCBool = false
                         if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                            // Folder selected — recursively spider all valid files inside
+                            // Folder opened — recursively copy all valid files while scope is active
                             if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
                                 for case let fileURL as URL in enumerator {
-                                    if allowedExts.contains(fileURL.pathExtension.lowercased()) {
-                                        allFound.append(fileURL)
+                                    guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
+                                    let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
+                                    do {
+                                        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                                        try fm.copyItem(at: fileURL, to: dest)
+                                        allFound.append(dest)
+                                    } catch {
+                                        Logger.shared.log("ImportCoordinator: Copy failed for \(fileURL.lastPathComponent): \(error)", category: "System", type: .warning)
                                     }
                                 }
                             }
                         } else if allowedExts.contains(url.pathExtension.lowercased()) {
-                            // Single file selected — use directly
-                            allFound.append(url)
+                            // Single file — copy to staging while scope is active
+                            let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
+                            do {
+                                if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                                try fm.copyItem(at: url, to: dest)
+                                allFound.append(dest)
+                            } catch {
+                                Logger.shared.log("ImportCoordinator: Single file copy failed for \(url.lastPathComponent): \(error)", category: "System", type: .warning)
+                            }
                         }
                         if accessing { url.stopAccessingSecurityScopedResource() }
                     }
