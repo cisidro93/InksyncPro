@@ -50,8 +50,8 @@ class SmartListImporter {
             let row = line.trimmingCharacters(in: .whitespaces)
             if row.isEmpty { continue }
             
-            // Simple split for basic CSV reading
-            let columns = row.components(separatedBy: ",")
+            // Quote-aware CSV tokenizer (handles commas inside quoted fields)
+            let columns = parseCSVRow(row)
             
             if idx == 0 {
                 let testHeaders = columns.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
@@ -354,5 +354,32 @@ class SmartListImporter {
             return match
         }
         return nil
+    }
+    
+    /// Quote-aware CSV row tokenizer. Handles commas and escaped quotes inside quoted fields.
+    private func parseCSVRow(_ row: String) -> [String] {
+        var fields: [String] = []
+        var current = ""
+        var inQuotes = false
+        let chars = Array(row)
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            if c == "\"" {
+                if inQuotes && i + 1 < chars.count && chars[i + 1] == "\"" {
+                    current.append("\""); i += 1
+                } else {
+                    inQuotes.toggle()
+                }
+            } else if c == "," && !inQuotes {
+                fields.append(current.trimmingCharacters(in: .whitespaces))
+                current = ""
+            } else {
+                current.append(c)
+            }
+            i += 1
+        }
+        fields.append(current.trimmingCharacters(in: .whitespaces))
+        return fields
     }
 }

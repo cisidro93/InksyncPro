@@ -51,8 +51,11 @@ class ReadwiseImportService {
         var importedCount = 0
         var skippedCount = 0
         
-        let formatters: [DateFormatter] = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy", "MMM d, yyyy", "yyyy-MM-dd'T'HH:mm:ssZ"].map { fmt in
+        // Extended format bank covering all known Readwise export date variants
+        let fullDateFormats = ["yyyy-MM-dd HH:mm:ssZ", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy", "MMM d, yyyy", "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss.SSSZ"]
+        let formatters: [DateFormatter] = fullDateFormats.map { fmt in
             let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
             df.dateFormat = fmt
             return df
         }
@@ -78,34 +81,49 @@ class ReadwiseImportService {
             let author = (authorIdx != nil && row.count > authorIdx!) ? row[authorIdx!].trimmingCharacters(in: .whitespacesAndNewlines) : ""
             let dateStr = (dateIdx != nil && row.count > dateIdx!) ? row[dateIdx!].trimmingCharacters(in: .whitespacesAndNewlines) : ""
             
-            var parsedDate = Date()
+            var parsedDate: Date? = nil
             if !dateStr.isEmpty {
-                if let iso = ISO8601DateFormatter().date(from: dateStr) {
-                    parsedDate = iso
+                let isoFull = ISO8601DateFormatter()
+                isoFull.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime, .withTimeZone]
+                let isoBasic = ISO8601DateFormatter()
+                isoBasic.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
+                if let d = isoFull.date(from: dateStr) ?? isoBasic.date(from: dateStr) {
+                    parsedDate = d
                 } else {
                     for df in formatters {
-                        if let d = df.date(from: dateStr) {
-                            parsedDate = d
-                            break
-                        }
+                        if let d = df.date(from: dateStr) { parsedDate = d; break }
                     }
                 }
+                if parsedDate == nil {
+                    Logger.shared.log("Readwise [WARN]: Could not parse date '\(dateStr)' row \(i). Falling back to import time.", category: "Import", type: .warning)
+                }
+            }
+            let resolvedDate = parsedDate ?? Date()
+            
+            // Deterministic ID from content hash: same highlight always gets same UUID → prevents duplicate imports
+            let contentKey = "\(bookTitle)||||\(highlightText)"
+            let contentHash = Insecure.MD5.hash(data: Data(contentKey.utf8))
+            let deterministicID = contentHash.withUnsafeBytes { ptr -> UUID in
+                let bytes = ptr.bindMemory(to: UInt8.self).baseAddress!
+                return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
             }
             
-            // Generate a deterministic 16-byte UUID from the book title using MD5 hashing
+            // Deterministic pdfID from book title so all highlights share the same pdfID per book
             let hash = Insecure.MD5.hash(data: Data(bookTitle.utf8))
             let syntheticPDFID = hash.withUnsafeBytes { ptr -> UUID in
                 let bytes = ptr.bindMemory(to: UInt8.self).baseAddress!
-                return UUID(uuid: (
-                    bytes[0], bytes[1], bytes[2], bytes[3],
-                    bytes[4], bytes[5], bytes[6], bytes[7],
-                    bytes[8], bytes[9], bytes[10], bytes[11],
-                    bytes[12], bytes[13], bytes[14], bytes[15]
-                ))
+                return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+            }
+            
+            // Deduplication guard: skip if this exact highlight already exists in the store
+            let existingFetch = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == deterministicID })
+            if let existing = try? context.fetch(existingFetch), !existing.isEmpty {
+                skippedCount += 1
+                continue
             }
             
             let annotation = SDAnnotation(
-                id: UUID(),
+                id: deterministicID,
                 pdfID: syntheticPDFID.uuidString,
                 pageIndex: 0,
                 text: highlightText,
@@ -113,7 +131,7 @@ class ReadwiseImportService {
                 isReadwiseImport: true,
                 readwiseBookTitle: bookTitle,
                 readwiseAuthor: author,
-                createdAt: parsedDate
+                createdAt: resolvedDate
             )
             
             context.insert(annotation)
@@ -121,7 +139,7 @@ class ReadwiseImportService {
         }
         
         try context.save()
-        Logger.shared.log("Readwise Sync: Successfully imported \(importedCount) records. Skipped \(skippedCount) malformed rows.", category: "Import", type: .success)
+        Logger.shared.log("Readwise Sync: Imported \(importedCount) highlights. Skipped \(skippedCount) (duplicates or malformed rows).", category: "Import", type: .success)
         return importedCount
     }
     

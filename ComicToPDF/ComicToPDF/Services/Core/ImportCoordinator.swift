@@ -47,7 +47,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "cbz") ?? .zip,
                 UTType(filenameExtension: "cbr") ?? .archive,
                 UTType(filenameExtension: "cb7") ?? .archive,
-                .epub, .pdf, .zip, .archive
+                .epub, .pdf, .zip, .archive, .folder
             ]
         case .folder:
             supportedTypes = [.folder]
@@ -107,9 +107,31 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     }
                     DispatchQueue.main.async { self.finish(with: allFound) }
                 } else if self.currentType == .unified {
-                    // asCopy: true means iOS already materialized safe copies of each file.
-                    // No spidering needed — just pass them straight through.
-                    DispatchQueue.main.async { self.finish(with: urls) }
+                    // For each URL: if it's a folder, spider it for all valid files.
+                    // If it's a file, pass it straight through. asCopy:true means iOS
+                    // already gave us safe sandbox copies — no additional scoping needed.
+                    var allFound: [URL] = []
+                    let fm = FileManager.default
+                    let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+                    for url in urls {
+                        let accessing = url.startAccessingSecurityScopedResource()
+                        var isDir: ObjCBool = false
+                        if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                            // Folder selected — recursively spider all valid files inside
+                            if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+                                for case let fileURL as URL in enumerator {
+                                    if allowedExts.contains(fileURL.pathExtension.lowercased()) {
+                                        allFound.append(fileURL)
+                                    }
+                                }
+                            }
+                        } else if allowedExts.contains(url.pathExtension.lowercased()) {
+                            // Single file selected — use directly
+                            allFound.append(url)
+                        }
+                        if accessing { url.stopAccessingSecurityScopedResource() }
+                    }
+                    DispatchQueue.main.async { self.finish(with: allFound) }
                 } else {
                     DispatchQueue.main.async {
                         self.finish(with: urls)

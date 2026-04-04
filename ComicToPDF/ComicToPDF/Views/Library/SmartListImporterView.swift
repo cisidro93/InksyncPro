@@ -26,7 +26,7 @@ struct SmartListImporterView: View {
                             
                             Text("Import a .cbl (Comic Book List) or a basic .CSV text list of issues to automatically generate a properly-sequenced custom reading event from your local library.")
                                 .multilineTextAlignment(.center)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Color(.secondaryLabel))
                                 .padding(.horizontal)
                             
                             VStack(alignment: .leading, spacing: 12) {
@@ -49,8 +49,8 @@ struct SmartListImporterView: View {
                                     Label("Copy CSV Template", systemImage: "doc.on.doc")
                                         .font(.caption).bold()
                                         .padding(.horizontal, 12).padding(.vertical, 8)
-                                        .background(Color.blue.opacity(0.2))
-                                        .foregroundColor(.blue)
+                                        .background(Color(.systemBlue).opacity(0.15))
+                                        .foregroundColor(Color(.systemBlue))
                                         .cornerRadius(8)
                                 }
                                 
@@ -62,8 +62,8 @@ struct SmartListImporterView: View {
                                     Label("Copy Text Template", systemImage: "doc.on.doc")
                                         .font(.caption).bold()
                                         .padding(.horizontal, 12).padding(.vertical, 8)
-                                        .background(Color.green.opacity(0.2))
-                                        .foregroundColor(.green)
+                                        .background(Color(.systemGreen).opacity(0.15))
+                                        .foregroundColor(Color(.systemGreen))
                                         .cornerRadius(8)
                                 }
                             }
@@ -75,7 +75,7 @@ struct SmartListImporterView: View {
                             
                             Text("Or paste your list directly:")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Color(.secondaryLabel))
                             
                             TextEditor(text: $pastedText)
                                 .frame(height: 120)
