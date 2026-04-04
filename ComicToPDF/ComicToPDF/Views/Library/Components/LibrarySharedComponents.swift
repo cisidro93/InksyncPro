@@ -95,7 +95,7 @@ struct ModernEmptyState: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .background(Theme.bg)
     }
 }
 

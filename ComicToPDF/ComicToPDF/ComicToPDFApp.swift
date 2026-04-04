@@ -16,7 +16,12 @@ struct InksyncProApp: App {
             SDPageModel.self,
             SDSeriesMemory.self
         ])
+        #if DEBUG
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        #else
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        #endif
+        
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
