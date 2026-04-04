@@ -16,11 +16,17 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
     private static var live: ImportCoordinator?
     private var completion: (([URL]) -> Void)?
     private var currentType: ImportType = .files
+    private var isProcessing = false   // guard against delegate firing twice
 
     private override init() {}
 
     /// Present the picker from the topmost active view controller.
+    /// Silently no-ops if a picker is already active to prevent re-entrancy loops.
     static func present(type: ImportType = .files, completion: @escaping ([URL]) -> Void) {
+        guard ImportCoordinator.live == nil else {
+            Logger.shared.log("ImportCoordinator: Ignoring duplicate present() call — picker already active.", category: "System", type: .warning)
+            return
+        }
         let coordinator = ImportCoordinator()
         coordinator.completion = completion
         coordinator.currentType = type
@@ -90,6 +96,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
     // MARK: - UIDocumentPickerDelegate
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        // Guard: delegate can fire twice on iPad (sheet + popover). Process only once.
+        guard !isProcessing else { return }
+        isProcessing = true
+        
         guard !urls.isEmpty else {
             finish(with: [])
             return

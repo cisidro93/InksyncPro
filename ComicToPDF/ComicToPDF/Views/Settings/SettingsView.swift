@@ -209,7 +209,7 @@ struct SettingsView: View {
     private var sendToKindleSection: some View {
         Section(header: Text("Send to Kindle").font(.footnote).foregroundColor(.secondary)) {
             HStack {
-                settingsIcon("envelope.fill", color: .black)
+                settingsIcon("envelope.fill", color: Color(UIColor.systemGray))
                 TextField("Your @kindle.com Email", text: $kindleEmail)
                     .keyboardType(.emailAddress)
                     .autocapitalization(.none)
@@ -268,7 +268,7 @@ struct SettingsView: View {
             }
             
             HStack {
-                settingsIcon("kindle", color: .black)
+                settingsIcon("kindle", color: Color(UIColor.systemGray))
                 Toggle("Optimize for E-Readers", isOn: $settingsManager.conversionSettings.optimizeForDevice)
             }
             

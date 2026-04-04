@@ -174,6 +174,12 @@ actor ImportOrchestrator {
     }
     
     func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [URL: PDFMetadata] = [:]) async {
+        // Guard: if a prior import is still running, do not stack a second one
+        let alreadyConverting = await MainActor.run { manager.isConverting }
+        guard !alreadyConverting else {
+            Logger.shared.log("importFilesAsSeries: Skipped — import already in progress.", category: "Import", type: .warning)
+            return
+        }
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Import..." }
         defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
         
