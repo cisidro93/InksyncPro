@@ -184,26 +184,27 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     /// Synchronously spiders a folder and copies all valid comic files to temp storage.
     static func processFolderSpiderSync(url: URL) -> [URL] {
-        let validExts = Set(["cbz", "cbr", "cb7", "epub", "zip", "pdf"])
+        var foundURLs: [URL] = []
+        let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
         let fm = FileManager.default
-        let tempDir = fm.temporaryDirectory.appendingPathComponent("FolderSpider_\(UUID().uuidString)")
+        let tempDir = fm.temporaryDirectory.appendingPathComponent("Folder_Spider_\(UUID().uuidString)")
         try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        var result: [URL] = []
 
-        fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])?
-            .forEach { item in
-                guard let fileURL = item as? URL,
-                      validExts.contains(fileURL.pathExtension.lowercased()) else { return }
-                let dest = tempDir.appendingPathComponent(fileURL.lastPathComponent)
-                do {
-                    if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                    try fm.copyItem(at: fileURL, to: dest)
-                    result.append(dest)
-                } catch {
-                    Logger.shared.log("ImportCoordinator: Spider copy failed (\(fileURL.lastPathComponent)): \(error)", category: "System", type: .warning)
+        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                if validExts.contains(fileURL.pathExtension.lowercased()) {
+                    let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
+                    do {
+                        if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+                        try fm.copyItem(at: fileURL, to: destURL)
+                        foundURLs.append(destURL)
+                    } catch {
+                        Logger.shared.log("ImportCoordinator: Spider copy failed (\(fileURL.lastPathComponent)): \(error)", category: "System", type: .warning)
+                    }
                 }
             }
-        return result
+        }
+        return foundURLs
     }
 
     private func finish(with urls: [URL]) {
