@@ -171,6 +171,7 @@ class WiFiServer: ObservableObject {
         }
     }
     
+    private func processData(_ data: Data, connection: NWConnection, context: ConnectionContext) {
         if !context.isHeaderParsed {
             context.buffer.append(data)
             
@@ -513,7 +514,7 @@ class WiFiServer: ObservableObject {
                 let tempZipURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip")
                 defer { try? FileManager.default.removeItem(at: tempZipURL) }
                 
-                var archive: Archive? = Archive(url: tempZipURL, accessMode: .create)
+                var archive: Archive? = try? Archive(url: tempZipURL, accessMode: .create)
                 guard let validArchive = archive else {
                     sendResponse(connection, 500, "Failed to create archive stream.")
                     return

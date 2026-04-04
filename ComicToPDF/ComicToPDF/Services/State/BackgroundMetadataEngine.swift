@@ -48,7 +48,7 @@ class BackgroundMetadataEngine: ObservableObject {
         
         // Get queue of unmatched PDFs
         let queue = manager.convertedPDFs.filter { 
-            ($0.metadata.comicVineID == nil) && ($0.metadata.autoMatchFailed != true) && ($0.contentType == .comic)
+            ($0.metadata.universalIssueID == nil) && ($0.metadata.autoMatchFailed != true) && ($0.contentType == .comic)
         }
         
         queueCount = queue.count
@@ -145,7 +145,7 @@ class BackgroundMetadataEngine: ObservableObject {
     private func applyPartialMatch(to fileID: UUID, manager: ConversionManager, volume: ComicVineVolume, issueNum: Int?) {
         if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == fileID }) {
             manager.convertedPDFs[idx].metadata.series = volume.name
-            manager.convertedPDFs[idx].metadata.seriesID = volume.id
+            manager.convertedPDFs[idx].metadata.universalSeriesID = volume.id
             manager.convertedPDFs[idx].metadata.volume = volume.name
             manager.convertedPDFs[idx].metadata.publisher = volume.publisher?.name
             if let num = issueNum {
@@ -157,11 +157,11 @@ class BackgroundMetadataEngine: ObservableObject {
     private func applyFullMatch(to fileID: UUID, manager: ConversionManager, volume: ComicVineVolume, issue: ComicVineIssueDetails, issueNum: Int) {
         if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == fileID }) {
             manager.convertedPDFs[idx].metadata.series = volume.name
-            manager.convertedPDFs[idx].metadata.seriesID = volume.id
+            manager.convertedPDFs[idx].metadata.universalSeriesID = volume.id
             manager.convertedPDFs[idx].metadata.volume = volume.name
             manager.convertedPDFs[idx].metadata.issueNumber = "\(issueNum)"
             manager.convertedPDFs[idx].metadata.publisher = volume.publisher?.name
-            manager.convertedPDFs[idx].metadata.comicVineID = issue.id
+            manager.convertedPDFs[idx].metadata.universalIssueID = issue.id
             
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"

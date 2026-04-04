@@ -152,7 +152,7 @@ class AnnotationStore: ObservableObject {
     }
     
     func add(_ annotation: Annotation) {
-        var newAnnotation = annotation
+        let newAnnotation = annotation
         
         // Optimistically insert into the active binding array immediately
         store[newAnnotation.pdfID, default: []].append(newAnnotation)
