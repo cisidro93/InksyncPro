@@ -69,12 +69,12 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: folderTypes, asCopy: false)
             picker.allowsMultipleSelection = false
         } else if type == .unified {
-            // Matches the FolderPicker from 5556dd2 exactly:
-            // asCopy:false + allowsMultipleSelection:false + .folder in types.
-            // This is what causes iOS to show an active "Open" button when the
-            // user is browsing inside a folder — without needing to select anything.
+            // asCopy:false so we get security-scoped URLs.
+            // allowsMultipleSelection:true lets users pick multiple files when browsing inside a folder.
+            // .folder in the supported types enables the "Open" button when the user is AT a folder level.
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-            picker.allowsMultipleSelection = false
+            picker.allowsMultipleSelection = true
+            picker.directoryURL = nil // Let the picker open at the system default location
         } else {
             let asCopy = type == .files || type == .json || type == .smartList
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
