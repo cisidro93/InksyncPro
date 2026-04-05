@@ -163,7 +163,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
             case .unified:
                 let fm = FileManager.default
-                let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+                let allowedExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
                 let stagingDir = fm.temporaryDirectory
                     .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
                 try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
@@ -171,37 +171,51 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
                 for url in urls {
                     let accessing = url.startAccessingSecurityScopedResource()
-                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-                    var isDir: ObjCBool = false
-                    guard fm.fileExists(atPath: url.path, isDirectory: &isDir) else { continue }
+                    var coordError: NSError?
+                    NSFileCoordinator().coordinate(
+                        readingItemAt: url,
+                        options: .withoutChanges,
+                        error: &coordError
+                    ) { coordURL in
+                        var isDir: ObjCBool = false
+                        guard fm.fileExists(atPath: coordURL.path, isDirectory: &isDir) else { return }
 
-                    if isDir.boolValue {
-                        fm.enumerator(at: url,
-                                      includingPropertiesForKeys: [.isDirectoryKey],
-                                      options: [.skipsHiddenFiles])?
-                            .forEach { item in
-                                guard let fileURL = item as? URL,
-                                      allowedExts.contains(fileURL.pathExtension.lowercased()) else { return }
-                                let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                                do {
-                                    if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                                    try fm.copyItem(at: fileURL, to: dest)
-                                    found.append(dest)
-                                } catch {
-                                    Logger.shared.log("ImportCoordinator: Folder copy failed (\(fileURL.lastPathComponent)): \(error)", category: "System", type: .warning)
+                        if isDir.boolValue {
+                            // Folder — recursively collect all valid comic files
+                            if let enumerator = fm.enumerator(
+                                at: coordURL,
+                                includingPropertiesForKeys: [.isDirectoryKey],
+                                options: [.skipsHiddenFiles]
+                            ) {
+                                for case let fileURL as URL in enumerator {
+                                    guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
+                                    let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
+                                    do {
+                                        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                                        try fm.copyItem(at: fileURL, to: dest)
+                                        found.append(dest)
+                                    } catch {
+                                        Logger.shared.log("ImportCoordinator[unified/folder]: copy failed (\(fileURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
+                                    }
                                 }
                             }
-                    } else if allowedExts.contains(url.pathExtension.lowercased()) {
-                        let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
-                        do {
-                            if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                            try fm.copyItem(at: url, to: dest)
-                            found.append(dest)
-                        } catch {
-                            Logger.shared.log("ImportCoordinator: File copy failed (\(url.lastPathComponent)): \(error)", category: "System", type: .warning)
+                        } else if allowedExts.contains(coordURL.pathExtension.lowercased()) {
+                            // Single file
+                            let dest = stagingDir.appendingPathComponent(coordURL.lastPathComponent)
+                            do {
+                                if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                                try fm.copyItem(at: coordURL, to: dest)
+                                found.append(dest)
+                            } catch {
+                                Logger.shared.log("ImportCoordinator[unified/file]: copy failed (\(coordURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
+                            }
                         }
                     }
+                    if let e = coordError {
+                        Logger.shared.log("ImportCoordinator[unified]: coordinator error for \(url.lastPathComponent): \(e.localizedDescription)", category: "System", type: .error)
+                    }
+                    if accessing { url.stopAccessingSecurityScopedResource() }
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
 
