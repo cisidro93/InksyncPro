@@ -109,10 +109,11 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        // CRITICAL: With asCopy:false, iOS 17+ auto-dismisses the picker BEFORE calling this
-        // delegate. Calling controller.dismiss() again produces a completion block that never
-        // fires on those OS versions, silently dropping the entire import.
-        // Solution: process URLs directly on a background queue — no dismiss call needed.
+        // Dismiss the picker immediately — asCopy:false never auto-dismisses.
+        // We do NOT use a completion block so processing is not gated on the animation.
+        controller.dismiss(animated: true)
+
+        // Process on background queue in parallel with the dismiss animation.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
 

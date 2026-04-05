@@ -191,7 +191,7 @@ struct LibraryHeaderView: View {
                         
                         // 3. One-Click Unified Importer
                         Button(action: {
-                            ImportCoordinator.present(type: .unified) { urls in
+                            ImportCoordinator.present(type: .folder) { urls in
                                 guard !urls.isEmpty else { return }
                                 Task { await conversionManager.importFilesAsSeries(urls: urls) }
                             }
