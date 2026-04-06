@@ -195,7 +195,7 @@ struct ContentView: View {
                     onFolderImport: {
                         // Import button now opens the Import Queue staging sheet (via LibraryHeaderView).
                         // This path is the fallback triggered from the empty-library state.
-                        ImportCoordinator.present(type: .folder) { urls in
+                        ImportCoordinator.present(type: .unified) { urls in
                             guard !urls.isEmpty else { return }
                             ImportQueueManager.shared.stage(urls)
                         }

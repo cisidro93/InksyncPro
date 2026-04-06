@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:epub="http://www.idpf.org/2007/ops">
+  <head>
+    <meta charset="UTF-8"/>
+    <!-- viewport MUST match actual source image pixel dimensions -->
+    <meta name="viewport" content="width=1920, height=1200"/>
+    <title>Page 1</title>
+    <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
+  </head>
+  <body>
+    <div class="page">
+
+      <!-- Full page image — always the first element in .page -->
+      <img class="page-image"
+           src="../images/page001.jpg"
+           alt="Page 1"/>
+
+      <!--
+        PANEL MARKUP RULES — READ CAREFULLY:
+
+        1. The <a class="app-amzn-magnify"> and the target <div> are SIBLINGS.
+           The target div must NOT be inside the <a> tag.
+
+        2. data-app-amzn-magnify JSON must use straight quotes, not smart quotes.
+           Attribute value uses single outer quotes, JSON uses double inner quotes.
+
+        3. sourceId = id of the <div> INSIDE the <a> tag
+           targetId = id of the SIBLING <div> outside the <a> tag
+           These must match EXACTLY including case.
+
+        4. ordinal starts at 1 per page and increments by 1.
+
+        5. Coordinates are percentages of the page image dimensions.
+           Formula: top% = (pixel_y / img_height) * 100
+
+        6. IDs must be unique across the ENTIRE book, not just the page.
+           Use convention: p{pageNum}-panel{panelNum}-s / -t
+      -->
+
+      <!-- Panel 1: top-left panel (example: x=20px, y=30px, w=900px, h=550px on 1920x1200 page) -->
+      <a class="app-amzn-magnify"
+         data-app-amzn-magnify='{"targetId":"p1-panel1-t","sourceId":"p1-panel1-s","ordinal":1}'>
+        <div id="p1-panel1-s"
+             class="panel-source"
+             style="top:2.50%; left:1.04%; width:46.88%; height:45.83%;">
+        </div>
+      </a>
+      <div id="p1-panel1-t"
+           class="panel-target"
+           style="top:2.50%; left:1.04%; width:46.88%; height:45.83%;">
+      </div>
+
+      <!-- Panel 2: top-right panel -->
+      <a class="app-amzn-magnify"
+         data-app-amzn-magnify='{"targetId":"p1-panel2-t","sourceId":"p1-panel2-s","ordinal":2}'>
+        <div id="p1-panel2-s"
+             class="panel-source"
+             style="top:2.50%; left:52.08%; width:46.88%; height:45.83%;">
+        </div>
+      </a>
+      <div id="p1-panel2-t"
+           class="panel-target"
+           style="top:2.50%; left:52.08%; width:46.88%; height:45.83%;">
+      </div>
+
+      <!-- Panel 3: bottom-left panel -->
+      <a class="app-amzn-magnify"
+         data-app-amzn-magnify='{"targetId":"p1-panel3-t","sourceId":"p1-panel3-s","ordinal":3}'>
+        <div id="p1-panel3-s"
+             class="panel-source"
+             style="top:52.50%; left:1.04%; width:46.88%; height:45.00%;">
+        </div>
+      </a>
+      <div id="p1-panel3-t"
+           class="panel-target"
+           style="top:52.50%; left:1.04%; width:46.88%; height:45.00%;">
+      </div>
+
+      <!-- Panel 4: bottom-right panel -->
+      <a class="app-amzn-magnify"
+         data-app-amzn-magnify='{"targetId":"p1-panel4-t","sourceId":"p1-panel4-s","ordinal":4}'>
+        <div id="p1-panel4-s"
+             class="panel-source"
+             style="top:52.50%; left:52.08%; width:46.88%; height:45.00%;">
+        </div>
+      </a>
+      <div id="p1-panel4-t"
+           class="panel-target"
+           style="top:52.50%; left:52.08%; width:46.88%; height:45.00%;">
+      </div>
+
+    </div>
+  </body>
+</html>

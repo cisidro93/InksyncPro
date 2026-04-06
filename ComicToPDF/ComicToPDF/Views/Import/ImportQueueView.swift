@@ -169,11 +169,9 @@ struct ImportQueueView: View {
     // MARK: Actions
 
     private func addFiles() {
-        // .folder picker: blue Open button when inside a folder, spiders recursively for CBZ/PDF etc.
-        // Deprecated single-URL delegate means iOS WILL call back when user presses Open inside a folder.
-        // Files are staged to queue, NOT directly imported.
+        // .unified picker: allows recursive folder staging OR individual file multi-selection.
         queue.isStagingFiles = true
-        ImportCoordinator.present(type: .folder) { urls in
+        ImportCoordinator.present(type: .unified) { urls in
             queue.isStagingFiles = false
             guard !urls.isEmpty else { return }
             queue.stage(urls)
