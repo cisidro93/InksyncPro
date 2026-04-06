@@ -57,6 +57,14 @@ class MigrationService {
             try context.save()
             UserDefaults.standard.set(true, forKey: "hasMigratedToSwiftData_v1")
             Logger.shared.log("Successfully migrated \(legacyPDFs.count) books and \(legacyCollections.count) collections to SwiftData", category: "Migration")
+            
+            // 🔥 Nuke the legacy JSON ghost files from iCloud Drive / Documents directory permanently.
+            // If we leave them, uninstalling and reinstalling the app will cause iCloud Drive to 
+            // restore these files, and the app will silently reconstruct the old history!
+            try? FileManager.default.removeItem(at: libraryURL)
+            let collectionsURL = getCollectionsURL()
+            try? FileManager.default.removeItem(at: collectionsURL)
+            
         } catch {
             Logger.shared.log("Fatal Error during SwiftData migration: \(error.localizedDescription)", category: "Migration", type: .error)
         }
