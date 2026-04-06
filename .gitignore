@@ -17,3 +17,6 @@ Pods/
 "ComicToPDF/reference files/"
 *.cbz
 *.epub
+
+reference files/ipa_extracted/
+reference files/*.ipa
