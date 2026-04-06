@@ -103,6 +103,13 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     // MARK: - UIDocumentPickerDelegate
 
+    /// Deprecated single-URL delegate (iOS < 11). iOS still calls THIS (not the multi-URL variant)
+    /// when allowsMultipleSelection=false and a folder is selected via the .folder picker.
+    /// The working binary explicitly implements this in FolderPickerV.Coordinator.
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
+        documentPicker(controller, didPickDocumentsAt: [url])
+    }
+
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard !urls.isEmpty else {
             finish(with: [])
