@@ -7,7 +7,7 @@ class WorkspaceSessionManager: ObservableObject {
     static let shared = WorkspaceSessionManager()
     
     // Guided View Data
-    @Published var panelOverrides: [UUID: [Int: [PanelExtractor.Panel]]] = [:]
+    // 🗑 panelOverrides RAM dictionary has been migrated to `PageModelStore` native SQLite
     
     // Panel Editor State
     @Published var isPresentingPanelEditor: Bool = false
@@ -30,28 +30,7 @@ class WorkspaceSessionManager: ObservableObject {
         if let model = pageModels[pdfID]?[pageIndex] {
             return model
         }
-        
-        var newModel = PageModel(pageIndex: pageIndex)
-        
-        if let legacyPanels = panelOverrides[pdfID]?[pageIndex] {
-             var allNormalized = true
-             newModel.panels = legacyPanels.map { panel in
-                let rect = panel.boundingBox
-                if rect.maxX <= 1.1 && rect.maxY <= 1.1 {
-                     return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
-                } else {
-                     allNormalized = false
-                     return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
-                }
-            }
-            
-            if !newModel.panels.isEmpty && allNormalized {
-                 newModel.coordinateSystem = .normalized
-            } else {
-                 newModel.coordinateSystem = .unknown 
-            }
-        }
-        return newModel
+        return PageModelStore.shared.getPageModel(for: pdfID, pageIndex: pageIndex)
     }
     
     func savePageModel(_ model: PageModel, for pdfID: UUID) {
@@ -64,27 +43,7 @@ class WorkspaceSessionManager: ObservableObject {
         }
         pageModels[pdfID]?[model.pageIndex] = modelToSave
         
-        // Convert back to Vision (Legacy)
-        let legacyPanels = model.panels.map { rect -> PanelExtractor.Panel in
-            let x = rect.origin.x / 1000.0
-            let y = rect.origin.y / 1000.0
-            let w = rect.width / 1000.0
-            let h = rect.height / 1000.0
-            let yVision = 1.0 - y - h
-            let visionRect = CGRect(x: x, y: yVision, width: w, height: h)
-            return PanelExtractor.Panel(boundingBox: visionRect)
-        }
-        
-        if legacyPanels.isEmpty {
-            panelOverrides[pdfID]?[model.pageIndex] = nil 
-        } else {
-            if panelOverrides[pdfID] == nil {
-                panelOverrides[pdfID] = [:]
-            }
-            panelOverrides[pdfID]?[model.pageIndex] = legacyPanels
-        }
-        
-        // Tell Persistence Manager to save globally
-        NotificationCenter.default.post(name: NSNotification.Name("LibraryNeedsSave"), object: nil)
+        // Instantly save to Native SQLite Store without bloating the Main Thread
+        PageModelStore.shared.savePageModel(modelToSave, for: pdfID)
     }
 }

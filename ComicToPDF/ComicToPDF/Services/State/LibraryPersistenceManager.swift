@@ -22,7 +22,8 @@ class LibraryPersistenceManager {
         let index = LibraryIndex(
             files: [], // ✅ Deprecated: Unshackled from JSON Monolith (Handled by SwiftData Native)
             collections: [], // ✅ Deprecated: Migrated to SDPDFCollection
-            panelOverrides: WorkspaceSessionManager.shared.panelOverrides,
+            panelOverrides: nil, // ✅ Migrated to SwiftData Native SQLite (PageModelStore)
+    
             registeredDevices: DeviceRegistry.shared.registeredDevices,
             primaryDeviceID: DeviceRegistry.shared.primaryDeviceID
         )
@@ -73,7 +74,39 @@ class LibraryPersistenceManager {
                        let data = try? Data(contentsOf: url),
                        let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) {
                         
-                        WorkspaceSessionManager.shared.panelOverrides = index.panelOverrides ?? [:]
+                        if let legacyPanels = index.panelOverrides, !legacyPanels.isEmpty {
+                            // ✅ Deep Migrate Legacy Panels to SQLite
+                            for (pdfID, pages) in legacyPanels {
+                                for (pageIndex, visionPanels) in pages {
+                                    var newModel = PageModel(pageIndex: pageIndex)
+                                    var allNormalized = true
+                                    newModel.panels = visionPanels.map { panel in
+                                        let rect = panel.boundingBox
+                                        if rect.maxX <= 1.1 && rect.maxY <= 1.1 {
+                                            return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
+                                        } else {
+                                            allNormalized = false
+                                            return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
+                                        }
+                                    }
+                                    if !newModel.panels.isEmpty && allNormalized {
+                                        newModel.coordinateSystem = .normalized
+                                    } else {
+                                        newModel.coordinateSystem = .unknown 
+                                    }
+                                    PageModelStore.shared.savePageModel(newModel, for: pdfID)
+                                }
+                            }
+                            // 💥 NUKE the ghost payload from the JSON to defeat iCloud ghost reinstalls 
+                            var scrubbedIndex = index
+                            scrubbedIndex.panelOverrides = nil
+                            if let scrubURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName) {
+                                if let encoded = try? JSONEncoder().encode(scrubbedIndex) {
+                                    try? encoded.write(to: scrubURL, options: .atomic)
+                                }
+                            }
+                        }
+                        
                         DeviceRegistry.shared.registeredDevices = index.registeredDevices ?? []
                         DeviceRegistry.shared.primaryDeviceID = index.primaryDeviceID
                     }

@@ -270,7 +270,7 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { ImportQueueManager.shared.stage([]); /* queue opened via header */ }
+                    onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) }
                 )
             } else {
                 LibraryGridView(
@@ -281,7 +281,7 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { ImportQueueManager.shared.stage([]); /* queue opened via header */ }
+                    onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) }
                 )
             }
         }

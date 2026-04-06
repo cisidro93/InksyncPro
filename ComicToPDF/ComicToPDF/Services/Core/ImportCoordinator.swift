@@ -75,22 +75,13 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             // The delegate receives a security-scoped URL for the chosen folder.
             picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
             picker.allowsMultipleSelection = false
-
         } else if type == .unified {
-            // ─── Critical Design ───────────────────────────────────────────────────
-            // asCopy: false   → security-scoped URLs; we copy files manually inside the scope.
-            // allowsMultipleSelection: false → iOS shows an active "Open" button when the
-            //   user is navigated INSIDE a folder. With `true`, tapping a folder navigates
-            //   into it, breaking the "open this whole folder" use case the user expects.
-            // 
-            // The unified picker now allows multiple selection so users can select multiple CBZ files
-            // or select a folder to import recursively.
-            // ───────────────────────────────────────────────────────────────────────
+            // Security scoped URLs manually handled to support recursive folder dumping AND file selecting
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
             picker.allowsMultipleSelection = true
-
         } else {
             let asCopy = (type == .files || type == .json || type == .smartList)
+            // ✅ Fix iOS 16/17 UI Deadlock: `asCopy: true` forces a native copy before dismissing, bypassing `NSFileCoordinator` bugs.
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
             picker.allowsMultipleSelection = (type == .files)
         }
@@ -128,8 +119,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
             case .folder:
                 // asCopy:false gives us a security-scoped URL for the selected folder.
-                // NSFileCoordinator is the correct iOS API for reading security-scoped URLs
-                // delivered by UIDocumentPickerViewController.
+                // NSFileCoordinator is the correct iOS API for reading security-scoped URLs.
                 var found: [URL] = []
                 let fm2 = FileManager.default
                 let validExts2 = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
@@ -204,7 +194,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                                         try fm.copyItem(at: fileURL, to: dest)
                                         found.append(dest)
                                     } catch {
-                                        Logger.shared.log("ImportCoordinator[unified/folder]: copy failed (\(fileURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
+                                        Logger.shared.log("ImportCoordinator: unified copy failed: \(error.localizedDescription)", category: "System", type: .warning)
                                     }
                                 }
                             }
@@ -216,18 +206,19 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                                 try fm.copyItem(at: coordURL, to: dest)
                                 found.append(dest)
                             } catch {
-                                Logger.shared.log("ImportCoordinator[unified/file]: copy failed (\(coordURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
+                                Logger.shared.log("ImportCoordinator: unified single file copy failed: \(error.localizedDescription)", category: "System", type: .warning)
                             }
                         }
                     }
                     if let e = coordError {
-                        Logger.shared.log("ImportCoordinator[unified]: coordinator error for \(url.lastPathComponent): \(e.localizedDescription)", category: "System", type: .error)
+                        Logger.shared.log("ImportCoordinator: unified coord error: \(e.localizedDescription)", category: "System", type: .error)
                     }
                     if accessing { url.stopAccessingSecurityScopedResource() }
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
 
             default:
+                // .files returns standard OS-copied tmp URLs because `asCopy: true` was used! Safe to process.
                 DispatchQueue.main.async { self.finish(with: urls) }
             }
         }

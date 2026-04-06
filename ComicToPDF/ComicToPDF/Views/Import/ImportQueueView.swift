@@ -169,7 +169,6 @@ struct ImportQueueView: View {
     // MARK: Actions
 
     private func addFiles() {
-        // .unified picker: allows recursive folder staging OR individual file multi-selection.
         queue.isStagingFiles = true
         ImportCoordinator.present(type: .unified) { urls in
             queue.isStagingFiles = false

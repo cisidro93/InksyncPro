@@ -367,7 +367,7 @@ struct ComicReaderEngine: View {
     var guidedView: some View {
         TabView(selection: $currentIndex) {
             ForEach(0..<cache.pageCount, id: \.self) { index in
-                let panelsForPage = WorkspaceSessionManager.shared.panelOverrides[pdf.id]?[index] ?? []
+                let panelsForPage = PageModelStore.shared.legacyVisionPanels(for: pdf.id, pageIndex: index)
                 ComicGuidedPageView(
                     image: cache.getImage(at: index),
                     panels: panelsForPage,

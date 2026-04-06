@@ -304,5 +304,8 @@ struct LibraryHeaderView: View {
             Rectangle().frame(height: 1).foregroundColor(Theme.text.opacity(0.05)),
             alignment: .bottom
         )
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowImportQueue"))) { _ in
+            showImportQueue = true
+        }
     }
 }
