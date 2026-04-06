@@ -19,9 +19,9 @@ struct LibraryHeaderView: View {
     // Vault unlock callback
     var onVaultToggle: () -> Void
     var onSelectAll: (() -> Void)? = nil
-    
 
-    
+    @State private var showImportQueue = false
+
     var body: some View {
         VStack(spacing: 16) {
             
@@ -189,13 +189,8 @@ struct LibraryHeaderView: View {
                             .overlay(Capsule().stroke(Theme.text.opacity(0.1), lineWidth: 1))
                         }
                         
-                        // 3. One-Click Unified Importer
-                        Button(action: {
-                            ImportCoordinator.present(type: .folder) { urls in
-                                guard !urls.isEmpty else { return }
-                                Task { await conversionManager.importFilesAsSeries(urls: urls) }
-                            }
-                        }) {
+                        // 3. One-Click Import Queue (opens staging queue then "Import All")
+                        Button(action: { showImportQueue = true }) {
                             HStack(spacing: 8) {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 14, weight: .bold))
@@ -208,6 +203,10 @@ struct LibraryHeaderView: View {
                             .padding(.vertical, 12)
                             .background(Theme.blue)
                             .clipShape(Capsule())
+                        }
+                        .sheet(isPresented: $showImportQueue) {
+                            ImportQueueView()
+                                .environmentObject(conversionManager)
                         }
                         
                         ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }

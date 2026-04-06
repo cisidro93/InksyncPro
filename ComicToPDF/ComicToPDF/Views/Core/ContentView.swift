@@ -193,9 +193,11 @@ struct ContentView: View {
                     batchMergeItems: $batchMergeItems,
                     useNavigationStack: true,
                     onFolderImport: {
+                        // Import button now opens the Import Queue staging sheet (via LibraryHeaderView).
+                        // This path is the fallback triggered from the empty-library state.
                         ImportCoordinator.present(type: .folder) { urls in
                             guard !urls.isEmpty else { return }
-                            Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                            ImportQueueManager.shared.stage(urls)
                         }
                     }
                 )
