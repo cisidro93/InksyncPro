@@ -157,4 +157,49 @@ class PageModelStore: ObservableObject {
         let descriptor = FetchDescriptor<SDPageModel>(predicate: #Predicate { $0.pdfID == pdfID })
         return (try? context.fetchCount(descriptor)) ?? 0
     }
+    
+    // MARK: - Legacy Compatibility Bridges
+    
+    func deletePageModels(for pdfID: UUID) {
+        if activePDFID == pdfID { activeCache.removeAll() }
+        guard let context = modelContext else { return }
+        try? context.delete(model: SDPageModel.self, where: #Predicate { $0.pdfID == pdfID })
+        try? context.save()
+    }
+    
+    func saveLegacyVisionPanels(_ panels: [PanelExtractor.Panel], for pdfID: UUID, pageIndex: Int) {
+        var newModel = PageModel(pageIndex: pageIndex)
+        var allNormalized = true
+        newModel.panels = panels.map { panel in
+            let rect = panel.boundingBox
+            if rect.maxX <= 1.1 && rect.maxY <= 1.1 {
+                 return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
+            } else {
+                 allNormalized = false
+                 return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
+            }
+        }
+        if !newModel.panels.isEmpty && allNormalized {
+             newModel.coordinateSystem = .normalized
+        } else {
+             newModel.coordinateSystem = .unknown 
+        }
+        savePageModel(newModel, for: pdfID)
+    }
+
+    func saveAllLegacyVisionPanels(_ panelMap: [Int: [PanelExtractor.Panel]], for pdfID: UUID) {
+        deletePageModels(for: pdfID)
+        for (pageIndex, panels) in panelMap {
+            saveLegacyVisionPanels(panels, for: pdfID, pageIndex: pageIndex)
+        }
+    }
+
+    func getAllLegacyVisionPanels(for pdfID: UUID) -> [Int: [PanelExtractor.Panel]] {
+        loadPDFContext(pdfID: pdfID)
+        var map: [Int: [PanelExtractor.Panel]] = [:]
+        for (pageIndex, _) in activeCache {
+            map[pageIndex] = legacyVisionPanels(for: pdfID, pageIndex: pageIndex)
+        }
+        return map
+    }
 }

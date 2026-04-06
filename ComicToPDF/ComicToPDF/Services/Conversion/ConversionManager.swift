@@ -143,13 +143,12 @@ class ConversionManager: ObservableObject {
     }
     
     func savePanelOverrides(for pdfID: UUID, pageIndex: Int, panels: [PanelExtractor.Panel]) async {
-        if WorkspaceSessionManager.shared.panelOverrides[pdfID] == nil { WorkspaceSessionManager.shared.panelOverrides[pdfID] = [:] }
-        WorkspaceSessionManager.shared.panelOverrides[pdfID]?[pageIndex] = panels
+        PageModelStore.shared.saveLegacyVisionPanels(panels, for: pdfID, pageIndex: pageIndex)
         saveLibrary() 
     }
     
     func savePanelOverrides(for pdfID: UUID, panels: [Int: [PanelExtractor.Panel]]) {
-        WorkspaceSessionManager.shared.panelOverrides[pdfID] = panels
+        PageModelStore.shared.saveAllLegacyVisionPanels(panels, for: pdfID)
         self.saveLibrary()
     }
     
@@ -225,7 +224,7 @@ class ConversionManager: ObservableObject {
     
     // ✅ NEW: Centralized manifest logic to fix panel loss
     func getCombinedManifest(for pdf: ConvertedPDF) async -> [Int: [PanelExtractor.Panel]] {
-        var combined = WorkspaceSessionManager.shared.panelOverrides[pdf.id] ?? [:]
+        var combined = PageModelStore.shared.getAllLegacyVisionPanels(for: pdf.id)
         Logger.shared.log("Building Manifest for \(pdf.name) (ID: \(pdf.id))", category: "Manifest")
         
         // Merge with source panels if available

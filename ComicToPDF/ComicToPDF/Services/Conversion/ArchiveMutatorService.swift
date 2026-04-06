@@ -48,7 +48,7 @@ class ArchiveMutatorService {
             if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 manager.convertedPDFs[idx].pageCount -= deletedCount
                 manager.convertedPDFs[idx].fileSize = newSize
-                WorkspaceSessionManager.shared.panelOverrides[pdf.id] = nil
+                PageModelStore.shared.deletePageModels(for: pdf.id)
                 manager.saveLibrary()
             }
             Logger.shared.log("Deleted \(deletedCount) pages from \(pdf.name)", category: "Edit")
@@ -111,7 +111,7 @@ class ArchiveMutatorService {
         manager.scanLibrary()
         
         await MainActor.run {
-            WorkspaceSessionManager.shared.panelOverrides[pdf.id] = newPanels
+            PageModelStore.shared.saveAllLegacyVisionPanels(newPanels, for: pdf.id)
             manager.saveLibrary()
         }
         try? await manager.injectMetadata(into: url, panels: newPanels, metadata: pdf.metadata)
@@ -319,7 +319,7 @@ class ArchiveMutatorService {
         manager.scanLibrary()
         
         if let newPDF = manager.convertedPDFs.first(where: { $0.url.standardizedFileURL.path == outputURL.standardizedFileURL.path }) {
-            WorkspaceSessionManager.shared.panelOverrides[newPDF.id] = newFileOverrides
+            PageModelStore.shared.saveAllLegacyVisionPanels(newFileOverrides, for: newPDF.id)
             manager.saveLibrary()
         }
         

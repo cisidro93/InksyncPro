@@ -22,7 +22,7 @@ extension ConversionManager {
         Logger.shared.log("Running Pre-Flight Check for: \(pdf.name)", category: "Validation")
         
         if AppSettingsManager.shared.conversionSettings.isGuidedView {
-            let panels = WorkspaceSessionManager.shared.panelOverrides[pdf.id] ?? [:]
+            let panels = PageModelStore.shared.getAllLegacyVisionPanels(for: pdf.id)
             if panels.isEmpty {
                 return .warning("Guided View is enabled, but no panels were detected. The EPUB will export with default full-page views.")
             }

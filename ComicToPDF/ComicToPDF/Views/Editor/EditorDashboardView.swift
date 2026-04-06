@@ -89,7 +89,7 @@ struct EditorRowView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     
     var editedPageCount: Int {
-        WorkspaceSessionManager.shared.panelOverrides[pdf.id]?.keys.count ?? 0
+        PageModelStore.shared.getEditedPageCount(for: pdf.id)
     }
     
     var body: some View {

@@ -40,8 +40,8 @@ final class MetadataInjector {
     // ✅ NEW: Embed currently saved panels into the source file (EPUB/CBZ)
     func embedPanels(for pdf: ConvertedPDF, manager: ConversionManager) async {
         do {
-            let overrides = await MainActor.run { WorkspaceSessionManager.shared.panelOverrides }
-            guard let panels = overrides[pdf.id] else {
+            let panels = await MainActor.run { PageModelStore.shared.getAllLegacyVisionPanels(for: pdf.id) }
+            guard !panels.isEmpty else {
                 await MainActor.run {
                     manager.appAlert = AppAlert(title: "No Edits Found", message: "There are no saved panel edits for this file to embed.")
                 }
