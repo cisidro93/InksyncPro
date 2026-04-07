@@ -118,43 +118,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             switch self.currentType {
 
             case .folder:
-                // asCopy:false gives us a security-scoped URL for the selected folder.
-                // NSFileCoordinator is the correct iOS API for reading security-scoped URLs.
                 var found: [URL] = []
-                let fm2 = FileManager.default
-                let validExts2 = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
                 for url in urls {
                     let accessing = url.startAccessingSecurityScopedResource()
-                    let stagingDir = fm2.temporaryDirectory
-                        .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-                    try? fm2.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-
-                    var coordError: NSError?
-                    NSFileCoordinator().coordinate(
-                        readingItemAt: url,
-                        options: .withoutChanges,
-                        error: &coordError
-                    ) { coordURL in
-                        guard let enumerator = fm2.enumerator(
-                            at: coordURL,
-                            includingPropertiesForKeys: [.isDirectoryKey],
-                            options: [.skipsHiddenFiles]
-                        ) else { return }
-                        for case let fileURL as URL in enumerator {
-                            guard validExts2.contains(fileURL.pathExtension.lowercased()) else { continue }
-                            let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                            do {
-                                if fm2.fileExists(atPath: dest.path) { try fm2.removeItem(at: dest) }
-                                try fm2.copyItem(at: fileURL, to: dest)
-                                found.append(dest)
-                            } catch {
-                                Logger.shared.log("ImportCoordinator[coord]: copy failed (\(fileURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
-                            }
-                        }
-                    }
-                    if let e = coordError {
-                        Logger.shared.log("ImportCoordinator[coord]: coordinator error: \(e.localizedDescription)", category: "System", type: .error)
-                    }
+                    found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
                     if accessing { url.stopAccessingSecurityScopedResource() }
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
