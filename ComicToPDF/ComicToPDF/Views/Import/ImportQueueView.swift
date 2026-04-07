@@ -29,6 +29,7 @@ struct ImportQueueView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var queue = ImportQueueManager.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var showingImportOptions = false
 
     var body: some View {
         NavigationView {
@@ -150,36 +151,30 @@ struct ImportQueueView: View {
     // MARK: Shared Buttons
 
     private var addFilesButtons: some View {
-        HStack(spacing: 12) {
-            Button(action: { addItems(type: .files) }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("Select Files")
-                        .font(.system(size: 15, weight: .semibold))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+        Button(action: { showingImportOptions = true }) {
+            HStack(spacing: 6) {
+                Image(systemName: "folder.fill.badge.plus")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("Add Files")
+                    .font(.system(size: 15, weight: .semibold))
             }
-            .disabled(queue.isStagingFiles)
-
-            Button(action: { addItems(type: .folder) }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "folder.badge.plus")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("Select Folder")
-                        .font(.system(size: 15, weight: .semibold))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.purple)
-                .foregroundColor(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Color.blue)
+            .foregroundColor(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .disabled(queue.isStagingFiles)
+        .confirmationDialog("How would you like to import?", isPresented: $showingImportOptions, titleVisibility: .visible) {
+            Button("Import Files (CBZ, EPUB, PDF)") {
+                addItems(type: .files)
             }
-            .disabled(queue.isStagingFiles)
+            Button("Import Folders", role: .none) {
+                addItems(type: .folder)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Due to Apple security rules, folders and individual files must be selected separately.")
         }
     }
 
