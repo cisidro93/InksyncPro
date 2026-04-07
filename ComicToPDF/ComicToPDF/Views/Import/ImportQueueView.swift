@@ -91,7 +91,7 @@ struct ImportQueueView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
 
-            addFilesButton
+            addFilesButtons
                 .padding(.horizontal, 24)
             Spacer()
         }
@@ -139,7 +139,7 @@ struct ImportQueueView: View {
             .listStyle(.plain)
 
             VStack(spacing: 8) {
-                addFilesButton
+                addFilesButtons
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -149,28 +149,45 @@ struct ImportQueueView: View {
 
     // MARK: Shared Buttons
 
-    private var addFilesButton: some View {
-        Button(action: addFiles) {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("Add Files")
-                    .font(.system(size: 16, weight: .semibold))
+    private var addFilesButtons: some View {
+        HStack(spacing: 12) {
+            Button(action: { addItems(type: .files) }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Select Files")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Color.blue)
-            .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .disabled(queue.isStagingFiles)
+
+            Button(action: { addItems(type: .folder) }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Select Folder")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.purple)
+                .foregroundColor(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .disabled(queue.isStagingFiles)
         }
-        .disabled(queue.isStagingFiles)
     }
 
     // MARK: Actions
 
-    private func addFiles() {
+    private func addItems(type: ImportCoordinator.ImportType) {
         queue.isStagingFiles = true
-        ImportCoordinator.present(type: .unified) { urls in
+        ImportCoordinator.present(type: type) { urls in
             queue.isStagingFiles = false
             guard !urls.isEmpty else { return }
             queue.stage(urls)
