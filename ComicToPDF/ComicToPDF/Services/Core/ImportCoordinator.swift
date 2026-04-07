@@ -10,6 +10,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         case folder
         case json       // For settings/exports
         case smartList  // For cbl, csv, md, txt
+        case unified    // Universal hybrid file and folder picker
     }
 
     // Strong reference held so ARC doesn't collect the coordinator before the delegate fires.
@@ -46,6 +47,13 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "cb7") ?? .archive,
                 .epub, .pdf, .zip, .archive
             ]
+        case .unified:
+            supportedTypes = [
+                UTType(filenameExtension: "cbz") ?? .zip,
+                UTType(filenameExtension: "cbr") ?? .archive,
+                UTType(filenameExtension: "cb7") ?? .archive,
+                .epub, .pdf, .zip, .archive, .folder
+            ]
         case .folder:
             supportedTypes = [.folder]
         case .json:
@@ -67,6 +75,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             // The delegate receives a security-scoped URL for the chosen folder.
             picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
             picker.allowsMultipleSelection = false
+        } else if type == .unified {
+            // Security scoped URLs manually handled to support recursive folder dumping AND file selecting
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
+            picker.allowsMultipleSelection = true
         } else {
             let asCopy = (type == .files || type == .json || type == .smartList)
             // ✅ Fix iOS 16/17 UI Deadlock: `asCopy: true` forces a native copy before dismissing, bypassing `NSFileCoordinator` bugs.
@@ -142,6 +154,54 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     }
                     if let e = coordError {
                         Logger.shared.log("ImportCoordinator[coord]: coordinator error: \(e.localizedDescription)", category: "System", type: .error)
+                    }
+                    if accessing { url.stopAccessingSecurityScopedResource() }
+                }
+                DispatchQueue.main.async { self.finish(with: found) }
+
+            case .unified:
+                let fm = FileManager.default
+                let allowedExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+                let stagingDir = fm.temporaryDirectory
+                    .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+                try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+                var found: [URL] = []
+
+                for url in urls {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    
+                    var isDir: ObjCBool = false
+                    if fm.fileExists(atPath: url.path, isDirectory: &isDir) {
+                        if isDir.boolValue {
+                            // Folder — recursively collect all valid comic files without NSFileCoordinator lock
+                            if let enumerator = fm.enumerator(
+                                at: url,
+                                includingPropertiesForKeys: [.isDirectoryKey],
+                                options: [.skipsHiddenFiles]
+                            ) {
+                                for case let fileURL as URL in enumerator {
+                                    guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
+                                    let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
+                                    do {
+                                        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                                        try fm.copyItem(at: fileURL, to: dest)
+                                        found.append(dest)
+                                    } catch {
+                                        Logger.shared.log("ImportCoordinator: unified copy failed: \(error.localizedDescription)", category: "System", type: .warning)
+                                    }
+                                }
+                            }
+                        } else if allowedExts.contains(url.pathExtension.lowercased()) {
+                            // Single file
+                            let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
+                            do {
+                                if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                                try fm.copyItem(at: url, to: dest)
+                                found.append(dest)
+                            } catch {
+                                Logger.shared.log("ImportCoordinator: unified single file copy failed: \(error.localizedDescription)", category: "System", type: .warning)
+                            }
+                        }
                     }
                     if accessing { url.stopAccessingSecurityScopedResource() }
                 }
