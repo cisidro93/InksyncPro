@@ -17,6 +17,7 @@ targets:
         excludes:
           - "**/*.md"
           - "**/*.txt"
+          - "reference files/**"
 
     dependencies:
       - package: ZIPFoundation

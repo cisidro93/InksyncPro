@@ -16,36 +16,12 @@ class LibraryPersistenceManager {
         var primaryDeviceID: UUID? = nil
     }
     
-    /// Snapshots the Façade state properties and dispatches them deep inside a background payload for asynchronous storage.
     @MainActor
     func save(manager: ConversionManager) {
-        let index = LibraryIndex(
-            files: [], // ✅ Deprecated: Unshackled from JSON Monolith (Handled by SwiftData Native)
-            collections: [], // ✅ Deprecated: Migrated to SDPDFCollection
-            panelOverrides: nil, // ✅ Migrated to SwiftData Native SQLite (PageModelStore)
-    
-            registeredDevices: DeviceRegistry.shared.registeredDevices,
-            primaryDeviceID: DeviceRegistry.shared.primaryDeviceID
-        )
-        
         let syncPDFs = manager.convertedPDFs
         let syncCols = manager.collections
         
         Task.detached(priority: .background) {
-            guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName) else { return }
-            
-            do {
-                let encoded = try JSONEncoder().encode(index)
-                
-                // Advanced Crash Safety: Atomic Swap (Stops Null-byte corruption if the battery dies mid-save)
-                let tempURL = url.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".tmp")
-                try encoded.write(to: tempURL, options: .atomic)
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
-                
-            } catch {
-                Logger.shared.log("LibraryPersistenceManager: Background Save Failed: \(error)", category: "Persistence", type: .error)
-            }
-            
             // ✅ Trigger Dual-Write Sync to SwiftData
             await MigrationService.shared.syncToSwiftData(pdfs: syncPDFs, collections: syncCols)
         }
@@ -97,18 +73,14 @@ class LibraryPersistenceManager {
                                     PageModelStore.shared.savePageModel(newModel, for: pdfID)
                                 }
                             }
-                            // 💥 NUKE the ghost payload from the JSON to defeat iCloud ghost reinstalls 
-                            var scrubbedIndex = index
-                            scrubbedIndex.panelOverrides = nil
-                            if let scrubURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName) {
-                                if let encoded = try? JSONEncoder().encode(scrubbedIndex) {
-                                    try? encoded.write(to: scrubURL, options: .atomic)
-                                }
-                            }
                         }
                         
                         DeviceRegistry.shared.registeredDevices = index.registeredDevices ?? []
                         DeviceRegistry.shared.primaryDeviceID = index.primaryDeviceID
+                        
+                        // 💥 ANNIHILATE the legacy JSON from the physical disk natively to force iCloud to issue a Global Document Deletion.
+                        // This mathematically ensures ghost data cannot be restored on subsequent remote re-installs.
+                        try? FileManager.default.removeItem(at: url)
                     }
                 }
             } catch {
