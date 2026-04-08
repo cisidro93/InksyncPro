@@ -151,7 +151,7 @@ struct ImportQueueView: View {
     // MARK: Shared Buttons
 
     private var addFilesButtons: some View {
-        Button(action: { addItems(type: .folder) }) {
+        Button(action: { addItems(type: .unified) }) {
             HStack(spacing: 6) {
                 Image(systemName: "folder.fill.badge.plus")
                     .font(.system(size: 16, weight: .semibold))

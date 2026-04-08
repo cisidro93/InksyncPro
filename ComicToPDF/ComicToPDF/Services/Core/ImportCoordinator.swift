@@ -107,109 +107,58 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        // Dismiss the picker immediately — asCopy:false never auto-dismisses.
-        // We do NOT use a completion block so processing is not gated on the animation.
-        controller.dismiss(animated: true)
+        // Dismiss the picker — asCopy:false never auto-dismisses.
+        // Processing starts in the completion block AFTER dismiss finishes.
+        // This matches the proven 697adbe pattern that is running on the user's phone.
+        controller.dismiss(animated: true) { [weak self] in
+            guard let self = self else { return }
 
-        // Process on background queue in parallel with the dismiss animation.
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
+            DispatchQueue.global(qos: .userInitiated).async {
+                switch self.currentType {
 
-            switch self.currentType {
-
-            case .folder:
-                // asCopy:false gives us a security-scoped URL for the selected folder.
-                // NSFileCoordinator is the correct iOS API for reading security-scoped URLs.
-                var found: [URL] = []
-                let fm2 = FileManager.default
-                let validExts2 = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
-                for url in urls {
-                    let accessing = url.startAccessingSecurityScopedResource()
-                    let stagingDir = fm2.temporaryDirectory
-                        .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-                    try? fm2.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-
-                    var coordError: NSError?
-                    NSFileCoordinator().coordinate(
-                        readingItemAt: url,
-                        options: .withoutChanges,
-                        error: &coordError
-                    ) { coordURL in
-                        guard let enumerator = fm2.enumerator(
-                            at: coordURL,
-                            includingPropertiesForKeys: [.isDirectoryKey],
-                            options: [.skipsHiddenFiles]
-                        ) else { return }
-                        for case let fileURL as URL in enumerator {
-                            guard validExts2.contains(fileURL.pathExtension.lowercased()) else { continue }
-                            let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                            do {
-                                if fm2.fileExists(atPath: dest.path) { try fm2.removeItem(at: dest) }
-                                try fm2.copyItem(at: fileURL, to: dest)
-                                found.append(dest)
-                            } catch {
-                                Logger.shared.log("ImportCoordinator[coord]: copy failed (\(fileURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
-                            }
-                        }
+                case .folder:
+                    var allFound: [URL] = []
+                    for url in urls {
+                        let isAccessing = url.startAccessingSecurityScopedResource()
+                        allFound.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
+                        if isAccessing { url.stopAccessingSecurityScopedResource() }
                     }
-                    if let e = coordError {
-                        Logger.shared.log("ImportCoordinator[coord]: coordinator error: \(e.localizedDescription)", category: "System", type: .error)
-                    }
-                    if accessing { url.stopAccessingSecurityScopedResource() }
-                }
-                DispatchQueue.main.async { self.finish(with: found) }
+                    DispatchQueue.main.async { self.finish(with: allFound) }
 
-            case .unified:
-                let fm = FileManager.default
-                let allowedExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
-                let stagingDir = fm.temporaryDirectory
-                    .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-                try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-                var found: [URL] = []
+                case .unified:
+                    // asCopy:false means we hold the security scope and must copy files
+                    // to our own staging dir before releasing it.
+                    var allFound: [URL] = []
+                    let fm = FileManager.default
+                    let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+                    let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+                    try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
 
-                for url in urls {
-                    let accessing = url.startAccessingSecurityScopedResource()
-                    
-                    var isDir: ObjCBool = false
-                    if fm.fileExists(atPath: url.path, isDirectory: &isDir) {
-                        if isDir.boolValue {
-                            // Folder — recursively collect all valid comic files without NSFileCoordinator lock
-                            if let enumerator = fm.enumerator(
-                                at: url,
-                                includingPropertiesForKeys: [.isDirectoryKey],
-                                options: [.skipsHiddenFiles]
-                            ) {
-                                for case let fileURL as URL in enumerator {
-                                    guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
-                                    let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                                    do {
-                                        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                                        try fm.copyItem(at: fileURL, to: dest)
-                                        found.append(dest)
-                                    } catch {
-                                        Logger.shared.log("ImportCoordinator: unified copy failed: \(error.localizedDescription)", category: "System", type: .warning)
-                                    }
-                                }
-                            }
+                    for url in urls {
+                        let accessing = url.startAccessingSecurityScopedResource()
+                        var isDir: ObjCBool = false
+                        if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                            // Folder opened — recursively copy all valid files while scope is active
+                            allFound.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
                         } else if allowedExts.contains(url.pathExtension.lowercased()) {
-                            // Single file
+                            // Single file — copy to staging
                             let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
                             do {
                                 if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
                                 try fm.copyItem(at: url, to: dest)
-                                found.append(dest)
+                                allFound.append(dest)
                             } catch {
-                                Logger.shared.log("ImportCoordinator: unified single file copy failed: \(error.localizedDescription)", category: "System", type: .warning)
+                                Logger.shared.log("ImportCoordinator[unified/file]: copy failed (\(url.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
                             }
                         }
+                        if accessing { url.stopAccessingSecurityScopedResource() }
                     }
-                    if accessing { url.stopAccessingSecurityScopedResource() }
-                }
-                DispatchQueue.main.async { self.finish(with: found) }
+                    DispatchQueue.main.async { self.finish(with: allFound) }
 
-            default:
-                // .files returns standard OS-copied tmp URLs because `asCopy: true` was used! Safe to process.
-                DispatchQueue.main.async { self.finish(with: urls) }
+                default:
+                    // .files returns standard OS-copied tmp URLs because `asCopy: true` was used.
+                    DispatchQueue.main.async { self.finish(with: urls) }
+                }
             }
         }
     }
