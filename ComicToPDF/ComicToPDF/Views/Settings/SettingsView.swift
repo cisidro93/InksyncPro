@@ -1,5 +1,5 @@
 import SwiftUI
-
+import SwiftData
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
