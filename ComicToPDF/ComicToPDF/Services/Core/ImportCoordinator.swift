@@ -107,35 +107,58 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        // 1. MUST secure the URLs synchronously on the exact thread they are delivered to BEFORE the delegate returns!
-        var securedURLs: [(URL, Bool)] = []
-        for url in urls {
-            let accessing = url.startAccessingSecurityScopedResource()
-            securedURLs.append((url, accessing))
-        }
+        // Dismiss the picker immediately — asCopy:false never auto-dismisses.
+        // We do NOT use a completion block so processing is not gated on the animation.
+        controller.dismiss(animated: true)
 
-        // DO NOT forcefully call `controller.dismiss(animated: true)`. Apple natively manages the File Picker UI dismissal. 
-        // Manually dismissing it here conflicts with Apple's `isDismissing` state and permanently deadlocks the "Open" button spinner.
-
-        // 3. Process on background queue.
+        // Process on background queue in parallel with the dismiss animation.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
 
-            defer {
-                // ALWAYS release kernel security locks when the background pipeline finishes
-                for (url, accessing) in securedURLs {
+            switch self.currentType {
+
+            case .folder:
+                // asCopy:false gives us a security-scoped URL for the selected folder.
+                // NSFileCoordinator is the correct iOS API for reading security-scoped URLs.
+                var found: [URL] = []
+                let fm2 = FileManager.default
+                let validExts2 = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+                for url in urls {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    let stagingDir = fm2.temporaryDirectory
+                        .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+                    try? fm2.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+
+                    var coordError: NSError?
+                    NSFileCoordinator().coordinate(
+                        readingItemAt: url,
+                        options: .withoutChanges,
+                        error: &coordError
+                    ) { coordURL in
+                        guard let enumerator = fm2.enumerator(
+                            at: coordURL,
+                            includingPropertiesForKeys: [.isDirectoryKey],
+                            options: [.skipsHiddenFiles]
+                        ) else { return }
+                        for case let fileURL as URL in enumerator {
+                            guard validExts2.contains(fileURL.pathExtension.lowercased()) else { continue }
+                            let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
+                            do {
+                                if fm2.fileExists(atPath: dest.path) { try fm2.removeItem(at: dest) }
+                                try fm2.copyItem(at: fileURL, to: dest)
+                                found.append(dest)
+                            } catch {
+                                Logger.shared.log("ImportCoordinator[coord]: copy failed (\(fileURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
+                            }
+                        }
+                    }
+                    if let e = coordError {
+                        Logger.shared.log("ImportCoordinator[coord]: coordinator error: \(e.localizedDescription)", category: "System", type: .error)
+                    }
                     if accessing { url.stopAccessingSecurityScopedResource() }
                 }
-            }
-
-            switch self.currentType {
-            case .folder:
-                var found: [URL] = []
-                for (url, _) in securedURLs {
-                    found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                }
                 DispatchQueue.main.async { self.finish(with: found) }
-                
+
             case .unified:
                 let fm = FileManager.default
                 let allowedExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
@@ -144,87 +167,43 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
                 var found: [URL] = []
 
-                for (url, _) in securedURLs {
-                    var isDirectory = false
-                    if let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey]), let isDir = resourceValues.isDirectory {
-                        isDirectory = isDir
-                    } else {
-                        isDirectory = url.hasDirectoryPath
-                    }
+                for url in urls {
+                    let accessing = url.startAccessingSecurityScopedResource()
                     
-                    if isDirectory {
-                        // For folders, we actively map using NSFileCoordinator natively
-                        found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                    } else {
-                        // For standalone files directly yielded from UIDocumentPicker, Apple has ALREADY materialized them natively. 
-                        // Executing another NSFileCoordinator block here deliberately crashes Apple's local file provider loop.
-                        let ext = url.pathExtension.lowercased()
-                        let isIcloud = (ext == "icloud")
-                        let realExt = isIcloud ? (url.deletingPathExtension().pathExtension.lowercased()) : ext
-                        
-                        if allowedExts.contains(realExt) {
-                            let finalName = isIcloud ? (url.deletingPathExtension().lastPathComponent) : url.lastPathComponent
-                            let dest = stagingDir.appendingPathComponent(finalName)
+                    var isDir: ObjCBool = false
+                    if fm.fileExists(atPath: url.path, isDirectory: &isDir) {
+                        if isDir.boolValue {
+                            // Folder — recursively collect all valid comic files without NSFileCoordinator lock
+                            if let enumerator = fm.enumerator(
+                                at: url,
+                                includingPropertiesForKeys: [.isDirectoryKey],
+                                options: [.skipsHiddenFiles]
+                            ) {
+                                for case let fileURL as URL in enumerator {
+                                    guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
+                                    let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
+                                    do {
+                                        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                                        try fm.copyItem(at: fileURL, to: dest)
+                                        found.append(dest)
+                                    } catch {
+                                        Logger.shared.log("ImportCoordinator: unified copy failed: \(error.localizedDescription)", category: "System", type: .warning)
+                                    }
+                                }
+                            }
+                        } else if allowedExts.contains(url.pathExtension.lowercased()) {
+                            // Single file
+                            let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
                             do {
                                 if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
                                 try fm.copyItem(at: url, to: dest)
                                 found.append(dest)
                             } catch {
-                                Logger.shared.log("ImportCoordinator: unified single file copy failed: \(error)", category: "System", type: .warning)
+                                Logger.shared.log("ImportCoordinator: unified single file copy failed: \(error.localizedDescription)", category: "System", type: .warning)
                             }
                         }
                     }
-                }
-                DispatchQueue.main.async { self.finish(with: found) }
-                
-            case .files:
-                // .files returns standard OS-copied tmp URLs because `asCopy: true` was used! Safe to process.
-                DispatchQueue.main.async { self.finish(with: urls) }
-
-            case .unified:
-                let fm = FileManager.default
-                let allowedExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
-                let stagingDir = fm.temporaryDirectory
-                    .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-                try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-                var found: [URL] = []
-
-                for (url, _) in securedURLs {
-                    var isDirectory = false
-                    if let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey]), let isDir = resourceValues.isDirectory {
-                        isDirectory = isDir
-                    } else {
-                        // Fallback heuristical check if resource keys fail on heavy dataless files
-                        isDirectory = url.hasDirectoryPath
-                    }
-                    
-                    if isDirectory {
-                        found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                    } else {
-                        let ext = url.pathExtension.lowercased()
-                        let isIcloud = (ext == "icloud")
-                        let realExt = isIcloud ? (url.deletingPathExtension().pathExtension.lowercased()) : ext
-                        
-                        if allowedExts.contains(realExt) {
-                            let finalName = isIcloud ? (url.deletingPathExtension().lastPathComponent) : url.lastPathComponent
-                            let dest = stagingDir.appendingPathComponent(finalName)
-                            
-                            let fileCoordinator = NSFileCoordinator()
-                            var copyError: NSError?
-                            fileCoordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &copyError) { lockedFileURL in
-                                do {
-                                    if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                                    try fm.copyItem(at: lockedFileURL, to: dest)
-                                    found.append(dest)
-                                } catch {
-                                    Logger.shared.log("ImportCoordinator: unified copy failed: \(error)", category: "System", type: .warning)
-                                }
-                            }
-                            if let error = copyError {
-                                Logger.shared.log("ImportCoordinator: unified staging failure: \(error)", category: "System", type: .warning)
-                            }
-                        }
-                    }
+                    if accessing { url.stopAccessingSecurityScopedResource() }
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
 
@@ -242,7 +221,8 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     // MARK: - Helpers
 
-    /// Safely projects an NSFileCoordinator read-lock across a security-scoped Sandbox root and spiders recursively natively
+    /// Synchronously spiders a folder and copies all valid comic files to temp storage.
+    /// Uses NSFileCoordinator to project read-locks across "On My iPad" sandbox boundaries.
     static func processFolderSpiderSync(url: URL) -> [URL] {
         var foundURLs: [URL] = []
         let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
@@ -250,50 +230,36 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         let tempDir = fm.temporaryDirectory.appendingPathComponent("Folder_Spider_\(UUID().uuidString)")
         try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-        let coordinator = NSFileCoordinator()
-        var coordinateError: NSError?
-        
-        // Block explicitly synchrononizes read access for the entire Directory subtree natively bypassing iOS Sandbox limitations
-        coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &coordinateError) { secureURL in
-            if let enumerator = fm.enumerator(at: secureURL, includingPropertiesForKeys: [.isDirectoryKey, .isUbiquitousItemKey], options: [.skipsHiddenFiles]) {
-                for case let fileURL as URL in enumerator {
-                    // Extract true extension, bypassing .icloud shadows if any
-                    let ext = fileURL.pathExtension.lowercased()
-                    let isIcloud = (ext == "icloud")
-                    let realExt = isIcloud ? (fileURL.deletingPathExtension().pathExtension.lowercased()) : ext
-                    
-                    if validExts.contains(realExt) {
-                        let finalName = isIcloud ? (fileURL.deletingPathExtension().lastPathComponent) : fileURL.lastPathComponent
-                        let destURL = tempDir.appendingPathComponent(finalName)
-                        
-                        do {
-                            if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
-                            
-                            // To force iOS to hydrate shadow files or copy strict foreign-container files reliably, coordinate the SPECIFIC file individually.
-                            let fileCoordinator = NSFileCoordinator()
-                            var copyError: NSError?
-                            fileCoordinator.coordinate(readingItemAt: fileURL, options: .withoutChanges, error: &copyError) { lockedFileURL in
-                                do {
-                                    try fm.copyItem(at: lockedFileURL, to: destURL)
-                                    foundURLs.append(destURL)
-                                } catch {
-                                    Logger.shared.log("ImportCoordinator: Sub-file Copy Failed (\(finalName)): \(error)", category: "System", type: .warning)
-                                }
-                            }
-                        } catch {
-                            Logger.shared.log("ImportCoordinator: Spider environment failed (\(finalName)): \(error)", category: "System", type: .warning)
-                        }
+        // Wrap enumeration in NSFileCoordinator to gain kernel-level read access
+        // for directories outside our sandbox (e.g. "On My iPad" local storage).
+        var coordError: NSError?
+        NSFileCoordinator().coordinate(
+            readingItemAt: url,
+            options: .withoutChanges,
+            error: &coordError
+        ) { coordURL in
+            guard let enumerator = fm.enumerator(
+                at: coordURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) else { return }
+
+            for case let fileURL as URL in enumerator {
+                if validExts.contains(fileURL.pathExtension.lowercased()) {
+                    let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
+                    do {
+                        if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+                        try fm.copyItem(at: fileURL, to: destURL)
+                        foundURLs.append(destURL)
+                    } catch {
+                        Logger.shared.log("ImportCoordinator: Spider copy failed (\(fileURL.lastPathComponent)): \(error)", category: "System", type: .warning)
                     }
                 }
-            } else {
-                 Logger.shared.log("ImportCoordinator: Kernel refused enumeration inside active OS coordinator context.", category: "System", type: .error)
             }
         }
-        
-        if let error = coordinateError {
-            Logger.shared.log("ImportCoordinator: Sandbox Coordinator failed to lock root url: \(error.localizedDescription)", category: "System", type: .error)
+        if let e = coordError {
+            Logger.shared.log("ImportCoordinator: Folder coordinator error: \(e.localizedDescription)", category: "System", type: .error)
         }
-        
         return foundURLs
     }
 
