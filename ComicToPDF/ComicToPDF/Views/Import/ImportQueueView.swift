@@ -29,7 +29,6 @@ struct ImportQueueView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var queue = ImportQueueManager.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var showingImportOptions = false
 
     var body: some View {
         NavigationView {
@@ -92,7 +91,7 @@ struct ImportQueueView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
 
-            addFilesButtons
+            addFilesButton
                 .padding(.horizontal, 24)
             Spacer()
         }
@@ -140,7 +139,7 @@ struct ImportQueueView: View {
             .listStyle(.plain)
 
             VStack(spacing: 8) {
-                addFilesButtons
+                addFilesButton
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -150,13 +149,13 @@ struct ImportQueueView: View {
 
     // MARK: Shared Buttons
 
-    private var addFilesButtons: some View {
-        Button(action: { addItems(type: .unified) }) {
-            HStack(spacing: 6) {
-                Image(systemName: "folder.fill.badge.plus")
+    private var addFilesButton: some View {
+        Button(action: addFiles) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle.fill")
                     .font(.system(size: 16, weight: .semibold))
-                Text("Import Files")
-                    .font(.system(size: 15, weight: .semibold))
+                Text("Add Files")
+                    .font(.system(size: 16, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
@@ -169,9 +168,12 @@ struct ImportQueueView: View {
 
     // MARK: Actions
 
-    private func addItems(type: ImportCoordinator.ImportType) {
+    private func addFiles() {
+        // .folder picker: blue Open button when inside a folder, spiders recursively for CBZ/PDF etc.
+        // Deprecated single-URL delegate means iOS WILL call back when user presses Open inside a folder.
+        // Files are staged to queue, NOT directly imported.
         queue.isStagingFiles = true
-        ImportCoordinator.present(type: type) { urls in
+        ImportCoordinator.present(type: .folder) { urls in
             queue.isStagingFiles = false
             guard !urls.isEmpty else { return }
             queue.stage(urls)
