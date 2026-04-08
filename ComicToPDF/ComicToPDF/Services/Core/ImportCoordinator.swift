@@ -149,33 +149,31 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     var isDir: ObjCBool = false
                     if fm.fileExists(atPath: url.path, isDirectory: &isDir) {
                         if isDir.boolValue {
-                            // Folder — recursively collect all valid comic files without NSFileCoordinator lock
-                            if let enumerator = fm.enumerator(
-                                at: url,
-                                includingPropertiesForKeys: [.isDirectoryKey],
-                                options: [.skipsHiddenFiles]
-                            ) {
-                                for case let fileURL as URL in enumerator {
-                                    guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
-                                    let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                                    do {
-                                        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                                        try fm.copyItem(at: fileURL, to: dest)
-                                        found.append(dest)
-                                    } catch {
-                                        Logger.shared.log("ImportCoordinator: unified copy failed: \(error.localizedDescription)", category: "System", type: .warning)
+                            found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
+                        } else {
+                            let ext = url.pathExtension.lowercased()
+                            let isIcloud = (ext == "icloud")
+                            let realExt = isIcloud ? (url.deletingPathExtension().pathExtension.lowercased()) : ext
+                            
+                            if allowedExts.contains(realExt) {
+                                let finalName = isIcloud ? (url.deletingPathExtension().lastPathComponent) : url.lastPathComponent
+                                let dest = stagingDir.appendingPathComponent(finalName)
+                                do {
+                                    if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                                    
+                                    let fileCoordinator = NSFileCoordinator()
+                                    var copyError: NSError?
+                                    fileCoordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &copyError) { lockedFileURL in
+                                        do {
+                                            try fm.copyItem(at: lockedFileURL, to: dest)
+                                            found.append(dest)
+                                        } catch {
+                                            Logger.shared.log("ImportCoordinator: unified copy failed: \(error)", category: "System", type: .warning)
+                                        }
                                     }
+                                } catch {
+                                    Logger.shared.log("ImportCoordinator: unified staging failure: \(error)", category: "System", type: .warning)
                                 }
-                            }
-                        } else if allowedExts.contains(url.pathExtension.lowercased()) {
-                            // Single file
-                            let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
-                            do {
-                                if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                                try fm.copyItem(at: url, to: dest)
-                                found.append(dest)
-                            } catch {
-                                Logger.shared.log("ImportCoordinator: unified single file copy failed: \(error.localizedDescription)", category: "System", type: .warning)
                             }
                         }
                     }
