@@ -196,7 +196,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     // MARK: - Helpers
 
-    /// Synchronously spiders a folder and copies all valid comic files to temp storage.
+    /// Safely projects an NSFileCoordinator read-lock across a security-scoped Sandbox root and spiders recursively natively
     static func processFolderSpiderSync(url: URL) -> [URL] {
         var foundURLs: [URL] = []
         let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
@@ -204,20 +204,50 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         let tempDir = fm.temporaryDirectory.appendingPathComponent("Folder_Spider_\(UUID().uuidString)")
         try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
-            for case let fileURL as URL in enumerator {
-                if validExts.contains(fileURL.pathExtension.lowercased()) {
-                    let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
-                    do {
-                        if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
-                        try fm.copyItem(at: fileURL, to: destURL)
-                        foundURLs.append(destURL)
-                    } catch {
-                        Logger.shared.log("ImportCoordinator: Spider copy failed (\(fileURL.lastPathComponent)): \(error)", category: "System", type: .warning)
+        let coordinator = NSFileCoordinator()
+        var coordinateError: NSError?
+        
+        // Block explicitly synchrononizes read access for the entire Directory subtree natively bypassing iOS Sandbox limitations
+        coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &coordinateError) { secureURL in
+            if let enumerator = fm.enumerator(at: secureURL, includingPropertiesForKeys: [.isDirectoryKey, .isUbiquitousItemKey], options: [.skipsHiddenFiles]) {
+                for case let fileURL as URL in enumerator {
+                    // Extract true extension, bypassing .icloud shadows if any
+                    let ext = fileURL.pathExtension.lowercased()
+                    let isIcloud = (ext == "icloud")
+                    let realExt = isIcloud ? (fileURL.deletingPathExtension().pathExtension.lowercased()) : ext
+                    
+                    if validExts.contains(realExt) {
+                        let finalName = isIcloud ? (fileURL.deletingPathExtension().lastPathComponent) : fileURL.lastPathComponent
+                        let destURL = tempDir.appendingPathComponent(finalName)
+                        
+                        do {
+                            if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+                            
+                            // To force iOS to hydrate shadow files or copy strict foreign-container files reliably, coordinate the SPECIFIC file individually.
+                            let fileCoordinator = NSFileCoordinator()
+                            var copyError: NSError?
+                            fileCoordinator.coordinate(readingItemAt: fileURL, options: .withoutChanges, error: &copyError) { lockedFileURL in
+                                do {
+                                    try fm.copyItem(at: lockedFileURL, to: destURL)
+                                    foundURLs.append(destURL)
+                                } catch {
+                                    Logger.shared.log("ImportCoordinator: Sub-file Copy Failed (\(finalName)): \(error)", category: "System", type: .warning)
+                                }
+                            }
+                        } catch {
+                            Logger.shared.log("ImportCoordinator: Spider environment failed (\(finalName)): \(error)", category: "System", type: .warning)
+                        }
                     }
                 }
+            } else {
+                 Logger.shared.log("ImportCoordinator: Kernel refused enumeration inside active OS coordinator context.", category: "System", type: .error)
             }
         }
+        
+        if let error = coordinateError {
+            Logger.shared.log("ImportCoordinator: Sandbox Coordinator failed to lock root url: \(error.localizedDescription)", category: "System", type: .error)
+        }
+        
         return foundURLs
     }
 
