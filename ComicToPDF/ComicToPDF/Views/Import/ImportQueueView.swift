@@ -151,11 +151,11 @@ struct ImportQueueView: View {
     // MARK: Shared Buttons
 
     private var addFilesButtons: some View {
-        Button(action: { showingImportOptions = true }) {
+        Button(action: { addItems(type: .folder) }) {
             HStack(spacing: 6) {
                 Image(systemName: "folder.fill.badge.plus")
                     .font(.system(size: 16, weight: .semibold))
-                Text("Add Files")
+                Text("Import Files")
                     .font(.system(size: 15, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
@@ -165,17 +165,6 @@ struct ImportQueueView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .disabled(queue.isStagingFiles)
-        .confirmationDialog("How would you like to import?", isPresented: $showingImportOptions, titleVisibility: .visible) {
-            Button("Import Files (CBZ, EPUB, PDF)") {
-                addItems(type: .files)
-            }
-            Button("Import Folders", role: .none) {
-                addItems(type: .folder)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Due to Apple security rules, folders and individual files must be selected separately.")
-        }
     }
 
     // MARK: Actions
