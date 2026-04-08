@@ -136,6 +136,47 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
                 
+            case .unified:
+                let fm = FileManager.default
+                let allowedExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+                let stagingDir = fm.temporaryDirectory
+                    .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+                try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+                var found: [URL] = []
+
+                for (url, _) in securedURLs {
+                    var isDirectory = false
+                    if let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey]), let isDir = resourceValues.isDirectory {
+                        isDirectory = isDir
+                    } else {
+                        isDirectory = url.hasDirectoryPath
+                    }
+                    
+                    if isDirectory {
+                        // For folders, we actively map using NSFileCoordinator natively
+                        found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
+                    } else {
+                        // For standalone files directly yielded from UIDocumentPicker, Apple has ALREADY materialized them natively. 
+                        // Executing another NSFileCoordinator block here deliberately crashes Apple's local file provider loop.
+                        let ext = url.pathExtension.lowercased()
+                        let isIcloud = (ext == "icloud")
+                        let realExt = isIcloud ? (url.deletingPathExtension().pathExtension.lowercased()) : ext
+                        
+                        if allowedExts.contains(realExt) {
+                            let finalName = isIcloud ? (url.deletingPathExtension().lastPathComponent) : url.lastPathComponent
+                            let dest = stagingDir.appendingPathComponent(finalName)
+                            do {
+                                if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                                try fm.copyItem(at: url, to: dest)
+                                found.append(dest)
+                            } catch {
+                                Logger.shared.log("ImportCoordinator: unified single file copy failed: \(error)", category: "System", type: .warning)
+                            }
+                        }
+                    }
+                }
+                DispatchQueue.main.async { self.finish(with: found) }
+                
             case .files:
                 // .files returns standard OS-copied tmp URLs because `asCopy: true` was used! Safe to process.
                 DispatchQueue.main.async { self.finish(with: urls) }
