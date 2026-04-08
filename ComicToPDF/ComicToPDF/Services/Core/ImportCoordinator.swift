@@ -129,50 +129,18 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
             case .folder:
                 // asCopy:false gives us a security-scoped URL for the selected folder.
-                // NSFileCoordinator is the correct iOS API for reading security-scoped URLs
-                // delivered by UIDocumentPickerViewController.
+                // Use simple FileManager enumeration — NOT NSFileCoordinator which can deadlock.
                 var found: [URL] = []
-                let fm2 = FileManager.default
-                let validExts2 = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
                 for url in urls {
                     let accessing = url.startAccessingSecurityScopedResource()
-                    let stagingDir = fm2.temporaryDirectory
-                        .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-                    try? fm2.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-
-                    var coordError: NSError?
-                    NSFileCoordinator().coordinate(
-                        readingItemAt: url,
-                        options: .withoutChanges,
-                        error: &coordError
-                    ) { coordURL in
-                        guard let enumerator = fm2.enumerator(
-                            at: coordURL,
-                            includingPropertiesForKeys: [.isDirectoryKey],
-                            options: [.skipsHiddenFiles]
-                        ) else { return }
-                        for case let fileURL as URL in enumerator {
-                            guard validExts2.contains(fileURL.pathExtension.lowercased()) else { continue }
-                            let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                            do {
-                                if fm2.fileExists(atPath: dest.path) { try fm2.removeItem(at: dest) }
-                                try fm2.copyItem(at: fileURL, to: dest)
-                                found.append(dest)
-                            } catch {
-                                Logger.shared.log("ImportCoordinator[coord]: copy failed (\(fileURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
-                            }
-                        }
-                    }
-                    if let e = coordError {
-                        Logger.shared.log("ImportCoordinator[coord]: coordinator error: \(e.localizedDescription)", category: "System", type: .error)
-                    }
+                    found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
                     if accessing { url.stopAccessingSecurityScopedResource() }
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
 
             case .unified:
                 let fm = FileManager.default
-                let allowedExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+                let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
                 let stagingDir = fm.temporaryDirectory
                     .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
                 try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
@@ -180,49 +148,20 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
                 for url in urls {
                     let accessing = url.startAccessingSecurityScopedResource()
-
-                    var coordError: NSError?
-                    NSFileCoordinator().coordinate(
-                        readingItemAt: url,
-                        options: .withoutChanges,
-                        error: &coordError
-                    ) { coordURL in
-                        var isDir: ObjCBool = false
-                        guard fm.fileExists(atPath: coordURL.path, isDirectory: &isDir) else { return }
-
-                        if isDir.boolValue {
-                            // Folder — recursively collect all valid comic files
-                            if let enumerator = fm.enumerator(
-                                at: coordURL,
-                                includingPropertiesForKeys: [.isDirectoryKey],
-                                options: [.skipsHiddenFiles]
-                            ) {
-                                for case let fileURL as URL in enumerator {
-                                    guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
-                                    let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                                    do {
-                                        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                                        try fm.copyItem(at: fileURL, to: dest)
-                                        found.append(dest)
-                                    } catch {
-                                        Logger.shared.log("ImportCoordinator[unified/folder]: copy failed (\(fileURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
-                                    }
-                                }
-                            }
-                        } else if allowedExts.contains(coordURL.pathExtension.lowercased()) {
-                            // Single file
-                            let dest = stagingDir.appendingPathComponent(coordURL.lastPathComponent)
-                            do {
-                                if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                                try fm.copyItem(at: coordURL, to: dest)
-                                found.append(dest)
-                            } catch {
-                                Logger.shared.log("ImportCoordinator[unified/file]: copy failed (\(coordURL.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
-                            }
+                    var isDir: ObjCBool = false
+                    if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                        // Folder — spider recursively
+                        found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
+                    } else if allowedExts.contains(url.pathExtension.lowercased()) {
+                        // Single file — copy to staging
+                        let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
+                        do {
+                            if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                            try fm.copyItem(at: url, to: dest)
+                            found.append(dest)
+                        } catch {
+                            Logger.shared.log("ImportCoordinator[unified]: copy failed (\(url.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
                         }
-                    }
-                    if let e = coordError {
-                        Logger.shared.log("ImportCoordinator[unified]: coordinator error for \(url.lastPathComponent): \(e.localizedDescription)", category: "System", type: .error)
                     }
                     if accessing { url.stopAccessingSecurityScopedResource() }
                 }
@@ -278,10 +217,8 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             ?? scenes.first as? UIWindowScene
         guard let root = windowScene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
                       ?? windowScene?.windows.first?.rootViewController else { return nil }
-        // Return the root directly — do NOT walk up through presented VCs.
-        // On iPad, presenting UIDocumentPickerViewController from a SwiftUI .sheet
-        // (which is a .pageSheet) breaks the picker's "Open" button.
-        // Presenting from root gives the picker a clean, full-screen context.
-        return root
+        var top = root
+        while let presented = top.presentedViewController { top = presented }
+        return top
     }
 }
