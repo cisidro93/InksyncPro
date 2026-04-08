@@ -64,22 +64,25 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         }
         
         let picker: UIDocumentPickerViewController
-        if type == .folder {
-            let folderTypes: [UTType] = [.folder, .directory]
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: folderTypes, asCopy: false)
-            picker.allowsMultipleSelection = false
-        } else if type == .unified {
-            // Matches the FolderPicker from 5556dd2 exactly:
-            // asCopy:false + allowsMultipleSelection:false + .folder in types.
-            // This is what causes iOS to show an active "Open" button when the
-            // user is browsing inside a folder — without needing to select anything.
+
+        if type == .unified {
+            // Single unified picker: files AND folders selectable.
+            // asCopy:false → security-scoped URLs; we manually copy to staging.
+            // allowsMultipleSelection:true → iPad shows selection circles on every item.
+            //   Tapping a folder's CIRCLE selects it. Tapping its NAME navigates into it.
+            //   Tapping a file's CIRCLE selects it.
+            //   User presses "Open" to submit all selected items.
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
+            picker.allowsMultipleSelection = true
+        } else if type == .folder {
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
             picker.allowsMultipleSelection = false
         } else {
             let asCopy = type == .files || type == .json || type == .smartList
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
             picker.allowsMultipleSelection = (type == .files)
         }
+
         picker.delegate = coordinator
         picker.shouldShowFileExtensions = true
 
@@ -94,19 +97,43 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             finish(with: [])
             return
         }
-        
-        // iOS 17+ auto-dismisses UIDocumentPickerViewController after user selection.
-        // On iOS 16, it does not. We call dismiss here for iOS 16 compatibility,
-        // but do NOT gate processing on the completion block — it may never fire on iOS 17.
-        controller.dismiss(animated: true, completion: nil)
-        
-        // Capture type before going to background
+
         let type = self.currentType
-        
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            
-            if type == .folder {
+
+            if type == .unified {
+                // asCopy:false — each URL is security-scoped.
+                // Check each: folders get spidered, files get staged.
+                var allFound: [URL] = []
+                let fm = FileManager.default
+                let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+                let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+                try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+
+                for url in urls {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    var isDir: ObjCBool = false
+                    if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                        // Selected a folder — spider it recursively for comic files
+                        allFound.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
+                    } else if allowedExts.contains(url.pathExtension.lowercased()) {
+                        // Selected a single file — copy to staging
+                        let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
+                        do {
+                            if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                            try fm.copyItem(at: url, to: dest)
+                            allFound.append(dest)
+                        } catch {
+                            Logger.shared.log("ImportCoordinator: file copy failed (\(url.lastPathComponent)): \(error)", category: "System", type: .warning)
+                        }
+                    }
+                    if accessing { url.stopAccessingSecurityScopedResource() }
+                }
+                DispatchQueue.main.async { self.finish(with: allFound) }
+
+            } else if type == .folder {
                 var allFound: [URL] = []
                 for url in urls {
                     let isAccessing = url.startAccessingSecurityScopedResource()
@@ -114,47 +141,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     if isAccessing { url.stopAccessingSecurityScopedResource() }
                 }
                 DispatchQueue.main.async { self.finish(with: allFound) }
-            } else if type == .unified {
-                var allFound: [URL] = []
-                let fm = FileManager.default
-                let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
-                let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-                try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-                
-                for url in urls {
-                    let accessing = url.startAccessingSecurityScopedResource()
-                    var isDir: ObjCBool = false
-                    if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
-                            for case let fileURL as URL in enumerator {
-                                guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
-                                let dest = stagingDir.appendingPathComponent(fileURL.lastPathComponent)
-                                do {
-                                    if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                                    try fm.copyItem(at: fileURL, to: dest)
-                                    allFound.append(dest)
-                                } catch {
-                                    Logger.shared.log("ImportCoordinator: Copy failed for \(fileURL.lastPathComponent): \(error)", category: "System", type: .warning)
-                                }
-                            }
-                        }
-                    } else if allowedExts.contains(url.pathExtension.lowercased()) {
-                        let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
-                        do {
-                            if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                            try fm.copyItem(at: url, to: dest)
-                            allFound.append(dest)
-                        } catch {
-                            Logger.shared.log("ImportCoordinator: Single file copy failed for \(url.lastPathComponent): \(error)", category: "System", type: .warning)
-                        }
-                    }
-                    if accessing { url.stopAccessingSecurityScopedResource() }
-                }
-                DispatchQueue.main.async { self.finish(with: allFound) }
+
             } else {
-                DispatchQueue.main.async {
-                    self.finish(with: urls)
-                }
+                // .files with asCopy:true — URLs are already sandbox copies.
+                DispatchQueue.main.async { self.finish(with: urls) }
             }
         }
     }
