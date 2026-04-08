@@ -146,34 +146,38 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 var found: [URL] = []
 
                 for (url, _) in securedURLs {
-                    var isDir: ObjCBool = false
-                    if fm.fileExists(atPath: url.path, isDirectory: &isDir) {
-                        if isDir.boolValue {
-                            found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                        } else {
-                            let ext = url.pathExtension.lowercased()
-                            let isIcloud = (ext == "icloud")
-                            let realExt = isIcloud ? (url.deletingPathExtension().pathExtension.lowercased()) : ext
+                    var isDirectory = false
+                    if let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey]), let isDir = resourceValues.isDirectory {
+                        isDirectory = isDir
+                    } else {
+                        // Fallback heuristical check if resource keys fail on heavy dataless files
+                        isDirectory = url.hasDirectoryPath
+                    }
+                    
+                    if isDirectory {
+                        found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
+                    } else {
+                        let ext = url.pathExtension.lowercased()
+                        let isIcloud = (ext == "icloud")
+                        let realExt = isIcloud ? (url.deletingPathExtension().pathExtension.lowercased()) : ext
+                        
+                        if allowedExts.contains(realExt) {
+                            let finalName = isIcloud ? (url.deletingPathExtension().lastPathComponent) : url.lastPathComponent
+                            let dest = stagingDir.appendingPathComponent(finalName)
                             
-                            if allowedExts.contains(realExt) {
-                                let finalName = isIcloud ? (url.deletingPathExtension().lastPathComponent) : url.lastPathComponent
-                                let dest = stagingDir.appendingPathComponent(finalName)
+                            let fileCoordinator = NSFileCoordinator()
+                            var copyError: NSError?
+                            fileCoordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &copyError) { lockedFileURL in
                                 do {
                                     if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                                    
-                                    let fileCoordinator = NSFileCoordinator()
-                                    var copyError: NSError?
-                                    fileCoordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &copyError) { lockedFileURL in
-                                        do {
-                                            try fm.copyItem(at: lockedFileURL, to: dest)
-                                            found.append(dest)
-                                        } catch {
-                                            Logger.shared.log("ImportCoordinator: unified copy failed: \(error)", category: "System", type: .warning)
-                                        }
-                                    }
+                                    try fm.copyItem(at: lockedFileURL, to: dest)
+                                    found.append(dest)
                                 } catch {
-                                    Logger.shared.log("ImportCoordinator: unified staging failure: \(error)", category: "System", type: .warning)
+                                    Logger.shared.log("ImportCoordinator: unified copy failed: \(error)", category: "System", type: .warning)
                                 }
+                            }
+                            if let error = copyError {
+                                Logger.shared.log("ImportCoordinator: unified staging failure: \(error)", category: "System", type: .warning)
                             }
                         }
                     }
