@@ -107,22 +107,33 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        // Dismiss the picker immediately — asCopy:false never auto-dismisses.
-        // We do NOT use a completion block so processing is not gated on the animation.
+        // 1. MUST secure the URLs synchronously on the main thread BEFORE the picker is dismissed!
+        // Otherwise iOS instantly revokes sandbox permissions when the modal vanishes.
+        var securedURLs: [(URL, Bool)] = []
+        for url in urls {
+            let accessing = url.startAccessingSecurityScopedResource()
+            securedURLs.append((url, accessing))
+        }
+
+        // 2. Now it is safe to dismiss the picker seamlessly.
         controller.dismiss(animated: true)
 
-        // Process on background queue in parallel with the dismiss animation.
+        // 3. Process on background queue.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
 
-            switch self.currentType {
+            defer {
+                // ALWAYS release kernel security locks when the background pipeline finishes
+                for (url, accessing) in securedURLs {
+                    if accessing { url.stopAccessingSecurityScopedResource() }
+                }
+            }
 
+            switch self.currentType {
             case .folder:
                 var found: [URL] = []
-                for url in urls {
-                    let accessing = url.startAccessingSecurityScopedResource()
+                for (url, _) in securedURLs {
                     found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                    if accessing { url.stopAccessingSecurityScopedResource() }
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
 
@@ -134,9 +145,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
                 var found: [URL] = []
 
-                for url in urls {
-                    let accessing = url.startAccessingSecurityScopedResource()
-                    
+                for (url, _) in securedURLs {
                     var isDir: ObjCBool = false
                     if fm.fileExists(atPath: url.path, isDirectory: &isDir) {
                         if isDir.boolValue {
@@ -170,7 +179,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                             }
                         }
                     }
-                    if accessing { url.stopAccessingSecurityScopedResource() }
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
 
