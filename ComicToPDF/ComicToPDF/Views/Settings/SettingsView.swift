@@ -653,6 +653,23 @@ struct SettingsView: View {
                 }
             }
             
+            Button(action: {
+                if let context = try? InksyncProApp.sharedModelContainer.mainContext {
+                    let descriptor = FetchDescriptor<SDAnnotation>()
+                    if let annotations = try? context.fetch(descriptor) {
+                        for ann in annotations {
+                            context.delete(ann)
+                        }
+                        try? context.save()
+                    }
+                }
+            }) {
+                HStack {
+                    settingsIcon("flame.fill", color: .red)
+                    Text("Purge Zettelkasten Database").foregroundColor(.red)
+                }
+            }
+            
             NavigationLink(destination: HelpCenterView()) {
                 HStack {
                     settingsIcon("questionmark.circle.fill", color: .blue)
