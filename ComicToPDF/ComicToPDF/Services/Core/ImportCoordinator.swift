@@ -97,6 +97,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
         picker.delegate = coordinator
         picker.shouldShowFileExtensions = true
+        picker.modalPresentationStyle = .fullScreen
         Logger.shared.log("ImportCoordinator: Presenting \(type) picker.", category: "System")
         rootVC.present(picker, animated: true)
     }
@@ -277,8 +278,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             ?? scenes.first as? UIWindowScene
         guard let root = windowScene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
                       ?? windowScene?.windows.first?.rootViewController else { return nil }
-        var top = root
-        while let presented = top.presentedViewController { top = presented }
-        return top
+        // Return the root directly — do NOT walk up through presented VCs.
+        // On iPad, presenting UIDocumentPickerViewController from a SwiftUI .sheet
+        // (which is a .pageSheet) breaks the picker's "Open" button.
+        // Presenting from root gives the picker a clean, full-screen context.
+        return root
     }
 }
