@@ -107,16 +107,15 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        // 1. MUST secure the URLs synchronously on the main thread BEFORE the picker is dismissed!
-        // Otherwise iOS instantly revokes sandbox permissions when the modal vanishes.
+        // 1. MUST secure the URLs synchronously on the exact thread they are delivered to BEFORE the delegate returns!
         var securedURLs: [(URL, Bool)] = []
         for url in urls {
             let accessing = url.startAccessingSecurityScopedResource()
             securedURLs.append((url, accessing))
         }
 
-        // 2. Now it is safe to dismiss the picker seamlessly.
-        controller.dismiss(animated: true)
+        // DO NOT forcefully call `controller.dismiss(animated: true)`. Apple natively manages the File Picker UI dismissal. 
+        // Manually dismissing it here conflicts with Apple's `isDismissing` state and permanently deadlocks the "Open" button spinner.
 
         // 3. Process on background queue.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -136,6 +135,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
+                
+            case .files:
+                // .files returns standard OS-copied tmp URLs because `asCopy: true` was used! Safe to process.
+                DispatchQueue.main.async { self.finish(with: urls) }
 
             case .unified:
                 let fm = FileManager.default
