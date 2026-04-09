@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import UniformTypeIdentifiers
 
 // MARK: - Staged URL Manager
 
@@ -29,6 +30,7 @@ struct ImportQueueView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var queue = ImportQueueManager.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var showFilePicker = false
 
     var body: some View {
         NavigationView {
@@ -67,6 +69,28 @@ struct ImportQueueView: View {
                         .foregroundColor(.orange)
                         .fontWeight(.semibold)
                         .disabled(queue.stagedURLs.isEmpty)
+                }
+            }
+            .fileImporter(
+                isPresented: $showFilePicker,
+                allowedContentTypes: [.folder],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let folderURL = urls.first else { return }
+                    queue.isStagingFiles = true
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let accessing = folderURL.startAccessingSecurityScopedResource()
+                        let found = ImportCoordinator.processFolderSpiderSync(url: folderURL)
+                        if accessing { folderURL.stopAccessingSecurityScopedResource() }
+                        DispatchQueue.main.async {
+                            queue.isStagingFiles = false
+                            if !found.isEmpty { queue.stage(found) }
+                        }
+                    }
+                case .failure(let error):
+                    Logger.shared.log("FileImporter error: \(error.localizedDescription)", category: "System", type: .error)
                 }
             }
         }
@@ -150,7 +174,7 @@ struct ImportQueueView: View {
     // MARK: Shared Buttons
 
     private var addFilesButton: some View {
-        Button(action: addFiles) {
+        Button(action: { showFilePicker = true }) {
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 16, weight: .semibold))
@@ -167,18 +191,6 @@ struct ImportQueueView: View {
     }
 
     // MARK: Actions
-
-    private func addFiles() {
-        // .folder picker: blue Open button when inside a folder, spiders recursively for CBZ/PDF etc.
-        // Deprecated single-URL delegate means iOS WILL call back when user presses Open inside a folder.
-        // Files are staged to queue, NOT directly imported.
-        queue.isStagingFiles = true
-        ImportCoordinator.present(type: .folder) { urls in
-            queue.isStagingFiles = false
-            guard !urls.isEmpty else { return }
-            queue.stage(urls)
-        }
-    }
 
     private func importAll() {
         let urls = queue.stagedURLs
