@@ -241,12 +241,12 @@ struct ImportQueueView: View {
 
     // MARK: Actions
 
-    /// Uses the UIKit-based ImportCoordinator to present a native folder picker.
-    /// This handles both folder and individual file selection natively.
+    /// Uses the UIKit-based ImportCoordinator to present a native hybrid picker.
+    /// `.unified` accepts BOTH individual files (CBZ, CBR, EPUB, PDF) AND folders.
     /// Do NOT replace with SwiftUI .fileImporter — it cannot select both.
     private func addFiles() {
         queue.isStagingFiles = true
-        ImportCoordinator.present(type: .folder) { urls in
+        ImportCoordinator.present(type: .unified) { urls in
             guard !urls.isEmpty else {
                 queue.isStagingFiles = false
                 return
