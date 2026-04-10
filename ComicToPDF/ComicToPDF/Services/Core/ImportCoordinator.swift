@@ -87,7 +87,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             picker.allowsMultipleSelection = true
 
         } else {
-            let asCopy = (type == .files || type == .json || type == .smartList)
+            let asCopy = (type == .json || type == .smartList)
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
             picker.allowsMultipleSelection = (type == .files)
         }
@@ -135,7 +135,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
 
-            case .unified:
+            case .unified, .files:
                 let fm = FileManager.default
                 let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
                 let stagingDir = fm.temporaryDirectory
@@ -151,11 +151,16 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                         found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
                     } else if allowedExts.contains(url.pathExtension.lowercased()) {
                         // Single file — use NSFileCoordinator to resolve iCloud faults
-                        let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
+                        // PRESERVE the original parent folder context so `SeriesNameParser` groups files smartly!
+                        let originalParent = url.deletingLastPathComponent().lastPathComponent
+                        let destFolder = stagingDir.appendingPathComponent(originalParent)
+                        try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+                        
+                        let dest = destFolder.appendingPathComponent(url.lastPathComponent)
                         if ImportCoordinator.secureCopy(from: url, to: dest) {
                             found.append(dest)
                         } else {
-                            Logger.shared.log("ImportCoordinator[unified]: coordinated copy failed (\(url.lastPathComponent))", category: "System", type: .warning)
+                            Logger.shared.log("ImportCoordinator[files_copy]: coordinated copy failed (\(url.lastPathComponent))", category: "System", type: .warning)
                         }
                     }
                     if accessing { url.stopAccessingSecurityScopedResource() }
