@@ -49,9 +49,15 @@ class ImportQueueManager: ObservableObject {
         var seenPaths = Set<String>()
         let dedupedIncoming = incomingURLs.filter { seenPaths.insert($0.path).inserted }
 
+        // Take a thread-safe snapshot of the current queue for dedup logic
+        var currentQueueSnapshot: [URL] = []
+        DispatchQueue.main.sync {
+            currentQueueSnapshot = self.stagedURLs
+        }
+
         // 2. Fast pre-filters (no file I/O)
-        let existingFilenames = Set(stagedURLs.map { $0.lastPathComponent })
-        let existingChapterKeys: Set<String> = Set(stagedURLs.compactMap { url -> String? in
+        let existingFilenames = Set(currentQueueSnapshot.map { $0.lastPathComponent })
+        let existingChapterKeys: Set<String> = Set(currentQueueSnapshot.compactMap { url -> String? in
             let series = url.deletingLastPathComponent().lastPathComponent
             guard let ch = SeriesNameParser.chapterKey(from: url.lastPathComponent) else { return nil }
             return "\(series):\(ch)"
@@ -90,7 +96,12 @@ class ImportQueueManager: ObservableObject {
         }
 
         // Apply queue size cap
-        let available = ImportQueueManager.maxQueueSize - stagedURLs.count
+        var currentCount = 0
+        DispatchQueue.main.sync {
+            currentCount = self.stagedURLs.count
+        }
+        
+        let available = ImportQueueManager.maxQueueSize - currentCount
         if toStage.count > available {
             let overflow = toStage[available...]
             toStage = Array(toStage[..<available])
@@ -98,10 +109,11 @@ class ImportQueueManager: ObservableObject {
             DispatchQueue.main.async { self.queueCapReached = true }
         }
 
-        stagedURLs.append(contentsOf: toStage)
-        persistQueue()
-
-        DispatchQueue.main.async { self.stagingProgress = nil }
+        DispatchQueue.main.sync {
+            self.stagedURLs.append(contentsOf: toStage)
+            self.persistQueue()
+            self.stagingProgress = nil
+        }
 
         return StageResult(
             staged: toStage.count,
