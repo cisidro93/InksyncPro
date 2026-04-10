@@ -164,8 +164,11 @@ struct ImportQueueView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
 
-            addFilesButton
-                .padding(.horizontal, 24)
+            HStack(spacing: 12) {
+                addFilesButton
+                addFolderButton
+            }
+            .padding(.horizontal, 24)
             Spacer()
         }
     }
