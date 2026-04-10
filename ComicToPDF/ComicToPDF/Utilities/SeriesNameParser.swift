@@ -88,30 +88,49 @@ enum SeriesNameParser {
     ///   3. Mixed: some files in subfolders, some at root → handled separately
     ///
     static func groupIntoSeries(_ urls: [URL]) -> [(seriesName: String, urls: [URL])] {
-        let byFolder = Dictionary(grouping: urls) {
-            $0.deletingLastPathComponent().lastPathComponent
+        let genericFolders: Set<String> = [
+            "downloads", "inbox", "tmp", "temp", "comics", "documents", "desktop", "manga", 
+            "antigravity inksyncpro inbox", "inksyncpro inbox", "inksyncpro"
+        ]
+
+        let bySeries = Dictionary(grouping: urls) { url -> String in
+            let filename = url.lastPathComponent
+            let folderName = url.deletingLastPathComponent().lastPathComponent
+            
+            // 1. Is the folder a generic OS or user container?
+            let isGenericFolder = genericFolders.contains(folderName.lowercased()) 
+                || folderName.lowercased().contains("inbox")
+                || folderName.hasPrefix("Folder_Spider_") 
+                || folderName.hasPrefix("com.apple")
+            
+            // 2. What does the file name itself tell us?
+            let detection = SeriesNameDetector.detect(from: filename)
+            
+            // 3. Fallback priority selection
+            if detection.confidence == .low && !isGenericFolder && !isSourceSiteFolder(folderName) {
+                // Filename is ambiguous (e.g. "01.cbz") AND the folder name is explicitly structured (e.g. "One Piece")
+                let cleaned = cleanFolderName(folderName)
+                return cleaned.isEmpty ? cleanFolderName(detection.seriesName) : cleaned
+            }
+            
+            // Use the smart filename detection.
+            let detectedName = cleanFolderName(detection.seriesName)
+            if detectedName.isEmpty || isSourceSiteFolder(detectedName) {
+                return !isGenericFolder ? cleanFolderName(folderName) : "Imported Files"
+            }
+            
+            return detectedName
         }
 
-        return byFolder
+        return bySeries
             .sorted { $0.key < $1.key }
-            .map { folderName, folderURLs in
-                let seriesName: String
-                if isSourceSiteFolder(folderName) {
-                    // Loose files at source-site root — label clearly
-                    let siteName = cleanFolderName(folderName)
-                    seriesName = siteName.isEmpty ? "Imported Files" : "From \(siteName)"
-                } else {
-                    let cleaned = cleanFolderName(folderName)
-                    seriesName = cleaned.isEmpty ? folderName : cleaned
-                }
-
-                // Sort by chapter number, fall back to filename sort
+            .map { seriesName, folderURLs in
+                // Sort the URLs inside the series by chapter number
                 let sorted = folderURLs.sorted {
                     let a = chapterKey(from: $0.lastPathComponent) ?? $0.lastPathComponent
                     let b = chapterKey(from: $1.lastPathComponent) ?? $1.lastPathComponent
                     return a.localizedStandardCompare(b) == .orderedAscending
                 }
-
                 return (seriesName: seriesName, urls: sorted)
             }
     }
