@@ -145,22 +145,36 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
                 for url in urls {
                     let accessing = url.startAccessingSecurityScopedResource()
+                    
                     var isDir: ObjCBool = false
                     if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
                         // Folder — spider recursively safely via coordinator
                         found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                    } else if allowedExts.contains(url.pathExtension.lowercased()) {
-                        // Single file — use NSFileCoordinator to resolve iCloud faults
-                        // PRESERVE the original parent folder context so `SeriesNameParser` groups files smartly!
-                        let originalParent = url.deletingLastPathComponent().lastPathComponent
-                        let destFolder = stagingDir.appendingPathComponent(originalParent)
-                        try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-                        
-                        let dest = destFolder.appendingPathComponent(url.lastPathComponent)
-                        if ImportCoordinator.secureCopy(from: url, to: dest) {
-                            found.append(dest)
-                        } else {
-                            Logger.shared.log("ImportCoordinator[files_copy]: coordinated copy failed (\(url.lastPathComponent))", category: "System", type: .warning)
+                    } else {
+                        // File block
+                        var targetURL = url
+                        var actualExt = url.pathExtension.lowercased()
+                        if actualExt == "icloud" {
+                            let fileName = url.lastPathComponent
+                            if fileName.hasPrefix(".") && fileName.hasSuffix(".icloud") {
+                                let logicalName = String(fileName.dropFirst().dropLast(7))
+                                actualExt = (logicalName as NSString).pathExtension.lowercased()
+                                targetURL = url.deletingLastPathComponent().appendingPathComponent(logicalName)
+                            }
+                        }
+
+                        if allowedExts.contains(actualExt) {
+                            // PRESERVE the original parent folder context so `SeriesNameParser` groups files smartly!
+                            let originalParent = targetURL.deletingLastPathComponent().lastPathComponent
+                            let destFolder = stagingDir.appendingPathComponent(originalParent)
+                            try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+                            
+                            let dest = destFolder.appendingPathComponent(targetURL.lastPathComponent)
+                            if ImportCoordinator.secureCopy(from: targetURL, to: dest) {
+                                found.append(dest)
+                            } else {
+                                Logger.shared.log("ImportCoordinator[files_copy]: coordinated copy failed (\(targetURL.lastPathComponent))", category: "System", type: .warning)
+                            }
                         }
                     }
                     if accessing { url.stopAccessingSecurityScopedResource() }
