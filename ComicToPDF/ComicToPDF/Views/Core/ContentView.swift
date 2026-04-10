@@ -105,6 +105,8 @@ struct ContentView: View {
             Task { @MainActor in
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
                 MigrationService.shared.performSmartGrouping(context: modelContext)
+                // Passive scan for sandbox cleanup badge in Settings
+                await SandboxCleanupManager.shared.passiveScan()
             }
         }
         // Layer 3: Post-import series grouping prompt
@@ -197,7 +199,7 @@ struct ContentView: View {
                         // This path is the fallback triggered from the empty-library state.
                         ImportCoordinator.present(type: .folder) { urls in
                             guard !urls.isEmpty else { return }
-                            ImportQueueManager.shared.stage(urls)
+                            _ = ImportQueueManager.shared.stageWithDuplicateCheck(urls)
                         }
                     }
                 )

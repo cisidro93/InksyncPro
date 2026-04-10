@@ -98,6 +98,9 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     var lastConversionDate: Date? = nil
     var panelConfidenceScore: Double? = nil
     
+    // SHA-256 content hash, set ONCE at import. Never update during rename, edit, or metadata refresh.
+    var contentHash: String? = nil
+    
     // âœ… NEW: File Extension Tracker
     var fileExtensionString: String {
         return url.pathExtension.uppercased()
@@ -108,7 +111,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         return String(format: "%.1f MB", mb)
     }
     
-    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro) {
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro, contentHash: String? = nil) {
         self.id = id
         self.name = name
         self.url = url

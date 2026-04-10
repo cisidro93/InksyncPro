@@ -2,35 +2,27 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
-// MARK: - Staged URL Manager
-
-/// Accumulates comic file URLs before the user commits to "Import All".
-/// Survives sheet dismissal so users can add from multiple locations.
-class ImportQueueManager: ObservableObject {
-    static let shared = ImportQueueManager()
-    private init() {}
-
-    @Published var stagedURLs: [URL] = []
-    @Published var isStagingFiles: Bool = false
-
-    func stage(_ urls: [URL]) {
-        let deduped = urls.filter { new in
-            !stagedURLs.contains { $0.lastPathComponent == new.lastPathComponent }
-        }
-        stagedURLs.append(contentsOf: deduped)
-    }
-
-    func remove(at offsets: IndexSet) { stagedURLs.remove(atOffsets: offsets) }
-    func clear() { stagedURLs.removeAll() }
-}
-
 // MARK: - Import Queue View
 
 struct ImportQueueView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var queue = ImportQueueManager.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var showFilePicker = false
+
+    // Duplicate handling
+    @State private var pendingDuplicates: [URL] = []
+    @State private var showDuplicateAlert = false
+
+    // Series conflict handling
+    @State private var showSeriesConflict = false
+    @State private var pendingConflictGroups: [(seriesName: String, urls: [URL])] = []
+
+    // Import summary
+    @State private var importSummaries: [ImportSummary] = []
+    @State private var showImportSummary = false
+
+    // Queue cap toast
+    @State private var showCapToast = false
 
     var body: some View {
         NavigationView {
@@ -48,13 +40,40 @@ struct ImportQueueView: View {
                     Color.black.opacity(0.55).ignoresSafeArea()
                     VStack(spacing: 14) {
                         ProgressView().tint(.white).scaleEffect(1.3)
-                        Text("Scanning folder…")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white)
+                        if let progress = queue.stagingProgress {
+                            Text("Staging \(progress.current) of \(progress.total) files…")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.white)
+                        } else {
+                            Text("Scanning folder…")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.white)
+                        }
                     }
                     .padding(28)
                     .background(Color(white: 0.15).opacity(0.96))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+
+                // Queue cap toast overlay
+                if showCapToast {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.yellow)
+                            Text("Queue limit reached (\(ImportQueueManager.maxQueueSize) files). Import what's staged, then add more.")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                        }
+                        .padding(12)
+                        .background(Color(white: 0.2).opacity(0.95))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    .animation(.easeInOut, value: showCapToast)
                 }
             }
             .navigationTitle("Import Queue")
@@ -71,26 +90,56 @@ struct ImportQueueView: View {
                         .disabled(queue.stagedURLs.isEmpty)
                 }
             }
-            .fileImporter(
-                isPresented: $showFilePicker,
-                allowedContentTypes: [.folder],
-                allowsMultipleSelection: false
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    guard let folderURL = urls.first else { return }
-                    queue.isStagingFiles = true
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        let accessing = folderURL.startAccessingSecurityScopedResource()
-                        let found = ImportCoordinator.processFolderSpiderSync(url: folderURL)
-                        if accessing { folderURL.stopAccessingSecurityScopedResource() }
-                        DispatchQueue.main.async {
-                            queue.isStagingFiles = false
-                            if !found.isEmpty { queue.stage(found) }
+            // Duplicate files alert
+            .alert("Duplicates Detected", isPresented: $showDuplicateAlert) {
+                Button("Skip Duplicates", role: .cancel) { pendingDuplicates = [] }
+                Button("Import Anyway") {
+                    queue.forceStage(pendingDuplicates)
+                    pendingDuplicates = []
+                }
+            } message: {
+                Text("\(pendingDuplicates.count) file(s) already exist in your queue. Import anyway?")
+            }
+            // Series name conflict sheet
+            .sheet(isPresented: $showSeriesConflict) {
+                SeriesConflictView(
+                    conflictingGroups: pendingConflictGroups,
+                    onAddToExisting: { group in
+                        Task {
+                            await conversionManager.importFilesAsSeries(
+                                urls: group.urls,
+                                seriesName: group.seriesName,
+                                addToExisting: true
+                            )
+                        }
+                    },
+                    onCreateNew: { group in
+                        Task {
+                            await conversionManager.importFilesAsSeries(
+                                urls: group.urls,
+                                seriesName: "\(group.seriesName) (New)",
+                                addToExisting: false
+                            )
                         }
                     }
-                case .failure(let error):
-                    Logger.shared.log("FileImporter error: \(error.localizedDescription)", category: "System", type: .error)
+                )
+            }
+            // Import result summary sheet
+            .sheet(isPresented: $showImportSummary) {
+                ImportSummaryView(summaries: importSummaries) { failedURLs in
+                    // Retry: re-stage failed files
+                    queue.forceStage(failedURLs)
+                    showImportSummary = false
+                }
+            }
+            .onChange(of: queue.queueCapReached) { _, reached in
+                if reached {
+                    showCapToast = true
+                    // Auto-dismiss after 4 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                        showCapToast = false
+                        queue.queueCapReached = false
+                    }
                 }
             }
         }
@@ -174,7 +223,7 @@ struct ImportQueueView: View {
     // MARK: Shared Buttons
 
     private var addFilesButton: some View {
-        Button(action: { showFilePicker = true }) {
+        Button(action: addFiles) {
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 16, weight: .semibold))
@@ -192,11 +241,68 @@ struct ImportQueueView: View {
 
     // MARK: Actions
 
+    /// Uses the UIKit-based ImportCoordinator to present a native folder picker.
+    /// This handles both folder and individual file selection natively.
+    /// Do NOT replace with SwiftUI .fileImporter — it cannot select both.
+    private func addFiles() {
+        queue.isStagingFiles = true
+        ImportCoordinator.present(type: .folder) { urls in
+            guard !urls.isEmpty else {
+                queue.isStagingFiles = false
+                return
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = queue.stageWithDuplicateCheck(urls)
+                DispatchQueue.main.async {
+                    queue.isStagingFiles = false
+                    if result.skippedDuplicates > 0 {
+                        pendingDuplicates = result.duplicateURLs
+                        showDuplicateAlert = true
+                    }
+                }
+            }
+        }
+    }
+
     private func importAll() {
         let urls = queue.stagedURLs
         queue.clear()
         dismiss()
-        Task { await conversionManager.importFilesAsSeries(urls: urls) }
+
+        // Group into series using SeriesNameParser
+        let groups = SeriesNameParser.groupIntoSeries(urls)
+
+        // Check each group for series name conflicts with existing library collections
+        let existingSeriesNames = Set(conversionManager.collections.map { $0.name.lowercased() })
+        let conflicting = groups.filter { group in
+            existingSeriesNames.contains(group.seriesName.lowercased())
+        }
+
+        if !conflicting.isEmpty {
+            pendingConflictGroups = conflicting
+            showSeriesConflict = true
+            // Import non-conflicting groups immediately
+            let conflictNames = Set(conflicting.map { $0.seriesName })
+            let nonConflicting = groups.filter { !conflictNames.contains($0.seriesName) }
+            if !nonConflicting.isEmpty {
+                Task { await runImport(groups: nonConflicting) }
+            }
+        } else {
+            Task { await runImport(groups: groups) }
+        }
+    }
+
+    private func runImport(groups: [(seriesName: String, urls: [URL])]) async {
+        for group in groups {
+            // Build per-file metadata overrides with series name from folder parsing
+            var overrides: [URL: PDFMetadata] = [:]
+            for url in group.urls {
+                var meta = PDFMetadata(title: url.deletingPathExtension().lastPathComponent)
+                meta.series = group.seriesName
+                overrides[url] = meta
+            }
+            await conversionManager.importFilesAsSeries(urls: group.urls, overrides: overrides)
+        }
     }
 
     private func iconFor(_ url: URL) -> String {

@@ -130,6 +130,47 @@ extension ConversionManager {
         await ImportOrchestrator.shared.importFilesAsSeries(urls: urls, manager: self, overrides: overrides)
     }
 
+    /// Series-aware import overload used by the Smart Import Pipeline.
+    /// All parameters have defaults — every existing call site compiles unchanged.
+    @discardableResult
+    func importFilesAsSeries(
+        urls: [URL],
+        seriesName: String? = nil,
+        addToExisting: Bool = false,
+        forceOverwrite: Bool = false
+    ) async -> ImportSummary {
+        // Build per-file metadata overrides with the detected series name
+        var overrides: [URL: PDFMetadata] = [:]
+        if let name = seriesName {
+            for url in urls {
+                var meta = PDFMetadata(title: url.deletingPathExtension().lastPathComponent)
+                meta.series = name
+                overrides[url] = meta
+            }
+        }
+
+        // Track success/failure by comparing library before and after
+        let beforeCount = convertedPDFs.count
+        await ImportOrchestrator.shared.importFilesAsSeries(
+            urls: urls, manager: self, overrides: overrides
+        )
+        let afterCount = convertedPDFs.count
+        let successCount = max(0, afterCount - beforeCount)
+        let failedCount = urls.count - successCount
+
+        // Build failed URL list (files that didn't make it into the library)
+        let importedFilenames = Set(convertedPDFs.suffix(successCount).map { $0.url.lastPathComponent })
+        let failedURLs = urls.filter { url in
+            !importedFilenames.contains(url.lastPathComponent)
+        }
+
+        return ImportSummary(
+            seriesName: seriesName ?? "Imported",
+            successCount: successCount,
+            failedURLs: Array(failedURLs.prefix(failedCount))
+        )
+    }
+
     func finalizeSeriesImport(pdfs: [ConvertedPDF], seriesName: String) async {
         await ImportOrchestrator.shared.finalizeSeriesImport(pdfs: pdfs, seriesName: seriesName, manager: self)
     }
@@ -179,7 +220,8 @@ extension ConversionManager {
                     metadata: pdf.metadata,
                     collectionId: pdf.collectionId,
                     isFavorite: pdf.isFavorite,
-                    coverImageData: pdf.coverImageData
+                    coverImageData: pdf.coverImageData,
+                    contentHash: pdf.contentHash
                 )
                 convertedPDFs[idx] = updatedPDF
                 

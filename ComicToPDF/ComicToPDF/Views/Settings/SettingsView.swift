@@ -653,6 +653,20 @@ struct SettingsView: View {
                 }
             }
             
+            NavigationLink(destination: StorageCleanupView()) {
+                HStack {
+                    settingsIcon("internaldrive.fill", color: .orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Storage Cleanup")
+                        if SandboxCleanupManager.shared.passiveReclaimableBytes > 0 {
+                            Text("\(SandboxCleanupManager.shared.formattedSize(SandboxCleanupManager.shared.passiveReclaimableBytes)) reclaimable")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            
             Button(action: {
                 if let context = try? InksyncProApp.sharedModelContainer.mainContext {
                     let descriptor = FetchDescriptor<SDAnnotation>()

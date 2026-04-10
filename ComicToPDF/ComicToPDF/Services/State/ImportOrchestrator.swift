@@ -188,6 +188,10 @@ actor ImportOrchestrator {
             Set(manager.convertedPDFs.map { "\($0.url.lastPathComponent)||\($0.fileSize)" })
         }
         let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
+        // Content-hash lookup for rename-proof dedup (catches same file imported under different name)
+        let existingHashes: Set<String> = await MainActor.run {
+            Set(manager.convertedPDFs.compactMap { $0.contentHash })
+        }
         let isVaultUnlocked = await MainActor.run { !SecurityManager.shared.isVaultLocked }
 
         await MainActor.run { ImportMonitorManager.shared.startImport(totalCount: urls.count) }
@@ -227,6 +231,15 @@ actor ImportOrchestrator {
                     continue
                 }
                 
+                // 3. Content-hash check: catches renamed copies of already-imported files
+                if !existingHashes.isEmpty {
+                    let quickHash = ContentHasher.sha256(of: url)
+                    if let hash = quickHash, existingHashes.contains(hash) {
+                        Logger.shared.log("Skipping hash-duplicate: \(fileName) (hash match)", category: "Import", type: .info)
+                        continue
+                    }
+                }
+                
                 // 🚀 PREVENT DESTRUCTIVE COLLISION: Instead of destructively dropping chapters named "1.cbz", 
                 // we inject their validated Series Name mapping into the physical Document namespace!
                 if existingPaths.contains(fileName) || newPDFs.contains(where: { $0.url.lastPathComponent == fileName }) {
@@ -245,6 +258,10 @@ actor ImportOrchestrator {
                 }
                 
                 do {
+                    // Compute SHA-256 on the ORIGINAL file while security scope is active.
+                    // Must happen BEFORE copy so dedup works even if conversion fails.
+                    let fileContentHash = ContentHasher.sha256(of: url)
+                    
                     if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
                     
                     // Aggressive APFS Inode Optimization (Move instead of Copy for Staged Items)
@@ -308,6 +325,7 @@ actor ImportOrchestrator {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                     }
                     pdf.isPrivate = isVaultUnlocked
+                    pdf.contentHash = fileContentHash
                     newPDFs.append(pdf)
                     
                     await ImportMonitorManager.shared.incrementSuccess()
