@@ -147,17 +147,15 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     let accessing = url.startAccessingSecurityScopedResource()
                     var isDir: ObjCBool = false
                     if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                        // Folder — spider recursively
+                        // Folder — spider recursively safely via coordinator
                         found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
                     } else if allowedExts.contains(url.pathExtension.lowercased()) {
-                        // Single file — copy to staging
+                        // Single file — use NSFileCoordinator to resolve iCloud faults
                         let dest = stagingDir.appendingPathComponent(url.lastPathComponent)
-                        do {
-                            if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                            try fm.copyItem(at: url, to: dest)
+                        if ImportCoordinator.secureCopy(from: url, to: dest) {
                             found.append(dest)
-                        } catch {
-                            Logger.shared.log("ImportCoordinator[unified]: copy failed (\(url.lastPathComponent)): \(error.localizedDescription)", category: "System", type: .warning)
+                        } else {
+                            Logger.shared.log("ImportCoordinator[unified]: coordinated copy failed (\(url.lastPathComponent))", category: "System", type: .warning)
                         }
                     }
                     if accessing { url.stopAccessingSecurityScopedResource() }
@@ -177,29 +175,54 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     // MARK: - Helpers
 
-    /// Synchronously spiders a folder and copies all valid comic files to temp storage.
+    /// Synchronously spiders a folder and copies all valid comic files using NSFileCoordinator to resolve iCloud faults.
     static func processFolderSpiderSync(url: URL) -> [URL] {
         var foundURLs: [URL] = []
-        let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+        let validExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
         let fm = FileManager.default
         let tempDir = fm.temporaryDirectory.appendingPathComponent("Folder_Spider_\(UUID().uuidString)")
         try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
-            for case let fileURL as URL in enumerator {
-                if validExts.contains(fileURL.pathExtension.lowercased()) {
-                    let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
-                    do {
-                        if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
-                        try fm.copyItem(at: fileURL, to: destURL)
-                        foundURLs.append(destURL)
-                    } catch {
-                        Logger.shared.log("ImportCoordinator: Spider copy failed (\(fileURL.lastPathComponent)): \(error)", category: "System", type: .warning)
+        // Safety timeout to prevent infinite enumeration of vast directories
+        let timeoutDate = Date().addingTimeInterval(30.0) 
+
+        var error: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &error) { safeFolderURL in
+            if let enumerator = fm.enumerator(at: safeFolderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+                for case let fileURL as URL in enumerator {
+                    if Date() > timeoutDate {
+                        Logger.shared.log("ImportCoordinator: Folder spider timed out after 30 seconds", category: "System", type: .warning)
+                        break
+                    }
+                    
+                    if validExts.contains(fileURL.pathExtension.lowercased()) {
+                        let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
+                        if ImportCoordinator.secureCopy(from: fileURL, to: destURL) {
+                            foundURLs.append(destURL)
+                        }
                     }
                 }
             }
         }
         return foundURLs
+    }
+    
+    /// Safely copies a file using NSFileCoordinator to trigger on-demand iCloud downloads and bypass security scopes.
+    private static func secureCopy(from sourceURL: URL, to destURL: URL) -> Bool {
+        var success = false
+        var error: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &error) { safeURL in
+            do {
+                if FileManager.default.fileExists(atPath: destURL.path) {
+                    try FileManager.default.removeItem(at: destURL)
+                }
+                try FileManager.default.copyItem(at: safeURL, to: destURL)
+                success = true
+            } catch {
+                Logger.shared.log("ImportCoordinator: Secure copy failed for \(sourceURL.lastPathComponent): \(error.localizedDescription)", category: "System", type: .error)
+            }
+        }
+        return success
     }
 
     private func finish(with urls: [URL]) {
