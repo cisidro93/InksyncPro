@@ -175,7 +175,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     // MARK: - Helpers
 
-    /// Synchronously spiders a folder and copies all valid comic files using NSFileCoordinator to resolve iCloud faults.
+    /// Synchronously spiders a folder without locking the root node.
     static func processFolderSpiderSync(url: URL) -> [URL] {
         var foundURLs: [URL] = []
         let validExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
@@ -183,23 +183,21 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         let tempDir = fm.temporaryDirectory.appendingPathComponent("Folder_Spider_\(UUID().uuidString)")
         try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-        // Safety timeout to prevent infinite enumeration of vast directories
-        let timeoutDate = Date().addingTimeInterval(30.0) 
+        let timeoutDate = Date().addingTimeInterval(30.0)
 
-        var error: NSError?
-        NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &error) { safeFolderURL in
-            if let enumerator = fm.enumerator(at: safeFolderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
-                for case let fileURL as URL in enumerator {
-                    if Date() > timeoutDate {
-                        Logger.shared.log("ImportCoordinator: Folder spider timed out after 30 seconds", category: "System", type: .warning)
-                        break
-                    }
-                    
-                    if validExts.contains(fileURL.pathExtension.lowercased()) {
-                        let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
-                        if ImportCoordinator.secureCopy(from: fileURL, to: destURL) {
-                            foundURLs.append(destURL)
-                        }
+        // Do NOT use NSFileCoordinator on the root directory (deadlocks on `Downloads`).
+        // Security scopes cascade to contents automatically.
+        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                if Date() > timeoutDate {
+                    Logger.shared.log("ImportCoordinator: Folder spider timed out after 30 seconds", category: "System", type: .warning)
+                    break
+                }
+                
+                if validExts.contains(fileURL.pathExtension.lowercased()) {
+                    let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
+                    if ImportCoordinator.secureCopy(from: fileURL, to: destURL) {
+                        foundURLs.append(destURL)
                     }
                 }
             }
@@ -207,11 +205,12 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         return foundURLs
     }
     
-    /// Safely copies a file using NSFileCoordinator to trigger on-demand iCloud downloads and bypass security scopes.
+    /// Safely copies a file using NSFileCoordinator with empty options to trigger on-demand iCloud downloads and bypass security scopes.
     private static func secureCopy(from sourceURL: URL, to destURL: URL) -> Bool {
         var success = false
         var error: NSError?
-        NSFileCoordinator().coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &error) { safeURL in
+        // options: [] deliberately forces iOS to materialize the iCloud dataless fault.
+        NSFileCoordinator().coordinate(readingItemAt: sourceURL, options: [], error: &error) { safeURL in
             do {
                 if FileManager.default.fileExists(atPath: destURL.path) {
                     try FileManager.default.removeItem(at: destURL)
