@@ -71,9 +71,8 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         let picker: UIDocumentPickerViewController
 
         if type == .folder {
-            // asCopy:false → Open button stays ACTIVE while user is navigated inside a folder.
-            // The delegate receives a security-scoped URL for the chosen folder.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
+            // asCopy:true → The OS natively orchestrates copying and downloading the folder hierarchy securely into our tmp directory!
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: true)
             picker.allowsMultipleSelection = false
         } else if type == .unified {
             // ─── Critical Design ───────────────────────────────────────────────────
@@ -123,13 +122,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             switch self.currentType {
 
             case .folder:
-                // asCopy:false gives us a security-scoped URL for the selected folder.
-                // Use simple FileManager enumeration — NOT NSFileCoordinator which can deadlock.
+                // asCopy:true natively orchestrates folder copying/iCloud download into our Local Temp context!
                 var found: [URL] = []
                 for url in urls {
-                    let accessing = url.startAccessingSecurityScopedResource()
                     found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                    if accessing { url.stopAccessingSecurityScopedResource() }
                 }
                 DispatchQueue.main.async { self.finish(with: found) }
 
@@ -192,46 +188,36 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     // MARK: - Helpers
 
-    /// Synchronously spiders a folder without locking the root node.
+    /// Fast, unblocked file spider for perfectly localized paths extracted via asCopy: true.
     static func processFolderSpiderSync(url: URL) -> [URL] {
         var foundURLs: [URL] = []
         let validExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
         let fm = FileManager.default
-        let tempDir = fm.temporaryDirectory.appendingPathComponent("Folder_Spider_\(UUID().uuidString)")
-        try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+        try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
 
         let timeoutDate = Date().addingTimeInterval(30.0)
 
-        // Do NOT use NSFileCoordinator on the root directory (deadlocks on `Downloads`).
-        // Security scopes cascade to contents automatically.
-        // We MUST NOT skip hidden files, because iCloud dataless faults begin with `.` and end with `.icloud`.
-        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: []) {
+        // Native native traversal. No Security Scopes or NSFileCoordinator needed natively.
+        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
             for case let fileURL as URL in enumerator {
                 if Date() > timeoutDate {
                     Logger.shared.log("ImportCoordinator: Folder spider timed out after 30 seconds", category: "System", type: .warning)
                     break
                 }
 
-                var targetURL = fileURL
-                var actualExtension = fileURL.pathExtension.lowercased()
-                
-                // Process physical iCloud fault descriptors (e.g. ".MyComic.cbz.icloud")
-                if actualExtension == "icloud" {
-                    let fileName = fileURL.lastPathComponent
-                    if fileName.hasPrefix(".") && fileName.hasSuffix(".icloud") {
-                        let logicalName = String(fileName.dropFirst().dropLast(7))
-                        actualExtension = (logicalName as NSString).pathExtension.lowercased()
-                        targetURL = fileURL.deletingLastPathComponent().appendingPathComponent(logicalName)
-                    }
-                } else if fileURL.lastPathComponent.hasPrefix(".") {
-                    // Skip standard hidden system files (.DS_Store, etc.)
-                    continue
-                }
-                
-                if validExts.contains(actualExtension) {
-                    let destURL = tempDir.appendingPathComponent(targetURL.lastPathComponent)
-                    if ImportCoordinator.secureCopy(from: targetURL, to: destURL) {
+                if validExts.contains(fileURL.pathExtension.lowercased()) {
+                    let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
+                    let destFolder = stagingDir.appendingPathComponent(originalParent)
+                    try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+
+                    let destURL = destFolder.appendingPathComponent(fileURL.lastPathComponent)
+                    do {
+                        if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+                        try fm.copyItem(at: fileURL, to: destURL)
                         foundURLs.append(destURL)
+                    } catch {
+                        Logger.shared.log("ImportCoordinator: Local fast-copy failed: \(error.localizedDescription)", category: "System", type: .error)
                     }
                 }
             }
