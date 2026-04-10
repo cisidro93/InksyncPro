@@ -75,7 +75,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             // The delegate receives a security-scoped URL for the chosen folder.
             picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
             picker.allowsMultipleSelection = false
-
         } else if type == .unified {
             // ─── Critical Design ───────────────────────────────────────────────────
             // asCopy: false   → security-scoped URLs; we copy files manually inside the scope.
@@ -85,9 +84,8 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             // ───────────────────────────────────────────────────────────────────────
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
             picker.allowsMultipleSelection = true
-
         } else {
-            let asCopy = (type == .json || type == .smartList)
+            let asCopy = (type == .files || type == .json || type == .smartList)
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
             picker.allowsMultipleSelection = (type == .files)
         }
