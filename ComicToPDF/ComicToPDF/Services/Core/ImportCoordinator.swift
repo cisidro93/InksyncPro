@@ -79,15 +79,12 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         } else if type == .unified {
             // ─── Critical Design ───────────────────────────────────────────────────
             // asCopy: false   → security-scoped URLs; we copy files manually inside the scope.
-            // allowsMultipleSelection: false → iOS shows an active "Open" button when the
-            //   user is navigated INSIDE a folder. With `true`, tapping a folder navigates
-            //   into it, breaking the "open this whole folder" use case the user expects.
-            // .folder in contentTypes → delivers the folder URL when user hits Open.
-            //
-            // Flow: user browses to Downloads/en.mangafox → hits Open → we spider that folder.
+            // allowsMultipleSelection: true → allows the user to select multiple individual files 
+            //   OR select a folder using the "Select" button. 
+            //   If false, iOS breaks the "Open" button inside folders when mixing file and folder types.
             // ───────────────────────────────────────────────────────────────────────
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-            picker.allowsMultipleSelection = false
+            picker.allowsMultipleSelection = true
 
         } else {
             let asCopy = (type == .files || type == .json || type == .smartList)
