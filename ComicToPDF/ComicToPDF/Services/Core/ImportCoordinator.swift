@@ -187,16 +187,33 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
         // Do NOT use NSFileCoordinator on the root directory (deadlocks on `Downloads`).
         // Security scopes cascade to contents automatically.
-        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+        // We MUST NOT skip hidden files, because iCloud dataless faults begin with `.` and end with `.icloud`.
+        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: []) {
             for case let fileURL as URL in enumerator {
                 if Date() > timeoutDate {
                     Logger.shared.log("ImportCoordinator: Folder spider timed out after 30 seconds", category: "System", type: .warning)
                     break
                 }
+
+                var targetURL = fileURL
+                var actualExtension = fileURL.pathExtension.lowercased()
                 
-                if validExts.contains(fileURL.pathExtension.lowercased()) {
-                    let destURL = tempDir.appendingPathComponent(fileURL.lastPathComponent)
-                    if ImportCoordinator.secureCopy(from: fileURL, to: destURL) {
+                // Process physical iCloud fault descriptors (e.g. ".MyComic.cbz.icloud")
+                if actualExtension == "icloud" {
+                    let fileName = fileURL.lastPathComponent
+                    if fileName.hasPrefix(".") && fileName.hasSuffix(".icloud") {
+                        let logicalName = String(fileName.dropFirst().dropLast(7))
+                        actualExtension = (logicalName as NSString).pathExtension.lowercased()
+                        targetURL = fileURL.deletingLastPathComponent().appendingPathComponent(logicalName)
+                    }
+                } else if fileURL.lastPathComponent.hasPrefix(".") {
+                    // Skip standard hidden system files (.DS_Store, etc.)
+                    continue
+                }
+                
+                if validExts.contains(actualExtension) {
+                    let destURL = tempDir.appendingPathComponent(targetURL.lastPathComponent)
+                    if ImportCoordinator.secureCopy(from: targetURL, to: destURL) {
                         foundURLs.append(destURL)
                     }
                 }
