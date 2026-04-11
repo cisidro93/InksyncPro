@@ -310,17 +310,9 @@ actor ImportOrchestrator {
                         smartMetadata.series = validParentFolder
                     }
                     
-                        // Parse full metadata to extract Manga layout
-                        if let parsedInfo = ComicInfoParser.parse(from: destURL) {
-                            smartMetadata.isManga = parsedInfo.manga
-                        }
-                    } else {
-                        // 3. Fallback to Parent Folder if no XML exists
-                        smartMetadata.series = validParentFolder
-                        if validParentFolder != nil {
-                            smartMetadata.tags.append("Folder Auto-Group")
-                            Logger.shared.log("Import: Sourced series name '\(validParentFolder!)' from parent folder for \(fileName)", category: "Import", type: .info)
-                        }
+                    // Parse full metadata to extract Manga layout
+                    if let parsedInfo = ComicInfoParser.parse(from: destURL) {
+                        smartMetadata.isManga = parsedInfo.manga
                     }
                     
                     var pdf = ConvertedPDF(

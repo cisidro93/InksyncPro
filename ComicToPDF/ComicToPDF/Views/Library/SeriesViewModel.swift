@@ -46,8 +46,14 @@ class SeriesViewModel: ObservableObject {
         var groups: [String: [ConvertedPDF]] = [:]
 
         for pdf in pdfs {
-            let key = (pdf.metadata.series ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            var key = (pdf.metadata.series ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else { continue }
+            
+            // Sub-group by volume locally in the library view if volume metadata is present
+            if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
+                key = "\(key) - Vol \(vol)"
+            }
+            
             groups[key, default: []].append(pdf)
         }
 

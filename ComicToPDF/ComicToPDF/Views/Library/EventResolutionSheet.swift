@@ -122,6 +122,11 @@ struct EventResolutionSheet: View {
                         } label: {
                             Label("Compile Kindle Omnibus (\(omnibusTotalMB)MB)", systemImage: "books.vertical.fill")
                         }
+                        Button {
+                            applyMetadataTags()
+                        } label: {
+                            Label("Inject Native Metadata Tags", systemImage: "tag.fill")
+                        }
                     }
                     .font(.headline)
                     .disabled(autoMatched.isEmpty)
@@ -187,6 +192,30 @@ struct EventResolutionSheet: View {
         
         // Delegate to background Omnibus processor
         conversionManager.enqueueOmnibus(name: eventName, sourceFiles: matchedPDFs)
+        dismiss()
+    }
+    private func applyMetadataTags() {
+        isProcessing = true
+        
+        for item in resolvedItems {
+            if case .matched(let pdf) = item.resolution {
+                // Find and update the underlying PDF model natively in the library
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    var mutableMeta = conversionManager.convertedPDFs[idx].metadata
+                    
+                    // Directly inject the CSV Smart List mappings
+                    mutableMeta.series = item.request.series
+                    mutableMeta.issueNumber = item.request.issueNumber
+                    mutableMeta.volume = item.request.volume
+                    mutableMeta.tags.append("Smart List Synced")
+                    
+                    conversionManager.convertedPDFs[idx].metadata = mutableMeta
+                }
+            }
+        }
+        
+        conversionManager.saveLibrary()
+        isProcessing = false
         dismiss()
     }
 }
