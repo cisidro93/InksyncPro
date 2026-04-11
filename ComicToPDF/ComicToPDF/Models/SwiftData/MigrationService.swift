@@ -95,6 +95,7 @@ class MigrationService {
         }
         
         var generatedCount = 0
+        var assignedCount = 0
         
         for (seriesName, docs) in groupedByName {
             // Only group if there are at least 2 matching items
@@ -113,17 +114,20 @@ class MigrationService {
                 }
                 
                 for doc in docs {
-                    doc.collectionId = container.id
+                    if doc.collectionId != container.id {
+                        doc.collectionId = container.id
+                        assignedCount += 1
+                    }
                 }
             }
         }
         
-        if generatedCount > 0 {
+        if generatedCount > 0 || assignedCount > 0 {
             try? context.save()
-            Logger.shared.log("Smart Grouping generated \(generatedCount) new recursive series collections.", category: "Library")
+            Logger.shared.log("Smart Grouping generated \(generatedCount) new collections and assigned \(assignedCount) items.", category: "Library")
         }
         
-        return generatedCount
+        return generatedCount + assignedCount
     }
     
     // ✅ NEW: Dual-Write Background Sync

@@ -118,6 +118,7 @@ class BackgroundMetadataEngine: ObservableObject {
     private func finishCleanly(manager: ConversionManager, message: String) {
         isRunning = false
         UIApplication.shared.isIdleTimerDisabled = false
+        manager.saveLibrary() // Persist perfectly matched items to SwiftData before terminating
         
         TaskEngine.shared.isConverting = false
         TaskEngine.shared.processingStatus = ""
