@@ -80,22 +80,22 @@ struct EventResolutionSheet: View {
                     Section(header: Text("Auto-Matched").foregroundColor(.green)) {
                         ForEach(autoMatched) { item in
                             if case .matched(let pdf) = item.resolution {
-                                HStack {
-                                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
-                                    VStack(alignment: .leading) {
-                                        Text(pdf.name).font(.subheadline)
-                                        Text(item.request.originalText).font(.caption2).foregroundColor(.secondary)
+                                Button {
+                                    manualAssigningItem = item
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                                        VStack(alignment: .leading) {
+                                            Text(pdf.name).font(.subheadline).foregroundColor(.primary)
+                                            Text(item.request.originalText).font(.caption2).foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                            .foregroundColor(Color(.tertiaryLabel))
+                                            .font(.caption)
                                     }
-                                    Spacer()
-                                    Button {
-                                        manualAssigningItem = item
-                                    } label: {
-                                        Label("Reassign", systemImage: "arrow.triangle.2.circlepath")
-                                            .labelStyle(.iconOnly)
-                                            .foregroundColor(.blue)
-                                    }
-                                    .buttonStyle(.plain)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -104,18 +104,20 @@ struct EventResolutionSheet: View {
                 if !missing.isEmpty {
                     Section(header: Text("Missing (Still Need)").foregroundColor(.red)) {
                         ForEach(missing) { item in
-                            HStack {
-                                Image(systemName: "xmark.circle").foregroundColor(.red)
-                                Text(item.request.originalText).font(.subheadline)
-                                Spacer()
-                                Button {
-                                    manualAssigningItem = item
-                                } label: {
-                                    Label("Assign Library File", systemImage: "magnifyingglass")
-                                        .font(.caption).bold()
+                            Button {
+                                manualAssigningItem = item
+                            } label: {
+                                HStack {
+                                    Image(systemName: "xmark.circle").foregroundColor(.red)
+                                    Text(item.request.originalText).font(.subheadline)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    Image(systemName: "magnifyingglass")
+                                        .foregroundColor(Color(.tertiaryLabel))
+                                        .font(.caption)
                                 }
-                                .buttonStyle(.bordered)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
