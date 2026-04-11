@@ -129,30 +129,28 @@ class LibraryViewModel: ObservableObject {
             
             for (key, var group) in groups {
                 // ✅ PHASE 4: Internal Sorting & Cover Assigner
-                if key.starts(with: "series_") {
-                    // Ensure issues inside the folder always display in reading sequence
-                    group.issues.sort { a, b in
-                        let aNumStr = a.metadata.issueNumber ?? ""
-                        let bNumStr = b.metadata.issueNumber ?? ""
-                        
-                        // Check if these are from the same volume first to prevent cross-volume jumbling
-                        let aVolStr = a.metadata.volume ?? ""
-                        let bVolStr = b.metadata.volume ?? ""
-                        if !aVolStr.isEmpty && !bVolStr.isEmpty && aVolStr != bVolStr,
-                           let aVol = Double(aVolStr), let bVol = Double(bVolStr) {
-                            return aVol < bVol
-                        }
-                        
-                        if !aNumStr.isEmpty && !bNumStr.isEmpty, let aNum = Double(aNumStr), let bNum = Double(bNumStr) {
-                            return aNum < bNum
-                        }
-                        
-                        return a.name.localizedStandardCompare(b.name) == .orderedAscending
+                // Ensure issues inside the folder always display in reading sequence
+                group.issues.sort { a, b in
+                    let aNumStr = a.metadata.issueNumber ?? ""
+                    let bNumStr = b.metadata.issueNumber ?? ""
+                    
+                    // Check if these are from the same volume first to prevent cross-volume jumbling
+                    let aVolStr = a.metadata.volume ?? ""
+                    let bVolStr = b.metadata.volume ?? ""
+                    if !aVolStr.isEmpty && !bVolStr.isEmpty && aVolStr != bVolStr,
+                       let aVol = Double(aVolStr), let bVol = Double(bVolStr) {
+                        return aVol < bVol
                     }
                     
-                    if let cover = group.issues.first {
-                        group.coverIssueID = cover.id
+                    if !aNumStr.isEmpty && !bNumStr.isEmpty, let aNum = Double(aNumStr), let bNum = Double(bNumStr) {
+                        return aNum < bNum
                     }
+                    
+                    return a.name.localizedStandardCompare(b.name) == .orderedAscending
+                }
+                
+                if let cover = group.issues.first {
+                    group.coverIssueID = cover.id
                 }
                 
                 let item = LibraryListItem.series(group)
