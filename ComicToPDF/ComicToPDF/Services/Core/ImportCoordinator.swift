@@ -64,7 +64,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         let picker: UIDocumentPickerViewController
 
         if type == .json || type == .smartList {
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
             picker.allowsMultipleSelection = false
         } else {
             // Legacy 0bb6b38 Perfection: Unified Picker handles BOTH files and folders simultaneously natively.

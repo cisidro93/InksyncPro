@@ -29,16 +29,16 @@ class SmartListImporter {
     
     /// Parses a standard .cbl XML file and extracts the reading order
     func parseCBL(from url: URL) throws -> [RequestedComicItem] {
-        guard let xmlString = try? String(contentsOf: url, encoding: .utf8) else {
-            throw NSError(domain: "SmartListImporter", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to read CBL file."])
+        guard let xmlString = try? readStringResiliently(from: url) else {
+            throw NSError(domain: "SmartListImporter", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to read CBL file. Encoding may be corrupted."])
         }
         return parseCBLString(xmlString)
     }
     
     // MARK: - CSV AI Table Parser
     func parseCSVList(from url: URL, defaultSeriesName: String) throws -> [RequestedComicItem] {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-            throw NSError(domain: "SmartListImporter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to read CSV file."])
+        guard let text = try? readStringResiliently(from: url) else {
+            throw NSError(domain: "SmartListImporter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to read CSV file. Encoding may be corrupted."])
         }
         
         var items: [RequestedComicItem] = []
@@ -113,8 +113,8 @@ class SmartListImporter {
     
     /// Parses a lightweight text/CSV/Markdown file utilizing Context Engine inheritance
     func parseTextList(from url: URL, defaultSeriesName: String) throws -> [RequestedComicItem] {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-            throw NSError(domain: "SmartListImporter", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to read text file."])
+        guard let text = try? readStringResiliently(from: url) else {
+            throw NSError(domain: "SmartListImporter", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to read text file. Encoding may be corrupted."])
         }
         
         var items: [RequestedComicItem] = []
@@ -381,5 +381,17 @@ class SmartListImporter {
         }
         fields.append(current.trimmingCharacters(in: .whitespaces))
         return fields
+    }
+    
+    private func readStringResiliently(from url: URL) throws -> String {
+        do {
+            return try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            let data = try Data(contentsOf: url)
+            if let str = String(data: data, encoding: .windowsCP1252) ?? String(data: data, encoding: .isoLatin1) {
+                return str
+            }
+            throw error
+        }
     }
 }
