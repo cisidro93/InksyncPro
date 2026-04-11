@@ -100,12 +100,16 @@ struct ImportQueueView: View {
                     }
                 )
             }
-            // Import result summary sheet
             .sheet(isPresented: $showImportSummary) {
                 ImportSummaryView(summaries: importSummaries) { failedURLs in
                     // Retry: re-stage failed files
                     queue.forceStage(failedURLs)
                     showImportSummary = false
+                }
+            }
+            .onChange(of: showSeriesConflict) { newValue in
+                if newValue == false && queue.stagedURLs.isEmpty {
+                    dismiss()
                 }
             }
         }
@@ -234,8 +238,7 @@ struct ImportQueueView: View {
     private func importAll() {
         let urls = queue.stagedURLs
         queue.clear()
-        dismiss()
-
+        
         // Group into series using SeriesNameParser
         let groups = SeriesNameParser.groupIntoSeries(urls)
 
@@ -248,6 +251,7 @@ struct ImportQueueView: View {
         if !conflicting.isEmpty {
             pendingConflictGroups = conflicting
             showSeriesConflict = true
+            
             // Import non-conflicting groups immediately
             let conflictNames = Set(conflicting.map { $0.seriesName })
             let nonConflicting = groups.filter { !conflictNames.contains($0.seriesName) }
@@ -255,6 +259,7 @@ struct ImportQueueView: View {
                 Task { await runImport(groups: nonConflicting) }
             }
         } else {
+            dismiss()
             Task { await runImport(groups: groups) }
         }
     }
