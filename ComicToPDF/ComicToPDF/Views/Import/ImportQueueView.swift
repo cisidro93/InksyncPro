@@ -21,9 +21,6 @@ struct ImportQueueView: View {
     @State private var importSummaries: [ImportSummary] = []
     @State private var showImportSummary = false
 
-    // Queue cap toast
-    @State private var showCapToast = false
-
     var body: some View {
         NavigationView {
             ZStack {
@@ -53,27 +50,6 @@ struct ImportQueueView: View {
                     .padding(28)
                     .background(Color(white: 0.15).opacity(0.96))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
-                }
-
-                // Queue cap toast overlay
-                if showCapToast {
-                    VStack {
-                        Spacer()
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.yellow)
-                            Text("Queue limit reached (\(ImportQueueManager.maxQueueSize) files). Import what's staged, then add more.")
-                                .font(.caption)
-                                .foregroundColor(.white)
-                        }
-                        .padding(12)
-                        .background(Color(white: 0.2).opacity(0.95))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                    .animation(.easeInOut, value: showCapToast)
                 }
             }
             .navigationTitle("Import Queue")
@@ -130,16 +106,6 @@ struct ImportQueueView: View {
                     // Retry: re-stage failed files
                     queue.forceStage(failedURLs)
                     showImportSummary = false
-                }
-            }
-            .onChange(of: queue.queueCapReached) { _, reached in
-                if reached {
-                    showCapToast = true
-                    // Auto-dismiss after 4 seconds
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                        showCapToast = false
-                        queue.queueCapReached = false
-                    }
                 }
             }
         }

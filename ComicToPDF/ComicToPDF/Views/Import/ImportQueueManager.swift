@@ -31,12 +31,9 @@ class ImportQueueManager: ObservableObject {
     static let shared = ImportQueueManager()
     private init() { loadPersistedQueue() }
 
-    static let maxQueueSize = 500
-
     @Published var stagedURLs: [URL] = []
     @Published var isStagingFiles: Bool = false
     @Published var stagingProgress: (current: Int, total: Int)? = nil
-    @Published var queueCapReached: Bool = false
 
     // MARK: - Smart Stage (primary entry point)
 
@@ -91,22 +88,7 @@ class ImportQueueManager: ObservableObject {
                 dupes.append(url); continue
             }
 
-
             toStage.append(url)
-        }
-
-        // Apply queue size cap
-        var currentCount = 0
-        DispatchQueue.main.sync {
-            currentCount = self.stagedURLs.count
-        }
-        
-        let available = ImportQueueManager.maxQueueSize - currentCount
-        if toStage.count > available {
-            let overflow = toStage[available...]
-            toStage = Array(toStage[..<available])
-            dupes.append(contentsOf: overflow)
-            DispatchQueue.main.async { self.queueCapReached = true }
         }
 
         DispatchQueue.main.sync {
@@ -125,12 +107,7 @@ class ImportQueueManager: ObservableObject {
     /// Force-stages URLs regardless of duplicate status.
     /// Called when user explicitly chooses "Import Anyway".
     func forceStage(_ urls: [URL]) {
-        let available = ImportQueueManager.maxQueueSize - stagedURLs.count
-        let toAdd = Array(urls.prefix(available))
-        stagedURLs.append(contentsOf: toAdd)
-        if toAdd.count < urls.count {
-            queueCapReached = true
-        }
+        stagedURLs.append(contentsOf: urls)
         persistQueue()
     }
 
@@ -141,12 +118,7 @@ class ImportQueueManager: ObservableObject {
         let deduped = urls.filter { new in
             !stagedURLs.contains { $0.lastPathComponent == new.lastPathComponent }
         }
-        let available = ImportQueueManager.maxQueueSize - stagedURLs.count
-        let toAdd = Array(deduped.prefix(available))
-        stagedURLs.append(contentsOf: toAdd)
-        if toAdd.count < deduped.count {
-            queueCapReached = true
-        }
+        stagedURLs.append(contentsOf: deduped)
         persistQueue()
     }
 
@@ -159,7 +131,6 @@ class ImportQueueManager: ObservableObject {
 
     func clear() {
         stagedURLs.removeAll()
-        queueCapReached = false
         UserDefaults.standard.removeObject(forKey: "importQueueBookmarks")
     }
 
