@@ -287,18 +287,29 @@ actor ImportOrchestrator {
                         validParentFolder = parentName
                     }
                     
-                    // 1. Attempt XML Parse or Pre-Flight Override
-                    if let meta = overrideMeta {
-                        smartDisplayName = meta.title
-                        smartMetadata = meta
-                    } else if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
+                    // 1. Highest Priority: Native ComicInfo.xml Archive Tagging
+                    if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
                         smartDisplayName = xmlData.displayName
-                        smartMetadata.title = xmlData.parsedTitle ?? smartDisplayName
-                        // 2. Cascade Priority: XML Series -> Parent Folder -> nil
-                        smartMetadata.series = xmlData.parsedSeries ?? validParentFolder
+                        smartMetadata.title = xmlData.parsedTitle ?? overrideMeta?.title ?? smartDisplayName
+                        
+                        // Cascade: XML Series -> Folder Override -> validParentFolder -> nil
+                        smartMetadata.series = xmlData.parsedSeries ?? overrideMeta?.series ?? validParentFolder
                         smartMetadata.issueNumber = xmlData.parsedNumber
                         smartMetadata.tags.append("Auto XML Scrape")
                         
+                        // Merge safe remaining attributes from the heuristic override
+                        if smartMetadata.issueNumber == nil, let overMeta = overrideMeta {
+                            smartMetadata.issueNumber = overMeta.issueNumber
+                        }
+                    } else if let meta = overrideMeta {
+                        // 2. Fallback: Smart Heuristics and Folder Hierarchy Mappings
+                        smartDisplayName = meta.title
+                        smartMetadata = meta
+                    } else {
+                        // 3. Absolute Fallback
+                        smartMetadata.series = validParentFolder
+                    }
+                    
                         // Parse full metadata to extract Manga layout
                         if let parsedInfo = ComicInfoParser.parse(from: destURL) {
                             smartMetadata.isManga = parsedInfo.manga
