@@ -25,7 +25,15 @@ enum SeriesNameParser {
 
         // Strip series-folder numeric ID prefix: "manga544", "manga1063", etc.
         s = s.replacingOccurrences(
-            of: #"^(manga|comic|book)[0-9]+"#,
+            of: #"(?i)^(manga|comic|book)[0-9]+"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Strip trailing volume/chapter/issue tags (e.g., "Batman Vol 1" -> "Batman")
+        // This ensures volume subfolders all group into the same base series name!
+        s = s.replacingOccurrences(
+            of: #"(?i)\s*(v|vol|volume|ch|chapter|issue|book|part)\.?\s*\d+(\.\d+)?\s*$"#,
             with: "",
             options: .regularExpression
         )
@@ -36,9 +44,9 @@ enum SeriesNameParser {
         // Remove trailing/leading whitespace
         s = s.trimmingCharacters(in: .whitespaces)
 
-        // Title-case each word
+        // Title-case gently: Uppercase first letter of each word but preserve existing inner caps (e.g., "DC")
         let titled = s.split(separator: " ")
-            .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+            .map { $0.prefix(1).uppercased() + String($0.dropFirst()) }
             .joined(separator: " ")
 
         return titled.isEmpty ? raw : titled
