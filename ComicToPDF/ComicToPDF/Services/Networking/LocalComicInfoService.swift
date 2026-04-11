@@ -112,6 +112,15 @@ class LocalComicInfoService {
             seriesStr = cleaned
         }
         
+        // Strip reading order prefixes (e.g., "01 Dark Web" -> "Dark Web")
+        if var finalSeries = seriesStr {
+            let prefixPattern = "^\\d+\\s*[-.]?\\s*"
+            if let prefixMatch = finalSeries.range(of: prefixPattern, options: .regularExpression) {
+                finalSeries = String(finalSeries[prefixMatch.upperBound...])
+            }
+            seriesStr = finalSeries.isEmpty ? nil : finalSeries
+        }
+        
         return (displayName: filename, parsedSeries: seriesStr, parsedNumber: numberStr, parsedVolume: volumeStr, parsedTitle: nil)
     }
 }
