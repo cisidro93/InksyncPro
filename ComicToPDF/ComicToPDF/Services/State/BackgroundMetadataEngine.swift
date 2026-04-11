@@ -75,48 +75,41 @@ class BackgroundMetadataEngine: ObservableObject {
                 break 
             }
             
+            currentProgress += 1
+            TaskEngine.shared.conversionProgress = Double(currentProgress) / Double(queueCount)
+            TaskEngine.shared.processingStatus = "Searching: \(file.name)..."
+            
+            let query = MetadataHeuristics.cleanFilename(file.name)
+            let issueStr = MetadataHeuristics.extractIssueNumber(from: file.name)
+            
             do {
-                currentProgress += 1
-                TaskEngine.shared.conversionProgress = Double(currentProgress) / Double(queueCount)
-                TaskEngine.shared.processingStatus = "Searching: \(file.name)..."
+                let results = try await ComicVineService.shared.searchVolumes(query: query, apiKey: apiKey)
                 
-                let query = MetadataHeuristics.cleanFilename(file.name)
-                let issueStr = MetadataHeuristics.extractIssueNumber(from: file.name)
-                
-                do {
-                    let results = try await ComicVineService.shared.searchVolumes(query: query, apiKey: apiKey)
-                    
-                    if let bestVolume = results.first {
-                        if let issueNumStr = issueStr, let issueNum = Int(issueNumStr) {
-                            if let issue = try await ComicVineService.shared.getIssue(volumeID: bestVolume.id, issueNumber: issueNumStr, apiKey: apiKey) {
-                                applyFullMatch(to: file.id, manager: manager, volume: bestVolume, issue: issue, issueNum: issueNum)
-                                matchCount += 1
-                            } else {
-                                applyPartialMatch(to: file.id, manager: manager, volume: bestVolume, issueNum: issueNum)
-                                matchCount += 1
-                            }
+                if let bestVolume = results.first {
+                    if let issueNumStr = issueStr, let issueNum = Int(issueNumStr) {
+                        if let issue = try await ComicVineService.shared.getIssue(volumeID: bestVolume.id, issueNumber: issueNumStr, apiKey: apiKey) {
+                            applyFullMatch(to: file.id, manager: manager, volume: bestVolume, issue: issue, issueNum: issueNum)
+                            matchCount += 1
                         } else {
-                            applyPartialMatch(to: file.id, manager: manager, volume: bestVolume, issueNum: nil)
+                            applyPartialMatch(to: file.id, manager: manager, volume: bestVolume, issueNum: issueNum)
                             matchCount += 1
                         }
                     } else {
-                        markAsFailed(id: file.id, manager: manager)
-                        failCount += 1
+                        applyPartialMatch(to: file.id, manager: manager, volume: bestVolume, issueNum: nil)
+                        matchCount += 1
                     }
-                } catch {
-                    Logger.shared.log("Failed API check for \(file.name): \(error.localizedDescription)", category: "Metadata", type: .error)
+                } else {
                     markAsFailed(id: file.id, manager: manager)
                     failCount += 1
                 }
-                
-                // Save state aggressively so progress isn't lost if the user force-closes the app
-                manager.saveLibrary()
-                
             } catch {
-                Logger.shared.log("CRITICAL METADATA CRASH AVERTED on \(file.name): \(error.localizedDescription)", category: "Metadata", type: .error)
+                Logger.shared.log("Failed API check for \(file.name): \(error.localizedDescription)", category: "Metadata", type: .error)
                 markAsFailed(id: file.id, manager: manager)
                 failCount += 1
             }
+            
+            // Save state aggressively so progress isn't lost if the user force-closes the app
+            manager.saveLibrary()
         }
         
         finishCleanly(manager: manager, message: "Matched: \(matchCount). Failed: \(failCount).")
