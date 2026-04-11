@@ -42,31 +42,38 @@ struct SmartListImporterView: View {
                             
                             HStack(spacing: 16) {
                                 Button(action: {
-                                    let template = "Volume,Start_Chapter,End_Chapter\n1,1,7\n2,8,14\n3,15,21"
-                                    UIPasteboard.general.string = template
-                                    conversionManager.appAlert = AppAlert(title: "Copied!", message: "CSV Template copied to clipboard. You can paste this to AI to format your lists.")
+                                    ImportCoordinator.present(type: .smartList) { urls in
+                                        if let first = urls.first {
+                                            handleImport(result: .success([first]))
+                                        }
+                                    }
                                 }) {
-                                    Label("Copy CSV Template", systemImage: "doc.on.doc")
-                                        .font(.caption).bold()
-                                        .padding(.horizontal, 12).padding(.vertical, 8)
+                                    Label("Import CSV/CBL File", systemImage: "tablecells")
+                                        .font(.headline)
+                                        .padding(.horizontal, 16).padding(.vertical, 12)
+                                        .frame(maxWidth: .infinity)
                                         .background(Color(.systemBlue).opacity(0.15))
                                         .foregroundColor(Color(.systemBlue))
-                                        .cornerRadius(8)
+                                        .cornerRadius(12)
                                 }
                                 
                                 Button(action: {
-                                    let template = "# Series Name\n## Volume 1\nCh 1-7\n## Volume 2\nCh 8-14"
-                                    UIPasteboard.general.string = template
-                                    conversionManager.appAlert = AppAlert(title: "Copied!", message: "Text Template copied to clipboard. You can paste this to AI to format your lists.")
+                                    ImportCoordinator.present(type: .smartList) { urls in
+                                        if let first = urls.first {
+                                            handleImport(result: .success([first]))
+                                        }
+                                    }
                                 }) {
-                                    Label("Copy Text Template", systemImage: "doc.on.doc")
-                                        .font(.caption).bold()
-                                        .padding(.horizontal, 12).padding(.vertical, 8)
+                                    Label("Import Text File", systemImage: "doc.plaintext")
+                                        .font(.headline)
+                                        .padding(.horizontal, 16).padding(.vertical, 12)
+                                        .frame(maxWidth: .infinity)
                                         .background(Color(.systemGreen).opacity(0.15))
                                         .foregroundColor(Color(.systemGreen))
-                                        .cornerRadius(8)
+                                        .cornerRadius(12)
                                 }
                             }
+                            .padding(.horizontal, 40)
                             
                             TextField("Event Name", text: $eventName)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -94,23 +101,6 @@ struct SmartListImporterView: View {
                                         .padding()
                                         .frame(maxWidth: .infinity)
                                         .background(Color.green)
-                                        .cornerRadius(12)
-                                        .padding(.horizontal, 40)
-                                }
-                            } else {
-                                Button {
-                                    ImportCoordinator.present(type: .smartList) { urls in
-                                        if let first = urls.first {
-                                            handleImport(result: .success([first]))
-                                        }
-                                    }
-                                } label: {
-                                    Label("Select List File", systemImage: "folder.fill")
-                                        .font(.headline)
-                                        .foregroundColor(.white)
-                                        .padding()
-                                        .frame(maxWidth: .infinity)
-                                        .background(Color.purple)
                                         .cornerRadius(12)
                                         .padding(.horizontal, 40)
                                 }
