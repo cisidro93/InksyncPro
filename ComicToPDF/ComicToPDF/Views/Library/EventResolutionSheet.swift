@@ -9,6 +9,7 @@ struct EventResolutionSheet: View {
     
     @State private var showingConfirmation = false
     @State private var isProcessing = false
+    @State private var manualAssigningItem: ResolvedEventItem? = nil
     
     var autoMatched: [ResolvedEventItem] { resolvedItems.filter { if case .matched = $0.resolution { return true }; return false } }
     var suggested: [ResolvedEventItem] { resolvedItems.filter { if case .suggested = $0.resolution { return true }; return false } }
@@ -85,6 +86,15 @@ struct EventResolutionSheet: View {
                                         Text(pdf.name).font(.subheadline)
                                         Text(item.request.originalText).font(.caption2).foregroundColor(.secondary)
                                     }
+                                    Spacer()
+                                    Button {
+                                        manualAssigningItem = item
+                                    } label: {
+                                        Label("Reassign", systemImage: "arrow.triangle.2.circlepath")
+                                            .labelStyle(.iconOnly)
+                                            .foregroundColor(.blue)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -97,6 +107,14 @@ struct EventResolutionSheet: View {
                             HStack {
                                 Image(systemName: "xmark.circle").foregroundColor(.red)
                                 Text(item.request.originalText).font(.subheadline)
+                                Spacer()
+                                Button {
+                                    manualAssigningItem = item
+                                } label: {
+                                    Label("Assign Library File", systemImage: "magnifyingglass")
+                                        .font(.caption).bold()
+                                }
+                                .buttonStyle(.bordered)
                             }
                         }
                     }
@@ -130,6 +148,14 @@ struct EventResolutionSheet: View {
                     }
                     .font(.headline)
                     .disabled(autoMatched.isEmpty)
+                }
+            }
+            .sheet(item: $manualAssigningItem) { item in
+                LibraryFilePickerSheet { selectedPDF in
+                    manualAssigningItem = nil
+                    if let idx = resolvedItems.firstIndex(where: { $0.id == item.id }) {
+                        resolvedItems[idx].resolution = .matched(selectedPDF)
+                    }
                 }
             }
         }
