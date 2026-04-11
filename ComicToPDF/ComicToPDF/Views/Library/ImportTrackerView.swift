@@ -47,10 +47,5 @@ struct ImportTrackerView: View {
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: monitor.isImporting)
             }
         }
-        .alert("Import Complete", isPresented: $monitor.showCompletionReport) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(monitor.finalReportMessage)
-        }
     }
 }
