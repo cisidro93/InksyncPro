@@ -29,9 +29,6 @@ class LibraryPersistenceManager {
     
     /// Awakens the Database structure from the filesystem memory blocks natively onto the Main Queue arrays.
     func load(manager: ConversionManager) {
-        guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName) else { return }
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
-        
         // Unshackled from legacy filesystem array extraction, natively bridge from ModelContainer
         Task.detached(priority: .userInitiated) {
             do {

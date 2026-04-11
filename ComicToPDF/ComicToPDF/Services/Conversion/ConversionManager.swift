@@ -73,10 +73,6 @@ class ConversionManager: ObservableObject {
     init() {
         loadLibrary()
         
-        Task {
-            await MainActor.run { self.scanLibrary() }
-        }
-        
         createWelcomeFile()
         performStartupOptimization()
         Task { await MainActor.run { self.migrateCoversToDisk() } }
