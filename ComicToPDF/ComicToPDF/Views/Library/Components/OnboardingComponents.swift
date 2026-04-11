@@ -5,7 +5,7 @@ struct OnboardingSlideView: View {
     let title: String
     let headline: String
     let description: String
-    let colors: [Color]
+    let accentColor: Color
     let index: Int
     @Binding var currentIndex: Int
     @Environment(\.horizontalSizeClass) var sizeClass
@@ -20,48 +20,55 @@ struct OnboardingSlideView: View {
         VStack(spacing: isPad ? 50 : 30) {
             Spacer().frame(height: isPad ? 80 : 40)
             
-            // Hero Icon
+            // MARK: Neo-Brutalist Icon Box
             ZStack {
-                Circle()
-                    .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: isPad ? 240 : 140, height: isPad ? 240 : 140)
-                    .blur(radius: isPad ? 40 : 20)
-                    .opacity(isVisible ? 0.6 : 0)
+                Rectangle()
+                    .fill(Color(red: 0.1, green: 0.1, blue: 0.13))
+                    .frame(width: isPad ? 200 : 120, height: isPad ? 200 : 120)
+                    .border(accentColor, width: 4)
+                    .shadow(color: accentColor.opacity(0.8), radius: 0, x: 8, y: 8)
+                    .rotationEffect(.degrees(isVisible ? 0 : -10))
                 
                 Image(systemName: icon)
-                    .font(.system(size: isPad ? 110 : 70, weight: .light))
-                    .foregroundStyle(LinearGradient(colors: [.white, colors.first ?? .white], startPoint: .top, endPoint: .bottom))
-                    .shadow(color: colors.last?.opacity(0.5) ?? .clear, radius: 10, y: 5)
+                    .font(.system(size: isPad ? 90 : 50, weight: .bold))
+                    .foregroundColor(accentColor)
                     .scaleEffect(isVisible ? 1 : 0.5)
-                    .opacity(isVisible ? 1 : 0)
             }
             .padding(.bottom, 20)
+            .opacity(isVisible ? 1 : 0)
             
-            // Typography
+            // MARK: Typography
             VStack(spacing: isPad ? 24 : 16) {
                 Text(title)
-                    .font(.system(size: isPad ? 18 : 14, weight: .bold, design: .rounded))
-                    .tracking(2)
-                    .foregroundColor(colors.first)
-                    .textCase(.uppercase)
-                    .offset(y: isVisible ? 0 : 20)
+                    .font(.system(size: isPad ? 18 : 14, weight: .black, design: .monospaced))
+                    .tracking(4)
+                    .foregroundColor(accentColor)
+                    .background(accentColor.opacity(0.2))
+                    .padding(.horizontal, 8)
+                    .offset(x: isVisible ? 0 : -20)
                     .opacity(isVisible ? 1 : 0)
                 
                 Text(headline)
-                    .font(.system(size: isPad ? 56 : 34, weight: .bold, design: .rounded))
+                    .font(.system(size: isPad ? 60 : 40, weight: .black, design: .default))
                     .multilineTextAlignment(.center)
                     .foregroundColor(.white)
-                    .offset(y: isVisible ? 0 : 20)
+                    .shadow(color: accentColor.opacity(0.5), radius: 0, x: 4, y: 4)
+                    .offset(x: isVisible ? 0 : 20)
                     .opacity(isVisible ? 1 : 0)
                 
-                Text(description)
-                    .font(.system(size: isPad ? 24 : 16, weight: .regular, design: .rounded))
-                    .multilineTextAlignment(.center)
-                    .foregroundColor(Theme.textSecondary)
-                    .padding(.horizontal, isPad ? 80 : 32)
-                    .lineSpacing(isPad ? 8 : 4)
-                    .offset(y: isVisible ? 0 : 20)
-                    .opacity(isVisible ? 1 : 0)
+                VStack {
+                    Text(description)
+                        .font(.system(size: isPad ? 20 : 14, weight: .medium, design: .monospaced))
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.gray)
+                        .lineSpacing(6)
+                        .padding(20)
+                }
+                .border(Color.gray.opacity(0.3), width: 2)
+                .background(Color.black.opacity(0.5))
+                .padding(.horizontal, isPad ? 100 : 40)
+                .offset(y: isVisible ? 0 : 20)
+                .opacity(isVisible ? 1 : 0)
             }
             
             Spacer()
@@ -69,7 +76,7 @@ struct OnboardingSlideView: View {
         .padding()
         .onChange(of: currentIndex) {
             if currentIndex == index {
-                withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
                     isVisible = true
                 }
             } else {
@@ -78,7 +85,7 @@ struct OnboardingSlideView: View {
         }
         .onAppear {
             if currentIndex == index {
-                withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2)) {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.1)) {
                     isVisible = true
                 }
             }
@@ -89,7 +96,7 @@ struct OnboardingSlideView: View {
 struct PremiumCTAButton: View {
     let title: String
     let icon: String?
-    let colors: [Color]
+    let accentColor: Color
     let action: () -> Void
     @Environment(\.horizontalSizeClass) var sizeClass
     
@@ -99,31 +106,25 @@ struct PremiumCTAButton: View {
     
     var body: some View {
         Button(action: {
-            let generator = UIImpactFeedbackGenerator(style: .medium)
+            let generator = UIImpactFeedbackGenerator(style: .rigid)
             generator.impactOccurred()
             action()
         }) {
             HStack(spacing: isPad ? 12 : 8) {
                 Text(title)
-                    .font(.system(size: isPad ? 22 : 18, weight: .bold, design: .rounded))
+                    .font(.system(size: isPad ? 24 : 18, weight: .black, design: .monospaced))
                 if let ic = icon {
                     Image(systemName: ic)
-                        .font(.system(size: isPad ? 22 : 18, weight: .bold))
+                        .font(.system(size: isPad ? 24 : 18, weight: .black))
                 }
             }
-            .foregroundColor(.white)
+            .foregroundColor(.black)
             .frame(maxWidth: isPad ? 400 : .infinity)
             .frame(height: isPad ? 68 : 56)
-            .background(
-                LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
-            )
-            .cornerRadius(16)
-            .shadow(color: colors.first?.opacity(0.4) ?? .clear, radius: 10, y: 5)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
-            )
+            .background(accentColor)
+            .border(Color.white, width: 2)
+            .shadow(color: accentColor.opacity(0.8), radius: 0, x: 6, y: 6)
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, 40)
     }
 }

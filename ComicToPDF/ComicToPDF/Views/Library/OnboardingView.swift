@@ -1,83 +1,126 @@
 import SwiftUI
 
+struct BlueprintGrid: View {
+    @State private var offset: CGFloat = 0
+    var body: some View {
+        GeometryReader { geometry in
+            Path { path in
+                let width = geometry.size.width
+                let height = geometry.size.height
+                let spacing: CGFloat = 40
+                
+                for x in stride(from: 0, through: width, by: spacing) {
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: height))
+                }
+                for y in stride(from: 0, through: height, by: spacing) {
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: width, y: y))
+                }
+            }
+            .stroke(Color.cyan.opacity(0.15), lineWidth: 1)
+            .offset(y: offset)
+            .animation(.linear(duration: 20).repeatForever(autoreverses: false), value: offset)
+            .onAppear { offset = 40 }
+        }
+        .ignoresSafeArea()
+    }
+}
+
+struct NeoBrutalistStripe: View {
+    var body: some View {
+        GeometryReader { proxy in
+            Path { path in
+                let width = proxy.size.width
+                let height = proxy.size.height
+                for i in stride(from: -height, to: width, by: 20) {
+                    path.move(to: CGPoint(x: i, y: 0))
+                    path.addLine(to: CGPoint(x: i + height, y: height))
+                }
+            }
+            .stroke(Color.yellow.opacity(0.8), lineWidth: 10)
+        }
+    }
+}
+
 struct OnboardingView: View {
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     
     @State private var currentIndex: Int = 0
-    @State private var startAnimation: Bool = false
-    
     private let totalSlides = 4
     
     var body: some View {
         ZStack {
-            // MARK: Premium Glass Background
-            Color.black.ignoresSafeArea()
+            // MARK: Blueprint Base
+            Color(red: 0.05, green: 0.05, blue: 0.1).ignoresSafeArea()
+            BlueprintGrid()
             
-            // Dynamic Background Blobs bound to currentIndex
-            Circle()
-                .fill(LinearGradient(colors: currentColors(for: currentIndex), startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 400, height: 400)
-                .blur(radius: 100)
-                .offset(
-                    x: startAnimation ? CGFloat(currentIndex * -30) + 50 : 0,
-                    y: startAnimation ? CGFloat(currentIndex * 20) - 150 : -200
-                )
-                .animation(.easeInOut(duration: 4).repeatForever(autoreverses: true), value: startAnimation)
-                .animation(.spring(response: 0.8, dampingFraction: 0.7), value: currentIndex)
-            
-            Circle()
-                .fill(LinearGradient(colors: altColors(for: currentIndex), startPoint: .bottomLeading, endPoint: .topTrailing))
-                .frame(width: 300, height: 300)
-                .blur(radius: 80)
-                .offset(
-                    x: startAnimation ? CGFloat(currentIndex * 40) - 50 : 100,
-                    y: startAnimation ? CGFloat(currentIndex * -20) + 200 : 250
-                )
-                .animation(.easeInOut(duration: 5).repeatForever(autoreverses: true), value: startAnimation)
-                .animation(.spring(response: 0.8, dampingFraction: 0.7), value: currentIndex)
+            // MARK: Hazard Accent Stripes
+            VStack {
+                HStack {
+                    NeoBrutalistStripe()
+                        .frame(width: 150, height: 150)
+                        .rotationEffect(.degrees(45))
+                        .offset(x: -50, y: -50)
+                        .opacity(currentIndex % 2 == 0 ? 1 : 0)
+                        .animation(.spring(), value: currentIndex)
+                    Spacer()
+                }
+                Spacer()
+                HStack {
+                    Spacer()
+                    NeoBrutalistStripe()
+                        .frame(width: 200, height: 200)
+                        .rotationEffect(.degrees(225))
+                        .offset(x: 80, y: 80)
+                        .opacity(currentIndex % 2 != 0 ? 1 : 0)
+                        .animation(.spring(), value: currentIndex)
+                }
+            }
+            .ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // MARK: Paginated Feature Carousel
                 TabView(selection: $currentIndex) {
                     
                     OnboardingSlideView(
-                        icon: "wand.and.stars.inverse",
-                        title: "WELCOME",
-                        headline: "Inksync Pro",
-                        description: "The ultimate workspace for Manga, Books, and PDFs natively optimized for Apple Silicon.",
-                        colors: [Theme.blue, Color.purple],
+                        icon: "cpu",
+                        title: "SYSTEM REBOOT",
+                        headline: "INKSYNC PRO",
+                        description: "The ultimate edge-to-edge workspace natively hyper-threaded for Apple Silicon.",
+                        accentColor: .cyan,
                         index: 0,
                         currentIndex: $currentIndex
                     ).tag(0)
                     
                     OnboardingSlideView(
-                        icon: "highlighter",
-                        title: "SMART READER",
-                        headline: "Zettelkasten Note-Taking",
-                        description: "Drag native iOS highlights to capture knowledge and instantly sync Tags & Annotations to your Personal Cloud.",
-                        colors: [Theme.orange, Color.red],
+                        icon: "terminal",
+                        title: "NEURAL ENGINE",
+                        headline: "LOCAL PARSING",
+                        description: "Our offline Neural Engine strips CBZs and automatically reconstructs metadata without a central server.",
+                        accentColor: .yellow,
                         index: 1,
                         currentIndex: $currentIndex
                     ).tag(1)
                     
                     OnboardingSlideView(
-                        icon: "sparkles.tv",
-                        title: "NATIVE ENGINE",
-                        headline: "Guided View Extraction",
-                        description: "Our offline Neural Engine automatically slices CBZ/PDF comics directly into edge-to-edge Guided View EPUBs.",
-                        colors: [Theme.blue, Color.teal],
+                        icon: "bolt.fill",
+                        title: "ZETTELKASTEN",
+                        headline: "SMART HIGHLIGHTS",
+                        description: "Extract raw highlight data directly into your personal PKM environment like Readwise & Notion.",
+                        accentColor: .green,
                         index: 2,
                         currentIndex: $currentIndex
                     ).tag(2)
                     
                     OnboardingSlideView(
-                        icon: "paintbrush.pointed",
-                        title: "PRECISION CANVAS",
-                        headline: "Pro Editor Suite",
-                        description: "Merge split spreads, apply E-Ink contrast filters, and seamlessly orchestrate Metadata from local databases.",
-                        colors: [Color.purple, Theme.orange],
+                        icon: "slider.horizontal.3",
+                        title: "E-INK CANVAS",
+                        headline: "PRO EDITOR SUITE",
+                        description: "Merge aggressive split layouts and blast pure black & white E-Ink contrast filtering instantly.",
+                        accentColor: .orange,
                         index: 3,
                         currentIndex: $currentIndex
                     ).tag(3)
@@ -89,52 +132,37 @@ struct OnboardingView: View {
                 // MARK: Persistent Sticky CTA
                 VStack(spacing: 20) {
                     PremiumCTAButton(
-                        title: currentIndex == totalSlides - 1 ? "Start Creating" : "Continue",
-                        icon: currentIndex == totalSlides - 1 ? "arrow.right.circle.fill" : nil,
-                        colors: currentColors(for: currentIndex),
+                        title: currentIndex == totalSlides - 1 ? "INITIALIZE" : "NEXT SEQUENCE",
+                        icon: currentIndex == totalSlides - 1 ? "checkmark.circle.fill" : "chevron.right.square.fill",
+                        accentColor: currentAccent(for: currentIndex),
                         action: handleCTA
                     )
                     
                     if currentIndex < totalSlides - 1 {
-                        Button("Skip Intro") {
+                        Button("ABORT / SKIP INTRO") {
                             finishOnboarding()
                         }
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Theme.textSecondary)
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundColor(.gray)
                         .padding(.top, 4)
                     } else {
-                        // Invisible spacer to maintain height
-                        Text("Skip Intro").opacity(0).font(.system(size: 14)).padding(.top, 4)
+                        Text("ABORT / SKIP INTRO").opacity(0).font(.system(size: 14)).padding(.top, 4)
                     }
                 }
                 .padding(.bottom, 40)
                 .padding(.top, 20)
             }
         }
-        .onAppear {
-            self.startAnimation = true
-        }
     }
     
     // MARK: - Handlers
-    
-    private func currentColors(for index: Int) -> [Color] {
+    private func currentAccent(for index: Int) -> Color {
         switch index {
-        case 0: return [Theme.blue, Color.purple]
-        case 1: return [Theme.orange, Color.red]
-        case 2: return [Theme.blue, Color.teal]
-        case 3: return [Color.purple, Theme.orange]
-        default: return [Theme.blue, Color.purple]
-        }
-    }
-    
-    private func altColors(for index: Int) -> [Color] {
-        switch index {
-        case 0: return [Theme.orange, Theme.blue]
-        case 1: return [Color.purple, Theme.orange]
-        case 2: return [Color.teal, Color.purple]
-        case 3: return [Theme.blue, Color.red]
-        default: return [Theme.orange, Theme.blue]
+        case 0: return .cyan
+        case 1: return .yellow
+        case 2: return .green
+        case 3: return .orange
+        default: return .cyan
         }
     }
     
@@ -149,14 +177,13 @@ struct OnboardingView: View {
     }
     
     private func finishOnboarding() {
-        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        let generator = UIImpactFeedbackGenerator(style: .rigid)
         generator.impactOccurred()
         
         UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
         withAnimation {
             hasSeenOnboarding = true
         }
-        
         dismiss()
     }
 }
