@@ -26,6 +26,27 @@ struct InksyncProApp: App {
     }()
     
     init() {
+        // ?? ANNIHILATE GHOST DATA ON FRESH INSTALLS ??
+        // Guarantees absolute blank UI state if a user deletes and reinstalls the app.
+        // Bypasses Simulator cache retentions, Sideloadly hot-swaps, and iCloud Document injections.
+        if !UserDefaults.standard.bool(forKey: "hasEmployedFreshInstallNuke_v1") {
+            let fileManager = FileManager.default
+            
+            // 1. Vaporize Documents Directory (Nukes all ghost CBZs automatically synced by iCloud)
+            if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
+                try? fileManager.removeItem(at: docDir)
+                try? fileManager.createDirectory(at: docDir, withIntermediateDirectories: true, attributes: nil)
+            }
+            
+            // 2. Vaporize Application Support Directory (Nukes legacy SwiftData SQLite vaults and stored Covers)
+            if let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                try? fileManager.removeItem(at: supportDir)
+                try? fileManager.createDirectory(at: supportDir, withIntermediateDirectories: true, attributes: nil)
+            }
+            
+            UserDefaults.standard.set(true, forKey: "hasEmployedFreshInstallNuke_v1")
+        }
+        
         // Register Background Task for Auto-Sync
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.antigravity.InksyncPro.autosync", using: nil) { task in
             InksyncProApp.handleAppRefresh(task: task as! BGAppRefreshTask)
