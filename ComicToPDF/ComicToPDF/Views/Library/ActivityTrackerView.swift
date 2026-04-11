@@ -2,16 +2,18 @@ import SwiftUI
 
 struct ActivityTrackerButton: View {
     @EnvironmentObject var manager: ConversionManager
+    @ObservedObject private var importMonitor = ImportMonitorManager.shared
     @State private var showQueue = false
     
     var body: some View {
         Button(action: { showQueue = true }) {
             ZStack {
+                let isActive = !manager.activeTasks.isEmpty || importMonitor.isImporting
                 Image(systemName: "arrow.up.arrow.down.circle")
                     .font(.system(size: 20))
-                    .foregroundColor(manager.activeTasks.isEmpty ? .secondary : .purple)
+                    .foregroundColor(isActive ? .purple : .secondary)
                 
-                if !manager.activeTasks.isEmpty {
+                if isActive {
                     Circle()
                         .fill(Color.red)
                         .frame(width: 8, height: 8)
@@ -28,11 +30,12 @@ struct ActivityTrackerButton: View {
 
 struct ActivityQueueView: View {
     let tasks: [AppBackgroundTask]
+    @ObservedObject private var importMonitor = ImportMonitorManager.shared
     
     var body: some View {
         NavigationStack {
             List {
-                if tasks.isEmpty {
+                if tasks.isEmpty && !importMonitor.isImporting {
                     VStack(spacing: 12) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 40))
@@ -45,9 +48,36 @@ struct ActivityQueueView: View {
                     .padding(.vertical, 40)
                     .listRowBackground(Color.clear)
                 } else {
-                    Section("Active Tasks") {
-                        ForEach(tasks) { task in
-                            TaskMonitorRow(task: task)
+                    if importMonitor.isImporting {
+                        Section("Importing Files") {
+                            HStack(spacing: 16) {
+                                ProgressView()
+                                    .controlSize(.regular)
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Extracting Archives")
+                                        .font(.headline)
+                                    
+                                    Text("\(importMonitor.filesProcessed) of \(importMonitor.totalFilesToProcess) complete")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Text("\(Int(importMonitor.progress * 100))%")
+                                    .font(.subheadline.bold())
+                                    .foregroundColor(.purple)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    
+                    if !tasks.isEmpty {
+                        Section("Active Tasks") {
+                            ForEach(tasks) { task in
+                                TaskMonitorRow(task: task)
+                            }
                         }
                     }
                 }

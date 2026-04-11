@@ -284,8 +284,6 @@ struct ModernLibraryView: View {
                     onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) }
                 )
             }
-        }
-        .overlay(ImportTrackerView())
     }
 
     @ViewBuilder private var batchBottomToolbar: some View {
