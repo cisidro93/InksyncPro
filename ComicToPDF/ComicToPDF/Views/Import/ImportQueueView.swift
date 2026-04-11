@@ -164,11 +164,8 @@ struct ImportQueueView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
 
-            HStack(spacing: 12) {
-                addFilesButton
-                addFolderButton
-            }
-            .padding(.horizontal, 24)
+            addFilesButton
+                .padding(.horizontal, 24)
             Spacer()
         }
     }
@@ -215,10 +212,7 @@ struct ImportQueueView: View {
             .listStyle(.plain)
 
             VStack(spacing: 8) {
-                HStack(spacing: 12) {
-                    addFilesButton
-                    addFolderButton
-                }
+                addFilesButton
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -233,7 +227,7 @@ struct ImportQueueView: View {
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 16, weight: .semibold))
-                Text("Add Files")
+                Text("Add Folder or Comics")
                     .font(.system(size: 16, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
@@ -245,49 +239,13 @@ struct ImportQueueView: View {
         .disabled(queue.isStagingFiles)
     }
 
-    private var addFolderButton: some View {
-        Button(action: addFolder) {
-            HStack(spacing: 8) {
-                Image(systemName: "folder.fill.badge.plus")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("Add Folder")
-                    .font(.system(size: 16, weight: .semibold))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Color.orange)
-            .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-        .disabled(queue.isStagingFiles)
-    }
+
 
     // MARK: Actions
 
     private func addFiles() {
         queue.isStagingFiles = true
-        ImportCoordinator.present(type: .files) { urls in
-            guard !urls.isEmpty else {
-                queue.isStagingFiles = false
-                return
-            }
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = queue.stageWithDuplicateCheck(urls)
-                
-                DispatchQueue.main.async {
-                    queue.isStagingFiles = false
-                    if result.skippedDuplicates > 0 {
-                        pendingDuplicates = result.duplicateURLs
-                        showDuplicateAlert = true
-                    }
-                }
-            }
-        }
-    }
-
-    private func addFolder() {
-        queue.isStagingFiles = true
-        ImportCoordinator.present(type: .folder) { urls in
+        ImportCoordinator.present(type: .unified) { urls in
             guard !urls.isEmpty else {
                 queue.isStagingFiles = false
                 return

@@ -40,22 +40,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
         let supportedTypes: [UTType]
         switch type {
-        case .files:
-            supportedTypes = [
-                UTType(filenameExtension: "cbz") ?? .zip,
-                UTType(filenameExtension: "cbr") ?? .archive,
-                UTType(filenameExtension: "cb7") ?? .archive,
-                .epub, .pdf, .zip, .archive
-            ]
-        case .unified:
-            supportedTypes = [
-                UTType(filenameExtension: "cbz") ?? .zip,
-                UTType(filenameExtension: "cbr") ?? .archive,
-                UTType(filenameExtension: "cb7") ?? .archive,
-                .epub, .pdf, .zip, .archive, .folder
-            ]
-        case .folder:
-            supportedTypes = [.folder]
         case .json:
             supportedTypes = [.json]
         case .smartList:
@@ -66,33 +50,32 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "md") ?? .plainText,
                 UTType(filenameExtension: "txt") ?? .plainText
             ]
+        default:
+            // Unified Legacy Forward-Port (0bb6b38)
+            supportedTypes = [
+                .pdf, .zip, .folder, .archive,
+                UTType(filenameExtension: "epub") ?? .epub,
+                UTType(filenameExtension: "cbz") ?? .zip,
+                UTType(filenameExtension: "cbr") ?? .archive,
+                UTType(filenameExtension: "cb7") ?? .archive
+            ].compactMap { $0 }
         }
 
         let picker: UIDocumentPickerViewController
 
-        if type == .folder {
-            // asCopy:true → The OS natively orchestrates copying and downloading the folder hierarchy securely into our tmp directory!
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: true)
+        if type == .json || type == .smartList {
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
             picker.allowsMultipleSelection = false
-        } else if type == .unified {
-            // ─── Critical Design ───────────────────────────────────────────────────
-            // asCopy: false   → security-scoped URLs; we copy files manually inside the scope.
-            // allowsMultipleSelection: true → allows the user to select multiple individual files 
-            //   OR select a folder using the "Select" button. 
-            //   If false, iOS breaks the "Open" button inside folders when mixing file and folder types.
-            // ───────────────────────────────────────────────────────────────────────
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-            picker.allowsMultipleSelection = true
         } else {
-            let asCopy = (type == .files || type == .json || type == .smartList)
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: asCopy)
-            picker.allowsMultipleSelection = (type == .files)
+            // Legacy 0bb6b38 Perfection: Unified Picker handles BOTH files and folders simultaneously natively.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
+            picker.allowsMultipleSelection = true
         }
 
         picker.delegate = coordinator
         picker.shouldShowFileExtensions = true
         picker.modalPresentationStyle = .fullScreen
-        Logger.shared.log("ImportCoordinator: Presenting \(type) picker.", category: "System")
+        Logger.shared.log("ImportCoordinator: Presenting structured picker payload natively.", category: "System")
         rootVC.present(picker, animated: true)
     }
 
@@ -114,70 +97,74 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         // Dismiss the picker immediately — asCopy:false never auto-dismisses.
         // We do NOT use a completion block so processing is not gated on the animation.
         controller.dismiss(animated: true)
-
+        
         // Process on background queue in parallel with the dismiss animation.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
 
-            switch self.currentType {
+            if self.currentType == .json || self.currentType == .smartList {
+                DispatchQueue.main.async { self.finish(with: urls) }
+                return
+            }
 
-            case .folder:
-                // asCopy:true natively orchestrates folder copying/iCloud download into our Local Temp context!
-                var found: [URL] = []
-                for url in urls {
-                    found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                }
-                DispatchQueue.main.async { self.finish(with: found) }
+            // --- 0bb6b38 Legacy extraction block + SeriesNameParser staging ---
+            let fm = FileManager.default
+            let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+            
+            let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+            try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+            
+            var foundURLs: [URL] = []
 
-            case .unified, .files:
-                let fm = FileManager.default
-                let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
-                let stagingDir = fm.temporaryDirectory
-                    .appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-                try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-                var found: [URL] = []
-
-                for url in urls {
-                    let accessing = url.startAccessingSecurityScopedResource()
-                    
-                    var isDir: ObjCBool = false
-                    if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                        // Folder — spider recursively safely via coordinator
-                        found.append(contentsOf: ImportCoordinator.processFolderSpiderSync(url: url))
-                    } else {
-                        // File block
-                        var targetURL = url
-                        var actualExt = url.pathExtension.lowercased()
-                        if actualExt == "icloud" {
-                            let fileName = url.lastPathComponent
-                            if fileName.hasPrefix(".") && fileName.hasSuffix(".icloud") {
-                                let logicalName = String(fileName.dropFirst().dropLast(7))
-                                actualExt = (logicalName as NSString).pathExtension.lowercased()
-                                targetURL = url.deletingLastPathComponent().appendingPathComponent(logicalName)
-                            }
-                        }
-
-                        if allowedExts.contains(actualExt) {
-                            // PRESERVE the original parent folder context so `SeriesNameParser` groups files smartly!
-                            let originalParent = targetURL.deletingLastPathComponent().lastPathComponent
-                            let destFolder = stagingDir.appendingPathComponent(originalParent)
-                            try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-                            
-                            let dest = destFolder.appendingPathComponent(targetURL.lastPathComponent)
-                            if ImportCoordinator.secureCopy(from: targetURL, to: dest) {
-                                found.append(dest)
-                            } else {
-                                Logger.shared.log("ImportCoordinator[files_copy]: coordinated copy failed (\(targetURL.lastPathComponent))", category: "System", type: .warning)
+            for url in urls {
+                let secured = url.startAccessingSecurityScopedResource()
+                
+                var isDirectory: ObjCBool = false
+                if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                    // Recursively spider the directory synchronously
+                    if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
+                        for case let fileURL as URL in enumerator {
+                            if allowedExts.contains(fileURL.pathExtension.lowercased()) {
+                                // Preserve native structure for SeriesNameParser Context
+                                let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
+                                let destFolder = stagingDir.appendingPathComponent(originalParent)
+                                try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+                                
+                                let destURL = destFolder.appendingPathComponent(fileURL.lastPathComponent)
+                                do {
+                                    if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+                                    try fm.copyItem(at: fileURL, to: destURL)
+                                    foundURLs.append(destURL)
+                                } catch {
+                                    Logger.shared.log("ImportCoordinator: Copy failed \(fileURL.lastPathComponent)", category: "System", type: .warning)
+                                }
                             }
                         }
                     }
-                    if accessing { url.stopAccessingSecurityScopedResource() }
+                } else {
+                    // It's a standard single file selection
+                    if allowedExts.contains(url.pathExtension.lowercased()) {
+                        let originalParent = url.deletingLastPathComponent().lastPathComponent
+                        let destFolder = stagingDir.appendingPathComponent(originalParent)
+                        try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+                        
+                        let destURL = destFolder.appendingPathComponent(url.lastPathComponent)
+                        do {
+                            if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+                            try fm.copyItem(at: url, to: destURL)
+                            foundURLs.append(destURL)
+                        } catch {
+                            Logger.shared.log("ImportCoordinator: Copy failed \(url.lastPathComponent)", category: "System", type: .warning)
+                        }
+                    }
                 }
-                DispatchQueue.main.async { self.finish(with: found) }
-
-            default:
-                DispatchQueue.main.async { self.finish(with: urls) }
+                
+                if secured {
+                    url.stopAccessingSecurityScopedResource()
+                }
             }
+            
+            DispatchQueue.main.async { self.finish(with: foundURLs) }
         }
     }
 
@@ -188,61 +175,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     // MARK: - Helpers
 
-    /// Fast, unblocked file spider for perfectly localized paths extracted via asCopy: true.
-    static func processFolderSpiderSync(url: URL) -> [URL] {
-        var foundURLs: [URL] = []
-        let validExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
-        let fm = FileManager.default
-        let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-        try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
 
-        let timeoutDate = Date().addingTimeInterval(30.0)
-
-        // Native native traversal. No Security Scopes or NSFileCoordinator needed natively.
-        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
-            for case let fileURL as URL in enumerator {
-                if Date() > timeoutDate {
-                    Logger.shared.log("ImportCoordinator: Folder spider timed out after 30 seconds", category: "System", type: .warning)
-                    break
-                }
-
-                if validExts.contains(fileURL.pathExtension.lowercased()) {
-                    let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
-                    let destFolder = stagingDir.appendingPathComponent(originalParent)
-                    try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-
-                    let destURL = destFolder.appendingPathComponent(fileURL.lastPathComponent)
-                    do {
-                        if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
-                        try fm.copyItem(at: fileURL, to: destURL)
-                        foundURLs.append(destURL)
-                    } catch {
-                        Logger.shared.log("ImportCoordinator: Local fast-copy failed: \(error.localizedDescription)", category: "System", type: .error)
-                    }
-                }
-            }
-        }
-        return foundURLs
-    }
-    
-    /// Safely copies a file using NSFileCoordinator with empty options to trigger on-demand iCloud downloads and bypass security scopes.
-    private static func secureCopy(from sourceURL: URL, to destURL: URL) -> Bool {
-        var success = false
-        var error: NSError?
-        // options: [] deliberately forces iOS to materialize the iCloud dataless fault.
-        NSFileCoordinator().coordinate(readingItemAt: sourceURL, options: [], error: &error) { safeURL in
-            do {
-                if FileManager.default.fileExists(atPath: destURL.path) {
-                    try FileManager.default.removeItem(at: destURL)
-                }
-                try FileManager.default.copyItem(at: safeURL, to: destURL)
-                success = true
-            } catch {
-                Logger.shared.log("ImportCoordinator: Secure copy failed for \(sourceURL.lastPathComponent): \(error.localizedDescription)", category: "System", type: .error)
-            }
-        }
-        return success
-    }
 
     private func finish(with urls: [URL]) {
         completion?(urls)
