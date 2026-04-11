@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import ZIPFoundation
 
 /// A deterministic local parser for `ComicInfo.xml` structured metadata.
@@ -30,9 +30,8 @@ class LocalComicInfoService {
         
         // 1. Locate ComicInfo.xml
         guard let entry = archive["ComicInfo.xml"] ?? archive["comicinfo.xml"] else {
-            let errorMsg = "MissingMetadataError: No 'ComicInfo.xml' found inside \(cbzURL.lastPathComponent)"
-            Logger.shared.log(errorMsg, category: "LocalRenamer", type: .error)
-            throw NSError(domain: "MissingMetadata", code: 404, userInfo: [NSLocalizedDescriptionKey: errorMsg])
+            // SILENT FALLBACK: If XML is missing, extract series and number heuristically from the filename.
+            return fallbackFilenameHeuristics(filename: cbzURL.deletingPathExtension().lastPathComponent)
         }
         
         // 2. Stream Exact File into Memory
@@ -42,7 +41,7 @@ class LocalComicInfoService {
                 xmlData.append(data)
             }
         } catch {
-            let errorMsg = "ExtractionError: Failed to stream 'ComicInfo.xml' stream from \(cbzURL.lastPathComponent): \(error.localizedDescription)"
+            let errorMsg = "ExtractionError: Failed to stream 'ComicInfo.xml' stream from \(cbzURL.lastPathComponent)"
             Logger.shared.log(errorMsg, category: "LocalRenamer", type: .error)
             throw NSError(domain: "ZipException", code: 3, userInfo: [NSLocalizedDescriptionKey: errorMsg])
         }
@@ -54,34 +53,27 @@ class LocalComicInfoService {
         
         let success = parserRef.parse()
         if !success {
-            let parserErr = parserRef.parserError?.localizedDescription ?? "Unknown Parse Error"
-            let errorMsg = "CorruptedXMLError: Parser failed on \(cbzURL.lastPathComponent) - \(parserErr)"
-            Logger.shared.log(errorMsg, category: "LocalRenamer", type: .error)
-            throw NSError(domain: "XMLFormat", code: 4, userInfo: [NSLocalizedDescriptionKey: errorMsg])
+            return fallbackFilenameHeuristics(filename: cbzURL.deletingPathExtension().lastPathComponent)
         }
         
         // 4. Construct Formatted String
-        let series = parser.series ?? "Unknown Series"
+        let series = parser.series ?? cbzURL.deletingPathExtension().lastPathComponent
         let titleBlock = parser.title != nil ? " - \(parser.title!)" : ""
         
         var volumeBlock = ""
         if let v = parser.volume {
             volumeBlock = " - v\(v)"
-        } else {
-            Logger.shared.log("Missing <Volume> tag softly ignored for \(cbzURL.lastPathComponent)", category: "LocalRenamer", type: .warning)
         }
         
         var numberBlock = ""
         if let numRaw = parser.number {
-            // Apply 3-digit Zero-Padding natively
             if let intNum = Int(numRaw) {
                 numberBlock = String(format: " - c%03d", intNum)
             } else {
-                numberBlock = " - c\(numRaw)" // Fallback for fractional issues (e.g. 1.5)
+                numberBlock = " - c\(numRaw)" 
             }
-        } else {
-            Logger.shared.log("Missing <Number> tag softly ignored for \(cbzURL.lastPathComponent)", category: "LocalRenamer", type: .warning)
         }
+
         
         var candidateName = "\(series)\(volumeBlock)\(numberBlock)\(titleBlock)"
         
@@ -99,6 +91,28 @@ class LocalComicInfoService {
         // Remove Non-printable ASCII/Unicode clutter
         candidateName = candidateName.components(separatedBy: .controlCharacters).joined()
         return (displayName: candidateName.trimmingCharacters(in: .whitespacesAndNewlines), parsedSeries: parser.series, parsedNumber: parser.number, parsedVolume: parser.volume, parsedTitle: parser.title)
+    }
+    
+    /// Heuristically parses structured conventions (e.g. "SeriesName v01 c045.cbz")
+    private func fallbackFilenameHeuristics(filename: String) -> (String, String?, String?, String?, String?) {
+        var seriesStr: String? = nil
+        var numberStr: String? = nil
+        var volumeStr: String? = nil
+        
+        let cleaned = filename.replacingOccurrences(of: "_", with: " ")
+        
+        // Match Chapter/Issue conventions at the end of string
+        // Eg: "Initial D Chapter 32" or "Dark Web - 001" or "Issue 4.5"
+        let pattern = "\\s(?:#|v|vol|ch|chapter|issue)?\\.?\\s*(\\d+\\.?\\d*)[^a-zA-Z]*$"
+        if let match = cleaned.range(of: pattern, options: [.regularExpression, .caseInsensitive]) {
+            numberStr = String(cleaned[match]).trimmingCharacters(in: CharacterSet(charactersIn: " #vvolchapteisu.").union(.whitespaces))
+            seriesStr = String(cleaned[..<match.lowerBound])
+                .trimmingCharacters(in: CharacterSet(charactersIn: " -_").union(.whitespaces))
+        } else {
+            seriesStr = cleaned
+        }
+        
+        return (displayName: filename, parsedSeries: seriesStr, parsedNumber: numberStr, parsedVolume: volumeStr, parsedTitle: nil)
     }
 }
 
