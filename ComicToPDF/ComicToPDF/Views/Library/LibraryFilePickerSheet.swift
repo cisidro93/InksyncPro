@@ -10,14 +10,28 @@ struct LibraryFilePickerSheet: View {
     
     var filteredPDFs: [ConvertedPDF] {
         if searchText.isEmpty {
-            return conversionManager.convertedPDFs.sorted { $0.metadata.series ?? "" < $1.metadata.series ?? "" }
+            return conversionManager.convertedPDFs.sorted { 
+                let s1 = $0.metadata.series ?? ""
+                let s2 = $1.metadata.series ?? ""
+                if s1 == s2 {
+                    // Include Issue Number in natural sorting if possible, otherwise Name
+                    if let i1 = $0.metadata.issueNumber, let i2 = $1.metadata.issueNumber, let n1 = Int(i1), let n2 = Int(i2) {
+                        return n1 < n2
+                    }
+                    return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                }
+                return s1 < s2
+            }
         } else {
             let lowerQuery = searchText.lowercased()
             return conversionManager.convertedPDFs.filter { pdf in
                 pdf.name.lowercased().contains(lowerQuery) ||
                 (pdf.metadata.series?.lowercased().contains(lowerQuery) == true) ||
-                (pdf.metadata.issueNumber?.lowercased().contains(lowerQuery) == true)
-            }.sorted { $0.name < $1.name }
+                (pdf.metadata.issueNumber?.lowercased().contains(lowerQuery) == true) ||
+                (pdf.metadata.volume?.lowercased().contains(lowerQuery) == true)
+            }.sorted { 
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
         }
     }
     
