@@ -7,7 +7,7 @@ class LibraryViewModel: ObservableObject {
     @Published var searchText: String = ""
     
     // Search Debouncing
-    @Published private var debouncedSearchText: String = ""
+    @Published var debouncedSearchText: String = ""
     private var cancellables = Set<AnyCancellable>()
     
     // Routing State

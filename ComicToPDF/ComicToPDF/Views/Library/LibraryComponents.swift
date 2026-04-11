@@ -186,20 +186,26 @@ struct SearchFilterBar: View {
     
     var body: some View {
         HStack {
-            HStack {
+            HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
+                    .padding(.leading, 12)
+                
                 TextField("Search library...", text: $searchText)
+                    .foregroundColor(.primary)
+                    .accentColor(.blue)
+                    .padding(.vertical, 12)
+                
                 if !searchText.isEmpty {
                     Button(action: { searchText = "" }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
+                            .padding(.trailing, 12)
                     }
                 }
             }
-            .padding(8)
             .background(Color(.secondarySystemBackground))
-            .cornerRadius(10)
+            .cornerRadius(12)
             
             Button(action: { showFilters.toggle() }) {
                 Image(systemName: "line.3.horizontal.decrease.circle")

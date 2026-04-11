@@ -136,6 +136,7 @@ struct ModernLibraryView: View {
         .onChange(of: swiftDataPDFs) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
         .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
         .onChange(of: swiftDataCollections) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+        .onChange(of: viewModel.debouncedSearchText) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenMergedBook"))) { notification in
             if let newBook = notification.object as? ConvertedPDF {
                 // Ensure the view hierarchy processes the dismissal first, then throw up the full screen cover.
