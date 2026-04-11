@@ -85,7 +85,10 @@ struct SmartListImporterView: View {
                                 .foregroundColor(Color(.secondaryLabel))
                             
                             TextEditor(text: $pastedText)
-                                .frame(height: 120)
+                                .font(.system(size: 13, design: .monospaced))
+                                .autocorrectionDisabled(true)
+                                .textInputAutocapitalization(.never)
+                                .frame(minHeight: 150, maxHeight: 350)
                                 .padding(8)
                                 .background(Color(.secondarySystemBackground))
                                 .cornerRadius(8)
