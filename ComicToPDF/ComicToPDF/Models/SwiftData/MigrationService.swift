@@ -73,10 +73,10 @@ class MigrationService {
     // ✅ Smart Regex Grouping Algorithm
     // Automatically takes an array of unassigned documents and creates InkContainers 
     // for series matching known syntax (e.g. "Batman Vol. 1", "Batman Vol. 2")
-    func performSmartGrouping(context: ModelContext) {
+    func performSmartGrouping(context: ModelContext) -> Int {
         // Fetch all documents and filter in memory to dodge `#Predicate` translation limitations on optional arrays
         let fetchDescriptor = FetchDescriptor<SDConvertedPDF>()
-        guard let allDocs = try? context.fetch(fetchDescriptor) else { return }
+        guard let allDocs = try? context.fetch(fetchDescriptor) else { return 0 }
         let orphans = allDocs.filter { $0.collectionId == nil }
         
         var groupedByName: [String: [SDConvertedPDF]] = [:]
@@ -122,6 +122,8 @@ class MigrationService {
             try? context.save()
             Logger.shared.log("Smart Grouping generated \(generatedCount) new recursive series collections.", category: "Library")
         }
+        
+        return generatedCount
     }
     
     // ✅ NEW: Dual-Write Background Sync

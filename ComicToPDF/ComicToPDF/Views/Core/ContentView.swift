@@ -104,7 +104,17 @@ struct ContentView: View {
             
             Task { @MainActor in
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
-                MigrationService.shared.performSmartGrouping(context: modelContext)
+                let genCount = MigrationService.shared.performSmartGrouping(context: modelContext)
+                
+                // SILENT CACHE SYNC: We MUST reload SwiftData into RAM so that any new natively-generated
+                // collections aren't destroyed continuously by the next stale UI `save()` call.
+                if genCount > 0 {
+                    if let (sdPdfs, sdCols) = try? await MigrationService.shared.fetchSwiftDataLegacyBridge() {
+                        conversionManager.convertedPDFs = sdPdfs.map { $0.toDTO() }
+                        conversionManager.collections = sdCols.map { $0.toDTO() }
+                    }
+                }
+                
                 // Passive scan for sandbox cleanup badge in Settings
                 await SandboxCleanupManager.shared.passiveScan()
             }
