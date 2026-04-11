@@ -105,10 +105,18 @@ class LibraryViewModel: ObservableObject {
             // If a user imports a Folder "Batman", and the Metadata parsed is also "Batman",
             // the UI will double-render the series item if both exist. We prefer the collection group.
             var keysToRemove: [String] = []
-            for (key, group) in groups {
+            for (key, var group) in groups {
                 if key.starts(with: "col_") {
                     let overlappingSeriesKey = "series_\(group.title)"
-                    if groups[overlappingSeriesKey] != nil {
+                    if let orphanSeries = groups[overlappingSeriesKey] {
+                        // Merge the items into the collection group!
+                        for issue in orphanSeries.issues {
+                            if !group.issues.contains(where: { $0.id == issue.id }) {
+                                group.issues.append(issue)
+                                group.count += 1
+                            }
+                        }
+                        groups[key] = group
                         keysToRemove.append(overlappingSeriesKey)
                     }
                 }
@@ -120,17 +128,29 @@ class LibraryViewModel: ObservableObject {
             var items: [(Int, LibraryListItem)] = []
             
             for (key, var group) in groups {
-                // ✅ PHASE 4: Chronological Cover Assigner
+                // ✅ PHASE 4: Internal Sorting & Cover Assigner
                 if key.starts(with: "series_") {
-                    let trueCover = group.issues.min { a, b in
+                    // Ensure issues inside the folder always display in reading sequence
+                    group.issues.sort { a, b in
                         let aNumStr = a.metadata.issueNumber ?? ""
                         let bNumStr = b.metadata.issueNumber ?? ""
+                        
+                        // Check if these are from the same volume first to prevent cross-volume jumbling
+                        let aVolStr = a.metadata.volume ?? ""
+                        let bVolStr = b.metadata.volume ?? ""
+                        if !aVolStr.isEmpty && !bVolStr.isEmpty && aVolStr != bVolStr,
+                           let aVol = Double(aVolStr), let bVol = Double(bVolStr) {
+                            return aVol < bVol
+                        }
+                        
                         if !aNumStr.isEmpty && !bNumStr.isEmpty, let aNum = Double(aNumStr), let bNum = Double(bNumStr) {
                             return aNum < bNum
                         }
+                        
                         return a.name.localizedStandardCompare(b.name) == .orderedAscending
                     }
-                    if let cover = trueCover {
+                    
+                    if let cover = group.issues.first {
                         group.coverIssueID = cover.id
                     }
                 }
