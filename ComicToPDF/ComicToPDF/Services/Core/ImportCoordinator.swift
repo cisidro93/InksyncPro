@@ -44,12 +44,16 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             supportedTypes = [.json]
         case .smartList:
             supportedTypes = [
-                .item, .content, .data, .plainText, .commaSeparatedText, .text,
-                UTType(filenameExtension: "cbl") ?? .xml,
-                UTType(filenameExtension: "csv") ?? .commaSeparatedText,
-                UTType(filenameExtension: "md") ?? .plainText,
-                UTType(filenameExtension: "txt") ?? .plainText
-            ]
+                .plainText,
+                .commaSeparatedText,
+                .text,
+                .data,
+                .content,
+                UTType(filenameExtension: "cbl"),
+                UTType(filenameExtension: "csv"),
+                UTType(filenameExtension: "md"),
+                UTType(filenameExtension: "txt")
+            ].compactMap { $0 }
         default:
             // Unified Legacy Forward-Port (0bb6b38)
             supportedTypes = [

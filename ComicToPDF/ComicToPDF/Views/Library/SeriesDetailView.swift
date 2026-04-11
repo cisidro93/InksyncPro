@@ -143,6 +143,20 @@ struct SeriesDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 16) {
+                    if isSelectionMode {
+                        Button(action: {
+                            withAnimation {
+                                if selection.count == localIssues.count {
+                                    selection.removeAll()
+                                } else {
+                                    selection = Set(localIssues.map { $0.id })
+                                }
+                            }
+                        }) {
+                            Text(selection.count == localIssues.count ? "Deselect All" : "Select All")
+                        }
+                    }
+                    
                     Button(action: {
                         withAnimation {
                             isSelectionMode.toggle()

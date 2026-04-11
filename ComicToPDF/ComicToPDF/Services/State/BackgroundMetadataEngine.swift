@@ -146,34 +146,38 @@ class BackgroundMetadataEngine: ObservableObject {
     
     private func applyPartialMatch(to fileID: UUID, manager: ConversionManager, volume: ComicVineVolume, issueNum: Int?) {
         if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == fileID }) {
-            manager.convertedPDFs[idx].metadata.series = volume.name
-            manager.convertedPDFs[idx].metadata.universalSeriesID = String(volume.id)
-            manager.convertedPDFs[idx].metadata.volume = volume.name
-            manager.convertedPDFs[idx].metadata.publisher = volume.publisher?.name
+            var mutablePDF = manager.convertedPDFs[idx]
+            mutablePDF.metadata.series = volume.name
+            mutablePDF.metadata.universalSeriesID = String(volume.id)
+            mutablePDF.metadata.volume = volume.name
+            mutablePDF.metadata.publisher = volume.publisher?.name
             if let num = issueNum {
-                manager.convertedPDFs[idx].metadata.issueNumber = "\(num)"
+                mutablePDF.metadata.issueNumber = "\(num)"
             }
+            manager.convertedPDFs[idx] = mutablePDF
         }
     }
     
     private func applyFullMatch(to fileID: UUID, manager: ConversionManager, volume: ComicVineVolume, issue: ComicVineIssueDetails, issueNum: Int) {
         if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == fileID }) {
-            manager.convertedPDFs[idx].metadata.series = volume.name
-            manager.convertedPDFs[idx].metadata.universalSeriesID = String(volume.id)
-            manager.convertedPDFs[idx].metadata.volume = volume.name
-            manager.convertedPDFs[idx].metadata.issueNumber = "\(issueNum)"
-            manager.convertedPDFs[idx].metadata.publisher = volume.publisher?.name
-            manager.convertedPDFs[idx].metadata.universalIssueID = String(issue.id)
+            var mutablePDF = manager.convertedPDFs[idx]
+            mutablePDF.metadata.series = volume.name
+            mutablePDF.metadata.universalSeriesID = String(volume.id)
+            mutablePDF.metadata.volume = volume.name
+            mutablePDF.metadata.issueNumber = "\(issueNum)"
+            mutablePDF.metadata.publisher = volume.publisher?.name
+            mutablePDF.metadata.universalIssueID = String(issue.id)
             
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
             if let dateString = issue.cover_date, let date = formatter.date(from: dateString) {
-                manager.convertedPDFs[idx].metadata.publicationDate = date
+                mutablePDF.metadata.publicationDate = date
             }
             
             if let desc = issue.description {
-                manager.convertedPDFs[idx].metadata.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
+                mutablePDF.metadata.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
             }
+            manager.convertedPDFs[idx] = mutablePDF
         }
     }
     
