@@ -265,16 +265,19 @@ struct ImportQueueView: View {
     }
 
     private func runImport(groups: [(seriesName: String, urls: [URL])]) async {
+        var allURLs: [URL] = []
+        var combinedOverrides: [URL: PDFMetadata] = [:]
+        
         for group in groups {
-            // Build per-file metadata overrides with series name from folder parsing
-            var overrides: [URL: PDFMetadata] = [:]
+            allURLs.append(contentsOf: group.urls)
             for url in group.urls {
                 var meta = PDFMetadata(title: url.deletingPathExtension().lastPathComponent)
                 meta.series = group.seriesName
-                overrides[url] = meta
+                combinedOverrides[url] = meta
             }
-            await conversionManager.importFilesAsSeries(urls: group.urls, overrides: overrides)
         }
+        
+        await conversionManager.importFilesAsSeries(urls: allURLs, overrides: combinedOverrides)
     }
 
     private func iconFor(_ url: URL) -> String {
