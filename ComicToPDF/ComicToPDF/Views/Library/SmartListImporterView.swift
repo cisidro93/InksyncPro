@@ -10,6 +10,8 @@ struct SmartListImporterView: View {
     @State private var eventName: String = "Imported Event"
     @State private var pastedText: String = ""
 
+    @State private var showingImporter = false
+
     var body: some View {
             Group {
                 if let items = resolvedItems {
@@ -42,11 +44,7 @@ struct SmartListImporterView: View {
                             
                             HStack(spacing: 16) {
                                 Button(action: {
-                                    ImportCoordinator.present(type: .smartList) { urls in
-                                        if let first = urls.first {
-                                            handleImport(result: .success([first]))
-                                        }
-                                    }
+                                    showingImporter = true
                                 }) {
                                     Label("Import CSV/CBL File", systemImage: "tablecells")
                                         .font(.headline)
@@ -58,11 +56,7 @@ struct SmartListImporterView: View {
                                 }
                                 
                                 Button(action: {
-                                    ImportCoordinator.present(type: .smartList) { urls in
-                                        if let first = urls.first {
-                                            handleImport(result: .success([first]))
-                                        }
-                                    }
+                                    showingImporter = true
                                 }) {
                                     Label("Import Text File", systemImage: "doc.plaintext")
                                         .font(.headline)
@@ -121,6 +115,13 @@ struct SmartListImporterView: View {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Cancel") { dismiss() }
                             }
+                        }
+                        .fileImporter(
+                            isPresented: $showingImporter,
+                            allowedContentTypes: [.item],
+                            allowsMultipleSelection: false
+                        ) { result in
+                            handleImport(result: result)
                         }
                     }
                 }
