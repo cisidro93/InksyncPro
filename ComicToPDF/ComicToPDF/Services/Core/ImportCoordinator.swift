@@ -43,17 +43,11 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         case .json:
             supportedTypes = [.json]
         case .smartList:
-            supportedTypes = [
-                .plainText,
-                .commaSeparatedText,
-                .text,
-                .data,
-                .content,
-                UTType(filenameExtension: "cbl"),
-                UTType(filenameExtension: "csv"),
-                UTType(filenameExtension: "md"),
-                UTType(filenameExtension: "txt")
-            ].compactMap { $0 }
+            // Use `.item` to universally unlock the picker. Third-party cloud providers (like Google Drive)
+            // often wrap CSVs or TXTs in custom proprietary UTIs (e.g. com.google.drive.ext.csv), which
+            // causes the native picker to grey them out if we restrict by strict UTType.
+            // We handle validation intrinsically at the parser level instead.
+            supportedTypes = [.item]
         default:
             // Unified Legacy Forward-Port (0bb6b38)
             supportedTypes = [
