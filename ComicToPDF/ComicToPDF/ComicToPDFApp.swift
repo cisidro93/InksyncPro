@@ -32,16 +32,18 @@ struct InksyncProApp: App {
         if !UserDefaults.standard.bool(forKey: "hasEmployedFreshInstallNuke_v1") {
             let fileManager = FileManager.default
             
-            // 1. Vaporize Documents Directory (Nukes all ghost CBZs automatically synced by iCloud)
+            // 1. Vaporize Documents Directory Contents (Nukes all ghost CBZs automatically synced by iCloud)
             if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
-                try? fileManager.removeItem(at: docDir)
-                try? fileManager.createDirectory(at: docDir, withIntermediateDirectories: true, attributes: nil)
+                if let items = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
+                    for item in items { try? fileManager.removeItem(at: item) }
+                }
             }
             
-            // 2. Vaporize Application Support Directory (Nukes legacy SwiftData SQLite vaults and stored Covers)
+            // 2. Vaporize Application Support Directory Contents (Nukes legacy SwiftData SQLite vaults and stored Covers)
             if let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                try? fileManager.removeItem(at: supportDir)
-                try? fileManager.createDirectory(at: supportDir, withIntermediateDirectories: true, attributes: nil)
+                if let items = try? fileManager.contentsOfDirectory(at: supportDir, includingPropertiesForKeys: nil) {
+                    for item in items { try? fileManager.removeItem(at: item) }
+                }
             }
             
             UserDefaults.standard.set(true, forKey: "hasEmployedFreshInstallNuke_v1")

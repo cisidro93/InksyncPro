@@ -210,6 +210,24 @@ class MigrationService {
          let docs = try context.fetch(docDesc)
          let cols = try context.fetch(colDesc)
          
-         return (docs, cols)
+         // ?? Self-Healing Pruner: Instantly eviscerate any Ghost Records 
+         // If a user deletes a file natively in the iOS 'Files' app, SwiftData inherently ghosts it.
+         var validDocs: [SDConvertedPDF] = []
+         var didPrune = false
+         
+         for doc in docs {
+             if FileManager.default.fileExists(atPath: doc.url.path) {
+                 validDocs.append(doc)
+             } else {
+                 context.delete(doc)
+                 didPrune = true
+             }
+         }
+         
+         if didPrune {
+             try? context.save()
+         }
+         
+         return (validDocs, cols)
     }
 }
