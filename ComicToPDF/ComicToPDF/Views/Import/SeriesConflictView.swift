@@ -82,7 +82,7 @@ struct SeriesConflictView: View {
             HStack(spacing: 10) {
                 Button(action: {
                     onAddToExisting(group)
-                    withAnimation { resolvedIndices.insert(index) }
+                    withAnimation { _ = resolvedIndices.insert(index) }
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "plus.circle")
@@ -98,7 +98,7 @@ struct SeriesConflictView: View {
 
                 Button(action: {
                     onCreateNew(group)
-                    withAnimation { resolvedIndices.insert(index) }
+                    withAnimation { _ = resolvedIndices.insert(index) }
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "folder.badge.plus")

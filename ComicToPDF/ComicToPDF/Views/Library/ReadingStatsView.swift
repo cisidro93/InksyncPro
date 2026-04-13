@@ -254,7 +254,7 @@ struct ReadingStatsView: View {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        let weekday = calendar.component(.weekday, from: today) // 1 = Sunday
+        _ = calendar.component(.weekday, from: today) // 1 = Sunday
         
         // Build from tracker's daily data, fallback to computed estimates
         return days.enumerated().map { idx, name in

@@ -97,7 +97,7 @@ class LocalComicInfoService {
     private func fallbackFilenameHeuristics(filename: String) -> (String, String?, String?, String?, String?) {
         var seriesStr: String? = nil
         var numberStr: String? = nil
-        var volumeStr: String? = nil
+        let volumeStr: String? = nil
         
         let cleaned = filename.replacingOccurrences(of: "_", with: " ")
         
