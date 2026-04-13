@@ -75,63 +75,111 @@ struct SeriesDetailView: View {
     
     @State private var localIssues: [ConvertedPDF] = []
     
+    // Volume Grouping State
+    @State private var showVolumeGrouping: Bool = true
+    @State private var collapsedVolumes: Set<String> = []
+    
     var isCollection: Bool {
         guard let id = UUID(uuidString: series.id) else { return false }
         return conversionManager.collections.contains(where: { $0.id == id })
+    }
+    
+    /// Groups issues by their volume metadata for collapsible rendering
+    var volumeGroups: [(key: String, issues: [ConvertedPDF])] {
+        var groups: [String: [ConvertedPDF]] = [:]
+        var ungrouped: [ConvertedPDF] = []
+        
+        for pdf in localIssues {
+            if let vol = pdf.metadata.volume, !vol.isEmpty {
+                groups[vol, default: []].append(pdf)
+            } else {
+                ungrouped.append(pdf)
+            }
+        }
+        
+        // Sort volume keys numerically
+        var result = groups.map { (key: $0.key, issues: $0.value) }
+            .sorted { (Int($0.key) ?? 0) < (Int($1.key) ?? 0) }
+        
+        if !ungrouped.isEmpty {
+            result.append((key: "Ungrouped", issues: ungrouped))
+        }
+        return result
+    }
+    
+    /// True if any issues have volume metadata worth grouping by
+    var hasVolumeData: Bool {
+        localIssues.contains { $0.metadata.volume != nil && !($0.metadata.volume!.isEmpty) }
     }
 
     var body: some View {
         List {
             Section(header: headerView) {
-                ForEach(localIssues) { pdf in
-                    if isSelectionMode {
-                        Button {
-                            if selection.contains(pdf.id) {
-                                selection.remove(pdf.id)
-                            } else {
-                                selection.insert(pdf.id)
-                            }
-                        } label: {
-                            HStack {
-                                LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
-                                Spacer()
-                                Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
-                                    .font(.title2)
-                            }
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Color.black)
+                if showVolumeGrouping && hasVolumeData {
+                    // ── Collapsible Volume Sections ──────────────────────────
+                    ForEach(volumeGroups, id: \.key) { group in
+                        let isCollapsed = collapsedVolumes.contains(group.key)
                         
-                    } else if useNavigationStack {
-                        NavigationLink(value: pdf) {
-                            LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
-                        }
-                        .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
-                        .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
-                        .contextMenu { contextMenuContent(pdf) }
-                    } else {
+                        // Volume Header (tap to collapse/expand)
                         Button {
-                            selectedPDF = pdf
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                if isCollapsed {
+                                    collapsedVolumes.remove(group.key)
+                                } else {
+                                    collapsedVolumes.insert(group.key)
+                                }
+                            }
                         } label: {
-                            LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                            HStack(spacing: 10) {
+                                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(Theme.orange)
+                                    .frame(width: 16)
+                                
+                                Image(systemName: "book.closed.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(group.key == "Ungrouped" ? Theme.textSecondary : Theme.blue)
+                                
+                                Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume \(group.key)")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(Theme.text)
+                                
+                                Spacer()
+                                
+                                Text("\(group.issues.count) issues")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundColor(Theme.textSecondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Theme.text.opacity(0.08))
+                                    .clipShape(Capsule())
+                            }
+                            .padding(.vertical, 6)
                         }
-                        .buttonStyle(PlainButtonStyle())
-                        .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
-                        .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
-                        .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
-                        .contextMenu { contextMenuContent(pdf) }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Theme.surface.opacity(0.5))
+                        
+                        // Volume Contents (shown when expanded)
+                        if !isCollapsed {
+                            ForEach(group.issues) { pdf in
+                                issueRow(pdf)
+                            }
+                        }
                     }
+                } else {
+                    // ── Flat List (original behavior) ────────────────────────
+                    ForEach(localIssues) { pdf in
+                        issueRow(pdf)
                     }
                     .onMove { source, destination in
                         if isCollection {
                             localIssues.move(fromOffsets: source, toOffset: destination)
-                            // Save to backend
                             if let colID = UUID(uuidString: series.id) {
                                 conversionManager.updateCollectionOrder(collectionID: colID, newOrderIDs: localIssues.map { $0.id })
                             }
                         }
                     }
+                }
             }
         }
         .onAppear {
@@ -175,6 +223,16 @@ struct SeriesDetailView: View {
                                 .foregroundColor(showBookmarksOnly ? Theme.orange : .blue)
                         }
 
+                        // Volume Grouping Toggle (only visible when volume data exists)
+                        if hasVolumeData {
+                            Button {
+                                withAnimation { showVolumeGrouping.toggle() }
+                            } label: {
+                                Image(systemName: showVolumeGrouping ? "rectangle.3.group.fill" : "rectangle.3.group")
+                                    .foregroundColor(showVolumeGrouping ? Theme.orange : .blue)
+                            }
+                        }
+
                         Menu {
                             Picker("Sort By", selection: $sortOption) {
                                 if isCollection {
@@ -182,6 +240,26 @@ struct SeriesDetailView: View {
                                 }
                                 ForEach(SeriesSortOption.allCases.filter { $0 != .manual }) { option in
                                     Text(option.rawValue).tag(option)
+                                }
+                            }
+                            
+                            if showVolumeGrouping && hasVolumeData {
+                                Divider()
+                                
+                                Button {
+                                    withAnimation {
+                                        collapsedVolumes = Set(volumeGroups.map { $0.key })
+                                    }
+                                } label: {
+                                    Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
+                                }
+                                
+                                Button {
+                                    withAnimation {
+                                        collapsedVolumes.removeAll()
+                                    }
+                                } label: {
+                                    Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
                                 }
                             }
                         } label: {
@@ -320,6 +398,50 @@ struct SeriesDetailView: View {
             Text("Enter the series name to group this file into a collection.")
         }
         .task(id: series.id) { await loadHeaderCover() }
+    }
+    
+    // MARK: - Issue Row (Shared by flat + volume grouped views)
+    
+    @ViewBuilder
+    private func issueRow(_ pdf: ConvertedPDF) -> some View {
+        if isSelectionMode {
+            Button {
+                if selection.contains(pdf.id) {
+                    selection.remove(pdf.id)
+                } else {
+                    selection.insert(pdf.id)
+                }
+            } label: {
+                HStack {
+                    LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
+                    Spacer()
+                    Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
+                        .font(.title2)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Color.black)
+            
+        } else if useNavigationStack {
+            NavigationLink(value: pdf) {
+                LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
+            }
+            .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
+            .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
+            .contextMenu { contextMenuContent(pdf) }
+        } else {
+            Button {
+                selectedPDF = pdf
+            } label: {
+                LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
+            .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
+            .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
+            .contextMenu { contextMenuContent(pdf) }
+        }
     }
 
     var headerView: some View {
