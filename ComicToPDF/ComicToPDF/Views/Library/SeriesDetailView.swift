@@ -6,7 +6,14 @@ struct SeriesDetailView: View {
     @Binding var selectedPDF: ConvertedPDF?
     var useNavigationStack: Bool
     @AppStorage("defaultSeriesSort") private var sortOption: SeriesSortOption = .issueNumber
+    @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
+    @AppStorage("manualOmnibusBuildsCount") private var manualOmnibusBuildsCount = 0
+    
     @State private var headerCover: UIImage? = nil
+    
+    // Config Sheet & Prompt State
+    @State private var showingOmnibusPrompt: Bool = false
+    @State private var pendingConfigSelection: Set<UUID>? = nil
     
     // Batch Selection
     @State private var selection = Set<UUID>()
@@ -277,10 +284,26 @@ struct SeriesDetailView: View {
                         // Feature 3: Volume Omnibus Quick-Build (long-press)
                         .contextMenu {
                             Button {
-                                conversionManager.enqueueOmnibus(
-                                    name: "\(series.title) Vol. \(group.key)",
-                                    sourceFiles: group.issues
-                                )
+                                if fastBundleOmnibus {
+                                    // User opted-in to the background autobuilder
+                                    conversionManager.enqueueOmnibus(
+                                        name: "\(series.title) Vol. \(group.key)",
+                                        sourceFiles: group.issues
+                                    )
+                                } else {
+                                    // User prefers the manual control sheet
+                                    manualOmnibusBuildsCount += 1
+                                    let selectedIDs = Set(group.issues.map { $0.id })
+                                    
+                                    // Trigger the prompt instead of instantly showing if they hit the 3-build threshold
+                                    if manualOmnibusBuildsCount == 3 {
+                                        pendingConfigSelection = selectedIDs
+                                        showingOmnibusPrompt = true
+                                    } else {
+                                        selection = selectedIDs
+                                        showingMergeConfig = true
+                                    }
+                                }
                             } label: {
                                 Label("Build Kindle Omnibus for Vol. \(group.key)", systemImage: "books.vertical.fill")
                             }
@@ -565,6 +588,28 @@ struct SeriesDetailView: View {
             }
         } message: {
             Text("Enter the series name to group this file into a collection.")
+        }
+        .alert("Automate Omnibus Builds?", isPresented: $showingOmnibusPrompt) {
+            Button("Enable Fast Bundle") {
+                fastBundleOmnibus = true
+                
+                // Route them directly to background queue
+                if let pending = pendingConfigSelection {
+                    let files = series.issues.filter { pending.contains($0.id) }
+                    conversionManager.enqueueOmnibus(name: "\(series.title) Omnibus", sourceFiles: files)
+                }
+                pendingConfigSelection = nil
+            }
+            Button("Keep Showing Control Sheet") {
+                // If they deny, trigger the sheet
+                if let pending = pendingConfigSelection {
+                    selection = pending
+                    showingMergeConfig = true
+                }
+                pendingConfigSelection = nil
+            }
+        } message: {
+            Text("You've built 3 omnibuses manually. Would you like to enable 'Fast Bundle Mode' to automatically skip the configuration sheet and instantly queue omnibuses in the background using your saved settings?")
         }
         .task(id: series.id) { await loadHeaderCover() }
     }

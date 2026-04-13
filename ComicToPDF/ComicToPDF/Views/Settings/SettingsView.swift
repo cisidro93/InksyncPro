@@ -3,8 +3,9 @@ import SwiftData
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
-    // ✅ Observe Global Layout Setting
+    // Core Navigation & Overarching Variables
     @AppStorage("useSidebar") private var useSidebar = true
+    @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     
     // ✅ NEW: Kindle Email Storage
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
@@ -318,9 +319,23 @@ struct SettingsView: View {
                     Text("100 MB").tag(100)
                     Text("200 MB (Kindle Safe)").tag(200)
                     Text("500 MB").tag(500)
+                    Text("1,000 MB").tag(1000)
                     Text("Infinite / Disable Split").tag(99999)
                 }
                 .pickerStyle(.menu)
+            }
+            
+            // ✅ FEATURE: Omnibus Quick Mode
+            HStack {
+                settingsIcon("bolt.fill", color: .yellow)
+                VStack(alignment: .leading) {
+                    Toggle("Fast Bundle Omnibus Mode", isOn: $fastBundleOmnibus)
+                    Text("Instantly queue background Omnibus conversion from Library using your predetermined global settings, skipping the configuration sheet.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 2)
+                }
+            }
             }
             
             HStack {

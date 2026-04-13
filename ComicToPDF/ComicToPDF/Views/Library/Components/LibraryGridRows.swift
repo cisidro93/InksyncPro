@@ -77,8 +77,8 @@ struct ModernGridFileCell: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
             )
-            .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 8, x: 0, y: 4)
-            .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.15), radius: 16, x: 0, y: 8)
+                // ✅ FIXED: Removed heavy double-shadow passes to ensure buttery 120fps scrolling.
+                // Since the Library Grid is visually black, shadows were invisible anyway but triggering off-screen rendering.
             
             // Text Details & Kindle-Style Progress
             VStack(alignment: .leading, spacing: 4) {
@@ -230,8 +230,7 @@ struct ModernGridSeriesCell: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
                 )
-                .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 8, x: 0, y: 4)
-                .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.15), radius: 16, x: 0, y: 8)
+                // ✅ FIXED: Removed heavy double-shadow passes from the top-layer stack bounds.
                 
                 // Floating Glass Series Badge
                 HStack(spacing: 4) {
