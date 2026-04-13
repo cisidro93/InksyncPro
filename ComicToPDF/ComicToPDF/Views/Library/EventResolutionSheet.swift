@@ -93,6 +93,14 @@ struct EventResolutionSheet: View {
                                         }) {
                                             Label("Deny", systemImage: "xmark")
                                         }.buttonStyle(.bordered).tint(.red)
+                                        
+                                        Spacer()
+                                        
+                                        Button(action: {
+                                            manualAssigningItem = item
+                                        }) {
+                                            Image(systemName: "pencil")
+                                        }.buttonStyle(.bordered).tint(.blue)
                                     }
                                     .padding(.top, 4)
                                 }
