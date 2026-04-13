@@ -113,6 +113,7 @@ struct LibraryGridView: View {
                 .padding(.vertical, 30)
                 .padding(.trailing, 2)
             }
+            .id(tapAction) // Force rebuild of structural components (NavigationLink vs Button)
             } // End ScrollViewReader
             }
         }

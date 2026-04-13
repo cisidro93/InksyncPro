@@ -144,6 +144,7 @@ struct LibraryListView: View {
                 .padding(.vertical, 30)
                 .padding(.trailing, 2)
             }
+            .id(tapAction)
             } // end ScrollViewReader
         }
     }

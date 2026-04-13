@@ -192,7 +192,9 @@ struct ReaderView: View {
             }
             .task {
                 await prepareArchive()
+                trackProgress() // Ensure it shows up in "Continue Reading" immediately
             }
+            .onChange(of: currentPageIndex) { trackProgress() }
             .onDisappear {
                 // Cleanup Temp Files
                 if let dir = unzippedDir {

@@ -285,6 +285,7 @@ struct EBookReaderView: View {
         chapterPage = 0 // Start next chapter at page 0
         withAnimation(.easeInOut(duration: 0.18)) { currentIndex += 1 }
         saveProgress()
+        trackEBookProgress()
     }
     
     private func prevChapter() {
@@ -292,6 +293,7 @@ struct EBookReaderView: View {
         chapterPage = 99999 // Send a signal to JS to jump to the END of the previous chapter
         withAnimation(.easeInOut(duration: 0.18)) { currentIndex -= 1 }
         saveProgress()
+        trackEBookProgress()
     }
     
     // MARK: - Load & Cleanup
@@ -337,6 +339,7 @@ struct EBookReaderView: View {
                 self.errorMessage = "This EPUB file seems to be corrupted or missing a valid reading spine."
             }
             self.isLoading = false
+            trackEBookProgress()
         }
     }
     
@@ -349,6 +352,22 @@ struct EBookReaderView: View {
         if let dir = unzipDir {
             try? FileManager.default.removeItem(at: dir)
         }
+    }
+    
+    private func trackEBookProgress() {
+        // Find the PDF in the ConversionManager
+        guard let p = ConversionManager.shared.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
+        var progress = ReaderProgressTracker.shared.progress(for: p.id) ?? ReadingProgress(pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
+        progress.lastOpenedAt = Date()
+        progress.currentPageIndex = currentIndex
+        progress.currentChapterIndex = currentIndex
+        if totalChapters > 1 {
+            progress.completionFraction = Double(currentIndex) / Double(totalChapters - 1)
+        }
+        if !progress.readingSessionDates.contains(where: { Calendar.current.isDateInToday($0) }) {
+            progress.readingSessionDates.append(Date())
+        }
+        ReaderProgressTracker.shared.update(progress)
     }
 }
 

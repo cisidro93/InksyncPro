@@ -3,8 +3,11 @@ import SwiftUI
 struct SeriesDetailView: View {
     let series: SeriesGroup
     @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.dismiss) var dismiss
     @Binding var selectedPDF: ConvertedPDF?
     var useNavigationStack: Bool
+    
+    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details
     @AppStorage("defaultSeriesSort") private var sortOption: SeriesSortOption = .issueNumber
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     @AppStorage("manualOmnibusBuildsCount") private var manualOmnibusBuildsCount = 0
@@ -686,7 +689,7 @@ struct SeriesDetailView: View {
             .buttonStyle(PlainButtonStyle())
             .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Theme.bg)
             
-        } else if useNavigationStack {
+        } else if useNavigationStack && tapAction == .details {
             NavigationLink(value: pdf) {
                 LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
             }
@@ -695,7 +698,11 @@ struct SeriesDetailView: View {
             .contextMenu { contextMenuContent(pdf) }
         } else {
             Button {
-                selectedPDF = pdf
+                if tapAction == .read {
+                    pdfToRead = pdf
+                } else {
+                    selectedPDF = pdf
+                }
             } label: {
                 LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
             }
