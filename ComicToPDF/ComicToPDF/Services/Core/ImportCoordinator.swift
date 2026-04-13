@@ -116,6 +116,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
             for url in urls {
                 let secured = url.startAccessingSecurityScopedResource()
+                defer { if secured { url.stopAccessingSecurityScopedResource() } }
                 
                 var isDirectory: ObjCBool = false
                 if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
