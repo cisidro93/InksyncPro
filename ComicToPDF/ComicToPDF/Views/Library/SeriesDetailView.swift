@@ -160,7 +160,7 @@ struct SeriesDetailView: View {
         issues.filter { ($0.metadata.lastReadPage ?? 0) >= $0.pageCount && $0.pageCount > 0 }.count
     }
 
-    var body: some View {
+    private var contentList: some View {
         List {
             Section(header: headerView) {
                 // ── Continue Reading Smart Button ────────────────────────
@@ -459,6 +459,10 @@ struct SeriesDetailView: View {
                 }
             }
         }
+    }
+
+    var body: some View {
+        contentList
         .fullScreenCover(item: $pdfToRead) { pdf in
             if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) }
         }
