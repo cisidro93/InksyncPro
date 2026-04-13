@@ -111,14 +111,98 @@ struct SeriesDetailView: View {
     var hasVolumeData: Bool {
         localIssues.contains { $0.metadata.volume != nil && !($0.metadata.volume!.isEmpty) }
     }
+    
+    /// Finds the next unread issue in reading order
+    var nextUnreadIssue: ConvertedPDF? {
+        for pdf in localIssues {
+            let lastRead = pdf.metadata.lastReadPage ?? 0
+            if lastRead < pdf.pageCount {
+                return pdf
+            }
+        }
+        return nil
+    }
+    
+    /// Calculates reading progress (0.0–1.0) for a set of issues
+    private func readingProgress(for issues: [ConvertedPDF]) -> Double {
+        let totalPages = issues.reduce(0) { $0 + max($1.pageCount, 1) }
+        let readPages = issues.reduce(0) { $0 + ($1.metadata.lastReadPage ?? 0) }
+        guard totalPages > 0 else { return 0 }
+        return Double(readPages) / Double(totalPages)
+    }
+    
+    /// Count of fully completed issues in a group
+    private func completedCount(for issues: [ConvertedPDF]) -> Int {
+        issues.filter { ($0.metadata.lastReadPage ?? 0) >= $0.pageCount && $0.pageCount > 0 }.count
+    }
 
     var body: some View {
         List {
             Section(header: headerView) {
+                // ── Continue Reading Smart Button ────────────────────────
+                if let nextIssue = nextUnreadIssue {
+                    Button {
+                        pdfToRead = nextIssue
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 28))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [Theme.orange, Theme.red],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Continue Reading")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(Theme.textSecondary)
+                                    .tracking(0.8)
+                                
+                                Text(nextIssue.name)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(Theme.text)
+                                    .lineLimit(1)
+                                
+                                if let vol = nextIssue.metadata.volume, !vol.isEmpty,
+                                   let issue = nextIssue.metadata.issueNumber {
+                                    Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
+                                        .font(.system(size: 11, design: .rounded))
+                                        .foregroundColor(Theme.orange)
+                                } else {
+                                    Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
+                                        .font(.system(size: 11, design: .rounded))
+                                        .foregroundColor(Theme.orange)
+                                }
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Theme.orange.opacity(0.1))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
+                }
+                
                 if showVolumeGrouping && hasVolumeData {
                     // ── Collapsible Volume Sections ──────────────────────────
                     ForEach(volumeGroups, id: \.key) { group in
                         let isCollapsed = collapsedVolumes.contains(group.key)
+                        let progress = readingProgress(for: group.issues)
+                        let completed = completedCount(for: group.issues)
                         
                         // Volume Header (tap to collapse/expand)
                         Button {
@@ -130,34 +214,77 @@ struct SeriesDetailView: View {
                                 }
                             }
                         } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundColor(Theme.orange)
-                                    .frame(width: 16)
+                            VStack(spacing: 6) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(Theme.orange)
+                                        .frame(width: 16)
+                                    
+                                    Image(systemName: completed == group.issues.count ? "book.closed.fill" : "book.closed")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(completed == group.issues.count ? .green : (group.key == "Ungrouped" ? Theme.textSecondary : Theme.blue))
+                                    
+                                    Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume \(group.key)")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(Theme.text)
+                                    
+                                    Spacer()
+                                    
+                                    Text("\(completed)/\(group.issues.count)")
+                                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                                        .foregroundColor(completed == group.issues.count ? .green : Theme.textSecondary)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Theme.text.opacity(0.08))
+                                        .clipShape(Capsule())
+                                }
                                 
-                                Image(systemName: "book.closed.fill")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(group.key == "Ungrouped" ? Theme.textSecondary : Theme.blue)
-                                
-                                Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume \(group.key)")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(Theme.text)
-                                
-                                Spacer()
-                                
-                                Text("\(group.issues.count) issues")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundColor(Theme.textSecondary)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Theme.text.opacity(0.08))
-                                    .clipShape(Capsule())
+                                // Reading Progress Bar
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .fill(Theme.text.opacity(0.08))
+                                            .frame(height: 3)
+                                        
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .fill(
+                                                progress >= 1.0
+                                                    ? AnyShapeStyle(Color.green)
+                                                    : AnyShapeStyle(LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .leading, endPoint: .trailing))
+                                            )
+                                            .frame(width: geo.size.width * CGFloat(min(progress, 1.0)), height: 3)
+                                    }
+                                }
+                                .frame(height: 3)
                             }
                             .padding(.vertical, 6)
                         }
                         .buttonStyle(.plain)
                         .listRowBackground(Theme.surface.opacity(0.5))
+                        // Feature 3: Volume Omnibus Quick-Build (long-press)
+                        .contextMenu {
+                            Button {
+                                conversionManager.enqueueOmnibus(
+                                    name: "\(series.title) Vol. \(group.key)",
+                                    sourceFiles: group.issues
+                                )
+                            } label: {
+                                Label("Build Kindle Omnibus for Vol. \(group.key)", systemImage: "books.vertical.fill")
+                            }
+                            
+                            Button {
+                                withAnimation {
+                                    if isCollapsed {
+                                        collapsedVolumes.remove(group.key)
+                                    } else {
+                                        collapsedVolumes.insert(group.key)
+                                    }
+                                }
+                            } label: {
+                                Label(isCollapsed ? "Expand" : "Collapse", systemImage: isCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+                            }
+                        }
                         
                         // Volume Contents (shown when expanded)
                         if !isCollapsed {
@@ -261,6 +388,15 @@ struct SeriesDetailView: View {
                                 } label: {
                                     Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
                                 }
+                            }
+                            
+                            Divider()
+                            
+                            // Feature 5: Smart List Template Export
+                            Button {
+                                exportSmartListTemplate()
+                            } label: {
+                                Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
                             }
                         } label: {
                             Image(systemName: "arrow.up.arrow.down")
@@ -445,41 +581,119 @@ struct SeriesDetailView: View {
     }
 
     var headerView: some View {
-        HStack {
-            if let img = headerCover {
-                Image(uiImage: img)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 80, height: 120)
-                    .cornerRadius(8)
-                    .shadow(radius: 4)
-                    .clipped()
-            } else {
-                Rectangle()
-                    .fill(Color(UIColor.secondarySystemBackground))
-                    .frame(width: 80, height: 120)
-                    .overlay(Image(systemName: "books.vertical").foregroundColor(.gray))
-                    .cornerRadius(8)
-            }
+        VStack(spacing: 12) {
+            HStack {
+                if let img = headerCover {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 80, height: 120)
+                        .cornerRadius(8)
+                        .shadow(radius: 4)
+                        .clipped()
+                } else {
+                    Rectangle()
+                        .fill(Color(UIColor.secondarySystemBackground))
+                        .frame(width: 80, height: 120)
+                        .overlay(Image(systemName: "books.vertical").foregroundColor(.gray))
+                        .cornerRadius(8)
+                }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(series.title)
-                    .font(.title2).bold()
-                    .foregroundColor(.primary)
-                Text("\(series.count) Issues")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                if let publisher = series.issues.first?.metadata.publisher {
-                    Text(publisher)
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                        .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(series.title)
+                        .font(.title2).bold()
+                        .foregroundColor(.primary)
+                    Text("\(series.count) Issues")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    if let publisher = series.issues.first?.metadata.publisher {
+                        Text(publisher)
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                            .padding(.top, 4)
+                    }
+                    
+                    // Series-wide reading progress
+                    let seriesProgress = readingProgress(for: localIssues)
+                    let seriesCompleted = completedCount(for: localIssues)
+                    
+                    HStack(spacing: 6) {
+                        Text("\(Int(seriesProgress * 100))%")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(seriesProgress >= 1.0 ? .green : Theme.orange)
+                        
+                        Text("\(seriesCompleted)/\(localIssues.count) read")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    .padding(.top, 2)
+                }
+                .padding(.leading)
+                Spacer()
+            }
+            
+            // Series-wide progress bar
+            let progress = readingProgress(for: localIssues)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Theme.text.opacity(0.1))
+                        .frame(height: 4)
+                    
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(
+                            progress >= 1.0
+                                ? AnyShapeStyle(Color.green)
+                                : AnyShapeStyle(LinearGradient(colors: [Theme.blue, Theme.orange], startPoint: .leading, endPoint: .trailing))
+                        )
+                        .frame(width: geo.size.width * CGFloat(min(progress, 1.0)), height: 4)
                 }
             }
-            .padding(.leading)
-            Spacer()
+            .frame(height: 4)
         }
         .padding(.vertical)
+    }
+    
+    // MARK: - Feature 5: Smart List Template Export
+    
+    private func exportSmartListTemplate() {
+        var csv = "volume,start_chapter,end_chapter,series\n"
+        
+        if hasVolumeData {
+            for group in volumeGroups {
+                guard group.key != "Ungrouped" else { continue }
+                let issueNumbers = group.issues.compactMap { $0.metadata.issueNumber }.compactMap { Int($0) }.sorted()
+                if let first = issueNumbers.first, let last = issueNumbers.last {
+                    csv += "\(group.key),\(first),\(last),\(series.title)\n"
+                }
+            }
+        } else {
+            for pdf in localIssues {
+                let issue = pdf.metadata.issueNumber ?? ""
+                let vol = pdf.metadata.volume ?? ""
+                csv += "\(vol),\(issue),\(issue),\(series.title)\n"
+            }
+        }
+        
+        let filename = "\(series.title.replacingOccurrences(of: " ", with: "_"))_SmartList.csv"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try? csv.write(to: tempURL, atomically: true, encoding: .utf8)
+        
+        let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController {
+            var topVC = rootVC
+            while let presented = topVC.presentedViewController { topVC = presented }
+            
+            // iPad requires popover source
+            if let popover = activityVC.popoverPresentationController {
+                popover.sourceView = topVC.view
+                popover.sourceRect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            topVC.present(activityVC, animated: true)
+        }
     }
 
     @ViewBuilder
