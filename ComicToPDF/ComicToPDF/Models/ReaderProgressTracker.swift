@@ -133,6 +133,32 @@ class ReaderProgressTracker: ObservableObject {
         return totalFraction / Double(seriesBooks.count)
     }
     
+    /// Returns pages read on a specific day of the current week (0=Mon, 6=Sun)
+    func pagesReadOn(dayOfWeekIndex: Int) -> Int {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        // Find the Monday of this week
+        let weekday = calendar.component(.weekday, from: today)
+        let daysFromMonday = (weekday + 5) % 7  // Convert Sun=1 to Mon=0
+        guard let monday = calendar.date(byAdding: .day, value: -daysFromMonday, to: today) else { return 0 }
+        guard let targetDay = calendar.date(byAdding: .day, value: dayOfWeekIndex, to: monday) else { return 0 }
+        let nextDay = calendar.date(byAdding: .day, value: 1, to: targetDay) ?? targetDay
+        
+        // Sum pages from sessions on that day
+        var total = 0
+        for progress in progressMap.values {
+            let sessionsOnDay = progress.readingSessionDates.filter { date in
+                date >= targetDay && date < nextDay
+            }
+            // Each session roughly correlates to some pages read; use totalPagesRead as proxy
+            if !sessionsOnDay.isEmpty {
+                total += max(1, progress.totalPagesRead / max(progress.readingSessionDates.count, 1)) * sessionsOnDay.count
+            }
+        }
+        return total
+    }
+    
     // MARK: - Persistence
     
     private func loadAll() {

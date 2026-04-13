@@ -260,6 +260,10 @@ struct ModernLibraryView: View {
                 onSelectAll: handleSelectAll
             )
             
+            // MARK: - Recently Read Shelf
+            RecentlyReadShelf(pdfs: nativeVisiblePDFs) { pdf in
+                viewModel.activeFullScreen = .read(pdf)
+            }
 
             // MARK: - Discrete Layout Layers
             if viewStyle == .list {

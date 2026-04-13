@@ -272,12 +272,18 @@ struct ModernGridSeriesCell: View {
             
             // Text Details
             VStack(alignment: .leading, spacing: 4) {
-                Text(group.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(Theme.text)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(height: 38, alignment: .topLeading)
+                HStack(spacing: 4) {
+                    Text(group.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    
+                    if UserDefaults.standard.bool(forKey: "showSeriesHealthScore") {
+                        SeriesHealthBadge(issues: group.issues)
+                    }
+                }
+                .frame(height: 38, alignment: .topLeading)
             }
         }
         .padding(8)

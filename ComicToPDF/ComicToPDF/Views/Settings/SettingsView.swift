@@ -202,6 +202,23 @@ struct SettingsView: View {
                     set: { comicBadgeColorHex = $0.toHex() ?? "#3d6fff" }
                 ))
             }
+            
+            Divider()
+            
+            HStack {
+                settingsIcon("chart.bar.doc.horizontal.fill", color: .green)
+                Toggle("Series Health Score Badges", isOn: Binding(
+                    get: { settingsManager.showSeriesHealthScore },
+                    set: { newVal in
+                        settingsManager.showSeriesHealthScore = newVal
+                        UserDefaults.standard.set(newVal, forKey: "showSeriesHealthScore")
+                    }
+                ))
+            }
+            
+            Text("Shows metadata completeness % on each series folder in the library.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
         } header: { Text("General UI") }
     }
     
@@ -664,6 +681,20 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                }
+            }
+            
+            NavigationLink(destination: DuplicateFinderView().environmentObject(conversionManager)) {
+                HStack {
+                    settingsIcon("doc.on.doc", color: .yellow)
+                    Text("Duplicate File Finder")
+                }
+            }
+            
+            NavigationLink(destination: ImportHistoryView()) {
+                HStack {
+                    settingsIcon("clock.arrow.circlepath", color: .teal)
+                    Text("Import History")
                 }
             }
             

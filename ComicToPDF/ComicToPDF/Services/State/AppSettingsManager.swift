@@ -16,6 +16,7 @@ class AppSettingsManager: ObservableObject {
     
     // Aesthetic & Library State
     @Published var isVaultUnlocked: Bool = false
+    @Published var showSeriesHealthScore: Bool = UserDefaults.standard.bool(forKey: "showSeriesHealthScore")
     
     // ✅ Persistent Watched Folders
     struct WatchedFolder: Codable, Identifiable, Equatable {

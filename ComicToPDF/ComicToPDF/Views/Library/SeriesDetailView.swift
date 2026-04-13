@@ -78,6 +78,8 @@ struct SeriesDetailView: View {
     // Volume Grouping State
     @State private var showVolumeGrouping: Bool = true
     @State private var collapsedVolumes: Set<String> = []
+    @State private var showBatchVolumeAssignment = false
+    @State private var jumpToVolume: String? = nil
     
     var isCollection: Bool {
         guard let id = UUID(uuidString: series.id) else { return false }
@@ -110,6 +112,11 @@ struct SeriesDetailView: View {
     /// True if any issues have volume metadata worth grouping by
     var hasVolumeData: Bool {
         localIssues.contains { $0.metadata.volume != nil && !($0.metadata.volume!.isEmpty) }
+    }
+    
+    /// Detected missing issues in the series
+    var missingIssues: [String] {
+        MissingIssueDetector.detectGaps(in: localIssues)
     }
     
     /// Finds the next unread issue in reading order
@@ -195,6 +202,11 @@ struct SeriesDetailView: View {
                     .buttonStyle(.plain)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
+                }
+                
+                // ── Missing Issue Banner ──────────────────────────────
+                if !missingIssues.isEmpty {
+                    MissingIssueBanner(gaps: missingIssues)
                 }
                 
                 if showVolumeGrouping && hasVolumeData {
@@ -445,10 +457,20 @@ struct SeriesDetailView: View {
                         
                         Spacer()
                         
-                        Text("\(selection.count) Selected")
-                            .font(.subheadline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.secondary)
+                        VStack(spacing: 2) {
+                            Text("\(selection.count) Selected")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.secondary)
+                            
+                            Button {
+                                showBatchVolumeAssignment = true
+                            } label: {
+                                Text("Assign Volume")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
+                            }
+                            .disabled(selection.isEmpty)
+                        }
                         
                         Spacer()
                         
@@ -502,6 +524,17 @@ struct SeriesDetailView: View {
         }
         .sheet(item: $pdfToSearchMetadata) { pdf in
             MetadataSearchSheet(pdf: pdf)
+        }
+        .sheet(isPresented: $showBatchVolumeAssignment) {
+            BatchVolumeAssignmentSheet(selectedIDs: selection)
+                .environmentObject(conversionManager)
+        }
+        .overlay {
+            if showVolumeGrouping && hasVolumeData && volumeGroups.count > 4 {
+                QuickVolumeJumpOverlay(volumeGroups: volumeGroups) { volKey in
+                    jumpToVolume = volKey
+                }
+            }
         }
         .alert("Rename File", isPresented: Binding(
             get: { pdfToRename != nil },

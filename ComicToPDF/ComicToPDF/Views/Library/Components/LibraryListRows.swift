@@ -223,6 +223,10 @@ struct ModernSeriesRow: View {
                     Text("\(group.count) \(group.count == 1 ? "Issue" : "Issues")")
                         .font(.caption)
                         .foregroundColor(Theme.textSecondary)
+                    
+                    if UserDefaults.standard.bool(forKey: "showSeriesHealthScore") {
+                        SeriesHealthBadge(issues: group.issues)
+                    }
                 }
             }
             
