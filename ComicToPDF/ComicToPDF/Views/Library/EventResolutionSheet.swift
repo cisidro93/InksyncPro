@@ -10,6 +10,7 @@ struct EventResolutionSheet: View {
     @State private var showingConfirmation = false
     @State private var isProcessing = false
     @State private var manualAssigningItem: ResolvedEventItem? = nil
+    @State private var showSeriesPicker = false
     
     var autoMatched: [ResolvedEventItem] { resolvedItems.filter { if case .matched = $0.resolution { return true }; return false } }
     var suggested: [ResolvedEventItem] { resolvedItems.filter { if case .suggested = $0.resolution { return true }; return false } }
@@ -149,7 +150,7 @@ struct EventResolutionSheet: View {
                         }
                         
                         Button {
-                            buildVolumeSubCollections()
+                            showSeriesPicker = true
                         } label: {
                             Label("Organize into Volume Folders", systemImage: "folder.badge.plus")
                         }
@@ -177,6 +178,11 @@ struct EventResolutionSheet: View {
                     if let idx = resolvedItems.firstIndex(where: { $0.id == item.id }) {
                         resolvedItems[idx].resolution = .matched(selectedPDF)
                     }
+                }
+            }
+            .sheet(isPresented: $showSeriesPicker) {
+                SeriesPickerSheet(collections: conversionManager.collections, eventName: eventName) { selectedCollection in
+                    buildVolumeSubCollections(into: selectedCollection)
                 }
             }
         }
@@ -253,9 +259,8 @@ struct EventResolutionSheet: View {
         dismiss()
     }
     
-    /// Creates volume sub-collections within an existing or new parent series collection.
-    /// Intelligently reuses the existing series folder if one is found in the library.
-    private func buildVolumeSubCollections() {
+    /// Creates volume sub-collections within the user-selected parent series collection.
+    private func buildVolumeSubCollections(into selectedCollection: PDFCollection?) {
         isProcessing = true
         
         // Group resolved items by their parsed volume
@@ -272,19 +277,12 @@ struct EventResolutionSheet: View {
             }
         }
         
-        // ── Intelligent Series Binding ──────────────────────────────────────────
-        // Search for an existing collection whose name matches the event/series name.
-        // This prevents creating a duplicate "Initial D" folder when one already exists.
+        // Use the explicitly user-selected collection, or create a new one
         let parentCollection: PDFCollection
-        let normalizedEventName = eventName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        if let existing = conversionManager.collections.first(where: {
-            $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == normalizedEventName
-        }) {
-            parentCollection = existing
-            Logger.shared.log("Smart List: Bound to existing series collection '\(existing.name)'", category: "SmartList")
+        if let selected = selectedCollection {
+            parentCollection = selected
+            Logger.shared.log("Smart List: User selected series '\(selected.name)'", category: "SmartList")
         } else {
-            // No existing match — create a new parent
             let newParent = PDFCollection(
                 id: UUID(),
                 name: eventName,
@@ -294,7 +292,7 @@ struct EventResolutionSheet: View {
             )
             conversionManager.collections.append(newParent)
             parentCollection = newParent
-            Logger.shared.log("Smart List: Created new series collection '\(eventName)'", category: "SmartList")
+            Logger.shared.log("Smart List: Created new series '\(eventName)'", category: "SmartList")
         }
         
         // Assign un-volumed files to the parent series folder
