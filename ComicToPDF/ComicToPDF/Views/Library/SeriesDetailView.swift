@@ -14,6 +14,7 @@ struct SeriesDetailView: View {
     // Config Sheet & Prompt State
     @State private var showingOmnibusPrompt: Bool = false
     @State private var pendingConfigSelection: Set<UUID>? = nil
+    @State private var mergeConfigSuggestedName: String? = nil
     
     // Batch Selection
     @State private var selection = Set<UUID>()
@@ -298,9 +299,11 @@ struct SeriesDetailView: View {
                                     // Trigger the prompt instead of instantly showing if they hit the 3-build threshold
                                     if manualOmnibusBuildsCount == 3 {
                                         pendingConfigSelection = selectedIDs
+                                        mergeConfigSuggestedName = "\(series.title) Vol. \(group.key)"
                                         showingOmnibusPrompt = true
                                     } else {
                                         selection = selectedIDs
+                                        mergeConfigSuggestedName = "\(series.title) Vol. \(group.key)"
                                         showingMergeConfig = true
                                     }
                                 }
@@ -500,6 +503,7 @@ struct SeriesDetailView: View {
                         Button(action: {
                             let generator = UIImpactFeedbackGenerator(style: .medium)
                             generator.impactOccurred()
+                            mergeConfigSuggestedName = "\(series.title) Omnibus"
                             showingMergeConfig = true
                         }) {
                             HStack {
@@ -536,7 +540,7 @@ struct SeriesDetailView: View {
         }
         .sheet(isPresented: $showingMergeConfig) {
             let filesToMerge = series.issues.filter { selection.contains($0.id) }
-            SeriesMergeConfigurationView(sourceFiles: filesToMerge)
+            SeriesMergeConfigurationView(sourceFiles: filesToMerge, suggestedName: mergeConfigSuggestedName)
         }
         .sheet(isPresented: $showBatchMetadataEditor) {
             let selectedFiles = series.issues.filter { selection.contains($0.id) }

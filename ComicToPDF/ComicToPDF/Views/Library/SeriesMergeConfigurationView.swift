@@ -15,10 +15,13 @@ struct SeriesMergeConfigurationView: View {
     @State private var mangaMode: Bool = false
     @State private var isProcessing: Bool = false
     
-    init(sourceFiles: [ConvertedPDF]) {
+    init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
         self.sourceFiles = sourceFiles
         // Default sort by logical name (usually volume/issue number)
         _itemsToMerge = State(initialValue: sourceFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
+        if let name = suggestedName {
+            _outputName = State(initialValue: name)
+        }
     }
     
     var body: some View {
