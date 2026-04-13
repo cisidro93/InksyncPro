@@ -140,9 +140,6 @@ struct SmartListImporterView: View {
             let isAccessing = selectedFile.startAccessingSecurityScopedResource()
             defer { if isAccessing { selectedFile.stopAccessingSecurityScopedResource() } }
             
-            // Removed rigorous readability check here since UIDocumentPicker with 'asCopy: true' gives guaranteed local copies in temp.
-            // On iOS, checking `isReadableFile` on newly copied temp documents can erroneously return false due to POSIX attribute delays.
-            
             let ext = selectedFile.pathExtension.lowercased()
             let cleanFilename = selectedFile.deletingPathExtension().lastPathComponent
                 .replacingOccurrences(of: "_", with: " ")
@@ -166,6 +163,36 @@ struct SmartListImporterView: View {
             
             // Perform resolution against local library
             let resolutions = SmartListImporter.shared.resolveList(requests, against: conversionManager.convertedPDFs)
+            
+            // ── Smart Series Affinity Detection ─────────────────────────────────────
+            // Analyze matched items to detect if the list references a single existing
+            // series collection. If 70%+ of matched files share one collection, this
+            // is a "series volume breakdown" not a crossover event — auto-bind to it.
+            let matchedPDFs = resolutions.compactMap { item -> ConvertedPDF? in
+                if case .matched(let pdf) = item.resolution { return pdf }
+                if case .suggested(let pdf) = item.resolution { return pdf }
+                return nil
+            }
+            
+            if !matchedPDFs.isEmpty {
+                var collectionVotes: [UUID: (count: Int, name: String)] = [:]
+                for pdf in matchedPDFs {
+                    if let colId = pdf.collectionId,
+                       let col = conversionManager.collections.first(where: { $0.id == colId }) {
+                        let existing = collectionVotes[colId] ?? (count: 0, name: col.name)
+                        collectionVotes[colId] = (count: existing.count + 1, name: col.name)
+                    }
+                }
+                
+                // Find dominant collection
+                if let dominant = collectionVotes.max(by: { $0.value.count < $1.value.count }) {
+                    let affinityRatio = Double(dominant.value.count) / Double(matchedPDFs.count)
+                    if affinityRatio >= 0.7 {
+                        // This list references an existing series — bind to it
+                        eventName = dominant.value.name
+                    }
+                }
+            }
             
             withAnimation {
                 self.resolvedItems = resolutions

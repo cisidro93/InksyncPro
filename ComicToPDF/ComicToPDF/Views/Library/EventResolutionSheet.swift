@@ -253,9 +253,8 @@ struct EventResolutionSheet: View {
         dismiss()
     }
     
-    /// Creates a parent series collection with nested volume sub-collections.
-    /// Each matched file is assigned to its volume's folder. Files without a volume
-    /// go directly into the parent collection.
+    /// Creates volume sub-collections within an existing or new parent series collection.
+    /// Intelligently reuses the existing series folder if one is found in the library.
     private func buildVolumeSubCollections() {
         isProcessing = true
         
@@ -273,17 +272,32 @@ struct EventResolutionSheet: View {
             }
         }
         
-        // Create the parent series collection
-        let parentCollection = PDFCollection(
-            id: UUID(),
-            name: eventName,
-            icon: "books.vertical",
-            color: "orange",
-            creationDate: Date()
-        )
-        conversionManager.collections.append(parentCollection)
+        // ── Intelligent Series Binding ──────────────────────────────────────────
+        // Search for an existing collection whose name matches the event/series name.
+        // This prevents creating a duplicate "Initial D" folder when one already exists.
+        let parentCollection: PDFCollection
+        let normalizedEventName = eventName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // Assign un-volumed files to the parent
+        if let existing = conversionManager.collections.first(where: {
+            $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == normalizedEventName
+        }) {
+            parentCollection = existing
+            Logger.shared.log("Smart List: Bound to existing series collection '\(existing.name)'", category: "SmartList")
+        } else {
+            // No existing match — create a new parent
+            let newParent = PDFCollection(
+                id: UUID(),
+                name: eventName,
+                icon: "books.vertical",
+                color: "orange",
+                creationDate: Date()
+            )
+            conversionManager.collections.append(newParent)
+            parentCollection = newParent
+            Logger.shared.log("Smart List: Created new series collection '\(eventName)'", category: "SmartList")
+        }
+        
+        // Assign un-volumed files to the parent series folder
         for (pdf, _) in noVolume {
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 conversionManager.convertedPDFs[idx].collectionId = parentCollection.id
@@ -298,15 +312,26 @@ struct EventResolutionSheet: View {
         for vol in sortedVolumes {
             guard let entries = volumeBuckets[vol] else { continue }
             
-            let volCollection = PDFCollection(
-                id: UUID(),
-                name: "\(eventName) — Vol. \(vol)",
-                icon: "book.closed",
-                color: "blue",
-                creationDate: Date(),
-                manualSortOrder: entries.map { $0.0.id }
-            )
-            conversionManager.collections.append(volCollection)
+            let volName = "\(parentCollection.name) — Vol. \(vol)"
+            
+            // Reuse existing volume sub-collection if it already exists
+            let volCollection: PDFCollection
+            if let existingVol = conversionManager.collections.first(where: {
+                $0.name.lowercased() == volName.lowercased()
+            }) {
+                volCollection = existingVol
+            } else {
+                let newVol = PDFCollection(
+                    id: UUID(),
+                    name: volName,
+                    icon: "book.closed",
+                    color: "blue",
+                    creationDate: Date(),
+                    manualSortOrder: entries.map { $0.0.id }
+                )
+                conversionManager.collections.append(newVol)
+                volCollection = newVol
+            }
             
             for (pdf, _) in entries {
                 if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
