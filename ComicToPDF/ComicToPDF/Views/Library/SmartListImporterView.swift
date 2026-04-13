@@ -10,7 +10,7 @@ struct SmartListImporterView: View {
     @State private var eventName: String = "Imported Event"
     @State private var pastedText: String = ""
 
-    @State private var showingImporter = false
+
 
     var body: some View {
             Group {
@@ -186,7 +186,7 @@ struct SmartListImporterView: View {
         do {
             let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).csv")
             try clean.write(to: tempURL, atomically: true, encoding: .utf8)
-            handleImport(result: .success([tempURL]))
+            handleSmartListURL(tempURL)
         } catch {
             errorMessage = "Failed to process text."
         }

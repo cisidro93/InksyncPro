@@ -43,11 +43,11 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         case .json:
             supportedTypes = [.json]
         case .smartList:
-            // Use `.item` to universally unlock the picker. Third-party cloud providers (like Google Drive)
-            // often wrap CSVs or TXTs in custom proprietary UTIs (e.g. com.google.drive.ext.csv), which
-            // causes the native picker to grey them out if we restrict by strict UTType.
-            // We handle validation intrinsically at the parser level instead.
-            supportedTypes = [.item]
+            // UTType.content = base type for ALL readable file content (text, CSV, data) but
+            // explicitly EXCLUDES directories. Using .item (which includes .folder) causes
+            // iPadOS to enter a hybrid browse/select mode that suppresses selection circles.
+            // We validate the actual file extension in the parser, so broad matching is safe.
+            supportedTypes = [.content]
         default:
             // Unified Legacy Forward-Port (0bb6b38)
             supportedTypes = [
@@ -158,9 +158,8 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     }
                 }
                 
-                if secured {
-                    url.stopAccessingSecurityScopedResource()
-                }
+                // Security scope is released by the `defer` block at the top of this loop.
+                // Do NOT call stopAccessing again here — double-release corrupts the URL sandbox token.
             }
             
             DispatchQueue.main.async { self.finish(with: foundURLs) }
