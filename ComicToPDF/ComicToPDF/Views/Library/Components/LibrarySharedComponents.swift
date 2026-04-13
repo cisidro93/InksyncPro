@@ -120,7 +120,7 @@ struct ComicZealScrubber: View {
             }
             .background(
                 Capsule()
-                    .fill(Color.black.opacity(0.4))
+                    .fill(.ultraThinMaterial)
             )
             .gesture(
                 DragGesture(minimumDistance: 0)

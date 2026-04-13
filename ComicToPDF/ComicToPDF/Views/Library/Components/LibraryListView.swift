@@ -34,14 +34,14 @@ struct LibraryListView: View {
                             } label: {
                                 ModernSeriesRow(group: group, isSelected: group.issues.allSatisfy { multiSelection.contains($0.id) }, isBatch: true)
                             }
-                            .listRowBackground(Color.black)
-                            .listRowSeparatorTint(Color(white: 0.2))
+                            .listRowBackground(Theme.bg)
+                            .listRowSeparatorTint(Color(UIColor.separator))
                         } else {
                             NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
                                 ModernSeriesRow(group: group, isSelected: false, isBatch: false)
                             }
-                            .listRowBackground(Color.black)
-                            .listRowSeparatorTint(Color(white: 0.2))
+                            .listRowBackground(Theme.bg)
+                            .listRowSeparatorTint(Color(UIColor.separator))
                             .contextMenu {
                                 Button(role: .destructive) {
                                     for issue in group.issues { conversionManager.deletePDF(issue) }
@@ -73,15 +73,15 @@ struct LibraryListView: View {
                              } label: {
                                  ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
                              }
-                             .listRowBackground(Color.black)
-                             .listRowSeparatorTint(Color(white: 0.2))
+                             .listRowBackground(Theme.bg)
+                             .listRowSeparatorTint(Color(UIColor.separator))
                         } else {
                             if useNavigationStack && tapAction == .details {
                                 NavigationLink(value: pdf) {
                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                                 }
-                                .listRowBackground(Color.black)
-                                .listRowSeparatorTint(Color(white: 0.2))
+                                .listRowBackground(Theme.bg)
+                                .listRowSeparatorTint(Color(UIColor.separator))
                                 // ✅ Comic Zeal Swipe Selection Action (Swipe Left)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button {
@@ -109,8 +109,8 @@ struct LibraryListView: View {
                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                                 }
                                 .tag(pdf)
-                                .listRowBackground(Color.black)
-                                .listRowSeparatorTint(Color(white: 0.2))
+                                .listRowBackground(Theme.bg)
+                                .listRowSeparatorTint(Color(UIColor.separator))
                                 // ✅ Comic Zeal Swipe Selection Action (Swipe Left)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button {
@@ -133,7 +133,7 @@ struct LibraryListView: View {
                 }
             } // end List
             .listStyle(.plain)
-            .background(Color.black)
+            .background(Theme.bg)
             .overlay(alignment: .trailing) {
                 // ✅ PHASE 10: Comic Zeal Feature Restored
                 ComicZealScrubber { letter in

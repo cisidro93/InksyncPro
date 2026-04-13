@@ -647,7 +647,7 @@ struct SeriesDetailView: View {
                 }
             }
             .buttonStyle(PlainButtonStyle())
-            .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Color.black)
+            .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Theme.bg)
             
         } else if useNavigationStack {
             NavigationLink(value: pdf) {
@@ -663,7 +663,7 @@ struct SeriesDetailView: View {
                 LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
             }
             .buttonStyle(PlainButtonStyle())
-            .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Color.black)
+            .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Theme.bg)
             .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
             .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
             .contextMenu { contextMenuContent(pdf) }

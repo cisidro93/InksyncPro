@@ -102,7 +102,7 @@ struct LibraryGridView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 100)
             }
-            .background(Color.black)
+            .background(Theme.bg)
             .overlay(alignment: .trailing) {
                 // ✅ PHASE 10: Comic Zeal Feature Restored
                 ComicZealScrubber { letter in
