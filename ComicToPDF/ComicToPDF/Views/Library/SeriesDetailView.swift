@@ -30,6 +30,7 @@ struct SeriesDetailView: View {
     @State private var pdfToAssignSeries: ConvertedPDF?
     @State private var assignSeriesText = ""
     @State private var pdfToRead: ConvertedPDF? // Added for Reader
+    @State private var pdfToDelete: ConvertedPDF? // QoL: Delete confirmation gate
 
     enum SeriesSortOption: String, CaseIterable, Identifiable {
         case manual = "Custom Order"
@@ -359,6 +360,7 @@ struct SeriesDetailView: View {
             localIssues = sortedIssues
         }
         .onChange(of: sortOption) { localIssues = sortedIssues }
+        .onChange(of: conversionManager.convertedPDFs.count) { localIssues = sortedIssues }
         .listStyle(InsetGroupedListStyle())
         .navigationTitle(series.title)
         .toolbar {
@@ -379,6 +381,8 @@ struct SeriesDetailView: View {
                     }
                     
                     Button(action: {
+                        let generator = UIImpactFeedbackGenerator(style: .medium)
+                        generator.impactOccurred()
                         withAnimation {
                             isSelectionMode.toggle()
                             selection.removeAll()
@@ -623,6 +627,35 @@ struct SeriesDetailView: View {
         } message: {
             Text("You've built 3 omnibuses manually. Would you like to enable 'Fast Bundle Mode' to automatically skip the configuration sheet and instantly queue omnibuses in the background using your saved settings?")
         }
+        // QoL: Delete confirmation with Move to Trash option
+        .alert("Delete File", isPresented: Binding(
+            get: { pdfToDelete != nil },
+            set: { if !$0 { pdfToDelete = nil } }
+        )) {
+            Button("Move to Trash", role: .destructive) {
+                if let pdf = pdfToDelete {
+                    // Move file to system trash instead of permanent delete
+                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        let fileURL = pdf.url
+                        conversionManager.convertedPDFs.remove(at: idx)
+                        conversionManager.saveLibrary()
+                        Task.detached(priority: .background) {
+                            try? FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
+                        }
+                    }
+                }
+                pdfToDelete = nil
+            }
+            Button("Delete Permanently", role: .destructive) {
+                if let pdf = pdfToDelete {
+                    conversionManager.deletePDF(pdf)
+                }
+                pdfToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pdfToDelete = nil }
+        } message: {
+            Text("\"\(pdfToDelete?.name ?? "this file")\" will be removed. Move to Trash allows recovery via the Files app.")
+        }
         .task(id: series.id) { await loadHeaderCover() }
     }
     
@@ -717,6 +750,18 @@ struct SeriesDetailView: View {
                             .foregroundColor(Theme.textSecondary)
                     }
                     .padding(.top, 2)
+                    
+                    // QoL: Missing issue awareness
+                    if !missingIssues.isEmpty {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10))
+                            Text("\(missingIssues.count) missing issue\(missingIssues.count == 1 ? "" : "s") detected")
+                                .font(.system(size: 11, design: .rounded))
+                        }
+                        .foregroundColor(.orange)
+                        .padding(.top, 2)
+                    }
                 }
                 .padding(.leading)
                 Spacer()
@@ -812,7 +857,7 @@ struct SeriesDetailView: View {
     
     @ViewBuilder
     private func swipeActionsTrailing(_ pdf: ConvertedPDF) -> some View {
-        Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+        Button(role: .destructive) { pdfToDelete = pdf } label: { Label("Delete", systemImage: "trash") }
     }
     
     @ViewBuilder
@@ -845,7 +890,7 @@ struct SeriesDetailView: View {
             Task { await conversionManager.embedPanels(for: pdf) }
         } label: { Label("Embed Panels", systemImage: "flame") }
         
-        Button(role: .destructive) { conversionManager.deletePDF(pdf) } label: { Label("Delete", systemImage: "trash") }
+        Button(role: .destructive) { pdfToDelete = pdf } label: { Label("Delete", systemImage: "trash") }
         
         Divider()
         

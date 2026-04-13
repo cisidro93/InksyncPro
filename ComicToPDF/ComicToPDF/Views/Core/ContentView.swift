@@ -305,7 +305,7 @@ struct ContentView: View {
                         Spacer()
                     }
                     .padding()
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                 }
             }
         } detail: {

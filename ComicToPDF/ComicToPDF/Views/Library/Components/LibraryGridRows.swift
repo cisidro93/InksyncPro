@@ -75,7 +75,7 @@ struct ModernGridFileCell: View {
             .clipped()
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                    .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
             )
                 // ✅ FIXED: Removed heavy double-shadow passes to ensure buttery 120fps scrolling.
                 // Since the Library Grid is visually black, shadows were invisible anyway but triggering off-screen rendering.

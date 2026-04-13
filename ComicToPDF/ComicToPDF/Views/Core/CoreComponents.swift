@@ -347,15 +347,13 @@ struct SplashScreenView: View {
                         logoOpacity = 1.0
                     }
                     
-                    // Check if user has completed onboarding
-                    if !hasSeenOnboarding {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(1.5))
+                        if !hasSeenOnboarding {
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 showOnboarding = true
                             }
-                        }
-                    } else {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        } else {
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 isActive = true
                             }

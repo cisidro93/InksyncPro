@@ -434,12 +434,18 @@ struct ResolutionItemSuggestionCell: View {
             }
             
             HStack {
-                Button(action: onConfirm) {
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onConfirm()
+                }) {
                     Label("Confirm", systemImage: "checkmark")
                         .font(.system(size: 14, weight: .semibold))
                 }.buttonStyle(.borderedProminent).tint(.green)
                 
-                Button(action: onDeny) {
+                Button(action: {
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    onDeny()
+                }) {
                     Label("Deny", systemImage: "xmark")
                         .font(.system(size: 14, weight: .semibold))
                 }.buttonStyle(.bordered).tint(.red)

@@ -142,6 +142,8 @@ struct SmartImportSheet: View {
         self.sourceURL = sourceURL
         _vm = StateObject(wrappedValue: SmartImportViewModel(sourceURL: sourceURL))
     }
+    
+    @State private var showingConvertSettings = false
 
     var body: some View {
         NavigationView {
@@ -159,7 +161,7 @@ struct SmartImportSheet: View {
                         vm.seriesMemory = nil
                     }
                 } else {
-                    ImportFormView(vm: vm) {
+                    ImportFormView(vm: vm, showingConvertSettings: $showingConvertSettings) {
                         vm.confirm(manager: manager, context: context)
                         dismiss()
                     }
@@ -183,6 +185,27 @@ struct SmartImportSheet: View {
         } message: {
             Text(vm.extractionError ?? "Archive is corrupted or invalid.")
         }
+        // QoL: Wire Advanced Settings to full ConvertView
+        .sheet(isPresented: $showingConvertSettings) {
+            NavigationStack {
+                ConvertView(pdf: ConvertedPDF(
+                    name: vm.title,
+                    url: sourceURL,
+                    pageCount: vm.pageCount,
+                    fileSize: (try? FileManager.default.attributesOfItem(atPath: sourceURL.path)[.size] as? Int64) ?? 0,
+                    metadata: PDFMetadata(
+                        title: vm.title,
+                        series: vm.seriesName.isEmpty ? nil : vm.seriesName,
+                        issueNumber: vm.volumeNumber.isEmpty ? nil : vm.volumeNumber
+                    )
+                ))
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { showingConvertSettings = false }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -190,6 +213,7 @@ struct SmartImportSheet: View {
 struct ImportFormView: View {
     @ObservedObject var vm: SmartImportViewModel
     @Environment(\.horizontalSizeClass) private var hSizeClass
+    @Binding var showingConvertSettings: Bool
     let onConfirm: () -> Void
 
     var body: some View {
@@ -280,7 +304,7 @@ struct ImportFormView: View {
                     }
 
                     Button("Advanced Convert Settings") {
-                        // For a future deep integration with ConvertView
+                        showingConvertSettings = true
                     }
                     .font(.system(size: 13))
                     .foregroundColor(.inkTextSecondary)
@@ -353,7 +377,7 @@ struct ImportFormView: View {
 
                 // Action buttons
                 HStack(spacing: 12) {
-                    Button("Advanced Settings") { /* open ConvertView */ }
+                    Button("Advanced Settings") { showingConvertSettings = true }
                         .font(.system(size: 14))
                         .foregroundColor(.inkTextSecondary)
                         .frame(maxWidth: .infinity)
