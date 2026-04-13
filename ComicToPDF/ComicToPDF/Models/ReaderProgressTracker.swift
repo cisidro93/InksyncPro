@@ -38,6 +38,10 @@ class ReaderProgressTracker: ObservableObject {
     func progress(for pdfID: UUID) -> ReadingProgress? {
         return progressMap[pdfID]
     }
+    
+    func recentSessions() -> [ReadingProgress] {
+        return progressMap.values.sorted { $0.lastOpenedAt > $1.lastOpenedAt }
+    }
     func update(_ progress: ReadingProgress) {
         var updated = progress
         

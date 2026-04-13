@@ -183,7 +183,7 @@ struct ContentView: View {
                             }
                             
                             await MainActor.run {
-                                self.selectedTab = 1 // Switch to Inbox Tab
+                                self.selectedTab = 2 // Switch to Inbox Tab
                             }
                         }
                     }
@@ -195,6 +195,13 @@ struct ContentView: View {
     // ✅ iOS 26 "Liquid Glass" Layout
     var liquidGlassLayout: some View {
         TabView(selection: $selectedTab) {
+            // Tab 0: Reader
+            NavigationStack {
+                ActiveReaderDashboardView()
+            }
+            .tabItem { Label("Reader", systemImage: "book.fill") }
+            .tag(0)
+            
             // Tab 1: Library
             NavigationStack {
                 ModernLibraryView(
@@ -205,8 +212,6 @@ struct ContentView: View {
                     batchMergeItems: $batchMergeItems,
                     useNavigationStack: true,
                     onFolderImport: {
-                        // Import button now opens the Import Queue staging sheet (via LibraryHeaderView).
-                        // This path is the fallback triggered from the empty-library state.
                         ImportCoordinator.present(type: .folder) { urls in
                             guard !urls.isEmpty else { return }
                             _ = ImportQueueManager.shared.stageWithDuplicateCheck(urls)
@@ -220,40 +225,40 @@ struct ContentView: View {
                 }
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
-            .tag(0)
+            .tag(1)
             
             // Tab 2: Inbox Room
             NavigationStack {
                 InboxReviewView()
             }
             .tabItem { Label("Inbox", systemImage: "tray.full.fill") }
-            .tag(1)
+            .tag(2)
             
             // Tab 3: Devices
             DevicesView()
             .tabItem { Label("Devices", systemImage: "ipad.and.iphone") }
-            .tag(2)
+            .tag(3)
             
             // Tab 4: Work Area
             NavigationStack {
                 EditorDashboardView()
             }
             .tabItem { Label("Work Area", systemImage: "pencil.and.outline") }
-            .tag(3)
+            .tag(4)
             
             // Tab 5: Highlights
             NavigationStack {
                 GlobalZettelkastenHubView()
             }
             .tabItem { Label("Highlights", systemImage: "highlighter") }
-            .tag(4)
+            .tag(5)
             
             // Tab 6: Settings
             NavigationStack {
                 SettingsView()
             }
             .tabItem { Label("Settings", systemImage: "gear") }
-            .tag(5)
+            .tag(6)
         }
         // ✅ iOS 26 Enhancements
         .ios26_tabBarMinimizeBehavior(.onScrollDown)
@@ -276,18 +281,21 @@ struct ContentView: View {
                 )
                 List(selection: tabBinding) {
                     NavigationLink(value: 0) {
-                        Label("Library", systemImage: "books.vertical.fill")
+                        Label("Reader", systemImage: "book.fill")
                     }
                     NavigationLink(value: 1) {
-                        Label("Inbox", systemImage: "tray.full.fill")
+                        Label("Library", systemImage: "books.vertical.fill")
                     }
                     NavigationLink(value: 2) {
-                        Label("Devices", systemImage: "ipad.and.iphone")
+                        Label("Inbox", systemImage: "tray.full.fill")
                     }
                     NavigationLink(value: 3) {
-                        Label("Work Area", systemImage: "pencil.and.outline")
+                        Label("Devices", systemImage: "ipad.and.iphone")
                     }
                     NavigationLink(value: 4) {
+                        Label("Work Area", systemImage: "pencil.and.outline")
+                    }
+                    NavigationLink(value: 5) {
                         Label("Highlights", systemImage: "highlighter")
                     }
                 }
@@ -311,6 +319,8 @@ struct ContentView: View {
         } detail: {
             NavigationStack {
                 if selectedTab == 0 {
+                    ActiveReaderDashboardView()
+                } else if selectedTab == 1 {
                     ModernLibraryView(
                         selectedPDF: $selectedPDF,
                         isBatchMode: $isBatchMode,
@@ -336,13 +346,13 @@ struct ContentView: View {
                             ConvertView(pdf: pdf)
                         }
                     }
-                } else if selectedTab == 1 {
-                    InboxReviewView()
                 } else if selectedTab == 2 {
-                    DevicesView()
+                    InboxReviewView()
                 } else if selectedTab == 3 {
-                    EditorDashboardView()
+                    DevicesView()
                 } else if selectedTab == 4 {
+                    EditorDashboardView()
+                } else if selectedTab == 5 {
                     NavigationStack {
                         GlobalZettelkastenHubView()
                     }

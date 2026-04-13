@@ -260,8 +260,8 @@ struct EBookReaderView: View {
         VStack(spacing: 16) {
             ProgressView()
                 .progressViewStyle(.circular)
+                .controlSize(.large)
                 .tint(Color(hex: "#7B5EA7"))
-                .scaleEffect(1.4)
             Text("Opening Book…")
                 .font(.subheadline)
                 .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.6))
