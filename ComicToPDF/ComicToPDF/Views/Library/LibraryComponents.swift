@@ -532,7 +532,8 @@ struct QuickVolumeJumpOverlay: View {
                         }
                         .padding(6)
                     }
-                    .frame(width: 48, maxHeight: 260)
+                    .frame(width: 48)
+                    .frame(maxHeight: 260)
                     .background(.ultraThinMaterial)
                     .cornerRadius(12)
                     .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
