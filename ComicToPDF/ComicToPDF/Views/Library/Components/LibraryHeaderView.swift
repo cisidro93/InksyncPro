@@ -27,15 +27,26 @@ struct LibraryHeaderView: View {
             
             // Row 1: Integrated Search & Title
             HStack(spacing: 12) {
-                // Title / Brand
-                HStack(spacing: 6) {
-                     Image(systemName: "books.vertical.fill")
-                         .font(.system(size: 24, weight: .bold))
-                         .foregroundStyle(Theme.orange.gradient)
-                     Text("Library")
-                         .font(.system(size: 28, weight: .bold))
-                         .foregroundColor(Theme.text)
-                         .fixedSize(horizontal: true, vertical: false)
+                // Title / Brand & Library Stats Matrix
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                         Image(systemName: "books.vertical.fill")
+                             .font(.system(size: 24, weight: .bold))
+                             .foregroundStyle(Theme.orange.gradient)
+                         Text("Library")
+                             .font(.system(size: 28, weight: .bold))
+                             .foregroundColor(Theme.text)
+                             .fixedSize(horizontal: true, vertical: false)
+                    }
+                    
+                    let fileCount = conversionManager.convertedPDFs.count
+                    let seriesCount = conversionManager.collections.count
+                    
+                    Text("\(fileCount) FILES • \(seriesCount) SERIES")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundColor(Theme.textSecondary)
+                        .tracking(1.2)
+                        .opacity(0.8)
                 }
                 
                 Spacer()
