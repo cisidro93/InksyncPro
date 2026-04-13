@@ -232,6 +232,9 @@ actor ImportOrchestrator {
                 }
                 
                 // 3. Content-hash check: catches renamed copies of already-imported files
+                // 💥 DISABLED: Hashing 1,371 multi-hundred-megabyte files synchronously completely chokes the iOS Watchdog timer.
+                // We rely exclusively on the ultra-fast Filename + Byte-Count composite key above for dedup.
+                /*
                 if !existingHashes.isEmpty {
                     let quickHash = ContentHasher.sha256(of: url)
                     if let hash = quickHash, existingHashes.contains(hash) {
@@ -239,6 +242,7 @@ actor ImportOrchestrator {
                         continue
                     }
                 }
+                */
                 
                 // 🚀 PREVENT DESTRUCTIVE COLLISION: Instead of destructively dropping chapters named "1.cbz", 
                 // we inject their validated Series Name mapping into the physical Document namespace!
@@ -258,10 +262,6 @@ actor ImportOrchestrator {
                 }
                 
                 do {
-                    // Compute SHA-256 on the ORIGINAL file while security scope is active.
-                    // Must happen BEFORE copy so dedup works even if conversion fails.
-                    let fileContentHash = ContentHasher.sha256(of: url)
-                    
                     if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
                     
                     // Aggressive APFS Inode Optimization (Move instead of Copy for Staged Items)
@@ -328,8 +328,24 @@ actor ImportOrchestrator {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                     }
                     pdf.isPrivate = isVaultUnlocked
-                    pdf.contentHash = fileContentHash
+                    pdf.contentHash = nil // Deferred to prevent 20-minute synchronous UI freezes
                     newPDFs.append(pdf)
+                    
+                    // 💥 CRITICAL ATOMICITY FIX: Chunk Save every 35 files!
+                    // If the user imports 1,300 files and iOS terminates the App after 30 seconds
+                    // in the background, ALL copied files become permanent untracked ghosts!
+                    // This natively commits them to the live SWIFT DATA database safely mid-flight.
+                    if newPDFs.count % 35 == 0 {
+                        let chunk = newPDFs
+                        await MainActor.run {
+                            for chunkPdf in chunk {
+                                if !manager.convertedPDFs.contains(where: { $0.url.lastPathComponent == chunkPdf.url.lastPathComponent }) {
+                                    manager.convertedPDFs.append(chunkPdf)
+                                }
+                            }
+                            manager.saveLibrary()
+                        }
+                    }
                     
                     await ImportMonitorManager.shared.incrementSuccess()
                 } catch {
