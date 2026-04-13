@@ -184,6 +184,7 @@ struct EventResolutionSheet: View {
                 SeriesPickerSheet(collections: conversionManager.collections, eventName: eventName) { selectedCollection in
                     buildVolumeSubCollections(into: selectedCollection)
                 }
+                .environmentObject(conversionManager)
             }
         }
     }
