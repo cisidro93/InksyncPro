@@ -71,39 +71,13 @@ struct EventResolutionSheet: View {
                         ForEach(suggested.indices, id: \.self) { index in
                             let item = suggested[index]
                             if case .suggested(let pdf) = item.resolution {
-                                VStack(alignment: .leading) {
-                                    Text("Requested: \(item.request.originalText)")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                    Text("Found: \(pdf.name)")
-                                        .font(.headline)
-                                        .foregroundColor(.primary)
-                                    
-                                    HStack {
-                                        Button(action: {
-                                            // Explicit confirm -> move to matched
-                                            confirmSuggestion(item: item, with: pdf)
-                                        }) {
-                                            Label("Confirm Match", systemImage: "checkmark")
-                                        }.buttonStyle(.borderedProminent).tint(.green)
-                                        
-                                        Button(action: {
-                                            // Reject -> move to missing
-                                            rejectSuggestion(item: item)
-                                        }) {
-                                            Label("Deny", systemImage: "xmark")
-                                        }.buttonStyle(.bordered).tint(.red)
-                                        
-                                        Spacer()
-                                        
-                                        Button(action: {
-                                            manualAssigningItem = item
-                                        }) {
-                                            Image(systemName: "pencil")
-                                        }.buttonStyle(.bordered).tint(.blue)
-                                    }
-                                    .padding(.top, 4)
-                                }
+                                ResolutionItemSuggestionCell(
+                                    item: item,
+                                    pdf: pdf,
+                                    onConfirm: { confirmSuggestion(item: item, with: pdf) },
+                                    onDeny: { rejectSuggestion(item: item) },
+                                    onManualMap: { manualAssigningItem = item }
+                                )
                             }
                         }
                     }
@@ -412,5 +386,99 @@ struct EventResolutionSheet: View {
         conversionManager.saveLibrary()
         isProcessing = false
         dismiss()
+    }
+}
+
+// MARK: - Fast High-Performance Suggestion Cell
+struct ResolutionItemSuggestionCell: View {
+    let item: ResolvedEventItem
+    let pdf: ConvertedPDF
+    let onConfirm: () -> Void
+    let onDeny: () -> Void
+    let onManualMap: () -> Void
+    
+    @EnvironmentObject var conversionManager: ConversionManager
+    @State private var localCover: UIImage? = nil
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 14) {
+                // High Performance Rendered Thumbnail
+                ZStack {
+                    if let directCacheImg = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
+                        Image(uiImage: directCacheImg)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else if let img = localCover {
+                        Image(uiImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        Rectangle().fill(Color(.secondarySystemFill))
+                        Image(systemName: "doc.text.fill").foregroundColor(.gray)
+                    }
+                }
+                .frame(width: 54, height: 80)
+                .cornerRadius(6)
+                .clipped()
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Requested: \(item.request.originalText)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text("Found: \(pdf.name)")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                }
+            }
+            
+            HStack {
+                Button(action: onConfirm) {
+                    Label("Confirm", systemImage: "checkmark")
+                        .font(.system(size: 14, weight: .semibold))
+                }.buttonStyle(.borderedProminent).tint(.green)
+                
+                Button(action: onDeny) {
+                    Label("Deny", systemImage: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                }.buttonStyle(.bordered).tint(.red)
+                
+                Spacer()
+                
+                Button(action: onManualMap) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                }.buttonStyle(.bordered).tint(.blue)
+            }
+        }
+        .padding(.vertical, 4)
+        .task(id: pdf.id) {
+            let key = pdf.id.uuidString as NSString
+            if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                self.localCover = cached; return
+            }
+            guard let coverURL = conversionManager.getCoverURL(for: pdf),
+                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
+            
+            // Decoupled background image downsampling
+            let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) else { return nil }
+                let downsampleOptions = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 300
+                ] as CFDictionary
+                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
+                return UIImage(cgImage: cgImage)
+            }.value
+            
+            if let image = generated {
+                conversionManager.thumbnailCache.setObject(image, forKey: key)
+                self.localCover = image
+            }
+        }
     }
 }

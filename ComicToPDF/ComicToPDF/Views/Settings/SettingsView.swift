@@ -336,7 +336,6 @@ struct SettingsView: View {
                         .padding(.top, 2)
                 }
             }
-            }
             
             HStack {
                 settingsIcon("seal.fill", color: .pink)
