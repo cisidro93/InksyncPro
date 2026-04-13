@@ -24,6 +24,19 @@ struct EventResolutionSheet: View {
         return Int(bytes / 1024 / 1024)
     }
     
+    /// All distinct series names found in the resolved items
+    var distinctSeriesInList: [String] {
+        let allSeries = resolvedItems.compactMap { item -> String? in
+            let s = item.request.series.trimmingCharacters(in: .whitespacesAndNewlines)
+            return s.isEmpty ? nil : s
+        }
+        return Array(Set(allSeries)).sorted()
+    }
+    
+    var isMultiSeries: Bool {
+        distinctSeriesInList.count > 1
+    }
+    
     var body: some View {
         NavigationStack {
             List {
@@ -149,10 +162,20 @@ struct EventResolutionSheet: View {
                             Label("Create Playlist Folder", systemImage: "folder.fill")
                         }
                         
-                        Button {
-                            showSeriesPicker = true
-                        } label: {
-                            Label("Organize into Volume Folders", systemImage: "folder.badge.plus")
+                        if isMultiSeries {
+                            // Multi-series CSV: auto-organize each series
+                            Button {
+                                buildMultiSeriesVolumes()
+                            } label: {
+                                Label("Auto-Organize All \(distinctSeriesInList.count) Series", systemImage: "folder.badge.plus")
+                            }
+                        } else {
+                            // Single-series CSV: let user pick target
+                            Button {
+                                showSeriesPicker = true
+                            } label: {
+                                Label("Organize into Volume Folders", systemImage: "folder.badge.plus")
+                            }
                         }
                         
                         Divider()
@@ -260,16 +283,65 @@ struct EventResolutionSheet: View {
         dismiss()
     }
     
-    /// Creates volume sub-collections within the user-selected parent series collection.
+    /// Single-series: Creates volume sub-collections within the user-selected parent.
     private func buildVolumeSubCollections(into selectedCollection: PDFCollection?) {
         isProcessing = true
+        organizeSeriesVolumes(forSeries: nil, into: selectedCollection)
+        conversionManager.saveLibrary()
+        isProcessing = false
+        dismiss()
+    }
+    
+    /// Multi-series: Automatically processes every distinct series in the CSV.
+    private func buildMultiSeriesVolumes() {
+        isProcessing = true
         
-        // Group resolved items by their parsed volume
+        for seriesName in distinctSeriesInList {
+            let normalizedName = seriesName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            let targetCollection: PDFCollection
+            if let existing = conversionManager.collections.first(where: {
+                $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == normalizedName
+            }) {
+                targetCollection = existing
+            } else {
+                let newCol = PDFCollection(
+                    id: UUID(),
+                    name: seriesName,
+                    icon: "books.vertical",
+                    color: "orange",
+                    creationDate: Date()
+                )
+                conversionManager.collections.append(newCol)
+                
+                for i in conversionManager.convertedPDFs.indices {
+                    if conversionManager.convertedPDFs[i].metadata.series?.lowercased() == normalizedName,
+                       conversionManager.convertedPDFs[i].collectionId == nil {
+                        conversionManager.convertedPDFs[i].collectionId = newCol.id
+                    }
+                }
+                targetCollection = newCol
+            }
+            
+            organizeSeriesVolumes(forSeries: seriesName, into: targetCollection)
+        }
+        
+        conversionManager.saveLibrary()
+        isProcessing = false
+        dismiss()
+    }
+    
+    /// Core volume organization logic shared by single and multi-series paths.
+    private func organizeSeriesVolumes(forSeries seriesFilter: String?, into parentCollection: PDFCollection?) {
         var volumeBuckets: [String: [(ConvertedPDF, ResolvedEventItem)]] = [:]
         var noVolume: [(ConvertedPDF, ResolvedEventItem)] = []
         
         for item in resolvedItems {
             if case .matched(let pdf) = item.resolution {
+                if let filter = seriesFilter {
+                    guard item.request.series.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ==
+                          filter.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) else { continue }
+                }
                 if let vol = item.request.volume, !vol.isEmpty {
                     volumeBuckets[vol, default: []].append((pdf, item))
                 } else {
@@ -278,56 +350,32 @@ struct EventResolutionSheet: View {
             }
         }
         
-        // Use the explicitly user-selected collection, or create a new one
-        let parentCollection: PDFCollection
-        if let selected = selectedCollection {
-            parentCollection = selected
-            Logger.shared.log("Smart List: User selected series '\(selected.name)'", category: "SmartList")
+        let parent: PDFCollection
+        if let selected = parentCollection {
+            parent = selected
         } else {
-            let newParent = PDFCollection(
-                id: UUID(),
-                name: eventName,
-                icon: "books.vertical",
-                color: "orange",
-                creationDate: Date()
-            )
+            let newParent = PDFCollection(id: UUID(), name: seriesFilter ?? eventName, icon: "books.vertical", color: "orange", creationDate: Date())
             conversionManager.collections.append(newParent)
-            parentCollection = newParent
-            Logger.shared.log("Smart List: Created new series '\(eventName)'", category: "SmartList")
+            parent = newParent
         }
         
-        // Assign un-volumed files to the parent series folder
         for (pdf, _) in noVolume {
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                conversionManager.convertedPDFs[idx].collectionId = parentCollection.id
+                conversionManager.convertedPDFs[idx].collectionId = parent.id
             }
         }
         
-        // Create a sub-collection per volume, sorted numerically
-        let sortedVolumes = volumeBuckets.keys.sorted {
-            (Int($0) ?? 0) < (Int($1) ?? 0)
-        }
+        let sortedVolumes = volumeBuckets.keys.sorted { (Int($0) ?? 0) < (Int($1) ?? 0) }
         
         for vol in sortedVolumes {
             guard let entries = volumeBuckets[vol] else { continue }
+            let volName = "\(parent.name) \u{2014} Vol. \(vol)"
             
-            let volName = "\(parentCollection.name) — Vol. \(vol)"
-            
-            // Reuse existing volume sub-collection if it already exists
             let volCollection: PDFCollection
-            if let existingVol = conversionManager.collections.first(where: {
-                $0.name.lowercased() == volName.lowercased()
-            }) {
+            if let existingVol = conversionManager.collections.first(where: { $0.name.lowercased() == volName.lowercased() }) {
                 volCollection = existingVol
             } else {
-                let newVol = PDFCollection(
-                    id: UUID(),
-                    name: volName,
-                    icon: "book.closed",
-                    color: "blue",
-                    creationDate: Date(),
-                    manualSortOrder: entries.map { $0.0.id }
-                )
+                let newVol = PDFCollection(id: UUID(), name: volName, icon: "book.closed", color: "blue", creationDate: Date(), manualSortOrder: entries.map { $0.0.id })
                 conversionManager.collections.append(newVol)
                 volCollection = newVol
             }
@@ -339,11 +387,8 @@ struct EventResolutionSheet: View {
                 }
             }
         }
-        
-        conversionManager.saveLibrary()
-        isProcessing = false
-        dismiss()
     }
+
     private func applyMetadataTags() {
         isProcessing = true
         
