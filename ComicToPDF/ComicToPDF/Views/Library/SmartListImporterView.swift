@@ -118,7 +118,14 @@ struct SmartListImporterView: View {
                         }
                         .fileImporter(
                             isPresented: $showingImporter,
-                            allowedContentTypes: [.item],
+                            allowedContentTypes: [
+                                .data,
+                                .content,
+                                .commaSeparatedText,
+                                .plainText,
+                                UTType(filenameExtension: "cbl") ?? .data,
+                                UTType(filenameExtension: "csv") ?? .data
+                            ],
                             allowsMultipleSelection: false
                         ) { result in
                             handleImport(result: result)
