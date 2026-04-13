@@ -146,6 +146,14 @@ struct SeriesDetailView: View {
         return Double(readPages) / Double(totalPages)
     }
     
+    /// Zero-pads a volume string (if it's an integer) to ensure correct lexicographical sorting (01 vs 10)
+    private func formattedVolumeKey(_ key: String) -> String {
+        if let val = Int(key) {
+            return String(format: "%02d", val)
+        }
+        return key
+    }
+    
     /// Count of fully completed issues in a group
     private func completedCount(for issues: [ConvertedPDF]) -> Int {
         issues.filter { ($0.metadata.lastReadPage ?? 0) >= $0.pageCount && $0.pageCount > 0 }.count
@@ -288,7 +296,7 @@ struct SeriesDetailView: View {
                                 if fastBundleOmnibus {
                                     // User opted-in to the background autobuilder
                                     conversionManager.enqueueOmnibus(
-                                        name: "\(series.title) Vol. \(group.key)",
+                                        name: "\(series.title) Vol. \(formattedVolumeKey(group.key))",
                                         sourceFiles: group.issues
                                     )
                                 } else {
@@ -299,16 +307,16 @@ struct SeriesDetailView: View {
                                     // Trigger the prompt instead of instantly showing if they hit the 3-build threshold
                                     if manualOmnibusBuildsCount == 3 {
                                         pendingConfigSelection = selectedIDs
-                                        mergeConfigSuggestedName = "\(series.title) Vol. \(group.key)"
+                                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
                                         showingOmnibusPrompt = true
                                     } else {
                                         selection = selectedIDs
-                                        mergeConfigSuggestedName = "\(series.title) Vol. \(group.key)"
+                                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
                                         showingMergeConfig = true
                                     }
                                 }
                             } label: {
-                                Label("Build Kindle Omnibus for Vol. \(group.key)", systemImage: "books.vertical.fill")
+                                Label("Build Kindle Omnibus for Vol. \(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
                             }
                             
                             Button {
