@@ -373,24 +373,16 @@ struct EventResolutionSheet: View {
             }
         }
         
+        // ✅ FIXED: Instead of creating messy root-level PDFCollections for every Volume,
+        // we just map the PDFs to the parent Series Collection and inject the 'metadata.volume' tag.
+        // The `SeriesDetailView` will natively group and visually collapse them into Volume buckets!
         let sortedVolumes = volumeBuckets.keys.sorted { (Int($0) ?? 0) < (Int($1) ?? 0) }
-        
         for vol in sortedVolumes {
             guard let entries = volumeBuckets[vol] else { continue }
-            let volName = "\(parent.name) \u{2014} Vol. \(vol)"
-            
-            let volCollection: PDFCollection
-            if let existingVol = conversionManager.collections.first(where: { $0.name.lowercased() == volName.lowercased() }) {
-                volCollection = existingVol
-            } else {
-                let newVol = PDFCollection(id: UUID(), name: volName, icon: "book.closed", color: "blue", creationDate: Date(), manualSortOrder: entries.map { $0.0.id })
-                conversionManager.collections.append(newVol)
-                volCollection = newVol
-            }
             
             for (pdf, _) in entries {
                 if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    conversionManager.convertedPDFs[idx].collectionId = volCollection.id
+                    conversionManager.convertedPDFs[idx].collectionId = parent.id
                     conversionManager.convertedPDFs[idx].metadata.volume = vol
                 }
             }
