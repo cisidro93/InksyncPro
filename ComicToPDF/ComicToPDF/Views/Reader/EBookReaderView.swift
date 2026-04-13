@@ -9,6 +9,7 @@ struct EBookReaderView: View {
     var onExit: (() -> Void)? = nil
     
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var prefs = EBookPreferences.shared
     @Environment(\.colorScheme) var colorScheme
     @State private var showingSettingsPanel = false
@@ -356,7 +357,7 @@ struct EBookReaderView: View {
     
     private func trackEBookProgress() {
         // Find the PDF in the ConversionManager
-        guard let p = ConversionManager.shared.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
+        guard let p = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
         var progress = ReaderProgressTracker.shared.progress(for: p.id) ?? ReadingProgress(pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
         progress.lastOpenedAt = Date()
         progress.currentPageIndex = currentIndex

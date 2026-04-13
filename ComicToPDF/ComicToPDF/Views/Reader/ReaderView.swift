@@ -812,6 +812,19 @@ struct ReaderScrubber: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: Color.black.opacity(0.15), radius: 10, y: 5)
         .padding(.horizontal, 20)
+    // MARK: - Progress Tracking Integration
+    private func trackProgress() {
+        guard let p = pdf else { return }
+        var progress = ReaderProgressTracker.shared.progress(for: p.id) ?? ReadingProgress(pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
+        progress.lastOpenedAt = Date()
+        progress.currentPageIndex = currentPageIndex
+        if !pages.isEmpty {
+           progress.completionFraction = Double(currentPageIndex) / Double(max(1, pages.count - 1))
+        }
+        if !progress.readingSessionDates.contains(where: { Calendar.current.isDateInToday($0) }) {
+            progress.readingSessionDates.append(Date())
+        }
+        ReaderProgressTracker.shared.update(progress)
     }
 }
 
