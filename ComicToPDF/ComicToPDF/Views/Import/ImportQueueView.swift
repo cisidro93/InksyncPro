@@ -107,7 +107,7 @@ struct ImportQueueView: View {
                     showImportSummary = false
                 }
             }
-            .onChange(of: showSeriesConflict) { newValue in
+            .onChange(of: showSeriesConflict) { _, newValue in
                 if newValue == false && queue.stagedURLs.isEmpty {
                     dismiss()
                 }

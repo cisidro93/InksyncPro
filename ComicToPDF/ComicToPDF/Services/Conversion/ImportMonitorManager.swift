@@ -50,7 +50,7 @@ class ImportMonitorManager: ObservableObject {
     func completeImport() {
         self.isImporting = false
         
-        let successful = totalFilesToProcess - filesFailed
+        let _ = totalFilesToProcess - filesFailed
         
         // Release the survival token back to iOS to allow natural sleeping
         if self.backgroundTask != .invalid {

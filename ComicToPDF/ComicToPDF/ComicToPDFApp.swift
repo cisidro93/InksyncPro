@@ -76,6 +76,7 @@ struct InksyncProApp: App {
                     case .active:
                          SecurityManager.shared.handleAppForegrounding()
                     @unknown default: break
+                    }
                 }
                 // ✅ Phase 5: Apple Handoff (Reader State Sync)
                 .onContinueUserActivity("com.inksync.read") { userActivity in

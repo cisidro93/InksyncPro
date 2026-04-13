@@ -45,30 +45,7 @@ struct PPLReaderView: View {
                             }
                         } else {
                             // ✅ Phase 2: Spread Splitting (Portrait Detection)
-                            let isPortrait = geo.size.height > geo.size.width
-                            let isSpread = bufferManager.currentImage != nil && CGFloat(bufferManager.currentImage!.width) > CGFloat(bufferManager.currentImage!.height) * 1.2
-                            
-                            if isPortrait && isSpread && autoSplitPortraitSpreads, let img = bufferManager.currentImage {
-                                let rect: NormalizedRect
-                                // If Manga Mode RTL: Half 0 is Right, Half 1 is Left
-                                if isMangaMode {
-                                    rect = (splitHalf == 0) ? .init(minX: 0.5, minY: 0, maxX: 1, maxY: 1) : .init(minX: 0, minY: 0, maxX: 0.5, maxY: 1)
-                                } else {
-                                    rect = (splitHalf == 0) ? .init(minX: 0, minY: 0, maxX: 0.5, maxY: 1) : .init(minX: 0.5, minY: 0, maxX: 1, maxY: 1)
-                                }
-                                MetalCanvasView(
-                                    image: img,
-                                    lockedRect: rect,
-                                    isPPLEnabled: true
-                                )
-                            } else {
-                                // Standard Single Page
-                                MetalCanvasView(
-                                    image: bufferManager.currentImage,
-                                    lockedRect: bufferManager.lockedRect,
-                                    isPPLEnabled: bufferManager.isPPLEnabled
-                                )
-                            }
+                            splitSpreadOrSinglePage(geo: geo)
                         }
                     }
                     // Structural Transforms allow scaling before we trigger hard Coordinate Lock Math
@@ -150,6 +127,39 @@ struct PPLReaderView: View {
                 // If PPL is enabled, the buffer renderer will automatically slice the buffer against the new page
             }
             .background(Color.black)
+        }
+    }
+    
+    @ViewBuilder
+    private func splitSpreadOrSinglePage(geo: GeometryProxy) -> some View {
+        let isPortrait = geo.size.height > geo.size.width
+        let imgWidth = CGFloat(bufferManager.currentImage?.width ?? 0)
+        let imgHeight = CGFloat(bufferManager.currentImage?.height ?? 1)
+        let isSpread = imgWidth > imgHeight * 1.2
+        
+        if isPortrait && isSpread && autoSplitPortraitSpreads, let img = bufferManager.currentImage {
+            // NormalizedRect is on a 0-1000 scale
+            let rightHalf = NormalizedRect(x: 500, y: 0, width: 500, height: 1000)
+            let leftHalf = NormalizedRect(x: 0, y: 0, width: 500, height: 1000)
+            
+            let rect: NormalizedRect
+            if isMangaMode {
+                rect = (splitHalf == 0) ? rightHalf : leftHalf
+            } else {
+                rect = (splitHalf == 0) ? leftHalf : rightHalf
+            }
+            
+            MetalCanvasView(
+                image: img,
+                lockedRect: rect,
+                isPPLEnabled: true
+            )
+        } else {
+            MetalCanvasView(
+                image: bufferManager.currentImage,
+                lockedRect: bufferManager.lockedRect,
+                isPPLEnabled: bufferManager.isPPLEnabled
+            )
         }
     }
     

@@ -89,7 +89,7 @@ class PageBufferManager: ObservableObject {
     }
     
     // ✅ Phase 1: Smart Margin Cropping Core Engine
-    static func autoCropMargins(from image: CGImage) -> CGImage {
+    nonisolated static func autoCropMargins(from image: CGImage) -> CGImage {
         // CoreImage has a native CITextImageGenerator or CIFilter meant to crop to bounding box, 
         // but an even faster way for comics is CIDetector or simply filtering to contrast boundaries.
         // `CIColorControls` + `CIAreaMinMax` can be slow. 
