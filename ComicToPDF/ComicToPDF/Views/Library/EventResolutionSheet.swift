@@ -27,16 +27,27 @@ struct EventResolutionSheet: View {
         NavigationStack {
             List {
                 Section {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Total Required: \(resolvedItems.count)").font(.footnote).foregroundColor(.secondary)
-                            HStack(spacing: 12) {
-                                Label("\(autoMatched.count) Matched", systemImage: "checkmark.circle.fill").foregroundColor(.green)
-                                Label("\(suggested.count) Review", systemImage: "exclamationmark.triangle.fill").foregroundColor(.orange)
-                                Label("\(missing.count) Missing", systemImage: "xmark.circle.fill").foregroundColor(.red)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Total Required: \(resolvedItems.count)").font(.footnote).foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            Label("\(autoMatched.count) Matched", systemImage: "checkmark.circle.fill").foregroundColor(.green)
+                            Label("\(suggested.count) Review", systemImage: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                            Label("\(missing.count) Missing", systemImage: "xmark.circle.fill").foregroundColor(.red)
+                        }
+                        .font(.caption)
+                        
+                        if !suggested.isEmpty {
+                            Button(action: acceptAllSuggestions) {
+                                Label("Accept All \(suggested.count) Suggestions", systemImage: "checkmark.circle")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color.green)
+                                    .clipShape(Capsule())
                             }
-                            .font(.caption)
-                            .padding(.top, 4)
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -138,6 +149,14 @@ struct EventResolutionSheet: View {
                         }
                         
                         Button {
+                            buildVolumeSubCollections()
+                        } label: {
+                            Label("Organize into Volume Folders", systemImage: "folder.badge.plus")
+                        }
+                        
+                        Divider()
+                        
+                        Button {
                             buildOmnibusSequence()
                         } label: {
                             Label("Compile Kindle Omnibus (\(omnibusTotalMB)MB)", systemImage: "books.vertical.fill")
@@ -149,7 +168,7 @@ struct EventResolutionSheet: View {
                         }
                     }
                     .font(.headline)
-                    .disabled(autoMatched.isEmpty)
+                    .disabled(autoMatched.isEmpty && suggested.isEmpty)
                 }
             }
             .sheet(item: $manualAssigningItem) { item in
@@ -172,6 +191,17 @@ struct EventResolutionSheet: View {
     private func rejectSuggestion(item: ResolvedEventItem) {
         if let idx = resolvedItems.firstIndex(where: { $0.id == item.id }) {
             resolvedItems[idx].resolution = .missing
+        }
+    }
+    
+    /// Bulk-accept every suggestion in one tap
+    private func acceptAllSuggestions() {
+        withAnimation {
+            for i in resolvedItems.indices {
+                if case .suggested(let pdf) = resolvedItems[i].resolution {
+                    resolvedItems[i].resolution = .matched(pdf)
+                }
+            }
         }
     }
     
@@ -220,6 +250,74 @@ struct EventResolutionSheet: View {
         
         // Delegate to background Omnibus processor
         conversionManager.enqueueOmnibus(name: eventName, sourceFiles: matchedPDFs)
+        dismiss()
+    }
+    
+    /// Creates a parent series collection with nested volume sub-collections.
+    /// Each matched file is assigned to its volume's folder. Files without a volume
+    /// go directly into the parent collection.
+    private func buildVolumeSubCollections() {
+        isProcessing = true
+        
+        // Group resolved items by their parsed volume
+        var volumeBuckets: [String: [(ConvertedPDF, ResolvedEventItem)]] = [:]
+        var noVolume: [(ConvertedPDF, ResolvedEventItem)] = []
+        
+        for item in resolvedItems {
+            if case .matched(let pdf) = item.resolution {
+                if let vol = item.request.volume, !vol.isEmpty {
+                    volumeBuckets[vol, default: []].append((pdf, item))
+                } else {
+                    noVolume.append((pdf, item))
+                }
+            }
+        }
+        
+        // Create the parent series collection
+        let parentCollection = PDFCollection(
+            id: UUID(),
+            name: eventName,
+            icon: "books.vertical",
+            color: "orange",
+            creationDate: Date()
+        )
+        conversionManager.collections.append(parentCollection)
+        
+        // Assign un-volumed files to the parent
+        for (pdf, _) in noVolume {
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].collectionId = parentCollection.id
+            }
+        }
+        
+        // Create a sub-collection per volume, sorted numerically
+        let sortedVolumes = volumeBuckets.keys.sorted {
+            (Int($0) ?? 0) < (Int($1) ?? 0)
+        }
+        
+        for vol in sortedVolumes {
+            guard let entries = volumeBuckets[vol] else { continue }
+            
+            let volCollection = PDFCollection(
+                id: UUID(),
+                name: "\(eventName) — Vol. \(vol)",
+                icon: "book.closed",
+                color: "blue",
+                creationDate: Date(),
+                manualSortOrder: entries.map { $0.0.id }
+            )
+            conversionManager.collections.append(volCollection)
+            
+            for (pdf, _) in entries {
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].collectionId = volCollection.id
+                    conversionManager.convertedPDFs[idx].metadata.volume = vol
+                }
+            }
+        }
+        
+        conversionManager.saveLibrary()
+        isProcessing = false
         dismiss()
     }
     private func applyMetadataTags() {
