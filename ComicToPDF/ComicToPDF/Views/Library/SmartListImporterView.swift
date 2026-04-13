@@ -44,7 +44,11 @@ struct SmartListImporterView: View {
                             
                             HStack(spacing: 16) {
                                 Button(action: {
-                                    showingImporter = true
+                                    ImportCoordinator.present(type: .smartList) { urls in
+                                        if let url = urls.first {
+                                            handleSmartListURL(url)
+                                        }
+                                    }
                                 }) {
                                     Label("Import CSV/CBL File", systemImage: "tablecells")
                                         .font(.headline)
@@ -56,7 +60,11 @@ struct SmartListImporterView: View {
                                 }
                                 
                                 Button(action: {
-                                    showingImporter = true
+                                    ImportCoordinator.present(type: .smartList) { urls in
+                                        if let url = urls.first {
+                                            handleSmartListURL(url)
+                                        }
+                                    }
                                 }) {
                                     Label("Import Text File", systemImage: "doc.plaintext")
                                         .font(.headline)
@@ -116,29 +124,13 @@ struct SmartListImporterView: View {
                                 Button("Cancel") { dismiss() }
                             }
                         }
-                        .fileImporter(
-                            isPresented: $showingImporter,
-                            allowedContentTypes: [
-                                .data,
-                                .content,
-                                .commaSeparatedText,
-                                .plainText,
-                                UTType(filenameExtension: "cbl") ?? .data,
-                                UTType(filenameExtension: "csv") ?? .data
-                            ],
-                            allowsMultipleSelection: false
-                        ) { result in
-                            handleImport(result: result)
-                        }
                     }
                 }
             }
         }
         
-    private func handleImport(result: Result<[URL], Error>) {
+    private func handleSmartListURL(_ selectedFile: URL) {
         do {
-            guard let selectedFile: URL = try result.get().first else { return }
-            
             // Set default event name to filename if default wasn't changed
             if eventName == "Imported Event" {
                 eventName = selectedFile.deletingPathExtension().lastPathComponent
