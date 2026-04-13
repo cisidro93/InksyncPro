@@ -142,12 +142,7 @@ struct PPLReaderView: View {
             let rightHalf = NormalizedRect(x: 500, y: 0, width: 500, height: 1000)
             let leftHalf = NormalizedRect(x: 0, y: 0, width: 500, height: 1000)
             
-            let rect: NormalizedRect
-            if isMangaMode {
-                rect = (splitHalf == 0) ? rightHalf : leftHalf
-            } else {
-                rect = (splitHalf == 0) ? leftHalf : rightHalf
-            }
+            let rect: NormalizedRect = isMangaMode ? (splitHalf == 0 ? rightHalf : leftHalf) : (splitHalf == 0 ? leftHalf : rightHalf)
             
             MetalCanvasView(
                 image: img,
