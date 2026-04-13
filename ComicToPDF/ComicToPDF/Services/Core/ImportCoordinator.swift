@@ -61,7 +61,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
         let picker: UIDocumentPickerViewController
 
-        if type == .json || type == .smartList {
+        if type == .json {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
             picker.allowsMultipleSelection = false
         } else {
