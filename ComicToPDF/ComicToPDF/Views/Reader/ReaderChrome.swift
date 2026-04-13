@@ -16,6 +16,7 @@ struct ReaderChrome: View {
     // Scrubber
     @Binding var currentProgress: Double
     let totalPages: Int
+    var customScrubber: AnyView? = nil
     // Optional TTS
     var hasTTS: Bool = false
     var isSpeaking: Bool = false
@@ -103,19 +104,25 @@ struct ReaderChrome: View {
             // Bottom Bar
             VStack(spacing: 12) {
                 // Scrubber Area
-                HStack {
-                    Text("1")
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.7))
-                    
-                    Slider(value: $currentProgress, in: 0...1)
-                        .accentColor(.blue)
-                    
-                    Text("\(totalPages)")
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.7))
+                if let custom = customScrubber {
+                    // ✅ Phase 4: Visual Scrubber Timeline Injection
+                    custom
+                        .padding(.horizontal)
+                } else {
+                    HStack {
+                        Text("1")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        Slider(value: $currentProgress, in: 0...1)
+                            .accentColor(.blue)
+                        
+                        Text("\(totalPages)")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
                 
                 HStack {
                     Button(action: onBookmark) {

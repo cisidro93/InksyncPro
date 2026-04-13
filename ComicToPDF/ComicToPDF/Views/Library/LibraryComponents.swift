@@ -327,6 +327,118 @@ struct RecentlyReadShelf: View {
     }
 }
 
+// MARK: - 1.5 Up Next Smart Binge Shelf (Phase 3)
+
+struct UpNextBingeShelf: View {
+    let allPDFs: [ConvertedPDF]
+    let onTap: (ConvertedPDF) -> Void
+    
+    // Engine to calculate the exact next issue to read based on completed volumes
+    var upNextItems: [ConvertedPDF] {
+        var nextToRead: [String: ConvertedPDF] = [:] // SeriesName : PDF
+        
+        // Group by series
+        let seriesGroups = Dictionary(grouping: allPDFs.filter { $0.metadata.series != nil && !$0.metadata.series!.isEmpty }, by: { $0.metadata.series! })
+        
+        for (seriesName, issues) in seriesGroups {
+            // Sort issues by number
+            let sortedIssues = issues.sorted { a, b in
+                let aNum = Double(a.metadata.issueNumber ?? a.metadata.volume ?? "0") ?? 0
+                let bNum = Double(b.metadata.issueNumber ?? b.metadata.volume ?? "0") ?? 0
+                return aNum < bNum
+            }
+            
+            // Find highest completed
+            if let lastReadIdx = sortedIssues.lastIndex(where: { 
+                let progress = Double($0.metadata.lastReadPage ?? 0) / Double(max($0.pageCount, 1))
+                return progress > 0.95 // 95% complete or more
+            }) {
+                // If there's a next issue in the series that hasn't been completed yet
+                if lastReadIdx + 1 < sortedIssues.count {
+                    let nextItem = sortedIssues[lastReadIdx + 1]
+                    let nextProgress = Double(nextItem.metadata.lastReadPage ?? 0) / Double(max(nextItem.pageCount, 1))
+                    if nextProgress < 0.95 {
+                        nextToRead[seriesName] = nextItem
+                    }
+                }
+            }
+        }
+        
+        return Array(nextToRead.values).sorted { $0.name < $1.name }.prefix(8).map { $0 }
+    }
+    
+    var body: some View {
+        let items = upNextItems
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "sparkles.tv")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(Theme.purple) // Differentiate from Recently Read
+                    Text("Up Next")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(Theme.text)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(items) { pdf in
+                            Button {
+                                onTap(pdf)
+                            } label: {
+                                VStack(spacing: 6) {
+                                    // Cover thumbnail
+                                    if let data = pdf.coverImageData, let img = UIImage(data: data) {
+                                        Image(uiImage: img)
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                            .frame(width: 90, height: 135)
+                                            .cornerRadius(8)
+                                            .clipped()
+                                    } else {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Theme.surface)
+                                            .frame(width: 90, height: 135)
+                                            .overlay(
+                                                Image(systemName: "book.fill")
+                                                    .foregroundColor(Theme.textSecondary)
+                                            )
+                                    }
+                                    
+                                    if let issue = pdf.metadata.issueNumber ?? pdf.metadata.volume {
+                                        Text("Vol. \(issue)")
+                                            .font(.system(size: 10, weight: .heavy))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 3)
+                                            .background(Theme.purple)
+                                            .clipShape(Capsule())
+                                            .offset(y: -20)
+                                            .padding(.bottom, -20)
+                                    }
+                                    
+                                    Text(pdf.name)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Theme.textSecondary)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.center)
+                                        .frame(width: 90)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                }
+            }
+            .padding(.top, 16)
+        }
+    }
+}
+
 // MARK: - 2. Missing Issue Detector
 
 struct MissingIssueDetector {

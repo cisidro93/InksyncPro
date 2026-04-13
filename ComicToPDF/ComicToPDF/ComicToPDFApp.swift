@@ -76,6 +76,19 @@ struct InksyncProApp: App {
                     case .active:
                          SecurityManager.shared.handleAppForegrounding()
                     @unknown default: break
+                }
+                // ✅ Phase 5: Apple Handoff (Reader State Sync)
+                .onContinueUserActivity("com.inksync.read") { userActivity in
+                    if let pdfIDString = userActivity.userInfo?["pdfID"] as? String,
+                       let pdfID = UUID(uuidString: pdfIDString),
+                       let pageIndex = userActivity.userInfo?["pageIndex"] as? Int {
+                        // We fire a Notification so the ModernLibraryView/Router can intercept it
+                        // and throw up the specific PDF automatically.
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("HandoffRequested"),
+                            object: nil,
+                            userInfo: ["pdfID": pdfID, "pageIndex": pageIndex]
+                        )
                     }
                 }
         }

@@ -341,6 +341,14 @@ struct ComicReaderEngine: View {
                     set: { currentIndex = Int($0 * Double(max(1, cache.pageCount - 1))) }
                 ),
                 totalPages: cache.pageCount,
+                customScrubber: AnyView(
+                    VisualComicScrubber(
+                        currentIndex: $currentIndex,
+                        totalPages: cache.pageCount,
+                        cache: cache,
+                        isMangaMode: readingMode == .mangaRTL
+                    )
+                ),
                 isEnhanced: activeFilterPreset != .original,
                 onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } }
             )
@@ -361,6 +369,17 @@ struct ComicReaderEngine: View {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentIndex = saved.currentPageIndex
             }
+        }
+        // ✅ Phase 5: Apple Handoff (Reader State Sync)
+        .userActivity("com.inksync.read", isActive: true) { activity in
+            activity.title = "Reading \(pdf.name)"
+            activity.isEligibleForHandoff = true
+            activity.addUserInfoEntries(from: [
+                "pdfID": pdf.id.uuidString,
+                "pageIndex": currentIndex
+            ])
+            // Also notify local Watch/Mac companion apps if built in the future
+            activity.becomeCurrent()
         }
     }
     
@@ -590,6 +609,99 @@ struct ComicGuidedPageView: View {
                 currentPanelIndex = -1
                 masterIndex -= 1
             }
+        }
+    }
+}
+
+// MARK: - Phase 4: Visual Scrubber Timeline
+struct VisualComicScrubber: View {
+    @Binding var currentIndex: Int
+    let totalPages: Int
+    @ObservedObject var cache: ComicImageCache
+    var isMangaMode: Bool
+    
+    @State private var dragIndex: Int? = nil
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            // Floating Visual Timeline
+            if let activeIndex = dragIndex, activeIndex >= 0 && activeIndex < totalPages {
+                VStack(spacing: 4) {
+                    Group {
+                        if let previewImg = cache.getImage(at: activeIndex) {
+                            Image(uiImage: previewImg)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } else {
+                            ZStack {
+                                Color.gray.opacity(0.3)
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .frame(width: 90, height: 130)
+                    .cornerRadius(8)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.8), radius: 15, y: 10)
+                    .id("scrubber_thumb_\(activeIndex)_\(cache.cacheUpdatedTick)")
+                    
+                    Text("Page \(activeIndex + 1)")
+                        .font(.system(size: 12, weight: .black))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.8))
+                        .clipShape(Capsule())
+                }
+                .transition(.opacity.combined(with: .scale))
+            }
+            
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(height: 8)
+                    
+                    let displayIndex = dragIndex ?? currentIndex
+                    let normalized = isMangaMode ? CGFloat(totalPages - 1 - displayIndex) : CGFloat(displayIndex)
+                    let ratio = totalPages > 1 ? normalized / CGFloat(totalPages - 1) : 0
+                    let thumbWidth: CGFloat = 24
+                    let trackWidth = geo.size.width - thumbWidth
+                    
+                    Capsule()
+                        .fill(Theme.blue)
+                        .frame(width: ratio * trackWidth + thumbWidth, height: 8)
+                    
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: thumbWidth, height: thumbWidth)
+                        .shadow(radius: 4)
+                        .offset(x: ratio * trackWidth)
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { val in
+                                    let percentage = min(max(val.location.x / geo.size.width, 0), 1)
+                                    let rawIndex = Int(round(percentage * CGFloat(totalPages - 1)))
+                                    let targeted = isMangaMode ? (totalPages - 1 - rawIndex) : rawIndex
+                                    
+                                    if dragIndex != targeted {
+                                        let generator = UISelectionFeedbackGenerator()
+                                        generator.selectionChanged()
+                                        dragIndex = targeted
+                                    }
+                                }
+                                .onEnded { _ in
+                                    if let final = dragIndex {
+                                        Haptics.shared.playImpact(style: .medium)
+                                        currentIndex = final
+                                    }
+                                    dragIndex = nil
+                                }
+                        )
+                }
+                .frame(height: 24)
+            }
+            .frame(height: 24)
         }
     }
 }

@@ -14,6 +14,10 @@ struct PPLReaderView: View {
     
     @AppStorage("isDoublePageMode") private var isDoublePageMode = false
     
+    // ✅ Phase 2: Spread Splitting State
+    @State private var splitHalf: Int = 0 // 0 = first half, 1 = second half
+    @AppStorage("autoSplitPortraitSpreads") private var autoSplitPortraitSpreads = true
+    
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -40,12 +44,31 @@ struct PPLReaderView: View {
                                 }
                             }
                         } else {
-                            // Standard Single Page
-                            MetalCanvasView(
-                                image: bufferManager.currentImage,
-                                lockedRect: bufferManager.lockedRect,
-                                isPPLEnabled: bufferManager.isPPLEnabled
-                            )
+                            // ✅ Phase 2: Spread Splitting (Portrait Detection)
+                            let isPortrait = geo.size.height > geo.size.width
+                            let isSpread = bufferManager.currentImage != nil && CGFloat(bufferManager.currentImage!.width) > CGFloat(bufferManager.currentImage!.height) * 1.2
+                            
+                            if isPortrait && isSpread && autoSplitPortraitSpreads, let img = bufferManager.currentImage {
+                                let rect: NormalizedRect
+                                // If Manga Mode RTL: Half 0 is Right, Half 1 is Left
+                                if isMangaMode {
+                                    rect = (splitHalf == 0) ? .init(minX: 0.5, minY: 0, maxX: 1, maxY: 1) : .init(minX: 0, minY: 0, maxX: 0.5, maxY: 1)
+                                } else {
+                                    rect = (splitHalf == 0) ? .init(minX: 0, minY: 0, maxX: 0.5, maxY: 1) : .init(minX: 0.5, minY: 0, maxX: 1, maxY: 1)
+                                }
+                                MetalCanvasView(
+                                    image: img,
+                                    lockedRect: rect,
+                                    isPPLEnabled: true
+                                )
+                            } else {
+                                // Standard Single Page
+                                MetalCanvasView(
+                                    image: bufferManager.currentImage,
+                                    lockedRect: bufferManager.lockedRect,
+                                    isPPLEnabled: bufferManager.isPPLEnabled
+                                )
+                            }
                         }
                     }
                     // Structural Transforms allow scaling before we trigger hard Coordinate Lock Math
@@ -157,6 +180,18 @@ struct PPLReaderView: View {
     }
     
     private func nextPage(geo: CGSize) {
+        let isPortrait = geo.height > geo.width
+        let isSpread = bufferManager.currentImage != nil && CGFloat(bufferManager.currentImage!.width) > CGFloat(bufferManager.currentImage!.height) * 1.2
+        
+        if isPortrait && isSpread && autoSplitPortraitSpreads {
+            if splitHalf == 0 {
+                splitHalf = 1
+                return // Absorbed
+            } else {
+                splitHalf = 0
+            }
+        }
+        
         let hopCount = (isDoublePageMode && geo.width > geo.height) ? 2 : 1
         if currentPageIndex + hopCount < pages.count + (hopCount - 1) {
             Haptics.shared.playImpact(style: .light)
@@ -165,6 +200,18 @@ struct PPLReaderView: View {
     }
     
     private func prevPage(geo: CGSize) {
+        let isPortrait = geo.height > geo.width
+        let isSpread = bufferManager.currentImage != nil && CGFloat(bufferManager.currentImage!.width) > CGFloat(bufferManager.currentImage!.height) * 1.2
+        
+        if isPortrait && isSpread && autoSplitPortraitSpreads {
+            if splitHalf == 1 {
+                splitHalf = 0
+                return // Absorbed
+            } else {
+                splitHalf = 1 // We assume the prev page might also be a spread, so we default to the "end" of it just in case. If not, it safely renders as standard full page.
+            }
+        }
+        
         let hopCount = (isDoublePageMode && geo.width > geo.height) ? 2 : 1
         if currentPageIndex > 0 {
             Haptics.shared.playImpact(style: .light)

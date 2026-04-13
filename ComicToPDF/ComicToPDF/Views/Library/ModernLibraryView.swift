@@ -145,6 +145,23 @@ struct ModernLibraryView: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HandoffRequested"))) { notification in
+            // ✅ Phase 5: Apple Handoff (Reader State Sync)
+            if let userInfo = notification.userInfo,
+               let pdfID = userInfo["pdfID"] as? UUID,
+               let pageIndex = userInfo["pageIndex"] as? Int {
+                if let targetPDF = nativeVisiblePDFs.first(where: { $0.id == pdfID }) {
+                    // Pre-emptively set the ReaderTracker to the handoff index so the reader opens to the exact page
+                    var progress = ReaderProgressTracker.shared.progress(for: targetPDF.id) ?? ReadingProgress(pdfID: targetPDF.id, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
+                    progress.currentPageIndex = pageIndex
+                    ReaderProgressTracker.shared.update(progress)
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        viewModel.activeFullScreen = .read(targetPDF)
+                    }
+                }
+            }
+        }
     }
     
     // MARK: - Extracted Router UI
@@ -259,6 +276,11 @@ struct ModernLibraryView: View {
                 onVaultToggle: handleVaultToggle,
                 onSelectAll: handleSelectAll
             )
+            
+            // MARK: - Up Next Binge Shelf
+            UpNextBingeShelf(allPDFs: nativeVisiblePDFs) { pdf in
+                viewModel.activeFullScreen = .read(pdf)
+            }
             
             // MARK: - Recently Read Shelf
             RecentlyReadShelf(pdfs: nativeVisiblePDFs) { pdf in
