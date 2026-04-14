@@ -24,7 +24,7 @@ struct ImportQueueView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                Color.black.ignoresSafeArea()
+                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
 
                 if queue.stagedURLs.isEmpty {
                     emptyStateView
@@ -34,21 +34,21 @@ struct ImportQueueView: View {
 
                 // Staging-in-progress overlay
                 if queue.isStagingFiles {
-                    Color.black.opacity(0.55).ignoresSafeArea()
+                    Color.black.opacity(0.3).ignoresSafeArea()
                     VStack(spacing: 14) {
-                        ProgressView().tint(.white).scaleEffect(1.3)
+                        ProgressView().tint(.primary).scaleEffect(1.3)
                         if let progress = queue.stagingProgress {
                             Text("Staging \(progress.current) of \(progress.total) files…")
                                 .font(.subheadline.weight(.medium))
-                                .foregroundColor(.white)
+                                .foregroundColor(.primary)
                         } else {
                             Text("Scanning folder…")
                                 .font(.subheadline.weight(.medium))
-                                .foregroundColor(.white)
+                                .foregroundColor(.primary)
                         }
                     }
                     .padding(28)
-                    .background(Color(white: 0.15).opacity(0.96))
+                    .background(.regularMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
             }
@@ -126,7 +126,7 @@ struct ImportQueueView: View {
 
             Text("Staging Queue Is Empty")
                 .font(.title2.bold())
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
 
             Text("Add comics from different folders into this queue. Once you've selected everything, tap 'Import All' to process them together.")
                 .font(.subheadline)
@@ -155,7 +155,7 @@ struct ImportQueueView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(white: 0.07))
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
 
             List {
                 ForEach(queue.stagedURLs, id: \.self) { url in
@@ -166,16 +166,16 @@ struct ImportQueueView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(url.deletingPathExtension().lastPathComponent)
                                 .font(.subheadline.weight(.medium))
-                                .foregroundColor(.white)
+                                .foregroundColor(.primary)
                                 .lineLimit(1)
                             Text(url.pathExtension.uppercased())
                                 .font(.caption2)
-                                .foregroundColor(.gray)
+                                .foregroundColor(.secondary)
                         }
                         Spacer()
                     }
-                    .listRowBackground(Color(white: 0.1))
-                    .listRowSeparatorTint(Color.white.opacity(0.08))
+                    .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
+                    .listRowSeparatorTint(Color.primary.opacity(0.08))
                 }
                 .onDelete { queue.remove(at: $0) }
             }
@@ -186,7 +186,7 @@ struct ImportQueueView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color(white: 0.07))
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
         }
     }
 

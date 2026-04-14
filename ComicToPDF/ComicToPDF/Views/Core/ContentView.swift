@@ -195,76 +195,79 @@ struct ContentView: View {
 
     // ✅ iOS Layout with Custom InkTabBar
     var liquidGlassLayout: some View {
-        TabView(selection: $selectedTab) {
-            // Tab 0: Library (Primary / Default)
-            NavigationStack {
-                ModernLibraryView(
-                    selectedPDF: $selectedPDF,
-                    isBatchMode: $isBatchMode,
-                    multiSelection: $multiSelection,
-                    showingBatchMergeReorder: $showingBatchMergeReorder,
-                    batchMergeItems: $batchMergeItems,
-                    useNavigationStack: true,
-                    onFolderImport: {
-                        ImportCoordinator.present(type: .folder) { urls in
-                            guard !urls.isEmpty else { return }
-                            _ = ImportQueueManager.shared.stageWithDuplicateCheck(urls)
+        ZStack(alignment: .bottom) {
+            TabView(selection: $selectedTab) {
+                // Tab 0: Library (Primary / Default)
+                NavigationStack {
+                    ModernLibraryView(
+                        selectedPDF: $selectedPDF,
+                        isBatchMode: $isBatchMode,
+                        multiSelection: $multiSelection,
+                        showingBatchMergeReorder: $showingBatchMergeReorder,
+                        batchMergeItems: $batchMergeItems,
+                        useNavigationStack: true,
+                        onFolderImport: {
+                            ImportCoordinator.present(type: .folder) { urls in
+                                guard !urls.isEmpty else { return }
+                                _ = ImportQueueManager.shared.stageWithDuplicateCheck(urls)
+                            }
                         }
+                    )
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationDestination(for: ConvertedPDF.self) { pdf in
+                        ConvertView(pdf: pdf)
+                            .id(pdf.id)
                     }
-                )
-                .toolbar(.hidden, for: .navigationBar)
-                .navigationDestination(for: ConvertedPDF.self) { pdf in
-                    ConvertView(pdf: pdf)
-                        .id(pdf.id)
                 }
-            }
-            .tabItem { Label("Library", systemImage: "books.vertical") }
-            .tag(0)
+                .tabItem { Label("Library", systemImage: "books.vertical") }
+                .tag(0)
 
-            // Tab 1: Reader Dashboard
-            NavigationStack {
-                ActiveReaderDashboardView()
-            }
-            .tabItem { Label("Reader", systemImage: "book.fill") }
-            .tag(1)
+                // Tab 1: Reader Dashboard
+                NavigationStack {
+                    ActiveReaderDashboardView()
+                }
+                .tabItem { Label("Reader", systemImage: "book.fill") }
+                .tag(1)
 
-            // Tab 2: Inbox
-            NavigationStack {
-                InboxReviewView()
-            }
-            .tabItem { Label("Inbox", systemImage: "tray.full.fill") }
-            .tag(2)
+                // Tab 2: Inbox
+                NavigationStack {
+                    InboxReviewView()
+                }
+                .tabItem { Label("Inbox", systemImage: "tray.full.fill") }
+                .tag(2)
 
-            // Tab 3: Devices
-            DevicesView()
-            .tabItem { Label("Devices", systemImage: "ipad.and.iphone") }
-            .tag(3)
+                // Tab 3: Devices
+                DevicesView()
+                .tabItem { Label("Devices", systemImage: "ipad.and.iphone") }
+                .tag(3)
 
-            // Tab 4: Work Area
-            NavigationStack {
-                EditorDashboardView()
-            }
-            .tabItem { Label("Work Area", systemImage: "scissors") }
-            .tag(4)
+                // Tab 4: Work Area
+                NavigationStack {
+                    EditorDashboardView()
+                }
+                .tabItem { Label("Work Area", systemImage: "scissors") }
+                .tag(4)
 
-            // Tab 5: Highlights
-            NavigationStack {
-                GlobalZettelkastenHubView()
-            }
-            .tabItem { Label("Highlights", systemImage: "text.badge.star") }
-            .tag(5)
+                // Tab 5: Highlights
+                NavigationStack {
+                    GlobalZettelkastenHubView()
+                }
+                .tabItem { Label("Highlights", systemImage: "text.badge.star") }
+                .tag(5)
 
-            // Tab 6: Settings
-            NavigationStack {
-                SettingsView()
+                // Tab 6: Settings
+                NavigationStack {
+                    SettingsView()
+                }
+                .tabItem { Label("Settings", systemImage: "gear") }
+                .tag(6)
             }
-            .tabItem { Label("Settings", systemImage: "gear") }
-            .tag(6)
-        }
-        // Hide native tab bar — replaced by InkTabBar
-        .toolbar(.hidden, for: .tabBar)
-        // Custom InkTabBar floats above content via safeAreaInset
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // Hide native tab bar — replaced by InkTabBar overlay
+            .toolbar(.hidden, for: .tabBar)
+            // Add padding so scroll views can reach the very bottom behind the pill
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 70) }
+
+            // Custom InkTabBar floats above content
             InkTabBar(
                 selectedTab: $selectedTab,
                 isHidden: $tabBarHidden,
@@ -272,7 +275,7 @@ struct ContentView: View {
                 isConverting: conversionManager.isConverting,
                 convertingMessage: conversionManager.processingStatus
             )
-            .padding(.bottom, 8)
+            .padding(.bottom, 12)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_Hide"))) { _ in
             withAnimation { tabBarHidden = true }
