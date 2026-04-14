@@ -11,15 +11,19 @@ jobs:
     runs-on: macos-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      XCODE_VERSION: ${{ steps.xcode-version.outputs.version }}
+      # Redirect module cache to /tmp so it is NEVER cached between runs.
+      # This is the definitive fix for "mtime changed" SwiftShims errors.
+      CLANG_MODULE_CACHE_PATH: /tmp/clang-module-cache
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Get Xcode Version
-      id: xcode-version
-      run: echo "version=$(xcodebuild -version | head -1 | tr ' ' '_')" >> $GITHUB_OUTPUT
-    
+    - name: Select Xcode
+      run: |
+        # Log the Xcode version for traceability
+        xcodebuild -version
+        sudo xcode-select -p
+
     - name: Install Tools
       run: |
         brew install swiftlint
@@ -32,15 +36,14 @@ jobs:
     - name: Debug Files
       run: ls -R
 
-    - name: Cache Xcode build and SPM
+    - name: Cache SPM Packages
       uses: actions/cache@v4
       with:
-        path: |
-          ~/.build
-          ComicToPDF/build/SourcePackages
-        key: ${{ runner.os }}-xcode-${{ env.XCODE_VERSION }}-spm-${{ hashFiles('ComicToPDF/project.yml') }}
+        # Only cache resolved SPM source checkouts — never compiled .pcm or .o files
+        path: ComicToPDF/build/SourcePackages/checkouts
+        key: ${{ runner.os }}-spm-${{ hashFiles('ComicToPDF/project.yml') }}
         restore-keys: |
-          ${{ runner.os }}-xcode-${{ env.XCODE_VERSION }}-spm-
+          ${{ runner.os }}-spm-
 
     - name: Generate Project
       run: |
@@ -51,18 +54,12 @@ jobs:
       run: |
         cd ComicToPDF
         xcodebuild -list -project InksyncPro.xcodeproj
-        # Clean first to prevent stale module cache (.pcm mtime) errors with new SDK runners
         xcodebuild -project InksyncPro.xcodeproj \
                    -scheme InksyncPro \
                    -sdk iphoneos \
                    -configuration Release \
                    -derivedDataPath build \
-                   clean
-        xcodebuild -project InksyncPro.xcodeproj \
-                   -scheme InksyncPro \
-                   -sdk iphoneos \
-                   -configuration Release \
-                   -derivedDataPath build \
+                   CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache \
                    build \
                    CODE_SIGN_IDENTITY="" \
                    CODE_SIGNING_REQUIRED=NO \
