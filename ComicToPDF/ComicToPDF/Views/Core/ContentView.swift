@@ -193,11 +193,15 @@ struct ContentView: View {
         }
     }
 
-    // ✅ iOS Layout with Custom InkTabBar
+    // ✅ iOS + iPad Layout — Pure Custom Tab Router (NO TabView = NO native tab bar)
     var liquidGlassLayout: some View {
         ZStack(alignment: .bottom) {
-            TabView(selection: $selectedTab) {
-                // Tab 0: Library (Primary / Default)
+
+            // ── Content Layer ──────────────────────────────────────────────────
+            // Each child stays alive (preserves scroll position / nav stack) but
+            // is hidden when not active. This avoids the blank-flash on first switch.
+            Group {
+                // Tab 0: Library
                 NavigationStack {
                     ModernLibraryView(
                         selectedPDF: $selectedPDF,
@@ -215,59 +219,39 @@ struct ContentView: View {
                     )
                     .toolbar(.hidden, for: .navigationBar)
                     .navigationDestination(for: ConvertedPDF.self) { pdf in
-                        ConvertView(pdf: pdf)
-                            .id(pdf.id)
+                        ConvertView(pdf: pdf).id(pdf.id)
                     }
                 }
-                .tabItem { Label("Library", systemImage: "books.vertical") }
-                .tag(0)
+                .tabVisible(selectedTab == 0)
 
                 // Tab 1: Reader Dashboard
-                NavigationStack {
-                    ActiveReaderDashboardView()
-                }
-                .tabItem { Label("Reader", systemImage: "book.fill") }
-                .tag(1)
+                NavigationStack { ActiveReaderDashboardView() }
+                    .tabVisible(selectedTab == 1)
 
                 // Tab 2: Inbox
-                NavigationStack {
-                    InboxReviewView()
-                }
-                .tabItem { Label("Inbox", systemImage: "tray.full.fill") }
-                .tag(2)
+                NavigationStack { InboxReviewView() }
+                    .tabVisible(selectedTab == 2)
 
                 // Tab 3: Devices
                 DevicesView()
-                .tabItem { Label("Devices", systemImage: "ipad.and.iphone") }
-                .tag(3)
+                    .tabVisible(selectedTab == 3)
 
                 // Tab 4: Work Area
-                NavigationStack {
-                    EditorDashboardView()
-                }
-                .tabItem { Label("Work Area", systemImage: "scissors") }
-                .tag(4)
+                NavigationStack { EditorDashboardView() }
+                    .tabVisible(selectedTab == 4)
 
                 // Tab 5: Highlights
-                NavigationStack {
-                    GlobalZettelkastenHubView()
-                }
-                .tabItem { Label("Highlights", systemImage: "text.badge.star") }
-                .tag(5)
+                NavigationStack { GlobalZettelkastenHubView() }
+                    .tabVisible(selectedTab == 5)
 
                 // Tab 6: Settings
-                NavigationStack {
-                    SettingsView()
-                }
-                .tabItem { Label("Settings", systemImage: "gear") }
-                .tag(6)
+                NavigationStack { SettingsView() }
+                    .tabVisible(selectedTab == 6)
             }
-            // Hide native tab bar — replaced by InkTabBar overlay
-            .toolbar(.hidden, for: .tabBar)
-            // Add padding so scroll views can reach the very bottom behind the pill
-            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 70) }
+            // Reserve space at the bottom so content scrolls above the pill
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 80) }
 
-            // Custom InkTabBar floats above content
+            // ── Floating Glass Pill ────────────────────────────────────────────
             InkTabBar(
                 selectedTab: $selectedTab,
                 isHidden: $tabBarHidden,
@@ -277,6 +261,7 @@ struct ContentView: View {
             )
             .padding(.bottom, 12)
         }
+        .ignoresSafeArea(edges: .bottom)
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_Hide"))) { _ in
             withAnimation { tabBarHidden = true }
         }
@@ -284,7 +269,7 @@ struct ContentView: View {
             withAnimation { tabBarHidden = false }
         }
     }
-    
+
     var iPadLayout: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {

@@ -247,4 +247,15 @@ extension View {
     func inkTabBarScrollDetect(onDown: @escaping () -> Void, onUp: @escaping () -> Void) -> some View {
         self.modifier(InkTabBarScrollDetector(onScrollDown: onDown, onScrollUp: onUp))
     }
+
+    /// Keep a tab view always in the hierarchy (preserves state) but hide + disable
+    /// it when `isVisible` is false. Drop-in replacement for TabView tab management.
+    @ViewBuilder
+    func tabVisible(_ isVisible: Bool) -> some View {
+        self
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .opacity(isVisible ? 1 : 0)
+            .allowsHitTesting(isVisible)
+            .accessibilityHidden(!isVisible)
+    }
 }
