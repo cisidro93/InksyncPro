@@ -14,6 +14,15 @@ struct EBookReaderView: View {
     @Environment(\.colorScheme) var colorScheme
     @State private var showingSettingsPanel = false
     
+    // Utilities
+    @ObservedObject private var orientationLock = OrientationLockManager.shared
+    @ObservedObject private var sleepTimer = SleepTimerManager.shared
+    @State private var deviceOrientation = UIDevice.current.orientation
+    
+    // Tools
+    @State private var showShareSheet = false
+    @State private var showSleepTimerPicker = false
+    
     // Preferences — shared across all books
 
 
@@ -106,98 +115,147 @@ struct EBookReaderView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-                .sheet(isPresented: $showingSettingsPanel) {
+        .sheet(isPresented: $showingSettingsPanel) {
             EBookSettingsPanel()
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showSleepTimerPicker) {
+            SleepTimerPickerSheet()
+        }
+        .sheet(isPresented: $showShareSheet) {
+            ShareSheet(activityItems: [fileURL])
+        }
         .task { await loadBook() }
         .onDisappear { cleanup(); saveProgress() }
+        .onChange(of: sleepTimer.didFire) { fired in
+            if fired { if let onExit = onExit { onExit() } else { dismiss() } }
+        }
     }
     
-    // MARK: - Top Bar
+    // MARK: - Top Bar (Glass HUD)
     @ViewBuilder private var topBar: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 10) {
+            // Back Button
             Button { if let onExit = onExit { onExit() } else { dismiss() } } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
-                    .padding(10)
-                    .background(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.08))
-                    .clipShape(Circle())
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
             }
             
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.headline).lineLimit(1).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
-                if let chapter = metadata?.spineItems[safe: currentIndex] {
-                    Text(chapter.label).font(.caption).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.55)).lineLimit(1)
-                }
-            }
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .shadow(color: .black.opacity(0.6), radius: 3)
             
             Spacer()
             
-                        Button { showingSettingsPanel.toggle(); showChapterList = false } label: {
-                Image(systemName: "textformat.size")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
-                    .padding(10)
-                    .background(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.08))
-                    .clipShape(Circle())
+            // Sleep timer badge
+            if sleepTimer.isActive {
+                Button { showSleepTimerPicker = true } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "moon.zzz.fill").font(.system(size: 10))
+                        Text(sleepTimer.formattedRemaining).font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(Color.orange)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                }
+            }
+
+            // Orientation lock
+            Button { orientationLock.toggleLock(current: deviceOrientation) } label: {
+                Image(systemName: orientationLock.isLocked ? "lock.rotation" : "lock.rotation.open")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(orientationLock.isLocked ? Color.orange : .white)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
             }
             
-            Button { withAnimation(.spring()) { showChapterList.toggle() } } label: {
-                Image(systemName: "list.bullet")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
-                    .padding(10)
-                    .background(showChapterList ? prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.15) : prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.08))
-                    .clipShape(Circle())
+            Menu {
+                Section("Appearance") {
+                    Button { showingSettingsPanel.toggle() } label: {
+                        Label("Text & Layout", systemImage: "textformat.size")
+                    }
+                }
+                Section("Navigate") {
+                    Button { showChapterList = true } label: {
+                        Label("Table of Contents", systemImage: "list.bullet.rectangle")
+                    }
+                    .disabled(metadata?.spineItems.isEmpty ?? true)
+                }
+                Section("Tools") {
+                    Button { showShareSheet = true } label: {
+                        Label("Share Book", systemImage: "square.and.arrow.up")
+                    }
+                    Button { showSleepTimerPicker = true } label: {
+                        Label(
+                            sleepTimer.isActive ? "Sleep Timer (\(sleepTimer.formattedRemaining))" : "Sleep Timer\u{2026}",
+                            systemImage: "moon.zzz"
+                        )
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 50)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 14)
+        .padding(.top, 52)
+        .padding(.bottom, 10)
         .background(
-            prefs.activeTheme.background(colorScheme: colorScheme).opacity(0.92)
-                .background(.ultraThinMaterial.opacity(0.3))
-                .ignoresSafeArea(edges: .top)
+            LinearGradient(
+                colors: [Color.black.opacity(0.55), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .top)
         )
     }
     
-    // MARK: - Bottom Bar
+    // MARK: - Bottom Bar (Glass HUD)
     @ViewBuilder private var bottomBar: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 24) {
             Button { prevChapter() } label: {
                 Image(systemName: "chevron.left.circle.fill")
                     .font(.system(size: 32))
-                    .foregroundStyle(currentIndex == 0 ? prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.2) : Color(hex: "#7B5EA7"))
+                    .foregroundStyle(currentIndex == 0 ? .white.opacity(0.2) : .white.opacity(0.9))
             }
             .disabled(currentIndex == 0)
             
             VStack(spacing: 2) {
                 Text("Page \(chapterPage + 1) of \(chapterTotalPages)")
-                    .font(.caption.monospacedDigit().bold())
-                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
                 if totalChapters > 1 {
                     Text("Chapter \(currentIndex + 1) / \(totalChapters)")
-                        .font(.system(size: 10, weight: .medium).monospacedDigit())
-                        .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.5))
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.6))
                 }
             }
-            .frame(minWidth: 90)
+            .frame(minWidth: 100)
             
             Button { nextChapter() } label: {
                 Image(systemName: "chevron.right.circle.fill")
                     .font(.system(size: 32))
-                    .foregroundStyle(currentIndex >= totalChapters - 1 ? prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.2) : Color(hex: "#7B5EA7"))
+                    .foregroundStyle(currentIndex >= totalChapters - 1 ? .white.opacity(0.2) : .white.opacity(0.9))
             }
             .disabled(currentIndex >= totalChapters - 1)
         }
-        .padding(.vertical, 14)
+        .padding(.vertical, 16)
         .padding(.horizontal, 24)
         .background(
-            prefs.activeTheme.background(colorScheme: colorScheme).opacity(0.92)
-                .background(.ultraThinMaterial.opacity(0.3))
-                .ignoresSafeArea(edges: .bottom)
+            LinearGradient(
+                colors: [Color.clear, Color.black.opacity(0.65)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
         )
     }
     

@@ -96,6 +96,9 @@ struct ReaderView: View {
     // ✅ CBR warning
     @State private var showCBRWarning = false
     
+    // ✅ PDF document reference (for share + TOC)
+    @State private var loadedPDFDocument: PDFDocument? = nil
+    
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -181,6 +184,7 @@ struct ReaderView: View {
                                 isVerticalScroll: isVerticalScroll,
                                 isMangaMode: isMangaMode,
                                 isDoublePageMode: isDoublePageMode,
+                                loadedDocument: $loadedPDFDocument,
                                 onSingleTap: {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         isToolbarVisible.toggle()
@@ -272,7 +276,15 @@ struct ReaderView: View {
                 toc = CBZTableOfContents.build(from: extracted)
             }
             .onChange(of: pages) {
-                toc = CBZTableOfContents.build(from: pages)
+                // If we're a PDF and we have a loaded document, don't overwrite TOC with the empty file URLs
+                if fileURL.pathExtension.lowercased() != "pdf" {
+                    toc = CBZTableOfContents.build(from: pages)
+                }
+            }
+            .onChange(of: loadedPDFDocument) {
+                if let doc = loadedPDFDocument {
+                    toc = buildPDFTOC(from: doc)
+                }
             }
             .onChange(of: currentPageIndex) { trackProgress() }
             .onChange(of: isMangaMode) { savePerBookPreferences() }
@@ -449,21 +461,61 @@ struct ReaderView: View {
         )
     }
 
-    // MARK: - Share Current Page
+    // MARK: - Share Current Page (format-aware)
     private func shareCurrentPage() {
-        guard currentPageIndex < pages.count else { return }
-        let url = pages[currentPageIndex]
-        DispatchQueue.global(qos: .userInitiated).async {
-            if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
-                DispatchQueue.main.async {
-                    self.shareImage = image
-                    self.showShareSheet = true
+        if fileURL.pathExtension.lowercased() == "pdf" {
+            // PDF path: render current page via PDFKit
+            let pageIdx = currentPageIndex
+            let docURL = fileURL
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let doc = PDFDocument(url: docURL),
+                   let page = doc.page(at: pageIdx) {
+                    let size = CGSize(width: 1024, height: 1408)
+                    let thumb = page.thumbnail(of: size, for: .mediaBox)
+                    DispatchQueue.main.async {
+                        self.shareImage = thumb
+                        self.showShareSheet = true
+                    }
+                }
+            }
+        } else {
+            // CBZ / image archive path
+            guard currentPageIndex < pages.count else { return }
+            let url = pages[currentPageIndex]
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
+                    DispatchQueue.main.async {
+                        self.shareImage = image
+                        self.showShareSheet = true
+                    }
                 }
             }
         }
     }
 
-    
+    // MARK: - PDF Table of Contents Parser
+    private func buildPDFTOC(from doc: PDFDocument) -> CBZTableOfContents {
+        guard let root = doc.outlineRoot, root.numberOfChildren > 0 else {
+            return CBZTableOfContents(chapters: [])
+        }
+        var chapters: [(title: String, pageIndex: Int)] = []
+        for i in 0..<root.numberOfChildren {
+            guard let node = root.child(at: i),
+                  let dest = node.destination,
+                  let page = dest.page,
+                  let label = node.label, !label.isEmpty else { continue }
+            chapters.append((title: label, pageIndex: doc.index(for: page)))
+        }
+        guard !chapters.isEmpty else { return CBZTableOfContents(chapters: []) }
+        let total = doc.pageCount
+        let built = chapters.enumerated().map { idx, ch -> CBZTableOfContents.Chapter in
+            let end = idx + 1 < chapters.count ? chapters[idx + 1].pageIndex : total
+            return CBZTableOfContents.Chapter(title: ch.title, firstPageIndex: ch.pageIndex, pageCount: max(1, end - ch.pageIndex))
+        }
+        return CBZTableOfContents(chapters: built)
+    }
+
+
     // MARK: - Archive Preparation
     private func prepareArchive() async {
         let ext = fileURL.pathExtension.lowercased()
@@ -841,6 +893,7 @@ struct PDFKitView: UIViewRepresentable {
     let isVerticalScroll: Bool
     let isMangaMode: Bool
     let isDoublePageMode: Bool
+    @Binding var loadedDocument: PDFDocument?
     let onSingleTap: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -879,6 +932,7 @@ struct PDFKitView: UIViewRepresentable {
                     if Task.isCancelled { return }
                     pdfView.document = document
                     self.totalPages = Array(repeating: url, count: document.pageCount)
+                    self.loadedDocument = document
                 }
             }
         }
