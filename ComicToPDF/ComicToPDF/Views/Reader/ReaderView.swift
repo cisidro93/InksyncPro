@@ -78,11 +78,46 @@ struct ReaderView: View {
     @State private var swipeStartBrightness: CGFloat = 0
     @State private var swipeStartWarmth: Double = 0
     
+    // ✅ Orientation Lock
+    @ObservedObject private var orientationLock = OrientationLockManager.shared
+    
+    // ✅ Sleep Timer
+    @ObservedObject private var sleepTimer = SleepTimerManager.shared
+    @State private var showSleepTimerPicker = false
+    
+    // ✅ Table of Contents
+    @State private var showTOC = false
+    @State private var toc: CBZTableOfContents = CBZTableOfContents(chapters: [])
+    
+    // ✅ Share Page
+    @State private var shareImage: UIImage? = nil
+    @State private var showShareSheet = false
+    
+    // ✅ CBR warning
+    @State private var showCBRWarning = false
+    
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                // ✅ CBR Guard: surface helpful message early
+                if CBRSupportChecker.isCBR(fileURL) {
+                    VStack(spacing: 20) {
+                        Image(systemName: "doc.badge.exclamationmark")
+                            .font(.system(size: 60))
+                            .foregroundStyle(Color.orange)
+                        Text("CBR Not Supported")
+                            .font(.title2.bold())
+                        Text(CBRSupportChecker.unsupportedMessage)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                        Button("Go Back") { if let onExit = onExit { onExit() } else { dismiss() } }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.orange)
+                    }
                 // ✅ Route: text-based EPUB → EBookReaderView, everything else → image reader
-                if fileURL.pathExtension.lowercased() == "epub" && contentType == .book {
+                } else if fileURL.pathExtension.lowercased() == "epub" && contentType == .book {
                     EBookReaderView(
                         fileURL: fileURL,
                         title: fileURL.deletingPathExtension().lastPathComponent,
@@ -232,10 +267,19 @@ struct ReaderView: View {
                 await prepareArchive()
                 restorePerBookPreferences()
                 trackProgress()
+                // Build TOC from extracted pages
+                let extracted = pages
+                toc = CBZTableOfContents.build(from: extracted)
+            }
+            .onChange(of: pages) {
+                toc = CBZTableOfContents.build(from: pages)
             }
             .onChange(of: currentPageIndex) { trackProgress() }
             .onChange(of: isMangaMode) { savePerBookPreferences() }
             .onChange(of: colorFilter) { savePerBookPreferences() }
+            .onChange(of: sleepTimer.didFire) { fired in
+                if fired { if let onExit = onExit { onExit() } else { dismiss() } }
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 deviceOrientation = UIDevice.current.orientation
             }
@@ -243,6 +287,8 @@ struct ReaderView: View {
                 if let dir = unzippedDir {
                     try? FileManager.default.removeItem(at: dir)
                 }
+                orientationLock.unlock() // Always restore free rotation on exit
+                sleepTimer.stop()
             }
             .alert("Jump to Page", isPresented: $showJumpToPage) {
                 TextField("Page number (1–\(pages.count))", text: $jumpToPageText)
@@ -257,12 +303,23 @@ struct ReaderView: View {
             } message: {
                 Text("Enter a page number between 1 and \(pages.count).")
             }
+            .sheet(isPresented: $showTOC) {
+                ReaderTOCSheet(toc: toc, currentPageIndex: $currentPageIndex)
+            }
+            .sheet(isPresented: $showShareSheet) {
+                if let img = shareImage {
+                    ShareSheet(activityItems: [img])
+                }
+            }
+            .sheet(isPresented: $showSleepTimerPicker) {
+                SleepTimerPickerSheet()
+            }
     }
     
     // MARK: - Top Bar (Minimal Glass HUD)
     @ViewBuilder private var topBar: some View {
-        HStack(spacing: 12) {
-            // Back Button
+        HStack(spacing: 10) {
+            // Back
             Button { if let onExit = onExit { onExit() } else { dismiss() } } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .semibold))
@@ -270,37 +327,68 @@ struct ReaderView: View {
                     .frame(width: 36, height: 36)
                     .background(.ultraThinMaterial, in: Circle())
             }
-            
+
             Text(fileURL.deletingPathExtension().lastPathComponent)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .shadow(color: .black.opacity(0.6), radius: 3)
-            
+
             Spacer()
-            
-            // Page indicator pill
+
+            // Page + reading time pill
             if !pages.isEmpty {
-                Text("\(currentPageIndex + 1) / \(pages.count)")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.ultraThinMaterial, in: Capsule())
+                VStack(spacing: 1) {
+                    Text("\(currentPageIndex + 1) / \(pages.count)")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.9))
+                    if let mins = ReaderProgressTracker.shared.progress(for: pdf?.id ?? UUID())?.estimatedMinutesRemaining, mins > 0 {
+                        Text("\(mins)m left")
+                            .font(.system(size: 9, weight: .regular, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.ultraThinMaterial, in: Capsule())
             }
-            
+
             Spacer()
-            
+
+            // Sleep timer badge
+            if sleepTimer.isActive {
+                Button { showSleepTimerPicker = true } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "moon.zzz.fill").font(.system(size: 10))
+                        Text(sleepTimer.formattedRemaining).font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(Color.orange)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                }
+            }
+
+            // Orientation lock
+            Button { orientationLock.toggleLock(current: deviceOrientation) } label: {
+                Image(systemName: orientationLock.isLocked ? "lock.rotation" : "lock.rotation.open")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(orientationLock.isLocked ? Color.orange : .white)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+
+            // Bookmark
             if pdf != nil {
                 Button(action: toggleBookmark) {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(isBookmarked ? Theme.orange : .white)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 34, height: 34)
                         .background(.ultraThinMaterial, in: Circle())
                 }
             }
-            
+
+            // Settings + all tools
             Menu {
                 Section("Reading Mode") {
                     Toggle("Manga (Right-to-Left)", isOn: $isMangaMode)
@@ -309,32 +397,42 @@ struct ReaderView: View {
                 Section("Layout") {
                     Toggle("Dual Page (Manual)", isOn: $isDoublePageMode)
                     Toggle("Auto Dual Page in Landscape", isOn: $autoLandscapeDualPage)
-                    Toggle("Auto-Split Wide Pages (Portrait)", isOn: .constant(true))
                 }
                 Section("Color Filter") {
                     ForEach(ReaderColorFilter.allCases, id: \.self) { filter in
-                        Button {
-                            withAnimation { colorFilter = filter }
-                        } label: {
+                        Button { withAnimation { colorFilter = filter } } label: {
                             Label(filter.label, systemImage: filter.icon)
                         }
                         .foregroundStyle(colorFilter == filter ? Color.orange : Color.primary)
                     }
                 }
-                Section("Navigation") {
-                    Button {
-                        jumpToPageText = ""
-                        showJumpToPage = true
-                    } label: {
-                        Label("Jump to Page…", systemImage: "arrow.right.circle")
+                Section("Navigate") {
+                    Button { jumpToPageText = ""; showJumpToPage = true } label: {
+                        Label("Jump to Page\u2026", systemImage: "arrow.right.circle")
                     }
                     .disabled(pages.isEmpty)
+                    Button { showTOC = true } label: {
+                        Label("Table of Contents", systemImage: "list.bullet.rectangle")
+                    }
+                    .disabled(toc.chapters.count <= 1)
+                }
+                Section("Tools") {
+                    Button { shareCurrentPage() } label: {
+                        Label("Share This Page", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(pages.isEmpty)
+                    Button { showSleepTimerPicker = true } label: {
+                        Label(
+                            sleepTimer.isActive ? "Sleep Timer (\(sleepTimer.formattedRemaining))" : "Sleep Timer\u2026",
+                            systemImage: "moon.zzz"
+                        )
+                    }
                 }
             } label: {
-                Image(systemName: "textformat.size")
+                Image(systemName: "ellipsis.circle")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 34, height: 34)
                     .background(.ultraThinMaterial, in: Circle())
             }
         }
@@ -350,6 +448,21 @@ struct ReaderView: View {
             .ignoresSafeArea(edges: .top)
         )
     }
+
+    // MARK: - Share Current Page
+    private func shareCurrentPage() {
+        guard currentPageIndex < pages.count else { return }
+        let url = pages[currentPageIndex]
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
+                DispatchQueue.main.async {
+                    self.shareImage = image
+                    self.showShareSheet = true
+                }
+            }
+        }
+    }
+
     
     // MARK: - Archive Preparation
     private func prepareArchive() async {

@@ -41,25 +41,36 @@ class PageBufferManager: ObservableObject {
     
     func render(pageIndex: Int, bounds: CGSize) {
         renderTask?.cancel()
-        
+
         renderTask = Task {
             self.isLoading = true
-            
+
             // Concurrent render for maximum hardware utilization
             async let current = renderPage(at: pageIndex)
             async let next = (pageIndex + 1 < pageURLs.count) ? renderPage(at: pageIndex + 1) : nil
             async let prev = (pageIndex - 1 >= 0) ? renderPage(at: pageIndex - 1) : nil
-            
+
             let (cImage, nImage, pImage) = await (current, next, prev)
-            
+
             if Task.isCancelled { return }
-            
+
             self.currentImage = cImage
             self.nextImage = nImage
             self.prevImage = pImage
             self.isLoading = false
+
+            // ✅ Near-end detection: signal to preload next volume when 5 pages from end
+            let totalPages = pageURLs.count
+            if totalPages > 0 && pageIndex >= totalPages - 5 {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("Reader_NearingEnd"),
+                    object: nil,
+                    userInfo: ["pagesRemaining": totalPages - pageIndex]
+                )
+            }
         }
     }
+
     
     private func renderPage(at index: Int) async -> CGImage? {
         guard index >= 0 && index < pageURLs.count else { return nil }
