@@ -93,34 +93,14 @@ struct ReaderView: View {
     @State private var shareImage: UIImage? = nil
     @State private var showShareSheet = false
     
-    // ✅ CBR warning
-    @State private var showCBRWarning = false
-    
     // ✅ PDF document reference (for share + TOC)
     @State private var loadedPDFDocument: PDFDocument? = nil
     
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // ✅ CBR Guard: surface helpful message early
-                if CBRSupportChecker.isCBR(fileURL) {
-                    VStack(spacing: 20) {
-                        Image(systemName: "doc.badge.exclamationmark")
-                            .font(.system(size: 60))
-                            .foregroundStyle(Color.orange)
-                        Text("CBR Not Supported")
-                            .font(.title2.bold())
-                        Text(CBRSupportChecker.unsupportedMessage)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
-                        Button("Go Back") { if let onExit = onExit { onExit() } else { dismiss() } }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Color.orange)
-                    }
-                // ✅ Route: text-based EPUB → EBookReaderView, everything else → image reader
-                } else if fileURL.pathExtension.lowercased() == "epub" && contentType == .book {
+                // ✅ Route: text-based EPUB → EBookReaderView, image formats (CBZ/CBR/PDF) → comicReaderBody
+                if fileURL.pathExtension.lowercased() == "epub" && contentType == .book {
                     EBookReaderView(
                         fileURL: fileURL,
                         title: fileURL.deletingPathExtension().lastPathComponent,

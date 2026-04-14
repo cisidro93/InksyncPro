@@ -2,11 +2,18 @@ import Foundation
 import SwiftUI
 import ZIPFoundation
 import PDFKit
-// import UnrarKit
+import Unrar
 
 struct ZipUtilities {
     
     static func extractComic(from sourceURL: URL) async throws -> (workingDir: URL, imageURLs: [URL]) {
+        let ext = sourceURL.pathExtension.lowercased()
+
+        // Delegate CBR/RAR directly to the dedicated extractor
+        if ["cbr", "rar"].contains(ext) {
+            return try await CBRExtractor.extract(from: sourceURL)
+        }
+
         return try await withCheckedThrowingContinuation { continuation in
             // Use a raw background queue to guarantee isolation from the UI
             DispatchQueue.global(qos: .userInitiated).async {
@@ -24,7 +31,6 @@ struct ZipUtilities {
                     // 2. Create Target Directory
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
                     
-                    let ext = sourceURL.pathExtension.lowercased()
                     var extractedFiles: [URL] = []
                     
                     // 3. Extraction Strategy
@@ -57,26 +63,9 @@ struct ZipUtilities {
                                 }
                             }
                         }
-//                    } else if ["cbr", "rar"].contains(ext) {
-//                        // --- RAR / CBR PATH ---
-//                        // LEGACY: UnrarKit disabled due to build issues.
-//                        // let archive = try UnrarKit.Archive(url: sourceURL)
-//                        // try archive.extractFiles(to: tempDir)
-//                        //
-//                        // // Enumerate extracted files
-//                        // let keys: [URLResourceKey] = [.isRegularFileKey]
-//                        // let enumerator = fileManager.enumerator(at: tempDir, includingPropertiesForKeys: keys)
-//                        //
-//                        // while let fileURL = enumerator?.nextObject() as? URL {
-//                        //      let fileExt = fileURL.pathExtension.lowercased()
-//                        //      if ["jpg", "jpeg", "png", "webp", "gif"].contains(fileExt) {
-//                        //           extractedFiles.append(fileURL)
-//                        //      }
-//                        // }
 
                     } else {
-                        // --- ZIP / CBZ PATH (Legacy) ---
-                        // Initialize Archive
+                        // --- ZIP / CBZ PATH ---
                         guard let archive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read) else {
                             throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
                         }

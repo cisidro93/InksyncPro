@@ -7,6 +7,9 @@ packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation.git
     from: 0.9.19
+  Unrar:
+    url: https://github.com/mtgto/Unrar.swift.git
+    from: 0.5.0
 
 targets:
   InksyncPro:
@@ -21,6 +24,7 @@ targets:
 
     dependencies:
       - package: ZIPFoundation
+      - package: Unrar
 
     configFiles:
       Debug: Config.xcconfig

@@ -126,20 +126,15 @@ struct ReaderTOCSheet: View {
     }
 }
 
-// MARK: - CBR Support Stub
+// MARK: - CBR Support
 
-/// CBR files are RAR archives. Full RAR extraction requires a native library (libunrar or similar).
-/// This stub provides user-facing messaging and detects CBR files early so the reader
-/// can show a helpful alert rather than a cryptic crash.
+/// CBR files are RAR archives.
+/// Full native RAR extraction is powered by Unrar.swift (wrapping the official libunrar C++ source).
 struct CBRSupportChecker {
     static func isCBR(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         return ext == "cbr" || ext == "rar"
     }
-
-    static let unsupportedMessage = """
-    CBR files use the RAR compression format which requires a native decompression library not yet bundled with InksyncPro.
-
-    Workaround: Use a tool like Calibre, ComicInfo Editor, or 7-Zip to convert the CBR to CBZ (ZIP-based), then re-import it. CBZ files are fully supported.
-    """
+    /// Returns true when CBR support has been compiled in (Unrar.swift linked).
+    static let isSupported: Bool = true
 }
