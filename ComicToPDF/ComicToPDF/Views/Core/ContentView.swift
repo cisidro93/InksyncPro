@@ -5,8 +5,9 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.horizontalSizeClass) var sizeClass
-    @StateObject private var conversionManager = ConversionManager()
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @EnvironmentObject private var conversionManager: ConversionManager
     @StateObject private var settingsManager = AppSettingsManager.shared
     // ✅ NEW: Wi-Fi Server for Kindle Sync
     @StateObject private var wifiServer = WiFiServer()
@@ -248,8 +249,11 @@ struct ContentView: View {
                 NavigationStack { SettingsView() }
                     .tabVisible(selectedTab == 6)
             }
-            // Reserve space at the bottom so content scrolls above the pill
-            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 80) }
+            // Reserve space at the bottom so content scrolls above the pill.
+            // Use a smaller inset in landscape where screen height is precious.
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: (sizeClass == .compact && verticalSizeClass == .compact) ? 50 : 80)
+            }
 
             // ── Floating Glass Pill ────────────────────────────────────────────
             InkTabBar(

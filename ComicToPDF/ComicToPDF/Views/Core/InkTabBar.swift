@@ -20,6 +20,7 @@ struct InkTabBar: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var hSizeClass
+    @Environment(\.verticalSizeClass) private var vSizeClass
 
     private let allTabs: [InkTabItem] = [
         InkTabItem(tag: 0, label: "Library",    icon: "books.vertical",        activeIcon: "books.vertical.fill"),
@@ -31,14 +32,24 @@ struct InkTabBar: View {
         InkTabItem(tag: 6, label: "Settings",   icon: "gear",                  activeIcon: "gearshape.fill"),
     ]
 
-    // Compact: 5 primary tabs; Regular: all 7
-    private var visibleTabs: [InkTabItem] {
-        hSizeClass == .compact ? Array(allTabs.prefix(5)) : allTabs
+    // Always show all 7 tabs on every device and orientation
+    private var visibleTabs: [InkTabItem] { allTabs }
+
+    // iPhone landscape = compact height + compact width
+    private var isLandscapePhone: Bool {
+        hSizeClass == .compact && vSizeClass == .compact
     }
 
     private var horizontalPadding: CGFloat {
-        hSizeClass == .compact ? 24 : 80
+        if isLandscapePhone { return 60 }   // landscape iPhone: tight outer padding
+        if hSizeClass == .compact { return 18 } // portrait iPhone: small padding
+        return 80                            // iPad / regular
     }
+
+    private var pillVerticalPadding: CGFloat { isLandscapePhone ? 5 : 10 }
+    private var iconSize: CGFloat         { isLandscapePhone ? 15 : 17 }
+    private var activeIconSize: CGFloat   { isLandscapePhone ? 17 : 19 }
+    private var iconFrameHeight: CGFloat  { isLandscapePhone ? 22 : 34 }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -55,13 +66,10 @@ struct InkTabBar: View {
                 }
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 10)
+            .padding(.vertical, pillVerticalPadding)
             .background(
                 ZStack {
-                    // Base blur
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                    // Subtle inner gradient for depth
+                    Capsule().fill(.ultraThinMaterial)
                     Capsule()
                         .fill(
                             LinearGradient(
@@ -120,10 +128,10 @@ struct InkTabBar: View {
                 }
             }
         } label: {
-            VStack(spacing: 3) {
+            VStack(spacing: isLandscapePhone ? 1 : 3) {
                 ZStack {
-                    // Active glow
-                    if isActive {
+                    // Active glow — skip in landscape to save height
+                    if isActive && !isLandscapePhone {
                         Circle()
                             .fill(Color.orange.opacity(0.18))
                             .frame(width: 38, height: 38)
@@ -131,7 +139,10 @@ struct InkTabBar: View {
                     }
 
                     Image(systemName: isActive ? tab.activeIcon : tab.icon)
-                        .font(.system(size: isActive ? 19 : 17, weight: isActive ? .semibold : .regular))
+                        .font(.system(
+                            size: isActive ? activeIconSize : iconSize,
+                            weight: isActive ? .semibold : .regular
+                        ))
                         .foregroundStyle(
                             isActive
                                 ? AnyShapeStyle(
@@ -146,12 +157,12 @@ struct InkTabBar: View {
                         .scaleEffect(isActive ? 1.08 : 1.0)
                         .animation(.spring(response: 0.25, dampingFraction: 0.60), value: isActive)
                 }
-                .frame(width: 44, height: 34)
+                .frame(width: 44, height: iconFrameHeight)
 
-                // Active dot indicator
+                // Active dot — smaller in landscape
                 Circle()
                     .fill(Color.orange)
-                    .frame(width: 4, height: 4)
+                    .frame(width: isLandscapePhone ? 3 : 4, height: isLandscapePhone ? 3 : 4)
                     .opacity(isActive ? 1 : 0)
                     .scaleEffect(isActive ? 1 : 0.1)
                     .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isActive)
