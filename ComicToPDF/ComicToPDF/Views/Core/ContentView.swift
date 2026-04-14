@@ -7,7 +7,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @EnvironmentObject private var conversionManager: ConversionManager
+    @StateObject private var conversionManager = ConversionManager()
     @StateObject private var settingsManager = AppSettingsManager.shared
     // ✅ NEW: Wi-Fi Server for Kindle Sync
     @StateObject private var wifiServer = WiFiServer()
