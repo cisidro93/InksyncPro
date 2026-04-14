@@ -10,7 +10,7 @@ struct CBRExtractor {
     static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "bmp", "tiff"]
 
     /// Extracts a CBR/RAR archive to a temporary directory.
-    /// - Returns: (workingDir, sorted image URLs) — identical contract to ZipUtilities.extractComic
+    /// - Returns: (workingDir, sorted image URLs) — same contract as ZipUtilities.extractComic
     static func extract(from sourceURL: URL) async throws -> (workingDir: URL, imageURLs: [URL]) {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -28,15 +28,15 @@ struct CBRExtractor {
                         .appendingPathComponent("cbr_\(stem)_\(uniqueID)")
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-                    // Open archive with Unrar.swift
-                    let archive = try Archive(filePath: sourceURL.path)
+                    // Open archive — Unrar.Archive disambiguates from ZIPFoundation.Archive
+                    let archive = try Unrar.Archive(fileURL: sourceURL)
 
-                    // List entries and extract images
-                    var imageURLs: [URL] = []
+                    // List all entries
                     let entries = try archive.entries()
+                    var imageURLs: [URL] = []
 
                     for entry in entries {
-                        // Skip directories and macOS metadata
+                        // Skip directories and macOS metadata artefacts
                         guard !entry.fileName.hasSuffix("/"),
                               !entry.fileName.contains("__MACOSX"),
                               !entry.fileName.hasPrefix(".") else { continue }
@@ -44,11 +44,11 @@ struct CBRExtractor {
                         let ext = (entry.fileName as NSString).pathExtension.lowercased()
                         guard imageExtensions.contains(ext) else { continue }
 
-                        // Flatten the path so all images sit at the top of tempDir
+                        // Flatten the path — all images land directly in tempDir
                         let flatName = (entry.fileName as NSString).lastPathComponent
                         let destURL = tempDir.appendingPathComponent(flatName)
 
-                        // Extract entry data into memory then write
+                        // Extract entry to Data then persist atomically
                         let data = try archive.extract(entry)
                         try data.write(to: destURL, options: .atomic)
                         imageURLs.append(destURL)
@@ -58,7 +58,7 @@ struct CBRExtractor {
                         throw CBRError.noImagesFound
                     }
 
-                    // Sort alphanumerically (same as ZipUtilities)
+                    // Sort alphanumerically — same contract as ZipUtilities
                     let sorted = imageURLs.sorted {
                         $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
                     }
@@ -81,8 +81,7 @@ struct CBRExtractor {
     }
 
     // MARK: - CBR-to-CBZ Repackager
-    /// Extracts a CBR and repacks the images into a CBZ (ZIP) archive.
-    /// Useful for one-time conversion so future reads are zero-overhead.
+    /// Extracts a CBR and repacks images into a CBZ so future reads are zero-overhead.
     static func convertToCBZ(from sourceURL: URL, destination: URL? = nil) async throws -> URL {
         let (workingDir, imageURLs) = try await extract(from: sourceURL)
         defer { try? FileManager.default.removeItem(at: workingDir) }
@@ -91,17 +90,15 @@ struct CBRExtractor {
             .deletingPathExtension()
             .appendingPathExtension("cbz")
 
-        // Remove existing CBZ if present
         if FileManager.default.fileExists(atPath: destURL.path) {
             try FileManager.default.removeItem(at: destURL)
         }
 
-        // Repack via ZipUtilities
         let imagesDir = imageURLs.first?.deletingLastPathComponent() ?? workingDir
         try await ZipUtilities.zipDirectory(imagesDir, to: destURL)
 
         Logger.shared.log(
-            "CBRExtractor: converted \(sourceURL.lastPathComponent) → \(destURL.lastPathComponent)",
+            "CBRExtractor: \(sourceURL.lastPathComponent) \u{2192} \(destURL.lastPathComponent)",
             category: "System", type: .success
         )
         return destURL
