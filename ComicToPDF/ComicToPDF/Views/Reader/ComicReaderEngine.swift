@@ -290,22 +290,17 @@ struct ComicReaderEngine: View {
                     } else if readingMode == .panelNavigation {
                         guidedView
                     } else {
-                        // Standard Horizontal or RTL Mode
-                        TabView(selection: $currentIndex) {
-                            ForEach(0..<cache.pageCount, id: \.self) { index in
-                                // We inject `cache.cacheUpdatedTick` merely to force SwiftUI to redraw this specific view when background fetch succeeds.
-                                ComicPageView(image: cache.getImage(at: index), forceRedrawTick: cache.cacheUpdatedTick)
-                                    .applyFilterPreset(activeFilterPreset)
-                                    .tag(index)
-                                    .rotation3DEffect(.degrees(readingMode == .mangaRTL ? 180 : 0), axis: (x: 0, y: 1, z: 0))
-                            }
-                        }
-                        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
-                        // Reverse rendering context for RTL mode
-                        .rotation3DEffect(.degrees(readingMode == .mangaRTL ? 180 : 0), axis: (x: 0, y: 1, z: 0))
+                    // Book-style page flip (single or RTL)
+                    BookPager(
+                        currentIndex: $currentIndex,
+                        totalPages: cache.pageCount,
+                        cache: cache,
+                        readingMode: readingMode,
+                        activeFilterPreset: activeFilterPreset,
+                        onChromeTap: { chromeVisible.toggle() }
+                    )
                     }
                 }
-                .onTapGesture { chromeVisible.toggle() }
             }
             
             ReaderChrome(
@@ -427,32 +422,12 @@ struct ComicReaderEngine: View {
     }
     
     var twoUpView: some View {
-        // Landscape two-up
-        TabView(selection: $currentIndex) {
-            let limit = cache.pageCount / 2
-            ForEach(0..<limit, id: \.self) { pairIndex in
-                let index1 = pairIndex * 2
-                let index2 = index1 + 1
-                
-                HStack(spacing: 0) {
-                    if let img1 = cache.getImage(at: index1) {
-                        Image(uiImage: img1).resizable().applyFilterPreset(activeFilterPreset).aspectRatio(contentMode: .fit)
-                    } else {
-                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5))).frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    if index2 < cache.pageCount {
-                        if let img2 = cache.getImage(at: index2) {
-                            Image(uiImage: img2).resizable().applyFilterPreset(activeFilterPreset).aspectRatio(contentMode: .fit)
-                        } else {
-                            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5))).frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                    }
-                }
-                .tag(index1)
-                .id(cache.cacheUpdatedTick) // Async trigger
-            }
-        }
-        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+        TwoUpBookPager(
+            currentIndex: $currentIndex,
+            cache: cache,
+            activeFilterPreset: activeFilterPreset,
+            onChromeTap: { chromeVisible.toggle() }
+        )
     }
 }
 
@@ -461,23 +436,57 @@ struct ComicPageView: View {
     let image: UIImage?
     let forceRedrawTick: Int?
     @State private var currentScale: CGFloat = 1.0
-    
+    @State private var offset: CGSize = .zero
+
     var body: some View {
         if let image = image {
             GeometryReader { geo in
+                let imageSize = image.size
+                let containerAspect = geo.size.width / geo.size.height
+                let imageAspect   = imageSize.width / imageSize.height
+
+                // Determine rendered dimension so we never overflow horizontally
+                let renderWidth: CGFloat
+                let renderHeight: CGFloat
+                if imageAspect > containerAspect {
+                    // Landscape-dominant: constrain to width
+                    renderWidth  = geo.size.width
+                    renderHeight = geo.size.width / imageAspect
+                } else {
+                    // Portrait-dominant: constrain to height
+                    renderHeight = geo.size.height
+                    renderWidth  = geo.size.height * imageAspect
+                }
+
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: geo.size.width, height: geo.size.height)
+                    .frame(width: renderWidth, height: renderHeight)
                     .scaleEffect(currentScale)
+                    .offset(offset)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
                     .gesture(
-                        MagnificationGesture()
-                            .onChanged { val in currentScale = max(1.0, val) }
-                            .onEnded { _ in withAnimation(.spring()) { currentScale = 1.0 } }
+                        SimultaneousGesture(
+                            MagnificationGesture()
+                                .onChanged { val in currentScale = max(1.0, val) }
+                                .onEnded   { _ in
+                                    withAnimation(.spring()) {
+                                        currentScale = 1.0
+                                        offset = .zero
+                                    }
+                                },
+                            DragGesture()
+                                .onChanged { val in
+                                    if currentScale > 1.0 { offset = val.translation }
+                                }
+                                .onEnded { _ in
+                                    if currentScale <= 1.0 {
+                                        withAnimation(.spring()) { offset = .zero }
+                                    }
+                                }
+                        )
                     )
             }
         } else {
-            // Elegant placeholder for async-streaming
             ZStack {
                 Color.black
                 ProgressView()

@@ -164,6 +164,7 @@ struct SeriesDetailView: View {
     }
 
     private var contentList: some View {
+        ScrollViewReader { scrollProxy in
         List {
             Section(header: headerView) {
                 // ── Continue Reading Smart Button ────────────────────────
@@ -246,6 +247,7 @@ struct SeriesDetailView: View {
                                 }
                             }
                         } label: {
+
                             VStack(spacing: 6) {
                                 HStack(spacing: 10) {
                                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
@@ -294,6 +296,7 @@ struct SeriesDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .listRowBackground(Theme.surface.opacity(0.5))
+                        .id("vol_\(group.key)")  // anchor for QuickVolumeJump scroll
                         // Feature 3: Volume Omnibus Quick-Build (long-press)
                         .contextMenu {
                             Button {
@@ -366,6 +369,22 @@ struct SeriesDetailView: View {
         .onChange(of: conversionManager.convertedPDFs.count) { localIssues = sortedIssues }
         .listStyle(InsetGroupedListStyle())
         .navigationTitle(series.title)
+        // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
+        .onChange(of: jumpToVolume) { _, targetKey in
+            guard let targetKey else { return }
+            // 1. Expand the volume if it was collapsed
+            withAnimation(.easeInOut(duration: 0.2)) {
+                collapsedVolumes.remove(targetKey)
+            }
+            // 2. Scroll after the expand animation gives the List time to render
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    scrollProxy.scrollTo("vol_\(targetKey)", anchor: .top)
+                }
+                HapticEngine.medium()
+                jumpToVolume = nil  // reset so same volume can be re-selected
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 16) {
@@ -462,6 +481,7 @@ struct SeriesDetailView: View {
                 }
             }
         }
+        } // end ScrollViewReader
     }
 
     var body: some View {
