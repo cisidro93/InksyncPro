@@ -438,29 +438,28 @@ struct ComicPageView: View {
     @State private var currentScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
 
+    /// Compute the rendered width/height that fits the image inside `container`
+    /// without overflowing, preserving aspect ratio.
+    private func renderSize(for image: UIImage, in container: CGSize) -> CGSize {
+        let imageAspect     = image.size.width / image.size.height
+        let containerAspect = container.width  / container.height
+        if imageAspect > containerAspect {
+            // Landscape-dominant: clamp to container width
+            return CGSize(width: container.width, height: container.width / imageAspect)
+        } else {
+            // Portrait-dominant: clamp to container height
+            return CGSize(width: container.height * imageAspect, height: container.height)
+        }
+    }
+
     var body: some View {
         if let image = image {
             GeometryReader { geo in
-                let imageSize = image.size
-                let containerAspect = geo.size.width / geo.size.height
-                let imageAspect   = imageSize.width / imageSize.height
-
-                // Determine rendered dimension so we never overflow horizontally
-                let renderWidth: CGFloat
-                let renderHeight: CGFloat
-                if imageAspect > containerAspect {
-                    // Landscape-dominant: constrain to width
-                    renderWidth  = geo.size.width
-                    renderHeight = geo.size.width / imageAspect
-                } else {
-                    // Portrait-dominant: constrain to height
-                    renderHeight = geo.size.height
-                    renderWidth  = geo.size.height * imageAspect
-                }
+                let rendered = renderSize(for: image, in: geo.size)
 
                 Image(uiImage: image)
                     .resizable()
-                    .frame(width: renderWidth, height: renderHeight)
+                    .frame(width: rendered.width, height: rendered.height)
                     .scaleEffect(currentScale)
                     .offset(offset)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)

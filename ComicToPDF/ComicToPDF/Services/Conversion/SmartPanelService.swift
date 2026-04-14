@@ -100,7 +100,8 @@ class SmartPanelService {
              return nil
         }
         
-        await MainActor.run { TaskEngine.shared.processingStatus = "Metadata Found (\(result.count) pages)" }
+        let pageCount = result.count
+        await MainActor.run { TaskEngine.shared.processingStatus = "Metadata Found (\(pageCount) pages)" }
         try? await Task.sleep(nanoseconds: 500_000_000)
         
         // Denormalized Repair
