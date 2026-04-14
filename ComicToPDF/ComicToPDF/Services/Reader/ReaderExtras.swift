@@ -47,7 +47,6 @@ struct CBZTableOfContents {
             return CBZTableOfContents(chapters: [chapter])
         }
 
-        var startIndex = 0
         groups = folderOrder.compactMap { folder in
             guard let indices = folderMap[folder], !indices.isEmpty else { return nil }
             return (folder: folder, indices: indices)

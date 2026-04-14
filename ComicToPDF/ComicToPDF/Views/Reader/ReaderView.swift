@@ -408,7 +408,7 @@ struct ReaderView: View {
                 }
                 Section("Navigate") {
                     Button { jumpToPageText = ""; showJumpToPage = true } label: {
-                        Label("Jump to Page\u2026", systemImage: "arrow.right.circle")
+                        Label("Jump to Page…", systemImage: "arrow.right.circle")
                     }
                     .disabled(pages.isEmpty)
                     Button { showTOC = true } label: {
@@ -423,7 +423,7 @@ struct ReaderView: View {
                     .disabled(pages.isEmpty)
                     Button { showSleepTimerPicker = true } label: {
                         Label(
-                            sleepTimer.isActive ? "Sleep Timer (\(sleepTimer.formattedRemaining))" : "Sleep Timer\u2026",
+                            sleepTimer.isActive ? "Sleep Timer (\(sleepTimer.formattedRemaining))" : "Sleep Timer…",
                             systemImage: "moon.zzz"
                         )
                     }

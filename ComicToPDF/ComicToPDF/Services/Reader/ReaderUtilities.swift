@@ -36,10 +36,8 @@ final class OrientationLockManager: ObservableObject {
     private func applyLock(_ mask: UIInterfaceOrientationMask) {
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
         let pref = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: mask)
-        scene.requestGeometryUpdate(pref) { error in
-            if error != nil {
-                // Some devices/situations reject the request silently — acceptable failure
-            }
+        scene.requestGeometryUpdate(pref) { _ in
+            // Orientation change rejected by system — acceptable silent failure
         }
         // Rotate to match if needed
         if #available(iOS 16.0, *) {
