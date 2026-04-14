@@ -11,6 +11,8 @@ struct ReadingProgress: Codable, Identifiable {
     var completionFraction: Double      // 0.0–1.0
     var readingSessionDates: [Date]     // for streak calculation
     var estimatedMinutesRemaining: Int? // books only
+    var prefersMangaMode: Bool?         // per-book RTL preference memory
+    var colorFilter: String?            // "none" | "sepia" | "grayscale"
 }
 
 @MainActor

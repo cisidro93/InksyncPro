@@ -11,7 +11,8 @@ struct ContentView: View {
     // ✅ NEW: Wi-Fi Server for Kindle Sync
     @StateObject private var wifiServer = WiFiServer()
     
-    @State private var selectedTab = 0
+    @State private var selectedTab = 0   // 0 = Library (default launch tab)
+    @State private var tabBarHidden = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var selectedPDF: ConvertedPDF?
     
@@ -192,17 +193,10 @@ struct ContentView: View {
         }
     }
 
-    // ✅ iOS 26 "Liquid Glass" Layout
+    // ✅ iOS Layout with Custom InkTabBar
     var liquidGlassLayout: some View {
         TabView(selection: $selectedTab) {
-            // Tab 0: Reader
-            NavigationStack {
-                ActiveReaderDashboardView()
-            }
-            .tabItem { Label("Reader", systemImage: "book.fill") }
-            .tag(0)
-            
-            // Tab 1: Library
+            // Tab 0: Library (Primary / Default)
             NavigationStack {
                 ModernLibraryView(
                     selectedPDF: $selectedPDF,
@@ -225,34 +219,41 @@ struct ContentView: View {
                 }
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
+            .tag(0)
+
+            // Tab 1: Reader Dashboard
+            NavigationStack {
+                ActiveReaderDashboardView()
+            }
+            .tabItem { Label("Reader", systemImage: "book.fill") }
             .tag(1)
-            
-            // Tab 2: Inbox Room
+
+            // Tab 2: Inbox
             NavigationStack {
                 InboxReviewView()
             }
             .tabItem { Label("Inbox", systemImage: "tray.full.fill") }
             .tag(2)
-            
+
             // Tab 3: Devices
             DevicesView()
             .tabItem { Label("Devices", systemImage: "ipad.and.iphone") }
             .tag(3)
-            
+
             // Tab 4: Work Area
             NavigationStack {
                 EditorDashboardView()
             }
-            .tabItem { Label("Work Area", systemImage: "pencil.and.outline") }
+            .tabItem { Label("Work Area", systemImage: "scissors") }
             .tag(4)
-            
+
             // Tab 5: Highlights
             NavigationStack {
                 GlobalZettelkastenHubView()
             }
-            .tabItem { Label("Highlights", systemImage: "highlighter") }
+            .tabItem { Label("Highlights", systemImage: "text.badge.star") }
             .tag(5)
-            
+
             // Tab 6: Settings
             NavigationStack {
                 SettingsView()
@@ -260,15 +261,24 @@ struct ContentView: View {
             .tabItem { Label("Settings", systemImage: "gear") }
             .tag(6)
         }
-        // ✅ iOS 26 Enhancements
-        .ios26_tabBarMinimizeBehavior(.onScrollDown)
-        .ios26_tabViewBottomAccessory {
-            if conversionManager.isConverting {
-                ProgressOverlay(
-                    progress: conversionManager.conversionProgress,
-                    message: conversionManager.processingStatus
-                )
-            }
+        // Hide native tab bar — replaced by InkTabBar
+        .toolbar(.hidden, for: .tabBar)
+        // Custom InkTabBar floats above content via safeAreaInset
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            InkTabBar(
+                selectedTab: $selectedTab,
+                isHidden: $tabBarHidden,
+                convertingProgress: conversionManager.conversionProgress,
+                isConverting: conversionManager.isConverting,
+                convertingMessage: conversionManager.processingStatus
+            )
+            .padding(.bottom, 8)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_Hide"))) { _ in
+            withAnimation { tabBarHidden = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_Show"))) { _ in
+            withAnimation { tabBarHidden = false }
         }
     }
     
@@ -281,10 +291,10 @@ struct ContentView: View {
                 )
                 List(selection: tabBinding) {
                     NavigationLink(value: 0) {
-                        Label("Reader", systemImage: "book.fill")
+                        Label("Library", systemImage: "books.vertical.fill")
                     }
                     NavigationLink(value: 1) {
-                        Label("Library", systemImage: "books.vertical.fill")
+                        Label("Reader", systemImage: "book.fill")
                     }
                     NavigationLink(value: 2) {
                         Label("Inbox", systemImage: "tray.full.fill")
@@ -293,10 +303,10 @@ struct ContentView: View {
                         Label("Devices", systemImage: "ipad.and.iphone")
                     }
                     NavigationLink(value: 4) {
-                        Label("Work Area", systemImage: "pencil.and.outline")
+                        Label("Work Area", systemImage: "scissors")
                     }
                     NavigationLink(value: 5) {
-                        Label("Highlights", systemImage: "highlighter")
+                        Label("Highlights", systemImage: "text.badge.star")
                     }
                 }
                 .navigationTitle("Inksync")
@@ -319,15 +329,13 @@ struct ContentView: View {
         } detail: {
             NavigationStack {
                 if selectedTab == 0 {
-                    ActiveReaderDashboardView()
-                } else if selectedTab == 1 {
                     ModernLibraryView(
                         selectedPDF: $selectedPDF,
                         isBatchMode: $isBatchMode,
                         multiSelection: $multiSelection,
                         showingBatchMergeReorder: $showingBatchMergeReorder,
                         batchMergeItems: $batchMergeItems,
-                        useNavigationStack: false, // Handle selection manually in detail if needed, but since we are the detail, maybe we DO want navigation stack inside it for reader? Actually, ModernLibraryView already handles `useNavigationStack: false` by setting `selectedPDF`.
+                        useNavigationStack: false,
                         onFolderImport: {
                             ImportCoordinator.present(type: .folder) { urls in
                                 guard !urls.isEmpty else { return }
@@ -336,16 +344,14 @@ struct ContentView: View {
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    // If a PDF is selected, we want to push the ConvertView. 
-                    // To do this cleanly without breaking the grid, we use a navigationDestination bounded to selectedPDF
                     .navigationDestination(isPresented: Binding(
                         get: { selectedPDF != nil },
                         set: { if !$0 { selectedPDF = nil } }
                     )) {
-                        if let pdf = selectedPDF {
-                            ConvertView(pdf: pdf)
-                        }
+                        if let pdf = selectedPDF { ConvertView(pdf: pdf) }
                     }
+                } else if selectedTab == 1 {
+                    ActiveReaderDashboardView()
                 } else if selectedTab == 2 {
                     InboxReviewView()
                 } else if selectedTab == 3 {

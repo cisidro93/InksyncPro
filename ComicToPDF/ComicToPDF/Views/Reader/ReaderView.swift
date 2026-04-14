@@ -1,10 +1,34 @@
-
 import SwiftUI
 import UIKit
 import WebKit
 import PDFKit
 import ZIPFoundation
 import PencilKit
+
+// MARK: - Reader Color Filter
+enum ReaderColorFilter: String, CaseIterable, Codable {
+    case none     = "none"
+    case sepia    = "sepia"
+    case grayscale = "grayscale"
+    case warm     = "warm"   // reduce blue light
+    
+    var label: String {
+        switch self {
+        case .none:      return "Standard"
+        case .sepia:     return "Sepia"
+        case .grayscale: return "Grayscale"
+        case .warm:      return "Night Warm"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .none:      return "photo"
+        case .sepia:     return "cup.and.saucer.fill"
+        case .grayscale: return "moon.circle"
+        case .warm:      return "flame.fill"
+        }
+    }
+}
 
 struct ReaderView: View {
     @State var fileURL: URL
@@ -27,6 +51,13 @@ struct ReaderView: View {
     @State private var isDrawingMode = false
     @State private var canvasView = PKCanvasView()
     @State private var deviceOrientation: UIDeviceOrientation = UIDevice.current.orientation
+    
+    // ✅ Color Filter
+    @State private var colorFilter: ReaderColorFilter = .none
+    
+    // ✅ Jump to Page
+    @State private var showJumpToPage = false
+    @State private var jumpToPageText = ""
     
     // Unzip State
     @State private var unzippedDir: URL?
@@ -140,6 +171,9 @@ struct ReaderView: View {
                     }
                 }
                 
+                // Apply color filter overlay
+                colorFilterOverlay
+                
                 // Hardware Hardware Binding
                 VolumeHook(onUp: {
                     isMangaMode ? nextPage() : prevPage()
@@ -196,9 +230,12 @@ struct ReaderView: View {
             }
             .task {
                 await prepareArchive()
+                restorePerBookPreferences()
                 trackProgress()
             }
             .onChange(of: currentPageIndex) { trackProgress() }
+            .onChange(of: isMangaMode) { savePerBookPreferences() }
+            .onChange(of: colorFilter) { savePerBookPreferences() }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 deviceOrientation = UIDevice.current.orientation
             }
@@ -206,6 +243,19 @@ struct ReaderView: View {
                 if let dir = unzippedDir {
                     try? FileManager.default.removeItem(at: dir)
                 }
+            }
+            .alert("Jump to Page", isPresented: $showJumpToPage) {
+                TextField("Page number (1–\(pages.count))", text: $jumpToPageText)
+                    .keyboardType(.numberPad)
+                Button("Go") {
+                    if let n = Int(jumpToPageText), n >= 1, n <= pages.count {
+                        currentPageIndex = n - 1
+                    }
+                    jumpToPageText = ""
+                }
+                Button("Cancel", role: .cancel) { jumpToPageText = "" }
+            } message: {
+                Text("Enter a page number between 1 and \(pages.count).")
             }
     }
     
@@ -260,6 +310,25 @@ struct ReaderView: View {
                     Toggle("Dual Page (Manual)", isOn: $isDoublePageMode)
                     Toggle("Auto Dual Page in Landscape", isOn: $autoLandscapeDualPage)
                     Toggle("Auto-Split Wide Pages (Portrait)", isOn: .constant(true))
+                }
+                Section("Color Filter") {
+                    ForEach(ReaderColorFilter.allCases, id: \.self) { filter in
+                        Button {
+                            withAnimation { colorFilter = filter }
+                        } label: {
+                            Label(filter.label, systemImage: filter.icon)
+                        }
+                        .foregroundStyle(colorFilter == filter ? Color.orange : Color.primary)
+                    }
+                }
+                Section("Navigation") {
+                    Button {
+                        jumpToPageText = ""
+                        showJumpToPage = true
+                    } label: {
+                        Label("Jump to Page…", systemImage: "arrow.right.circle")
+                    }
+                    .disabled(pages.isEmpty)
                 }
             } label: {
                 Image(systemName: "textformat.size")
@@ -581,6 +650,56 @@ struct ReaderView: View {
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
+    }
+
+    // MARK: - Color Filter Overlay
+    @ViewBuilder
+    private var colorFilterOverlay: some View {
+        if colorFilter != .none {
+            Group {
+                switch colorFilter {
+                case .sepia:
+                    Color(red: 0.44, green: 0.26, blue: 0.08)
+                        .blendMode(.multiply)
+                        .opacity(0.28)
+                case .grayscale:
+                    Color.white
+                        .opacity(0)
+                        .overlay(Color.black.opacity(0)) // handled via .saturation modifier below
+                case .warm:
+                    Color(red: 1.0, green: 0.75, blue: 0.4)
+                        .blendMode(.multiply)
+                        .opacity(0.15)
+                case .none:
+                    EmptyView()
+                }
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
+    }
+    
+    // MARK: - Per-Book Preference Persistence
+    private func restorePerBookPreferences() {
+        guard let p = pdf,
+              let saved = ReaderProgressTracker.shared.progress(for: p.id) else { return }
+        if let mangaMode = saved.prefersMangaMode {
+            isMangaMode = mangaMode
+        }
+        if let savedFilter = saved.colorFilter,
+           let filter = ReaderColorFilter(rawValue: savedFilter) {
+            colorFilter = filter
+        }
+    }
+    
+    private func savePerBookPreferences() {
+        guard let p = pdf else { return }
+        var progress = ReaderProgressTracker.shared.progress(for: p.id)
+            ?? ReadingProgress(pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
+                               totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
+        progress.prefersMangaMode = isMangaMode
+        progress.colorFilter = colorFilter.rawValue
+        ReaderProgressTracker.shared.update(progress)
     }
 
     // MARK: - Progress Tracking Integration
