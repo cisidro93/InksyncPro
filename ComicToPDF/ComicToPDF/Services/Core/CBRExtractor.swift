@@ -37,7 +37,7 @@ struct CBRExtractor {
 
                     for entry in entries {
                         // Skip directories and macOS metadata artefacts
-                        guard !entry.fileName.hasSuffix("/"),
+                        guard !entry.directory,
                               !entry.fileName.contains("__MACOSX"),
                               !entry.fileName.hasPrefix(".") else { continue }
 
