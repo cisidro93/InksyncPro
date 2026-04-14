@@ -4,6 +4,7 @@ struct PPLReaderView: View {
     let pages: [URL]
     @Binding var currentPageIndex: Int
     var isMangaMode: Bool
+    var isDoublePageOverride: Bool = false  // Landscape auto-dual-page from parent
     var onCenterTap: () -> Void
     @ObservedObject private var bufferManager = PageBufferManager.shared
     
@@ -12,7 +13,10 @@ struct PPLReaderView: View {
     @State private var offset: CGSize = .zero
     @State private var dragOffset: CGSize = .zero
     
-    @AppStorage("isDoublePageMode") private var isDoublePageMode = false
+    @AppStorage("isDoublePageMode") private var isDoublePageStored = false
+    
+    // Effective double page: respects both the stored toggle AND the landscape override
+    private var effectiveDoublePage: Bool { isDoublePageOverride || isDoublePageStored }
     
     // ✅ Phase 2: Spread Splitting State
     @State private var splitHalf: Int = 0 // 0 = first half, 1 = second half
@@ -29,7 +33,7 @@ struct PPLReaderView: View {
                     // We utilize the preexisting asynchronous buffer predictions (`nextImage`)
                     // instead of synthesizing a merged bitmap, saving 40-70MB of RAM per swap.
                     HStack(spacing: 0) {
-                        if isDoublePageMode && geo.size.width > geo.size.height {
+                        if effectiveDoublePage && geo.size.width > geo.size.height {
                             if isMangaMode {
                                 // RTL (Manga) -> Next Page is on the Left
                                 if let next = bufferManager.nextImage {
@@ -197,7 +201,7 @@ struct PPLReaderView: View {
             }
         }
         
-        let hopCount = (isDoublePageMode && geo.width > geo.height) ? 2 : 1
+        let hopCount = (effectiveDoublePage && geo.width > geo.height) ? 2 : 1
         if currentPageIndex + hopCount < pages.count + (hopCount - 1) {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex += hopCount
@@ -213,11 +217,11 @@ struct PPLReaderView: View {
                 splitHalf = 0
                 return // Absorbed
             } else {
-                splitHalf = 1 // We assume the prev page might also be a spread, so we default to the "end" of it just in case. If not, it safely renders as standard full page.
+                splitHalf = 1
             }
         }
         
-        let hopCount = (isDoublePageMode && geo.width > geo.height) ? 2 : 1
+        let hopCount = (effectiveDoublePage && geo.width > geo.height) ? 2 : 1
         if currentPageIndex > 0 {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = max(0, currentPageIndex - hopCount)

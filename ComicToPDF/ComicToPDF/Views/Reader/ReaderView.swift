@@ -18,12 +18,15 @@ struct ReaderView: View {
     @AppStorage("isMangaMode") private var isMangaMode = false
     @State private var isPanelViewEnabled = true
     @State private var isToolbarVisible = true
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     
     // ✅ Phase 30: Advanced Reader Features
     @AppStorage("isVerticalScroll") private var isVerticalScroll = false
     @AppStorage("isDoublePageMode") private var isDoublePageMode = false
+    @AppStorage("autoLandscapeDualPage") private var autoLandscapeDualPage = true
     @State private var isDrawingMode = false
     @State private var canvasView = PKCanvasView()
+    @State private var deviceOrientation: UIDeviceOrientation = UIDevice.current.orientation
     
     // Unzip State
     @State private var unzippedDir: URL?
@@ -96,7 +99,8 @@ struct ReaderView: View {
                         // ✅ ZERO-LATENCY METAL PPL READER
                         if fileURL.pathExtension.lowercased() != "pdf" {
                             if !pages.isEmpty {
-                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, isMangaMode: isMangaMode) {
+                                let effectiveDoublePage = isDoublePageMode || (autoLandscapeDualPage && deviceOrientation.isLandscape)
+                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage) {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         isToolbarVisible.toggle()
                                     }
@@ -192,34 +196,47 @@ struct ReaderView: View {
             }
             .task {
                 await prepareArchive()
-                trackProgress() // Ensure it shows up in "Continue Reading" immediately
+                trackProgress()
             }
             .onChange(of: currentPageIndex) { trackProgress() }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                deviceOrientation = UIDevice.current.orientation
+            }
             .onDisappear {
-                // Cleanup Temp Files
                 if let dir = unzippedDir {
                     try? FileManager.default.removeItem(at: dir)
                 }
             }
     }
     
-    // MARK: - Top Bar
+    // MARK: - Top Bar (Minimal Glass HUD)
     @ViewBuilder private var topBar: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
+            // Back Button
             Button { if let onExit = onExit { onExit() } else { dismiss() } } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .padding(10)
-                    .background(Color.primary.opacity(0.08))
-                    .clipShape(Circle())
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
             }
             
-            VStack(alignment: .leading, spacing: 1) {
-                Text(fileURL.deletingPathExtension().lastPathComponent)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .foregroundStyle(.primary)
+            Text(fileURL.deletingPathExtension().lastPathComponent)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .shadow(color: .black.opacity(0.6), radius: 3)
+            
+            Spacer()
+            
+            // Page indicator pill
+            if !pages.isEmpty {
+                Text("\(currentPageIndex + 1) / \(pages.count)")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
             }
             
             Spacer()
@@ -227,38 +244,41 @@ struct ReaderView: View {
             if pdf != nil {
                 Button(action: toggleBookmark) {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(isBookmarked ? Theme.orange : .primary)
-                        .padding(10)
-                        .background(Color.primary.opacity(0.08))
-                        .clipShape(Circle())
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(isBookmarked ? Theme.orange : .white)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial, in: Circle())
                 }
             }
             
             Menu {
-                Section("Reading Direction") {
-                    Toggle("Manga Mode (R-to-L)", isOn: $isMangaMode)
-                    Toggle("Vertical Webtoon", isOn: $isVerticalScroll)
+                Section("Reading Mode") {
+                    Toggle("Manga (Right-to-Left)", isOn: $isMangaMode)
+                    Toggle("Vertical Webtoon Scroll", isOn: $isVerticalScroll)
                 }
-                Section("Advanced") {
-                    Toggle("Panel View", isOn: $isPanelViewEnabled)
+                Section("Layout") {
+                    Toggle("Dual Page (Manual)", isOn: $isDoublePageMode)
+                    Toggle("Auto Dual Page in Landscape", isOn: $autoLandscapeDualPage)
+                    Toggle("Auto-Split Wide Pages (Portrait)", isOn: .constant(true))
                 }
             } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .padding(10)
-                    .background(Color.primary.opacity(0.08))
-                    .clipShape(Circle())
+                Image(systemName: "textformat.size")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 50)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 14)
+        .padding(.top, 52)
+        .padding(.bottom, 10)
         .background(
-            Color(UIColor.systemBackground).opacity(0.92)
-                .background(.ultraThinMaterial.opacity(0.3))
-                .ignoresSafeArea(edges: .top)
+            LinearGradient(
+                colors: [Color.black.opacity(0.55), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .top)
         )
     }
     
@@ -740,93 +760,148 @@ struct ReaderScrubber: View {
     let isMangaMode: Bool
     let pages: [URL]
     
-    @State private var dragIndex: Int? = nil // Tracks the thumb while scrubbing
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isDragging: Bool = false
+    @State private var dragIndex: Int? = nil
+    
+    // Precomputed colours that are always legible in both modes
+    private var trackBg: Color {
+        colorScheme == .dark ? Color.white.opacity(0.25) : Color.black.opacity(0.18)
+    }
+    private var trackFill: Color { Theme.orange }
+    private var thumbColor: Color {
+        colorScheme == .dark ? Color(white: 0.9) : Color.white
+    }
+    private var panelBg: Material { .regularMaterial }
     
     var body: some View {
-        VStack(spacing: 8) {
-            // Floating Thumbnail Preview
-            if let activeIndex = dragIndex, activeIndex >= 0 && activeIndex < pages.count {
-                VStack(spacing: 4) {
-                    LocalFileImage(url: pages[activeIndex])
-                    .frame(width: 90, height: 130)
-                    .cornerRadius(8)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
-                    
-                    Text("Page \(activeIndex + 1)")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color(uiColor: UIColor.systemBackground))
-                        .clipShape(Capsule())
-                        .shadow(radius: 3)
-                }
-                .transition(.opacity.combined(with: .scale))
+        VStack(spacing: 0) {
+            // ── 5-page filmstrip thumbnail strip (shown while scrubbing) ──
+            if isDragging, let activeIndex = dragIndex {
+                filmstrip(centeredAt: activeIndex)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 8)
             } else {
-                Text("Page \(currentPageIndex + 1) of \(totalPages)")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.primary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color(uiColor: UIColor.systemBackground).opacity(0.8))
-                    .clipShape(Capsule())
+                // Idle: compact page pill only
+                Text("\(currentPageIndex + 1) / \(totalPages)")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(.bottom, 8)
             }
             
+            // ── Scrubber track ──
             GeometryReader { geo in
+                let displayIndex = dragIndex ?? currentPageIndex
+                let normalized = isMangaMode
+                    ? CGFloat(totalPages - 1 - displayIndex)
+                    : CGFloat(displayIndex)
+                let ratio = totalPages > 1 ? normalized / CGFloat(totalPages - 1) : 0
+                let thumbDiameter: CGFloat = isDragging ? 22 : 18
+                let trackWidth = geo.size.width - thumbDiameter
+                let thumbX = ratio * trackWidth
+                
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.primary.opacity(0.15)).frame(height: 6)
-                    
-                    let displayIndex = dragIndex ?? currentPageIndex
-                    let normalized = isMangaMode ? CGFloat(totalPages - 1 - displayIndex) : CGFloat(displayIndex)
-                    let ratio = totalPages > 1 ? normalized / CGFloat(totalPages - 1) : 0
-                    let thumbWidth: CGFloat = 20
-                    let trackWidth = geo.size.width - thumbWidth
-                    
+                    // Background track
                     Capsule()
-                        .fill(Theme.orange)
-                        .frame(width: ratio * trackWidth + thumbWidth, height: 6)
+                        .fill(trackBg)
+                        .frame(height: isDragging ? 5 : 4)
                     
+                    // Filled portion
+                    Capsule()
+                        .fill(trackFill)
+                        .frame(width: thumbX + thumbDiameter, height: isDragging ? 5 : 4)
+                    
+                    // Thumb
                     Circle()
-                        .fill(Color(uiColor: UIColor.systemBackground))
-                        .frame(width: thumbWidth, height: thumbWidth)
-                        .shadow(radius: 4)
-                        .offset(x: ratio * trackWidth)
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { val in
-                                    let percentage = min(max(val.location.x / geo.size.width, 0), 1)
-                                    let rawIndex = Int(round(percentage * CGFloat(totalPages - 1)))
-                                    let targeted = isMangaMode ? (totalPages - 1 - rawIndex) : rawIndex
-                                    
-                                    if dragIndex != targeted {
-                                        let generator = UISelectionFeedbackGenerator()
-                                        generator.selectionChanged()
-                                        dragIndex = targeted
-                                    }
-                                }
-                                .onEnded { _ in
-                                    if let final = dragIndex {
-                                        currentPageIndex = final
-                                    }
-                                    dragIndex = nil
-                                }
-                        )
+                        .fill(thumbColor)
+                        .shadow(color: .black.opacity(isDragging ? 0.35 : 0.2), radius: isDragging ? 6 : 3, y: 1)
+                        .frame(width: thumbDiameter, height: thumbDiameter)
+                        .offset(x: thumbX)
+                        .animation(.interactiveSpring(response: 0.18, dampingFraction: 0.8), value: displayIndex)
                 }
-                .frame(height: 24)
+                .frame(height: 36) // Generous hit-target height
+                .contentShape(Rectangle()) // Full bar is draggable
+                .gesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { val in
+                            isDragging = true
+                            let percentage = min(max(val.location.x / geo.size.width, 0), 1)
+                            let rawIndex = Int(round(percentage * CGFloat(totalPages - 1)))
+                            let targeted = isMangaMode ? (totalPages - 1 - rawIndex) : rawIndex
+                            if dragIndex != targeted {
+                                let g = UISelectionFeedbackGenerator()
+                                g.selectionChanged()
+                                dragIndex = targeted
+                            }
+                        }
+                        .onEnded { _ in
+                            if let final = dragIndex {
+                                currentPageIndex = final
+                            }
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                isDragging = false
+                            }
+                            dragIndex = nil
+                        }
+                )
             }
-            .frame(height: 24)
-            .padding(.horizontal, 30)
+            .frame(height: 36)
+            .padding(.horizontal, 20)
         }
-        .padding(.top, 10)
-        .padding(.bottom, 20)
-        .background(
-            Color(uiColor: UIColor.systemBackground).opacity(0.92)
-                .background(.ultraThinMaterial.opacity(0.3))
+        .padding(.top, 12)
+        .padding(.bottom, 16)
+        .padding(.horizontal, 4)
+        .background(panelBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: Color.black.opacity(0.15), radius: 10, y: 5)
-        .padding(.horizontal, 20)
+        .shadow(color: .black.opacity(0.18), radius: 16, y: 4)
+        .padding(.horizontal, 16)
+        .animation(.interactiveSpring(response: 0.22, dampingFraction: 0.85), value: isDragging)
+    }
+    
+    // MARK: - Filmstrip
+    @ViewBuilder
+    private func filmstrip(centeredAt center: Int) -> some View {
+        let halfCount = 2
+        let indices = (center - halfCount ... center + halfCount).map { $0 }
+        
+        HStack(spacing: 6) {
+            ForEach(indices, id: \.self) { idx in
+                let isCenter = idx == center
+                if idx >= 0 && idx < pages.count {
+                    VStack(spacing: 3) {
+                        LocalFileImage(url: pages[idx])
+                            .frame(
+                                width: isCenter ? 70 : 52,
+                                height: isCenter ? 100 : 74
+                            )
+                            .cornerRadius(isCenter ? 7 : 5)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: isCenter ? 7 : 5)
+                                    .strokeBorder(
+                                        isCenter ? Theme.orange : Color.primary.opacity(0.15),
+                                        lineWidth: isCenter ? 2 : 0.5
+                                    )
+                            )
+                            .shadow(color: .black.opacity(isCenter ? 0.4 : 0.15), radius: isCenter ? 8 : 3)
+                            .scaleEffect(isCenter ? 1.0 : 0.92)
+                        
+                        Text("\(idx + 1)")
+                            .font(.system(size: isCenter ? 11 : 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(isCenter ? Theme.orange : .secondary)
+                    }
+                    .animation(.interactiveSpring(response: 0.2, dampingFraction: 0.75), value: center)
+                } else {
+                    Color.clear
+                        .frame(width: isCenter ? 70 : 52, height: isCenter ? 100 : 74)
+                }
+            }
+        }
     }
 }
 
