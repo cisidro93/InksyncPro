@@ -2,7 +2,8 @@ import Foundation
 import ZIPFoundation
 import UIKit
 
-@MainActor
+// NOTE: I/O runs on the caller's context (typically a Task).
+// Only UI status string updates are dispatched to @MainActor.
 class SmartPanelService {
     static let shared = SmartPanelService()
     

@@ -27,8 +27,9 @@ struct ModernLibraryView: View {
         case grid = "Grid"
     }
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
-    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details 
+    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
+    @State private var scrollToTopTrigger = false  // toggled by double-tap on Library tab
     
     // UI Options Enum (kept for picker logic)
     enum SortOption: String, CaseIterable, Identifiable {
@@ -161,6 +162,11 @@ struct ModernLibraryView: View {
                     }
                 }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InkTab_DoubleTap_0"))) { _ in
+            // Library tab double-tapped: scroll back to top
+            HapticEngine.selection()
+            NotificationCenter.default.post(name: Notification.Name("Library_ScrollToTop"), object: nil)
         }
     }
     

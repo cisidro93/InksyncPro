@@ -11,7 +11,7 @@ struct SeriesConflictView: View {
     @State private var resolvedIndices: Set<Int> = []
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
 

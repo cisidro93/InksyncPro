@@ -15,7 +15,7 @@ struct PageExtractionView: View {
     @State private var errorMessage = ""
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("Page Range")) {
                     Stepper("Start Page: \(rangeStart)", value: $rangeStart, in: 1...pdf.pageCount)
@@ -93,7 +93,7 @@ struct PanelExtractionView: View {
     @State private var errorMessage = ""
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack {
                 if extractedImages.isEmpty {
                     Image(uiImage: sourceImage)

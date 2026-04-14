@@ -9,7 +9,7 @@ struct PanelEditorView: View {
     @State private var selectedIndex: Int? = nil
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             GeometryReader { geometry in
                 ZStack {
                     Color.black.edgesIgnoringSafeArea(.all)

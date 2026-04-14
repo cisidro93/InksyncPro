@@ -20,6 +20,7 @@ class SmartImportViewModel: ObservableObject {
     @Published var userEditedTitle: Bool = false
     @Published var userEditedDirection: Bool = false
     @Published var pageCount: Int = 0
+    @Published var firstPageURL: URL? = nil  // for live cover preview
 
     var canSkipSheet: Bool { seriesMemory?.canSkipImportSheet == true }
     var shouldShowPanelStrip: Bool {
@@ -77,11 +78,18 @@ class SmartImportViewModel: ObservableObject {
             }
         }
 
-        // 5. Lightweight panel scan (first 15 pages only)
+        // 5. Streaming panel scan — extract images one-by-one, stop after 15
         do {
+            let secure = sourceURL.startAccessingSecurityScopedResource()
+            defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
+
+            // For CBR use CBRExtractor, for others use ZipFoundation streaming
             let extraction = try await ZipUtilities.extractComic(from: sourceURL)
-            let sample = Array(extraction.imageURLs.prefix(15))
-            pageCount = extraction.imageURLs.count
+            let allImages = extraction.imageURLs
+            pageCount = allImages.count
+            firstPageURL = allImages.first  // cover preview
+
+            let sample = Array(allImages.prefix(15))
             var confidences: [Double] = []
             for url in sample {
                 if let img = UIImage(contentsOfFile: url.path) {
@@ -93,7 +101,9 @@ class SmartImportViewModel: ObservableObject {
                 }
             }
             overallConfidence = confidences.isEmpty ? 0.8 : confidences.reduce(0, +) / Double(confidences.count)
-            try? FileManager.default.removeItem(at: extraction.workingDir)
+            // Clean up all extracted images except the first (used as cover preview)
+            let toDelete = allImages.dropFirst()
+            for url in toDelete { try? FileManager.default.removeItem(at: url) }
         } catch {
             self.extractionError = "Could not validate comic archive. The volume may be corrupted or encrypted: \(error.localizedDescription)"
         }
@@ -102,6 +112,7 @@ class SmartImportViewModel: ObservableObject {
     }
 
     func confirm(manager: ConversionManager, context: ModelContext) {
+        HapticEngine.success()  // import confirmed
         // Apply pipeline to settings
         ConversionViewModel().applyPipeline(selectedPipeline, to: &AppSettingsManager.shared.conversionSettings)
         AppSettingsManager.shared.conversionSettings.mangaMode = isManga
@@ -146,7 +157,7 @@ struct SmartImportSheet: View {
     @State private var showingConvertSettings = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 Color.inkBackground.ignoresSafeArea()
 
@@ -229,13 +240,23 @@ struct ImportFormView: View {
             VStack(spacing: 20) {
                 // Cover + title area
                 VStack(spacing: 8) {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.inkSurfaceRaised)
-                        .frame(width: 64, height: 90)
-                        .overlay(
-                            Image(systemName: "book.closed.fill")
-                                .foregroundColor(.inkTextSecondary)
-                        )
+                // Cover preview — show actual first page if available
+                Group {
+                    if let coverURL = vm.firstPageURL,
+                       let img = UIImage(contentsOfFile: coverURL.path) {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 64, height: 90)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .shadow(radius: 4)
+                    } else {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.inkSurfaceRaised)
+                            .frame(width: 64, height: 90)
+                            .overlay(Image(systemName: "book.closed.fill").foregroundColor(.inkTextSecondary))
+                    }
+                }
 
                     Text(vm.title)
                         .font(.system(size: 17, weight: .semibold))
@@ -320,14 +341,23 @@ struct ImportFormView: View {
             // Left column — cover + series info
             VStack(spacing: 16) {
                 // Cover (larger on iPad)
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.inkSurfaceRaised)
-                    .frame(width: 120, height: 170)
-                    .overlay(
-                        Image(systemName: "book.closed.fill")
-                            .foregroundColor(.inkTextSecondary)
-                            .font(.system(size: 36))
-                    )
+                // Cover preview — larger on iPad
+                Group {
+                    if let coverURL = vm.firstPageURL,
+                       let img = UIImage(contentsOfFile: coverURL.path) {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 120, height: 170)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .shadow(radius: 6)
+                    } else {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.inkSurfaceRaised)
+                            .frame(width: 120, height: 170)
+                            .overlay(Image(systemName: "book.closed.fill").foregroundColor(.inkTextSecondary).font(.system(size: 36)))
+                    }
+                }
 
                 Text(vm.seriesName)
                     .font(.system(size: 18, weight: .semibold))
@@ -453,6 +483,7 @@ struct SkippedImportView: View {
     let onConfirm: () -> Void
     let onChange: () -> Void
     @State private var countdown: Int = 3
+    @State private var timerActive = true
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -498,12 +529,16 @@ struct SkippedImportView: View {
 
             Spacer()
 
-            Button("Change settings") { onChange() }
+            Button("Change settings") {
+                timerActive = false  // prevent auto-confirm after view switches
+                onChange()
+            }
                 .font(.system(size: 14))
                 .foregroundColor(.inkTextSecondary)
                 .padding(.bottom, 30)
         }
         .onReceive(timer) { _ in
+            guard timerActive else { return }
             if countdown > 1 { countdown -= 1 }
             else { onConfirm() }
         }

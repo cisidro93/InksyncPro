@@ -117,12 +117,14 @@ struct InkTabBar: View {
 
         Button {
             if selectedTab == tab.tag {
-                // Tap active tab again → scroll-to-top signal
+                // Tap active tab again → scroll-to-top signal + subtle haptic
+                HapticEngine.medium()
                 NotificationCenter.default.post(
                     name: NSNotification.Name("InkTab_DoubleTap_\(tab.tag)"),
                     object: nil
                 )
             } else {
+                HapticEngine.light()
                 withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
                     selectedTab = tab.tag
                 }

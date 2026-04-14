@@ -13,7 +13,7 @@ struct AddDeviceSheet: View {
     var isValid: Bool { !name.isEmpty }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 Color.inkBackground.ignoresSafeArea()
 

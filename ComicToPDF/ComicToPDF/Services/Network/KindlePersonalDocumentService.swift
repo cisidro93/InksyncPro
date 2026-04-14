@@ -61,13 +61,13 @@ class KindlePersonalDocumentService: NSObject, ObservableObject, MFMailComposeVi
 struct MailComposeView: UIViewControllerRepresentable {
     let fileURL: URL
     let toEmail: String
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) private var dismiss
     
     class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
         var parent: MailComposeView
         init(_ parent: MailComposeView) { self.parent = parent }
         func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
-            parent.presentationMode.wrappedValue.dismiss()
+            parent.dismiss()
         }
     }
     

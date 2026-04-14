@@ -317,7 +317,7 @@ struct PageManagerView: View {
             await viewModel.loadPages(from: pdf)
         }
         .sheet(isPresented: $showingChapters) {
-             NavigationView {
+             NavigationStack {
                  List {
                      if livePDF.chapters.isEmpty {
                          Text("No chapters detected.")

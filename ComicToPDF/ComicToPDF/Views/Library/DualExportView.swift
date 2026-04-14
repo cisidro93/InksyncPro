@@ -5,7 +5,7 @@ struct DualExportView: View {
     let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) private var dismiss
     
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
     
@@ -20,7 +20,7 @@ struct DualExportView: View {
     @State private var mailResult: Result<MFMailComposeResult, Error>? = nil
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 24) {
                 // Header
                 VStack(spacing: 8) {
@@ -194,7 +194,7 @@ struct DualExportView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Close") { presentationMode.wrappedValue.dismiss() }
+                    Button("Close") { dismiss() }
                 }
             }
             .sheet(isPresented: $showingShareSheet) {
@@ -294,7 +294,7 @@ struct KFXInstructionCardView: View {
     var onShare: () -> Void
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("What's Next?")

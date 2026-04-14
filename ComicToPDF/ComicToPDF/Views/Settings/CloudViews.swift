@@ -24,7 +24,7 @@ struct CloudImportView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     Button(action: { 
@@ -110,7 +110,7 @@ struct CloudExportView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 Form {
                     Section {

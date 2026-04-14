@@ -6,6 +6,7 @@ struct SettingsView: View {
     // Core Navigation & Overarching Variables
     @AppStorage("useSidebar") private var useSidebar = true
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
+    @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
     
     // ✅ NEW: Kindle Email Storage
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
@@ -154,6 +155,16 @@ struct SettingsView: View {
     @ViewBuilder
     private var generalUISection: some View {
         Section {
+            // App Mode
+            HStack {
+                settingsIcon("bolt.fill", color: .orange)
+                Picker("App Mode", selection: $appUIMode) {
+                    Text("Go Mode  (Quick Convert)").tag(AppUIMode.go)
+                    Text("Pro Mode (Full Library)").tag(AppUIMode.pro)
+                }
+                .pickerStyle(.menu)
+            }
+
             HStack {
                 settingsIcon("textformat.size", color: .blue)
                 Picker("App Text Size", selection: $settingsManager.conversionSettings.textSize) {

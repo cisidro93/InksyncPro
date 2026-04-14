@@ -15,7 +15,7 @@ struct CloudSyncView: View {
     @State private var showingSuccess = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("WebDAV / Cloud Target")) {
                     TextField("Server URL (e.g. https://boox.local:8080)", text: $serverURL)

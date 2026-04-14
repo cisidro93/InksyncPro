@@ -42,7 +42,7 @@ struct MetadataEditorSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 autoFillSection()
                 coreInfoSection()
@@ -453,7 +453,7 @@ struct SearchResultsView: View {
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List(results) { volume in
                 Button {
                     onSelect(volume)
@@ -491,7 +491,7 @@ struct BookVineResultsView: View {
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List(results) { book in
                 Button {
                     onSelect(book)

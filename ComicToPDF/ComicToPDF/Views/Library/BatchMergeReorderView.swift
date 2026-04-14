@@ -19,7 +19,7 @@ struct BatchMergeReorderView: View {
     ]
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 if isProcessing {
                     ImmersiveConversionOverlay(

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct UnifiedReaderView: View {
     let pdf: ConvertedPDF
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         ZStack {
@@ -10,11 +10,11 @@ struct UnifiedReaderView: View {
             
             switch pdf.contentKind {
             case .comic:
-                ComicReaderEngine(pdf: pdf, onDismiss: { presentationMode.wrappedValue.dismiss() })
+                ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() })
             case .book:
-                BookReaderEngine(pdf: pdf, onDismiss: { presentationMode.wrappedValue.dismiss() })
+                BookReaderEngine(pdf: pdf, onDismiss: { dismiss() })
             case .document:
-                DocumentReaderEngine(pdf: pdf, onDismiss: { presentationMode.wrappedValue.dismiss() })
+                DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
             }
         }
         .navigationBarHidden(true)

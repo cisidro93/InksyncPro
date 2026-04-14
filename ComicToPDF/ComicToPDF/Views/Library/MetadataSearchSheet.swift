@@ -21,7 +21,7 @@ struct MetadataSearchSheet: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack {
                 // Search Bar
                 HStack {

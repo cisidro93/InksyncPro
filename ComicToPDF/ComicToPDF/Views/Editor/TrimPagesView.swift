@@ -20,7 +20,7 @@ struct TrimPagesView: View {
     @State private var errorMessage: String = ""
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("Trim Edges")) {
                     Text("Remove white borders or scanning artifacts from selected pages.")

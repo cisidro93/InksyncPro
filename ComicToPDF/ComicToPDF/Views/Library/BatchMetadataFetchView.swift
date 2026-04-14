@@ -215,7 +215,7 @@ struct BatchMetadataFetchView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if fetcher.currentPhase == .staging {
                     stagingView

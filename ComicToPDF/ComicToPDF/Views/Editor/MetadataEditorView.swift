@@ -28,7 +28,7 @@ struct MetadataEditorView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("Book Details")) {
                     TextField("Title", text: $title)

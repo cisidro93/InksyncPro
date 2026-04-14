@@ -51,38 +51,21 @@ struct ContentView: View {
     @State private var globalErrorCategory = "System"
 
     var body: some View {
-        VStack(spacing: 0) {
-            // ✅ Global "Go vs Pro" Mode Switcher
-            HStack {
-                Spacer()
-                Picker("UI Mode", selection: $appUIMode) {
-                    Text("Go Mode").tag(AppUIMode.go)
-                    Text("Pro Mode").tag(AppUIMode.pro)
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 300)
-                Spacer()
-            }
-            .padding(.vertical, 8)
-            .background(Color(.systemBackground).ignoresSafeArea(edges: .top))
-            .zIndex(1)
-            
-            ZStack {
-                if appUIMode == .go {
-                    GoConvertView()
+        ZStack {
+            if appUIMode == .go {
+                GoConvertView()
+                    .transition(.opacity)
+            } else {
+                if sizeClass == .compact || !useSidebar {
+                    liquidGlassLayout
                         .transition(.opacity)
                 } else {
-                    if sizeClass == .compact || !useSidebar {
-                        liquidGlassLayout
-                            .transition(.opacity)
-                    } else {
-                        iPadLayout
-                            .transition(.opacity)
-                    }
+                    iPadLayout
+                        .transition(.opacity)
                 }
             }
-            .animation(.easeInOut, value: appUIMode)
         }
+        .animation(.easeInOut, value: appUIMode)
         .secureVaultPrivacy()
         .environmentObject(conversionManager)
         .environmentObject(settingsManager)

@@ -226,7 +226,7 @@ struct ProFeatureCheatSheet: View {
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Section(header: Text("Magic Keyboard Shortcuts")) {
                     shortcutRow(cmd: "CMD + B", desc: "Toggle Notebook Overlay")

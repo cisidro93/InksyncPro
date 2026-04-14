@@ -3,11 +3,11 @@ import Charts
 
 struct ReadingStatsView: View {
     @ObservedObject private var tracker = ReaderProgressTracker.shared
-    @Environment(\.presentationMode) var presentation
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     
@@ -205,7 +205,11 @@ struct ReadingStatsView: View {
             }
             .background(Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all))
             .navigationTitle("Reading Stats")
-            .navigationBarItems(trailing: Button("Done") { presentation.wrappedValue.dismiss() })
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }.bold()
+                }
+            }
         }
     }
     
@@ -251,14 +255,14 @@ struct ReadingStatsView: View {
     }
     
     var weeklyData: [(day: String, pages: Int)] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        let days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        _ = calendar.component(.weekday, from: today) // 1 = Sunday
-        
-        // Build from tracker's daily data, fallback to computed estimates
-        return days.enumerated().map { idx, name in
-            let pagesForDay = tracker.pagesReadOn(dayOfWeekIndex: idx)
+        let cal = Calendar.current
+        // Build locale-correct day names starting from firstWeekday
+        var symbols = cal.shortWeekdaySymbols  // Sunday-first always
+        let firstIdx = cal.firstWeekday - 1     // 0=Sun in the array
+        symbols = Array(symbols[firstIdx...] + symbols[..<firstIdx])
+
+        return symbols.enumerated().map { idx, name in
+            let pagesForDay = tracker.pagesReadOn(dayOfWeekIndex: (idx + firstIdx) % 7)
             return (day: name, pages: pagesForDay)
         }
     }
@@ -286,7 +290,11 @@ struct ReadingStatsView: View {
         
         return groups
             .map { SeriesProgress(name: $0.key, readCount: $0.value.read, totalCount: $0.value.total) }
-            .sorted { $0.progress > $1.progress }
+            // Sort by most books read (engagement) then alphabetically
+            .sorted { lhs, rhs in
+                if lhs.readCount != rhs.readCount { return lhs.readCount > rhs.readCount }
+                return lhs.name < rhs.name
+            }
             .prefix(10)
             .map { $0 }
     }

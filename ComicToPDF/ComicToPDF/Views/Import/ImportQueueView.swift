@@ -22,7 +22,7 @@ struct ImportQueueView: View {
     @State private var showImportSummary = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
 

@@ -25,7 +25,7 @@ struct SeriesMergeConfigurationView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack {
                 if isProcessing {
                     ImmersiveConversionOverlay(

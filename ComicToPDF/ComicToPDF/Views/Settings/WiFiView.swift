@@ -261,7 +261,7 @@ struct WiFiView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 serverStatusSection
                 stagedFilesSection

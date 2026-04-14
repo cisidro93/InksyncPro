@@ -15,7 +15,7 @@ struct RenameSheetView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     TextField("Output file name", text: $newName)
@@ -194,7 +194,7 @@ struct BatchRenameView: View {
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("Rename Pattern")) {
                     TextField("Pattern (e.g., {series} #{issue})", text: $pattern)
