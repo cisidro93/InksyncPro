@@ -7,6 +7,10 @@ struct RequestedComicItem: Identifiable, Hashable {
     var year: String?
     var volume: String?
     var title: String?
+    var readingOrder: String?
+    var sortOrder: Int?
+    var label: String?
+    var isOptional: Bool?
     
     // Fallback original string for debugging or generic text matching
     var originalText: String
@@ -55,7 +59,7 @@ class SmartListImporter {
             
             if idx == 0 {
                 let testHeaders = columns.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
-                if testHeaders.contains(where: { $0.contains("chapter") || $0.contains("start") || $0.contains("end") || $0.contains("issue") || $0.contains("series") || $0.contains("title") }) {
+                if testHeaders.contains(where: { $0.contains("chapter") || $0.contains("start") || $0.contains("end") || $0.contains("issue") || $0.contains("series") || $0.contains("title") || $0.contains("reading") || $0.contains("sort") }) {
                     headers = testHeaders
                     hasHeaders = true
                     continue
@@ -70,6 +74,11 @@ class SmartListImporter {
             var endChap: Int? = nil
             var parsedSeries: String? = nil
             var parsedIssue: String? = nil
+            
+            var parsedReadingOrder: String? = nil
+            var parsedSortOrder: Int? = nil
+            var parsedLabel: String? = nil
+            var parsedOptional: Bool? = nil
             
             for (colIdx, value) in columns.enumerated() {
                 guard colIdx < headers.count else { continue }
@@ -86,19 +95,29 @@ class SmartListImporter {
                     startChap = Int(cleanVal)
                 } else if header == "end_chapter" || header == "end" {
                     endChap = Int(cleanVal)
+                } else if header == "readingorder" || header.contains("reading") || header == "event" {
+                    parsedReadingOrder = cleanVal
+                } else if header == "sortorder" || header == "order" || header == "sort" {
+                    parsedSortOrder = Int(cleanVal)
+                } else if header == "label" || header == "category" || header == "type" {
+                    parsedLabel = cleanVal
+                } else if header == "optional" {
+                    let optStr = cleanVal.lowercased()
+                    if optStr == "true" || optStr == "1" || optStr == "yes" { parsedOptional = true }
+                    else if optStr == "false" || optStr == "0" || optStr == "no" { parsedOptional = false }
                 }
             }
             
             if let series = parsedSeries ?? (defaultSeriesName.isEmpty ? nil : defaultSeriesName) {
                 if let issue = parsedIssue {
-                    items.append(RequestedComicItem(series: series, issueNumber: issue, volume: volInfo, originalText: row))
+                    items.append(RequestedComicItem(series: series, issueNumber: issue, volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: row))
                 } else if let start = startChap {
                     let end = endChap ?? start
                     for chap in start...end {
-                        items.append(RequestedComicItem(series: series, issueNumber: "\(chap)", volume: volInfo, originalText: "Vol \(volInfo ?? "?"), Ch \(chap)"))
+                        items.append(RequestedComicItem(series: series, issueNumber: "\(chap)", volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: "Vol \(volInfo ?? "?"), Ch \(chap)"))
                     }
                 } else {
-                    items.append(RequestedComicItem(series: series, issueNumber: nil, volume: volInfo, originalText: row))
+                    items.append(RequestedComicItem(series: series, issueNumber: nil, volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: row))
                 }
             }
         }

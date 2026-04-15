@@ -116,8 +116,12 @@ struct EventResolutionSheet: View {
                             } label: {
                                 HStack {
                                     Image(systemName: "xmark.circle").foregroundColor(.red)
-                                    Text(item.request.originalText).font(.subheadline)
-                                        .foregroundColor(.primary)
+                                    VStack(alignment: .leading) {
+                                        Text(item.request.originalText).font(.subheadline).foregroundColor(.primary)
+                                        if let isOpt = item.request.isOptional, isOpt {
+                                            Text("Optional").font(.caption2).padding(.horizontal, 4).padding(.vertical, 2).background(Color.secondary.opacity(0.2)).cornerRadius(4)
+                                        }
+                                    }
                                     Spacer()
                                     Image(systemName: "magnifyingglass")
                                         .foregroundColor(Color(.tertiaryLabel))
@@ -220,14 +224,22 @@ struct EventResolutionSheet: View {
     private func buildEventCollection() {
         isProcessing = true
         
-        // Extract array of matched PDFs exactly in the order of the resolvedItems list
-        var orderedIDs: [UUID] = []
-        
+        // Extract array of matched PDFs
+        var matchedPairs: [(pdf: ConvertedPDF, request: RequestedComicItem)] = []
         for item in resolvedItems {
             if case .matched(let pdf) = item.resolution {
-                orderedIDs.append(pdf.id)
+                matchedPairs.append((pdf, item.request))
             }
         }
+        
+        // Sort by requested sortOrder if provided, else keep parsed sequence
+        matchedPairs.sort { a, b in
+            let soA = a.request.sortOrder ?? Int.max
+            let soB = b.request.sortOrder ?? Int.max
+            return soA < soB
+        }
+        
+        var orderedIDs: [UUID] = matchedPairs.map { $0.pdf.id }
         
         let newCollection = PDFCollection(
             id: UUID(),
@@ -377,6 +389,11 @@ struct EventResolutionSheet: View {
                     mutableMeta.issueNumber = item.request.issueNumber
                     mutableMeta.volume = item.request.volume
                     mutableMeta.tags.append("Smart List Synced")
+                    
+                    if let ro = item.request.readingOrder { mutableMeta.readingOrder = ro }
+                    if let so = item.request.sortOrder { mutableMeta.sortOrder = so }
+                    if let lbl = item.request.label { mutableMeta.readingEventLabel = lbl }
+                    if let opt = item.request.isOptional { mutableMeta.isOptional = opt }
                     
                     conversionManager.convertedPDFs[idx].metadata = mutableMeta
                 }

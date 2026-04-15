@@ -40,6 +40,26 @@ Ch 8-14
 
 ---
 
+### Form 3: Event Reading Order (Complex Metadata)
+For explicit cross-over events and Reading Orders, the engine can map advanced metadata fields such as `ReadingOrder` names, sequence indexing (`SortOrder`), and flag items as `Optional`.
+
+**Supported Headers (Case-Insensitive):**
+- **ReadingOrder** / Event / Reading Order
+- **SortOrder** / Sort / Order
+- **Label** / Category / Type
+- **Optional**
+
+**Example `Civil War_Reading_Order.csv`:**
+```csv
+ReadingOrder,SortOrder,Series,Issue,Volume,Label,Optional
+Civil War,1,Amazing Spider-Man,529,,Prelude,false
+Civil War,2,New Avengers,21,,Prelude,true
+Civil War,3,Civil War,1,,Main,false
+```
+*(By providing `ReadingOrder` and `SortOrder` columns, the importer will automatically adopt the event name and strictly enforce the sequence order into the final generated Application Playlist).*
+
+---
+
 ## 2. Readwise Highlights Import (`.csv`)
 
 InksyncPro's native `ReadwiseImportService` is already mapped to support standard Readwise `.csv` exports out-of-the-box. 

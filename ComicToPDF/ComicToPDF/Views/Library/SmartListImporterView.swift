@@ -18,7 +18,8 @@ struct SmartListImporterView: View {
                     EventResolutionSheet(eventName: eventName, resolvedItems: items)
                 } else {
                     NavigationStack {
-                        VStack(spacing: 24) {
+                        ScrollView {
+                            VStack(spacing: 24) {
                             Image(systemName: "list.star")
                                 .font(.system(size: 60))
                                 .foregroundColor(.purple)
@@ -96,6 +97,15 @@ struct SmartListImporterView: View {
                                 .cornerRadius(8)
                                 .padding(.horizontal, 40)
                             
+                            // âœ… NEW: CSV Example Button
+                            Button {
+                                pastedText = "ReadingOrder,SortOrder,Series,Issue,Volume,Label,Optional\nCivil War,1,Amazing Spider-Man,529,,Prelude,false\nCivil War,2,New Avengers,21,,Prelude,true\nCivil War,3,Civil War,1,,Main,false"
+                            } label: {
+                                Label("Paste Example Reading Order Template", systemImage: "doc.on.clipboard")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
+                            
                             if !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Button {
                                     handlePastedText()
@@ -119,6 +129,7 @@ struct SmartListImporterView: View {
                                     .padding(.horizontal)
                             }
                         }
+                        .padding(.vertical)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Cancel") { dismiss() }
@@ -164,17 +175,21 @@ struct SmartListImporterView: View {
             // Perform resolution against local library
             let resolutions = SmartListImporter.shared.resolveList(requests, against: conversionManager.convertedPDFs)
             
-            // ── Smart Series Affinity Detection ─────────────────────────────────────
-            // Analyze matched items to detect if the list references a single existing
-            // series collection. If 70%+ of matched files share one collection, this
-            // is a "series volume breakdown" not a crossover event — auto-bind to it.
             let matchedPDFs = resolutions.compactMap { item -> ConvertedPDF? in
                 if case .matched(let pdf) = item.resolution { return pdf }
                 if case .suggested(let pdf) = item.resolution { return pdf }
                 return nil
             }
             
-            if !matchedPDFs.isEmpty {
+            // ── Smart Series Affinity Detection ─────────────────────────────────────
+            // If the parser found an explicit ReadingOrder name, use it
+            if let explicitEventName = requests.first(where: { $0.readingOrder != nil })?.readingOrder, !explicitEventName.isEmpty {
+                eventName = explicitEventName
+            }
+            // Analyze matched items to detect if the list references a single existing
+            // series collection. If 70%+ of matched files share one collection, this
+            // is a "series volume breakdown" not a crossover event — auto-bind to it.
+            else if !matchedPDFs.isEmpty {
                 var collectionVotes: [UUID: (count: Int, name: String)] = [:]
                 for pdf in matchedPDFs {
                     if let colId = pdf.collectionId,
