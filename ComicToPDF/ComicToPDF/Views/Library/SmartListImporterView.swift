@@ -20,17 +20,19 @@ struct SmartListImporterView: View {
                     NavigationStack {
                         ScrollView {
                             VStack(spacing: 24) {
-                            Image(systemName: "list.star")
-                                .font(.system(size: 60))
-                                .foregroundColor(.purple)
-                            
-                            Text("Smart Reading Lists")
-                                .font(.title).bold()
-                            
-                            Text("Import a .cbl (Comic Book List) or a basic .CSV text list of issues to automatically generate a properly-sequenced custom reading event from your local library.")
-                                .multilineTextAlignment(.center)
-                                .foregroundColor(Color(.secondaryLabel))
-                                .padding(.horizontal)
+                            Group {
+                                Image(systemName: "list.star")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.purple)
+                                
+                                Text("Smart Reading Lists")
+                                    .font(.title).bold()
+                                
+                                Text("Import a .cbl (Comic Book List) or a basic .CSV text list of issues to automatically generate a properly-sequenced custom reading event from your local library.")
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(Color(.secondaryLabel))
+                                    .padding(.horizontal)
+                            }
                             
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Supported Formats:")
