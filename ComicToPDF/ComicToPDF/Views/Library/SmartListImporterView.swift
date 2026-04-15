@@ -130,7 +130,8 @@ struct SmartListImporterView: View {
                             }
                         }
                         .padding(.vertical)
-                        .toolbar {
+                    }
+                    .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Cancel") { dismiss() }
                             }
