@@ -160,6 +160,18 @@ class PanelViewEPUBConverter {
             // Step 1: metadata
             let bookUUID = "urn:uuid:\(UUID().uuidString)"
 
+            // ── Cover thumbnail (Fix 2: dedicated cover.jpg for Kindle library) ──
+            // Kindle's library indexer looks for a standalone cover-image manifest
+            // item. It cannot reliably pull the thumbnail from the first spine page.
+            let coverSrcURL = batch.first?.url ?? imageURLs[0]
+            let coverJpegData: Data
+            if let override = coverOverrideData {
+                coverJpegData = override
+            } else {
+                coverJpegData = processImage(srcURL: coverSrcURL, settings: settings, isOddPage: true)
+            }
+            try? coverJpegData.write(to: imagesDir.appendingPathComponent("cover.jpg"))
+
             // Step 2 prep: build page catalog
             var pageCatalog: [PageEntry] = []
             for (localIdx, item) in batch.enumerated() {
@@ -282,13 +294,18 @@ class PanelViewEPUBConverter {
         let pubDate      = ISO8601DateFormatter().string(from: Date()).prefix(10)
 
         // Manifest items
+        // Fix 2: dedicated cover-image item so Kindle's thumbnail indexer resolves
+        // the cover without loading the full EPUB (cover.jpg written in convert()).
         var manifestItems: [String] = [
+            #"<item id="cover-image" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>"#,
             #"<item id="nav"  href="nav.xhtml"  media-type="application/xhtml+xml" properties="nav"/>"#,
             #"<item id="ncx"  href="toc.ncx"    media-type="application/x-dtbncx+xml"/>"#,
             #"<item id="css"  href="css/comic.css" media-type="text/css"/>"#
         ]
         for entry in pageCatalog {
-            manifestItems.append(#"<item id="img-\#(entry.paddedNum)" href="images/\#(entry.imageName)" media-type="image/jpeg"\#(entry.localIndex == 0 ? " properties=\"cover-image\"" : "")/>"#)
+            // properties="cover-image" intentionally absent here — only the
+            // dedicated cover-image item above should carry that property.
+            manifestItems.append(#"<item id="img-\#(entry.paddedNum)" href="images/\#(entry.imageName)" media-type="image/jpeg"/>"#)
             manifestItems.append(#"<item id="page\#(entry.paddedNum)" href="pages/\#(entry.xhtmlName)" media-type="application/xhtml+xml"/>"#)
         }
         if needsBlank {
@@ -314,9 +331,11 @@ class PanelViewEPUBConverter {
             <dc:date>\(pubDate)</dc:date>
             <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
             
-            <meta name="cover" content="img-001"/>
+            <!-- Fix 2: id must exactly match the manifest item that carries
+                 properties="cover-image" — which is now the dedicated cover-image item. -->
+            <meta name="cover" content="cover-image"/>
             <meta name="comic-panel-view" content="guided"/>
-            
+
             <!-- Fixed Layout Metadata -->
             <meta name="fixed-layout" content="true"/>
             <meta name="original-resolution" content="\(pageWidth)x\(pageHeight)"/>
@@ -326,7 +345,9 @@ class PanelViewEPUBConverter {
             <meta name="primary-writing-mode" content="\(isManga ? "horizontal-rl" : "horizontal-lr")"/>
             <meta property="rendition:layout">pre-paginated</meta>
             <meta property="rendition:orientation">auto</meta>
-            <meta property="rendition:spread">none</meta>
+            <!-- Fix 1+3: "none" caused E013 and disabled landscape dual-page on Scribe.
+                 "landscape" = single page portrait, two pages side-by-side landscape. -->
+            <meta property="rendition:spread">landscape</meta>
           </metadata>
 
           <manifest>
@@ -458,7 +479,9 @@ class PanelViewEPUBConverter {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml">
+        <!-- Fix 1: xmlns:epub required for EPUB 3 XHTML Content Documents compliance.
+             Without it the KFX ingestor flags a structural mismatch (E013). -->
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
           <head>
             <title>Page \(pageNum)</title>
             <meta name="viewport" content="width=\(W), height=\(H), initial-scale=1.0"/>
