@@ -102,17 +102,15 @@ struct DocumentReaderEngine: View {
                 .transition(.opacity)
             }
         }
-        .onAppear {
-            DispatchQueue.global(qos: .userInitiated).async {
-                let doc = PDFDocument(url: pdf.url)
-                DispatchQueue.main.async {
-                    self.pdfDocument = doc
-                    if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
-                        self.currentPageIndex = saved.currentPageIndex
-                    }
-                    if isReflowMode { updateReflowText() }
-                }
+        .task {
+            let doc = await Task.detached(priority: .userInitiated) {
+                PDFDocument(url: pdf.url)
+            }.value
+            pdfDocument = doc
+            if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
+                currentPageIndex = saved.currentPageIndex
             }
+            if isReflowMode { updateReflowText() }
         }
         .onChange(of: currentPageIndex) { old, new in
             if isReflowMode { updateReflowText() }
@@ -131,15 +129,16 @@ struct DocumentReaderEngine: View {
         guard let doc = pdfDocument else { return }
         for i in 0..<doc.pageCount {
             if let page = doc.page(at: i) {
-                // Approximate KOReader margin clip by aggressively cutting 12% padding
                 var crop = page.bounds(for: .cropBox)
                 crop = crop.insetBy(dx: crop.width * 0.12, dy: crop.height * 0.12)
                 page.setBounds(crop, for: .cropBox)
             }
         }
-        // Force PDFView to redraw the structural bounds
-        self.pdfDocument = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        // Force PDFView to re-layout: nil → reassign on next runloop tick.
+        // Task.yield() is deterministic under CPU load (no magic 0.1s delay).
+        pdfDocument = nil
+        Task { @MainActor in
+            await Task.yield()
             self.pdfDocument = doc
         }
     }
@@ -281,9 +280,12 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         }
         
         @objc func pageChanged(_ notification: Notification) {
-            if let view = notification.object as? PDFView, let page = view.currentPage, let document = view.document {
-                DispatchQueue.main.async {
-                    self.parent.currentPageIndex = document.index(for: page)
+            if let view = notification.object as? PDFView,
+               let page = view.currentPage,
+               let document = view.document {
+                let index = document.index(for: page)
+                Task { @MainActor in
+                    self.parent.currentPageIndex = index
                 }
             }
         }

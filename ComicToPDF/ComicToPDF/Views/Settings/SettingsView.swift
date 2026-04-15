@@ -133,8 +133,9 @@ struct SettingsView: View {
             Button("OK", role: .cancel) { }
         } message: { Text(aiFeedbackMessage) }
         .fileExporter(isPresented: $showingAIExport, document: aiExportDocument, contentType: .json, defaultFilename: "Inksync_AI_Profile.json") { result in
-            // Enforce a 0.5s modal teardown window so the new alert doesn't present over the closing picker
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // 0.5 s gives the file picker sheet time to fully dismiss before presenting the feedback alert
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000)
                 switch result {
                 case .success(_):
                     aiFeedbackTitle = "Engine Exported"

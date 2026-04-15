@@ -332,7 +332,8 @@ struct LogsView: View {
     private func copyToClipboard() {
         UIPasteboard.general.string = logger.getLogs()
         withAnimation { showingCopiedAlert = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 s
             withAnimation { showingCopiedAlert = false }
         }
     }

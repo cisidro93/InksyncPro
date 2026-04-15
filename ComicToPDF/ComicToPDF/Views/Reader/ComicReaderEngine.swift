@@ -43,7 +43,6 @@ class ComicImageCache: ObservableObject {
     private var accessQueue: [Int] = []
     private var fetchingQueue: Set<Int> = [] // Track pending extractions
     private let maxCacheSize = 7 // Can hold about ~15MB of images in memory depending on screen size
-    private let queue = DispatchQueue(label: "com.inksync.ComicImageCache", attributes: .concurrent)
     
     // For CBZ extraction
     private var cbzArchive: Archive?
@@ -70,10 +69,10 @@ class ComicImageCache: ObservableObject {
             self.isLoading = false
         } else if isPDF {
             self.pdfDocument = nil
-            queue.async { [weak self] in
+            Task.detached(priority: .userInitiated) { [weak self] in
                 let doc = PDFDocument(url: pdf.url)
                 let count = doc?.pageCount ?? 0
-                DispatchQueue.main.async {
+                await MainActor.run { [weak self] in
                     self?.pdfDocument = doc
                     self?.pageCount = count
                     self?.isLoading = false
@@ -81,10 +80,9 @@ class ComicImageCache: ObservableObject {
             }
         } else {
             self.pdfDocument = nil
-            queue.async { [weak self] in
-                guard let self = self else { return }
+            Task.detached(priority: .userInitiated) { [weak self] in
                 guard let archive = try? Archive(url: pdf.url, accessMode: .read, pathEncoding: .utf8) else {
-                    DispatchQueue.main.async { self.isLoading = false }
+                    await MainActor.run { [weak self] in self?.isLoading = false }
                     return
                 }
                 
@@ -93,11 +91,11 @@ class ComicImageCache: ObservableObject {
                     return name.hasSuffix(".jpg") || name.hasSuffix(".jpeg") || name.hasSuffix(".png") || name.hasSuffix(".webp")
                 }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
                 
-                DispatchQueue.main.async {
-                    self.cbzArchive = archive
-                    self.entries = sortedEntries
-                    self.pageCount = sortedEntries.count
-                    self.isLoading = false
+                await MainActor.run { [weak self] in
+                    self?.cbzArchive = archive
+                    self?.entries = sortedEntries
+                    self?.pageCount = sortedEntries.count
+                    self?.isLoading = false
                 }
             }
         }
@@ -130,37 +128,42 @@ class ComicImageCache: ObservableObject {
     
     private func fetchLocalImageAsync(at index: Int) {
         fetchingQueue.insert(index)
-        queue.async { [weak self] in
+        Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
-            if let img = self.extractOrRenderImage(at: index) {
+            // Capture archive state needed on background context
+            let img = self.extractOrRenderImage(at: index)
+            if let img {
                 self.cache.setObject(img, forKey: NSNumber(value: index))
-                self.updateLRU(index)
-                
-                DispatchQueue.main.async {
-                    self.fetchingQueue.remove(index)
-                    self.cacheUpdatedTick += 1 // Force UI redraw to pop the newly loaded image
+                await MainActor.run { [weak self] in
+                    self?.fetchingQueue.remove(index)
+                    self?.updateLRUOnMain(index)
+                    self?.cacheUpdatedTick += 1 // Force UI redraw to pop the newly loaded image
                 }
             } else {
-                DispatchQueue.main.async {
-                    self.fetchingQueue.remove(index)
+                await MainActor.run { [weak self] in
+                    self?.fetchingQueue.remove(index)
                 }
             }
         }
     }
     
-    private func updateLRU(_ index: Int) {
-        DispatchQueue.main.async {
-            if let pos = self.accessQueue.firstIndex(of: index) {
-                self.accessQueue.remove(at: pos)
-            }
-            self.accessQueue.append(index)
-            
-            // Evict if over maxCacheSize
-            while self.accessQueue.count > self.maxCacheSize {
-                let evictIndex = self.accessQueue.removeFirst()
-                self.cache.removeObject(forKey: NSNumber(value: evictIndex))
-            }
+    /// Must be called only from the main actor. Renamed from updateLRU to make isolation explicit.
+    private func updateLRUOnMain(_ index: Int) {
+        if let pos = accessQueue.firstIndex(of: index) {
+            accessQueue.remove(at: pos)
         }
+        accessQueue.append(index)
+        
+        // Evict if over maxCacheSize
+        while accessQueue.count > maxCacheSize {
+            let evictIndex = accessQueue.removeFirst()
+            cache.removeObject(forKey: NSNumber(value: evictIndex))
+        }
+    }
+
+    /// Legacy call-site bridge — ensures LRU updates always reach the main actor.
+    private func updateLRU(_ index: Int) {
+        Task { @MainActor [weak self] in self?.updateLRUOnMain(index) }
     }
     
     private func extractOrRenderImage(at index: Int) -> UIImage? {
@@ -232,26 +235,24 @@ class ComicImageCache: ObservableObject {
             }
         }
     }
+
     private func fetchStreamImage(at index: Int) {
         // Prevent duplicate network calls for same index
         if accessQueue.contains(index) { return }
         
         guard let url = URL(string: "\(pdfDocument == nil ? "http://prototype-stream" : .init())/\(index)") else { return } // Replace with actual pdf.url in production
         
-        queue.async { [weak self] in
+        accessQueue.append(index) // Mark as fetching before the Task starts
+        Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
-            self.accessQueue.append(index) // Mark as fetching
-            
-            // Native HTTP call prototyping Kavita PSE API layout
-            let task = URLSession.shared.dataTask(with: url) { data, response, error in
-                if let data = data, let image = UIImage(data: data) {
-                    self.cache.setObject(image, forKey: NSNumber(value: index))
-                    DispatchQueue.main.async {
-                        self.cacheUpdatedTick += 1
-                    }
+            // Use URLSession async/await — no GCD dataTask callback needed
+            if let (data, _) = try? await URLSession.shared.data(from: url),
+               let image = UIImage(data: data) {
+                self.cache.setObject(image, forKey: NSNumber(value: index))
+                await MainActor.run { [weak self] in
+                    self?.cacheUpdatedTick += 1
                 }
             }
-            task.resume()
         }
     }
 }

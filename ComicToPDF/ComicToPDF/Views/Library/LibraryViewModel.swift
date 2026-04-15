@@ -188,23 +188,24 @@ class LibraryViewModel: ObservableObject {
     // MARK: - Action Router Endpoint
     func handleDetailAction(action: LibraryRowAction, for pdf: ConvertedPDF, conversionManager: ConversionManager) {
         // A slight delay ensures any active sheet finishes dismissing before popping a new one
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        Task {
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 s
             switch action {
-            case .read:          
+            case .read:
                 self.activeFullScreen = .read(pdf)
-            case .details:       
+            case .details:
                 self.activeSheet = .details(pdf)
-            case .covers:        
+            case .covers:
                 self.activeFullScreen = .advancedWorkspace(pdf)
-            case .fetchMetadata: 
+            case .fetchMetadata:
                 self.activeSheet = .searchMetadata(pdf)
-            case .editMetadata:  
+            case .editMetadata:
                 self.activeSheet = .editMetadata(pdf)
-            case .export:        
+            case .export:
                 self.activeSheet = .export(pdf)
-            case .share:         
+            case .share:
                 self.activeSheet = .directShare(pdf)
-            case .sync:          
+            case .sync:
                 self.activeSheet = .cloudSync(pdf)
             case .rename:
                 self.renameText = pdf.name

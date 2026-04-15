@@ -140,8 +140,9 @@ struct ModernLibraryView: View {
         .onChange(of: viewModel.debouncedSearchText) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenMergedBook"))) { notification in
             if let newBook = notification.object as? ConvertedPDF {
-                // Ensure the view hierarchy processes the dismissal first, then throw up the full screen cover.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                // Brief yield lets the current sheet dismiss before the fullscreen cover appears.
+                Task {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 s
                     viewModel.activeFullScreen = .read(newBook)
                 }
             }
@@ -152,12 +153,12 @@ struct ModernLibraryView: View {
                let pdfID = userInfo["pdfID"] as? UUID,
                let pageIndex = userInfo["pageIndex"] as? Int {
                 if let targetPDF = nativeVisiblePDFs.first(where: { $0.id == pdfID }) {
-                    // Pre-emptively set the ReaderTracker to the handoff index so the reader opens to the exact page
                     var progress = ReaderProgressTracker.shared.progress(for: targetPDF.id) ?? ReadingProgress(pdfID: targetPDF.id, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
                     progress.currentPageIndex = pageIndex
                     ReaderProgressTracker.shared.update(progress)
-                    
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+
+                    Task {
+                        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 s
                         viewModel.activeFullScreen = .read(targetPDF)
                     }
                 }

@@ -768,7 +768,8 @@ struct ReaderView: View {
     private func finishEdgeSwipe() {
         swipeStartBrightness = UIScreen.main.brightness
         swipeStartWarmth = warmthLevel
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000) // 1.2 s
             withAnimation { self.showSwipeHUD = false }
         }
     }

@@ -41,10 +41,11 @@ class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     }
     
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        DispatchQueue.main.async { self.isSpeaking = false }
+        Task { @MainActor in self.isSpeaking = false }
     }
 }
 
+@MainActor
 class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var isLoading = true
     @Published var currentChapterHTML: String = ""
@@ -66,46 +67,47 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     }
     
     private func unpackEPUB() {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            
-            if !self.fileManager.fileExists(atPath: self.tempDir.path) {
-                try? self.fileManager.createDirectory(at: self.tempDir, withIntermediateDirectories: true)
-                guard let archive = try? Archive(url: self.pdf.url, accessMode: .read, pathEncoding: .utf8) else {
-                    DispatchQueue.main.async { self.isLoading = false }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            let fm = FileManager.default
+            let tempDir = await self.tempDir
+            let pdfURL = await self.pdf.url
+
+            if !fm.fileExists(atPath: tempDir.path) {
+                try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                guard let archive = try? Archive(url: pdfURL, accessMode: .read, pathEncoding: .utf8) else {
+                    await MainActor.run { self.isLoading = false }
                     return
                 }
-                
                 for entry in archive {
-                    let dest = self.tempDir.appendingPathComponent(entry.path)
-                    try? self.fileManager.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    let dest = tempDir.appendingPathComponent(entry.path)
+                    try? fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
                     _ = try? archive.extract(entry, to: dest)
                 }
             }
-            
-            self.parseNCXOrSpine()
+            await self.parseNCXOrSpine(tempDir: tempDir)
         }
     }
     
-    private func parseNCXOrSpine() {
-        // Look for .opf or .html files quickly in temp dir
-        if let enumerator = fileManager.enumerator(at: tempDir, includingPropertiesForKeys: nil) {
+    private func parseNCXOrSpine(tempDir: URL) async {
+        // Walk the unpacked EPUB directory on a background thread
+        let htmlFiles: [URL] = await Task.detached(priority: .userInitiated) {
+            guard let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: nil) else { return [] }
             var htmls: [URL] = []
             while let file = enumerator.nextObject() as? URL {
-                if file.pathExtension.lowercased() == "html" || file.pathExtension.lowercased() == "xhtml" {
-                    htmls.append(file)
-                }
+                let ext = file.pathExtension.lowercased()
+                if ext == "html" || ext == "xhtml" { htmls.append(file) }
             }
             htmls.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-            
-            DispatchQueue.main.async {
-                self.chapterHtmlFiles = htmls
-                if !htmls.isEmpty {
-                    self.loadChapter(index: self.currentChapterIndex)
-                } else {
-                    self.isLoading = false
-                }
-            }
+            return htmls
+        }.value
+
+        // Back on @MainActor — safe to mutate @Published properties
+        chapterHtmlFiles = htmlFiles
+        if !htmlFiles.isEmpty {
+            loadChapter(index: currentChapterIndex)
+        } else {
+            isLoading = false
         }
     }
     

@@ -377,7 +377,8 @@ struct SeriesDetailView: View {
                 collapsedVolumes.remove(targetKey)
             }
             // 2. Scroll after the expand animation gives the List time to render
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 350_000_000) // 0.35 s \u2014 matches expand animation
                 withAnimation(.easeInOut(duration: 0.4)) {
                     scrollProxy.scrollTo("vol_\(targetKey)", anchor: .top)
                 }

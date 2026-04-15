@@ -26,7 +26,8 @@ struct SeriesConflictView: View {
                             .foregroundColor(.white)
                     }
                     .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 s
                             dismiss()
                         }
                     }

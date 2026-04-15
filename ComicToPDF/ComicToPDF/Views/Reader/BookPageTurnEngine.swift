@@ -85,7 +85,8 @@ struct BookFlipGesture: View {
         withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.82)) {
             dragOffset = isMangaRTL ? 80 : -80
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000) // 0.18 s — matches spring response
             onFlipForward()
             dragOffset = isMangaRTL ? -30 : 30
             withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) { dragOffset = 0 }
@@ -98,7 +99,8 @@ struct BookFlipGesture: View {
         withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.82)) {
             dragOffset = isMangaRTL ? -80 : 80
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000) // 0.18 s — matches spring response
             onFlipBack()
             dragOffset = isMangaRTL ? 30 : -30
             withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) { dragOffset = 0 }

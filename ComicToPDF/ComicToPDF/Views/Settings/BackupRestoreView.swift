@@ -41,15 +41,16 @@ struct BackupRestoreView: View {
         }
         .navigationTitle("Backup & Restore")
         .fileExporter(isPresented: $showingExporter, document: backupDocument, contentType: .json, defaultFilename: "InksyncPro_Backup.json") { result in
-             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                 switch result {
-                 case .success:
-                     HapticManager.shared.notification(.success)
-                 case .failure(let error):
-                     importError = error.localizedDescription
-                     showingAlert = true
-                 }
-             }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 s — let exporter sheet dismiss
+                switch result {
+                case .success:
+                    HapticManager.shared.notification(.success)
+                case .failure(let error):
+                    importError = error.localizedDescription
+                    showingAlert = true
+                }
+            }
         }
 
         .alert("Status", isPresented: $showingAlert) { Button("OK", role: .cancel) { } } message: { Text(importError ?? "Unknown error") }
@@ -64,7 +65,7 @@ struct BackupRestoreView: View {
     
     func importBackup(from url: URL) {
         guard url.startAccessingSecurityScopedResource() else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            Task { @MainActor in
                 importError = "Permission denied to read backup file."
                 showingAlert = true
             }
@@ -91,8 +92,9 @@ struct BackupRestoreView: View {
                     self.conversionManager.restoreFromBackup(backup)
                     self.showingSuccess = true
                     HapticManager.shared.notification(.success)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.showingSuccess = false }
                 }
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 s auto-dismiss
+                await MainActor.run { self.showingSuccess = false }
             } catch {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 await MainActor.run {
