@@ -4,6 +4,7 @@ import Foundation
 
 struct CompletionSendView: View {
     @EnvironmentObject var manager: ConversionManager
+    @EnvironmentObject var settingsManager: SettingsManager
     let pdf: ConvertedPDF
     @Environment(\.dismiss) var dismiss
     @Query private var savedDevices: [SDRegisteredDevice]
@@ -13,6 +14,18 @@ struct CompletionSendView: View {
     @State private var sendSuccess = false
     @State private var errorMessage: String?
     @Environment(\.horizontalSizeClass) private var hSizeClass
+
+    // MARK: - Device → Conversion Profile Auto-Map
+    /// Maps a registered device type to the best-matching TargetDeviceProfile
+    /// so the user never has to manually keep these two pickers in sync.
+    private func inferProfile(for deviceType: RegisteredDevice.DeviceType) -> TargetDeviceProfile {
+        switch deviceType {
+        case .kindleScribe:     return .scribeColorsoft  // Scribe Colorsoft 11" is the current default Scribe
+        case .kindleColorsoft:  return .colorsoft7        // 7" Colorsoft
+        case .kindlePaperwhite: return .paperwhite2024
+        case .iPad, .other:     return settingsManager.conversionSettings.targetDeviceProfile
+        }
+    }
 
     var targetDevice: SDRegisteredDevice? {
         if let id = selectedDeviceID {
@@ -121,6 +134,11 @@ struct CompletionSendView: View {
                             isSelected: (selectedDeviceID ?? DeviceRegistry.shared.primaryDeviceID) == device.id
                         ) {
                             selectedDeviceID = device.id
+                            // Auto-sync conversion profile to the chosen device
+                            let profile = inferProfile(for: device.deviceType)
+                            if settingsManager.conversionSettings.targetDeviceProfile != profile {
+                                settingsManager.conversionSettings.targetDeviceProfile = profile
+                            }
                         }
                     }
                 }

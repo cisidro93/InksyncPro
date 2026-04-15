@@ -444,6 +444,8 @@ class PDFToEPUBConverter {
                 <meta name="original-resolution" content="1000x1500"/>
                 <meta name="orientation-lock" content="none"/>
                 <meta name="book-type" content="comic"/>
+                <!-- Suppresses "Learning reading speed" — signals image-based content to Kindle firmware -->
+                <meta name="amzn:kindle:book-type" content="image-based"/>
                 <meta name="zero-gutter" content="true"/>
                 <meta name="zero-margin" content="true"/>
                 <meta name="ke-border-color" content="#000000"/>

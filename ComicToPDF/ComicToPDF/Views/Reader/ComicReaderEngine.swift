@@ -364,7 +364,17 @@ struct ComicReaderEngine: View {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentIndex = saved.currentPageIndex
             }
+            // On appear, honour the current physical orientation immediately
+            // so opening in landscape already shows two pages.
+            syncReadingModeToOrientation()
         }
+        // Auto two-up: rotate device → automatically flip reading mode so the
+        // user doesn't need to discover the mode-toggle button in the chrome.
+        // Webtoon and panel-navigation are intentional choices; never override them.
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            syncReadingModeToOrientation()
+        }
+
         // ✅ Phase 5: Apple Handoff (Reader State Sync)
         .userActivity("com.inksync.read", isActive: true) { activity in
             activity.title = "Reading \(pdf.name)"
@@ -428,6 +438,34 @@ struct ComicReaderEngine: View {
             activeFilterPreset: activeFilterPreset,
             onChromeTap: { chromeVisible.toggle() }
         )
+    }
+
+    // MARK: - Orientation Helper
+
+    /// Switches between single-page and two-up based on physical device orientation.
+    /// Intentional modes (webtoon, panel navigation) are never auto-overridden.
+    private func syncReadingModeToOrientation() {
+        let orientation = UIDevice.current.orientation
+        let isLandscape = orientation.isLandscape
+
+        // Respect modes the user deliberately chose — don't hijack them.
+        guard readingMode != .webtoonScroll, readingMode != .panelNavigation else { return }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if isLandscape {
+                // Landscape → two-page spread
+                if readingMode != .pageTwoUp {
+                    readingMode = .pageTwoUp
+                }
+            } else if orientation.isPortrait {
+                // Portrait → restore single-page (manga keeps RTL)
+                if readingMode == .pageTwoUp {
+                    let isMangaComic = pdf.metadata.isManga == true
+                    readingMode = isMangaComic ? .mangaRTL : .pageHorizontal
+                }
+            }
+            // .faceUp / .faceDown / .unknown → leave mode unchanged
+        }
     }
 }
 

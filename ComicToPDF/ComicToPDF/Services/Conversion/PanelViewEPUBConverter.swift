@@ -341,6 +341,8 @@ class PanelViewEPUBConverter {
             <meta name="original-resolution" content="\(pageWidth)x\(pageHeight)"/>
             <meta name="orientation-lock" content="none"/>
             <meta name="book-type" content="comic"/>
+            <!-- Suppresses "Learning reading speed" on Kindle — signals image-based content to firmware -->
+            <meta name="amzn:kindle:book-type" content="image-based"/>
             <meta name="RegionMagnification" content="true"/>
             <meta name="primary-writing-mode" content="\(isManga ? "horizontal-rl" : "horizontal-lr")"/>
             <meta property="rendition:layout">pre-paginated</meta>

@@ -17,6 +17,8 @@ class OPFGenerator {
             <!-- Kindle 5.19.3 Hardened AWS Server-Side Override Tags -->
             <meta name="fixed-layout" content="true"/>
             <meta name="book-type" content="comic"/>
+            <!-- Suppresses \"Learning reading speed\" on Kindle — signals image-based content to firmware -->
+            <meta name="amzn:kindle:book-type" content="image-based"/>
             <meta name="zero-gutter" content="true"/>
             <meta name="zero-margin" content="true"/>
             <meta name="primary-writing-mode" content="horizontal-rl"/>
