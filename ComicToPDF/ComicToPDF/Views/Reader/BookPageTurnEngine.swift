@@ -142,98 +142,106 @@ struct BookPager: View {
 }
 
 // ============================================================
-// MARK: - Dynamic Two-Up Spread Pager
+// MARK: - Two-Up Spread Pager (Always-pairs book model)
 // ============================================================
-/// Shows two pages side-by-side that flip together as a physical spread.
-/// Dynamically respects actual image dimensions so landscape pages 
-/// consume the entire frame instead of being squeezed into 50% width.
+/// Shows two pages side-by-side that flip together as a physical book.
+/// Internally tracks a SPREAD index (0, 1, 2 …) so BookFlipGesture's
+/// background layer — content(spreadIdx-1) — always shows the correct
+/// previous full spread, never an intermediate half-page.
+///   spreadIdx 0  →  pages 0 + 1
+///   spreadIdx 1  →  pages 2 + 3
+///   spreadIdx 2  →  pages 4 + 5  …
+/// Landscape source images (aspect > 1.15) fill the full frame alone.
 struct TwoUpBookPager: View {
-    @Binding var currentIndex: Int // The absolute index of the LEFT page of current spread
+    @Binding var currentIndex: Int  // Absolute page index (exposed to scrubber/progress)
     let cache: ComicImageCache
     let activeFilterPreset: ReadingFilterPreset
     var onChromeTap: () -> Void
 
-    // MARK: - Layout Logic
-    /// Fast check if the page at index is narrow enough to safely be half a spread.
-    /// If image isn't loaded yet, defaults to portrait to avoid layout shifting until load.
-    private func isPortrait(_ index: Int) -> Bool {
-        guard let img = cache.getImage(at: index) else { return true }
-        // Aspect ratio (width / height)
-        let aspect = img.size.width / max(1, img.size.height)
-        return aspect <= 1.15 // Standard single pages are ~0.6-0.8. Genuine landscape spreads are >1.2
-    }
-    
-    // MARK: - Step Calculations
-    private func spreadStepForward(from index: Int) -> Int {
-        return isPortrait(index) ? 2 : 1
-    }
-    
-    private func spreadStepBackward(from index: Int) -> Int {
-        guard index > 0 else { return 0 }
-        // Inspect the page immediately preceding us
-        let prevIndex = index - 1
-        return isPortrait(prevIndex) ? 2 : 1
+    // Internal spread cursor — BookFlipGesture steps this by ±1 per flip.
+    // Because each unit = one complete spread, content(spreadIdx-1) is always
+    // the previous full spread, never an intermediate page.
+    @State private var spreadIdx: Int = 0
+
+    // MARK: - Spread Geometry
+
+    private var totalSpreads: Int {
+        max(1, Int(ceil(Double(cache.pageCount) / 2.0)))
     }
 
-    private func canFlipForward() -> Bool {
-        return currentIndex + spreadStepForward(from: currentIndex) < cache.pageCount
+    /// Left page absolute index for a given spread slot.
+    private func leftPage(for sIdx: Int) -> Int {
+        sIdx * 2
     }
 
-    private func canFlipBack() -> Bool {
-        return currentIndex > 0
+    /// True when the page at `absIdx` is portrait-ratio (normal half-width slot).
+    private func isPortrait(_ absIdx: Int) -> Bool {
+        guard let img = cache.getImage(at: absIdx) else { return true }
+        return (img.size.width / max(1, img.size.height)) <= 1.15
     }
 
-    private func flipForward() {
-        let step = spreadStepForward(from: currentIndex)
-        currentIndex = min(currentIndex + step, cache.pageCount - 1)
-    }
-
-    private func flipBack() {
-        let step = spreadStepBackward(from: currentIndex)
-        currentIndex = max(0, currentIndex - step)
-    }
+    // MARK: - Body
 
     var body: some View {
         BookFlipGesture(
-            currentIndex: $currentIndex,
-            content: { idx in
-                AnyView(spreadView(forLeftIndex: idx))
+            // Pass SPREAD index so content(spreadIdx-1) = previous FULL spread
+            currentIndex: $spreadIdx,
+            content: { sIdx in
+                let lp = leftPage(for: sIdx)
+                return AnyView(spreadView(leftPage: lp))
             },
             isMangaRTL: false,
             onChromeTap: onChromeTap,
-            canFlipForward: canFlipForward,
-            canFlipBack: canFlipBack,
-            onFlipForward: flipForward,
-            onFlipBack: flipBack
+            canFlipForward: { spreadIdx < totalSpreads - 1 },
+            canFlipBack:    { spreadIdx > 0 },
+            onFlipForward:  { spreadIdx += 1 },
+            onFlipBack:     { spreadIdx -= 1 }
         )
+        // Sync on open / resume
+        .onAppear { spreadIdx = currentIndex / 2 }
+        // Push absolute index to scrubber when spread changes
+        .onChange(of: spreadIdx) { _, newVal in
+            let page = leftPage(for: newVal)
+            if currentIndex != page { currentIndex = page }
+        }
+        // Pull from scrubber when user drags it
+        .onChange(of: currentIndex) { _, newVal in
+            let target = newVal / 2
+            if spreadIdx != target { spreadIdx = target }
+        }
     }
+
+    // MARK: - Spread View
 
     @ViewBuilder
-    private func spreadView(forLeftIndex leftIdx: Int) -> some View {
+    private func spreadView(leftPage leftIdx: Int) -> some View {
         GeometryReader { geo in
-            if isPortrait(leftIdx) {
-                // Double Page Spread
+            if !isPortrait(leftIdx) {
+                // Native landscape page — fills the whole frame alone
+                pageSlot(leftIdx)
+                    .frame(width: geo.size.width, height: geo.size.height)
+            } else {
+                // Standard two-page portrait spread
                 HStack(spacing: 0) {
-                    // Left Slot
                     pageSlot(leftIdx)
-                        .frame(width: geo.size.width / 2)
+                        .frame(width: geo.size.width / 2, height: geo.size.height)
 
-                    // Right Slot
                     if leftIdx + 1 < cache.pageCount {
                         pageSlot(leftIdx + 1)
-                            .frame(width: geo.size.width / 2)
+                            .frame(width: geo.size.width / 2, height: geo.size.height)
                     } else {
-                        Color.black.frame(width: geo.size.width / 2) // End padding
+                        // Last page: black right filler so layout is stable
+                        Color.black
+                            .frame(width: geo.size.width / 2, height: geo.size.height)
                     }
                 }
-            } else {
-                // Wide Landscape Page (Full Bleed)
-                pageSlot(leftIdx)
-                    .frame(width: geo.size.width)
             }
         }
+        // Re-render when cache delivers new images
         .id("spread_\(leftIdx)_\(cache.cacheUpdatedTick)")
     }
+
+    // MARK: - Page Slot
 
     @ViewBuilder
     private func pageSlot(_ index: Int) -> some View {
