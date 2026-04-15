@@ -325,12 +325,13 @@ enum TargetDeviceProfile: String, CaseIterable, Codable, Identifiable {
     case original = "Original Size (No Optimization)"
     
     // Amazon Kindle (Sorted by Release Year, Descending)
-    case scribeColorsoft = "Kindle Scribe Colorsoft (2024)"
-    case paperwhite2024 = "Kindle Paperwhite (2024)"
-    case scribe = "Kindle Scribe (2022)"
-    case paperwhite11 = "Kindle Paperwhite 11th Gen (2021)"
-    case oasis = "Kindle Oasis (2019)"
-    case kindleBasic = "Kindle Basic (2022)"
+    case scribeColorsoft = "Kindle Scribe Colorsoft 11\" (2025)"  // 11-inch — NOT the same as the 7" Colorsoft
+    case colorsoft7       = "Kindle Colorsoft 7\" (2024)"          // 7-inch colour reader — separate device
+    case paperwhite2024  = "Kindle Paperwhite (2024)"
+    case scribe          = "Kindle Scribe (2022)"
+    case paperwhite11    = "Kindle Paperwhite 11th Gen (2021)"
+    case oasis           = "Kindle Oasis (2019)"
+    case kindleBasic     = "Kindle Basic (2022)"
 
     // Kobo
     case koboLibraColour = "Kobo Libra Colour (2024)"
@@ -350,38 +351,57 @@ enum TargetDeviceProfile: String, CaseIterable, Codable, Identifiable {
     var brand: String {
         switch self {
         case .original: return "General"
-        case .scribeColorsoft, .paperwhite2024, .scribe, .paperwhite11, .oasis, .kindleBasic: return "Amazon Kindle"
+        case .scribeColorsoft, .colorsoft7, .paperwhite2024, .scribe, .paperwhite11, .oasis, .kindleBasic: return "Amazon Kindle"
         case .koboLibraColour, .koboClaraColour, .koboElipsa2E, .koboSage, .koboLibra2: return "Rakuten Kobo"
         case .booxTabUltraCPro, .booxNoteAir3C, .booxPage, .booxPalma: return "Onyx Boox"
         }
     }
     
     var resolution: CGSize? {
-        // We define the max resolution constraints for these screens.
-        // The EInkOptimizer will aspect-fit into these bounds.
+        // Portrait (taller) resolution — the EInkOptimizer aspect-fits into these bounds.
         switch self {
         case .original: return nil
-            
-        // Kindle
-        case .scribeColorsoft: return CGSize(width: 1860, height: 2480)
+
+        // Amazon Kindle
+        // Kindle Scribe Colorsoft 11" (2025): 300 PPI → 1980 × 2640
+        case .scribeColorsoft: return CGSize(width: 1980, height: 2640)
+        // Kindle Colorsoft 7" (2024): 300 PPI → 1264 × 1680 — SEPARATE device, different physical dimensions
+        case .colorsoft7:       return CGSize(width: 1264, height: 1680)
         case .paperwhite2024: return CGSize(width: 1264, height: 1680)
-        case .scribe: return CGSize(width: 1860, height: 2480)
-        case .paperwhite11: return CGSize(width: 1236, height: 1648)
-        case .oasis: return CGSize(width: 1264, height: 1680)
-        case .kindleBasic: return CGSize(width: 1080, height: 1440)
-            
+        case .scribe:         return CGSize(width: 1860, height: 2480)
+        case .paperwhite11:   return CGSize(width: 1236, height: 1648)
+        case .oasis:          return CGSize(width: 1264, height: 1680)
+        case .kindleBasic:    return CGSize(width: 1080, height: 1440)
+
         // Kobo
         case .koboLibraColour: return CGSize(width: 1264, height: 1680)
         case .koboClaraColour: return CGSize(width: 1072, height: 1448)
-        case .koboElipsa2E: return CGSize(width: 1404, height: 1872)
-        case .koboSage: return CGSize(width: 1440, height: 1920)
-        case .koboLibra2: return CGSize(width: 1264, height: 1680)
-            
+        case .koboElipsa2E:    return CGSize(width: 1404, height: 1872)
+        case .koboSage:        return CGSize(width: 1440, height: 1920)
+        case .koboLibra2:      return CGSize(width: 1264, height: 1680)
+
         // Boox
         case .booxTabUltraCPro: return CGSize(width: 1860, height: 2480)
-        case .booxNoteAir3C: return CGSize(width: 1860, height: 2480)
-        case .booxPage: return CGSize(width: 1264, height: 1680)
-        case .booxPalma: return CGSize(width: 824, height: 1648)
+        case .booxNoteAir3C:    return CGSize(width: 1860, height: 2480)
+        case .booxPage:         return CGSize(width: 1264, height: 1680)
+        case .booxPalma:        return CGSize(width: 824,  height: 1648)
+        }
+    }
+
+    /// Per-page slot resolution when the device displays two pages side-by-side in landscape.
+    /// Landscape rotates the screen: the longer dimension becomes the width.
+    /// Each page occupies exactly half that width.
+    ///
+    /// Only large-screen Kindles suppress letterboxing enough to make
+    /// the per-slot pre-fit worthwhile; smaller devices (7") use the
+    /// standard portrait resolution and let Kindle scale them.
+    var landscapeHalfSlotResolution: CGSize? {
+        switch self {
+        // Scribe Colorsoft 11": landscape = 2640 × 1980, each slot = 1320 × 1980
+        case .scribeColorsoft: return CGSize(width: 1320, height: 1980)
+        // Kindle Scribe 1st gen 10.2": landscape = 2480 × 1860, each slot = 1240 × 1860
+        case .scribe:          return CGSize(width: 1240, height: 1860)
+        default: return nil
         }
     }
 }

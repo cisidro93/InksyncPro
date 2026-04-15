@@ -743,7 +743,7 @@ class PanelViewEPUBConverter {
     private func processImage(srcURL: URL, settings: ConversionSettings, isOddPage: Bool) -> Data {
         let ext = srcURL.pathExtension.lowercased()
         let kindleSafe = ["jpg", "jpeg"] // PNG is NOT safe per KF8 spec
-        
+
         let needsCompression = settings.compressionQuality != .high
         let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
         let needsOptimization = settings.optimizeForDevice || settings.trimMargins || needsEnhancement
@@ -751,17 +751,60 @@ class PanelViewEPUBConverter {
         if needsOptimization, let rawImage = UIImage(contentsOfFile: srcURL.path) {
             var workingImage = rawImage
             if settings.optimizeForDevice {
-                workingImage = EInkOptimizer.shared.processImage(
-                    workingImage,
-                    for: settings.targetDeviceProfile,
-                    applyGrayscale: settings.imageEnhancement.grayscale,
-                    cropMargins: settings.trimMargins,
-                    reduceMoire: settings.imageEnhancement.reduceMoire,
-                    dither: settings.imageEnhancement.ditheringEnabled,
-                    marginOffset: settings.bindingMarginOffset,
-                    marginSide: settings.bindingMarginSide,
-                    isOddPage: isOddPage
-                )
+                // ── Landscape half-slot pre-fit (Kindle Scribe only) ──────────────
+                // For large-screen Scribes the EPUB uses rendition:spread=landscape,
+                // meaning each page occupies exactly half the screen width.
+                // Pre-scaling to the half-slot dimensions eliminates the ~73 px
+                // letterbox that would otherwise appear at the top and bottom of
+                // each page because portrait comic pages are wider than the slot.
+                // Only applies to portrait source images; landscape source images
+                // (spreads) are left at full resolution.
+                let halfSlot = settings.targetDeviceProfile.landscapeHalfSlotResolution
+                let isPortraitSource = rawImage.size.height >= rawImage.size.width
+                let effectiveProfile = settings.targetDeviceProfile
+
+                if let slot = halfSlot, isPortraitSource {
+                    // Use a synthetic profile resolution that matches the exact half-slot.
+                    // EInkOptimizer.processImage already aspect-fits, so this is safe.
+                    workingImage = EInkOptimizer.shared.processImage(
+                        rawImage,
+                        for: effectiveProfile,                 // carries grayscale, moire, binding settings
+                        applyGrayscale: settings.imageEnhancement.grayscale,
+                        cropMargins: settings.trimMargins,
+                        reduceMoire: settings.imageEnhancement.reduceMoire,
+                        dither: settings.imageEnhancement.ditheringEnabled,
+                        marginOffset: settings.bindingMarginOffset,
+                        marginSide: settings.bindingMarginSide,
+                        isOddPage: isOddPage
+                    )
+                    // Now resample down to half-slot dimensions so Kindle doesn't letterbox.
+                    // We use the same scale() helper from EInkOptimizer (exposed indirectly
+                    // through processImage). Since processImage already used the portrait
+                    // profile resolution (1980×2640), we now clamp to the slot width (1320)
+                    // so the height also scales proportionally and fills the slot fully.
+                    let slotScale = min(slot.width / workingImage.size.width,
+                                       slot.height / workingImage.size.height)
+                    if slotScale < 0.99 {
+                        let newSize = CGSize(width: workingImage.size.width  * slotScale,
+                                            height: workingImage.size.height * slotScale)
+                        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1.0
+                        workingImage = UIGraphicsImageRenderer(size: newSize, format: fmt).image { _ in
+                            workingImage.draw(in: CGRect(origin: .zero, size: newSize))
+                        }
+                    }
+                } else {
+                    workingImage = EInkOptimizer.shared.processImage(
+                        workingImage,
+                        for: settings.targetDeviceProfile,
+                        applyGrayscale: settings.imageEnhancement.grayscale,
+                        cropMargins: settings.trimMargins,
+                        reduceMoire: settings.imageEnhancement.reduceMoire,
+                        dither: settings.imageEnhancement.ditheringEnabled,
+                        marginOffset: settings.bindingMarginOffset,
+                        marginSide: settings.bindingMarginSide,
+                        isOddPage: isOddPage
+                    )
+                }
             }
             // Traditional Filters
             workingImage = ImageProcessor.process(image: workingImage, settings: settings) ?? workingImage
@@ -782,6 +825,7 @@ class PanelViewEPUBConverter {
         }
         return (try? Data(contentsOf: srcURL)) ?? Data()
     }
+
 
     private func resolvePageSize(from url: URL) async -> CGSize {
         return await Task.detached(priority: .userInitiated) {
