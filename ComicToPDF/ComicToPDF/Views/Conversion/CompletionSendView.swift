@@ -4,7 +4,7 @@ import Foundation
 
 struct CompletionSendView: View {
     @EnvironmentObject var manager: ConversionManager
-    @EnvironmentObject var settingsManager: SettingsManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     let pdf: ConvertedPDF
     @Environment(\.dismiss) var dismiss
     @Query private var savedDevices: [SDRegisteredDevice]
@@ -120,6 +120,10 @@ struct CompletionSendView: View {
 
     @ViewBuilder
     private var deviceSelectionArea: some View {
+        // Pre-compute the selected ID once so Swift's type-checker doesn't
+        // need to solve the compound optional expression inside ForEach.
+        let activeID: UUID? = selectedDeviceID ?? DeviceRegistry.shared.primaryDeviceID
+
         VStack(alignment: .leading, spacing: 12) {
             Text("Send to Device")
                 .font(.system(size: 12, design: .monospaced))
@@ -131,13 +135,14 @@ struct CompletionSendView: View {
                     ForEach(savedDevices) { device in
                         DeviceSelectCard(
                             device: device,
-                            isSelected: (selectedDeviceID ?? DeviceRegistry.shared.primaryDeviceID) == device.id
+                            isSelected: activeID == device.id
                         ) {
                             selectedDeviceID = device.id
                             // Auto-sync conversion profile to the chosen device
                             let profile = inferProfile(for: device.deviceType)
                             if settingsManager.conversionSettings.targetDeviceProfile != profile {
                                 settingsManager.conversionSettings.targetDeviceProfile = profile
+                                settingsManager.save()
                             }
                         }
                     }
