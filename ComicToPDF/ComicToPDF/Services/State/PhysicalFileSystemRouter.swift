@@ -55,17 +55,20 @@ class PhysicalFileSystemRouter {
     func loadCoverThumbnail(for pdf: ConvertedPDF, manager: ConversionManager) async -> UIImage? {
         let keyStr = pdf.id.uuidString
         if let cached = manager.thumbnailCache.object(forKey: keyStr as NSString) { return cached }
-        
+        // ✅ PERF: Resolve cover URL on MainActor *once*, before the background task.
+        // Avoids an implicit actor-hop back to MainActor per cell during scroll.
+        let coverURL = getCoverURL(for: pdf)
         return await Task.detached(priority: .userInitiated) { () -> UIImage? in
-            if let url = await self.getCoverURL(for: pdf), FileManager.default.fileExists(atPath: url.path) {
-                if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
-                    let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
-                    await MainActor.run { manager.thumbnailCache.setObject(thumbnail, forKey: keyStr as NSString) }
-                    return thumbnail
-                }
+            guard let url = coverURL,
+                  FileManager.default.fileExists(atPath: url.path),
+                  let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+                  let image = UIImage(data: data) else {
+                if let data = pdf.coverImageData, let image = UIImage(data: data) { return image }
+                return nil
             }
-            if let data = pdf.coverImageData, let image = UIImage(data: data) { return image }
-            return nil
+            let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
+            await MainActor.run { manager.thumbnailCache.setObject(thumbnail, forKey: keyStr as NSString) }
+            return thumbnail
         }.value
     }
     
@@ -76,12 +79,15 @@ class PhysicalFileSystemRouter {
         if let image = UIImage(data: data) {
             let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
             let key = pdf.id.uuidString as NSString
-            manager.thumbnailCache.setObject(thumbnail, forKey: key)
+            // ✅ PERF: Cost annotation makes totalCostLimit enforcement accurate
+            let cost = thumbnail.jpegData(compressionQuality: 0.8)?.count ?? 0
+            manager.thumbnailCache.setObject(thumbnail, forKey: key, cost: cost)
         }
         
         if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
             manager.convertedPDFs[index].coverImageData = nil
-            manager.objectWillChange.send()
+            // ✅ PERF: Removed objectWillChange.send() — NSCache mutations don't trigger SwiftUI renders.
+            // Thumbnail state is managed by isolated @State in LibraryComponents.
         }
     }
     
@@ -253,11 +259,10 @@ class PhysicalFileSystemRouter {
         
         if let fail = nsError { throw fail }
         
-        DispatchQueue.main.async {
-            manager.convertedPDFs[idx].url = newURL
-            manager.convertedPDFs[idx].name = newURL.lastPathComponent
-            manager.saveLibrary()
-        }
+        // ✅ PERF: @MainActor class — direct assignment, no dispatch needed
+        manager.convertedPDFs[idx].url = newURL
+        manager.convertedPDFs[idx].name = newURL.lastPathComponent
+        manager.saveLibrary()
     }
     
     // MARK: - Extracted Static Disk Helpers

@@ -103,9 +103,10 @@ extension ConversionManager {
         await MainActor.run {
             if let idx = self.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 self.convertedPDFs[idx].metadata.selectedCoverID = variantID
-                self.thumbnailCache.removeObject(forKey: pdf.url.path as NSString)
+                // ✅ PERF: Keyed by UUID (not URL path) — prevents stale orphans after rename
+                self.thumbnailCache.removeObject(forKey: pdf.id.uuidString as NSString)
                 self.saveLibrary()
-                self.objectWillChange.send()
+                self.objectWillChange.send()  // intentional: selectedCoverID change must redraw
             }
         }
         await generateCoverThumbnail(for: self.convertedPDFs.first(where: { $0.id == pdf.id }) ?? pdf)
@@ -172,8 +173,11 @@ extension ConversionManager {
             
             let newPDF = ConvertedPDF(name: outputURL.lastPathComponent, url: outputURL, pageCount: totalPages, fileSize: fileSize, metadata: PDFMetadata(title: safeName))
             await MainActor.run { self.convertedPDFs.append(newPDF) }
-            if let cover = inheritedCover { thumbnailCache.setObject(cover, forKey: outputURL.path as NSString); objectWillChange.send() }
-            else { Task { await self.generateCoverThumbnail(for: newPDF) } }
+            if let cover = inheritedCover {
+                // ✅ PERF: Key by UUID, not URL path; send is needed here to trigger cover display
+                thumbnailCache.setObject(cover, forKey: newPDF.id.uuidString as NSString)
+                objectWillChange.send()
+            } else { Task { await self.generateCoverThumbnail(for: newPDF) } }
             isConverting = false; statusMessage = "✅ Merge Complete!"; scanLibrary()
             Logger.shared.log("Merge Successful: \(outputName)", category: "Converter")
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil

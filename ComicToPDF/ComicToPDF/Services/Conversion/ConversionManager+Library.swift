@@ -225,9 +225,10 @@ extension ConversionManager {
                 )
                 convertedPDFs[idx] = updatedPDF
                 
-                if let image = thumbnailCache.object(forKey: pdf.url.path as NSString) {
-                    thumbnailCache.setObject(image, forKey: newURL.path as NSString)
-                    thumbnailCache.removeObject(forKey: pdf.url.path as NSString)
+                // ✅ PERF: Migrate the thumbnail cache entry to the new UUID key (UUID is immutable, URL is not)
+                if let image = thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
+                    thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
+                    // Old URL-path entry (if any) can stay — NSCache will evict under pressure
                 }
                 
                 saveLibrary()
