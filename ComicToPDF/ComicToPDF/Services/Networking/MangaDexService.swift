@@ -38,11 +38,11 @@ struct MangaDexChapterAttributes: Codable {
     let publishAt: String?
 }
 
-class MangaDexService {
+actor MangaDexService {
     static let shared = MangaDexService()
     
-    // MangaDex allows 5 requests per second, so rate limiting is extremely relaxed compared to ComicVine.
-    // However, a minimal buffer ensures no accidental bursts cause 429s.
+    // MangaDex allows 5 requests per second; 0.25s buffer prevents accidental burst 429s.
+    // Actor isolation guarantees lastRequestTime mutations are serialized — no data race possible.
     private var lastRequestTime = Date.distantPast
     
     private init() {}

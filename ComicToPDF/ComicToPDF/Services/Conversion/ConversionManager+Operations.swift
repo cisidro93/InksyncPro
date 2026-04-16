@@ -17,13 +17,18 @@ extension ConversionManager {
             // ✅ Linked Library: Resolve all source URLs through BookmarkResolver
             // This handles both local files and linked drive files transparently.
             var resolvedURLs: [URL] = []
+            var accessingTokens: [(URL, Bool)] = []  // Track which URLs we opened so we can close them all
+            defer {
+                for (url, wasAccessing) in accessingTokens where wasAccessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
             for (url, mode, _) in pdfPairs {
                 if case .linked(let bm) = mode,
-                   let resolved = try? BookmarkResolver.shared.resolve(bm) {  // nonisolated, sync call is fine in Task.detached
+                   let resolved = try? BookmarkResolver.shared.resolve(bm) {
                     let accessing = resolved.startAccessingSecurityScopedResource()
+                    accessingTokens.append((resolved, accessing))
                     resolvedURLs.append(resolved)
-                    // Note: access is held for the duration of the merge below
-                    _ = accessing  // Will be released at task completion
                 } else {
                     resolvedURLs.append(url)
                 }
@@ -153,9 +158,10 @@ extension ConversionManager {
         // ✅ Linked Library: resolve any linked source files before merging
         var sourceURLs: [URL] = []
         for pdf in pdfs {
-            if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {  // nonisolated sync call
-                let _ = resolved.startAccessingSecurityScopedResource()
+            if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+                let accessing = resolved.startAccessingSecurityScopedResource()
                 sourceURLs.append(resolved)
+                if accessing { resolved.stopAccessingSecurityScopedResource() }  // We'll re-acquire inside mergeEPUBs
             } else {
                 sourceURLs.append(pdf.url)
             }

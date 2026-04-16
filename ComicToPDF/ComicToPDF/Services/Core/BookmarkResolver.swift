@@ -46,11 +46,11 @@ actor BookmarkResolver {
                 bookmarkDataIsStale: &isStale
             )
             if isStale {
-                // Post notification so LinkedLibraryScanner can refresh the stored bookmark
-                NotificationCenter.default.post(
-                    name: .bookmarkBecameStale,
-                    object: bookmarkData
-                )
+                // ✅ Always post on the main actor — observers mutate @MainActor state (convertedPDFs).
+                // nonisolated resolve() can be called from any thread so we must hop explicitly.
+                Task { @MainActor in
+                    NotificationCenter.default.post(name: .bookmarkBecameStale, object: bookmarkData)
+                }
             }
             return url
         } catch {

@@ -126,7 +126,8 @@ class ConversionManager: ObservableObject {
         saveTask?.cancel()
         saveTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
-            try? await Task.sleep(nanoseconds: 500_000_000) 
+            // 300ms debounce — collapses burst saves (e.g. per-file metadata loops) into one disk write.
+            try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return }
             LibraryPersistenceManager.shared.save(manager: self)
         }

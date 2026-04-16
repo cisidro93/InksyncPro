@@ -174,17 +174,12 @@ class CoverFetchService {
     }
     
     private func fetchComicVineIssueCover(volumeID: Int, issueNumber: String) async -> [FetchedCover] {
-        // We do a brief safe check. This avoids hitting rate limits carelessly.
-        // We assume the user has configured CV or we're using a standard fetch.
-        // If we hit a rate limit, we just return empty array gracefully.
+        // ✅ MED-4 fix: read from AppSettingsManager (where Settings UI writes) not UserDefaults (never written to).
+        let apiKey = AppSettingsManager.shared.conversionSettings.comicVineAPIKey
+        guard !apiKey.isEmpty else { return [] }
+        
         do {
-            // Using a generic app key placeholder if no user key is passed to avoid burning it.
-            // Ideally, we'd inject the User's CV key if they had one in Settings. For now, rely on standard CV service handling.
-            // But since ComicVineService requires an apiKey parameter:
-            let defaultKey = UserDefaults.standard.string(forKey: "comicVineAPIKey") ?? ""
-            guard !defaultKey.isEmpty else { return [] }
-            
-            if let issueDetails = try await ComicVineService.shared.getIssue(volumeID: volumeID, issueNumber: issueNumber, apiKey: defaultKey) {
+            if let issueDetails = try await ComicVineService.shared.getIssue(volumeID: volumeID, issueNumber: issueNumber, apiKey: apiKey) {
                 if let originalStr = issueDetails.image?.original_url ?? issueDetails.image?.medium_url, let url = URL(string: originalStr) {
                     return [FetchedCover(url: url, sourceName: "ComicVine DB")]
                 }

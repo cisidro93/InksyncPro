@@ -47,7 +47,9 @@ final class DriveMonitor: ObservableObject {
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.probeAll()
-                try? await Task.sleep(for: .seconds(3))
+                // 30s passive poll — battery friendly for idle iPads.
+                // Immediate foreground probe (in setupLifecycleObservers) keeps reconnect snappy.
+                try? await Task.sleep(for: .seconds(30))
             }
         }
     }

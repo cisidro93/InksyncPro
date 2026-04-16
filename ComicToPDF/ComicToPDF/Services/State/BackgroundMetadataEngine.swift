@@ -107,9 +107,8 @@ class BackgroundMetadataEngine: ObservableObject {
                 markAsFailed(id: file.id, manager: manager)
                 failCount += 1
             }
-            
-            // Save state aggressively so progress isn't lost if the user force-closes the app
-            manager.saveLibrary()
+            // No saveLibrary() here — the 300ms debounce in saveLibrary() coalesces burst calls.
+            // A single save in finishCleanly() is sufficient and avoids N disk writes for N comics.
         }
         
         finishCleanly(manager: manager, message: "Matched: \(matchCount). Failed: \(failCount).")
@@ -143,6 +142,13 @@ class BackgroundMetadataEngine: ObservableObject {
         }
     }
     
+    // MARK: - DateFormatter (static — DateFormatter is expensive to initialize)
+    private static let coverDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
     // MARK: - Appliers
     
     private func applyPartialMatch(to fileID: UUID, manager: ConversionManager, volume: ComicVineVolume, issueNum: Int?) {
@@ -169,9 +175,7 @@ class BackgroundMetadataEngine: ObservableObject {
             mutablePDF.metadata.publisher = volume.publisher?.name
             mutablePDF.metadata.universalIssueID = String(issue.id)
             
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            if let dateString = issue.cover_date, let date = formatter.date(from: dateString) {
+            if let dateString = issue.cover_date, let date = BackgroundMetadataEngine.coverDateFormatter.date(from: dateString) {
                 mutablePDF.metadata.publicationDate = date
             }
             
