@@ -113,6 +113,26 @@ public struct ImmersiveConversionOverlay: View {
                         .id(detail)
                         .transition(.opacity)
                 }
+
+                // ✅ #5 QoL: 5-step pipeline progress indicator
+                let allStages = ["Unpacking Archive", "AI Panel Extraction", "Optimizing Assets", "Building EPUB", "Finalizing"]
+                let currentIndex = allStages.firstIndex(of: currentStage) ?? 0
+
+                VStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        ForEach(allStages.indices, id: \.self) { i in
+                            Capsule()
+                                .fill(i <= currentIndex ? Color.inkBlue : Color.white.opacity(0.18))
+                                .frame(height: 4)
+                                .animation(.easeInOut(duration: 0.4), value: currentIndex)
+                        }
+                    }
+                    .padding(.horizontal, 40)
+
+                    Text("\(min(currentIndex + 1, allStages.count)) of \(allStages.count)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.4))
+                }
             }
         }
         // Force rendering over everything

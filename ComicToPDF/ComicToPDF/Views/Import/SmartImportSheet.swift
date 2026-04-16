@@ -162,7 +162,7 @@ struct SmartImportSheet: View {
                 Color.inkBackground.ignoresSafeArea()
 
                 if vm.isAnalysing {
-                    AnalysingView()
+                    AnalysingView(seriesName: vm.sourceURL.deletingPathExtension().lastPathComponent)
                 } else if vm.canSkipSheet {
                     SkippedImportView(vm: vm) {
                         vm.confirm(manager: manager, context: context)
@@ -527,6 +527,8 @@ struct SkippedImportView: View {
                 .font(.system(size: 13, design: .monospaced))
                 .foregroundColor(.inkTextTertiary)
 
+            CountdownRing(total: 3, remaining: countdown)
+
             Spacer()
 
             Button("Change settings") {
@@ -545,17 +547,87 @@ struct SkippedImportView: View {
     }
 }
 
-// MARK: - Spinner Subview
-struct AnalysingView: View {
+// MARK: - Countdown Ring (used by SkippedImportView)
+struct CountdownRing: View {
+    let total: Int
+    let remaining: Int
+
     var body: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .tint(.inkBlue)
-                .scaleEffect(1.5)
-            Text("Analysing content...")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.inkTextSecondary)
+        ZStack {
+            Circle()
+                .stroke(Color.inkBorderSubtle, lineWidth: 4)
+            Circle()
+                .trim(from: 0, to: CGFloat(remaining) / CGFloat(max(total, 1)))
+                .stroke(
+                    Color.inkGreen,
+                    style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+                .animation(.linear(duration: 1.0), value: remaining)
+            Text("\(remaining)")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundColor(.inkTextPrimary)
         }
+        .frame(width: 52, height: 52)
     }
 }
 
+// MARK: - Animated Analysing View
+struct AnalysingView: View {
+    var seriesName: String = ""
+    @State private var rotation: Double = 0
+    @State private var phase: String = "Reading metadata…"
+
+    var body: some View {
+        VStack(spacing: 28) {
+            ZStack {
+                // Background track
+                Circle()
+                    .stroke(Color.inkBorderSubtle, lineWidth: 5)
+                    .frame(width: 64, height: 64)
+
+                // Spinning arc
+                Circle()
+                    .trim(from: 0.08, to: 0.82)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.inkBlue, Color.purple.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                    )
+                    .frame(width: 64, height: 64)
+                    .rotationEffect(.degrees(rotation))
+                    .animation(
+                        .linear(duration: 1.1).repeatForever(autoreverses: false),
+                        value: rotation
+                    )
+            }
+            .onAppear { rotation = 360 }
+
+            VStack(spacing: 6) {
+                Text(seriesName.isEmpty ? "Analysing…" : seriesName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.inkTextPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text(phase)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.inkTextSecondary)
+                    .id(phase)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.4), value: phase)
+            }
+        }
+        .task {
+            // Cycle through human-readable phases to match backend stages
+            let phases = ["Reading metadata…", "Scanning panels…", "Checking series memory…"]
+            for p in phases {
+                try? await Task.sleep(nanoseconds: 1_800_000_000)
+                withAnimation { phase = p }
+            }
+        }
+    }
+}
