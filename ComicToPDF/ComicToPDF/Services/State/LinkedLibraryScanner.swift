@@ -275,13 +275,20 @@ final class LinkedLibraryScanner {
             }
 
             // Parse metadata in place (streamed, no copy)
-            var metadata: PDFMetadata
+            let stem = fileURL.deletingPathExtension().lastPathComponent
+            var metadata = PDFMetadata(title: stem)
             if let parsed = ComicInfoParser.parse(from: fileURL) {
-                metadata = parsed
+                metadata.title = parsed.title ?? stem
+                metadata.series = parsed.series ?? SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
+                metadata.issueNumber = parsed.number
+                metadata.volume = parsed.volume.map { String($0) }
+                metadata.publisher = parsed.publisher
+                metadata.summary = parsed.summary
+                metadata.writer = parsed.writer
+                metadata.isManga = parsed.manga ? true : nil
+                metadata.tags = parsed.tags
             } else {
-                let stem = fileURL.deletingPathExtension().lastPathComponent
-                metadata = PDFMetadata(title: stem)
-                metadata.series = stem
+                metadata.series = SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
             }
 
             var pdf = ConvertedPDF(
