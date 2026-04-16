@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct LinkedLibrarySettingsView: View {
+    @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject var appSettings = AppSettingsManager.shared
     @ObservedObject var driveMonitor = DriveMonitor.shared
     
@@ -132,19 +133,14 @@ struct LinkedLibrarySettingsView: View {
     
     private func removeDrive(_ drive: AppSettingsManager.LinkedDriveEntry) {
         appSettings.removeLinkedDrive(drive)
-        // Optionally: clean up its files from the local conversion manager
-        Task {
-            let manager = await ConversionManager.shared
-            await MainActor.run {
-                manager.convertedPDFs.removeAll { pdf in
-                    if case .linked(let bookmark) = pdf.sourceMode {
-                        return bookmark == drive.volumeBookmarkData
-                    }
-                    return false
-                }
-                manager.saveLibrary()
-                manager.objectWillChange.send()
+        // Clean up its files from the local conversion manager
+        conversionManager.convertedPDFs.removeAll { pdf in
+            if case .linked(let bookmark) = pdf.sourceMode {
+                return bookmark == drive.volumeBookmarkData
             }
+            return false
         }
+        conversionManager.saveLibrary()
+        conversionManager.objectWillChange.send()
     }
 }

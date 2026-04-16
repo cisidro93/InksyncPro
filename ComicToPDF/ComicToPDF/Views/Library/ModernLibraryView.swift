@@ -17,11 +17,11 @@ struct ModernLibraryView: View {
     @Binding var showingBatchMergeReorder: Bool
     @Binding var batchMergeItems: [ConvertedPDF]
     
-    // Ã¢Å“â€¦ Navigation Mode
+    // ✅ Navigation Mode
     var useNavigationStack: Bool = false
     var onFolderImport: (() -> Void)? = nil
     
-    // Ã¢Å“â€¦ NEW: View Style State
+    // ✅ NEW: View Style State
     enum LibraryViewStyle: String {
         case list = "List"
         case grid = "Grid"
@@ -54,7 +54,7 @@ struct ModernLibraryView: View {
         ].compactMap { $0 }
     }
     
-    // Ã¢Å“â€¦ NEW: SwiftData Native Resolvers
+    // ✅ NEW: SwiftData Native Resolvers
     private var nativeVisiblePDFs: [ConvertedPDF] {
         let mapped = swiftDataPDFs.map { $0.toDTO() }
         return settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
@@ -95,7 +95,7 @@ struct ModernLibraryView: View {
                     }
                 }
                 // Removed redundant background to let ZStack ambient glow show through
-                // Ã¢Å“â€¦ MVVM Unified Navigation Router
+                // ✅ MVVM Unified Navigation Router
                 .fullScreenCover(item: $viewModel.activeFullScreen) { dest in
                     switch dest {
                     case .read(let pdf):
@@ -297,7 +297,9 @@ struct ModernLibraryView: View {
                         Spacer()
                     }
                     HStack {
-                        Text("Please reconnect '\\(disconnectedDrives.first?.displayName ?? "Drive")' to read your linked comics.")
+                        let driveName = disconnectedDrives.first?.displayName ?? "Drive"
+                        let message = "Please reconnect '\(driveName)' to read your linked comics."
+                        Text(message)
                             .font(.system(size: 13))
                             .foregroundColor(.white.opacity(0.8))
                         Spacer()
