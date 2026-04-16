@@ -71,9 +71,6 @@ struct InksyncProApp: App {
                 // ✅ SwiftData Engine Attachment (Injected globally)
                 .modelContainer(InksyncProApp.sharedModelContainer)
                 .onAppear {
-                    // ✅ CRITICAL: Wire LinkedLibraryScanner to the live ConversionManager
-                    // Without this, registerFiles() always silently no-ops because conversionManager is nil.
-                    LinkedLibraryScanner.shared.conversionManager = ConversionManager.shared
                     Task { @MainActor in
                         // Context is automatically available in views, but we can't easily grab it inside WindowGroup without a local view wrapper. 
                         // MigrationService call will be placed inside ContentView's onAppear to guarantee environment context.

@@ -83,6 +83,9 @@ struct ContentView: View {
             if !hasSeenOnboarding {
                 showOnboarding = true
             }
+            // ✅ CRITICAL: Wire LinkedLibraryScanner to this live ConversionManager instance.
+            // The scanner holds a weak ref — this must be set here where the @StateObject lives.
+            LinkedLibraryScanner.shared.conversionManager = conversionManager
             // Bind legacy memory-cache mapping to active SwiftData context
             AnnotationStore.shared.initialize(with: modelContext)
             PageModelStore.shared.initialize(with: modelContext)
