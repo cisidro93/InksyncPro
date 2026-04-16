@@ -111,6 +111,21 @@
                 </array>
             </dict>
         </dict>
+        <!-- Library drag-and-drop payload: internal type used for series grouping gestures -->
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>InksyncPro Library Drag Payload</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.inksyncpro.library.dragpayload</string>
+            <key>UTTypeTagSpecification</key>
+            <dict/>
+        </dict>
     </array>
 </dict>
 </plist>

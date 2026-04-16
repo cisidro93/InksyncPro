@@ -24,7 +24,7 @@ struct InboxReviewView: View {
                         .foregroundStyle(Theme.green.gradient)
                     Text("Inbox is clear")
                         .font(.title2.bold())
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     Text("All comics in your library have complete metadata.")
                         .font(.subheadline)
                         .foregroundColor(Theme.textSecondary)
@@ -35,7 +35,7 @@ struct InboxReviewView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Metadata Review")
                                 .font(.largeTitle.bold())
-                                .foregroundColor(.white)
+                                .foregroundColor(.primary)
                             Text("\(reviewItems.count) items need metadata matching.")
                                 .font(.subheadline)
                                 .foregroundColor(Theme.textSecondary)
@@ -100,7 +100,7 @@ struct InboxReviewView: View {
                                 }
                             }
                             .listRowBackground(Color.clear)
-                            .listRowSeparatorTint(.white.opacity(0.1))
+                            .listRowSeparatorTint(Color.inkBorderVisible)
                         }
                     }
                     .listStyle(.plain)
