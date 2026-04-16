@@ -248,16 +248,12 @@ class PhysicalFileSystemRouter {
             counter += 1
         }
         
-        var nsError: NSError?
-        NSFileCoordinator().coordinate(writingItemAt: currentURL, options: .forMoving, writingItemAt: newURL, options: .forReplacing, error: &nsError) { newTarget1, newTarget2 in
-            do {
-                try fileManager.moveItem(at: newTarget1, to: newTarget2)
-            } catch {
-                Logger.shared.log("Move Failure: \(error)", category: "FileSystem", type: .error)
-            }
+        do {
+            try fileManager.moveItem(at: currentURL, to: newURL)
+        } catch {
+            Logger.shared.log("Move Failure: \(error)", category: "FileSystem", type: .error)
+            throw error
         }
-        
-        if let fail = nsError { throw fail }
         
         // ✅ PERF: @MainActor class — direct assignment, no dispatch needed
         manager.convertedPDFs[idx].url = newURL
@@ -355,14 +351,14 @@ class PhysicalFileSystemRouter {
                                 return image
                             }
                         } catch {
-
+                            Logger.shared.log("Failed to extract \(entry.path): \(error.localizedDescription)", category: "Archive", type: .error)
                         }
                     }
                 }
                 
                 return firstSpreadImage
             } catch {
-
+                Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", type: .error)
             }
         }
         return nil

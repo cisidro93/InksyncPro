@@ -21,32 +21,42 @@ struct InksyncProApp: App {
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
-            fatalError("Could not create ModelContainer: \(error)")
+            print("Could not create ModelContainer: \\(error)")
+            do {
+                 return try ModelContainer(for: schema, configurations: [ModelConfiguration(isStoredInMemoryOnly: true)])
+            } catch {
+                 fatalError("Could not create Fallback ModelContainer: \\(error)")
+            }
         }
     }()
     
     init() {
-        // ?? ANNIHILATE GHOST DATA ON FRESH INSTALLS ??
+        // 💥 ANNIHILATE GHOST DATA ON FRESH INSTALLS 💥
         // Guarantees absolute blank UI state if a user deletes and reinstalls the app.
-        // Bypasses Simulator cache retentions, Sideloadly hot-swaps, and iCloud Document injections.
-        if !UserDefaults.standard.bool(forKey: "hasEmployedFreshInstallNuke_v1") {
-            let fileManager = FileManager.default
-            
-            // 1. Vaporize Documents Directory Contents (Nukes all ghost CBZs automatically synced by iCloud)
-            if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
-                if let items = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
-                    for item in items { try? fileManager.removeItem(at: item) }
+        // Uses a hidden file in App Support rather than UserDefaults so it doesn't propagate via iCloud.
+        let fileManager = FileManager.default
+        let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let nukeFlagURL = supportDir.appendingPathComponent(".hasEmployedFreshInstallNuke_v2")
+        
+        if !fileManager.fileExists(atPath: nukeFlagURL.path) {
+            Task.detached(priority: .background) {
+                // 1. Vaporize Documents Directory Contents (Nukes all ghost CBZs automatically synced by iCloud)
+                if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
+                    if let items = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
+                        for item in items { try? fileManager.removeItem(at: item) }
+                    }
                 }
-            }
-            
-            // 2. Vaporize Application Support Directory Contents (Nukes legacy SwiftData SQLite vaults and stored Covers)
-            if let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                
+                // 2. Vaporize Application Support Directory Contents (Nukes legacy SwiftData SQLite vaults and stored Covers)
                 if let items = try? fileManager.contentsOfDirectory(at: supportDir, includingPropertiesForKeys: nil) {
-                    for item in items { try? fileManager.removeItem(at: item) }
+                    for item in items { 
+                        if item.lastPathComponent.hasPrefix(".hasEmployedFreshInstallNuke") { continue }
+                        try? fileManager.removeItem(at: item) 
+                    }
                 }
+                
+                try? Data().write(to: nukeFlagURL)
             }
-            
-            UserDefaults.standard.set(true, forKey: "hasEmployedFreshInstallNuke_v1")
         }
         
         // Register Background Task for Auto-Sync

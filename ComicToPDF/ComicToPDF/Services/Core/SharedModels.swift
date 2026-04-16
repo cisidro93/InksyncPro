@@ -200,6 +200,10 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         hasher.combine(fileSize)
         hasher.combine(isPrivate)
         hasher.combine(metadata.series)
+        do {
+            let encoded = try JSONEncoder().encode(sourceMode)
+            hasher.combine(encoded)
+        } catch {}
     }
 
     static func == (lhs: ConvertedPDF, rhs: ConvertedPDF) -> Bool {
@@ -210,7 +214,8 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
                lhs.pageCount == rhs.pageCount &&
                lhs.fileSize == rhs.fileSize &&
                lhs.isPrivate == rhs.isPrivate &&
-               lhs.metadata.series == rhs.metadata.series
+               lhs.metadata.series == rhs.metadata.series &&
+               (try? JSONEncoder().encode(lhs.sourceMode)) == (try? JSONEncoder().encode(rhs.sourceMode))
     }
 }
 

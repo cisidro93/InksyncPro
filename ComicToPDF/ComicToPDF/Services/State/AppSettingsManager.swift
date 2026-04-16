@@ -76,9 +76,13 @@ class AppSettingsManager: ObservableObject {
         DriveMonitor.shared.startMonitoring(drives: self.linkedDrives)
     }
     
+    private var saveTask: Task<Void, Never>?
+    
     func save() {
-        Task.detached(priority: .background) { [weak self] in
-            guard let self = self else { return }
+        saveTask?.cancel()
+        saveTask = Task.detached(priority: .background) { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled, let self = self else { return }
             let config = await MainActor.run {
                 EncodedAppConfiguration(
                     settings: self.conversionSettings,

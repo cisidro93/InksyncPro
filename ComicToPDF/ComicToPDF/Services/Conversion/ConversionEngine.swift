@@ -47,9 +47,10 @@ actor ConversionEngine {
             let resultURL: URL
             
             // ✅ Linked Library: Wrap file access in BookmarkResolver for linked files
-            // For local files this resolves immediately with the existing URL.
-            // For linked files this holds the security-scoped access open for the duration.
-            let sourceMode: SourceMode = .local // QueueItem will carry sourceMode in next layer
+            // Any URL passed here that is a security-scoped bookmark to an external drive
+            // will have its access held open for the duration of the conversion.
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             if url.pathExtension.lowercased() == "pdf" {
                 resultURL = try await convertPDF(url: url, settings: settings)

@@ -61,19 +61,22 @@ final class DriveMonitor: ObservableObject {
 
     @discardableResult
     private func probeAll() async -> Set<UUID> {
-        var nowConnected: Set<UUID> = []
-
-        await withTaskGroup(of: (UUID, Bool).self) { group in
-            for drive in drives {
-                group.addTask {
-                    let reachable = await BookmarkResolver.shared.isReachable(drive.volumeBookmarkData)
-                    return (drive.id, reachable)
+        let currentDrives = self.drives
+        let nowConnected = await Task.detached {
+            var connected: Set<UUID> = []
+            await withTaskGroup(of: (UUID, Bool).self) { group in
+                for drive in currentDrives {
+                    group.addTask {
+                        let reachable = await BookmarkResolver.shared.isReachable(drive.volumeBookmarkData)
+                        return (drive.id, reachable)
+                    }
+                }
+                for await (id, reachable) in group {
+                    if reachable { connected.insert(id) }
                 }
             }
-            for await (id, reachable) in group {
-                if reachable { nowConnected.insert(id) }
-            }
-        }
+            return connected
+        }.value
 
         // Fire connect events for newly-appeared drives
         let newlyConnected = nowConnected.subtracting(connectedDriveIDs)

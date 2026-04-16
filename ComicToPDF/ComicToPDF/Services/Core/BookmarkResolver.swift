@@ -89,6 +89,9 @@ actor BookmarkResolver {
             }
             let result = try await group.next()!
             group.cancelAll()
+            // Wait for cancelled tasks to physically terminate before returning, 
+            // otherwise defer block halts security access while the task is mid-termination.
+            while let _ = await group.nextResult() {}
             return result
         }
     }
