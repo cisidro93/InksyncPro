@@ -71,7 +71,7 @@ actor BookmarkResolver {
     func withAccess<T: Sendable>(
         _ bookmarkData: Data,
         timeout: Duration = .seconds(600),
-        operation: @Sendable (URL) async throws -> T
+        operation: @escaping @Sendable (URL) async throws -> T
     ) async throws -> T {
         let resolvedURL = try resolve(bookmarkData)
         let accessing = resolvedURL.startAccessingSecurityScopedResource()
