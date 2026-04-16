@@ -26,6 +26,17 @@ class AppSettingsManager: ObservableObject {
     }
     @Published var watchedFolders: [WatchedFolder] = []
     
+    // ✅ Linked Library: Registered external drives
+    struct LinkedDriveEntry: Codable, Identifiable {
+        var id: UUID = UUID()
+        var displayName: String          // e.g. "Samsung T7 — Comics"
+        var volumeBookmarkData: Data     // Bookmark to the root folder on the drive
+        var lastSeenDate: Date
+        var fileCount: Int
+        var isReadOnly: Bool = false     // Set during initial link probe
+    }
+    @Published var linkedDrives: [LinkedDriveEntry] = []
+    
     private let settingsURL: URL
     
     private init() {
@@ -46,6 +57,7 @@ class AppSettingsManager: ObservableObject {
         let devices: [KindleDevice]
         let history: [ConvertedPDF]
         let watchedFolders: [WatchedFolder]?
+        let linkedDrives: [LinkedDriveEntry]?
     }
     
     func load() {
@@ -58,6 +70,10 @@ class AppSettingsManager: ObservableObject {
         self.kindleDevices = config.devices
         self.sendHistory = config.history
         self.watchedFolders = config.watchedFolders ?? []
+        self.linkedDrives = config.linkedDrives ?? []
+        
+        // Start drive monitoring if linked drives exist
+        DriveMonitor.shared.startMonitoring(drives: self.linkedDrives)
     }
     
     func save() {
@@ -69,7 +85,8 @@ class AppSettingsManager: ObservableObject {
                     presets: self.conversionPresets,
                     devices: self.kindleDevices,
                     history: self.sendHistory,
-                    watchedFolders: self.watchedFolders
+                    watchedFolders: self.watchedFolders,
+                    linkedDrives: self.linkedDrives
                 )
             }
             if let data = try? JSONEncoder().encode(config) {
@@ -86,4 +103,24 @@ class AppSettingsManager: ObservableObject {
     func removeKindleDevice(_ device: KindleDevice) { kindleDevices.removeAll { $0.id == device.id }; save() }
     func updateKindleDevice(_ device: KindleDevice) { if let idx = kindleDevices.firstIndex(where: { $0.id == device.id }) { kindleDevices[idx] = device; save() } }
     func setDefaultKindleDevice(_ device: KindleDevice) { for i in 0..<kindleDevices.count { kindleDevices[i].isDefault = (kindleDevices[i].id == device.id) }; save() }
+    
+    // MARK: - Linked Drive Mutators
+    func addLinkedDrive(_ entry: LinkedDriveEntry) {
+        linkedDrives.append(entry)
+        DriveMonitor.shared.startMonitoring(drives: linkedDrives)
+        save()
+    }
+    
+    func removeLinkedDrive(_ entry: LinkedDriveEntry) {
+        linkedDrives.removeAll { $0.id == entry.id }
+        DriveMonitor.shared.startMonitoring(drives: linkedDrives)
+        save()
+    }
+    
+    func updateLinkedDrive(_ entry: LinkedDriveEntry) {
+        if let idx = linkedDrives.firstIndex(where: { $0.id == entry.id }) {
+            linkedDrives[idx] = entry
+            save()
+        }
+    }
 }

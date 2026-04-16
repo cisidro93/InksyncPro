@@ -70,7 +70,16 @@ class ComicImageCache: ObservableObject {
         } else if isPDF {
             self.pdfDocument = nil
             Task.detached(priority: .userInitiated) { [weak self] in
-                let doc = PDFDocument(url: pdf.url)
+                // ✅ Linked Library: resolve security-scoped URL for linked files
+                let resolvedURL: URL
+                if case .linked(let bm) = pdf.sourceMode,
+                   let url = try? BookmarkResolver.shared.resolve(bm) {
+                    let _ = url.startAccessingSecurityScopedResource()
+                    resolvedURL = url
+                } else {
+                    resolvedURL = pdf.url
+                }
+                let doc = PDFDocument(url: resolvedURL)
                 let count = doc?.pageCount ?? 0
                 await MainActor.run { [weak self] in
                     self?.pdfDocument = doc
@@ -81,7 +90,16 @@ class ComicImageCache: ObservableObject {
         } else {
             self.pdfDocument = nil
             Task.detached(priority: .userInitiated) { [weak self] in
-                guard let archive = try? Archive(url: pdf.url, accessMode: .read, pathEncoding: .utf8) else {
+                // ✅ Linked Library: resolve security-scoped URL for linked files
+                let resolvedURL: URL
+                if case .linked(let bm) = pdf.sourceMode,
+                   let url = try? BookmarkResolver.shared.resolve(bm) {
+                    let _ = url.startAccessingSecurityScopedResource()
+                    resolvedURL = url
+                } else {
+                    resolvedURL = pdf.url
+                }
+                guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
                     await MainActor.run { [weak self] in self?.isLoading = false }
                     return
                 }

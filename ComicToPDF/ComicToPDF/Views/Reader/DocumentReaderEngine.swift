@@ -103,8 +103,18 @@ struct DocumentReaderEngine: View {
             }
         }
         .task {
+            // ✅ Linked Library: Resolve security-scoped URL before opening
+            let resolvedURL: URL
+            if case .linked(let bm) = pdf.sourceMode,
+               let url = try? BookmarkResolver.shared.resolve(bm) {
+                let _ = url.startAccessingSecurityScopedResource()
+                resolvedURL = url
+            } else {
+                resolvedURL = pdf.url
+            }
+            
             let doc = await Task.detached(priority: .userInitiated) {
-                PDFDocument(url: pdf.url)
+                PDFDocument(url: resolvedURL)
             }.value
             pdfDocument = doc
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {

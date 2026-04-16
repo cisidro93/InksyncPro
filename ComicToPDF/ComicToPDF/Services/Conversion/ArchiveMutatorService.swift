@@ -6,8 +6,27 @@ import UIKit
 class ArchiveMutatorService {
     static let shared = ArchiveMutatorService()
     
+    // MARK: - Linked File Write Guard
+    
+    /// Throws if a linked file is on a read-only drive.
+    /// All mutating operations call this first before touching the file.
+    private func assertWritable(_ pdf: ConvertedPDF) async throws {
+        guard pdf.isLinked else { return }  // Local files always writable
+        guard let bm = pdf.driveBookmarkData else { return }
+        
+        let writable = await BookmarkResolver.shared.checkWritable(bm)
+        if !writable {
+            throw NSError(
+                domain: "ArchiveMutatorService.LinkedFile",
+                code: 403,
+                userInfo: [NSLocalizedDescriptionKey: "This file is stored on a read-only external drive. Download it to your device first to edit it."]
+            )
+        }
+    }
+    
     // MARK: - Page Deletion
     func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>, manager: ConversionManager) async throws {
+        try await assertWritable(pdf)  // \u2705 Linked Library write guard
         guard !pageIndices.isEmpty else { return }
         await MainActor.run { TaskEngine.shared.processingStatus = "Deleting \(pageIndices.count) pages..." }
         
@@ -57,6 +76,7 @@ class ArchiveMutatorService {
     
     // MARK: - Page Reordering
     func reorderPages(_ pdf: ConvertedPDF, newOrder: [Int], manager: ConversionManager) async throws -> URL {
+        try await assertWritable(pdf)  // ✅ Linked Library write guard
         let fileManager = FileManager.default
         let url = pdf.url
         let tempID = UUID().uuidString
@@ -121,6 +141,7 @@ class ArchiveMutatorService {
     
     // MARK: - Trimming Pages
     func trimPages(from pdf: ConvertedPDF, pageIndices: Set<Int>, trim: (top: Double, bottom: Double, left: Double, right: Double), manager: ConversionManager) async throws {
+        try await assertWritable(pdf)  // ✅ Linked Library write guard
         let ext = pdf.url.pathExtension.lowercased()
         guard ["cbz", "zip", "epub"].contains(ext) else {
             throw NSError(domain: "TrimError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Trimming is only supported for CBZ, ZIP, or EPUB files."])

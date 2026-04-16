@@ -68,6 +68,45 @@ enum DocumentSubtype: String, Codable {
     case unknown
 }
 
+// ✅ Linked Library: Defines whether a file lives on-device or on a linked external drive
+enum SourceMode: Sendable {
+    case local
+    case linked(bookmarkData: Data)
+    
+    var isLinked: Bool {
+        if case .linked = self { return true }
+        return false
+    }
+}
+
+// Custom Codable for SourceMode — .local is the default for all legacy data
+extension SourceMode: Codable {
+    enum CodingKeys: String, CodingKey { case type, bookmarkData }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .local:
+            try container.encode("local", forKey: .type)
+        case .linked(let data):
+            try container.encode("linked", forKey: .type)
+            try container.encode(data, forKey: .bookmarkData)
+        }
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type_ = (try? container.decode(String.self, forKey: .type)) ?? "local"
+        switch type_ {
+        case "linked":
+            let data = try container.decode(Data.self, forKey: .bookmarkData)
+            self = .linked(bookmarkData: data)
+        default:
+            self = .local
+        }
+    }
+}
+
 struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var name: String
@@ -100,6 +139,16 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     
     // SHA-256 content hash, set ONCE at import. Never update during rename, edit, or metadata refresh.
     var contentHash: String? = nil
+    
+    // ✅ Linked Library: Source of this file (on-device local vault or external linked drive)
+    var sourceMode: SourceMode = .local
+    
+    // Computed helpers
+    var isLinked: Bool { sourceMode.isLinked }
+    var driveBookmarkData: Data? {
+        if case .linked(let data) = sourceMode { return data }
+        return nil
+    }
     
     // âœ… NEW: File Extension Tracker
     var fileExtensionString: String {

@@ -71,7 +71,17 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             guard let self else { return }
             let fm = FileManager.default
             let tempDir = await self.tempDir
-            let pdfURL = await self.pdf.url
+            let sourcePDF = await self.pdf
+
+            // ✅ Linked Library: resolve security-scoped URL for linked files
+            let pdfURL: URL
+            if case .linked(let bm) = sourcePDF.sourceMode,
+               let url = try? BookmarkResolver.shared.resolve(bm) {
+                let _ = url.startAccessingSecurityScopedResource()
+                pdfURL = url
+            } else {
+                pdfURL = sourcePDF.url
+            }
 
             if !fm.fileExists(atPath: tempDir.path) {
                 try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)

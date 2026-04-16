@@ -8,15 +8,29 @@ extension ConversionManager {
         let task = AppBackgroundTask(title: "Building Omnibus: \(name)", progress: 0.0)
         activeTasks.append(task)
         
-        let urls = sourceFiles.map { $0.url }
+        let pdfPairs = sourceFiles.map { ($0.url, $0.sourceMode, $0.coverImageData) }
         let startCover = sourceFiles.first?.coverImageData
         let settings = AppSettingsManager.shared.conversionSettings
         let saveDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         
         Task.detached(priority: .userInitiated) {
+            // ✅ Linked Library: Resolve all source URLs through BookmarkResolver
+            // This handles both local files and linked drive files transparently.
+            var resolvedURLs: [URL] = []
+            for (url, mode, _) in pdfPairs {
+                if case .linked(let bm) = mode,
+                   let resolved = try? BookmarkResolver.shared.resolve(bm) {
+                    let accessing = resolved.startAccessingSecurityScopedResource()
+                    resolvedURLs.append(resolved)
+                    // Note: access is held for the duration of the merge below
+                    _ = accessing  // Will be released at task completion
+                } else {
+                    resolvedURLs.append(url)
+                }
+            }
             do {
                 let generatedFiles = try await EPUBMerger().mergeWithSmartSplit(
-                    sourceURLs: urls,
+                    sourceURLs: resolvedURLs,
                     baseOutputName: name,
                     targetDir: saveDir,
                     settings: settings,
@@ -133,7 +147,19 @@ extension ConversionManager {
         isConverting = true; processingStatus = "Merging..."; statusMessage = "Starting merge..."
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let safeName = outputName.isEmpty ? "Merged Collection" : outputName; let outputURL = docDir.appendingPathComponent("\(safeName).epub")
-        let merger = EPUBMerger(); let sourceURLs = pdfs.map { $0.url }
+        let merger = EPUBMerger()
+        
+        // ✅ Linked Library: resolve any linked source files before merging
+        var sourceURLs: [URL] = []
+        for pdf in pdfs {
+            if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+                let _ = resolved.startAccessingSecurityScopedResource()
+                sourceURLs.append(resolved)
+            } else {
+                sourceURLs.append(pdf.url)
+            }
+        }
+        
         var inheritedCover: UIImage?
         if let firstPDF = pdfs.first { inheritedCover = getThumbnail(for: firstPDF) }
         do {

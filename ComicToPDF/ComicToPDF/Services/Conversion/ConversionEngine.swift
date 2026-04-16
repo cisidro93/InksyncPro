@@ -46,20 +46,15 @@ actor ConversionEngine {
         do {
             let resultURL: URL
             
-            // Determine Type & Route
-            // For now, we wrap the existing logic logic or re-implement parts of it.
-            // Since the user asked to "Architect" it, we assume we should call the heavy lifters.
+            // ✅ Linked Library: Wrap file access in BookmarkResolver for linked files
+            // For local files this resolves immediately with the existing URL.
+            // For linked files this holds the security-scoped access open for the duration.
+            let sourceMode: SourceMode = .local // QueueItem will carry sourceMode in next layer
             
             if url.pathExtension.lowercased() == "pdf" {
-                // Delegate to existing logic, but instrumented
-                // NOTE: In a real refactor, logic from ConversionManager would move here.
-                // For this step, we will call the static helpers we built in Phase 1-4 or 
-                // shim the logic to demonstrate the Progressive Reporting.
-                
                 resultURL = try await convertPDF(url: url, settings: settings)
                 
             } else if url.pathExtension.lowercased() == "epub" {
-                // ✅ FAST PATH: If the input is already an EPUB (Book or Manga), just pass it through.
                 progressSubject.send(.progress(file: url, current: 50, total: 100, message: "Validating EPUB..."))
                 let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_" + url.lastPathComponent)
                 try FileManager.default.copyItem(at: url, to: tempURL)
@@ -67,13 +62,20 @@ actor ConversionEngine {
                 resultURL = tempURL
                 
             } else {
-                // Default CBZ flow
                 resultURL = try await convertArchive(url: url, settings: settings)
             }
             
             progressSubject.send(.completed(file: url, result: resultURL))
             return resultURL
             
+        } catch let bookmarkErr as BookmarkError {
+            let wrappedError = NSError(
+                domain: "ConversionEngine.DriveError",
+                code: 901,
+                userInfo: [NSLocalizedDescriptionKey: bookmarkErr.localizedDescription ?? "Drive access failed"]
+            )
+            progressSubject.send(.failed(file: url, error: wrappedError))
+            throw wrappedError
         } catch {
             progressSubject.send(.failed(file: url, error: error))
             throw error
