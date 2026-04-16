@@ -420,7 +420,6 @@ struct ModernLibraryView: View {
             .padding(.vertical, 12)
             .background(.ultraThinMaterial)
             .foregroundColor(Theme.text)
-            .environment(\.colorScheme, .dark)
         }
     }
 }

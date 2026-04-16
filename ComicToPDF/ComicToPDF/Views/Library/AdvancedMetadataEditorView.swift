@@ -14,7 +14,7 @@ struct CustomGlassCard<Content: View>: View {
                     .foregroundColor(Theme.blue)
                 Text(title)
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
             }
             .padding(.bottom, 4)
             
@@ -51,13 +51,13 @@ struct GlassTextField: View {
                 .keyboardType(keyboardType)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color.black.opacity(0.3))
+                .background(Color(UIColor.secondarySystemBackground))
                 .cornerRadius(10)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                 )
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
         }
     }
 }
@@ -95,7 +95,7 @@ struct AdvancedMetadataEditorView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(Color(UIColor.systemBackground).ignoresSafeArea())
             .navigationTitle("Edit Metadata")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -137,7 +137,7 @@ struct AdvancedMetadataEditorView: View {
                                 .scaledToFill()
                         } else {
                             Rectangle()
-                                .fill(Color.black.opacity(0.3))
+                                .fill(Color(UIColor.secondarySystemBackground))
                                 .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(Theme.textSecondary))
                         }
                     }
@@ -147,7 +147,7 @@ struct AdvancedMetadataEditorView: View {
                     .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                     )
                     
                     PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
@@ -193,9 +193,9 @@ struct AdvancedMetadataEditorView: View {
         CustomGlassCard(title: "Tags", icon: "tag.fill") {
             TagEditorView(tags: $tags)
                 .padding()
-                .background(Color.black.opacity(0.3))
+                .background(Color(UIColor.secondarySystemBackground))
                 .cornerRadius(10)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.05), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         }
     }
     

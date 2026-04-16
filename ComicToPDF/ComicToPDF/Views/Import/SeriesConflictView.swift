@@ -13,7 +13,7 @@ struct SeriesConflictView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea()
+                Color(UIColor.systemBackground).ignoresSafeArea()
 
                 if resolvedIndices.count == conflictingGroups.count {
                     // All resolved
@@ -23,7 +23,7 @@ struct SeriesConflictView: View {
                             .foregroundColor(.green)
                         Text("All Conflicts Resolved")
                             .font(.title3.bold())
-                            .foregroundColor(.white)
+                            .foregroundColor(.primary)
                     }
                     .onAppear {
                         Task { @MainActor in
@@ -72,7 +72,7 @@ struct SeriesConflictView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(group.seriesName)
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     Text("\(group.urls.count) file\(group.urls.count == 1 ? "" : "s")")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -109,13 +109,13 @@ struct SeriesConflictView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(Color(white: 0.25))
+                    .background(Color(UIColor.secondarySystemFill))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
         }
         .padding(16)
-        .background(Color(white: 0.12))
+        .background(Color(UIColor.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 16)
     }

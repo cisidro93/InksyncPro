@@ -19,7 +19,7 @@ struct ImportSummaryView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea()
+                Color(UIColor.systemBackground).ignoresSafeArea()
 
                 ScrollView {
                     VStack(spacing: 16) {
@@ -79,7 +79,7 @@ struct ImportSummaryView: View {
 
             Text(hasFailures ? "Import Complete with Errors" : "Import Complete")
                 .font(.title3.bold())
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
 
             HStack(spacing: 16) {
                 Label("\(totalSuccess) imported", systemImage: "checkmark")
@@ -106,7 +106,7 @@ struct ImportSummaryView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(summary.seriesName)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
 
                     if summary.failedURLs.isEmpty {
                         Text("\(summary.successCount) files imported")
@@ -146,7 +146,7 @@ struct ImportSummaryView: View {
             }
         }
         .padding(14)
-        .background(Color(white: 0.12))
+        .background(Color(UIColor.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 16)
     }

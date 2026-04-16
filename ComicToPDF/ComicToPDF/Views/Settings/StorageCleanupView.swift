@@ -24,7 +24,7 @@ struct StorageCleanupView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea()
+                Color(UIColor.systemBackground).ignoresSafeArea()
 
                 if cleanupManager.isScanning {
                     scanningView

@@ -16,7 +16,7 @@ private struct CollectionGlassCard<Content: View>: View {
                     .foregroundColor(Theme.blue)
                 Text(title)
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
             }
             .padding(.bottom, 4)
             
@@ -86,7 +86,7 @@ struct CollectionEditorSheet: View {
                         Text(name.isEmpty ? "New Collection" : name)
                             .font(.title2)
                             .fontWeight(.bold)
-                            .foregroundColor(.white)
+                            .foregroundColor(.primary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 10)
@@ -97,13 +97,13 @@ struct CollectionEditorSheet: View {
                             .font(.headline)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 14)
-                            .background(Color.black.opacity(0.3))
+                            .background(Color(UIColor.secondarySystemBackground))
                             .cornerRadius(10)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                             )
-                            .foregroundColor(.white)
+                            .foregroundColor(.primary)
                             .tint(colorFromName(selectedColor))
                     }
                     
@@ -149,7 +149,7 @@ struct CollectionEditorSheet: View {
                                     
                                     Image(systemName: icon)
                                         .font(.title)
-                                        .foregroundColor(selectedIcon == icon ? colorFromName(selectedColor) : .white.opacity(0.7))
+                                        .foregroundColor(selectedIcon == icon ? colorFromName(selectedColor) : .secondary)
                                         .frame(width: 56, height: 56)
                                 }
                                 .scaleEffect(selectedIcon == icon ? 1.05 : 1.0)
@@ -166,7 +166,7 @@ struct CollectionEditorSheet: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(Color(UIColor.systemBackground).ignoresSafeArea())
             .navigationTitle(isEditing ? "Edit Collection" : "New Collection")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

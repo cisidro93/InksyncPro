@@ -29,7 +29,7 @@ struct SeriesGroupingSheet: View {
                         .foregroundStyle(Color(red: 1, green: 159/255, blue: 10/255).gradient)
                     Text("Group into Series?")
                         .font(.title2.bold())
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     Text("InksyncPro detected \(importedPDFs.count) files that may belong to the same series.")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -49,13 +49,13 @@ struct SeriesGroupingSheet: View {
                     TextField("e.g. One Piece", text: $seriesName)
                         .font(.body)
                         .padding(14)
-                        .background(Color(white: 0.12))
+                        .background(Color(UIColor.secondarySystemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                                .stroke(Color.primary.opacity(0.15), lineWidth: 1)
                         )
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                         .tint(Color(red: 1, green: 159/255, blue: 10/255))
                         .padding(.horizontal, 20)
                 }
@@ -80,7 +80,7 @@ struct SeriesGroupingSheet: View {
                                             .clipShape(RoundedRectangle(cornerRadius: 6))
                                     } else {
                                         RoundedRectangle(cornerRadius: 6)
-                                            .fill(Color(white: 0.15))
+                                            .fill(Color(UIColor.secondarySystemBackground))
                                             .frame(width: 64, height: 90)
                                             .overlay(Image(systemName: "doc.fill").foregroundColor(.secondary))
                                     }
@@ -99,7 +99,7 @@ struct SeriesGroupingSheet: View {
                                         .foregroundColor(.secondary)
                                 }
                                 .frame(width: 64, height: 90)
-                                .background(Color(white: 0.12))
+                                .background(Color(UIColor.secondarySystemBackground))
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                             }
                         }
@@ -139,7 +139,7 @@ struct SeriesGroupingSheet: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 32)
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(Color(UIColor.systemBackground).ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
