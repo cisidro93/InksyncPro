@@ -28,9 +28,17 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.delegate = coordinator
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
-        picker.modalPresentationStyle = .formSheet // Better UX for settings overlay
+        // iPads notoriously swallow UIDocumentPickerViewController UI events if it's 
+        // presented as a formSheet over an existing Settings formSheet.
+        picker.modalPresentationStyle = .fullScreen 
         
         rootVC.present(picker, animated: true)
+    }
+
+    /// iOS fundamentally requires this deprecated delegate method when allowsMultipleSelection = false 
+    /// and the picker is targeting `.folder`, otherwise the "Open" button simply does nothing.
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
+        documentPicker(controller, didPickDocumentsAt: [url])
     }
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
