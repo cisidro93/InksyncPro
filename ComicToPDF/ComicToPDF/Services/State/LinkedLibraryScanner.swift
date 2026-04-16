@@ -75,7 +75,7 @@ final class LinkedLibraryScanner {
 
     /// Non-destructive re-scan when a drive reconnects. Preserves all metadata, progress, and collections.
     func syncDrive(_ entry: AppSettingsManager.LinkedDriveEntry) async {
-        guard let url = try? BookmarkResolver.shared.resolve(entry.volumeBookmarkData) else {
+        guard let url = try? await BookmarkResolver.shared.resolve(entry.volumeBookmarkData) else {
             Logger.shared.log("LinkedLibraryScanner: Could not resolve bookmark for '\(entry.displayName)'", category: "Drive", type: .warning)
             return
         }
@@ -91,7 +91,7 @@ final class LinkedLibraryScanner {
         // Mark files that are no longer present on the drive
         for idx in manager.convertedPDFs.indices {
             if case .linked(let bm) = manager.convertedPDFs[idx].sourceMode,
-               let resolved = try? BookmarkResolver.shared.resolve(bm),
+               let resolved = try? await BookmarkResolver.shared.resolve(bm),
                !foundPaths.contains(resolved.path) {
                 manager.convertedPDFs[idx].metadata.autoMatchFailed = true  // Reuse as "missing" flag
                 Logger.shared.log("LinkedLibraryScanner: '\(manager.convertedPDFs[idx].name)' no longer found on drive", category: "Drive", type: .warning)
@@ -100,9 +100,8 @@ final class LinkedLibraryScanner {
 
         // Add newly appeared files
         let existingPaths = Set(manager.convertedPDFs.compactMap { pdf -> String? in
-            if case .linked(let bm) = pdf.sourceMode,
-               let resolved = try? BookmarkResolver.shared.resolve(bm) {
-                return resolved.path
+            if case .linked(let bm) = pdf.sourceMode {
+                return (try? BookmarkResolver.shared.resolve(bm))?.path  // synchronous resolve is fine here as a best-effort check
             }
             return nil
         })
@@ -146,7 +145,7 @@ final class LinkedLibraryScanner {
         let rootPath = rootURL.path
         manager.convertedPDFs.removeAll { pdf in
             if case .linked(let bm) = pdf.sourceMode,
-               let resolved = try? BookmarkResolver.shared.resolve(bm) {
+               let resolved = try? BookmarkResolver.shared.resolve(bm) {  // sync best-effort: resolve() is nonisolated here
                 return resolved.path.hasPrefix(rootPath)
             }
             return false
@@ -277,7 +276,7 @@ final class LinkedLibraryScanner {
 
             // Parse metadata in place (streamed, no copy)
             var metadata: PDFMetadata
-            if let parsed = ComicInfoParser.shared.parse(from: fileURL) {
+            if let parsed = ComicInfoParser.parse(from: fileURL) {
                 metadata = parsed
             } else {
                 let stem = fileURL.deletingPathExtension().lastPathComponent

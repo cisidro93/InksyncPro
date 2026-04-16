@@ -35,7 +35,8 @@ actor BookmarkResolver {
 
     /// Resolve a bookmark to a live URL that can be opened.
     /// Automatically re-bookmarks and persists stale data when detected.
-    func resolve(_ bookmarkData: Data) throws -> URL {
+    /// nonisolated so it can be called from sync contexts (e.g. compactMap closures).
+    nonisolated func resolve(_ bookmarkData: Data) throws -> URL {
         var isStale = false
         do {
             let url = try URL(

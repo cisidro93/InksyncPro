@@ -19,7 +19,7 @@ extension ConversionManager {
             var resolvedURLs: [URL] = []
             for (url, mode, _) in pdfPairs {
                 if case .linked(let bm) = mode,
-                   let resolved = try? BookmarkResolver.shared.resolve(bm) {
+                   let resolved = try? BookmarkResolver.shared.resolve(bm) {  // nonisolated, sync call is fine in Task.detached
                     let accessing = resolved.startAccessingSecurityScopedResource()
                     resolvedURLs.append(resolved)
                     // Note: access is held for the duration of the merge below
@@ -152,7 +152,7 @@ extension ConversionManager {
         // ✅ Linked Library: resolve any linked source files before merging
         var sourceURLs: [URL] = []
         for pdf in pdfs {
-            if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+            if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {  // nonisolated sync call
                 let _ = resolved.startAccessingSecurityScopedResource()
                 sourceURLs.append(resolved)
             } else {

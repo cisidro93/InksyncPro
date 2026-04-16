@@ -73,7 +73,7 @@ class ComicImageCache: ObservableObject {
                 // ✅ Linked Library: resolve security-scoped URL for linked files
                 let resolvedURL: URL
                 if case .linked(let bm) = pdf.sourceMode,
-                   let url = try? BookmarkResolver.shared.resolve(bm) {
+                   let url = try? await BookmarkResolver.shared.resolve(bm) {
                     let _ = url.startAccessingSecurityScopedResource()
                     resolvedURL = url
                 } else {
@@ -93,7 +93,7 @@ class ComicImageCache: ObservableObject {
                 // ✅ Linked Library: resolve security-scoped URL for linked files
                 let resolvedURL: URL
                 if case .linked(let bm) = pdf.sourceMode,
-                   let url = try? BookmarkResolver.shared.resolve(bm) {
+                   let url = try? await BookmarkResolver.shared.resolve(bm) {
                     let _ = url.startAccessingSecurityScopedResource()
                     resolvedURL = url
                 } else {

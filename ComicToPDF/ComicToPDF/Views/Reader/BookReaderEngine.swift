@@ -76,7 +76,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             // ✅ Linked Library: resolve security-scoped URL for linked files
             let pdfURL: URL
             if case .linked(let bm) = sourcePDF.sourceMode,
-               let url = try? BookmarkResolver.shared.resolve(bm) {
+               let url = try? await BookmarkResolver.shared.resolve(bm) {
                 let _ = url.startAccessingSecurityScopedResource()
                 pdfURL = url
             } else {
