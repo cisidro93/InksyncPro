@@ -47,14 +47,14 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
         
-        // Immediately dismiss so processing doesn't block the UI
+        // Dismiss first so processing isn't blocked on animation
         controller.dismiss(animated: true)
         
-        // The URL returned has a temporary security scope granted by the DocumentPicker.
-        // We MUST start accessing it immediately to generate the persistent bookmark data.
-        let accessing = selectedURL.startAccessingSecurityScopedResource()
-        defer { if accessing { selectedURL.stopAccessingSecurityScopedResource() } }
-        
+        // Do NOT start/stop security access here.
+        // The system grants us a temporary window after didPickDocuments fires.
+        // LinkedLibraryScanner.linkDrive() starts its own security scope independently
+        // using the bookmark it creates from this URL. Starting it here and passing
+        // the URL into an async closure would race the defer-based stop call.
         finish(with: selectedURL)
     }
     

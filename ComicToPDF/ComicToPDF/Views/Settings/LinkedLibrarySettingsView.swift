@@ -100,33 +100,21 @@ struct LinkedLibrarySettingsView: View {
         FolderLinkCoordinator.present { url in
             guard let url = url else { return }
             
-            do {
-                // Must create a security-scoped bookmark to retain access persistently
-                let bookmarkData = try url.bookmarkData(
-                    options: .minimalBookmark,
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil
-                )
-                
-                let displayName = url.lastPathComponent
-                let newDrive = AppSettingsManager.LinkedDriveEntry(
-                    id: UUID(),
-                    displayName: displayName,
-                    volumeBookmarkData: bookmarkData,
-                    lastSeenDate: Date(),
-                    fileCount: 0,
-                    isReadOnly: !FileManager.default.isWritableFile(atPath: url.path)
-                )
-                
-                Task {
+            Task {
+                do {
+                    // LinkedLibraryScanner.linkDrive handles bookmark creation, file scanning,
+                    // thumbnail generation, and addLinkedDrive persistence all atomically.
+                    // The FolderLinkCoordinator already called startAccessingSecurityScopedResource
+                    // before handing us the URL, giving us the temporary access window we need.
+                    let _ = try await LinkedLibraryScanner.shared.linkDrive(
+                        folderURL: url,
+                        displayName: url.lastPathComponent
+                    )
+                } catch {
                     await MainActor.run {
-                        appSettings.addLinkedDrive(newDrive)
+                        self.errorMessage = "Failed to link drive: \(error.localizedDescription)"
                     }
-                    // Immediately scan the drive in the background
-                    await LinkedLibraryScanner.shared.syncDrive(newDrive)
                 }
-            } catch {
-                self.errorMessage = "Failed to bookmark drive: \\(error.localizedDescription)"
             }
         }
     }
