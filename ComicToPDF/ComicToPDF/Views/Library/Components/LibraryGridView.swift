@@ -137,6 +137,15 @@ struct LibraryGridView: View {
                 .buttonStyle(PlainButtonStyle())
                 .contextMenu {
                     Button {
+                        if let next = nextUnread(in: group) {
+                            HapticEngine.success()
+                            onAction(.read, next)
+                        }
+                    } label: { Label("Read Next Issue", systemImage: "play.fill") }
+
+                    Divider()
+
+                    Button {
                         pendingSeriesName = group.title
                         renamingGroup = group
                     } label: { Label("Rename Series", systemImage: "pencil") }
@@ -199,7 +208,11 @@ struct LibraryGridView: View {
                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
                     }
                     .buttonStyle(PlainButtonStyle())
-                    .contextMenu { contextMenuContent(pdf) }
+                    .contextMenu {
+                        contextMenuContent(pdf)
+                    } preview: {
+                        CoverPreviewCard(pdf: pdf, manager: conversionManager)
+                    }
                 } else {
                     Button {
                         if tapAction == .read {
@@ -211,7 +224,11 @@ struct LibraryGridView: View {
                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
                     }
                     .buttonStyle(PlainButtonStyle())
-                    .contextMenu { contextMenuContent(pdf) }
+                    .contextMenu {
+                        contextMenuContent(pdf)
+                    } preview: {
+                        CoverPreviewCard(pdf: pdf, manager: conversionManager)
+                    }
                 }
             }
         }
@@ -247,7 +264,19 @@ struct LibraryGridView: View {
         )
     }
 
-    // MARK: - Drop Application
+    // MARK: - Helpers
+
+    /// Next unread issue in a series — lowest-numbered issue below 95% completion.
+    private func nextUnread(in group: SeriesGroup) -> ConvertedPDF? {
+        let sorted = group.issues.sorted { a, b in
+            let aNum = Int(a.metadata.issueNumber?.filter(\.isNumber) ?? "") ?? 0
+            let bNum = Int(b.metadata.issueNumber?.filter(\.isNumber) ?? "") ?? 0
+            return aNum < bNum
+        }
+        return sorted.first {
+            (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) < 0.95
+        } ?? sorted.first
+    }
 
     private func applyDrop(draggedPDFID: UUID, targetSeriesName: String) {
         guard let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == draggedPDFID }) else { return }

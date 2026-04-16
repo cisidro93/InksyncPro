@@ -104,6 +104,10 @@ struct InboxReviewView: View {
                         }
                     }
                     .listStyle(.plain)
+                    .refreshable {
+                        // Force re-evaluate which items are missing metadata
+                        await BackgroundMetadataEngine.shared.startEngine(manager: manager)
+                    }
                 }
             }
         }

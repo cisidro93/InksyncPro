@@ -301,6 +301,25 @@ struct ModernGridSeriesCell: View {
                     }
                 }
                 .frame(height: 38, alignment: .topLeading)
+                
+                // ✅ QoL: Reading progress badge — "3 / 12 read"
+                let readCount = group.issues.filter {
+                    (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) >= 0.95
+                }.count
+                if readCount > 0 {
+                    Text("\(readCount) / \(group.count) read")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(readCount == group.count ? Theme.green : Theme.textSecondary)
+                } else {
+                    let newCount = group.issues.filter {
+                        ReaderProgressTracker.shared.progress(for: $0.id) == nil
+                    }.count
+                    if newCount > 0 {
+                        Text("\(newCount) new")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(Theme.blue)
+                    }
+                }
             }
         }
         .padding(8)
@@ -340,5 +359,36 @@ struct ModernGridSeriesCell: View {
                 self.localCover = image
             }
         }
+    }
+}
+
+// MARK: - Cover Preview Card (used by context menu preview: blocks)
+struct CoverPreviewCard: View {
+    let pdf: ConvertedPDF
+    let manager: ConversionManager
+
+    var body: some View {
+        ZStack {
+            Color(UIColor.systemBackground)
+
+            if let img = manager.getThumbnail(for: pdf) {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.richtext")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.secondary)
+                    Text(pdf.metadata.title.isEmpty ? pdf.name : pdf.metadata.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                }
+            }
+        }
+        .frame(width: 180, height: 260)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

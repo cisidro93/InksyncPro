@@ -47,7 +47,17 @@ struct LibraryListView: View {
                                     for issue in group.issues { conversionManager.deletePDF(issue) }
                                 } label: { Label("Delete Series", systemImage: "trash") }
                             }
-                            // ✅ Comic Zeal Swipe Selection Action (Swipe Left)
+                            // Swipe right → Read next unread issue immediately
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                Button {
+                                    if let next = nextUnread(in: group) {
+                                        HapticEngine.success()
+                                        onAction(.read, next)
+                                    }
+                                } label: { Label("Read Next", systemImage: "play.fill") }
+                                .tint(Color.inkBlue)
+                            }
+                            // Swipe left → select all or delete
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button {
                                     isBatchMode = true
@@ -173,32 +183,26 @@ struct LibraryListView: View {
         }?.id
     }
     
-    @ViewBuilder
+    /// Returns the lowest-progress issue in a series that is not yet finished (< 95% read).
+    /// Falls back to the first issue if everything is complete (re-read from start).
+    private func nextUnread(in group: SeriesGroup) -> ConvertedPDF? {
+        let sorted = group.issues.sorted { a, b in
+            let aNum = Int(a.metadata.issueNumber?.filter(\.isNumber) ?? "") ?? 0
+            let bNum = Int(b.metadata.issueNumber?.filter(\.isNumber) ?? "") ?? 0
+            return aNum < bNum
+        }
+        return sorted.first {
+            (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) < 0.95
+        } ?? sorted.first
+    }
+
     private func swipeActionsLeading(_ pdf: ConvertedPDF) -> some View {
+        // ✅ QoL: leading swipe = read immediately (most common intent)
         Button {
-            onAction(.share, pdf)
-        } label: { Label("Send to App", systemImage: "paperplane") }
-        .tint(.blue)
-    
-        Button {
-            onAction(.fetchMetadata, pdf) // Or a specific metadata action
-        } label: { Label("Metadata", systemImage: "info.circle") }
-        .tint(.blue)
-        
-        Button {
-            onAction(.favorite, pdf)
-        } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash.fill" : "star.fill") }
-        .tint(.yellow)
-        
-        Button {
-            onAction(.rename, pdf)
-        } label: { Label("Rename", systemImage: "pencil") }
-        .tint(.orange)
-        
-        Button {
-            Task { await conversionManager.embedPanels(for: pdf) }
-        } label: { Label("Embed", systemImage: "flame") }
-        .tint(.purple)
+            HapticEngine.success()
+            onAction(.read, pdf)
+        } label: { Label("Read", systemImage: "play.fill") }
+        .tint(Color.inkBlue)
     }
     
     @ViewBuilder

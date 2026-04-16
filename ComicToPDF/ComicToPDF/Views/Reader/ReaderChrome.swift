@@ -125,7 +125,10 @@ struct ReaderChrome: View {
                 }
                 
                 HStack {
-                    Button(action: onBookmark) {
+                    Button(action: {
+                        HapticEngine.success()  // ✅ QoL: bookmark save gets tactile confirmation
+                        onBookmark()
+                    }) {
                         Image(systemName: "bookmark")
                             .font(.body.weight(.semibold))
                             .foregroundColor(.white)
