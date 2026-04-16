@@ -284,6 +284,33 @@ struct ModernLibraryView: View {
                 onSelectAll: handleSelectAll
             )
             
+            // ✅ NEW: Warning for Disconnected USB Drives
+            let disconnectedDrives = settingsManager.linkedDrives.filter { !DriveMonitor.shared.isConnected(driveID: $0.id) }
+            if !disconnectedDrives.isEmpty {
+                VStack(spacing: 4) {
+                    HStack {
+                        Image(systemName: "externaldrive.fill.badge.xmark")
+                            .foregroundColor(.red)
+                        Text("External Drive Disconnected")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                        Spacer()
+                    }
+                    HStack {
+                        Text("Please reconnect '\\(disconnectedDrives.first?.displayName ?? "Drive")' to read your linked comics.")
+                            .font(.system(size: 13))
+                            .foregroundColor(.white.opacity(0.8))
+                        Spacer()
+                    }
+                }
+                .padding()
+                .background(Theme.red.opacity(0.2))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.red.opacity(0.4), lineWidth: 1))
+                .cornerRadius(12)
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+            }
+            
             // MARK: - Up Next Binge Shelf
             UpNextBingeShelf(allPDFs: nativeVisiblePDFs) { pdf in
                 viewModel.activeFullScreen = .read(pdf)

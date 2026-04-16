@@ -60,6 +60,24 @@ struct ModernGridFileCell: View {
                         .foregroundColor(Theme.textSecondary)
                 }
                 
+                // ✅ NEW: Top-Left External Drive Badge
+                if case .linked(_) = pdf.sourceMode {
+                    VStack {
+                        HStack {
+                            Image(systemName: "externaldrive.fill")
+                                .font(.caption2)
+                                .foregroundColor(.white)
+                                .padding(6)
+                                .background(Theme.blue.opacity(0.9))
+                                .clipShape(Circle())
+                                .padding(6)
+                                .shadow(color: .black.opacity(0.3), radius: 3)
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                }
+                
                 // Batch Selection Overlay
                 if isBatch {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
