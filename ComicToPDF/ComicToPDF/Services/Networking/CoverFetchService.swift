@@ -175,7 +175,8 @@ class CoverFetchService {
     
     private func fetchComicVineIssueCover(volumeID: Int, issueNumber: String) async -> [FetchedCover] {
         // ✅ MED-4 fix: read from AppSettingsManager (where Settings UI writes) not UserDefaults (never written to).
-        let apiKey = AppSettingsManager.shared.conversionSettings.comicVineAPIKey
+        // AppSettingsManager is @MainActor-isolated — await hops to the main actor for this read only.
+        let apiKey = await AppSettingsManager.shared.conversionSettings.comicVineAPIKey
         guard !apiKey.isEmpty else { return [] }
         
         do {
