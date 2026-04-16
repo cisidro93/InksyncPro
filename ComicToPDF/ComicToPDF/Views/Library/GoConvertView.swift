@@ -133,11 +133,10 @@ struct GoConvertView: View {
     }
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                Text("Go Convert")
-                    .font(.largeTitle).bold().padding(.top, 40)
-                
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+
                 // MARK: Drop Zone
                 Button { 
                     ImportCoordinator.present(type: .unified) { urls in processPickedFiles(urls) }
@@ -300,9 +299,13 @@ struct GoConvertView: View {
                 }
                 
                 Spacer(minLength: 40)
+                }
             }
-        }
-        .disabled(queueManager.isProcessing)
+            // Reserve space above the floating tab pill
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 80) }
+            .navigationTitle("Go Convert")
+            .navigationBarTitleDisplayMode(.large)
+        } // end NavigationStack
         .overlay(
             Group {
                 if queueManager.isProcessing, let activeItem = queueManager.activeItem {

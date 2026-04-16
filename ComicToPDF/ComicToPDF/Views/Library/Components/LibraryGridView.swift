@@ -156,6 +156,9 @@ struct LibraryGridView: View {
                         for issue in group.issues { conversionManager.deletePDF(issue) }
                     } label: { Label("Delete Series", systemImage: "trash") }
                 }
+                // ✅ Bug fix #4: preview: block removed on iPhone.
+                // On compact size class, contextMenu preview: expands and dims the
+                // entire grid, masking all sibling cells. iPad-only feature.
             }
         }
         // ── Drag: each file in a series can be dragged individually via the single-cell path.
@@ -209,9 +212,32 @@ struct LibraryGridView: View {
                     }
                     .buttonStyle(PlainButtonStyle())
                     .contextMenu {
+                        // ✅ Bug fix #3: iPhone drag-and-drop fallback.
+                        // .draggable() / Transferable only fires reliably on iPad.
+                        // On iPhone, expose 'Move to Series…' in the context menu instead.
+                        if hSizeClass == .compact {
+                            Button {
+                                let destinationName = pdf.metadata.series?.isEmpty == false
+                                    ? pdf.metadata.series!
+                                    : pdf.metadata.title
+                                pendingDropInfo = DropResolutionInfo(
+                                    draggedID: pdf.id,
+                                    draggedSeriesName: pdf.metadata.series,
+                                    destinationSeriesName: destinationName,
+                                    isFileDroppingOntoSeries: false
+                                )
+                            } label: { Label("Move to Series…", systemImage: "folder.badge.plus") }
+                            Divider()
+                        }
                         contextMenuContent(pdf)
                     } preview: {
-                        CoverPreviewCard(pdf: pdf, manager: conversionManager)
+                        // ✅ Bug fix #4: preview: only on iPad.
+                        if hSizeClass == .regular {
+                            CoverPreviewCard(pdf: pdf, manager: conversionManager)
+                        } else {
+                            // Return an empty view on iPhone — SwiftUI still needs a body.
+                            EmptyView()
+                        }
                     }
                 } else {
                     Button {
@@ -225,10 +251,23 @@ struct LibraryGridView: View {
                     }
                     .buttonStyle(PlainButtonStyle())
                     .contextMenu {
+                        if hSizeClass == .compact {
+                            Button {
+                                let destinationName = pdf.metadata.series?.isEmpty == false
+                                    ? pdf.metadata.series!
+                                    : pdf.metadata.title
+                                pendingDropInfo = DropResolutionInfo(
+                                    draggedID: pdf.id,
+                                    draggedSeriesName: pdf.metadata.series,
+                                    destinationSeriesName: destinationName,
+                                    isFileDroppingOntoSeries: false
+                                )
+                            } label: { Label("Move to Series…", systemImage: "folder.badge.plus") }
+                            Divider()
+                        }
                         contextMenuContent(pdf)
-                    } preview: {
-                        CoverPreviewCard(pdf: pdf, manager: conversionManager)
                     }
+                    // No preview: on iPhone path — avoids grid masking entirely
                 }
             }
         }

@@ -157,6 +157,9 @@ struct DevicesView: View {
     }
 
     private func handleAppear() {
+        // ✅ Bug fix: never auto-show AddDevice before onboarding is complete.
+        // DevicesView is alive in the background even on Tab 0 — guard here.
+        guard UserDefaults.standard.bool(forKey: "hasSeenOnboarding") else { return }
         if savedDevices.isEmpty &&
            !UserDefaults.standard.bool(forKey: "hasCompletedDeviceSetup") {
             showAddDevice = true

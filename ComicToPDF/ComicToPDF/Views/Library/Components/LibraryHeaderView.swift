@@ -20,102 +20,159 @@ struct LibraryHeaderView: View {
     var onVaultToggle: () -> Void
     var onSelectAll: (() -> Void)? = nil
 
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var showImportQueue = false
 
     var body: some View {
-        VStack(spacing: 16) {
-            
-            // Row 1: Integrated Search & Title
-            HStack(spacing: 12) {
-                // Title / Brand & Library Stats Matrix
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                         Image(systemName: "books.vertical.fill")
-                             .font(.system(size: 24, weight: .bold))
-                             .foregroundStyle(Theme.orange.gradient)
-                         Text("Library")
-                             .font(.system(size: 28, weight: .bold))
-                             .foregroundColor(Theme.text)
-                             .fixedSize(horizontal: true, vertical: false)
+        VStack(spacing: 0) {
+
+            if hSizeClass == .compact {
+                // ✔️ iPhone layout: title row + full-width search row
+                VStack(spacing: 8) {
+                    // Row 1a: Title + icon buttons
+                    HStack(spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "books.vertical.fill")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(Theme.orange.gradient)
+                            Text("Library")
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundColor(Theme.text)
+                        }
+                        Spacer()
+                        // Sort
+                        Menu {
+                            Picker("Sort By", selection: $sortOption) {
+                                ForEach(ModernLibraryView.SortOption.allCases) { option in Text(option.rawValue).tag(option) }
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(Theme.text)
+                                .frame(width: 38, height: 38)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                        }
+                        // Grid / list
+                        Button {
+                            withAnimation { viewStyle = viewStyle == .grid ? .list : .grid }
+                        } label: {
+                            Image(systemName: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(Theme.text)
+                                .frame(width: 38, height: 38)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                        }
+                        ActivityTrackerButton()
                     }
-                    
-                    let fileCount = conversionManager.convertedPDFs.count
-                    let seriesCount = conversionManager.collections.count
-                    
-                    Text("\(fileCount) FILES • \(seriesCount) SERIES")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundColor(Theme.textSecondary)
-                        .tracking(1.2)
-                        .opacity(0.8)
-                }
-                
-                Spacer()
-                
-                // Large Integrated Search Bar
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Theme.textSecondary)
-                    
-                    TextField("Search Collection...", text: $searchText)
-                        .font(.system(size: 17))
-                        .foregroundColor(Theme.text)
-                        .tint(Theme.orange)
-                    
-                    if !searchText.isEmpty {
-                        Button(action: { searchText = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(Theme.textSecondary)
+                    .padding(.horizontal, 16)
+
+                    // Row 1b: Full-width search (no width competition)
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(Theme.textSecondary)
+                        TextField("Search collection…", text: $searchText)
+                            .font(.system(size: 15))
+                            .foregroundColor(Theme.text)
+                            .tint(Theme.orange)
+                        if !searchText.isEmpty {
+                            Button(action: { searchText = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(Theme.textSecondary)
+                            }
                         }
                     }
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 14)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Theme.text.opacity(0.1), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 16)
                 }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 16)
-                .background(.ultraThinMaterial) // Liquid Glass Field
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Theme.text.opacity(0.1), lineWidth: 1)
-                )
-                .frame(maxWidth: 400) // Constrain width on large screens
-                
-                // ✅ Sort Menu
-                Menu {
-                    Picker("Sort By", selection: $sortOption) {
-                        ForEach(ModernLibraryView.SortOption.allCases) { option in Text(option.rawValue).tag(option) }
+                .padding(.top, 16)
+
+            } else {
+                // ✔️ iPad layout: original single-row design
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                             Image(systemName: "books.vertical.fill")
+                                 .font(.system(size: 24, weight: .bold))
+                                 .foregroundStyle(Theme.orange.gradient)
+                             Text("Library")
+                                 .font(.system(size: 28, weight: .bold))
+                                 .foregroundColor(Theme.text)
+                                 .fixedSize(horizontal: true, vertical: false)
+                        }
+                        let fileCount = conversionManager.convertedPDFs.count
+                        let seriesCount = conversionManager.collections.count
+                        Text("\(fileCount) FILES • \(seriesCount) SERIES")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(Theme.textSecondary)
+                            .tracking(1.2)
+                            .opacity(0.8)
                     }
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Theme.text)
-                        .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Theme.text.opacity(0.1), lineWidth: 1))
-                }
-                
-                // ✅ Grid / List Toggle
-                Button {
-                    withAnimation {
-                        viewStyle = viewStyle == .grid ? .list : .grid
+                    Spacer()
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(Theme.textSecondary)
+                        TextField("Search Collection...", text: $searchText)
+                            .font(.system(size: 17))
+                            .foregroundColor(Theme.text)
+                            .tint(Theme.orange)
+                        if !searchText.isEmpty {
+                            Button(action: { searchText = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                        }
                     }
-                } label: {
-                    Image(systemName: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Theme.text)
-                        .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Theme.text.opacity(0.1), lineWidth: 1))
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Theme.text.opacity(0.1), lineWidth: 1)
+                    )
+                    .frame(maxWidth: 400)
+                    Menu {
+                        Picker("Sort By", selection: $sortOption) {
+                            ForEach(ModernLibraryView.SortOption.allCases) { option in Text(option.rawValue).tag(option) }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(Theme.text)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Theme.text.opacity(0.1), lineWidth: 1))
+                    }
+                    Button {
+                        withAnimation {
+                            viewStyle = viewStyle == .grid ? .list : .grid
+                        }
+                    } label: {
+                        Image(systemName: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(Theme.text)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Theme.text.opacity(0.1), lineWidth: 1))
+                    }
+                    ActivityTrackerButton()
                 }
-                
-                // ✅ Background Task Tracker
-                ActivityTrackerButton()
-                
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+            } // end hSizeClass branches
             // Row 2: Cohesive Action Center (Scrollable Pills)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
