@@ -249,8 +249,7 @@ class ReadwiseImportService {
             } else if c == "," && !inQuotes {
                 currentRow.append(currentField)
                 currentField = ""
-            } else if (c == "\r" || c == "\n") && !inQuotes {
-                if c == "\r" && i + 1 < chars.count && chars[i + 1] == "\n" { i += 1 }
+            } else if (c == "\r" || c == "\n" || c == "\r\n") && !inQuotes {
                 currentRow.append(currentField)
                 result.append(currentRow)
                 currentRow = []

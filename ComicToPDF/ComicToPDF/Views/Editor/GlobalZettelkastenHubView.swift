@@ -48,6 +48,13 @@ struct GlobalZettelkastenHubView: View {
         return filtered
     }
     
+    // O(1) Lookup cache for PDF names
+    private var pdfNameCache: [UUID: String] {
+        var dict = [UUID: String]()
+        for pdf in allPDFs { dict[pdf.id] = pdf.name }
+        return dict
+    }
+    
     // Group Highlights by Book (Native PDFs and Readwise Synced Books)
     var groupedAnnotations: [(key: String, value: [SDAnnotation])] {
         let dict = Dictionary(grouping: activeAnnotations) { ann -> String in
@@ -239,8 +246,8 @@ struct GlobalZettelkastenHubView: View {
 
         // Fall through to the native SwiftData PDF name (covers in-app reader highlights
         // whose pdfID matches a ConvertedPDF in the library).
-        if let pdf = allPDFs.first(where: { $0.id == ann.pdfID }) {
-            return pdf.name
+        if let pdfName = pdfNameCache[ann.pdfID] {
+            return pdfName
         }
 
         return "Book ID: " + String(ann.pdfID.uuidString.prefix(8))
