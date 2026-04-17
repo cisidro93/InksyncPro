@@ -378,9 +378,9 @@ actor ImportOrchestrator {
                     }
                 }
             }
-            
             manager.saveLibrary()
-            
+        } // End MainActor.run
+
         // ✅ PERF: Thumbnail generation — capped TaskGroup (4 concurrent) instead of
         // launching N simultaneous Tasks that flood the main actor queue.
         await withTaskGroup(of: Void.self) { group in

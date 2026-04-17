@@ -101,14 +101,21 @@ class ReadwiseImportService {
             return row[idx].trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        /// Split a Readwise tag string: comma or space separated, strips leading #
-        func parseTags(_ raw: String) -> [String]? {
-            guard !raw.isEmpty else { return nil }
-            let parts = raw.components(separatedBy: CharacterSet(charactersIn: ",;"))
-                           .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "#")) }
-                           .filter { !$0.isEmpty }
-            return parts.isEmpty ? nil : parts
-        }
+        // ✅ PERF: Pre-fetch ALL existing Readwise annotation IDs in a single query.
+        // The old code ran context.fetch(predicate: id == X) for EVERY row
+        // (1315 queries for the user's CSV). One query + Set<UUID> lookup = O(1) per row.
+        let allExistingFetch = FetchDescriptor<SDAnnotation>(
+            predicate: #Predicate { $0.isReadwiseImport == true }
+        )
+        let existingIDs: Set<UUID> = {
+            let existing = (try? context.fetch(allExistingFetch)) ?? []
+            return Set(existing.map { $0.id })
+        }()
+        Logger.shared.log("Readwise: \(existingIDs.count) existing highlights found — skipping duplicates", category: "Import")
+
+        var importedCount = 0
+        var skippedDuplicates = 0
+        var skippedMalformed = 0
 
         // ✅ PERF: Pre-fetch ALL existing Readwise annotation IDs in a single query.
         // The old code ran context.fetch(predicate: id == X) for EVERY row
