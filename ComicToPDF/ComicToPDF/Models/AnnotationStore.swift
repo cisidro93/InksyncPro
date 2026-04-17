@@ -58,6 +58,18 @@ struct Annotation: Codable, Identifiable {
     var isReadwiseImport: Bool = false
     var readwiseBookTitle: String?
     var readwiseAuthor: String?
+    /// Raw color name from Readwise CSV ("yellow", "blue", "pink", "aqua")
+    var readwiseColor: String?
+    /// Readwise user-applied tags from the CSV Tags column
+    var readwiseTags: [String]?
+    /// Readwise Document-level tags
+    var readwiseDocumentTags: [String]?
+    /// Amazon Book ID (ASIN) for deep-linking to Kindle
+    var readwiseAmazonID: String?
+    /// Location type: "location", "page", "offset", "order"
+    var readwiseLocationType: String?
+    /// Raw location value from CSV
+    var readwiseLocation: Int?
     
     // Bounding Box
     var boundsX: Double?
@@ -86,22 +98,58 @@ struct Annotation: Codable, Identifiable {
     }
     
     // ✅ Phase 31 Native Constructor for Readwise Importers
-    init(id: UUID, pdfID: String, pageIndex: Int, text: String?, note: String?, isReadwiseImport: Bool, readwiseBookTitle: String?, readwiseAuthor: String?, createdAt: Date) {
+    init(
+        id: UUID,
+        pdfID: String,
+        pageIndex: Int,
+        text: String?,
+        note: String?,
+        isReadwiseImport: Bool,
+        readwiseBookTitle: String?,
+        readwiseAuthor: String?,
+        readwiseColor: String?,
+        readwiseTags: [String]?,
+        readwiseDocumentTags: [String]?,
+        readwiseAmazonID: String?,
+        readwiseLocationType: String?,
+        readwiseLocation: Int?,
+        createdAt: Date
+    ) {
         self.id = id
-        // Inksync PDF Engine uses UUID heavily, so we hash synthetic titles to UUIDs
-        self.pdfID = UUID(uuidString: pdfID) ?? UUID() 
+        self.pdfID = UUID(uuidString: pdfID) ?? UUID()
         self.pageIndex = pageIndex
-        self.kindRaw = "highlight" // Default to highlight for external notes
+        self.kindRaw = "highlight"
         self.createdAt = createdAt
         self.modifiedAt = createdAt
         self.selectedText = text
-        self.noteText = note
-        self.colorHex = "#FFD700"
-        self.tags = []
-        
-        self.isReadwiseImport = isReadwiseImport
-        self.readwiseBookTitle = readwiseBookTitle
-        self.readwiseAuthor = readwiseAuthor
+        self.noteText = note.flatMap { $0.isEmpty ? nil : $0 }
+
+        // Map Readwise color name to a real hex value used throughout the app
+        let colorMap: [String: String] = [
+            "yellow": "#FFD60A",
+            "blue":   "#007AFF",
+            "pink":   "#FF2D55",
+            "aqua":   "#32ADE6",
+            "orange": "#FF9F0A",
+            "purple": "#BF5AF2"
+        ]
+        self.colorHex = colorMap[readwiseColor?.lowercased() ?? ""] ?? "#FFD60A"
+
+        // Merge user-applied Tags + Document tags into the single tags array used by the app
+        var allTags: [String] = []
+        if let rt = readwiseTags  { allTags.append(contentsOf: rt) }
+        if let dt = readwiseDocumentTags { allTags.append(contentsOf: dt) }
+        self.tags = allTags.isEmpty ? [] : allTags
+
+        self.isReadwiseImport    = isReadwiseImport
+        self.readwiseBookTitle   = readwiseBookTitle
+        self.readwiseAuthor      = readwiseAuthor
+        self.readwiseColor       = readwiseColor
+        self.readwiseTags        = readwiseTags
+        self.readwiseDocumentTags = readwiseDocumentTags
+        self.readwiseAmazonID    = readwiseAmazonID
+        self.readwiseLocationType = readwiseLocationType
+        self.readwiseLocation    = readwiseLocation
     }
     
     func toDTO() -> Annotation {
