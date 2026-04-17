@@ -3,8 +3,9 @@ import SwiftData
 import CryptoKit
 
 struct StudyNotebookView: View {
-    let bookID: String
-    
+    let bookID: String       // the ConvertedPDF's UUID string
+    let bookTitle: String    // human-readable title shown in the Zettelkasten Hub
+
     // Phase 1: Native Zettelkasten Integration
     @Environment(\.modelContext) private var modelContext
     @State private var activeNoteAnnotation: SDAnnotation?
@@ -117,7 +118,9 @@ struct StudyNotebookView: View {
                 text: nil,
                 note: "",
                 isReadwiseImport: false,
-                readwiseBookTitle: bookID,
+                // Store the real book title so the Zettelkasten Hub can group
+                // this note under the correct book name instead of a raw UUID.
+                readwiseBookTitle: bookTitle.isEmpty ? nil : bookTitle,
                 readwiseAuthor: nil,
                 createdAt: Date()
             )

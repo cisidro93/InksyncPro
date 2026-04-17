@@ -26,7 +26,10 @@ struct SplitStudyWorkspace: View {
                 ZStack {
                     ReaderView(fileURL: fileURL, contentType: contentType, pdf: pdf, onExit: { dismiss() })
                         .sheet(isPresented: $showNotebook) {
-                            StudyNotebookView(bookID: pdf?.id.uuidString ?? fileURL.lastPathComponent)
+                            StudyNotebookView(
+                                bookID: pdf?.id.uuidString ?? fileURL.lastPathComponent,
+                                bookTitle: pdf?.name ?? fileURL.deletingPathExtension().lastPathComponent
+                            )
                         }
                     
                     compactNotebookToggle
@@ -102,7 +105,10 @@ struct SplitStudyWorkspace: View {
     
     @ViewBuilder
     private func notebookPane(geo: GeometryProxy, fraction: Double, axis: Axis) -> some View {
-        StudyNotebookView(bookID: pdf?.id.uuidString ?? fileURL.lastPathComponent)
+        StudyNotebookView(
+            bookID: pdf?.id.uuidString ?? fileURL.lastPathComponent,
+            bookTitle: pdf?.name ?? fileURL.deletingPathExtension().lastPathComponent
+        )
             .frame(
                 width: axis == .horizontal ? geo.size.width * fraction - 8 : geo.size.width,
                 height: axis == .vertical ? geo.size.height * fraction - 8 : geo.size.height

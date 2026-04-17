@@ -228,12 +228,22 @@ struct GlobalZettelkastenHubView: View {
     
     private func bookTitle(for annotation: SDAnnotation?) -> String {
         guard let ann = annotation else { return "Unknown Book" }
-        if let title = ann.readwiseBookTitle { return title }
-        // Match SwiftData Native PDF Title instead of returning a raw UUID
+
+        // Use readwiseBookTitle only if it's a real human-readable title.
+        // Guard against the legacy bug where it was set to the raw UUID string.
+        if let title = ann.readwiseBookTitle,
+           !title.isEmpty,
+           UUID(uuidString: title) == nil {      // reject bare UUID strings
+            return title
+        }
+
+        // Fall through to the native SwiftData PDF name (covers in-app reader highlights
+        // whose pdfID matches a ConvertedPDF in the library).
         if let pdf = allPDFs.first(where: { $0.id == ann.pdfID }) {
             return pdf.name
         }
-        return "Book ID: " + String(ann.pdfID.uuidString.prefix(8)) 
+
+        return "Book ID: " + String(ann.pdfID.uuidString.prefix(8))
     }
     
     // MARK: - Actions
