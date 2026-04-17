@@ -39,9 +39,12 @@ final class LinkedLibraryScanner {
         let accessing = folderURL.startAccessingSecurityScopedResource()
         defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
 
-        // Create persistent bookmark for the root folder
+        // Create persistent bookmark for the root folder.
+        // IMPORTANT: On iOS, .minimalBookmark is a macOS-only option and produces
+        // transient bookmarks that become stale after the app session ends.
+        // An empty options set [] produces a durable, security-scoped bookmark.
         let bookmarkData = try folderURL.bookmarkData(
-            options: .minimalBookmark,
+            options: [],
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
@@ -67,6 +70,10 @@ final class LinkedLibraryScanner {
         // Save drive entry
         AppSettingsManager.shared.addLinkedDrive(entry)
         Logger.shared.log("LinkedLibraryScanner: Linked drive '\(entry.displayName)' with \(files.count) files", category: "Drive")
+
+        // Inform DriveMonitor of the updated drive list so the new drive
+        // immediately starts being polled for reachability.
+        DriveMonitor.shared.startMonitoring(drives: AppSettingsManager.shared.linkedDrives)
 
         return entry
     }
@@ -98,15 +105,15 @@ final class LinkedLibraryScanner {
             }
         }
 
-        // Add newly appeared files
-        let existingPaths = Set(manager.convertedPDFs.compactMap { pdf -> String? in
-            if case .linked(let bm) = pdf.sourceMode {
-                return (try? BookmarkResolver.shared.resolve(bm))?.path  // synchronous resolve is fine here as a best-effort check
-            }
-            return nil
+        // Add newly appeared files.
+        // Compare by filename only — drive URLs change across reconnects and
+        // resolving per-file bookmarks here is both slow and unreliable.
+        let existingFilenames = Set(manager.convertedPDFs.compactMap { pdf -> String? in
+            guard case .linked = pdf.sourceMode else { return nil }
+            return pdf.url.lastPathComponent
         })
 
-        let newFiles = foundFiles.filter { !existingPaths.contains($0.path) }
+        let newFiles = foundFiles.filter { !existingFilenames.contains($0.lastPathComponent) }
         if !newFiles.isEmpty {
             await registerFiles(newFiles, driveEntry: entry, rootURL: url)
             Logger.shared.log("LinkedLibraryScanner: Sync found \(newFiles.count) new files on '\(entry.displayName)'", category: "Drive")
@@ -164,6 +171,11 @@ final class LinkedLibraryScanner {
         targetFolderURL: URL,
         progress: @escaping (Double, String) -> Void
     ) async throws {
+        // ⚠️ targetFolderURL is on an external drive — must acquire security-scoped access
+        // before ANY file system operations underneath it.
+        let accessing = targetFolderURL.startAccessingSecurityScopedResource()
+        defer { if accessing { targetFolderURL.stopAccessingSecurityScopedResource() } }
+
         let total = files.count
         var copiedPairs: [(originalURL: URL, driveURL: URL, pdfID: UUID)] = []
 
@@ -188,7 +200,7 @@ final class LinkedLibraryScanner {
 
         for pair in copiedPairs {
             // Create bookmark for new drive location
-            let bookmark = try pair.driveURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+            let bookmark = try pair.driveURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
             
             // Update the ConvertedPDF entry in place (ID, metadata, collections preserved)
             if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pair.pdfID }) {
@@ -266,7 +278,8 @@ final class LinkedLibraryScanner {
         for fileURL in files {
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
                   let fileSize = attrs[.size] as? Int64,
-                  let bookmark = try? fileURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                  // Use [] options for a durable iOS security-scoped bookmark (not .minimalBookmark)
+                  let bookmark = try? fileURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
             else { continue }
 
             // Skip if already registered

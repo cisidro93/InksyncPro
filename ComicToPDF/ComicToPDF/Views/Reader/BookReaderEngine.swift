@@ -73,12 +73,16 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             let tempDir = await self.tempDir
             let sourcePDF = await self.pdf
 
-            // ✅ Linked Library: resolve security-scoped URL for linked files
+            // Linked Library: resolve security-scoped URL for linked files.
+            // We only need the scope open during the unpack step — chapters are read
+            // from the sandbox temp directory afterward, so scope is stopped after extraction.
             let pdfURL: URL
+            var accessedURL: URL? = nil
             if case .linked(let bm) = sourcePDF.sourceMode,
                let url = try? await BookmarkResolver.shared.resolve(bm) {
-                let _ = url.startAccessingSecurityScopedResource()
+                let didAccess = url.startAccessingSecurityScopedResource()
                 pdfURL = url
+                if didAccess { accessedURL = url }
             } else {
                 pdfURL = sourcePDF.url
             }
@@ -86,6 +90,8 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             if !fm.fileExists(atPath: tempDir.path) {
                 try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
                 guard let archive = try? Archive(url: pdfURL, accessMode: .read, pathEncoding: .utf8) else {
+                    // Stop scope before early return
+                    accessedURL?.stopAccessingSecurityScopedResource()
                     await MainActor.run { self.isLoading = false }
                     return
                 }
@@ -95,6 +101,8 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
                     _ = try? archive.extract(entry, to: dest)
                 }
             }
+            // Extraction done — stop security scope. parseNCXOrSpine reads from tempDir (sandbox).
+            accessedURL?.stopAccessingSecurityScopedResource()
             await self.parseNCXOrSpine(tempDir: tempDir)
         }
     }

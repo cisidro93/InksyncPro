@@ -28,14 +28,14 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.delegate = coordinator
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
-        // iPads notoriously swallow UIDocumentPickerViewController UI events if it's 
+        // iPads notoriously swallow UIDocumentPickerViewController UI events if it's
         // presented as a formSheet over an existing Settings formSheet.
-        picker.modalPresentationStyle = .fullScreen 
-        
+        picker.modalPresentationStyle = .fullScreen
+
         rootVC.present(picker, animated: true)
     }
 
-    /// iOS fundamentally requires this deprecated delegate method when allowsMultipleSelection = false 
+    /// iOS fundamentally requires this deprecated delegate method when allowsMultipleSelection = false
     /// and the picker is targeting `.folder`, otherwise the "Open" button simply does nothing.
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
         documentPicker(controller, didPickDocumentsAt: [url])
@@ -46,18 +46,36 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             finish(with: nil)
             return
         }
-        
-        // Dismiss first so processing isn't blocked on animation
-        controller.dismiss(animated: true)
-        
-        // Do NOT start/stop security access here.
-        // The system grants us a temporary window after didPickDocuments fires.
-        // LinkedLibraryScanner.linkDrive() starts its own security scope independently
-        // using the bookmark it creates from this URL. Starting it here and passing
-        // the URL into an async closure would race the defer-based stop call.
-        finish(with: selectedURL)
+
+        // ⚠️ CRITICAL RACE CONDITION FIX:
+        // The security-scoped resource window granted by the system document picker is
+        // extremely short-lived — it expires before the `dismiss(animated: true)` animation
+        // even completes, let alone before an async Task can call bookmarkData() on it.
+        //
+        // Fix: Start security access NOW (inside the delegate callback, while the window is
+        // guaranteed live). Defer stopping access until AFTER the dismiss animation completes
+        // so that LinkedLibraryScanner.linkDrive() receives the URL still within the active
+        // grant window. linkDrive() then starts its own independent security scope from inside
+        // the window (which succeeds because we have not yet stopped access), creates the
+        // durable bookmark, and then the defer block in linkDrive stops its own scope.
+        // We stop our scope immediately after calling finish() below.
+        let accessing = selectedURL.startAccessingSecurityScopedResource()
+
+        controller.dismiss(animated: true) { [weak self] in
+            guard let self else {
+                // Guard fired after dealloc — still stop access to avoid resource leak.
+                if accessing { selectedURL.stopAccessingSecurityScopedResource() }
+                return
+            }
+            self.finish(with: selectedURL)
+            // Stop our eagerly-acquired security scope only after linkDrive has been
+            // dispatched (finish() calls the completion synchronously, which fires
+            // the async Task that calls linkDrive). On the next run loop the Task
+            // has been created and holds its own scope via startAccessingSecurityScopedResource.
+            if accessing { selectedURL.stopAccessingSecurityScopedResource() }
+        }
     }
-    
+
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
         finish(with: nil)
     }

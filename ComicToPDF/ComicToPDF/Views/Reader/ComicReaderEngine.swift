@@ -54,6 +54,9 @@ class ComicImageCache: ObservableObject {
     let isPDF: Bool
     let isStream: Bool
     private var pdfDocument: PDFDocument?
+    /// Holds the URL whose security scope is currently active for linked CBZ files.
+    /// Released in `deinit` when the reader is dismissed.
+    var activelyAccessedURL: URL?
     
     init(pdf: ConvertedPDF) {
         let scheme = pdf.url.scheme?.lowercased() ?? ""
@@ -64,22 +67,26 @@ class ComicImageCache: ObservableObject {
         
         if isStream {
             self.pdfDocument = nil
-            // In a real flow, the PDF object carries the page count metadata
-            self.pageCount = 100 // Prototype fallback
+            self.pageCount = 100
             self.isLoading = false
         } else if isPDF {
             self.pdfDocument = nil
             Task.detached(priority: .userInitiated) { [weak self] in
-                // ✅ Linked Library: resolve security-scoped URL for linked files
+                // Linked Library: resolve and access the security-scoped URL.
+                // PDFDocument copies data on open, so we can stop access immediately after init.
                 let resolvedURL: URL
+                var accessedURL: URL? = nil
                 if case .linked(let bm) = pdf.sourceMode,
                    let url = try? await BookmarkResolver.shared.resolve(bm) {
-                    let _ = url.startAccessingSecurityScopedResource()
+                    let didAccess = url.startAccessingSecurityScopedResource()
                     resolvedURL = url
+                    if didAccess { accessedURL = url }
                 } else {
                     resolvedURL = pdf.url
                 }
                 let doc = PDFDocument(url: resolvedURL)
+                // PDFDocument has loaded its data — release the security scope.
+                if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }
                 let count = doc?.pageCount ?? 0
                 await MainActor.run { [weak self] in
                     self?.pdfDocument = doc
@@ -90,12 +97,18 @@ class ComicImageCache: ObservableObject {
         } else {
             self.pdfDocument = nil
             Task.detached(priority: .userInitiated) { [weak self] in
-                // ✅ Linked Library: resolve security-scoped URL for linked files
+                // Linked Library: for CBZ, we need the security scope live for the entire
+                // reader session since images are extracted lazily page-by-page on demand.
+                // Store the URL so we can stop access in deinit.
                 let resolvedURL: URL
                 if case .linked(let bm) = pdf.sourceMode,
                    let url = try? await BookmarkResolver.shared.resolve(bm) {
-                    let _ = url.startAccessingSecurityScopedResource()
+                    let didAccess = url.startAccessingSecurityScopedResource()
                     resolvedURL = url
+                    // Store reference so deinit can call stopAccessingSecurityScopedResource
+                    if didAccess {
+                        await MainActor.run { [weak self] in self?.activelyAccessedURL = url }
+                    }
                 } else {
                     resolvedURL = pdf.url
                 }
@@ -117,6 +130,11 @@ class ComicImageCache: ObservableObject {
                 }
             }
         }
+    }
+    
+    /// Stop security-scoped access when the cache is released (reader dismissed).
+    deinit {
+        activelyAccessedURL?.stopAccessingSecurityScopedResource()
     }
     
     func getImage(at index: Int) -> UIImage? {

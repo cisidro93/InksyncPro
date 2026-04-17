@@ -103,19 +103,24 @@ struct DocumentReaderEngine: View {
             }
         }
         .task {
-            // ✅ Linked Library: Resolve security-scoped URL before opening
+            // Linked Library: Resolve security-scoped URL before opening.
+            // PDFDocument copies data internally on open, so we stop access immediately after.
             let resolvedURL: URL
+            var accessedURL: URL? = nil
             if case .linked(let bm) = pdf.sourceMode,
                let url = try? BookmarkResolver.shared.resolve(bm) {
-                let _ = url.startAccessingSecurityScopedResource()
+                let didAccess = url.startAccessingSecurityScopedResource()
                 resolvedURL = url
+                if didAccess { accessedURL = url }
             } else {
                 resolvedURL = pdf.url
             }
-            
+
             let doc = await Task.detached(priority: .userInitiated) {
                 PDFDocument(url: resolvedURL)
             }.value
+            // PDFDocument has fully loaded — release the scope.
+            accessedURL?.stopAccessingSecurityScopedResource()
             pdfDocument = doc
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentPageIndex = saved.currentPageIndex
