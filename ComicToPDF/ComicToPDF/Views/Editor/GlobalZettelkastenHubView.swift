@@ -38,18 +38,19 @@ struct GlobalZettelkastenHubView: View {
         }
         
         if !searchText.isEmpty {
+            let cache = makePDFNameCache()
             filtered = filtered.filter { ann in
                 let txt = ann.selectedText?.localizedCaseInsensitiveContains(searchText) ?? false
                 let note = ann.noteText?.localizedCaseInsensitiveContains(searchText) ?? false
-                let book = bookTitle(for: ann).localizedCaseInsensitiveContains(searchText)
+                let book = bookTitle(for: ann, cache: cache).localizedCaseInsensitiveContains(searchText)
                 return txt || note || book
             }
         }
         return filtered
     }
     
-    // O(1) Lookup cache for PDF names
-    private var pdfNameCache: [UUID: String] {
+    // O(1) Lookup dictionary — built once per computed property access, reused for every annotation in that pass.
+    private func makePDFNameCache() -> [UUID: String] {
         var dict = [UUID: String]()
         for pdf in allPDFs { dict[pdf.id] = pdf.name }
         return dict
@@ -57,15 +58,17 @@ struct GlobalZettelkastenHubView: View {
     
     // Group Highlights by Book (Native PDFs and Readwise Synced Books)
     var groupedAnnotations: [(key: String, value: [SDAnnotation])] {
+        let cache = makePDFNameCache()
         let dict = Dictionary(grouping: activeAnnotations) { ann -> String in
-            return bookTitle(for: ann)
+            return bookTitle(for: ann, cache: cache)
         }
         return dict.sorted { $0.key < $1.key }
     }
 
     // Total unique book count across ALL annotations (not just filtered)
     private var totalBookCount: Int {
-        Set(allAnnotations.compactMap { bookTitle(for: $0) }).count
+        let cache = makePDFNameCache()
+        return Set(allAnnotations.map { bookTitle(for: $0, cache: cache) }).count
     }
     
     var body: some View {
@@ -233,20 +236,19 @@ struct GlobalZettelkastenHubView: View {
         }
     }
     
-    private func bookTitle(for annotation: SDAnnotation?) -> String {
+    private func bookTitle(for annotation: SDAnnotation?, cache: [UUID: String]? = nil) -> String {
         guard let ann = annotation else { return "Unknown Book" }
 
         // Use readwiseBookTitle only if it's a real human-readable title.
-        // Guard against the legacy bug where it was set to the raw UUID string.
         if let title = ann.readwiseBookTitle,
            !title.isEmpty,
-           UUID(uuidString: title) == nil {      // reject bare UUID strings
+           UUID(uuidString: title) == nil {
             return title
         }
 
-        // Fall through to the native SwiftData PDF name (covers in-app reader highlights
-        // whose pdfID matches a ConvertedPDF in the library).
-        if let pdfName = pdfNameCache[ann.pdfID] {
+        // Fall through to the native SwiftData PDF name via cache.
+        let lookup = cache ?? makePDFNameCache()
+        if let pdfName = lookup[ann.pdfID] {
             return pdfName
         }
 

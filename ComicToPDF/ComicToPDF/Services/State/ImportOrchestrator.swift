@@ -188,10 +188,6 @@ actor ImportOrchestrator {
             Set(manager.convertedPDFs.map { "\($0.url.lastPathComponent)||\($0.fileSize)" })
         }
         let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
-        // Content-hash lookup for rename-proof dedup (catches same file imported under different name)
-        let _: Set<String> = await MainActor.run {
-            Set(manager.convertedPDFs.compactMap { $0.contentHash })
-        }
         let isVaultUnlocked = await MainActor.run { !SecurityManager.shared.isVaultLocked }
 
         await MainActor.run { ImportMonitorManager.shared.startImport(totalCount: urls.count) }
