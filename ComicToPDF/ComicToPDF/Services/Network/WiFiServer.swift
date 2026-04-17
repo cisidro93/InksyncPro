@@ -26,12 +26,11 @@ class WiFiServer: ObservableObject {
     
     func start() {
         guard !isRunning else { return }
-        triggerLocalNetworkPrivacyAlert()
         
         // Reset State
         DispatchQueue.main.async { 
             self.errorMessage = nil 
-            self.securityCode = String(format: "%04d", Int.random(in: 0...9999)) // Generate PIN
+            self.securityCode = String(format: "%04d", Int.random(in: 0...9999))
             self.activeConnections = 0
             
             self.sessionLock.lock()
@@ -39,18 +38,27 @@ class WiFiServer: ObservableObject {
             self.sessionLock.unlock()
         }
         
+        // Trigger the Local Network permission alert FIRST, then wait for iOS to process
+        // the grant before binding the NWListener. Without the delay, the bind races against
+        // the async permission dialog and always loses, producing NWError -6555 NoAuth.
+        triggerLocalNetworkPrivacyAlert()
+        
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.bindListener()
+        }
+    }
+    
+    private func bindListener() {
         do {
-            // Use standard insecure TCP parameters to avoid implied TLS issues
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
             params.includePeerToPeer = true
-            
-            // ✅ Fix: internal permission error often caused by trying to bind to Cellular/VPN
+            // Binding to Wi-Fi only prevents cellular/VPN permission errors.
             params.requiredInterfaceType = .wifi
             
             let listener = try NWListener(using: params, on: 8080)
             
-            // ✅ Hybrid P2P: Advertise the service so Inksync Boox/Mobile clients can discover it via mDNS
+            // Advertise via mDNS so peer Inksync clients can discover this device.
             listener.service = NWListener.Service(name: UIDevice.current.name, type: "_inksync._tcp")
             
             listener.stateUpdateHandler = { [weak self] state in
@@ -67,12 +75,11 @@ class WiFiServer: ObservableObject {
                 case .failed(let error):
                     Logger.shared.log("Server failed: \(error.localizedDescription)", category: "Network", type: .error)
                     DispatchQueue.main.async {
-                        // Check for specific permission denied codes
-                        if error.debugDescription.contains("-65555") || error.localizedDescription.contains("NoAuth") {
-                            self.errorMessage = "Local Network Permission Denied (Code: \(error)).\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and ensure 'Inksync Pro' is enabled."
+                        let desc = error.localizedDescription + " \(error)"
+                        if desc.contains("NoAuth") || desc.contains("-6555") {
+                            self.errorMessage = "Local Network permission is required to start the Wi-Fi server.\n\nTo fix:\n1. Open the iOS Settings app\n2. Privacy & Security → Local Network\n3. Enable the toggle next to 'Inksync Pro'\n4. Return here and tap Start Server again."
                         } else {
-                            // ✅ Fix: Show full error details for debugging
-                            self.errorMessage = "Failed to start server:\n\(error.localizedDescription)\n(Debug: \(error))"
+                            self.errorMessage = "Server failed: \(error.localizedDescription)"
                             Logger.shared.log("Server Start Failed: \(error)", category: "Network", type: .error)
                         }
                     }
@@ -91,11 +98,11 @@ class WiFiServer: ObservableObject {
         } catch {
             Logger.shared.log("Failed to bind WiFi server to port 8080: \(error.localizedDescription)", category: "Network", type: .error)
             DispatchQueue.main.async {
-                if error.localizedDescription.contains("NoAuth") || "\(error)".contains("-65555") {
-                     self.errorMessage = "Local Network Permission Denied (Code: \(error)).\n\nPlease go to iOS Settings > Privacy & Security > Local Network, and ensure 'Inksync Pro' is enabled."
+                let desc = error.localizedDescription + " \(error)"
+                if desc.contains("NoAuth") || desc.contains("-6555") {
+                    self.errorMessage = "Local Network permission is required to start the Wi-Fi server.\n\nTo fix:\n1. Open the iOS Settings app\n2. Privacy & Security → Local Network\n3. Enable the toggle next to 'Inksync Pro'\n4. Return here and tap Start Server again."
                 } else {
-                    // ✅ Fix: Show full error details for debugging
-                    self.errorMessage = "Could not bind to port:\n\(error.localizedDescription)\n(Debug: \(error))"
+                    self.errorMessage = "Could not bind to port 8080: \(error.localizedDescription)"
                 }
             }
         }

@@ -291,7 +291,26 @@ struct WiFiView: View {
                 get: { server.errorMessage.map { ErrorWrapper(id: UUID(), message: $0) } },
                 set: { _ in server.errorMessage = nil }
             )) { wrapper in
-                Alert(title: Text("Server Error"), message: Text(wrapper.message), dismissButton: .default(Text("OK")))
+                let isPermissionError = wrapper.message.contains("Local Network permission")
+                                     || wrapper.message.contains("NoAuth")
+                if isPermissionError {
+                    return Alert(
+                        title: Text("Local Network Permission Required"),
+                        message: Text(wrapper.message),
+                        primaryButton: .default(Text("Open Settings")) {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        },
+                        secondaryButton: .cancel(Text("Dismiss"))
+                    )
+                } else {
+                    return Alert(
+                        title: Text("Server Error"),
+                        message: Text(wrapper.message),
+                        dismissButton: .default(Text("OK"))
+                    )
+                }
             }
             .alert("Database Sync", isPresented: $showingSyncAlert) {
                 TextField("4-Digit PIN", text: $syncPin)
