@@ -98,6 +98,8 @@ struct Annotation: Codable, Identifiable {
     }
     
     // ✅ Phase 31 Native Constructor for Readwise Importers
+    // All readwise-specific parameters default to nil so non-Readwise callers
+    // (e.g. StudyNotebookView creating in-app note annotations) compile unchanged.
     init(
         id: UUID,
         pdfID: String,
@@ -107,12 +109,12 @@ struct Annotation: Codable, Identifiable {
         isReadwiseImport: Bool,
         readwiseBookTitle: String?,
         readwiseAuthor: String?,
-        readwiseColor: String?,
-        readwiseTags: [String]?,
-        readwiseDocumentTags: [String]?,
-        readwiseAmazonID: String?,
-        readwiseLocationType: String?,
-        readwiseLocation: Int?,
+        readwiseColor: String?        = nil,
+        readwiseTags: [String]?       = nil,
+        readwiseDocumentTags: [String]? = nil,
+        readwiseAmazonID: String?     = nil,
+        readwiseLocationType: String? = nil,
+        readwiseLocation: Int?        = nil,
         createdAt: Date
     ) {
         self.id = id
