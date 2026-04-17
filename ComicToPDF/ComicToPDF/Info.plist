@@ -50,10 +50,13 @@
     <key>NSFaceIDUsageDescription</key>
     <string>Authentication required to access the Private Vault.</string>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Allow access to transfer files via WiFi</string>
+    <string>Inksync Pro uses your local Wi-Fi network to transfer comic and book files directly between your iPhone and iPad at full speed, without using iCloud or the internet.</string>
     <key>NSBonjourServices</key>
     <array>
+        <string>_inksync._tcp</string>
+        <string>_inksync._tcp.</string>
         <string>_http._tcp</string>
+        <string>_http._tcp.</string>
     </array>
     
     <!-- FILE SHARING & DOCS -->

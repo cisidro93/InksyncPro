@@ -853,23 +853,34 @@ class WiFiServer: ObservableObject {
     }
     
     func triggerLocalNetworkPrivacyAlert() {
-        // 1. Legacy Trigger (NSNetService)
-        let service = NetService(domain: "local.", type: "_http._tcp", name: "InksyncTrigger", port: 8080)
-        service.publish()
-        
-        // 2. Modern Trigger (NWBrowser)
-        let params = NWParameters.tcp
+        // iOS only shows the Local Network permission prompt when the app accesses a
+        // service type declared in NSBonjourServices. Browse for _inksync._tcp (our type)
+        // so the prompt fires correctly.
+        let params = NWParameters.udp
         params.includePeerToPeer = true
-        let browser = NWBrowser(for: .bonjour(type: "_http._tcp", domain: nil), using: params)
+        let browser = NWBrowser(for: .bonjour(type: "_inksync._tcp", domain: "local."), using: params)
         browser.start(queue: .global())
-        
-        // Removed UDP multicast trigger due to App Store Rejections 
-        // regarding unsolicited local network scanning without explicit intent.
-        
-        // Cleanup
+
+        // Also send a UDP packet to the mDNS multicast address — this is the most
+        // reliable way to trigger the system dialog on all iPadOS versions.
+        let socket = socket(AF_INET, SOCK_DGRAM, 0)
+        if socket >= 0 {
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = CFSwapInt16HostToBig(5353) // mDNS port
+            addr.sin_addr.s_addr = inet_addr("224.0.0.251") // mDNS multicast group
+            _ = "InksyncProTrigger".withCString { ptr in
+                withUnsafeMutablePointer(to: &addr) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                        sendto(socket, ptr, 17, 0, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
+                    }
+                }
+            }
+            close(socket)
+        }
+
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
             browser.cancel()
-            service.stop()
         }
     }
 }
