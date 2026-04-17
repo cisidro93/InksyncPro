@@ -203,24 +203,27 @@ class AnnotationStore: ObservableObject {
     
     func add(_ annotation: Annotation) {
         let newAnnotation = annotation
-        
-        // Optimistically insert into the active binding array immediately
         store[newAnnotation.pdfID, default: []].append(newAnnotation)
-        
+
+        // ✅ PERF: Skip NLP for Readwise imports (they already carry CSV tags) and
+        // for annotations with no text content. Previously every add() spawned a
+        // Task.detached regardless, creating a thundering herd of 1315 simultaneous
+        // NLP jobs when importing a full Readwise CSV export.
+        guard let text = newAnnotation.selectedText, !text.isEmpty,
+              newAnnotation.kind == .highlight else { return }
+
         // Execute heavy NLP Lexical Tagging asynchronously to prevent Main Thread 120Hz lockups
         Task.detached(priority: .background) {
             var backgroundAnnotation = newAnnotation
-            if let text = backgroundAnnotation.selectedText, backgroundAnnotation.kind == .highlight, backgroundAnnotation.tags == nil {
+            if backgroundAnnotation.tags == nil {
                 backgroundAnnotation.tags = await self.extractNLPKeywords(from: text)
             }
-            
+
             let finalAnnotation = backgroundAnnotation
-            // Sync final Zettelkasten SDAnnotation to disk
             await MainActor.run {
                 if let index = self.store[finalAnnotation.pdfID]?.firstIndex(where: { $0.id == finalAnnotation.id }) {
                     self.store[finalAnnotation.pdfID]?[index] = finalAnnotation
                 }
-                
                 if let context = self.modelContext {
                     let sdModel = SDAnnotation(from: finalAnnotation)
                     context.insert(sdModel)

@@ -3,43 +3,66 @@ import UIKit
 import Combine
 import ZIPFoundation
 
-/// Resolves the 'God Object' bottleneck by handling intensive O(N) file system enumeration strictly off the Main Thread.
+/// Resolves the 'God Object' bottleneck by handling intensive O(N) file system
+/// enumeration strictly off the Main Thread.
 actor LibraryScanner {
     static let shared = LibraryScanner()
-    
+
     func scanLibrary(addedByMode: AppUIMode? = nil, manager: ConversionManager) async {
         let fileManager = FileManager.default
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let inboxDir  = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+        let docDir    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
-        
+
         let currentPaths = await MainActor.run {
             manager.convertedPDFs.map { $0.url.lastPathComponent }
         }
-        
         let pathSet = Set(currentPaths)
-        
-        // 1. Scan Documents directory natively
-        if let enumerator = fileManager.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+
+        // Scan both the Documents directory and the Wi-Fi transfer Inbox
+        let dirsToScan = [docDir, inboxDir]
+
+        for scanDir in dirsToScan {
+            guard let enumerator = fileManager.enumerator(
+                at: scanDir,
+                includingPropertiesForKeys: keys,
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+
+            var filesSinceYield = 0
             while let fileURL = enumerator.nextObject() as? URL {
-                await Task.yield()
-                
-                // Ignore recovered vault folders from previous tests
-                if fileURL.path.contains("Recovered_Vault") || fileURL.path.contains("LibraryVault") { continue }
-                
-                let ext = fileURL.pathExtension.lowercased()
-                if ["pdf", "cbz", "zip", "epub"].contains(ext) {
-                    let filename = fileURL.lastPathComponent
-                    if !pathSet.contains(filename) {
-                        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-                        var newPDF = ConvertedPDF(name: filename, url: fileURL, pageCount: 0, fileSize: fileSize, metadata: PDFMetadata(title: filename))
-                        newPDF.addedByMode = addedByMode ?? .pro
-                        newPDFs.append(newPDF)
-                    }
+                // ✅ PERF: yield every 25 files instead of every single file.
+                // Task.yield() is a cooperative scheduling checkpoint — calling it
+                // for every file in a 2000-file library creates 2000 unnecessary
+                // context switches and makes the scan visibly slower.
+                filesSinceYield += 1
+                if filesSinceYield >= 25 {
+                    filesSinceYield = 0
+                    await Task.yield()
                 }
+
+                if fileURL.path.contains("Recovered_Vault") || fileURL.path.contains("LibraryVault") { continue }
+
+                let ext = fileURL.pathExtension.lowercased()
+                guard ["pdf", "cbz", "zip", "epub"].contains(ext) else { continue }
+
+                let filename = fileURL.lastPathComponent
+                guard !pathSet.contains(filename) else { continue }
+
+                let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                var newPDF = ConvertedPDF(
+                    name: filename, url: fileURL,
+                    pageCount: 0, fileSize: fileSize,
+                    metadata: PDFMetadata(title: filename)
+                )
+                newPDF.addedByMode = addedByMode ?? .pro
+                newPDFs.append(newPDF)
             }
         }
-        
+
         let finalNewPDFs = newPDFs
         if !finalNewPDFs.isEmpty {
             await MainActor.run {
@@ -48,34 +71,64 @@ actor LibraryScanner {
                 manager.saveLibrary()
             }
         }
-        
+
+        // ── Cover + page-count backfill ──────────────────────────────────────
+        // ✅ PERF: Was serial — one cover then one page count, one file at a time.
+        // Now uses a TaskGroup capped at 4 concurrent slots.
+        // Each slot fetches the cover and page count for one file, then the slot
+        // opens for the next file. This keeps CPU/IO busy without flooding the
+        // main actor queue with 500 simultaneous tasks.
+
         let pdfsToProcess = await MainActor.run {
             manager.convertedPDFs.filter { $0.pageCount == 0 }
         }
-        
+
         if !pdfsToProcess.isEmpty {
             Task.detached(priority: .background) {
-                for pdf in pdfsToProcess {
-                    await Task.yield()
-                    await manager.generateCoverThumbnail(for: pdf)
-                    
-                    let count = PhysicalFileSystemRouter.getPageCountStatic(from: pdf.url)
-                    
-                    if count > 0 {
-                        await MainActor.run {
-                            if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                                manager.convertedPDFs[idx].pageCount = count
+                await withTaskGroup(of: (UUID, Int)?.self) { group in
+                    var inFlight = 0
+                    var pending = pdfsToProcess.makeIterator()
+
+                    func enqueue() {
+                        guard let pdf = pending.next() else { return }
+                        group.addTask {
+                            await manager.generateCoverThumbnail(for: pdf)
+                            let count = PhysicalFileSystemRouter.getPageCountStatic(from: pdf.url)
+                            return count > 0 ? (pdf.id, count) : nil
+                        }
+                        inFlight += 1
+                    }
+
+                    // Seed 4 initial slots
+                    for _ in 0..<min(4, pdfsToProcess.count) { enqueue() }
+
+                    for await result in group {
+                        inFlight -= 1
+                        if let (id, count) = result {
+                            await MainActor.run {
+                                if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == id }) {
+                                    manager.convertedPDFs[idx].pageCount = count
+                                }
                             }
                         }
+                        // Refill the slot immediately
+                        enqueue()
                     }
                 }
+                // Single save after all backfill work is done
+                await MainActor.run { manager.saveLibrary() }
             }
         }
-        
+
+        // ── Deduplication & ghost-file pruning ───────────────────────────────
         let allPDFs = await MainActor.run { manager.convertedPDFs }
-        let missingIDs = allPDFs.filter { !fileManager.fileExists(atPath: $0.url.path) && !fileManager.fileExists(atPath: docDir.appendingPathComponent($0.url.lastPathComponent).path) }.map { $0.id }
-        
-        // Let's also enforce deduplication on memory so duplicates already created are pruned for the user
+        let missingIDs = allPDFs
+            .filter {
+                !fileManager.fileExists(atPath: $0.url.path) &&
+                !fileManager.fileExists(atPath: docDir.appendingPathComponent($0.url.lastPathComponent).path)
+            }
+            .map { $0.id }
+
         var uniquePDFs: [ConvertedPDF] = []
         var seenNames = Set<String>()
         for pdf in allPDFs {
@@ -84,14 +137,11 @@ actor LibraryScanner {
                 uniquePDFs.append(pdf)
             }
         }
-        
+
         let requiresPrune = !missingIDs.isEmpty || uniquePDFs.count != allPDFs.count
-        
         if requiresPrune {
-            let finalUnique = uniquePDFs // Prevent concurrent capture warning
             await MainActor.run {
-                manager.convertedPDFs = finalUnique
-                manager.convertedPDFs.removeAll { missingIDs.contains($0.id) }
+                manager.convertedPDFs = uniquePDFs.filter { !missingIDs.contains($0.id) }
                 Logger.shared.log("Library Pruned: Removed duplicates or sandbox-shifted files", category: "Library")
                 manager.saveLibrary()
             }

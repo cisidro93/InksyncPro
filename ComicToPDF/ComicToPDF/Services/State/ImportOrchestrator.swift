@@ -381,9 +381,17 @@ actor ImportOrchestrator {
             
             manager.saveLibrary()
             
-            // Generate Thumbnails safely for all imported instances now that group IDs exist securely
+        // ✅ PERF: Thumbnail generation — capped TaskGroup (4 concurrent) instead of
+        // launching N simultaneous Tasks that flood the main actor queue.
+        await withTaskGroup(of: Void.self) { group in
+            var inFlight = 0
             for pdf in importedPDFs {
-                Task { await manager.generateCoverThumbnail(for: pdf) }
+                if inFlight >= 4 {
+                    await group.next()
+                    inFlight -= 1
+                }
+                group.addTask { await manager.generateCoverThumbnail(for: pdf) }
+                inFlight += 1
             }
         }
     }
@@ -402,19 +410,34 @@ actor ImportOrchestrator {
                     manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
                     manager.convertedPDFs.append(pdf)
                 }
-                manager.saveLibrary()
+                manager.saveLibrary() // single save for the ungrouped branch
                 return
             }
-            
+
             for var pdf in pdfs {
                 pdf.collectionId = targetCollection.id
                 pdf.metadata.series = seriesName
                 manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
                 manager.convertedPDFs.append(pdf)
-                manager.saveLibrary()
+                // ✅ PERF: saveLibrary() removed from inside loop.
+                // The 300ms-debounced save below is called ONCE after all PDFs are appended.
+            }
+            manager.saveLibrary() // single debounced write for the entire series
+        }
+
+        // ✅ PERF: Thumbnail generation — capped at 4 concurrent tasks instead of
+        // launching N simultaneous Tasks that all compete on the main actor queue.
+        await withTaskGroup(of: Void.self) { group in
+            var inFlight = 0
+            for pdf in pdfs {
+                if inFlight >= 4 {
+                    await group.next()
+                    inFlight -= 1
+                }
+                group.addTask { await manager.generateCoverThumbnail(for: pdf) }
+                inFlight += 1
             }
         }
-        for pdf in pdfs { Task { await manager.generateCoverThumbnail(for: pdf) } }
     }
     
     nonisolated func assignToSeries(_ pdf: ConvertedPDF, seriesName: String, manager: ConversionManager) {

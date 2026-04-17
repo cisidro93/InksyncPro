@@ -110,9 +110,18 @@ class ReadwiseImportService {
             return parts.isEmpty ? nil : parts
         }
 
-        var importedCount = 0
-        var skippedDuplicates = 0
-        var skippedMalformed = 0
+        // ✅ PERF: Pre-fetch ALL existing Readwise annotation IDs in a single query.
+        // The old code ran context.fetch(predicate: id == X) for EVERY row
+        // (1315 queries for the user's CSV). One query + Set<UUID> lookup = O(1) per row.
+        let allExistingFetch = FetchDescriptor<SDAnnotation>(
+            predicate: #Predicate { $0.isReadwiseImport == true }
+        )
+        let existingIDs: Set<UUID> = {
+            let existing = (try? context.fetch(allExistingFetch)) ?? []
+            return Set(existing.map { $0.id })
+        }()
+        Logger.shared.log("Readwise: \(existingIDs.count) existing highlights found — skipping duplicates", category: "Import")
+
 
         for i in 1..<rows.count {
             let row = rows[i]
@@ -164,9 +173,8 @@ class ReadwiseImportService {
                                    b[8],b[9],b[10],b[11],b[12],b[13],b[14],b[15]))
             }
 
-            // Deduplication: skip if this exact highlight already exists
-            let existing = try? context.fetch(FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == detID }))
-            if let existing, !existing.isEmpty {
+            // Deduplication: O(1) Set lookup instead of per-row SwiftData fetch
+            guard !existingIDs.contains(detID) else {
                 skippedDuplicates += 1
                 continue
             }
