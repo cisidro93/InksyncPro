@@ -33,12 +33,17 @@ struct InksyncProApp: App {
     init() {
         // 💥 ANNIHILATE GHOST DATA ON FRESH INSTALLS 💥
         // Guarantees absolute blank UI state if a user deletes and reinstalls the app.
-        // Uses a hidden file in App Support rather than UserDefaults so it doesn't propagate via iCloud.
+        // We use UserDefaults here because standard UserDefaults are wiped on app deletion
+        // but reliably persist across app updates, ensuring we never wipe an existing user's library
+        // when they update the app.
+        
         let fileManager = FileManager.default
         let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let nukeFlagURL = supportDir.appendingPathComponent(".hasEmployedFreshInstallNuke_v2")
+        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        let isNotFreshInstall = UserDefaults.standard.bool(forKey: "isNotFreshInstall_v3")
         
-        if !fileManager.fileExists(atPath: nukeFlagURL.path) {
+        // If they have completed onboarding from a previous version, or we already marked it as not fresh:
+        if !hasCompletedOnboarding && !isNotFreshInstall {
             Task.detached(priority: .background) {
                 // 1. Vaporize Documents Directory Contents (Nukes all ghost CBZs automatically synced by iCloud)
                 if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
@@ -54,9 +59,13 @@ struct InksyncProApp: App {
                         try? fileManager.removeItem(at: item) 
                     }
                 }
-                
-                try? Data().write(to: nukeFlagURL)
             }
+            // Mark as not fresh so subsequent launches don't nuke
+            UserDefaults.standard.set(true, forKey: "isNotFreshInstall_v3")
+        } else if !isNotFreshInstall {
+            // User had completed onboarding before we added this specific flag,
+            // so we definitely shouldn't nuke. Just set the flag.
+            UserDefaults.standard.set(true, forKey: "isNotFreshInstall_v3")
         }
         
         // Register Background Task for Auto-Sync
