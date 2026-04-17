@@ -34,6 +34,17 @@ class TransferQueueManager: ObservableObject {
         stagedFiles.contains(where: { $0.id == pdf.id })
     }
 
+    /// Thread-safe snapshot for nonisolated callers (e.g. WiFiServer network handlers).
+    /// Uses DispatchQueue.main.sync when called from a background thread, which is always
+    /// the case for WiFiServer's NWConnection handlers. Falls back to assumeIsolated if
+    /// already on the main thread to avoid a deadlock.
+    nonisolated func stagedFilesSnapshot() -> [ConvertedPDF] {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { stagedFiles }
+        }
+        return DispatchQueue.main.sync { stagedFiles }
+    }
+
     /// Clears the entire transfer queue.
     func clearQueue() {
         stagedFiles.removeAll()

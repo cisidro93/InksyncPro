@@ -508,8 +508,9 @@ class WiFiServer: ObservableObject {
                 }
             }
         } else if path == "/queue.zip" {
-            // ✅ NEW: Hybrid P2P On-The-Fly ZIP Streaming
-            let stagedFiles = TransferQueueManager.shared.stagedFiles
+            // Hybrid P2P On-The-Fly ZIP Streaming
+            // stagedFilesSnapshot() is nonisolated — safe to call from this background queue.
+            let stagedFiles = TransferQueueManager.shared.stagedFilesSnapshot()
             
             guard !stagedFiles.isEmpty else {
                 sendResponse(connection, 404, "No staged files in the Transfer Queue.")
@@ -665,7 +666,7 @@ class WiFiServer: ObservableObject {
         
         let fileListHTML = fileLinks.isEmpty ? "<li style='justify-content:center; color:#999;'>No files found in Library</li>" : fileLinks.joined(separator: "\n")
         
-        let stagedCount = TransferQueueManager.shared.stagedFiles.count
+        let stagedCount = TransferQueueManager.shared.stagedFilesSnapshot().count
         let queueButtonHTML = stagedCount > 0 ? "<div style='margin-bottom: 20px;'><a href='/queue.zip' class='download-btn' style='display:block; text-align:center; padding: 12px; background: #34c759;'>Download \(stagedCount) Staged Files as ZIP</a></div>" : ""
         
         // HTML Response
