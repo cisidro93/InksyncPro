@@ -24,11 +24,14 @@ struct PeerNode: Identifiable, Equatable {
 /// LocalSend connections without manual IP entry.
 class PeerManager: ObservableObject {
     static let shared = PeerManager()
-    
+
     private var browser: NWBrowser?
     @Published private(set) var availablePeers: [PeerNode] = []
     @Published private(set) var isSearching = false
-    
+    /// Cache of resolved IPs keyed by endpoint string — prevents creating a new NWConnection
+    /// on every mDNS TTL refresh for already-known peers.
+    private var resolvedCache: [String: String] = [:]
+
     private init() {}
     
     /// Starts scanning for Inksync peers on the local network.
@@ -71,6 +74,7 @@ class PeerManager: ObservableObject {
     func stopDiscovery() {
         browser?.cancel()
         browser = nil
+        resolvedCache.removeAll()
         DispatchQueue.main.async {
             self.isSearching = false
             self.availablePeers.removeAll()
@@ -81,24 +85,32 @@ class PeerManager: ObservableObject {
     private func processBrowseResults(_ results: Set<NWBrowser.Result>) {
         for result in results {
             if case .service(let name, _, _, _) = result.endpoint {
+                let endpointKey = "\(result.endpoint)"
+
+                // If we already resolved this endpoint, update the peer list without
+                // creating a new NWConnection (avoids connection proliferation on TTL refreshes).
+                if let cachedIP = resolvedCache[endpointKey] {
+                    DispatchQueue.main.async {
+                        let peer = PeerNode(id: UUID(), name: name, ipAddress: cachedIP, port: 8080,
+                                           os: "Unknown", deviceModel: "Unknown", protocolType: "Inksync")
+                        if !self.availablePeers.contains(peer) {
+                            self.availablePeers.append(peer)
+                            self.availablePeers.sort(by: { $0.name < $1.name })
+                        }
+                    }
+                    continue
+                }
+
                 resolveIP(from: result.endpoint) { [weak self] resolvedIP in
                     guard let self = self, let ip = resolvedIP else { return }
-                    
-                    let peer = PeerNode(
-                        id: UUID(),
-                        name: name,
-                        ipAddress: ip,
-                        port: 8080,
-                        os: "Unknown",
-                        deviceModel: "Unknown",
-                        protocolType: "Inksync"
-                    )
-                    
+                    self.resolvedCache[endpointKey] = ip
+
+                    let peer = PeerNode(id: UUID(), name: name, ipAddress: ip, port: 8080,
+                                       os: "Unknown", deviceModel: "Unknown", protocolType: "Inksync")
                     DispatchQueue.main.async {
                         if !self.availablePeers.contains(peer) {
-                            var newPeers = self.availablePeers
-                            newPeers.append(peer)
-                            self.availablePeers = newPeers.sorted(by: { $0.name < $1.name })
+                            self.availablePeers.append(peer)
+                            self.availablePeers.sort(by: { $0.name < $1.name })
                         }
                     }
                 }

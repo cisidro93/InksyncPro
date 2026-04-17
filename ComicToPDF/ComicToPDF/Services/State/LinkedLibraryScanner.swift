@@ -137,25 +137,26 @@ final class LinkedLibraryScanner {
     func unlinkDrive(_ entry: AppSettingsManager.LinkedDriveEntry) {
         guard let manager = conversionManager else { return }
 
-        // Resolve the root path to identify which PDFs belong to this drive
-        guard let rootURL = try? BookmarkResolver.shared.resolve(entry.volumeBookmarkData) else {
-            // If bookmark is unresolvable, remove by bookmark data match
-            manager.convertedPDFs.removeAll { pdf in
-                if case .linked(let bm) = pdf.sourceMode { return bm == entry.volumeBookmarkData }
-                return false
-            }
-            AppSettingsManager.shared.removeLinkedDrive(entry)
-            manager.saveLibrary()
-            return
+        let rootPath: String?
+        if let rootURL = try? BookmarkResolver.shared.resolve(entry.volumeBookmarkData) {
+            rootPath = rootURL.path
+        } else {
+            rootPath = nil  // Bookmark unresolvable — fall back to bookmark-data match below
         }
 
-        let rootPath = rootURL.path
         manager.convertedPDFs.removeAll { pdf in
-            if case .linked(let bm) = pdf.sourceMode,
-               let resolved = try? BookmarkResolver.shared.resolve(bm) {  // sync best-effort: resolve() is nonisolated here
-                return resolved.path.hasPrefix(rootPath)
+            guard case .linked(let bm) = pdf.sourceMode else { return false }
+            if let rp = rootPath {
+                // Primary: path prefix match (reliable when drive is connected)
+                if let resolved = try? BookmarkResolver.shared.resolve(bm) {
+                    return resolved.path.hasPrefix(rp)
+                }
+                // Fallback: if individual bookmark is stale/unresolvable, match by drive bookmark equality
+                return bm == entry.volumeBookmarkData
+            } else {
+                // Drive not connected — match by drive bookmark equality
+                return bm == entry.volumeBookmarkData
             }
-            return false
         }
 
         AppSettingsManager.shared.removeLinkedDrive(entry)
@@ -183,14 +184,25 @@ final class LinkedLibraryScanner {
             progress(Double(i) / Double(total), "Copying \(pdf.name)...")
 
             let destURL = targetFolderURL.appendingPathComponent(pdf.url.lastPathComponent)
-            try FileManager.default.copyItem(at: pdf.url, to: destURL)
+            do {
+                try FileManager.default.copyItem(at: pdf.url, to: destURL)
 
-            // Verify via content hash if available, else file size
-            guard FileManager.default.fileExists(atPath: destURL.path) else {
-                throw NSError(domain: "LinkedLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "Copy verification failed for \(pdf.name)"])
+                // Verify copy succeeded
+                guard FileManager.default.fileExists(atPath: destURL.path) else {
+                    Logger.shared.log("LinkedLibraryScanner: Copy verification failed for \(pdf.name) — skipping", category: "Drive", type: .warning)
+                    continue
+                }
+                copiedPairs.append((pdf.url, destURL, pdf.id))
+            } catch {
+                // Clean up any partial copy so we don't orphan data on the drive
+                try? FileManager.default.removeItem(at: destURL)
+                Logger.shared.log("LinkedLibraryScanner: Offload copy failed for \(pdf.name): \(error.localizedDescription) — skipping", category: "Drive", type: .warning)
+                // Continue with remaining files — partial success is better than total abort
             }
+        }
 
-            copiedPairs.append((pdf.url, destURL, pdf.id))
+        guard !copiedPairs.isEmpty else {
+            throw NSError(domain: "LinkedLibrary", code: 2, userInfo: [NSLocalizedDescriptionKey: "None of the selected files could be copied to the drive. Check available space and drive write permissions."])
         }
 
         progress(0.95, "Linking drive files...")
@@ -200,20 +212,24 @@ final class LinkedLibraryScanner {
 
         for pair in copiedPairs {
             // Create bookmark for new drive location
-            let bookmark = try pair.driveURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-            
+            guard let bookmark = try? pair.driveURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) else {
+                Logger.shared.log("LinkedLibraryScanner: Could not bookmark drive file \(pair.driveURL.lastPathComponent) — keeping local copy", category: "Drive", type: .warning)
+                try? FileManager.default.removeItem(at: pair.driveURL)  // Remove orphaned drive copy
+                continue
+            }
+
             // Update the ConvertedPDF entry in place (ID, metadata, collections preserved)
             if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pair.pdfID }) {
                 manager.convertedPDFs[idx].url = pair.driveURL
                 manager.convertedPDFs[idx].sourceMode = .linked(bookmarkData: bookmark)
             }
 
-            // Delete original local file
+            // Delete original local file only after bookmark is secured
             try? FileManager.default.removeItem(at: pair.originalURL)
         }
 
         manager.saveLibrary()
-        progress(1.0, "Offload complete")
+        progress(1.0, "Offload complete — \(copiedPairs.count) of \(total) files moved")
         Logger.shared.log("LinkedLibraryScanner: Offloaded \(copiedPairs.count) files to drive", category: "Drive")
     }
 
@@ -230,28 +246,40 @@ final class LinkedLibraryScanner {
         try? FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
 
         let total = files.count
+        var downloadedCount = 0
 
         for (i, pdf) in files.enumerated() {
             progress(Double(i) / Double(total), "Downloading \(pdf.name)...")
 
             guard let bookmarkData = pdf.driveBookmarkData else { continue }
 
-            try await BookmarkResolver.shared.withAccess(bookmarkData) { driveURL in
-                let destURL = vault.appendingPathComponent(driveURL.lastPathComponent)
-                try FileManager.default.copyItem(at: driveURL, to: destURL)
+            do {
+                try await BookmarkResolver.shared.withAccess(bookmarkData) { driveURL in
+                    let destURL = vault.appendingPathComponent(driveURL.lastPathComponent)
 
-                await MainActor.run {
-                    if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        manager.convertedPDFs[idx].url = destURL
-                        manager.convertedPDFs[idx].sourceMode = .local
+                    // Remove existing file if present — prevents NSCocoaError.fileWriteFileExists crash
+                    if FileManager.default.fileExists(atPath: destURL.path) {
+                        try FileManager.default.removeItem(at: destURL)
+                    }
+
+                    try FileManager.default.copyItem(at: driveURL, to: destURL)
+
+                    await MainActor.run {
+                        if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                            manager.convertedPDFs[idx].url = destURL
+                            manager.convertedPDFs[idx].sourceMode = .local
+                        }
                     }
                 }
+                downloadedCount += 1
+            } catch {
+                Logger.shared.log("LinkedLibraryScanner: Download failed for \(pdf.name): \(error.localizedDescription) — skipping", category: "Drive", type: .warning)
             }
         }
 
         manager.saveLibrary()
-        progress(1.0, "Download complete")
-        Logger.shared.log("LinkedLibraryScanner: Downloaded \(files.count) files to device", category: "Drive")
+        progress(1.0, "Download complete — \(downloadedCount) of \(total) files")
+        Logger.shared.log("LinkedLibraryScanner: Downloaded \(downloadedCount) files to device", category: "Drive")
     }
 
     // MARK: - Private Helpers
@@ -275,19 +303,21 @@ final class LinkedLibraryScanner {
     ) async {
         guard let manager = conversionManager else { return }
 
+        // Build PDF entries serially (bookmark creation must be on the calling actor context)
+        // but parallelize cover thumbnail extraction with a concurrency cap of 4.
+        var newPDFs: [ConvertedPDF] = []
+
         for fileURL in files {
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
                   let fileSize = attrs[.size] as? Int64,
-                  // Use [] options for a durable iOS security-scoped bookmark (not .minimalBookmark)
                   let bookmark = try? fileURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
             else { continue }
 
-            // Skip if already registered
+            // Skip if already registered (filename + linked status check)
             if manager.convertedPDFs.contains(where: { $0.url.lastPathComponent == fileURL.lastPathComponent && $0.isLinked }) {
                 continue
             }
 
-            // Parse metadata in place (streamed, no copy)
             let stem = fileURL.deletingPathExtension().lastPathComponent
             var metadata = PDFMetadata(title: stem)
             if let parsed = ComicInfoParser.parse(from: fileURL) {
@@ -305,20 +335,48 @@ final class LinkedLibraryScanner {
             }
 
             var pdf = ConvertedPDF(
-                name: fileURL.deletingPathExtension().lastPathComponent,
+                name: stem,
                 url: fileURL,
-                pageCount: 0,    // Deferred — page count requires opening the archive
+                pageCount: 0,
                 fileSize: fileSize,
                 metadata: metadata
             )
             pdf.sourceMode = .linked(bookmarkData: bookmark)
-
-            // Generate and cache cover thumbnail locally so it shows offline
-            await generateAndCacheCover(for: &pdf, at: fileURL)
-
-            manager.convertedPDFs.append(pdf)
+            newPDFs.append(pdf)
         }
 
+        guard !newPDFs.isEmpty else { return }
+
+        // Parallelize cover thumbnail extraction (capped at 4 concurrent tasks to avoid
+        // thrashing the disk I/O bus on drives with slow random-access speeds).
+        await withTaskGroup(of: (Int, Data?).self) { group in
+            var inFlight = 0
+            let cap = 4
+
+            for (index, pdf) in newPDFs.enumerated() {
+                // Throttle concurrency
+                if inFlight >= cap {
+                    if let (idx, data) = await group.next() {
+                        if let data { newPDFs[idx].coverImageData = data }
+                        inFlight -= 1
+                    }
+                }
+                let url = pdf.url
+                group.addTask {
+                    let img = await Task.detached(priority: .background) {
+                        ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 300)
+                    }.value
+                    return (index, img?.pngData())
+                }
+                inFlight += 1
+            }
+            // Drain remaining
+            for await (idx, data) in group {
+                if let data { newPDFs[idx].coverImageData = data }
+            }
+        }
+
+        manager.convertedPDFs.append(contentsOf: newPDFs)
         manager.saveLibrary()
     }
 
@@ -336,15 +394,27 @@ final class LinkedLibraryScanner {
     // MARK: - Stale Bookmark Refresh
 
     @objc private func handleStaleBookmark(_ notification: Notification) {
-        // When BookmarkResolver detects a stale bookmark, attempt to refresh
-        // the stored bookmark data in the matching ConvertedPDF entry
         guard let staleData = notification.object as? Data,
               let manager = conversionManager else { return }
 
         for idx in manager.convertedPDFs.indices {
             if case .linked(let bm) = manager.convertedPDFs[idx].sourceMode, bm == staleData {
-                Logger.shared.log("LinkedLibraryScanner: Stale bookmark detected for '\(manager.convertedPDFs[idx].name)' — will re-bookmark on next access", category: "Drive", type: .warning)
+                let name = manager.convertedPDFs[idx].name
+                Logger.shared.log("LinkedLibraryScanner: Stale bookmark for '\(name)' — attempting refresh", category: "Drive", type: .warning)
+
+                // Attempt to re-create a fresh bookmark from the stale URL.
+                // resolve() returns a URL even when stale — it just flags isStale=true.
+                // We can re-bookmark from that URL to get a fresh, durable bookmark.
+                if let staleURL = try? BookmarkResolver.shared.resolve(staleData),
+                   let freshBookmark = try? staleURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                    manager.convertedPDFs[idx].sourceMode = .linked(bookmarkData: freshBookmark)
+                    Logger.shared.log("LinkedLibraryScanner: Refreshed bookmark for '\(name)'", category: "Drive")
+                } else {
+                    Logger.shared.log("LinkedLibraryScanner: Could not refresh bookmark for '\(name)' — drive may be disconnected", category: "Drive", type: .error)
+                }
             }
         }
+
+        manager.saveLibrary()
     }
 }

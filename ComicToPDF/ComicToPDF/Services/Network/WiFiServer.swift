@@ -387,46 +387,45 @@ class WiFiServer: ObservableObject {
     
     private func setupUpload(context: ConnectionContext) -> Bool {
         context.isHeaderParsed = true
-        
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.standardizedFileURL
+
+        // Write incoming files to the InksyncVault Inbox directory so the library
+        // scanner picks them up automatically. The old Documents/ destination was
+        // invisible to the import pipeline — files arrived but never appeared in the app.
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let inbox = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+        try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+
         var destURL: URL
-        
+
         if let relPathString = context.relativePath, !relPathString.isEmpty {
-            // Reconstruct the nested folder structure
-            destURL = docDir.appendingPathComponent(relPathString).standardizedFileURL
-            
-            guard destURL.path.hasPrefix(docDir.path) else {
+            // Reconstruct the nested folder structure under the inbox
+            destURL = inbox.appendingPathComponent(relPathString).standardizedFileURL
+
+            guard destURL.path.hasPrefix(inbox.standardizedFileURL.path) else {
                 Logger.shared.log("WiFi Transfer - Rejected Traversal Upload Attempt: \(relPathString)", category: "Network", type: .error)
                 return false
             }
-            
+
             let directoryURL = destURL.deletingLastPathComponent()
-            do {
-                try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
-            } catch {
-                Logger.shared.log("Failed to create intermediate P2P directory: \(error.localizedDescription)", category: "Network", type: .error)
-            }
+            try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         } else {
             let sanitizedFileName = URL(fileURLWithPath: context.filename).lastPathComponent
-            destURL = docDir.appendingPathComponent(sanitizedFileName).standardizedFileURL
+            destURL = inbox.appendingPathComponent(sanitizedFileName).standardizedFileURL
         }
-        
+
         context.destinationURL = destURL
-        
-        // ✅ NEW: Duplicate File Prevention
+
+        // Duplicate file prevention
         if FileManager.default.fileExists(atPath: destURL.path) {
             Logger.shared.log("WiFi Transfer - Rejected duplicate upload: \(destURL.lastPathComponent)", category: "Network", type: .warning)
             return false
         }
-        
-        // Create file
+
         FileManager.default.createFile(atPath: destURL.path, contents: nil, attributes: nil)
-        Logger.shared.log("Starting Upload: \(destURL.lastPathComponent) to path: \(destURL.path)", category: "Network")
-        
+        Logger.shared.log("Starting Upload: \(destURL.lastPathComponent) -> \(destURL.path)", category: "Network")
+
         do {
             context.fileHandle = try FileHandle(forWritingTo: destURL)
-            
-            // Start Background Task
             DispatchQueue.main.async {
                 self.isUploading = true
                 self.currentUploadFilename = destURL.lastPathComponent
