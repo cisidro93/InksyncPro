@@ -55,6 +55,11 @@ struct GlobalZettelkastenHubView: View {
         }
         return dict.sorted { $0.key < $1.key }
     }
+
+    // Total unique book count across ALL annotations (not just filtered)
+    private var totalBookCount: Int {
+        Set(allAnnotations.compactMap { bookTitle(for: $0) }).count
+    }
     
     var body: some View {
         ZStack {
@@ -131,8 +136,23 @@ struct GlobalZettelkastenHubView: View {
             }
         }
         .navigationTitle("Zettelkasten Hub")
+        .navigationBarTitleDisplayMode(.large)
         .searchable(text: $searchText, prompt: "Search all highlights & notes...")
         .toolbar {
+            // Stat indicators — mirrors Library's "N FILES • N SERIES" pattern
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 2) {
+                    Text("Zettelkasten Hub")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    if !allAnnotations.isEmpty {
+                        Text("\(allAnnotations.count) HIGHLIGHTS • \(totalBookCount) BOOKS")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .tracking(1.2)
+                    }
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button(action: { 
