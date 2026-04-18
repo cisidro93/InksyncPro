@@ -199,48 +199,62 @@ class MigrationService {
         }
     }
     
-    // ✅ NEW: Native SwiftData Read Bridge
+    // ✅ Native SwiftData Read Bridge
     // Replaces `inksync_pro_library.json` loading array bloat from Phase 1.
     func fetchSwiftDataLegacyBridge() async throws -> ([SDConvertedPDF], [SDPDFCollection]) {
-         let context = InksyncProApp.sharedModelContainer.mainContext
-         
-         let docDesc = FetchDescriptor<SDConvertedPDF>()
-         let colDesc = FetchDescriptor<SDPDFCollection>()
-         
-         let docs = try context.fetch(docDesc)
-         let cols = try context.fetch(colDesc)
-         
-         // ?? Self-Healing Pruner: Instantly eviscerate any Ghost Records 
-         // If a user deletes a file natively in the iOS 'Files' app, SwiftData inherently ghosts it.
-         var validDocs: [SDConvertedPDF] = []
-         var didPrune = false
-         
-         for doc in docs {
-             if FileManager.default.fileExists(atPath: doc.url.path) {
-                 validDocs.append(doc)
-             } else {
-                 context.delete(doc)
-                 didPrune = true
-             }
-         }
-         
-         let validDocCollectionIDs = Set(validDocs.compactMap { $0.collectionId })
-         var validCols: [SDPDFCollection] = []
-         
-         for col in cols {
-             // A structural collection is mathematically an orphan ghost if NO valid document claims it natively.
-             if !validDocCollectionIDs.contains(col.id) {
-                 context.delete(col)
-                 didPrune = true
-             } else {
-                 validCols.append(col)
-             }
-         }
-         
-         if didPrune {
-             try? context.save()
-         }
-         
-         return (validDocs, validCols)
+        let context = InksyncProApp.sharedModelContainer.mainContext
+
+        let docDesc = FetchDescriptor<SDConvertedPDF>()
+        let colDesc = FetchDescriptor<SDPDFCollection>()
+
+        let docs = try context.fetch(docDesc)
+        let cols = try context.fetch(colDesc)
+
+        // ── Path Re-Anchor ──────────────────────────────────────────────────
+        // After an app update the iOS sandbox container UUID rotates, making every
+        // stored absolute URL stale. Instead of deleting records (which wipes the
+        // library), we re-anchor the URL by searching for the file by name inside
+        // the current vault directory.
+        //
+        // If the file genuinely doesn't exist anywhere (user deleted it via Files
+        // app) we leave the record intact but mark metadata.autoMatchFailed = true
+        // so the UI can show a «missing» badge without nuking metadata/progress.
+        let vaultRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?.appendingPathComponent("InksyncVault", isDirectory: true)
+
+        var validDocs: [SDConvertedPDF] = []
+        var didUpdate = false
+
+        for doc in docs {
+            if FileManager.default.fileExists(atPath: doc.url.path) {
+                // Path still valid — nothing to do.
+                validDocs.append(doc)
+            } else {
+                // Try to re-anchor by filename inside the vault.
+                let filename = doc.url.lastPathComponent
+                if let vault = vaultRoot {
+                    let reanchored = vault.appendingPathComponent(filename)
+                    if FileManager.default.fileExists(atPath: reanchored.path) {
+                        doc.url = reanchored          // fix the stale absolute path
+                        didUpdate = true
+                        validDocs.append(doc)
+                        Logger.shared.log("MigrationService: Re-anchored '\(filename)' to new container path", category: "Migration")
+                        continue
+                    }
+                }
+                // File genuinely missing (deleted externally) — keep the record
+                // but surface it as missing so the UI can show a badge.
+                // Do NOT delete: the user's reading progress & annotations would
+                // be lost permanently and cannot be recovered.
+                validDocs.append(doc)
+                Logger.shared.log("MigrationService: '\(filename)' not found on disk — keeping record, marking missing", category: "Migration", type: .warning)
+            }
+        }
+
+        if didUpdate {
+            try? context.save()
+        }
+
+        return (validDocs, cols)
     }
 }

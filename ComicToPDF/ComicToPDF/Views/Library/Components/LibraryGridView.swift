@@ -3,7 +3,9 @@ import UniformTypeIdentifiers
 
 // MARK: - Drag Payload UTType
 extension UTType {
-    static let libraryDragPayload = UTType(exportedAs: "com.inksyncpro.library.dragpayload")
+    /// Use importedAs (not exportedAs) — importedAs works without a
+    /// UTExportedTypeDeclarations entry in Info.plist.
+    static let libraryDragPayload = UTType(importedAs: "com.inksyncpro.library.dragpayload")
 }
 
 // MARK: - Drag Payload
@@ -319,7 +321,22 @@ struct LibraryGridView: View {
 
     private func applyDrop(draggedPDFID: UUID, targetSeriesName: String) {
         guard let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == draggedPDFID }) else { return }
+
+        // Set the series name on the dragged file
         conversionManager.convertedPDFs[idx].metadata.series = targetSeriesName
+
+        // Also wire up the collectionId so the LibraryViewModel groups it under
+        // the collection-based path (col_) rather than only the series-metadata path.
+        if let matchingCollection = conversionManager.collections.first(where: { $0.name == targetSeriesName }) {
+            conversionManager.convertedPDFs[idx].collectionId = matchingCollection.id
+        } else {
+            // Create a new collection so the group tile appears immediately
+            conversionManager.createCollection(name: targetSeriesName, icon: "books.vertical", color: "blue")
+            if let newCol = conversionManager.collections.first(where: { $0.name == targetSeriesName }) {
+                conversionManager.convertedPDFs[idx].collectionId = newCol.id
+            }
+        }
+
         conversionManager.saveLibrary()
         HapticEngine.success()
     }
