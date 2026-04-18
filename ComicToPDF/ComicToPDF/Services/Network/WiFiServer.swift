@@ -77,7 +77,13 @@ class WiFiServer: ObservableObject {
 
             // Bind on port 8080. allowLocalEndpointReuse lets us reclaim it
             // immediately after a previous listener cancelled.
-            let listener = try NWListener(using: params, on: 8080)
+            let listener: NWListener
+            do {
+                listener = try NWListener(using: params, on: 8080)
+            } catch {
+                Logger.shared.log("Port 8080 busy, falling back to dynamic port: \(error.localizedDescription)", category: "Network", type: .warning)
+                listener = try NWListener(using: params, on: .any)
+            }
 
             // ⚠️ Do NOT set listener.service here.
             // NWListener.service ties Bonjour mDNS registration to the listener lifecycle.

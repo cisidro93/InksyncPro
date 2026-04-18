@@ -26,7 +26,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         // hard drive into the application sandbox before returning.
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
         picker.delegate = coordinator
-        picker.allowsMultipleSelection = false
+        picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
         // iPads notoriously swallow UIDocumentPickerViewController UI events if it's
         // presented as a formSheet over an existing Settings formSheet.

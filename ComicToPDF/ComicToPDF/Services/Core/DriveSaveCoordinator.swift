@@ -32,7 +32,7 @@ final class DriveSaveCoordinator: NSObject, UIDocumentPickerDelegate {
         // can create new folders on the drive without leaving the app.
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
         picker.delegate = coordinator
-        picker.allowsMultipleSelection = false
+        picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
         picker.modalPresentationStyle = .fullScreen
 
