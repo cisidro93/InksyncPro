@@ -231,14 +231,7 @@ class MigrationService {
         var didUpdate = false
 
         for doc in docs {
-            // 1. Linked files don't use sandbox UUIDs; skip re-anchoring.
-            // (We check sourceMode directly on SDConvertedPDF — using serialized JSON structure)
-            if let decoded = try? JSONDecoder().decode(SourceMode.self, from: doc.sourceModeData), decoded.isLinked {
-                validDocs.append(doc)
-                continue
-            }
-
-            // 2. If the absolute path still works (no update occurred), keep it.
+            // 1. If the absolute path still works (no update occurred or it's a connected external drive), keep it.
             if fileManager.fileExists(atPath: doc.url.path) {
                 validDocs.append(doc)
                 continue
