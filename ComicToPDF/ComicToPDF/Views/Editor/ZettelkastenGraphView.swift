@@ -10,10 +10,22 @@ struct GraphNode: Identifiable, Equatable {
     var velocity: CGVector = .zero
     let title: String
     let isTag: Bool
-    var mass: Double
+    var connectionCount: Int = 1
     var color: Color
 
     static func == (lhs: GraphNode, rhs: GraphNode) -> Bool { lhs.id == rhs.id }
+
+    /// Visual dot radius — logarithmic scale keeps highly-connected hubs visible
+    /// without dominating the canvas the way a linear mapping does.
+    /// Base 4pt for isolated nodes, up to ~14pt for the most-connected hubs.
+    var dotRadius: CGFloat {
+        let base: CGFloat = 4.0
+        let scale: CGFloat = 2.8
+        return base + scale * CGFloat(log2(Double(connectionCount) + 1.0))
+    }
+
+    /// Hit-test radius is larger than the visual dot so fingers can tap easily.
+    var hitRadius: CGFloat { max(dotRadius * 2.2, 18) }
 }
 
 struct GraphEdge: Identifiable {
@@ -32,22 +44,22 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
     @Published var offset: CGSize = .zero
     @Published var draggedNodeID: String? = nil
 
-    /// Path-finding state — the two nodes the user has long-pressed to trace a path between.
     @Published var pathAnchorA: String? = nil
     @Published var pathAnchorB: String? = nil
-    /// The set of node IDs that form the shortest path between A and B.
     @Published var highlightedPathNodeIDs: Set<String> = []
-    /// The set of edge IDs that form the shortest path between A and B.
     @Published var highlightedPathEdgeIDs: Set<String> = []
 
     private var displayLink: CADisplayLink?
+    private var tickCount: Int = 0
 
-    // Physics tuning
-    let repulsionStrength: Double  = 4500.0
-    let springStiffness: Double    = 0.022
-    let springLength: Double       = 130.0
-    let damping: Double            = 0.85
-    let centerGravity: Double      = 0.015
+    // ── Physics tuning ──────────────────────────────────────────────────────
+    // Stronger repulsion + shorter spring → nodes settle further apart,
+    // recreating the airy-but-connected look of Recall / Obsidian.
+    let repulsionStrength: Double = 6000.0
+    let springStiffness: Double  = 0.018
+    let springLength: Double     = 160.0
+    let damping: Double          = 0.82
+    let centerGravity: Double    = 0.012
 
     override init() { super.init() }
 
@@ -61,34 +73,49 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
         let screenCenter = CGPoint(x: UIScreen.main.bounds.width / 2,
                                    y: UIScreen.main.bounds.height / 2)
 
+        // Build a PDF name lookup so we don't do O(N²) inside the loop
+        var pdfNames: [UUID: String] = [:]
+        for pdf in pdfs { pdfNames[pdf.id] = pdf.name }
+
         for ann in annotations {
             let bookID = ann.pdfID.uuidString
             let title: String
-            if let rwTitle = ann.readwiseBookTitle {
+            if let rwTitle = ann.readwiseBookTitle, !rwTitle.isEmpty {
                 title = rwTitle
-            } else if let match = pdfs.first(where: { $0.id == ann.pdfID }) {
-                title = match.name
+            } else if let name = pdfNames[ann.pdfID] {
+                title = name
             } else {
-                title = "Book"
+                title = "Unknown"
             }
 
+            // Spawn nodes in a random annular ring so the initial layout
+            // is less clumped than a square distribution.
+            let angle = Double.random(in: 0..<2 * .pi)
+            let radius = Double.random(in: 80...280)
             let spawnPos = CGPoint(
-                x: screenCenter.x + CGFloat.random(in: -220...220),
-                y: screenCenter.y + CGFloat.random(in: -220...220)
+                x: screenCenter.x + radius * cos(angle),
+                y: screenCenter.y + radius * sin(angle)
             )
 
             if newNodes[bookID] == nil {
                 newNodes[bookID] = GraphNode(id: bookID, position: spawnPos,
-                                             title: title, isTag: false, mass: 2.0, color: .blue)
+                                             title: title, isTag: false, color: .blue)
             }
             connectionCounts[bookID, default: 0] += 1
 
-            if let tags = ann.tags {
-                for tag in tags {
+            // Only add tag nodes for Readwise tags (not auto-NLP tags for perf)
+            if let tags = ann.readwiseTags ?? ann.tags {
+                for tag in tags.prefix(4) { // cap tag fan-out per annotation
                     let tagID = "tag_\(tag.lowercased())"
                     if newNodes[tagID] == nil {
-                        newNodes[tagID] = GraphNode(id: tagID, position: spawnPos,
-                                                    title: "#\(tag)", isTag: true, mass: 1.0, color: .orange)
+                        let tAngle = Double.random(in: 0..<2 * .pi)
+                        let tRadius = Double.random(in: 120...300)
+                        let tPos = CGPoint(
+                            x: screenCenter.x + tRadius * cos(tAngle),
+                            y: screenCenter.y + tRadius * sin(tAngle)
+                        )
+                        newNodes[tagID] = GraphNode(id: tagID, position: tPos,
+                                                    title: "#\(tag)", isTag: true, color: .orange)
                     }
                     connectionCounts[tagID, default: 0] += 1
                     let edgeID = "\(bookID)_\(tagID)"
@@ -99,8 +126,9 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             }
         }
 
-        for (id, count) in connectionCounts {
-            newNodes[id]?.mass = 1.0 + Double(count) * 0.2
+        // Wire connection counts into nodes
+        for key in newNodes.keys {
+            newNodes[key]?.connectionCount = max(1, connectionCounts[key] ?? 1)
         }
 
         self.nodes = Array(newNodes.values)
@@ -112,6 +140,7 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
 
     func startSimulation() {
         stopSimulation()
+        tickCount = 0
         displayLink = CADisplayLink(target: self, selector: #selector(physicsTick))
         displayLink?.add(to: .main, forMode: .common)
     }
@@ -122,20 +151,21 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
     }
 
     @objc private func physicsTick() {
+        tickCount += 1
         var forces: [String: CGVector] = [:]
         for node in nodes { forces[node.id] = .zero }
 
         let center = CGPoint(x: UIScreen.main.bounds.width / 2,
                              y: UIScreen.main.bounds.height / 2)
 
-        // 1. Repulsion
+        // 1. Repulsion (Barnes-Hut approximation not needed under ~300 nodes)
         for i in 0..<nodes.count {
             for j in (i + 1)..<nodes.count {
                 let n1 = nodes[i]; let n2 = nodes[j]
                 let dx = n1.position.x - n2.position.x
                 let dy = n1.position.y - n2.position.y
                 let distSq = dx * dx + dy * dy
-                guard distSq > 0, distSq < 100_000 else { continue }
+                guard distSq > 1, distSq < 160_000 else { continue }
                 let dist = sqrt(distSq)
                 let force = repulsionStrength / distSq
                 let fx = (dx / dist) * force
@@ -145,7 +175,7 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             }
         }
 
-        // 2. Spring Attraction
+        // 2. Spring Attraction along edges
         for edge in edges {
             guard let i1 = nodes.firstIndex(where: { $0.id == edge.sourceID }),
                   let i2 = nodes.firstIndex(where: { $0.id == edge.targetID }) else { continue }
@@ -162,7 +192,7 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             forces[n2.id]?.dx -= fx; forces[n2.id]?.dy -= fy
         }
 
-        // 3. Center Gravity + Integration
+        // 3. Weak center gravity + velocity integration
         for i in 0..<nodes.count {
             guard nodes[i].id != draggedNodeID else { continue }
             let dx = center.x - nodes[i].position.x
@@ -171,30 +201,33 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             forces[nodes[i].id]?.dy += dy * centerGravity
 
             let f = forces[nodes[i].id]!
-            nodes[i].velocity.dx = (nodes[i].velocity.dx + f.dx / nodes[i].mass) * damping
-            nodes[i].velocity.dy = (nodes[i].velocity.dy + f.dy / nodes[i].mass) * damping
+            let mass = Double(nodes[i].connectionCount) * 0.6 + 1.0
+            nodes[i].velocity.dx = (nodes[i].velocity.dx + f.dx / mass) * damping
+            nodes[i].velocity.dy = (nodes[i].velocity.dy + f.dy / mass) * damping
 
+            // Cap velocity
             let speedSq = nodes[i].velocity.dx * nodes[i].velocity.dx
                         + nodes[i].velocity.dy * nodes[i].velocity.dy
-            if speedSq > 2500 {
+            let maxSpeed: Double = 40.0
+            if speedSq > maxSpeed * maxSpeed {
                 let speed = sqrt(speedSq)
-                nodes[i].velocity.dx = (nodes[i].velocity.dx / speed) * 50
-                nodes[i].velocity.dy = (nodes[i].velocity.dy / speed) * 50
+                nodes[i].velocity.dx = (nodes[i].velocity.dx / speed) * maxSpeed
+                nodes[i].velocity.dy = (nodes[i].velocity.dy / speed) * maxSpeed
             }
             nodes[i].position.x += nodes[i].velocity.dx
             nodes[i].position.y += nodes[i].velocity.dy
         }
 
-        var isAsleep = true
-        for node in nodes where abs(node.velocity.dx) > 0.1 || abs(node.velocity.dy) > 0.1 {
-            isAsleep = false; break
+        // Auto-sleep once settled (also stops after 600 ticks ~10s as a safety net)
+        let threshold: Double = 0.3
+        let isAsleep = nodes.allSatisfy {
+            abs($0.velocity.dx) < threshold && abs($0.velocity.dy) < threshold
         }
-        if isAsleep && draggedNodeID == nil { stopSimulation() }
+        if (isAsleep || tickCount > 600) && draggedNodeID == nil { stopSimulation() }
     }
 
     // MARK: Path Finding (BFS shortest path)
 
-    /// Sets the first or second path anchor, then finds the path between them.
     func setPathAnchor(_ nodeID: String) {
         if pathAnchorA == nil {
             pathAnchorA = nodeID
@@ -205,7 +238,6 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             pathAnchorB = nodeID
             computeShortestPath()
         } else {
-            // Third tap resets
             pathAnchorA = nodeID
             pathAnchorB = nil
             highlightedPathNodeIDs = [nodeID]
@@ -214,46 +246,31 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
     }
 
     func clearPath() {
-        pathAnchorA = nil
-        pathAnchorB = nil
-        highlightedPathNodeIDs = []
-        highlightedPathEdgeIDs = []
+        pathAnchorA = nil; pathAnchorB = nil
+        highlightedPathNodeIDs = []; highlightedPathEdgeIDs = []
     }
 
-    /// BFS over the undirected edge graph to find the shortest node/edge path.
     private func computeShortestPath() {
         guard let src = pathAnchorA, let dst = pathAnchorB else { return }
-
-        // Build adjacency list (undirected)
         var adj: [String: [(nodeID: String, edgeID: String)]] = [:]
         for edge in edges {
             adj[edge.sourceID, default: []].append((edge.targetID, edge.id))
             adj[edge.targetID, default: []].append((edge.sourceID, edge.id))
         }
-
-        // BFS
         var visited: Set<String> = [src]
         var queue: [(nodeID: String, path: [String], edgePath: [String])] = [(src, [src], [])]
         var foundNodePath: [String] = []
         var foundEdgePath: [String] = []
-
         while !queue.isEmpty {
             let (current, nodePath, edgePath) = queue.removeFirst()
-            if current == dst {
-                foundNodePath = nodePath
-                foundEdgePath = edgePath
-                break
-            }
+            if current == dst { foundNodePath = nodePath; foundEdgePath = edgePath; break }
             for neighbor in adj[current] ?? [] {
                 if !visited.contains(neighbor.nodeID) {
                     visited.insert(neighbor.nodeID)
-                    queue.append((neighbor.nodeID,
-                                  nodePath + [neighbor.nodeID],
-                                  edgePath + [neighbor.edgeID]))
+                    queue.append((neighbor.nodeID, nodePath + [neighbor.nodeID], edgePath + [neighbor.edgeID]))
                 }
             }
         }
-
         withAnimation(.easeInOut(duration: 0.35)) {
             highlightedPathNodeIDs = Set(foundNodePath)
             highlightedPathEdgeIDs = Set(foundEdgePath)
@@ -272,73 +289,84 @@ struct ZettelkastenGraphView: View {
     @StateObject private var engine = ZettelkastenGraphEngine()
     @Environment(\.colorScheme) private var colorScheme
 
-    // Hover highlight (single-tap)
     @State private var hoverNodeID: String? = nil
-    // Long-press state
-    @State private var longPressNodeID: String? = nil
-    // Canvas size captured for inverse-camera math
     @State private var canvasSize: CGSize = UIScreen.main.bounds.size
+    @State private var labelScale: CGFloat = 1.0  // zoomed-in label suppression
 
-    // MARK: Computed helpers
-
-    private var isPathMode: Bool {
-        engine.pathAnchorA != nil
-    }
+    // MARK: Theme colors
 
     private var bgColor: Color {
         colorScheme == .dark
-            ? Color(UIColor.systemBackground)          // near-black in dark mode
-            : Color(UIColor.secondarySystemBackground) // off-white in light mode
+            ? Color(red: 0.10, green: 0.10, blue: 0.12)   // deep charcoal
+            : Color(red: 0.96, green: 0.96, blue: 0.97)   // near-white
     }
-
-    private var gridColor: Color {
-        colorScheme == .dark ? .white.opacity(0.05) : .black.opacity(0.04)
+    private var gridDotColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.05)
     }
-
-    private var defaultEdgeColor: Color {
-        colorScheme == .dark ? .white.opacity(0.18) : .black.opacity(0.18)
+    private var edgeColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.10)
     }
-
-    private var nodeStrokeColor: Color {
-        colorScheme == .dark ? .white.opacity(0.75) : .black.opacity(0.25)
+    private var edgeHoverColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.55) : Color.black.opacity(0.55)
     }
-
     private var labelColor: Color {
-        colorScheme == .dark ? .white : .black
+        colorScheme == .dark ? Color.white.opacity(0.80) : Color.black.opacity(0.78)
     }
+    private var hudFg: Color {
+        colorScheme == .dark ? .white.opacity(0.60) : .black.opacity(0.55)
+    }
+
+    // ── Recall-style dot colors: filled inner core + subtle outer ring ───────
+    private func bookFill(_ alpha: CGFloat) -> Color {
+        (colorScheme == .dark
+            ? Color(red: 0.42, green: 0.68, blue: 1.00)   // soft blue
+            : Color(red: 0.20, green: 0.48, blue: 0.90))
+        .opacity(alpha)
+    }
+    private func tagFill(_ alpha: CGFloat) -> Color {
+        (colorScheme == .dark
+            ? Color(red: 1.00, green: 0.72, blue: 0.30)   // warm amber
+            : Color(red: 0.85, green: 0.48, blue: 0.10))
+        .opacity(alpha)
+    }
+    private func nodeFill(for node: GraphNode, alpha: CGFloat) -> Color {
+        node.isTag ? tagFill(alpha) : bookFill(alpha)
+    }
+
+    private var isPathMode: Bool { engine.pathAnchorA != nil }
 
     // MARK: Body
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            // Theme-reactive background
+        ZStack(alignment: .bottomLeading) {
             bgColor.ignoresSafeArea()
 
-            // Subtle grid dots (like Recall)
+            // Background grid dots (matches Recall aesthetic)
             Canvas { ctx, size in
-                let spacing: CGFloat = 30
+                let spacing: CGFloat = 28
                 for x in stride(from: 0, through: size.width, by: spacing) {
                     for y in stride(from: 0, through: size.height, by: spacing) {
                         let dot = CGRect(x: x - 1, y: y - 1, width: 2, height: 2)
-                        ctx.fill(Path(ellipseIn: dot), with: .color(gridColor))
+                        ctx.fill(Path(ellipseIn: dot), with: .color(gridDotColor))
                     }
                 }
             }
             .ignoresSafeArea()
 
-            // Main graph canvas
+            // Main force-directed graph
             Canvas { context, size in
                 canvasSize = size
+                labelScale = engine.scale
 
-                // Camera transform
+                // Camera
                 context.translateBy(x: engine.offset.width + size.width / 2,
                                     y: engine.offset.height + size.height / 2)
                 context.scaleBy(x: engine.scale, y: engine.scale)
                 context.translateBy(x: -size.width / 2, y: -size.height / 2)
 
-                // MARK: Draw Edges
                 let pathActive = !engine.highlightedPathEdgeIDs.isEmpty
 
+                // ──────────────────────── EDGES ──────────────────────────────
                 for edge in engine.edges {
                     guard let src = engine.nodes.first(where: { $0.id == edge.sourceID }),
                           let tgt = engine.nodes.first(where: { $0.id == edge.targetID }) else { continue }
@@ -348,71 +376,91 @@ struct ZettelkastenGraphView: View {
                     path.addLine(to: tgt.position)
 
                     let isOnPath = engine.highlightedPathEdgeIDs.contains(edge.id)
-                    let isHovered = hoverNodeID == src.id || hoverNodeID == tgt.id
+                    let isAdjacentToHover = hoverNodeID == src.id || hoverNodeID == tgt.id
 
                     if pathActive {
                         if isOnPath {
-                            // Glowing path edge
-                            context.stroke(path, with: .color(.cyan.opacity(0.35)), lineWidth: 6)
-                            context.stroke(path, with: .color(.cyan), lineWidth: 2)
+                            // Glowing highlighted path
+                            context.stroke(path, with: .color(Color.cyan.opacity(0.20)), lineWidth: 5)
+                            context.stroke(path, with: .color(Color.cyan.opacity(0.90)), lineWidth: 1.5)
                         } else {
-                            // Fade non-path edges
-                            context.stroke(path, with: .color(defaultEdgeColor.opacity(0.08)), lineWidth: 0.5)
+                            context.stroke(path, with: .color(edgeColor.opacity(0.08)), lineWidth: 0.5)
                         }
-                    } else if isHovered {
-                        context.stroke(path, with: .color(colorScheme == .dark ? .white.opacity(0.85) : .black.opacity(0.6)), lineWidth: 2.0)
+                    } else if isAdjacentToHover {
+                        context.stroke(path, with: .color(edgeHoverColor), lineWidth: 1.5)
                     } else {
-                        context.stroke(path, with: .color(defaultEdgeColor), lineWidth: 1.0)
+                        // Hairline edges — matches Recall/Obsidian feel
+                        context.stroke(path, with: .color(edgeColor), lineWidth: 0.7)
                     }
                 }
 
-                // MARK: Draw Nodes
+                // ──────────────────────── NODES ──────────────────────────────
                 for node in engine.nodes {
-                    let radius = CGFloat(node.mass * 8.0)
-                    let rect = CGRect(x: node.position.x - radius,
-                                      y: node.position.y - radius,
-                                      width: radius * 2, height: radius * 2)
+                    let r = node.dotRadius
+                    let rect = CGRect(x: node.position.x - r, y: node.position.y - r,
+                                      width: r * 2, height: r * 2)
 
-                    let isOnPath    = engine.highlightedPathNodeIDs.contains(node.id)
-                    let isAnchor    = node.id == engine.pathAnchorA || node.id == engine.pathAnchorB
-                    let isHovered   = hoverNodeID == node.id
+                    let isOnPath  = engine.highlightedPathNodeIDs.contains(node.id)
+                    let isAnchor  = node.id == engine.pathAnchorA || node.id == engine.pathAnchorB
+                    let isHovered = hoverNodeID == node.id
+                    let isDimmed  = hoverNodeID != nil && !isHovered
 
                     if pathActive {
                         if isAnchor {
-                            // Pulsing glow for anchor nodes
-                            context.fill(Path(ellipseIn: rect.insetBy(dx: -8, dy: -8)), with: .color(.cyan.opacity(0.25)))
-                            context.fill(Path(ellipseIn: rect), with: .color(.cyan))
-                            context.stroke(Path(ellipseIn: rect), with: .color(.white), lineWidth: 2.5)
+                            // Soft glow ring
+                            context.fill(Path(ellipseIn: rect.insetBy(dx: -r * 0.8, dy: -r * 0.8)),
+                                         with: .color(Color.cyan.opacity(0.18)))
+                            // Inner core
+                            context.fill(Path(ellipseIn: rect), with: .color(Color.cyan))
+                            context.stroke(Path(ellipseIn: rect),
+                                           with: .color(Color.white.opacity(0.9)), lineWidth: 1.5)
                         } else if isOnPath {
-                            context.fill(Path(ellipseIn: rect.insetBy(dx: -4, dy: -4)), with: .color(.cyan.opacity(0.2)))
-                            context.fill(Path(ellipseIn: rect), with: .color(node.color))
-                            context.stroke(Path(ellipseIn: rect), with: .color(.cyan), lineWidth: 2.0)
+                            context.fill(Path(ellipseIn: rect.insetBy(dx: -r * 0.5, dy: -r * 0.5)),
+                                         with: .color(Color.cyan.opacity(0.12)))
+                            context.fill(Path(ellipseIn: rect), with: .color(nodeFill(for: node, alpha: 1.0)))
+                            context.stroke(Path(ellipseIn: rect),
+                                           with: .color(Color.cyan.opacity(0.9)), lineWidth: 1.2)
                         } else {
-                            // Dim out off-path nodes
-                            context.fill(Path(ellipseIn: rect), with: .color(node.color.opacity(0.15)))
+                            context.fill(Path(ellipseIn: rect), with: .color(nodeFill(for: node, alpha: 0.12)))
                         }
-                    } else {
-                        let highlighted = isHovered || hoverNodeID == nil
-                        if highlighted {
-                            context.fill(Path(ellipseIn: rect.insetBy(dx: -4, dy: -4)),
-                                         with: .color(node.color.opacity(0.3)))
-                        }
-                        context.fill(Path(ellipseIn: rect),
-                                     with: .color(highlighted ? node.color : node.color.opacity(0.4)))
+                    } else if isHovered {
+                        // Hover: add a soft halo ring then solid core
+                        context.fill(Path(ellipseIn: rect.insetBy(dx: -r * 0.6, dy: -r * 0.6)),
+                                     with: .color(nodeFill(for: node, alpha: 0.20)))
+                        context.fill(Path(ellipseIn: rect), with: .color(nodeFill(for: node, alpha: 1.0)))
                         context.stroke(Path(ellipseIn: rect),
-                                       with: .color(nodeStrokeColor), lineWidth: 1.5)
+                                       with: .color(colorScheme == .dark ? .white.opacity(0.5) : .black.opacity(0.3)),
+                                       lineWidth: 1.0)
+                    } else {
+                        // Normal: solid core, tiny stroke ring — just like Recall dots
+                        let fill = isDimmed ? nodeFill(for: node, alpha: 0.25) : nodeFill(for: node, alpha: 0.90)
+                        context.fill(Path(ellipseIn: rect), with: .color(fill))
+                        if !isDimmed {
+                            // Very subtle outer stroke keeps dots from blending into edges
+                            let strokeAlpha: CGFloat = colorScheme == .dark ? 0.18 : 0.20
+                            context.stroke(Path(ellipseIn: rect),
+                                           with: .color(Color.white.opacity(strokeAlpha)), lineWidth: 0.8)
+                        }
                     }
 
-                    // Label
-                    let showLabel = pathActive
-                        ? (isOnPath || isAnchor)
-                        : ((hoverNodeID == nil || isHovered) && node.mass > 1.2)
+                    // ─── Labels ─────────────────────────────────────────────
+                    // Show label if: on path/anchor; or hovered; or highly connected and nothing else hovered.
+                    // Hide at high zoom-out (scale < 0.5) to prevent a wall of unreadable text.
+                    let scaleOK = engine.scale > 0.45
+                    let showLabel = scaleOK && (
+                        pathActive ? (isOnPath || isAnchor) :
+                        (isHovered || (hoverNodeID == nil && node.connectionCount >= 5))
+                    )
 
                     if showLabel {
-                        let labelPt = CGPoint(x: node.position.x, y: node.position.y + radius + 10)
+                        let truncated = node.title.count > 28
+                            ? String(node.title.prefix(26)) + "…"
+                            : node.title
+                        let labelPt = CGPoint(x: node.position.x, y: node.position.y + r + 9)
+                        let weight: Font.Weight = node.connectionCount >= 10 ? .semibold : .regular
                         context.draw(
-                            Text(node.title)
-                                .font(.system(size: 10, weight: node.isTag ? .regular : .semibold))
+                            Text(truncated)
+                                .font(.system(size: 9.5, weight: weight))
                                 .foregroundColor(isAnchor ? .cyan : labelColor),
                             at: labelPt
                         )
@@ -427,7 +475,7 @@ struct ZettelkastenGraphView: View {
                         if case .second(true, let drag?) = value {
                             let touchPos = applyInverseCamera(drag.startLocation)
                             if let tapped = engine.nodes.first(where: {
-                                distance(from: $0.position, to: touchPos) < CGFloat($0.mass * 18.0)
+                                distance(from: $0.position, to: touchPos) < $0.hitRadius
                             }) {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     engine.setPathAnchor(tapped.id)
@@ -442,7 +490,7 @@ struct ZettelkastenGraphView: View {
                         let touchPos = applyInverseCamera(val.location)
                         if engine.draggedNodeID == nil {
                             if let tapped = engine.nodes.first(where: {
-                                distance(from: $0.position, to: touchPos) < CGFloat($0.mass * 15.0)
+                                distance(from: $0.position, to: touchPos) < $0.hitRadius
                             }) {
                                 engine.draggedNodeID = tapped.id
                                 hoverNodeID = tapped.id
@@ -470,74 +518,60 @@ struct ZettelkastenGraphView: View {
                     }
             )
 
-            // MARK: HUD Overlays
-            VStack(alignment: .trailing, spacing: 8) {
-                // Path mode controls
+            // MARK: HUD — bottom left stat pill (matches Recall)
+            VStack(alignment: .leading, spacing: 8) {
                 if isPathMode {
                     HStack(spacing: 8) {
                         if engine.pathAnchorA != nil && engine.pathAnchorB == nil {
-                            Label("Long-press a second node to trace path", systemImage: "hand.tap")
-                                .font(.system(size: 12, weight: .medium))
+                            Label("Long-press second node to trace path", systemImage: "hand.tap")
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.cyan)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Capsule())
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(.ultraThinMaterial).clipShape(Capsule())
                         }
-                        Button {
-                            withAnimation { engine.clearPath() }
-                        } label: {
+                        Button { withAnimation { engine.clearPath() } } label: {
                             Label("Clear Path", systemImage: "xmark.circle.fill")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(.cyan)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Capsule())
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(.ultraThinMaterial).clipShape(Capsule())
                         }
                     }
-                    .padding(.top, 16)
-                    .padding(.trailing, 16)
                 }
 
-                // Node / edge counter
-                HStack(spacing: 6) {
-                    Circle().fill(Color.blue).frame(width: 8, height: 8)
+                // Stat pill
+                HStack(spacing: 5) {
+                    Circle().fill(bookFill(0.9)).frame(width: 7, height: 7)
                     Text("\(engine.nodes.filter { !$0.isTag }.count) books")
-                        .font(.system(size: 11, weight: .semibold))
-                    Circle().fill(Color.orange).frame(width: 8, height: 8)
+                        .font(.system(size: 11, weight: .medium))
+                    Circle().fill(tagFill(0.9)).frame(width: 7, height: 7)
                     Text("\(engine.nodes.filter { $0.isTag }.count) tags")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("·")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("·").foregroundColor(hudFg)
                     Text("\(engine.edges.count) links")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 11, weight: .medium))
                 }
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.7) : .black.opacity(0.6))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .foregroundColor(hudFg)
+                .padding(.horizontal, 12).padding(.vertical, 7)
                 .background(.ultraThinMaterial)
                 .clipShape(Capsule())
-                .padding(.bottom, 20)
-                .padding(.trailing, 16)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .padding(.leading, 16).padding(.bottom, 20)
 
-            // Long-press hint (shown only when not in path mode)
+            // Hint pill — top trailing
             if !isPathMode {
                 VStack {
                     Spacer()
                     HStack {
-                        Label("Long-press any node to start path tracing", systemImage: "hand.tap.fill")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .black.opacity(0.4))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
+                        Spacer()
+                        Label("Long-press any node to trace a path", systemImage: "hand.tap.fill")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(hudFg)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
                             .background(.ultraThinMaterial)
                             .clipShape(Capsule())
-                        Spacer()
                     }
-                    .padding(.leading, 16)
-                    .padding(.bottom, 20)
+                    .padding(.trailing, 16).padding(.bottom, 20)
                 }
             }
         }
@@ -550,20 +584,15 @@ struct ZettelkastenGraphView: View {
     private func applyInverseCamera(_ point: CGPoint) -> CGPoint {
         let size = canvasSize.width > 0 ? canvasSize : UIScreen.main.bounds.size
         var p = point
-        p.x -= size.width / 2
-        p.y -= size.height / 2
-        p.x /= engine.scale
-        p.y /= engine.scale
-        p.x -= engine.offset.width
-        p.y -= engine.offset.height
-        p.x += size.width / 2
-        p.y += size.height / 2
+        p.x -= size.width / 2; p.y -= size.height / 2
+        p.x /= engine.scale;   p.y /= engine.scale
+        p.x -= engine.offset.width; p.y -= engine.offset.height
+        p.x += size.width / 2;  p.y += size.height / 2
         return p
     }
 
     private func distance(from p1: CGPoint, to p2: CGPoint) -> CGFloat {
-        let dx = p1.x - p2.x
-        let dy = p1.y - p2.y
+        let dx = p1.x - p2.x; let dy = p1.y - p2.y
         return sqrt(dx * dx + dy * dy)
     }
 }
