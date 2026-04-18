@@ -24,86 +24,143 @@ class WiFiServer: ObservableObject {
     // ✅ NEW: Background Task Support
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     
+    // Tracks whether we've previously triggered the LAN permission dialog.
+    // After the first successful trigger the permission entry appears in Settings,
+    // so we never need to probe again — and probing while already-granted can
+    // cause iOS to briefly revoke+recheck the grant, producing a false -6555.
+    private var hasTriggeredLocalNetworkPermission: Bool {
+        get { UserDefaults.standard.bool(forKey: "inksync.hasTriggeredLANPermission") }
+        set { UserDefaults.standard.set(newValue, forKey: "inksync.hasTriggeredLANPermission") }
+    }
+
+    // How many times we've auto-retried the current start() attempt.
+    private var bindRetryCount = 0
+    private let maxBindRetries = 2
+
     func start() {
-        guard !isRunning else { return }
-        
-        // Reset State
-        DispatchQueue.main.async { 
-            self.errorMessage = nil 
-            self.securityCode = String(format: "%04d", Int.random(in: 0...9999))
-            self.activeConnections = 0
-            
-            self.sessionLock.lock()
-            self.validSessions.removeAll()
-            self.sessionLock.unlock()
-        }
-        
-        // Trigger the Local Network permission alert FIRST, then wait for iOS to process
-        // the grant before binding the NWListener. Without the delay, the bind races against
-        // the async permission dialog and always loses, producing NWError -6555 NoAuth.
-        triggerLocalNetworkPrivacyAlert()
-        
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.bindListener()
+        // Always tear down any stale listener first so port 8080 is guaranteed free.
+        listener?.cancel()
+        listener = nil
+
+        errorMessage = nil
+        securityCode = String(format: "%04d", Int.random(in: 0...9999))
+        activeConnections = 0
+        bindRetryCount = 0
+
+        sessionLock.lock()
+        validSessions.removeAll()
+        sessionLock.unlock()
+
+        if !hasTriggeredLocalNetworkPermission {
+            // First ever run: fire the probe so iOS shows the permission dialog,
+            // then wait 2 s for the user to respond before binding.
+            triggerLocalNetworkPrivacyAlert()
+            hasTriggeredLocalNetworkPermission = true
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.bindListener()
+            }
+        } else {
+            // Permission already granted — bind immediately, no probe delay needed.
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.bindListener()
+            }
         }
     }
-    
+
     private func bindListener() {
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
             params.includePeerToPeer = true
-            // NOTE: Do NOT set requiredInterfaceType = .wifi here.
-            // It silently prevents the listener from binding on hotspot,
-            // USB-C network, or multi-homed interfaces and produces no error.
+            // Do NOT lock to .wifi — that silently blocks hotspot / USB-C ethernet.
 
+            // Bind on port 8080. allowLocalEndpointReuse lets us reclaim it
+            // immediately after a previous listener cancelled.
             let listener = try NWListener(using: params, on: 8080)
-            
+
             // Advertise via mDNS so peer Inksync clients can discover this device.
             listener.service = NWListener.Service(name: UIDevice.current.name, type: "_inksync._tcp")
-            
+
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self = self else { return }
                 switch state {
                 case .ready:
-                    let pin = self.securityCode
-                    Logger.shared.log("WiFi Server Ready on port 8080. PIN: \(pin)", category: "Network")
+                    // Read the resolved port back (same as 8080 unless OS chose differently)
+                    let port = listener.port?.rawValue ?? 8080
+                    Logger.shared.log("WiFi Server ready on port \(port). PIN: \(self.securityCode)", category: "Network")
+                    self.bindRetryCount = 0
                     DispatchQueue.main.async {
                         self.isRunning = true
                         let ip = self.getIPAddress() ?? "localhost"
-                        self.serverURL = "http://\(ip):8080"
+                        self.serverURL = "http://\(ip):\(port)"
                     }
+
                 case .failed(let error):
-                    Logger.shared.log("Server failed: \(error.localizedDescription)", category: "Network", type: .error)
+                    let raw = "\(error)"
+                    Logger.shared.log("WiFi Server failed: \(raw)", category: "Network", type: .error)
+
+                    // -6555 / NoAuth fires for TWO different reasons:
+                    //  A) Permission truly not granted  → Settings shows OFF
+                    //  B) Permission granted but the OS revoked briefly during probe
+                    //     or port was still in TIME_WAIT from the last session.
+                    // Auto-retry handles case B without bothering the user.
+                    let isNetworkAuthError = raw.contains("NoAuth") || raw.contains("-6555")
+                        || raw.contains("posix(EPERM)")
+
+                    if isNetworkAuthError && self.bindRetryCount < self.maxBindRetries {
+                        self.bindRetryCount += 1
+                        Logger.shared.log("WiFi Server: retrying bind (attempt \(self.bindRetryCount))", category: "Network")
+                        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                            self?.bindListener()
+                        }
+                        return
+                    }
+
                     DispatchQueue.main.async {
-                        let desc = error.localizedDescription + " \(error)"
-                        if desc.contains("NoAuth") || desc.contains("-6555") {
-                            self.errorMessage = "Local Network permission is required to start the Wi-Fi server.\n\nTo fix:\n1. Open the iOS Settings app\n2. Privacy & Security → Local Network\n3. Enable the toggle next to 'Inksync Pro'\n4. Return here and tap Start Server again."
+                        if isNetworkAuthError {
+                            // Only show the "go to Settings" message when retries also failed.
+                            self.errorMessage = "Wi-Fi server failed to start.\n\n"
+                                + "Local Network access is enabled in Settings, but iOS briefly blocked the connection.\n\n"
+                                + "① Force-quit the app and reopen it, then tap Start Server.\n"
+                                + "② If it still fails: Settings › InksyncPro › Local Network → toggle OFF then back ON."
                         } else {
-                            self.errorMessage = "Server failed: \(error.localizedDescription)"
-                            Logger.shared.log("Server Start Failed: \(error)", category: "Network", type: .error)
+                            self.errorMessage = "Server failed: \(error.localizedDescription)\n\nRaw: \(raw)"
                         }
                     }
                     if self.isRunning { self.stop() }
+
                 default: break
                 }
             }
-            
+
             listener.newConnectionHandler = { [weak self] connection in
                 self?.handleConnection(connection)
             }
-            
+
             listener.start(queue: .global(qos: .userInitiated))
             self.listener = listener
-            
+
         } catch {
-            Logger.shared.log("Failed to bind WiFi server to port 8080: \(error.localizedDescription)", category: "Network", type: .error)
+            let raw = "\(error)"
+            Logger.shared.log("Failed to bind WiFi server: \(raw)", category: "Network", type: .error)
+            let isNetworkAuthError = raw.contains("NoAuth") || raw.contains("-6555") || raw.contains("EPERM")
+
+            if isNetworkAuthError && bindRetryCount < maxBindRetries {
+                bindRetryCount += 1
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    self?.bindListener()
+                }
+                return
+            }
+
             DispatchQueue.main.async {
-                let desc = error.localizedDescription + " \(error)"
-                if desc.contains("NoAuth") || desc.contains("-6555") {
-                    self.errorMessage = "Local Network permission is required to start the Wi-Fi server.\n\nTo fix:\n1. Open the iOS Settings app\n2. Privacy & Security → Local Network\n3. Enable the toggle next to 'Inksync Pro'\n4. Return here and tap Start Server again."
+                if isNetworkAuthError {
+                    self.errorMessage = "Wi-Fi server failed to start.\n\n"
+                        + "Local Network access is enabled in Settings, but iOS briefly blocked the connection.\n\n"
+                        + "① Force-quit the app and reopen it, then tap Start Server.\n"
+                        + "② If it still fails: Settings › InksyncPro › Local Network → toggle OFF then back ON."
                 } else {
-                    self.errorMessage = "Could not bind to port 8080: \(error.localizedDescription)"
+                    self.errorMessage = "Could not start server: \(error.localizedDescription)"
                 }
             }
         }
