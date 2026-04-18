@@ -309,54 +309,121 @@ struct GlobalZettelkastenHubView: View {
 
 struct GlobalHighlightRow: View {
     let annotation: SDAnnotation
+
+    @State private var showingEdit = false
+
+    // User-applied tags (excludes Readwise source tags already shown via readwiseTags)
+    private var userTags: [String] {
+        let rwSet = Set((annotation.readwiseTags ?? []) + (annotation.readwiseDocumentTags ?? []))
+        return (annotation.tags ?? []).filter { !rwSet.contains($0) }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let text = annotation.selectedText, !text.isEmpty {
-                Text(text)
-                    .font(.body)
-                    .foregroundColor(.primary)
-            }
-            if let note = annotation.noteText, !note.isEmpty {
-                HStack(alignment: .top) {
-                    Divider()
-                        .frame(width: 3)
-                        .background(Color.blue)
-                    Text(note)
-                        .font(.callout)
-                        .foregroundColor(.secondary)
-                        .padding(.leading, 4)
-                }
-            }
-            
-            // Auto Tags System Support
-            if let tags = annotation.tags, !tags.isEmpty {
-                HStack {
-                    ForEach(tags, id: \.self) { tag in
-                        Text("#\(tag)")
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
+        Button { showingEdit = true } label: {
+            VStack(alignment: .leading, spacing: 8) {
+
+                // Highlight text with left color bar
+                HStack(alignment: .top, spacing: 0) {
+                    if let hex = annotation.colorHex,
+                       let accentColor = Color(hex: hex) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(accentColor)
+                            .frame(width: 3)
                             .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.2))
-                            .foregroundColor(.orange)
-                            .cornerRadius(4)
+                    }
+                    if let text = annotation.selectedText, !text.isEmpty {
+                        Text(text)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .padding(.leading, 8)
                     }
                 }
-                .padding(.top, 4)
-            }
-            
-            HStack {
-                if annotation.isReadwiseImport {
-                    Image(systemName: "bird.fill")
-                        .font(.caption2)
-                        .foregroundColor(.blue)
+
+                // User's thought (noteText)
+                if let note = annotation.noteText, !note.isEmpty {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "text.bubble.fill")
+                            .font(.caption2)
+                            .foregroundStyle(Color.accentColor.opacity(0.7))
+                            .padding(.top, 2)
+                        Text(note)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .italic()
+                    }
                 }
-                Text(annotation.modifiedAt, style: .date)
-                    .font(.caption2)
-                    .foregroundColor(.gray)
-                Spacer()
+
+                // Tags row — user tags in orange, Readwise tags in blue
+                let rwTags = annotation.readwiseTags ?? []
+                if !userTags.isEmpty || !rwTags.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(userTags, id: \.self) { tag in
+                            TagPill(tag: tag, color: .orange)
+                        }
+                        ForEach(rwTags, id: \.self) { tag in
+                            TagPill(tag: tag, color: .blue)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+
+                // Footer
+                HStack(spacing: 5) {
+                    if annotation.isReadwiseImport {
+                        Image(systemName: "bird.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.blue)
+                    }
+                    Text(annotation.modifiedAt, style: .date)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    // Edit hint
+                    Image(systemName: "pencil")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.top, 2)
             }
-            .padding(.top, 4)
+            .padding()
         }
-        .padding()
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showingEdit) {
+            AnnotationEditSheet(annotation: annotation)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 }
+
+// Small inline chip that doesn't need removal capability
+private struct TagPill: View {
+    let tag: String
+    let color: Color
+    var body: some View {
+        Text("#\(tag)")
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.12))
+            .clipShape(Capsule())
+    }
+}
+
+private extension Color {
+    init?(hex: String) {
+        var h = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        guard h.count == 6 else { return nil }
+        h = "FF" + h
+        guard let value = UInt64(h, radix: 16) else { return nil }
+        self.init(
+            red:   Double((value >> 16) & 0xFF) / 255,
+            green: Double((value >>  8) & 0xFF) / 255,
+            blue:  Double( value        & 0xFF) / 255,
+            opacity: Double((value >> 24) & 0xFF) / 255
+        )
+    }
+}
+
