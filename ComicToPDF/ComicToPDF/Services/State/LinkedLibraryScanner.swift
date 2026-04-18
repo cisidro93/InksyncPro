@@ -439,7 +439,7 @@ final class LinkedLibraryScanner {
                 let url = pdf.url
                 group.addTask {
                     let img = await Task.detached(priority: .background) {
-                        ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 300)
+                        PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
                     }.value
                     return (index, img?.pngData())
                 }

@@ -132,7 +132,13 @@ class PhysicalFileSystemRouter {
         
         if let coverURL = getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) { return }
         
-        let url = pdf.url
+        let url: URL
+        if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+            url = resolved
+        } else {
+            url = pdf.url
+        }
+        
         let image = await Task.detached(priority: .background) { () -> UIImage? in
             return PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
         }.value
