@@ -227,6 +227,26 @@ class LibraryViewModel: ObservableObject {
                 }
             case .delete:
                 conversionManager.deletePDF(pdf)
+            case .saveToDrive:
+                // Present a folder picker so the user can choose (or create)
+                // any folder on the external drive as the save destination.
+                DriveSaveCoordinator.present { targetURL in
+                    guard let targetURL = targetURL else { return }
+                    Task { @MainActor in
+                        do {
+                            let count = try await LinkedLibraryScanner.shared.saveFilesToDrive(
+                                [pdf],
+                                targetFolderURL: targetURL
+                            ) { _, _ in }
+                            let msg = count > 0
+                                ? "'\(pdf.name)' saved to '\(targetURL.lastPathComponent)' on your drive."
+                                : "Save failed — file could not be copied to the drive."
+                            Logger.shared.log(msg, category: "Drive")
+                        } catch {
+                            Logger.shared.log("Save to Drive failed: \(error.localizedDescription)", category: "Drive", type: .error)
+                        }
+                    }
+                }
             }
         }
     }

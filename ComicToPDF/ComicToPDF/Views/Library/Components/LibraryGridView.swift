@@ -376,6 +376,12 @@ struct LibraryGridView: View {
         Button { onAction(.export, pdf) } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
         Button { onAction(.share, pdf) } label: { Label("Send to Kindle / Share", systemImage: "paperplane") }
         Button { onAction(.sync, pdf) } label: { Label("Direct Cloud Sync", systemImage: "icloud.and.arrow.up") }
+
+        // Show "Save to Drive" only when there is at least one linked drive configured
+        if !AppSettingsManager.shared.linkedDrives.isEmpty {
+            Button { onAction(.saveToDrive, pdf) } label: { Label("Save to External Drive…", systemImage: "externaldrive.badge.arrow.down") }
+        }
+
         Button { onAction(.rename, pdf) } label: { Label("Rename", systemImage: "pencil") }
         Button { onAction(.addToSeries, pdf) } label: { Label("Add to Series...", systemImage: "books.vertical") }
 

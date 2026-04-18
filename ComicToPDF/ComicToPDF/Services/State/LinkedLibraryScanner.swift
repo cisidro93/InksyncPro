@@ -52,11 +52,18 @@ final class LinkedLibraryScanner {
         // ━━ Move disk I/O off the MainActor ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // scanDirectory on large drives can take 5–10+ seconds.
         // Running it synchronously on MainActor blocks the UI and can trigger
-        // iPadOS watchdog termination. Detach to a background thread while
-        // security scope is still live (scope is thread-agnostic).
-        let files = await Task.detached(priority: .userInitiated) { [weak self] -> [URL] in
-            guard let self = self else { return [] }
-            return self.scanDirectory(folderURL)
+        // iPadOS watchdog termination. Capture only Sendable value types so
+        // we never need [weak self] in a @Sendable Task closure.
+        let exts = supportedExtensions          // [String] — Sendable
+        let files: [URL] = await Task.detached(priority: .userInitiated) {
+            guard let enumerator = FileManager.default.enumerator(
+                at: folderURL,
+                includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else { return [] }
+            return enumerator.compactMap { $0 as? URL }.filter {
+                exts.contains($0.pathExtension.lowercased())
+            }
         }.value
 
         Logger.shared.log("LinkedLibraryScanner: Scanned \(files.count) files in '\(folderURL.lastPathComponent)'", category: "Drive")
@@ -167,6 +174,69 @@ final class LinkedLibraryScanner {
         AppSettingsManager.shared.removeLinkedDrive(entry)
         manager.saveLibrary()
         Logger.shared.log("LinkedLibraryScanner: Unlinked drive '\(entry.displayName)'", category: "Drive")
+    }
+
+    // MARK: - Save File to Drive (Copy, No Delete)
+
+    /// Copy one or more files into a user-chosen folder on the external drive.
+    /// Unlike offloadToExternalDrive, the originals are NEVER deleted.
+    /// Returns the number of files successfully saved.
+    func saveFilesToDrive(
+        _ pdfs: [ConvertedPDF],
+        targetFolderURL: URL,
+        progress: @escaping (Double, String) -> Void
+    ) async throws -> Int {
+        let accessing = targetFolderURL.startAccessingSecurityScopedResource()
+        defer { if accessing { targetFolderURL.stopAccessingSecurityScopedResource() } }
+
+        guard FileManager.default.isWritableFile(atPath: targetFolderURL.path) else {
+            throw NSError(domain: "LinkedLibrary", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "The selected drive folder is read-only. Connect a writable drive or choose a different folder."])
+        }
+
+        let total = pdfs.count
+        var savedCount = 0
+
+        for (i, pdf) in pdfs.enumerated() {
+            progress(Double(i) / Double(total), "Saving \(pdf.name)…")
+
+            // Resolve source URL (linked files need bookmark resolution)
+            let sourceURL: URL
+            if case .linked(let bm) = pdf.sourceMode,
+               let resolved = try? BookmarkResolver.shared.resolve(bm) {
+                sourceURL = resolved
+            } else {
+                sourceURL = pdf.url
+            }
+
+            guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+                Logger.shared.log("saveFilesToDrive: source not found for '\(pdf.name)' — skipping", category: "Drive", type: .warning)
+                continue
+            }
+
+            // Build destination URL, deduplicating if a file already exists
+            var destURL = targetFolderURL.appendingPathComponent(sourceURL.lastPathComponent)
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                let stem = destURL.deletingPathExtension().lastPathComponent
+                let ext  = destURL.pathExtension
+                var counter = 2
+                repeat {
+                    destURL = targetFolderURL.appendingPathComponent("\(stem) (\(counter)).\(ext)")
+                    counter += 1
+                } while FileManager.default.fileExists(atPath: destURL.path)
+            }
+
+            do {
+                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                savedCount += 1
+                Logger.shared.log("saveFilesToDrive: '\(pdf.name)' → '\(destURL.path)'", category: "Drive")
+            } catch {
+                Logger.shared.log("saveFilesToDrive: copy failed for '\(pdf.name)': \(error.localizedDescription)", category: "Drive", type: .warning)
+            }
+        }
+
+        progress(1.0, "Saved \(savedCount) of \(total) files")
+        return savedCount
     }
 
     // MARK: - Offload to Drive (Local → Drive)
