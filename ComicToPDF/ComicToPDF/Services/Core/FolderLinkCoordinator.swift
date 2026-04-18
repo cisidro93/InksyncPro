@@ -47,26 +47,31 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        // ⚠️  SECURITY SCOPE OWNERSHIP:
+        // ⚠️  SECURITY SCOPE OWNERSHIP & iPadOS DISMISS BUG:
         // We start security scope here (inside the delegate callback, while the grant
-        // is guaranteed live). We do NOT stop it until after linkDrive() has started
-        // its own independent scope via startAccessingSecurityScopedResource().
-        // If we stop it before the async Task inside linkDrive runs, the system revokes
-        // the grant and scanDirectory returns 0 results — silently, no error.
+        // is guaranteed live).
+        // iPadOS sometimes swallows the dismiss(animated:completion:) callback entirely
+        // if the picker was presented .fullScreen over an existing form sheet (like Settings).
+        // To prevent silent failures, we process in parallel with the dismiss animation.
         let accessing = selectedURL.startAccessingSecurityScopedResource()
 
-        controller.dismiss(animated: true) { [weak self] in
+        controller.dismiss(animated: true)
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else {
                 if accessing { selectedURL.stopAccessingSecurityScopedResource() }
                 return
             }
-            // Deliver URL to linkDrive via finish().
+            
+            // Deliver URL to LinkedLibrarySettingsView via finish().
             // linkDrive immediately calls startAccessingSecurityScopedResource()
             // inside its own Task, overlapping with our scope. Only after that
             // succeeds do we stop ours — guaranteeing continuity.
-            self.finish(with: selectedURL)
-            // linkDrive's scope is now active; we can safely relinquish ours.
-            if accessing { selectedURL.stopAccessingSecurityScopedResource() }
+            DispatchQueue.main.async {
+                self.finish(with: selectedURL)
+                // linkDrive's scope is now active; we can safely relinquish ours.
+                if accessing { selectedURL.stopAccessingSecurityScopedResource() }
+            }
         }
     }
 

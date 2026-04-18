@@ -53,14 +53,18 @@ final class DriveSaveCoordinator: NSObject, UIDocumentPickerDelegate {
         // Start security scope here so it's live during the dismiss animation
         let accessing = selectedURL.startAccessingSecurityScopedResource()
 
-        controller.dismiss(animated: true) { [weak self] in
+        controller.dismiss(animated: true)
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else {
                 if accessing { selectedURL.stopAccessingSecurityScopedResource() }
                 return
             }
-            self.finish(with: selectedURL)
-            // saveFilesToDrive starts its own scope inside; safe to relinquish ours
-            if accessing { selectedURL.stopAccessingSecurityScopedResource() }
+            DispatchQueue.main.async {
+                self.finish(with: selectedURL)
+                // saveFilesToDrive starts its own scope inside; safe to relinquish ours
+                if accessing { selectedURL.stopAccessingSecurityScopedResource() }
+            }
         }
     }
 
