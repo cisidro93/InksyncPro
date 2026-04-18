@@ -324,10 +324,9 @@ struct GlobalHighlightRow: View {
 
                 // Highlight text with left color bar
                 HStack(alignment: .top, spacing: 0) {
-                    if let hex = annotation.colorHex,
-                       let accentColor = Color(hex: hex) {
+                    if let hex = annotation.colorHex {
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(accentColor)
+                            .fill(Color(hex: hex))
                             .frame(width: 3)
                             .padding(.vertical, 2)
                     }
@@ -409,21 +408,6 @@ private struct TagPill: View {
             .padding(.vertical, 2)
             .background(color.opacity(0.12))
             .clipShape(Capsule())
-    }
-}
-
-private extension Color {
-    init?(hex: String) {
-        var h = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        guard h.count == 6 else { return nil }
-        h = "FF" + h
-        guard let value = UInt64(h, radix: 16) else { return nil }
-        self.init(
-            red:   Double((value >> 16) & 0xFF) / 255,
-            green: Double((value >>  8) & 0xFF) / 255,
-            blue:  Double( value        & 0xFF) / 255,
-            opacity: Double((value >> 24) & 0xFF) / 255
-        )
     }
 }
 

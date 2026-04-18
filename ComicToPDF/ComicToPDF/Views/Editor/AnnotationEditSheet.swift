@@ -24,8 +24,7 @@ struct AnnotationEditSheet: View {
 
     // Derived
     private var highlightColor: Color {
-        guard let hex = annotation.colorHex else { return .yellow }
-        return Color(hex: hex) ?? .yellow
+        Color(hex: annotation.colorHex ?? "#FFD60A")
     }
 
     private var allDisplayTags: [String] {
@@ -284,68 +283,35 @@ private struct FlowTagLayout: View {
     }
 
     var body: some View {
-        // Wrapping flow using a lazy grid approach
         LazyVGrid(
             columns: [GridItem(.adaptive(minimum: 60, maximum: 200), spacing: 8)],
             alignment: .leading,
             spacing: 8
         ) {
             ForEach(tags, id: \.self) { tag in
-                TagChip(tag: tag,
-                        isUserTag: userTags.contains(tag),
-                        onRemove: userTags.contains(tag) ? { onRemove(tag) } : nil)
-            }
-        }
-    }
-}
-
-private struct TagChip: View {
-    let tag: String
-    let isUserTag: Bool
-    let onRemove: (() -> Void)?
-
-    var chipColor: Color { isUserTag ? .orange : .blue }
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Text("#\(tag)")
-                .font(.caption)
-                .fontWeight(isUserTag ? .medium : .regular)
-                .foregroundStyle(chipColor)
-                .lineLimit(1)
-
-            if let remove = onRemove {
-                Button(action: remove) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(chipColor.opacity(0.8))
+                let isUser = userTags.contains(tag)
+                let chipColor: Color = isUser ? .orange : .blue
+                HStack(spacing: 3) {
+                    Text("#\(tag)")
+                        .font(.caption)
+                        .fontWeight(isUser ? .medium : .regular)
+                        .foregroundStyle(chipColor)
+                        .lineLimit(1)
+                    if isUser {
+                        Button { onRemove(tag) } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(chipColor.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(chipColor.opacity(0.12))
+                .overlay(Capsule().stroke(chipColor.opacity(0.25), lineWidth: 1))
+                .clipShape(Capsule())
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(chipColor.opacity(0.12))
-        .overlay(
-            Capsule().stroke(chipColor.opacity(0.25), lineWidth: 1)
-        )
-        .clipShape(Capsule())
-    }
-}
-
-// MARK: - Color from hex helper (local to this file)
-
-private extension Color {
-    init?(hex: String) {
-        var h = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        guard h.count == 6 || h.count == 8 else { return nil }
-        if h.count == 6 { h = "FF" + h }
-        guard let value = UInt64(h, radix: 16) else { return nil }
-        self.init(
-            red:   Double((value >> 16) & 0xFF) / 255,
-            green: Double((value >>  8) & 0xFF) / 255,
-            blue:  Double( value        & 0xFF) / 255,
-            opacity: Double((value >> 24) & 0xFF) / 255
-        )
     }
 }
