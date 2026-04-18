@@ -219,29 +219,48 @@ class MigrationService {
         // If the file genuinely doesn't exist anywhere (user deleted it via Files
         // app) we leave the record intact but mark metadata.autoMatchFailed = true
         // so the UI can show a «missing» badge without nuking metadata/progress.
-        let vaultRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first?.appendingPathComponent("InksyncVault", isDirectory: true)
+        let fileManager = FileManager.default
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let vaultRoot = appSupport?.appendingPathComponent("InksyncVault", isDirectory: true)
+        let inboxRoot = appSupport?.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+        let docsRoot = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+
+        let possibleRoots = [vaultRoot, inboxRoot, docsRoot].compactMap { $0 }
 
         var validDocs: [SDConvertedPDF] = []
         var didUpdate = false
 
         for doc in docs {
-            if FileManager.default.fileExists(atPath: doc.url.path) {
-                // Path still valid — nothing to do.
+            // 1. Linked files don't use sandbox UUIDs; skip re-anchoring.
+            // (We check sourceMode directly on SDConvertedPDF — using serialized JSON structure)
+            if let decoded = try? JSONDecoder().decode(SourceMode.self, from: doc.sourceModeData), decoded.isLinked {
                 validDocs.append(doc)
-            } else {
-                // Try to re-anchor by filename inside the vault.
-                let filename = doc.url.lastPathComponent
-                if let vault = vaultRoot {
-                    let reanchored = vault.appendingPathComponent(filename)
-                    if FileManager.default.fileExists(atPath: reanchored.path) {
-                        doc.url = reanchored          // fix the stale absolute path
-                        didUpdate = true
-                        validDocs.append(doc)
-                        Logger.shared.log("MigrationService: Re-anchored '\(filename)' to new container path", category: "Migration")
-                        continue
-                    }
+                continue
+            }
+
+            // 2. If the absolute path still works (no update occurred), keep it.
+            if fileManager.fileExists(atPath: doc.url.path) {
+                validDocs.append(doc)
+                continue
+            }
+
+            // 3. Try to re-anchor by filename across all Known Vaults in the new Sandbox UUID
+            let filename = doc.url.lastPathComponent
+            var foundReanchor = false
+
+            for root in possibleRoots {
+                let reanchored = root.appendingPathComponent(filename)
+                if fileManager.fileExists(atPath: reanchored.path) {
+                    doc.url = reanchored          // fix the stale absolute path
+                    didUpdate = true
+                    validDocs.append(doc)
+                    Logger.shared.log("MigrationService: Re-anchored '\(filename)' to \(root.lastPathComponent)", category: "Migration")
+                    foundReanchor = true
+                    break
                 }
+            }
+
+            if !foundReanchor {
                 // File genuinely missing (deleted externally) — keep the record
                 // but surface it as missing so the UI can show a badge.
                 // Do NOT delete: the user's reading progress & annotations would
