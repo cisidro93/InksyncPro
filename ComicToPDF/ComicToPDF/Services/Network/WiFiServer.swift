@@ -5,9 +5,10 @@ import ZIPFoundation
 
 class WiFiServer: ObservableObject {
     private var listener: NWListener?
+    private var bonjourService: NetService?      // separate, non-fatal mDNS advertisement
     @Published var errorMessage: String?
-    @Published var securityCode: String = "" // ✅ NEW: Security PIN
-    @Published var activeConnections: Int = 0 // ✅ NEW: Monitoring
+    @Published var securityCode: String = ""
+    @Published var activeConnections: Int = 0
     @Published var isRunning = false
     @Published var serverURL: String?
     
@@ -78,8 +79,13 @@ class WiFiServer: ObservableObject {
             // immediately after a previous listener cancelled.
             let listener = try NWListener(using: params, on: 8080)
 
-            // Advertise via mDNS so peer Inksync clients can discover this device.
-            listener.service = NWListener.Service(name: UIDevice.current.name, type: "_inksync._tcp")
+            // ⚠️ Do NOT set listener.service here.
+            // NWListener.service ties Bonjour mDNS registration to the listener lifecycle.
+            // If mDNS registration fails (kDNSServiceErr_NoAuth / -65555 — common on
+            // corporate WiFi, router multicast filtering, or certain iOS sandbox states),
+            // iOS propagates the failure to the listener and kills it entirely.
+            // Instead we advertise via NetService separately so the server stays alive
+            // even when mDNS fails.
 
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self = self else { return }
@@ -93,17 +99,14 @@ class WiFiServer: ObservableObject {
                         self.isRunning = true
                         let ip = self.getIPAddress() ?? "localhost"
                         self.serverURL = "http://\(ip):\(port)"
+                        // Start Bonjour advertisement separately — failure here is non-fatal.
+                        self.advertiseBonjourService(port: port)
                     }
 
                 case .failed(let error):
                     let raw = "\(error)"
                     Logger.shared.log("WiFi Server failed: \(raw)", category: "Network", type: .error)
 
-                    // -6555 / NoAuth fires for TWO different reasons:
-                    //  A) Permission truly not granted  → Settings shows OFF
-                    //  B) Permission granted but the OS revoked briefly during probe
-                    //     or port was still in TIME_WAIT from the last session.
-                    // Auto-retry handles case B without bothering the user.
                     let isNetworkAuthError = raw.contains("NoAuth") || raw.contains("-6555")
                         || raw.contains("posix(EPERM)")
 
@@ -118,7 +121,6 @@ class WiFiServer: ObservableObject {
 
                     DispatchQueue.main.async {
                         if isNetworkAuthError {
-                            // Only show the "go to Settings" message when retries also failed.
                             self.errorMessage = "Wi-Fi server failed to start.\n\n"
                                 + "Local Network access is enabled in Settings, but iOS briefly blocked the connection.\n\n"
                                 + "① Force-quit the app and reopen it, then tap Start Server.\n"
@@ -165,10 +167,31 @@ class WiFiServer: ObservableObject {
             }
         }
     }
+
+    // MARK: - Bonjour Advertisement (non-fatal, separate from NWListener)
+
+    private func advertiseBonjourService(port: UInt16) {
+        bonjourService?.stop()
+        bonjourService = nil
+
+        let service = NetService(
+            domain: "local.",
+            type: "_inksync._tcp.",
+            name: UIDevice.current.name,
+            port: Int32(port)
+        )
+        // NetService delegate would be needed to handle errors, but since this
+        // is non-fatal we just let it succeed or fail silently.
+        service.publish()
+        bonjourService = service
+        Logger.shared.log("WiFi Server: Bonjour advertisement started on port \(port)", category: "Network")
+    }
     
     func stop() {
         listener?.cancel()
         listener = nil
+        bonjourService?.stop()
+        bonjourService = nil
         DispatchQueue.main.async {
             self.isRunning = false
             self.isUploading = false
