@@ -6,6 +6,7 @@ struct LinkedLibrarySettingsView: View {
     @ObservedObject var driveMonitor = DriveMonitor.shared
 
     @State private var isLinkingDrive = false
+    @State private var scanningStatus: String? = nil   // live feedback during scan
     @State private var errorMessage: String?
     @State private var successMessage: String?
 
@@ -98,9 +99,7 @@ struct LinkedLibrarySettingsView: View {
             }
 
             Section {
-                Button(action: {
-                    linkNewDrive()
-                }) {
+                Button(action: { linkNewDrive() }) {
                     HStack {
                         if isLinkingDrive {
                             ProgressView()
@@ -109,7 +108,14 @@ struct LinkedLibrarySettingsView: View {
                         } else {
                             Image(systemName: "externaldrive.badge.plus")
                         }
-                        Text(isLinkingDrive ? "Linking Drive..." : "Link External USB Drive")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(isLinkingDrive ? "Scanning Drive..." : "Link External USB Drive")
+                            if let status = scanningStatus, isLinkingDrive {
+                                Text(status)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
                 }
                 .disabled(isLinkingDrive)
@@ -135,21 +141,27 @@ struct LinkedLibrarySettingsView: View {
         }
         .navigationTitle("Linked Library")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // Ensure scanner has a reference to the live library so it can
+            // append files when the user picks a folder.
+            LinkedLibraryScanner.shared.conversionManager = conversionManager
+        }
     }
 
     private func linkNewDrive() {
         errorMessage = nil
         successMessage = nil
+        scanningStatus = nil
         isLinkingDrive = true
 
         FolderLinkCoordinator.present { url in
             guard let url = url else {
-                // User cancelled — not an error
                 Task { @MainActor in self.isLinkingDrive = false }
                 return
             }
 
             Task {
+                await MainActor.run { self.scanningStatus = "Reading folder structure…" }
                 do {
                     let entry = try await LinkedLibraryScanner.shared.linkDrive(
                         folderURL: url,
@@ -157,8 +169,8 @@ struct LinkedLibrarySettingsView: View {
                     )
                     await MainActor.run {
                         self.isLinkingDrive = false
+                        self.scanningStatus = nil
                         self.successMessage = "Linked \"\(entry.displayName)\" — \(entry.fileCount) comic\(entry.fileCount == 1 ? "" : "s") found."
-                        // Auto-clear success message after 5 seconds
                         Task {
                             try? await Task.sleep(nanoseconds: 5_000_000_000)
                             self.successMessage = nil
@@ -167,7 +179,8 @@ struct LinkedLibrarySettingsView: View {
                 } catch {
                     await MainActor.run {
                         self.isLinkingDrive = false
-                        self.errorMessage = "Failed to link drive: \(error.localizedDescription). Make sure the drive is connected and try tapping 'Link External USB Drive' again."
+                        self.scanningStatus = nil
+                        self.errorMessage = "Failed to link drive: \(error.localizedDescription). Make sure the drive is connected and try again."
                     }
                 }
             }

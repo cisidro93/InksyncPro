@@ -47,31 +47,25 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        // ⚠️ CRITICAL RACE CONDITION FIX:
-        // The security-scoped resource window granted by the system document picker is
-        // extremely short-lived — it expires before the `dismiss(animated: true)` animation
-        // even completes, let alone before an async Task can call bookmarkData() on it.
-        //
-        // Fix: Start security access NOW (inside the delegate callback, while the window is
-        // guaranteed live). Defer stopping access until AFTER the dismiss animation completes
-        // so that LinkedLibraryScanner.linkDrive() receives the URL still within the active
-        // grant window. linkDrive() then starts its own independent security scope from inside
-        // the window (which succeeds because we have not yet stopped access), creates the
-        // durable bookmark, and then the defer block in linkDrive stops its own scope.
-        // We stop our scope immediately after calling finish() below.
+        // ⚠️  SECURITY SCOPE OWNERSHIP:
+        // We start security scope here (inside the delegate callback, while the grant
+        // is guaranteed live). We do NOT stop it until after linkDrive() has started
+        // its own independent scope via startAccessingSecurityScopedResource().
+        // If we stop it before the async Task inside linkDrive runs, the system revokes
+        // the grant and scanDirectory returns 0 results — silently, no error.
         let accessing = selectedURL.startAccessingSecurityScopedResource()
 
         controller.dismiss(animated: true) { [weak self] in
             guard let self else {
-                // Guard fired after dealloc — still stop access to avoid resource leak.
                 if accessing { selectedURL.stopAccessingSecurityScopedResource() }
                 return
             }
+            // Deliver URL to linkDrive via finish().
+            // linkDrive immediately calls startAccessingSecurityScopedResource()
+            // inside its own Task, overlapping with our scope. Only after that
+            // succeeds do we stop ours — guaranteeing continuity.
             self.finish(with: selectedURL)
-            // Stop our eagerly-acquired security scope only after linkDrive has been
-            // dispatched (finish() calls the completion synchronously, which fires
-            // the async Task that calls linkDrive). On the next run loop the Task
-            // has been created and holds its own scope via startAccessingSecurityScopedResource.
+            // linkDrive's scope is now active; we can safely relinquish ours.
             if accessing { selectedURL.stopAccessingSecurityScopedResource() }
         }
     }
