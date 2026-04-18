@@ -154,34 +154,52 @@ struct LinkedLibrarySettingsView: View {
         scanningStatus = nil
         isLinkingDrive = true
 
+        // Capture a strong reference to conversionManager before the async gap.
+        // @EnvironmentObject can't be accessed across actor hops.
+        let manager = conversionManager
+        // Ensure the scanner always has the live manager — belt + suspenders.
+        LinkedLibraryScanner.shared.conversionManager = manager
+
         FolderLinkCoordinator.present { url in
             guard let url = url else {
+                // User cancelled — reset state on MainActor.
                 Task { @MainActor in self.isLinkingDrive = false }
                 return
             }
 
-            Task {
-                await MainActor.run { self.scanningStatus = "Reading folder structure…" }
+            // ⚠️ UIKit dismiss completion runs on an arbitrary thread.
+            // LinkedLibraryScanner is @MainActor — we MUST hop explicitly
+            // or the await silently deadlocks on iPad.
+            Task { @MainActor in
+                self.scanningStatus = "Reading folder structure…"
+
                 do {
-                    let entry = try await LinkedLibraryScanner.shared.linkDrive(
+                    let scanner = LinkedLibraryScanner.shared
+                    scanner.conversionManager = manager   // re-affirm before scan
+
+                    let entry = try await scanner.linkDrive(
                         folderURL: url,
                         displayName: url.lastPathComponent
                     )
-                    await MainActor.run {
-                        self.isLinkingDrive = false
-                        self.scanningStatus = nil
+
+                    self.isLinkingDrive = false
+                    self.scanningStatus = nil
+
+                    if entry.fileCount == 0 {
+                        // Linked but found nothing — surface a diagnostic.
+                        self.errorMessage = "Drive linked but no comic files were found inside \"\(entry.displayName)\".\n\nMake sure you selected the folder containing your .cbz / .pdf / .epub files, not a file inside it."
+                    } else {
                         self.successMessage = "Linked \"\(entry.displayName)\" — \(entry.fileCount) comic\(entry.fileCount == 1 ? "" : "s") found."
                         Task {
                             try? await Task.sleep(nanoseconds: 5_000_000_000)
                             self.successMessage = nil
                         }
                     }
+
                 } catch {
-                    await MainActor.run {
-                        self.isLinkingDrive = false
-                        self.scanningStatus = nil
-                        self.errorMessage = "Failed to link drive: \(error.localizedDescription). Make sure the drive is connected and try again."
-                    }
+                    self.isLinkingDrive = false
+                    self.scanningStatus = nil
+                    self.errorMessage = "Failed to link drive: \(error.localizedDescription).\n\nMake sure the drive is connected and try again."
                 }
             }
         }

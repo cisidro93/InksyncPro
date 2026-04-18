@@ -40,9 +40,6 @@ final class LinkedLibraryScanner {
         defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
 
         // Create persistent bookmark for the root folder.
-        // IMPORTANT: On iOS, .minimalBookmark is a macOS-only option and produces
-        // transient bookmarks that become stale after the app session ends.
-        // An empty options set [] produces a durable, security-scoped bookmark.
         let bookmarkData = try folderURL.bookmarkData(
             options: [],
             includingResourceValuesForKeys: nil,
@@ -52,8 +49,17 @@ final class LinkedLibraryScanner {
         // Probe write capability
         let isReadOnly = !FileManager.default.isWritableFile(atPath: folderURL.path)
 
-        // Scan for supported files
-        let files = scanDirectory(folderURL)
+        // ━━ Move disk I/O off the MainActor ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // scanDirectory on large drives can take 5–10+ seconds.
+        // Running it synchronously on MainActor blocks the UI and can trigger
+        // iPadOS watchdog termination. Detach to a background thread while
+        // security scope is still live (scope is thread-agnostic).
+        let files = await Task.detached(priority: .userInitiated) { [weak self] -> [URL] in
+            guard let self = self else { return [] }
+            return self.scanDirectory(folderURL)
+        }.value
+
+        Logger.shared.log("LinkedLibraryScanner: Scanned \(files.count) files in '\(folderURL.lastPathComponent)'", category: "Drive")
 
         // Build drive entry
         var entry = AppSettingsManager.LinkedDriveEntry(
@@ -71,8 +77,7 @@ final class LinkedLibraryScanner {
         AppSettingsManager.shared.addLinkedDrive(entry)
         Logger.shared.log("LinkedLibraryScanner: Linked drive '\(entry.displayName)' with \(files.count) files", category: "Drive")
 
-        // Inform DriveMonitor of the updated drive list so the new drive
-        // immediately starts being polled for reachability.
+        // Inform DriveMonitor of the updated drive list
         DriveMonitor.shared.startMonitoring(drives: AppSettingsManager.shared.linkedDrives)
 
         return entry
