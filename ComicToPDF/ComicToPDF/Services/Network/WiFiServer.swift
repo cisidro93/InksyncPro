@@ -53,9 +53,10 @@ class WiFiServer: ObservableObject {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
             params.includePeerToPeer = true
-            // Binding to Wi-Fi only prevents cellular/VPN permission errors.
-            params.requiredInterfaceType = .wifi
-            
+            // NOTE: Do NOT set requiredInterfaceType = .wifi here.
+            // It silently prevents the listener from binding on hotspot,
+            // USB-C network, or multi-homed interfaces and produces no error.
+
             let listener = try NWListener(using: params, on: 8080)
             
             // Advertise via mDNS so peer Inksync clients can discover this device.
@@ -321,8 +322,10 @@ class WiFiServer: ObservableObject {
         }
         
         let components = bodyString.components(separatedBy: "=")
-        if components.count == 2 && components[0] == "pin" {
-            let submittedPin = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
+        if components.count >= 2 && components[0].trimmingCharacters(in: .whitespacesAndNewlines) == "pin" {
+            let submittedPin = components[1...].joined(separator: "=")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .removingPercentEncoding ?? ""
             
             if submittedPin == self.securityCode {
                 // Success
@@ -332,17 +335,16 @@ class WiFiServer: ObservableObject {
                 validSessions.insert(newToken)
                 sessionLock.unlock()
                 
-                // Set Cookie and Redirect to /
+                // Set-Cookie and redirect to /
                 Logger.shared.log("Authentication Successful", category: "Network")
-                let response = """
-                HTTP/1.1 302 Found\r
-                Location: /\r
-                Set-Cookie: session=\(newToken); Path=/; Max-Age=3600\r
-                Content-Length: 0\r
-                Connection: close\r
-                \r
-                """
-                connection.send(content: response.data(using: .utf8), completion: .contentProcessed({ _ in connection.cancel() }))
+                let response = "HTTP/1.1 302 Found\r\n"
+                    + "Location: /\r\n"
+                    + "Set-Cookie: session=\(newToken); Path=/; Max-Age=3600\r\n"
+                    + "Content-Length: 0\r\n"
+                    + "Connection: close\r\n"
+                    + "\r\n"
+                connection.send(content: response.data(using: .utf8),
+                                completion: .contentProcessed({ _ in connection.cancel() }))
                 
             } else {
                 Logger.shared.log("Auth Failed: Incorrect PIN", category: "Network", type: .error)
@@ -583,15 +585,15 @@ class WiFiServer: ObservableObject {
     }
     
     private func sendResponse(_ connection: NWConnection, _ code: Int, _ body: String, contentType: String = "text/plain") {
-        let response = """
-        HTTP/1.1 \(code) OK\r
-        Content-Type: \(contentType)\r
-        Content-Length: \(body.utf8.count)\r
-        Connection: close\r
-        \r
-        \(body)
-        """
-        connection.send(content: response.data(using: .utf8), completion: .contentProcessed({ _ in connection.cancel() }))
+        let bodyData = body.data(using: .utf8) ?? Data()
+        let header = "HTTP/1.1 \(code) OK\r\n"
+            + "Content-Type: \(contentType); charset=utf-8\r\n"
+            + "Content-Length: \(bodyData.count)\r\n"
+            + "Connection: close\r\n"
+            + "\r\n"
+        var response = header.data(using: .utf8)!
+        response.append(bodyData)
+        connection.send(content: response, completion: .contentProcessed({ _ in connection.cancel() }))
     }
     
     private func sendResponse(_ connection: NWConnection, _ code: Int, data: Data, contentType: String, filename: String? = nil) {
@@ -855,8 +857,8 @@ class WiFiServer: ObservableObject {
     func triggerLocalNetworkPrivacyAlert() {
         // iOS only shows the Local Network permission prompt when the app accesses a
         // service type declared in NSBonjourServices. Browse for _inksync._tcp (our type)
-        // so the prompt fires correctly.
-        let params = NWParameters.udp
+        // using TCP params so it matches the declared NSBonjourServices entry.
+        let params = NWParameters.tcp
         params.includePeerToPeer = true
         let browser = NWBrowser(for: .bonjour(type: "_inksync._tcp", domain: "local."), using: params)
         browser.start(queue: .global())
