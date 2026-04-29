@@ -61,10 +61,7 @@ struct ModernLibraryView: View {
     
     // ✅ NEW: SwiftData Native Resolvers
     private var nativeVisiblePDFs: [ConvertedPDF] {
-        let mapped = swiftDataPDFs.map { $0.toDTO() }.filter { pdf in
-            // Filter out ghost files: Must exist on disk OR be a linked external drive file
-            FileManager.default.fileExists(atPath: pdf.url.path) || pdf.sourceMode.isLinked
-        }
+        let mapped = swiftDataPDFs.map { $0.toDTO() }
         return settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
     }
     

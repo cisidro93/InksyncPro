@@ -209,19 +209,17 @@ class MigrationService {
 
         let docDesc = FetchDescriptor<SDConvertedPDF>()
         let colDesc = FetchDescriptor<SDPDFCollection>()
+        let annDesc = FetchDescriptor<SDAnnotation>()
 
         let docs = try context.fetch(docDesc)
         let cols = try context.fetch(colDesc)
+        let annotations = (try? context.fetch(annDesc)) ?? []
 
         // ── Path Re-Anchor ──────────────────────────────────────────────────
         // After an app update the iOS sandbox container UUID rotates, making every
         // stored absolute URL stale. Instead of deleting records (which wipes the
         // library), we re-anchor the URL by searching for the file by name inside
         // the current vault directory.
-        //
-        // If the file genuinely doesn't exist anywhere (user deleted it via Files
-        // app) we leave the record intact but mark metadata.autoMatchFailed = true
-        // so the UI can show a «missing» badge without nuking metadata/progress.
         let fileManager = FileManager.default
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         let vaultRoot = appSupport?.appendingPathComponent("InksyncVault", isDirectory: true)
@@ -231,6 +229,7 @@ class MigrationService {
         let possibleRoots = [vaultRoot, inboxRoot, docsRoot].compactMap { $0 }
 
         var validDocs: [SDConvertedPDF] = []
+        var ghostIDs: Set<UUID> = []
         var didUpdate = false
 
         for doc in docs {
@@ -263,13 +262,24 @@ class MigrationService {
             }
 
             if !foundReanchor {
-                // File genuinely missing (deleted externally) — keep the record
-                // but surface it as missing so the UI can show a badge.
-                // Do NOT delete: the user's reading progress & annotations would
-                // be lost permanently and cannot be recovered.
-                validDocs.append(doc)
-                Logger.shared.log("MigrationService: '\(filename)' not found on disk — keeping record, marking missing", category: "Migration", type: .warning)
+                // File genuinely missing — DELETE the record permanently.
+                // Ghost files are caused by iCloud restoring old SwiftData SQLite databases
+                // after a clean reinstall. We eradicate them so they never come back.
+                ghostIDs.insert(doc.id)
+                context.delete(doc)
+                Logger.shared.log("MigrationService: Eradicated ghost record '\(filename)' from SwiftData", category: "Migration", type: .warning)
+                didUpdate = true
             }
+        }
+
+        // Cascade-delete all annotations that belonged to ghost books
+        if !ghostIDs.isEmpty {
+            for annotation in annotations {
+                if ghostIDs.contains(annotation.pdfID) {
+                    context.delete(annotation)
+                }
+            }
+            Logger.shared.log("MigrationService: Purged annotations for \(ghostIDs.count) ghost book(s)", category: "Migration", type: .warning)
         }
 
         if didUpdate {
