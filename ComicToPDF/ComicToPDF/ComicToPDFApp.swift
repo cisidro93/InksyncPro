@@ -33,17 +33,49 @@ struct InksyncProApp: App {
     init() {
         // 💥 ANNIHILATE GHOST DATA ON FRESH INSTALLS 💥
         // Guarantees absolute blank UI state if a user deletes and reinstalls the app.
-        // We use UserDefaults here because standard UserDefaults are wiped on app deletion
-        // but reliably persist across app updates, ensuring we never wipe an existing user's library
-        // when they update the app.
+        //
+        // SENTINEL STRATEGY: We write a tiny file in Application Support and mark
+        // it with the `isExcludedFromBackupKey` attribute so iCloud Drive NEVER
+        // syncs or restores it. On a true fresh install this file is absent; on an
+        // app-update or first launch after an iCloud restore it is present.
+        // This is more reliable than UserDefaults alone, which can be restored by
+        // iCloud Backup (NSUbiquitousKeyValueStore) on some device configurations.
         
         let fileManager = FileManager.default
         let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        
+        // Sentinel lives in Application Support — excluded from backup so it cannot
+        // ever travel with an iCloud restore of the database.
+        let sentinelURL = supportDir.appendingPathComponent(".inksync_install_sentinel_v1", isDirectory: false)
+        let sentinelExists = fileManager.fileExists(atPath: sentinelURL.path)
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         let isNotFreshInstall = UserDefaults.standard.bool(forKey: "isNotFreshInstall_v3")
         
-        // If they have completed onboarding from a previous version, or we already marked it as not fresh:
-        if !hasCompletedOnboarding && !isNotFreshInstall {
+        let shouldNuke: Bool
+        if sentinelExists {
+            // Sentinel is present — this is either an update or a normal re-launch.
+            // NEVER nuke an existing user's library.
+            shouldNuke = false
+        } else if hasCompletedOnboarding || isNotFreshInstall {
+            // No sentinel but UserDefaults says this isn't a fresh install.
+            // This happens after an iCloud-restored database lands on a device where
+            // the user deleted and reinstalled: UserDefaults was restored along with
+            // the iCloud backup. Trust the sentinel absence and treat as fresh.
+            // EXCEPTION: if onboarding was completed we MUST preserve the library.
+            if hasCompletedOnboarding {
+                // Genuine existing user — just write the sentinel and move on.
+                shouldNuke = false
+            } else {
+                // isNotFreshInstall was set but sentinel is absent — ghost restore.
+                // Nuke to clear any iCloud-restored database rows.
+                shouldNuke = true
+            }
+        } else {
+            // Neither sentinel nor onboarding flag — true first launch after a clean install.
+            shouldNuke = true
+        }
+        
+        if shouldNuke {
             // 1. Vaporize Documents Directory Contents (Nukes all ghost CBZs automatically synced by iCloud)
             if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
                 if let items = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
@@ -51,19 +83,34 @@ struct InksyncProApp: App {
                 }
             }
             
-            // 2. Vaporize Application Support Directory Contents (Nukes legacy SwiftData SQLite vaults and stored Covers)
+            // 2. Vaporize Application Support Directory Contents
+            //    This removes the SwiftData SQLite vault, cover image cache, etc.
+            //    The sentinel file doesn't exist yet so nothing to skip here.
             if let items = try? fileManager.contentsOfDirectory(at: supportDir, includingPropertiesForKeys: nil) {
-                for item in items { 
-                    if item.lastPathComponent.hasPrefix(".hasEmployedFreshInstallNuke") { continue }
-                    try? fileManager.removeItem(at: item) 
+                for item in items {
+                    // Skip the sentinel itself — it shouldn't exist yet but be safe.
+                    if item.lastPathComponent.hasPrefix(".inksync_install_sentinel") { continue }
+                    try? fileManager.removeItem(at: item)
                 }
             }
             
-            // Mark as not fresh so subsequent launches don't nuke
-            UserDefaults.standard.set(true, forKey: "isNotFreshInstall_v3")
-        } else if !isNotFreshInstall {
-            // User had completed onboarding before we added this specific flag,
-            // so we definitely shouldn't nuke. Just set the flag.
+            Logger.shared.log("InksyncProApp: Fresh install nuke complete. Ghost data eradicated.", category: "Migration", type: .warning)
+        }
+        
+        // Write (or re-write) the sentinel after every launch so it is always present
+        // for the lifetime of the install. The file content is irrelevant; existence is the signal.
+        if !fileManager.fileExists(atPath: sentinelURL.path) {
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            try? timestamp.write(to: sentinelURL, atomically: true, encoding: .utf8)
+            // Crucially, exclude from iCloud / iTunes backup so it is NEVER restored.
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            try? sentinelURL.setResourceValues(resourceValues)
+        }
+        
+        // Keep the legacy UserDefaults flag set for backwards compatibility with any code
+        // that may still read it.
+        if !isNotFreshInstall {
             UserDefaults.standard.set(true, forKey: "isNotFreshInstall_v3")
         }
         

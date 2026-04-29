@@ -272,7 +272,7 @@ class MigrationService {
             }
         }
 
-        // Cascade-delete all annotations that belonged to ghost books
+        // ── Cascade-delete annotations that belonged to ghost books ────────
         if !ghostIDs.isEmpty {
             for annotation in annotations {
                 if ghostIDs.contains(annotation.pdfID) {
@@ -282,10 +282,53 @@ class MigrationService {
             Logger.shared.log("MigrationService: Purged annotations for \(ghostIDs.count) ghost book(s)", category: "Migration", type: .warning)
         }
 
+        // ── Prune orphaned SDPDFCollection series shells ─────────────────────
+        // After ghost books are eradicated, any SDPDFCollection that has ZERO
+        // surviving books is itself a ghost series shell. If left alive it shows
+        // up as an empty folder in the Library on a fresh install.
+        let survivingCollectionIDs = Set(validDocs.compactMap { $0.collectionId })
+        var ghostCollectionNames: [String] = []
+        var validCols: [SDPDFCollection] = []
+        for col in cols {
+            if survivingCollectionIDs.contains(col.id) {
+                validCols.append(col)
+            } else {
+                ghostCollectionNames.append(col.name)
+                context.delete(col)
+                didUpdate = true
+                Logger.shared.log("MigrationService: Eradicated ghost series shell '\(col.name)'", category: "Migration", type: .warning)
+            }
+        }
+        if !ghostCollectionNames.isEmpty {
+            Logger.shared.log("MigrationService: Purged \(ghostCollectionNames.count) orphaned series collection(s)", category: "Migration", type: .warning)
+        }
+
+        // ── Prune orphaned SDSeriesMemory records ─────────────────────────
+        // SDSeriesMemory stores per-series learning (RTL, panel confidence, etc.).
+        // On a clean reinstall the iCloud-restored SQLite may still carry these.
+        // We always run this purge: orphaned memory can accumulate even when no
+        // explicit collection ghosts were detected (e.g. smart-grouped series that
+        // were later manually disbanded).
+        let liveSeriesNames = Set(validCols.map { $0.name.lowercased().trimmingCharacters(in: .whitespaces) })
+        let seriesMemDesc = FetchDescriptor<SDSeriesMemory>()
+        let allSeriesMemory = (try? context.fetch(seriesMemDesc)) ?? []
+        var purgedMemoryCount = 0
+        for memory in allSeriesMemory {
+            let normalised = memory.seriesNameNormalized.lowercased().trimmingCharacters(in: .whitespaces)
+            if !liveSeriesNames.contains(normalised) {
+                context.delete(memory)
+                purgedMemoryCount += 1
+                didUpdate = true
+            }
+        }
+        if purgedMemoryCount > 0 {
+            Logger.shared.log("MigrationService: Purged \(purgedMemoryCount) orphaned SDSeriesMemory record(s)", category: "Migration", type: .warning)
+        }
+
         if didUpdate {
             try? context.save()
         }
 
-        return (validDocs, cols)
+        return (validDocs, validCols)
     }
 }
