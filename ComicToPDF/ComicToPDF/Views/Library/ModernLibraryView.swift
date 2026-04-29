@@ -423,22 +423,6 @@ struct ModernLibraryView: View {
                 Menu {
                     Button {
                         let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        Task { await conversionManager.convertQueue(items) }
-                        isBatchMode = false
-                        multiSelection.removeAll()
-                    } label: { Label("Fast Convert", systemImage: "arrow.triangle.2.circlepath") }
-                    
-                    Button {
-                        batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        showingBatchMergeReorder = true
-                    } label: { Label("Convert & Merge", systemImage: "doc.on.doc.fill") }
-                    
-                    Button { viewModel.activeSheet = .merge } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
-                    Divider()
-                    
-                    // Storage Actions
-                    Button {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                         FolderLinkCoordinator.present { url in
                             guard let targetURL = url else { return }
                             Task {
@@ -461,7 +445,7 @@ struct ModernLibraryView: View {
                                 } catch {
                                     await MainActor.run {
                                         isStorageTransferring = false
-                                        conversionManager.appAlert = AlertItem(title: "Transfer Failed", message: error.localizedDescription)
+                                        conversionManager.appAlert = AppAlert(title: "Transfer Failed", message: error.localizedDescription)
                                     }
                                 }
                             }
@@ -489,12 +473,32 @@ struct ModernLibraryView: View {
                             } catch {
                                 await MainActor.run {
                                     isStorageTransferring = false
-                                    conversionManager.appAlert = AlertItem(title: "Download Failed", message: error.localizedDescription)
+                                    conversionManager.appAlert = AppAlert(title: "Download Failed", message: error.localizedDescription)
                                 }
                             }
                         }
                     } label: { Label("Download to iPad", systemImage: "ipad.and.arrow.forward") }
+                } label: {
+                    VStack(spacing: 4) { Image(systemName: "externaldrive.fill").font(.title3); Text("Storage").font(.caption) }
+                }
+                .disabled(multiSelection.isEmpty)
+                
+                Spacer()
+                
+                Menu {
+                    Button {
+                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        Task { await conversionManager.convertQueue(items) }
+                        isBatchMode = false
+                        multiSelection.removeAll()
+                    } label: { Label("Fast Convert", systemImage: "arrow.triangle.2.circlepath") }
                     
+                    Button {
+                        batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        showingBatchMergeReorder = true
+                    } label: { Label("Convert & Merge", systemImage: "doc.on.doc.fill") }
+                    
+                    Button { viewModel.activeSheet = .merge } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
                     Divider()
                     Button {
                         let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
@@ -505,8 +509,9 @@ struct ModernLibraryView: View {
                     .foregroundColor(Theme.orange)
                 }
                 .disabled(multiSelection.isEmpty)
+                    
             }
-            .padding(.horizontal, 30)
+            .padding(.horizontal, 10) // Tweak padding slightly to fit 6 icons
             .padding(.vertical, 12)
             .background(.ultraThinMaterial)
             .foregroundColor(Theme.text)
