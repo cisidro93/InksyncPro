@@ -338,10 +338,6 @@ struct ModernLibraryView: View {
                 .padding(.top, 10)
             }
             
-            // MARK: - Gamification Dashboard
-            GamificationDashboardView()
-                .padding(.top, 10)
-            
             // MARK: - Up Next Binge Shelf
             UpNextBingeShelf(allPDFs: nativeVisiblePDFs) { pdf in
                 viewModel.activeFullScreen = .read(pdf)
