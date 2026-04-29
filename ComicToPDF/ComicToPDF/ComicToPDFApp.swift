@@ -103,9 +103,11 @@ struct InksyncProApp: App {
             let timestamp = ISO8601DateFormatter().string(from: Date())
             try? timestamp.write(to: sentinelURL, atomically: true, encoding: .utf8)
             // Crucially, exclude from iCloud / iTunes backup so it is NEVER restored.
+            // URL is a value type — setResourceValues is mutating, so we need a var copy.
+            var mutableSentinelURL = sentinelURL
             var resourceValues = URLResourceValues()
             resourceValues.isExcludedFromBackup = true
-            try? sentinelURL.setResourceValues(resourceValues)
+            try? mutableSentinelURL.setResourceValues(resourceValues)
         }
         
         // Keep the legacy UserDefaults flag set for backwards compatibility with any code
