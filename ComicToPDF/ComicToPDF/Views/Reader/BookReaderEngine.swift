@@ -65,6 +65,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     
     @Published var isSearching = false
     @Published var searchResults: [SearchResult] = []
+    private var searchIndex: [String: Set<Int>]?
     
     let pdf: ConvertedPDF
     private let fileManager = FileManager.default
@@ -147,8 +148,47 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
         self.chapterHtmlFiles = htmlFiles
         if !htmlFiles.isEmpty {
             self.loadChapter(index: self.currentChapterIndex)
+            self.buildOrLoadSearchIndex()
         } else {
             self.isLoading = false
+        }
+    }
+    
+    private func buildOrLoadSearchIndex() {
+        let indexURL = tempDir.appendingPathComponent("search_index.json")
+        if let data = try? Data(contentsOf: indexURL),
+           let decoded = try? JSONDecoder().decode([String: Set<Int>].self, from: data) {
+            self.searchIndex = decoded
+            return
+        }
+        
+        let files = self.chapterHtmlFiles
+        Task.detached(priority: .background) {
+            var newIndex: [String: Set<Int>] = [:]
+            
+            for (idx, url) in files.enumerated() {
+                guard let content = try? String(contentsOf: url) else { continue }
+                let stripped = content.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression, range: nil)
+                
+                let words = stripped.components(separatedBy: CharacterSet.alphanumerics.inverted)
+                for word in words {
+                    guard word.count > 2 else { continue }
+                    let lower = word.lowercased()
+                    if newIndex[lower] != nil {
+                        newIndex[lower]?.insert(idx)
+                    } else {
+                        newIndex[lower] = [idx]
+                    }
+                }
+            }
+            
+            if let data = try? JSONEncoder().encode(newIndex) {
+                try? data.write(to: indexURL)
+            }
+            
+            await MainActor.run {
+                self.searchIndex = newIndex
+            }
         }
     }
     
@@ -183,11 +223,36 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
         
         let files = chapterHtmlFiles
         let items = tocItems
+        let localIndex = searchIndex
         
         let results = await Task.detached(priority: .userInitiated) {
             var found: [SearchResult] = []
-            for (idx, url) in files.enumerated() {
-                guard let content = try? String(contentsOf: url) else { continue }
+            let lowerQuery = query.lowercased()
+            
+            // 1. O(1) Pre-filtering using Inverted Index
+            var chaptersToSearch: [Int] = []
+            if let index = localIndex {
+                let queryWords = lowerQuery.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 2 }
+                if queryWords.isEmpty {
+                    chaptersToSearch = Array(0..<files.count)
+                } else {
+                    var intersection: Set<Int>?
+                    for word in queryWords {
+                        let matches = index[word] ?? []
+                        if intersection == nil { intersection = matches }
+                        else { intersection?.formIntersection(matches) }
+                    }
+                    chaptersToSearch = Array(intersection ?? [])
+                }
+            } else {
+                chaptersToSearch = Array(0..<files.count)
+            }
+            
+            // 2. Exact Regex extraction ONLY in matching chapters
+            for idx in chaptersToSearch.sorted() {
+                guard files.indices.contains(idx) else { continue }
+                guard let content = try? String(contentsOf: files[idx]) else { continue }
+                
                 // Strip HTML tags roughly for searching
                 let stripped = content.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression, range: nil)
                 
@@ -637,6 +702,9 @@ struct BookReaderEngine: View {
             BookNavigationSheet(vm: vm, showTOC: $showTOC, webView: webViewReference)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .onChange(of: vm.currentChapterIndex) { _, _ in
+            GamificationManager.shared.logPageRead()
         }
     }
 }

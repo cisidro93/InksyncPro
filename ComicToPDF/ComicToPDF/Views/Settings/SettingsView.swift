@@ -14,6 +14,11 @@ struct SettingsView: View {
     // ✅ NEW: Background Auto-Sync
     @AppStorage("enableBackgroundSync") private var enableBackgroundSync = false
     
+    // ✅ NEW: Gamification Settings
+    @AppStorage("enableSerendipity") private var enableSerendipity = true
+    @AppStorage("dailyPageGoal") private var dailyPageGoal = 5
+    @AppStorage("streakTheme") private var streakTheme: StreakTheme = .classic
+    
     // ✅ PHASE 7: Library Typography Themes
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
@@ -108,6 +113,7 @@ struct SettingsView: View {
             
             imageFiltersSection
             aiSection
+            gamificationSection
             integrationsSection
             systemSection
             legalSection
@@ -755,6 +761,42 @@ struct SettingsView: View {
                 }
             }
         } header: { Text("System") }
+    }
+    
+    @ViewBuilder
+    private var gamificationSection: some View {
+        Section {
+            HStack {
+                settingsIcon("sparkles", color: .purple)
+                Toggle("Daily Serendipity Engine", isOn: $enableSerendipity)
+            }
+            Text("Surfaces 5 random highlights from your Zettelkasten on the Library Dashboard to help you connect old ideas.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            
+            HStack {
+                settingsIcon("target", color: .red)
+                Picker("Daily Reading Goal (Pages/Chapters)", selection: $dailyPageGoal) {
+                    ForEach(1...20, id: \.self) { goal in
+                        Text("\(goal)").tag(goal)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            Text("Hitting this goal banks a 'Streak Charge'. Miss a day, and we'll consume a charge instead of breaking your streak!")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            
+            HStack {
+                settingsIcon(streakTheme.icon, color: streakTheme.color)
+                Picker("Streak Charge Icon Theme", selection: $streakTheme) {
+                    ForEach(StreakTheme.allCases) { theme in
+                        Text(theme.rawValue).tag(theme)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+        } header: { Text("Gamification & Learning") }
     }
     
     @ViewBuilder

@@ -441,6 +441,9 @@ struct ComicReaderEngine: View {
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             syncReadingModeToOrientation()
         }
+        .onChange(of: currentIndex) { _, _ in
+            GamificationManager.shared.logPageRead()
+        }
 
         // ✅ Phase 5: Apple Handoff (Reader State Sync)
         .userActivity("com.inksync.read", isActive: true) { activity in
