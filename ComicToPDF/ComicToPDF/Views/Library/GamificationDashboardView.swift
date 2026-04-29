@@ -61,7 +61,7 @@ enum StreakTheme: String, CaseIterable, Identifiable {
     var gradient: LinearGradient {
         switch self {
         case .classic: return LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
-        case .fantasy: return LinearGradient(colors: [.purple, .indigo, .magenta], startPoint: .leading, endPoint: .trailing)
+        case .fantasy: return LinearGradient(colors: [.purple, .indigo, .pink], startPoint: .leading, endPoint: .trailing)
         case .scifi: return LinearGradient(colors: [.cyan, .green], startPoint: .leading, endPoint: .trailing)
         case .manga: return LinearGradient(colors: [.pink, .red], startPoint: .leading, endPoint: .trailing)
         case .horror: return LinearGradient(colors: [Color(red: 0.6, green: 0, blue: 0), .black], startPoint: .leading, endPoint: .trailing)
@@ -174,7 +174,7 @@ struct GamificationDashboardView: View {
                     } else {
                         ForEach(serendipityHighlights) { highlight in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(highlight.chapterTitle)
+                                Text(highlight.chapterTitle ?? "Unknown Chapter")
                                     .font(.caption)
                                     .foregroundColor(streakTheme.color)
                                 Text(highlight.content)
@@ -200,7 +200,12 @@ struct GamificationDashboardView: View {
     }
     
     private func loadSerendipity() {
-        let allHighlights = AnnotationStore.shared.annotations.filter { $0.kind == .highlight || $0.kind == .note }
+        let annotations: [SDAnnotation] = AnnotationStore.shared.annotations
+        let allHighlights = annotations.filter { annotation -> Bool in
+            let isHighlight = (annotation.kind == .highlight)
+            let isNote = (annotation.kind == .note)
+            return isHighlight || isNote
+        }
         guard !allHighlights.isEmpty else { return }
         self.serendipityHighlights = Array(allHighlights.shuffled().prefix(5))
     }

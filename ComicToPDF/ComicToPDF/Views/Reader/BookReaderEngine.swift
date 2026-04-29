@@ -163,7 +163,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
         }
         
         let files = self.chapterHtmlFiles
-        Task.detached(priority: .background) {
+        Task.detached(priority: .background) { [weak self] in
             var newIndex: [String: Set<Int>] = [:]
             
             for (idx, url) in files.enumerated() {
@@ -187,7 +187,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             }
             
             await MainActor.run {
-                self.searchIndex = newIndex
+                self?.searchIndex = newIndex
             }
         }
     }
