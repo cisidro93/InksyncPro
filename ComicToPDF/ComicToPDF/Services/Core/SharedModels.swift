@@ -1025,6 +1025,10 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     var chapters: [Chapter]
     var addedByMode: AppUIMode
     
+    // Linked Library Support
+    var sourceModeData: Data?
+
+    
     // Unified Reader Properties
     var contentKind: ContentKind
     var documentSubtype: DocumentSubtype
@@ -1043,7 +1047,7 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         return String(format: "%.1f MB", mb)
     }
     
-    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro) {
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro, sourceMode: SourceMode = .local) {
         self.id = id
         self.name = name
         self.url = url
@@ -1063,6 +1067,9 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         self.documentSubtype = .unknown
         self.isOnDevice = false
         self.lastTransferFailed = false
+        if let encoded = try? JSONEncoder().encode(sourceMode) {
+            self.sourceModeData = encoded
+        }
     }
     
     // Bridge to Legacy Architecture during Phase 2 transitions
@@ -1078,6 +1085,11 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         pdf.lastOutputFormat = self.lastOutputFormat
         pdf.lastConversionDate = self.lastConversionDate
         pdf.panelConfidenceScore = self.panelConfidenceScore
+        
+        if let data = self.sourceModeData, let decoded = try? JSONDecoder().decode(SourceMode.self, from: data) {
+            pdf.sourceMode = decoded
+        }
+        
         return pdf
     }
 }

@@ -44,7 +44,7 @@ class MigrationService {
         
         // 2. Insert Documents and Relate
         for pdf in legacyPDFs {
-            let doc = SDConvertedPDF(id: pdf.id, name: pdf.name, url: pdf.url, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata, collectionId: pdf.collectionId, isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate, coverImageData: pdf.coverImageData, contentType: pdf.contentType, chapters: pdf.chapters, addedByMode: pdf.addedByMode)
+            let doc = SDConvertedPDF(id: pdf.id, name: pdf.name, url: pdf.url, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata, collectionId: pdf.collectionId, isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate, coverImageData: pdf.coverImageData, contentType: pdf.contentType, chapters: pdf.chapters, addedByMode: pdf.addedByMode, sourceMode: pdf.sourceMode)
             
             // Re-establish relationships natively in SwiftData
             if let colId = pdf.collectionId, containerMap[colId] != nil {
@@ -171,8 +171,11 @@ class MigrationService {
                         existing.isPrivate = pdf.isPrivate
                         existing.contentType = pdf.contentType
                         existing.addedByMode = pdf.addedByMode
+                        if let encoded = try? JSONEncoder().encode(pdf.sourceMode) {
+                            existing.sourceModeData = encoded
+                        }
                     } else {
-                        let doc = SDConvertedPDF(id: pdf.id, name: pdf.name, url: pdf.url, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata, collectionId: pdf.collectionId, isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate, coverImageData: pdf.coverImageData, contentType: pdf.contentType, chapters: pdf.chapters, addedByMode: pdf.addedByMode)
+                        let doc = SDConvertedPDF(id: pdf.id, name: pdf.name, url: pdf.url, pageCount: pdf.pageCount, fileSize: pdf.fileSize, metadata: pdf.metadata, collectionId: pdf.collectionId, isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate, coverImageData: pdf.coverImageData, contentType: pdf.contentType, chapters: pdf.chapters, addedByMode: pdf.addedByMode, sourceMode: pdf.sourceMode)
                         context.insert(doc)
                     }
                 }
@@ -233,6 +236,12 @@ class MigrationService {
         for doc in docs {
             // 1. If the absolute path still works (no update occurred or it's a connected external drive), keep it.
             if fileManager.fileExists(atPath: doc.url.path) {
+                validDocs.append(doc)
+                continue
+            }
+            
+            // 2. If it's a linked file (external drive), we DO NOT try to re-anchor it to the local vault.
+            if let data = doc.sourceModeData, let mode = try? JSONDecoder().decode(SourceMode.self, from: data), mode.isLinked {
                 validDocs.append(doc)
                 continue
             }

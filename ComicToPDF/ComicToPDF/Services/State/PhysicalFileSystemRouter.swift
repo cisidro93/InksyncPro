@@ -295,6 +295,11 @@ class PhysicalFileSystemRouter {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
+            // ✅ Check file existence before proceeding to prevent 'No such file' errors
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                return nil
+            }
+            
             do {
                 // Remove 'try?' to let errors propagate to the catch block
                 let archive = try Archive(url: url, accessMode: .read)
@@ -379,6 +384,11 @@ class PhysicalFileSystemRouter {
         if ["cbz", "zip", "epub"].contains(ext) {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
+            // ✅ Check file existence before proceeding to prevent errors
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                return 0
+            }
             
             guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return 0 }
             

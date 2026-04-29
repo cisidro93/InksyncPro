@@ -124,6 +124,7 @@ actor LibraryScanner {
         let allPDFs = await MainActor.run { manager.convertedPDFs }
         let missingIDs = allPDFs
             .filter {
+                !$0.isLinked &&
                 !fileManager.fileExists(atPath: $0.url.path) &&
                 !fileManager.fileExists(atPath: docDir.appendingPathComponent($0.url.lastPathComponent).path)
             }

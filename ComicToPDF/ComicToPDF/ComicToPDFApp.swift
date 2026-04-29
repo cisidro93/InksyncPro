@@ -44,22 +44,21 @@ struct InksyncProApp: App {
         
         // If they have completed onboarding from a previous version, or we already marked it as not fresh:
         if !hasCompletedOnboarding && !isNotFreshInstall {
-            Task.detached(priority: .background) {
-                // 1. Vaporize Documents Directory Contents (Nukes all ghost CBZs automatically synced by iCloud)
-                if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
-                    if let items = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
-                        for item in items { try? fileManager.removeItem(at: item) }
-                    }
-                }
-                
-                // 2. Vaporize Application Support Directory Contents (Nukes legacy SwiftData SQLite vaults and stored Covers)
-                if let items = try? fileManager.contentsOfDirectory(at: supportDir, includingPropertiesForKeys: nil) {
-                    for item in items { 
-                        if item.lastPathComponent.hasPrefix(".hasEmployedFreshInstallNuke") { continue }
-                        try? fileManager.removeItem(at: item) 
-                    }
+            // 1. Vaporize Documents Directory Contents (Nukes all ghost CBZs automatically synced by iCloud)
+            if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
+                if let items = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
+                    for item in items { try? fileManager.removeItem(at: item) }
                 }
             }
+            
+            // 2. Vaporize Application Support Directory Contents (Nukes legacy SwiftData SQLite vaults and stored Covers)
+            if let items = try? fileManager.contentsOfDirectory(at: supportDir, includingPropertiesForKeys: nil) {
+                for item in items { 
+                    if item.lastPathComponent.hasPrefix(".hasEmployedFreshInstallNuke") { continue }
+                    try? fileManager.removeItem(at: item) 
+                }
+            }
+            
             // Mark as not fresh so subsequent launches don't nuke
             UserDefaults.standard.set(true, forKey: "isNotFreshInstall_v3")
         } else if !isNotFreshInstall {
