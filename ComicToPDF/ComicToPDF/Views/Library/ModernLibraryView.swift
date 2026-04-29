@@ -31,6 +31,11 @@ struct ModernLibraryView: View {
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
     @State private var scrollToTopTrigger = false  // toggled by double-tap on Library tab
     
+    // ✅ NEW: Storage Transfer State
+    @State private var isStorageTransferring = false
+    @State private var transferProgress: Double = 0.0
+    @State private var transferStatus: String = ""
+    
     // UI Options Enum (kept for picker logic)
     enum SortOption: String, CaseIterable, Identifiable {
         case dateAdded = "Most Recent"
@@ -92,6 +97,26 @@ struct ModernLibraryView: View {
                 .safeAreaInset(edge: .bottom) {
                     if isBatchMode {
                         batchBottomToolbar.transition(.move(edge: .bottom))
+                    }
+                }
+                .overlay(alignment: .top) {
+                    if isStorageTransferring {
+                        VStack(spacing: 8) {
+                            Text("Storage Transfer")
+                                .font(.headline)
+                            Text(transferStatus)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            ProgressView(value: transferProgress)
+                                .progressViewStyle(.linear)
+                        }
+                        .padding()
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(12)
+                        .shadow(radius: 10)
+                        .padding(.top, 60)
+                        .padding(.horizontal, 40)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
                 // Removed redundant background to let ZStack ambient glow show through
@@ -409,6 +434,67 @@ struct ModernLibraryView: View {
                     } label: { Label("Convert & Merge", systemImage: "doc.on.doc.fill") }
                     
                     Button { viewModel.activeSheet = .merge } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
+                    Divider()
+                    
+                    // Storage Actions
+                    Button {
+                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        FolderLinkCoordinator.present { url in
+                            guard let targetURL = url else { return }
+                            Task {
+                                await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
+                                do {
+                                    try await LinkedLibraryScanner.shared.offloadToExternalDrive(
+                                        files: items,
+                                        targetFolderURL: targetURL
+                                    ) { progress, status in
+                                        DispatchQueue.main.async {
+                                            self.transferProgress = progress
+                                            self.transferStatus = status
+                                        }
+                                    }
+                                    await MainActor.run {
+                                        isStorageTransferring = false
+                                        isBatchMode = false
+                                        multiSelection.removeAll()
+                                    }
+                                } catch {
+                                    await MainActor.run {
+                                        isStorageTransferring = false
+                                        conversionManager.appAlert = AlertItem(title: "Transfer Failed", message: error.localizedDescription)
+                                    }
+                                }
+                            }
+                        }
+                    } label: { Label("Move to External Drive", systemImage: "externaldrive.fill.badge.plus") }
+                    
+                    Button {
+                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        Task {
+                            await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
+                            do {
+                                try await LinkedLibraryScanner.shared.downloadToDevice(
+                                    files: items
+                                ) { progress, status in
+                                    DispatchQueue.main.async {
+                                        self.transferProgress = progress
+                                        self.transferStatus = status
+                                    }
+                                }
+                                await MainActor.run {
+                                    isStorageTransferring = false
+                                    isBatchMode = false
+                                    multiSelection.removeAll()
+                                }
+                            } catch {
+                                await MainActor.run {
+                                    isStorageTransferring = false
+                                    conversionManager.appAlert = AlertItem(title: "Download Failed", message: error.localizedDescription)
+                                }
+                            }
+                        }
+                    } label: { Label("Download to iPad", systemImage: "ipad.and.arrow.forward") }
+                    
                     Divider()
                     Button {
                         let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
