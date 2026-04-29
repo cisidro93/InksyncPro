@@ -12,6 +12,7 @@ struct TypographySettings: Codable, Equatable {
     var marginWidth: CGFloat = 40
     var themeHex: String = "#ffffff"
     var textHex: String = "#000000"
+    var isVerticalScroll: Bool = false
 }
 @MainActor
 class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
@@ -45,6 +46,13 @@ class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     }
 }
 
+struct SearchResult: Identifiable {
+    let id = UUID()
+    let chapterIndex: Int
+    let chapterTitle: String
+    let snippet: String
+}
+
 @MainActor
 class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var isLoading = true
@@ -52,6 +60,11 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var chapterHtmlFiles: [URL] = []
     @Published var currentChapterIndex = 0
     @Published var isPlayingTTS = false
+    @Published var metadata: EBookMetadata?
+    @Published var tocItems: [EBookMetadata.SpineItem] = []
+    
+    @Published var isSearching = false
+    @Published var searchResults: [SearchResult] = []
     
     let pdf: ConvertedPDF
     private let fileManager = FileManager.default
@@ -102,30 +115,40 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
                 }
             }
             // Extraction done — stop security scope. parseNCXOrSpine reads from tempDir (sandbox).
+            let parsedMetadata = await EBookParser.shared.parse(epub: pdfURL)
             accessedURL?.stopAccessingSecurityScopedResource()
-            await self.parseNCXOrSpine(tempDir: tempDir)
+            await self.parseNCXOrSpine(tempDir: tempDir, parsedMetadata: parsedMetadata)
         }
     }
     
-    private func parseNCXOrSpine(tempDir: URL) async {
+    private func parseNCXOrSpine(tempDir: URL, parsedMetadata: EBookMetadata?) async {
         // Walk the unpacked EPUB directory on a background thread
         let htmlFiles: [URL] = await Task.detached(priority: .userInitiated) {
-            guard let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: nil) else { return [] }
-            var htmls: [URL] = []
-            while let file = enumerator.nextObject() as? URL {
-                let ext = file.pathExtension.lowercased()
-                if ext == "html" || ext == "xhtml" { htmls.append(file) }
+            if let spine = parsedMetadata?.spineItems, !spine.isEmpty {
+                return spine.compactMap { item in
+                    let dest = tempDir.appendingPathComponent(item.href)
+                    return FileManager.default.fileExists(atPath: dest.path) ? dest : nil
+                }
+            } else {
+                guard let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: nil) else { return [] }
+                var htmls: [URL] = []
+                while let file = enumerator.nextObject() as? URL {
+                    let ext = file.pathExtension.lowercased()
+                    if ext == "html" || ext == "xhtml" { htmls.append(file) }
+                }
+                htmls.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                return htmls
             }
-            htmls.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-            return htmls
         }.value
 
         // Back on @MainActor — safe to mutate @Published properties
-        chapterHtmlFiles = htmlFiles
+        self.metadata = parsedMetadata
+        self.tocItems = parsedMetadata?.spineItems ?? []
+        self.chapterHtmlFiles = htmlFiles
         if !htmlFiles.isEmpty {
-            loadChapter(index: currentChapterIndex)
+            self.loadChapter(index: self.currentChapterIndex)
         } else {
-            isLoading = false
+            self.isLoading = false
         }
     }
     
@@ -148,6 +171,53 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             }
             self.currentChapterHTML = html
             self.isLoading = false
+        }
+    }
+    
+    func search(query: String) async {
+        guard !query.isEmpty else {
+            await MainActor.run { self.searchResults = [] }
+            return
+        }
+        await MainActor.run { self.isSearching = true }
+        
+        let files = chapterHtmlFiles
+        let items = tocItems
+        
+        let results = await Task.detached(priority: .userInitiated) {
+            var found: [SearchResult] = []
+            for (idx, url) in files.enumerated() {
+                guard let content = try? String(contentsOf: url) else { continue }
+                // Strip HTML tags roughly for searching
+                let stripped = content.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression, range: nil)
+                
+                let lowerContent = stripped.lowercased()
+                let lowerQuery = query.lowercased()
+                
+                var searchRange = lowerContent.startIndex..<lowerContent.endIndex
+                while let range = lowerContent.range(of: lowerQuery, options: [], range: searchRange) {
+                    let snippetStart = stripped.index(max(stripped.startIndex, range.lowerBound), offsetBy: -40, limitedBy: stripped.startIndex) ?? stripped.startIndex
+                    let snippetEnd = stripped.index(min(stripped.endIndex, range.upperBound), offsetBy: 40, limitedBy: stripped.endIndex) ?? stripped.endIndex
+                    
+                    let snippet = String(stripped[snippetStart..<snippetEnd])
+                        .replacingOccurrences(of: "\n", with: " ")
+                        .trimmingCharacters(in: .whitespaces)
+                    
+                    let title = items.indices.contains(idx) ? items[idx].label : "Chapter \(idx + 1)"
+                    
+                    found.append(SearchResult(chapterIndex: idx, chapterTitle: title, snippet: "... \(snippet) ..."))
+                    
+                    searchRange = range.upperBound..<lowerContent.endIndex
+                    if found.count > 100 { break } // Limit global results
+                }
+                if found.count > 100 { break }
+            }
+            return found
+        }.value
+        
+        await MainActor.run {
+            self.searchResults = results
+            self.isSearching = false
         }
     }
     
@@ -253,26 +323,52 @@ struct EPUBWebView: UIViewRepresentable {
             
             var style = document.createElement('style');
             style.innerHTML = `
+                html {
+                    overflow-y: \(settings.isVerticalScroll ? "scroll" : "hidden") !important;
+                    height: 100vh !important;
+                }
                 body {
                     font-family: '\(settings.fontFamily)', serif !important;
                     font-size: \(settings.fontSize)px !important;
                     line-height: \(settings.lineSpacing) !important;
                     background-color: \(settings.themeHex) !important;
                     color: \(settings.textHex) !important;
-                    padding-left: \(settings.marginWidth)px !important;
-                    padding-right: \(settings.marginWidth)px !important;
+                    
+                    /* Layout */
+                    height: \(settings.isVerticalScroll ? "auto" : "calc(100vh - 100px)") !important;
                     padding-top: 40px !important;
                     padding-bottom: 60px !important;
-                                        column-count: 1 !important;
-                    /* Premium enhancements */
+                    padding-left: 0 !important;
+                    padding-right: 0 !important;
+                    margin: 0 !important;
+                    
+                    \(settings.isVerticalScroll ? "" : "column-width: 100vw !important;")
+                    \(settings.isVerticalScroll ? "" : "column-gap: 0 !important;")
+                    
+                    /* Typography enhancements */
                     text-align: justify !important;
                     -webkit-hyphens: auto !important;
                     hyphens: auto !important;
                 }
-                img { max-width: 100% !important; height: auto !important; border-radius: 4px; object-fit: contain; }
+                .content-container {
+                    padding-left: \(settings.marginWidth)px !important;
+                    padding-right: \(settings.marginWidth)px !important;
+                }
+                img { max-width: 100% !important; max-height: 100% !important; border-radius: 4px; object-fit: contain; }
                 .inksync-highlight { background-color: #ffd700; color: #000; border-radius: 3px; }
             `;
             head.appendChild(style);
+            
+            // Wrap body content in a container for margins while keeping columns full-width
+            if (!document.getElementById('inksync-container')) {
+                var container = document.createElement('div');
+                container.id = 'inksync-container';
+                container.className = 'content-container';
+                while(document.body.firstChild) {
+                    container.appendChild(document.body.firstChild);
+                }
+                document.body.appendChild(container);
+            }
             
             // Highlight Engine JS
             window.applyInksyncHighlight = function(colorHex) {
@@ -319,6 +415,14 @@ struct EPUBWebView: UIViewRepresentable {
         webView.backgroundColor = UIColor(hex: settings.themeHex) ?? .white
         webView.scrollView.backgroundColor = webView.backgroundColor
         
+        // Native Scrolling Mode Toggle
+        webView.scrollView.isPagingEnabled = !settings.isVerticalScroll
+        webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.showsVerticalScrollIndicator = settings.isVerticalScroll
+        webView.scrollView.bounces = true
+        webView.scrollView.alwaysBounceVertical = settings.isVerticalScroll
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        
         // Setup custom UIMenuController item
         // UIMenuItem deprecated in iOS 16
         
@@ -332,12 +436,14 @@ struct EPUBWebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         if webView.url?.absoluteString != baseUrl.absoluteString || webView.title == nil {
             webView.loadHTMLString(htmlContent, baseURL: baseUrl)
-        } else if webView.title != nil {
-            // If the swift model's HTML changed (e.g. from an incoming highlight save), we don't reload the whole page to prevent jumping,
-            // because the DOM already has the highlight! 
         }
+        
+        // Dynamically update UI appearance properties
         webView.backgroundColor = UIColor(hex: settings.themeHex) ?? .white
         webView.scrollView.backgroundColor = webView.backgroundColor
+        webView.scrollView.isPagingEnabled = !settings.isVerticalScroll
+        webView.scrollView.showsVerticalScrollIndicator = settings.isVerticalScroll
+        webView.scrollView.alwaysBounceVertical = settings.isVerticalScroll
     }
 }
 
@@ -350,8 +456,12 @@ struct BookReaderEngine: View {
     @State private var webViewReference: WKWebView?
     @State private var chromeVisible = false
     @State private var showAnnotations = false
+    @State private var showTypographyHUD = false
+    @State private var showTOC = false
+    @State private var activeHighlightToEdit: SDAnnotation? = nil
     @State private var settings = TypographySettings(themeHex: "#1C1C1E", textHex: "#E5E5EA") // Dark default
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
+    @State private var lastBrightnessDragValue: CGFloat = 0
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void) {
         self.pdf = pdf
@@ -383,6 +493,10 @@ struct BookReaderEngine: View {
                         AnnotationStore.shared.add(highlight)
                         StudyNotesStore.shared.appendHighlight(selectedText, chapter: "Chapter \(vm.currentChapterIndex + 1)")
                         
+                        // Zettelkasten Integration: Instantly pop up editor for new highlight
+                        let sdAnnotation = SDAnnotation(from: highlight)
+                        self.activeHighlightToEdit = sdAnnotation
+                        
                     }, onPageLoaded: { webView in
                         self.webViewReference = webView
                         let pageAnnotations = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == vm.currentChapterIndex && $0.kind == .highlight }
@@ -398,28 +512,70 @@ struct BookReaderEngine: View {
                         }
                     })
                     .edgesIgnoringSafeArea(.horizontal)
-                    .onTapGesture {
-                        chromeVisible.toggle()
-                    }
-                    .gesture(DragGesture(minimumDistance: 50, coordinateSpace: .local)
-                        .onEnded { value in
-                            if value.translation.width < -50 {
-                                vm.loadChapter(index: min(vm.chapterHtmlFiles.count - 1, vm.currentChapterIndex + 1))
-                            } else if value.translation.width > 50 {
-                                vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
+                    .onTapGesture(coordinateSpace: .global) { location in
+                        // Tap edges to change chapter if pagination reaches boundaries (simplified chapter navigation)
+                        let screenWidth = UIScreen.main.bounds.width
+                        if location.x < screenWidth * 0.2 {
+                            if let scrollView = webViewReference?.scrollView {
+                                if scrollView.contentOffset.x <= 0 {
+                                    vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
+                                } else {
+                                    scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x - screenWidth, y: 0), animated: true)
+                                }
                             }
+                        } else if location.x > screenWidth * 0.8 {
+                            if let scrollView = webViewReference?.scrollView {
+                                if scrollView.contentOffset.x >= scrollView.contentSize.width - screenWidth {
+                                    vm.loadChapter(index: min(vm.chapterHtmlFiles.count - 1, vm.currentChapterIndex + 1))
+                                } else {
+                                    scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x + screenWidth, y: 0), animated: true)
+                                }
+                            }
+                        } else {
+                            chromeVisible.toggle()
                         }
-                    )
+                    }
+                    
+                    // Edge Brightness Gesture Zones
+                    HStack {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .frame(width: 30)
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        let delta = value.translation.height - lastBrightnessDragValue
+                                        lastBrightnessDragValue = value.translation.height
+                                        UIScreen.main.brightness -= delta * 0.005
+                                    }
+                                    .onEnded { _ in lastBrightnessDragValue = 0 }
+                            )
+                        Spacer()
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .frame(width: 30)
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        let delta = value.translation.height - lastBrightnessDragValue
+                                        lastBrightnessDragValue = value.translation.height
+                                        UIScreen.main.brightness -= delta * 0.005
+                                    }
+                                    .onEnded { _ in lastBrightnessDragValue = 0 }
+                            )
+                    }
                 }
             }
             
             ReaderChrome(
                 pdf: pdf,
                 title: pdf.name,
-                pageText: "Ch. \(vm.currentChapterIndex + 1) / \(max(1, vm.chapterHtmlFiles.count))",
+                pageText: vm.tocItems.indices.contains(vm.currentChapterIndex) ? vm.tocItems[vm.currentChapterIndex].label : "Ch. \(vm.currentChapterIndex + 1) / \(max(1, vm.chapterHtmlFiles.count))",
                 isVisible: $chromeVisible,
                 onBack: onDismiss,
-                onEInkSend: {},
+                onEInkSend: {
+                    showTOC = true // Piggyback on unused button for TOC for now
+                },
                 onBookmark: {
                     let bookmark = Annotation(pdfID: pdf.id, pageIndex: vm.currentChapterIndex, chapterTitle: "Chapter \(vm.currentChapterIndex + 1)", kind: .bookmark, createdAt: Date(), modifiedAt: Date())
                     AnnotationStore.shared.add(bookmark)
@@ -428,14 +584,7 @@ struct BookReaderEngine: View {
                     showAnnotations = true
                 },
                 onSettingsToggle: {
-                    // Quick Theme Toggle
-                    if settings.themeHex == "#1C1C1E" {
-                        settings.themeHex = "#F4F1EA" // Sepia
-                        settings.textHex = "#433422"
-                    } else {
-                        settings.themeHex = "#1C1C1E" // Dark
-                        settings.textHex = "#E5E5EA"
-                    }
+                    withAnimation { showTypographyHUD = true }
                 },
                 currentProgress: Binding(
                     get: { Double(vm.currentChapterIndex) / Double(max(1, vm.chapterHtmlFiles.count - 1)) },
@@ -473,6 +622,184 @@ struct BookReaderEngine: View {
         }
         .sheet(isPresented: $showAnnotations) {
             AnnotationListView(pdfID: pdf.id, documentTitle: pdf.name)
+        }
+        .sheet(item: $activeHighlightToEdit) { annotation in
+            AnnotationEditSheet(annotation: annotation)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showTypographyHUD) {
+            TypographySettingsHUD(settings: $settings, webView: webViewReference)
+                .presentationDetents([.height(300)])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showTOC) {
+            BookNavigationSheet(vm: vm, showTOC: $showTOC, webView: webViewReference)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+struct BookNavigationSheet: View {
+    @ObservedObject var vm: BookReaderViewModel
+    @Binding var showTOC: Bool
+    var webView: WKWebView?
+    @State private var searchQuery = ""
+    
+    var body: some View {
+        NavigationView {
+            TabView {
+                // Chapters
+                List(0..<vm.tocItems.count, id: \.self) { idx in
+                    Button(action: {
+                        showTOC = false
+                        vm.loadChapter(index: idx)
+                    }) {
+                        HStack {
+                            Text(vm.tocItems[idx].label)
+                                .foregroundColor(vm.currentChapterIndex == idx ? .blue : .primary)
+                            Spacer()
+                            if vm.currentChapterIndex == idx {
+                                Image(systemName: "checkmark").foregroundColor(.blue)
+                            }
+                        }
+                    }
+                }
+                .tabItem { Label("Chapters", systemImage: "list.bullet") }
+                
+                // Search
+                VStack {
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+                        TextField("Search book...", text: $searchQuery)
+                            .onSubmit { Task { await vm.search(query: searchQuery) } }
+                        if !searchQuery.isEmpty {
+                            Button(action: { searchQuery = ""; vm.searchResults = [] }) {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(8)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(8)
+                    .padding()
+                    
+                    if vm.isSearching {
+                        ProgressView().padding()
+                        Spacer()
+                    } else if vm.searchResults.isEmpty && !searchQuery.isEmpty {
+                        Text("No results found.").foregroundColor(.secondary).padding()
+                        Spacer()
+                    } else {
+                        List(vm.searchResults) { result in
+                            Button(action: {
+                                showTOC = false
+                                vm.loadChapter(index: result.chapterIndex)
+                                // Dispatch a window.find to highlight the exact text
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                    let safeQuery = searchQuery.replacingOccurrences(of: "'", with: "\\'")
+                                    webView?.evaluateJavaScript("window.find('\(safeQuery)', false, false, true, false, false, false);")
+                                }
+                            }) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(result.chapterTitle)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(result.snippet)
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+                                        .lineLimit(3)
+                                }
+                            }
+                        }
+                    }
+                }
+                .tabItem { Label("Search", systemImage: "magnifyingglass") }
+            }
+            .navigationTitle("Navigation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { showTOC = false }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Typography Settings HUD
+struct TypographySettingsHUD: View {
+    @Binding var settings: TypographySettings
+    var webView: WKWebView?
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Theme")) {
+                    HStack(spacing: 20) {
+                        ThemeButton(title: "Light", bgHex: "#FFFFFF", textHex: "#000000", currentBg: settings.themeHex) {
+                            settings.themeHex = "#FFFFFF"; settings.textHex = "#000000"
+                            refreshWebView()
+                        }
+                        ThemeButton(title: "Sepia", bgHex: "#F4F1EA", textHex: "#433422", currentBg: settings.themeHex) {
+                            settings.themeHex = "#F4F1EA"; settings.textHex = "#433422"
+                            refreshWebView()
+                        }
+                        ThemeButton(title: "Dark", bgHex: "#1C1C1E", textHex: "#E5E5EA", currentBg: settings.themeHex) {
+                            settings.themeHex = "#1C1C1E"; settings.textHex = "#E5E5EA"
+                            refreshWebView()
+                        }
+                        ThemeButton(title: "OLED", bgHex: "#000000", textHex: "#D1D1D6", currentBg: settings.themeHex) {
+                            settings.themeHex = "#000000"; settings.textHex = "#D1D1D6"
+                            refreshWebView()
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                
+                Section(header: Text("Layout")) {
+                    Toggle("Vertical Scrolling Mode", isOn: Binding(
+                        get: { settings.isVerticalScroll },
+                        set: { settings.isVerticalScroll = $0; refreshWebView() }
+                    ))
+                }
+                
+                Section(header: Text("Font Size")) {
+                    Slider(value: Binding(
+                        get: { Double(settings.fontSize) },
+                        set: { settings.fontSize = CGFloat($0); refreshWebView() }
+                    ), in: 12...32, step: 1)
+                }
+            }
+            .navigationTitle("Typography")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+    
+    private func refreshWebView() {
+        // Force an immediate reload of the HTML with the new settings
+        // Ideally we would inject CSS dynamically, but reloadHTMLString is very fast for local chapters.
+        webView?.reload()
+    }
+}
+
+struct ThemeButton: View {
+    let title: String
+    let bgHex: String
+    let textHex: String
+    let currentBg: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(Color(UIColor(hex: bgHex) ?? .white))
+                .frame(width: 44, height: 44)
+                .overlay(
+                    Circle().stroke(Color.blue, lineWidth: currentBg == bgHex ? 3 : 0)
+                )
+                .shadow(color: .black.opacity(0.1), radius: 3)
         }
     }
 }

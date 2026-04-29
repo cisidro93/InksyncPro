@@ -4,14 +4,23 @@ import QuartzCore
 
 // MARK: - Data Models
 
+enum GraphNodeType {
+    case book, tag, note
+}
+
 struct GraphNode: Identifiable, Equatable {
     let id: String
     var position: CGPoint
     var velocity: CGVector = .zero
     let title: String
-    let isTag: Bool
+    let nodeType: GraphNodeType
     var connectionCount: Int = 1
-    var color: Color
+    
+    // Note specific metadata for HUD
+    var fullText: String? = nil
+    var userNote: String? = nil
+    var bookTitle: String? = nil
+    var colorHex: String? = nil
 
     static func == (lhs: GraphNode, rhs: GraphNode) -> Bool { lhs.id == rhs.id }
 
@@ -73,60 +82,94 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
         let screenCenter = CGPoint(x: UIScreen.main.bounds.width / 2,
                                    y: UIScreen.main.bounds.height / 2)
 
-        // Build a PDF name lookup so we don't do O(N²) inside the loop
         var pdfNames: [UUID: String] = [:]
         for pdf in pdfs { pdfNames[pdf.id] = pdf.name }
+        
+        // 1. Process Annotations as Nodes
+        // Limit to 250 most recent/relevant annotations to prevent Canvas death on large datasets
+        let targetAnnotations = Array(annotations.prefix(250))
+        
+        // Helper to safely add an edge
+        func addEdge(source: String, target: String) {
+            let edgeID = "\(source)_\(target)"
+            let revEdge = "\(target)_\(source)"
+            if !newEdges.contains(where: { $0.id == edgeID || $0.id == revEdge }) {
+                newEdges.append(GraphEdge(id: edgeID, sourceID: source, targetID: target))
+                connectionCounts[source, default: 0] += 1
+                connectionCounts[target, default: 0] += 1
+            }
+        }
+        
+        // Semantic Link processing
+        var noteTags: [String: Set<String>] = [:]
 
-        for ann in annotations {
+        for ann in targetAnnotations {
+            let annID = ann.id.uuidString
             let bookID = ann.pdfID.uuidString
-            let title: String
+            
+            let bTitle: String
             if let rwTitle = ann.readwiseBookTitle, !rwTitle.isEmpty {
-                title = rwTitle
+                bTitle = rwTitle
             } else if let name = pdfNames[ann.pdfID] {
-                title = name
+                bTitle = name
             } else {
-                title = "Unknown"
+                bTitle = "Unknown Book"
             }
-
-            // Spawn nodes in a random annular ring so the initial layout
-            // is less clumped than a square distribution.
-            let angle = Double.random(in: 0..<2 * .pi)
-            let radius = Double.random(in: 80...280)
-            let spawnPos = CGPoint(
-                x: screenCenter.x + radius * cos(angle),
-                y: screenCenter.y + radius * sin(angle)
-            )
-
+            
+            // Create Book Node
             if newNodes[bookID] == nil {
-                newNodes[bookID] = GraphNode(id: bookID, position: spawnPos,
-                                             title: title, isTag: false, color: .blue)
+                let angle = Double.random(in: 0..<2 * .pi)
+                let radius = Double.random(in: 80...280)
+                let pos = CGPoint(x: screenCenter.x + radius * cos(angle), y: screenCenter.y + radius * sin(angle))
+                newNodes[bookID] = GraphNode(id: bookID, position: pos, title: bTitle, nodeType: .book)
             }
-            connectionCounts[bookID, default: 0] += 1
-
-            // Only add tag nodes for Readwise tags (not auto-NLP tags for perf)
-            if let tags = ann.readwiseTags ?? ann.tags {
-                for tag in tags.prefix(4) { // cap tag fan-out per annotation
+            
+            // Create Note Node
+            let noteTitle = (ann.selectedText ?? ann.noteText ?? "Note").prefix(24).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+            let nAngle = Double.random(in: 0..<2 * .pi)
+            let nRadius = Double.random(in: 120...320)
+            let nPos = CGPoint(x: screenCenter.x + nRadius * cos(nAngle), y: screenCenter.y + nRadius * sin(nAngle))
+            
+            newNodes[annID] = GraphNode(id: annID, position: nPos, title: String(noteTitle), nodeType: .note, fullText: ann.selectedText, userNote: ann.noteText, bookTitle: bTitle, colorHex: ann.colorHex)
+            
+            // Link Note -> Book
+            addEdge(source: annID, target: bookID)
+            
+            // Process Tags
+            if let tags = ann.readwiseTags ?? ann.tags, !tags.isEmpty {
+                noteTags[annID] = Set(tags)
+                
+                for tag in tags.prefix(3) {
                     let tagID = "tag_\(tag.lowercased())"
                     if newNodes[tagID] == nil {
                         let tAngle = Double.random(in: 0..<2 * .pi)
-                        let tRadius = Double.random(in: 120...300)
-                        let tPos = CGPoint(
-                            x: screenCenter.x + tRadius * cos(tAngle),
-                            y: screenCenter.y + tRadius * sin(tAngle)
-                        )
-                        newNodes[tagID] = GraphNode(id: tagID, position: tPos,
-                                                    title: "#\(tag)", isTag: true, color: .orange)
+                        let tRadius = Double.random(in: 150...350)
+                        let tPos = CGPoint(x: screenCenter.x + tRadius * cos(tAngle), y: screenCenter.y + tRadius * sin(tAngle))
+                        newNodes[tagID] = GraphNode(id: tagID, position: tPos, title: "#\(tag)", nodeType: .tag)
                     }
-                    connectionCounts[tagID, default: 0] += 1
-                    let edgeID = "\(bookID)_\(tagID)"
-                    if !newEdges.contains(where: { $0.id == edgeID }) {
-                        newEdges.append(GraphEdge(id: edgeID, sourceID: bookID, targetID: tagID))
+                    // Link Note -> Tag
+                    addEdge(source: annID, target: tagID)
+                }
+            }
+        }
+        
+        // 2. Semantic Linking (Bi-directional Edges between Notes sharing multiple tags)
+        let noteIDs = Array(noteTags.keys)
+        for i in 0..<noteIDs.count {
+            for j in (i + 1)..<noteIDs.count {
+                let id1 = noteIDs[i]
+                let id2 = noteIDs[j]
+                
+                // Don't semantically link notes from the exact same book (they are already linked via the book node)
+                if let b1 = newNodes[id1]?.bookTitle, let b2 = newNodes[id2]?.bookTitle, b1 != b2 {
+                    let shared = noteTags[id1]!.intersection(noteTags[id2]!)
+                    if shared.count >= 2 { // Semantic threshold: 2 shared tags
+                        addEdge(source: id1, target: id2)
                     }
                 }
             }
         }
 
-        // Wire connection counts into nodes
         for key in newNodes.keys {
             newNodes[key]?.connectionCount = max(1, connectionCounts[key] ?? 1)
         }
@@ -329,8 +372,23 @@ struct ZettelkastenGraphView: View {
             : Color(red: 0.85, green: 0.48, blue: 0.10))
         .opacity(alpha)
     }
+    private func noteFill(_ alpha: CGFloat) -> Color {
+        (colorScheme == .dark
+            ? Color(red: 0.60, green: 0.85, blue: 0.40)   // soft green
+            : Color(red: 0.30, green: 0.75, blue: 0.20))
+        .opacity(alpha)
+    }
+    
     private func nodeFill(for node: GraphNode, alpha: CGFloat) -> Color {
-        node.isTag ? tagFill(alpha) : bookFill(alpha)
+        switch node.nodeType {
+        case .tag: return tagFill(alpha)
+        case .book: return bookFill(alpha)
+        case .note: 
+            if let customHex = node.colorHex {
+                return Color(hex: customHex).opacity(alpha)
+            }
+            return noteFill(alpha)
+        }
     }
 
     private var isPathMode: Bool { engine.pathAnchorA != nil }
@@ -542,10 +600,13 @@ struct ZettelkastenGraphView: View {
                 // Stat pill
                 HStack(spacing: 5) {
                     Circle().fill(bookFill(0.9)).frame(width: 7, height: 7)
-                    Text("\(engine.nodes.filter { !$0.isTag }.count) books")
+                    Text("\(engine.nodes.filter { $0.nodeType == .book }.count) books")
                         .font(.system(size: 11, weight: .medium))
                     Circle().fill(tagFill(0.9)).frame(width: 7, height: 7)
-                    Text("\(engine.nodes.filter { $0.isTag }.count) tags")
+                    Text("\(engine.nodes.filter { $0.nodeType == .tag }.count) tags")
+                        .font(.system(size: 11, weight: .medium))
+                    Circle().fill(noteFill(0.9)).frame(width: 7, height: 7)
+                    Text("\(engine.nodes.filter { $0.nodeType == .note }.count) notes")
                         .font(.system(size: 11, weight: .medium))
                     Text("·").foregroundColor(hudFg)
                     Text("\(engine.edges.count) links")
@@ -573,6 +634,51 @@ struct ZettelkastenGraphView: View {
                     }
                     .padding(.trailing, 16).padding(.bottom, 20)
                 }
+            }
+            
+            // MARK: Interactive Knowledge HUD
+            if let hID = hoverNodeID, let node = engine.nodes.first(where: { $0.id == hID }), node.nodeType == .note {
+                VStack {
+                    HStack {
+                        Spacer()
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let bTitle = node.bookTitle {
+                                HStack {
+                                    Image(systemName: "book.closed.fill").foregroundColor(.blue)
+                                    Text(bTitle).font(.caption).bold().foregroundStyle(.secondary)
+                                }
+                            }
+                            if let text = node.fullText, !text.isEmpty {
+                                Text("\"\(text)\"")
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .lineLimit(6)
+                            }
+                            if let uNote = node.userNote, !uNote.isEmpty {
+                                HStack(alignment: .top, spacing: 6) {
+                                    Image(systemName: "text.bubble.fill").foregroundStyle(.orange).font(.caption)
+                                    Text(uNote)
+                                        .font(.callout)
+                                        .italic()
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .lineLimit(4)
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .frame(width: 320, alignment: .leading)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(16)
+                        .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 5)
+                        .padding(.top, 24)
+                        .padding(.trailing, 24)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                    Spacer()
+                }
+                .zIndex(100)
             }
         }
         .onAppear { engine.buildGraph(from: annotations, pdfs: pdfs) }

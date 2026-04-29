@@ -304,6 +304,7 @@ struct ComicReaderEngine: View {
     @State private var readingMode: ComicReadingMode = .pageHorizontal
     @State private var activeFilterPreset: ReadingFilterPreset = .original
     @State private var showingFilterHUD = false
+    @State private var lastBrightnessDragValue: CGFloat = 0
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void) {
         self.pdf = pdf
@@ -338,6 +339,35 @@ struct ComicReaderEngine: View {
                     )
                     }
                 }
+            }
+            
+            // Edge Brightness Gesture Zones
+            HStack {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: 30)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let delta = value.translation.height - lastBrightnessDragValue
+                                lastBrightnessDragValue = value.translation.height
+                                UIScreen.main.brightness -= delta * 0.005
+                            }
+                            .onEnded { _ in lastBrightnessDragValue = 0 }
+                    )
+                Spacer()
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: 30)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let delta = value.translation.height - lastBrightnessDragValue
+                                lastBrightnessDragValue = value.translation.height
+                                UIScreen.main.brightness -= delta * 0.005
+                            }
+                            .onEnded { _ in lastBrightnessDragValue = 0 }
+                    )
             }
             
             ReaderChrome(
@@ -516,8 +546,12 @@ struct ComicPageView: View {
     /// Compute the rendered width/height that fits the image inside `container`
     /// without overflowing, preserving aspect ratio.
     private func renderSize(for image: UIImage, in container: CGSize) -> CGSize {
-        let imageAspect     = image.size.width / image.size.height
-        let containerAspect = container.width  / container.height
+        let imgHeight = max(1, image.size.height)
+        let contHeight = max(1, container.height)
+        
+        let imageAspect     = image.size.width / imgHeight
+        let containerAspect = container.width  / contHeight
+        
         if imageAspect > containerAspect {
             // Landscape-dominant: clamp to container width
             return CGSize(width: container.width, height: container.width / imageAspect)
@@ -559,6 +593,22 @@ struct ComicPageView: View {
                                 }
                         )
                     )
+                    .onTapGesture(count: 2) { loc in
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                            if currentScale > 1.0 {
+                                currentScale = 1.0
+                                offset = .zero
+                            } else {
+                                currentScale = 2.5
+                                let centerX = geo.size.width / 2
+                                let centerY = geo.size.height / 2
+                                // Calculate offset to bring the tapped point to the center of the screen
+                                let dx = (centerX - loc.x) * (currentScale - 1)
+                                let dy = (centerY - loc.y) * (currentScale - 1)
+                                offset = CGSize(width: dx, height: dy)
+                            }
+                        }
+                    }
             }
         } else {
             ZStack {

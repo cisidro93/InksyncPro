@@ -33,7 +33,7 @@ struct BookFlipGesture: View {
                 content(currentIndex)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .rotation3DEffect(
-                        .degrees(isAnimating ? 0 : Double(dragOffset / geo.size.width) * -20),
+                        .degrees(isAnimating ? 0 : Double(geo.size.width == 0 ? 0 : dragOffset / geo.size.width) * -20),
                         axis: (x: 0, y: 1, z: 0),
                         anchor: dragOffset > 0 ? .leading : .trailing,
                         perspective: 0.4
