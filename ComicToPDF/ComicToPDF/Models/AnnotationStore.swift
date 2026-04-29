@@ -201,6 +201,10 @@ class AnnotationStore: ObservableObject {
         return store[pdfID] ?? []
     }
     
+    var allAnnotations: [Annotation] {
+        return store.values.flatMap { $0 }
+    }
+    
     func add(_ annotation: Annotation) {
         let newAnnotation = annotation
         store[newAnnotation.pdfID, default: []].append(newAnnotation)

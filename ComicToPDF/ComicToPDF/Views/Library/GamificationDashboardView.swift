@@ -200,7 +200,7 @@ struct GamificationDashboardView: View {
     }
     
     private func loadSerendipity() {
-        let annotations: [Annotation] = AnnotationStore.shared.annotations
+        let annotations: [Annotation] = AnnotationStore.shared.allAnnotations
         let allHighlights = annotations.filter { annotation -> Bool in
             let isHighlight = (annotation.kind == .highlight)
             let isNote = (annotation.kind == .note)
