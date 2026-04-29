@@ -84,7 +84,7 @@ enum StreakTheme: String, CaseIterable, Identifiable {
 struct GamificationDashboardView: View {
     @ObservedObject var gamification = GamificationManager.shared
     @AppStorage("streakTheme") private var streakTheme: StreakTheme = .classic
-    @State private var serendipityHighlights: [SDAnnotation] = []
+    @State private var serendipityHighlights: [Annotation] = []
     
     var body: some View {
         VStack(spacing: 16) {
@@ -177,7 +177,7 @@ struct GamificationDashboardView: View {
                                 Text(highlight.chapterTitle ?? "Unknown Chapter")
                                     .font(.caption)
                                     .foregroundColor(streakTheme.color)
-                                Text(highlight.content)
+                                Text(highlight.selectedText ?? highlight.noteText ?? "")
                                     .font(.subheadline)
                                     .italic()
                                     .foregroundColor(.primary)
@@ -200,7 +200,7 @@ struct GamificationDashboardView: View {
     }
     
     private func loadSerendipity() {
-        let annotations: [SDAnnotation] = AnnotationStore.shared.annotations
+        let annotations: [Annotation] = AnnotationStore.shared.annotations
         let allHighlights = annotations.filter { annotation -> Bool in
             let isHighlight = (annotation.kind == .highlight)
             let isNote = (annotation.kind == .note)
