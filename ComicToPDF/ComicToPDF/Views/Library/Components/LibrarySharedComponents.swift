@@ -77,6 +77,12 @@ struct ModernEmptyState: View {
                 .font(.title2)
                 .fontWeight(.semibold)
                 .foregroundColor(Theme.text)
+
+            Text("Import your comics, manga, and books to get started.\nThey'll be organised automatically by series.")
+                .font(.subheadline)
+                .foregroundColor(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
             
             Button(action: onImport) {
                 HStack {

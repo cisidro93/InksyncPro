@@ -397,7 +397,9 @@ struct LibraryGridView: View {
             destinationCollectionID = existing.id
         } else {
             conversionManager.createCollection(name: targetSeriesName, icon: "books.vertical", color: "blue")
-            destinationCollectionID = conversionManager.collections.first(where: { $0.name == targetSeriesName })!.id
+            // Safe optional — if createCollection fails silently we bail rather than crashing.
+            guard let newCol = conversionManager.collections.first(where: { $0.name == targetSeriesName }) else { return }
+            destinationCollectionID = newCol.id
         }
 
         // Re-assign every issue from the dragged series to the destination series

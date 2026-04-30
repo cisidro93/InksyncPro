@@ -124,9 +124,19 @@ struct ModernFileRow: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
-        // ✅ NEW: Lazy Asynchronous Fetch with Cancellation
+        // ✅ PERF: Async thumbnail load — reads back from NSCache after write
+        // so the image immediately appears without triggering a global objectWillChange.
         .task(id: pdf.id) {
+            let key = pdf.id.uuidString as NSString
+            // Fast path: already cached in memory
+            if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                self.localCover = cached; return
+            }
             await conversionManager.loadThumbnailAsync(for: pdf)
+            // Read back after write so this cell re-renders with the loaded image
+            if let loaded = conversionManager.thumbnailCache.object(forKey: key) {
+                self.localCover = loaded
+            }
         }
     }
 }
@@ -245,11 +255,18 @@ struct ModernSeriesRow: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
-        // ✅ NEW: Lazy Asynchronous Fetch with Cancellation
+        // ✅ PERF: Async thumbnail load — reads back from NSCache after write
         .task(id: group.id) {
             if let issueID = group.coverIssueID,
                let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) {
+                let key = issueID.uuidString as NSString
+                if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                    self.localCover = cached; return
+                }
                 await conversionManager.loadThumbnailAsync(for: pdf)
+                if let loaded = conversionManager.thumbnailCache.object(forKey: key) {
+                    self.localCover = loaded
+                }
             }
         }
     }

@@ -27,14 +27,25 @@ class LibraryViewModel: ObservableObject {
             }
             .store(in: &cancellables)
     }
-    
+
     // MARK: - Core Cache System
+
+    /// Active rebuild task — cancelled whenever a new one starts to prevent
+    /// out-of-order UI updates when SwiftData fires rapid onChange events.
+    private var rebuilTask: Task<Void, Never>?
+
     func updateLibraryItemsCache(pdfs: [ConvertedPDF], collections: [PDFCollection], sortOption: ModernLibraryView.SortOption) {
-        // Capture context snapshot to safely detach
+        // Cancel any in-flight rebuild so rapid SwiftData events (e.g. reading-progress
+        // writes) don't stack up and deliver results out of order.
+        rebuilTask?.cancel()
+
         let currentSearchText = debouncedSearchText
         let sortedPDFs = sortPDFs(pdfs, sortOption: sortOption)
-        
-        Task.detached(priority: .background) {
+
+        rebuilTask = Task.detached(priority: .background) { [weak self] in
+            guard let self else { return }
+            guard !Task.isCancelled else { return }
+
             var groups: [String: SeriesGroup] = [:]
             var singles: [ConvertedPDF] = []
             var firstAppearanceIndex: [String: Int] = [:]
@@ -177,8 +188,12 @@ class LibraryViewModel: ObservableObject {
             }
             
             items.sort { $0.0 < $1.0 }
+
+            // Cancellation guard: don't publish a stale result if a newer rebuild
+            // has already been queued by the time we finish computing.
+            guard !Task.isCancelled else { return }
             let finalItems = items.map { $0.1 }
-            
+
             await MainActor.run { [weak self] in
                 self?.cachedLibraryItems = finalItems
             }

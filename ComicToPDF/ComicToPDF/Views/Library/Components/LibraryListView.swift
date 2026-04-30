@@ -43,6 +43,28 @@ struct LibraryListView: View {
                             .listRowBackground(Theme.bg)
                             .listRowSeparatorTint(Color(UIColor.separator))
                             .contextMenu {
+                                Button {
+                                    if let next = nextUnread(in: group) {
+                                        HapticEngine.success()
+                                        onAction(.read, next)
+                                    }
+                                } label: { Label("Read Next Issue", systemImage: "play.fill") }
+
+                                Divider()
+
+                                Button {
+                                    // Trigger series rename via the ViewModel rename alert
+                                    // Re-use the same approach as the grid: post a notification
+                                    // so ModernLibraryView can present the alert without
+                                    // needing a local @State here.
+                                    NotificationCenter.default.post(
+                                        name: Notification.Name("RequestSeriesRename"),
+                                        object: group
+                                    )
+                                } label: { Label("Rename Series", systemImage: "pencil") }
+
+                                Divider()
+
                                 Button(role: .destructive) {
                                     for issue in group.issues { conversionManager.deletePDF(issue) }
                                 } label: { Label("Delete Series", systemImage: "trash") }

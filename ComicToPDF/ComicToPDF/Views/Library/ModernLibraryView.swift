@@ -21,6 +21,9 @@ struct ModernLibraryView: View {
     var useNavigationStack: Bool = false
     var onFolderImport: (() -> Void)? = nil
     
+    @State private var listRenameGroup: SeriesGroup? = nil
+    @State private var listRenamePendingName: String = ""
+
     // ✅ NEW: View Style State
     enum LibraryViewStyle: String {
         case list = "List"
@@ -135,6 +138,28 @@ struct ModernLibraryView: View {
             } // End Inner Group
         } // End Outer Group
         
+        .alert("Rename Series", isPresented: Binding(
+            get: { listRenameGroup != nil },
+            set: { if !$0 { listRenameGroup = nil } }
+        )) {
+            TextField("Series Name", text: $listRenamePendingName)
+                .autocorrectionDisabled()
+            Button("Rename") {
+                guard let group = listRenameGroup else { return }
+                let newName = listRenamePendingName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !newName.isEmpty, newName != group.title else { listRenameGroup = nil; return }
+                for pdf in group.issues {
+                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        conversionManager.convertedPDFs[idx].metadata.series = newName
+                    }
+                }
+                conversionManager.saveLibrary()
+                listRenameGroup = nil
+            }
+            Button("Cancel", role: .cancel) { listRenameGroup = nil }
+        } message: {
+            Text("This will rename all \(listRenameGroup?.count ?? 0) issues in this series.")
+        }
         .alert("Rename File", isPresented: Binding(
             get: { viewModel.pdfToRename != nil },
             set: { if !$0 { viewModel.pdfToRename = nil } }
@@ -193,6 +218,14 @@ struct ModernLibraryView: View {
             // Library tab double-tapped: scroll back to top
             HapticEngine.selection()
             NotificationCenter.default.post(name: Notification.Name("Library_ScrollToTop"), object: nil)
+        }
+        // List-mode series rename — LibraryListView posts this when the user
+        // taps Rename in its context menu so ModernLibraryView can present
+        // the shared rename alert without LibraryListView needing local @State.
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RequestSeriesRename"))) { notification in
+            guard let group = notification.object as? SeriesGroup else { return }
+            listRenameGroup = group
+            listRenamePendingName = group.title
         }
     }
     
