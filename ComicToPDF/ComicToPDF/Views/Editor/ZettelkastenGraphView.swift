@@ -33,8 +33,10 @@ struct GraphNode: Identifiable, Equatable {
         return base + scale * CGFloat(log2(Double(connectionCount) + 1.0))
     }
 
-    /// Hit-test radius is larger than the visual dot so fingers can tap easily.
-    var hitRadius: CGFloat { max(dotRadius * 2.2, 18) }
+    /// Hit-test radius matches the visual dot exactly so neighbouring nodes
+    /// aren't accidentally triggered. A tiny floor (8 pt) keeps micro-nodes
+    /// tappable even when they haven't yet accumulated connections.
+    var hitRadius: CGFloat { max(dotRadius, 8) }
 }
 
 struct GraphEdge: Identifiable {
