@@ -11,9 +11,35 @@ extension UTType {
 // MARK: - Drag Payload
 
 /// What gets carried when the user drags a library item onto another.
+/// When `seriesGroupTitle` is non-nil the payload represents an entire series
+/// being dragged (series-to-series combine). `pdfID` is set to the cover
+/// issue's UUID so `applyDrop` still has a valid UUID anchor, and
+/// `issueIDs` carries every issue in the group so they can all be re-assigned.
 struct LibraryDragPayload: Codable, Transferable {
-    let pdfID: UUID
+    let pdfID: UUID                     // cover issue (or primary file)
     let currentSeriesName: String?      // nil = ungrouped standalone file
+    /// Non-nil only when dragging an entire series group.
+    let seriesGroupTitle: String?
+    /// All issue IDs belonging to the dragged series (empty for single-file drags).
+    let issueIDs: [UUID]
+
+    /// Convenience init for single-file drags (preserves backward compat).
+    init(pdfID: UUID, currentSeriesName: String?) {
+        self.pdfID = pdfID
+        self.currentSeriesName = currentSeriesName
+        self.seriesGroupTitle = nil
+        self.issueIDs = []
+    }
+
+    /// Init for dragging an entire series group.
+    init(seriesGroup: SeriesGroup) {
+        self.pdfID = seriesGroup.coverIssueID ?? seriesGroup.issues.first!.id
+        self.currentSeriesName = seriesGroup.title
+        self.seriesGroupTitle = seriesGroup.title
+        self.issueIDs = seriesGroup.issues.map(\.id)
+    }
+
+    var isSeriesDrag: Bool { seriesGroupTitle != nil }
 
     static var transferRepresentation: some TransferRepresentation {
         CodableRepresentation(contentType: .libraryDragPayload)
@@ -109,7 +135,16 @@ struct LibraryGridView: View {
         // MARK: Drop Resolution Sheet
         .sheet(item: $pendingDropInfo) { info in
             DropResolutionSheet(info: info) { chosenName in
-                applyDrop(draggedPDFID: info.draggedID, targetSeriesName: chosenName)
+                if !info.allDraggedIssueIDs.isEmpty {
+                    // Series-to-series combine: move every issue from source series
+                    applySeriesDrop(
+                        issueIDs: info.allDraggedIssueIDs,
+                        sourceSeriesName: info.draggedSeriesName,
+                        targetSeriesName: chosenName
+                    )
+                } else {
+                    applyDrop(draggedPDFID: info.draggedID, targetSeriesName: chosenName)
+                }
             }
         }
     }
@@ -119,6 +154,8 @@ struct LibraryGridView: View {
     @ViewBuilder
     private func seriesCell(group: SeriesGroup) -> some View {
         let isDropTarget = dropTargetSeriesTitle == group.title
+        let seriesPayload = LibraryDragPayload(seriesGroup: group)
+
         Group {
             if isBatchMode {
                 Button {
@@ -163,18 +200,26 @@ struct LibraryGridView: View {
                 // entire grid, masking all sibling cells. iPad-only feature.
             }
         }
-        // ── Drag: each file in a series can be dragged individually via the single-cell path.
-        // ── Drop: series cells accept dropped files/series; smart naming keeps the destination series name.
+        // ── Drag: series cards are draggable — lifting a series lets you combine it with another.
+        .draggable(seriesPayload) {
+            SeriesDragPreviewCard(group: group, manager: conversionManager)
+        }
+        // ── Drop: series cells accept dropped single files AND dropped series.
+        // Smart rule: destination series name wins. Sheet lets user override.
         .dropDestination(for: LibraryDragPayload.self) { payloads, _ in
             guard let payload = payloads.first else { return false }
-            guard payload.pdfID != group.issues.first?.id else { return false } // dropping onto itself
-            // Smart rule: destination series name wins unless user explicitly picks otherwise.
-            // We still show the sheet so they can confirm or override.
+            // Prevent dropping a series onto itself
+            if payload.isSeriesDrag, payload.seriesGroupTitle == group.title { return false }
+            if !payload.isSeriesDrag, payload.pdfID == group.issues.first?.id { return false }
+
+            // Destination name always wins (smart default)
             pendingDropInfo = DropResolutionInfo(
                 draggedID: payload.pdfID,
                 draggedSeriesName: payload.currentSeriesName,
-                destinationSeriesName: group.title,       // ← destination wins by default
-                isFileDroppingOntoSeries: true
+                destinationSeriesName: group.title,
+                isFileDroppingOntoSeries: true,
+                // Pass along all issue IDs so applyDrop can move the whole series
+                allDraggedIssueIDs: payload.issueIDs
             )
             dropTargetSeriesTitle = nil
             return true
@@ -341,6 +386,39 @@ struct LibraryGridView: View {
         HapticEngine.success()
     }
 
+    /// Moves every issue from the dragged series into the destination series,
+    /// then removes the now-empty source collection shell.
+    /// The destination series name always wins (smart default — user confirmed via sheet).
+    private func applySeriesDrop(issueIDs: [UUID], sourceSeriesName: String?, targetSeriesName: String) {
+        // Resolve or create the destination collection up-front so all re-assignments
+        // can reference the same collectionId atomically.
+        let destinationCollectionID: UUID
+        if let existing = conversionManager.collections.first(where: { $0.name == targetSeriesName }) {
+            destinationCollectionID = existing.id
+        } else {
+            conversionManager.createCollection(name: targetSeriesName, icon: "books.vertical", color: "blue")
+            destinationCollectionID = conversionManager.collections.first(where: { $0.name == targetSeriesName })!.id
+        }
+
+        // Re-assign every issue from the dragged series to the destination series
+        for id in issueIDs {
+            guard let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == id }) else { continue }
+            conversionManager.convertedPDFs[idx].metadata.series = targetSeriesName
+            conversionManager.convertedPDFs[idx].collectionId = destinationCollectionID
+        }
+
+        // Prune the now-empty source collection shell so it doesn't ghost in the grid
+        if let sourceName = sourceSeriesName,
+           !sourceName.isEmpty,
+           sourceName != targetSeriesName,
+           let sourceCol = conversionManager.collections.first(where: { $0.name == sourceName }) {
+            conversionManager.deleteCollection(sourceCol)
+        }
+
+        conversionManager.saveLibrary()
+        HapticEngine.success()
+    }
+
     // MARK: - Index Scrubber helper
 
     private func firstItemId(for letter: String) -> String? {
@@ -398,7 +476,7 @@ struct LibraryGridView: View {
     }
 }
 
-// MARK: - Drag Preview Card
+// MARK: - Drag Preview Cards
 
 private struct DragPreviewCard: View {
     let pdf: ConvertedPDF
@@ -424,6 +502,55 @@ private struct DragPreviewCard: View {
     }
 }
 
+/// Drag preview shown when lifting an entire series — two stacked covers + a count badge.
+private struct SeriesDragPreviewCard: View {
+    let group: SeriesGroup
+    let manager: ConversionManager
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            // Second cover peeking behind
+            if let secondID = group.issues.dropFirst().first?.id,
+               let img = manager.thumbnailCache.object(forKey: secondID.uuidString as NSString) {
+                Image(uiImage: img)
+                    .resizable().scaledToFill()
+                    .frame(width: 72, height: 100)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .rotationEffect(.degrees(-6))
+                    .offset(x: -6, y: 6)
+                    .opacity(0.7)
+            }
+
+            // Front cover
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.ultraThinMaterial)
+                if let coverID = group.coverIssueID,
+                   let img = manager.thumbnailCache.object(forKey: coverID.uuidString as NSString) {
+                    Image(uiImage: img)
+                        .resizable().scaledToFill()
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                } else {
+                    Image(systemName: "books.vertical.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 80, height: 112)
+
+            // Issue count badge
+            Text("\(group.count)")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color.inkBlue)
+                .clipShape(Capsule())
+                .offset(x: 4, y: 4)
+        }
+        .shadow(radius: 14)
+    }
+}
+
 // MARK: - Drop Resolution Info
 
 struct DropResolutionInfo: Identifiable {
@@ -431,7 +558,23 @@ struct DropResolutionInfo: Identifiable {
     let draggedID: UUID
     let draggedSeriesName: String?
     let destinationSeriesName: String
-    let isFileDroppingOntoSeries: Bool  // true = file→series, false = file→file
+    let isFileDroppingOntoSeries: Bool  // true = file→series or series→series, false = file→file
+    /// Non-empty when dragging an entire series (series→series combine).
+    let allDraggedIssueIDs: [UUID]
+
+    init(
+        draggedID: UUID,
+        draggedSeriesName: String?,
+        destinationSeriesName: String,
+        isFileDroppingOntoSeries: Bool,
+        allDraggedIssueIDs: [UUID] = []
+    ) {
+        self.draggedID = draggedID
+        self.draggedSeriesName = draggedSeriesName
+        self.destinationSeriesName = destinationSeriesName
+        self.isFileDroppingOntoSeries = isFileDroppingOntoSeries
+        self.allDraggedIssueIDs = allDraggedIssueIDs
+    }
 }
 
 // MARK: - Drop Resolution Sheet
@@ -465,13 +608,17 @@ struct DropResolutionSheet: View {
                     }
                     .padding(.top, 32)
 
-                    Text(info.isFileDroppingOntoSeries ? "Add to Series" : "Create / Merge Series")
+                    Text(info.allDraggedIssueIDs.isEmpty
+                         ? (info.isFileDroppingOntoSeries ? "Add to Series" : "Create / Merge Series")
+                         : "Combine Series")
                         .font(.title3.bold())
                         .foregroundColor(.primary)
 
-                    Text(info.isFileDroppingOntoSeries
-                         ? "Which series name should this issue use?"
-                         : "These two files will be grouped. Choose a series name.")
+                    Text(info.allDraggedIssueIDs.isEmpty
+                         ? (info.isFileDroppingOntoSeries
+                            ? "Which series name should this issue use?"
+                            : "These two files will be grouped. Choose a series name.")
+                         : "\(info.allDraggedIssueIDs.count) issue\(info.allDraggedIssueIDs.count == 1 ? "" : "s") from \"\(info.draggedSeriesName ?? "source")\" will move into this series. Which name should they use?")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
