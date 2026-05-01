@@ -61,6 +61,10 @@ struct LibraryGridView: View {
 
     let onAction: (LibraryRowAction, ConvertedPDF) -> Void
     let onImport: () -> Void
+    /// Called immediately after any drop merge is committed so the parent
+    /// can force-rebuild the cache from live in-memory data without waiting
+    /// for the SwiftData @Query async refresh cycle.
+    let onDropApplied: () -> Void
 
     // Rename series alert state
     @State private var renamingGroup: SeriesGroup? = nil
@@ -384,6 +388,7 @@ struct LibraryGridView: View {
 
         conversionManager.saveLibrary()
         HapticEngine.success()
+        onDropApplied()
     }
 
     /// Moves every issue from the dragged series into the destination series,
@@ -419,6 +424,7 @@ struct LibraryGridView: View {
 
         conversionManager.saveLibrary()
         HapticEngine.success()
+        onDropApplied()
     }
 
     // MARK: - Index Scrubber helper

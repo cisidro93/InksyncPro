@@ -402,7 +402,20 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) }
+                    onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
+                    // Rebuild immediately from live in-memory data so the grid updates the
+                    // instant a drop is confirmed — without waiting for the SwiftData
+                    // @Query async refresh cycle to propagate the changes.
+                    onDropApplied: {
+                        let livePDFs = settingsManager.isVaultUnlocked
+                            ? conversionManager.convertedPDFs
+                            : conversionManager.convertedPDFs.filter { !$0.isPrivate }
+                        viewModel.updateLibraryItemsCache(
+                            pdfs: livePDFs,
+                            collections: conversionManager.collections,
+                            sortOption: sortOption
+                        )
+                    }
                 )
             }
         }
