@@ -77,7 +77,7 @@ class ComicImageCache: ObservableObject {
                 let resolvedURL: URL
                 var accessedURL: URL? = nil
                 if case .linked(let bm) = pdf.sourceMode,
-                   let url = try? await BookmarkResolver.shared.resolve(bm) {
+                   let url = try? BookmarkResolver.shared.resolve(bm) {
                     let didAccess = url.startAccessingSecurityScopedResource()
                     resolvedURL = url
                     if didAccess { accessedURL = url }
@@ -102,7 +102,7 @@ class ComicImageCache: ObservableObject {
                 // Store the URL so we can stop access in deinit.
                 let resolvedURL: URL
                 if case .linked(let bm) = pdf.sourceMode,
-                   let url = try? await BookmarkResolver.shared.resolve(bm) {
+                   let url = try? BookmarkResolver.shared.resolve(bm) {
                     let didAccess = url.startAccessingSecurityScopedResource()
                     resolvedURL = url
                     // Store reference so deinit can call stopAccessingSecurityScopedResource
@@ -176,7 +176,7 @@ class ComicImageCache: ObservableObject {
                     self?.cacheUpdatedTick += 1 // Force UI redraw to pop the newly loaded image
                 }
             } else {
-                await MainActor.run { [weak self] in
+                _ = await MainActor.run { [weak self] in
                     self?.fetchingQueue.remove(index)
                 }
             }
