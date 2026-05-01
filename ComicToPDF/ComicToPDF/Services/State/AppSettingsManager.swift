@@ -32,6 +32,7 @@ class AppSettingsManager: ObservableObject {
         var displayName: String          // e.g. "Samsung T7 — Comics"
         var volumeBookmarkData: Data     // Bookmark to the root folder on the drive
         var lastSeenDate: Date
+        var lastSyncedDate: Date?        // Updated each time syncDrive completes
         var fileCount: Int
         var isReadOnly: Bool = false     // Set during initial link probe
     }

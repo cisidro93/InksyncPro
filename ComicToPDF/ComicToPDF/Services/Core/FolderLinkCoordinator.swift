@@ -2,85 +2,76 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// Presents a native iOS Folder picker with `asCopy: false` to establish
-/// a live, linked connection to an external USB drive or network share.
+/// a live, linked connection to an external USB drive, Dropbox, iCloud Drive,
+/// Google Drive, or any other Files-app provider — without copying files to the sandbox.
 final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
     private static var live: FolderLinkCoordinator?
-    private var completion: ((URL?) -> Void)?
+    /// Called with every picked URL. Passes an empty array on cancel.
+    private var completion: (([URL]) -> Void)?
 
     private override init() {}
 
-    /// Present the folder picker to link an external drive.
-    static func present(completion: @escaping (URL?) -> Void) {
+    /// Present the folder picker.
+    /// - Parameter completion: Receives all selected folder URLs, or an empty array on cancel.
+    static func present(completion: @escaping ([URL]) -> Void) {
         let coordinator = FolderLinkCoordinator()
         coordinator.completion = completion
         FolderLinkCoordinator.live = coordinator
 
         guard let rootVC = topViewController() else {
-            completion(nil)
+            completion([])
             FolderLinkCoordinator.live = nil
             return
         }
 
-        // asCopy: false is CRITICAL. It prevents iOS from freezing the UI to copy a 100GB
-        // hard drive into the application sandbox before returning.
+        // asCopy: false is CRITICAL — prevents iOS from silently downloading and copying
+        // the entire cloud folder (Dropbox, iCloud, etc.) into the app sandbox.
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
         picker.delegate = coordinator
         picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
-        // iPads notoriously swallow UIDocumentPickerViewController UI events if it's
-        // presented as a formSheet over an existing Settings formSheet.
+        // Full-screen prevents iPadOS from swallowing events when presented over a form sheet.
         picker.modalPresentationStyle = .fullScreen
 
         rootVC.present(picker, animated: true)
     }
 
-    /// iOS fundamentally requires this deprecated delegate method when allowsMultipleSelection = false
-    /// and the picker is targeting `.folder`, otherwise the "Open" button simply does nothing.
+    // MARK: - UIDocumentPickerDelegate
+
+    /// Legacy single-URL callback — bridge to the multi-URL handler.
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
         documentPicker(controller, didPickDocumentsAt: [url])
     }
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard let selectedURL = urls.first else {
-            finish(with: nil)
+        guard !urls.isEmpty else {
+            finish(with: [])
             return
         }
 
-        // ⚠️  SECURITY SCOPE OWNERSHIP & iPadOS DISMISS BUG:
-        // We start security scope here (inside the delegate callback, while the grant
-        // is guaranteed live).
-        // iPadOS sometimes swallows the dismiss(animated:completion:) callback entirely
-        // if the picker was presented .fullScreen over an existing form sheet (like Settings).
-        // To prevent silent failures, we process in parallel with the dismiss animation.
-        let accessing = selectedURL.startAccessingSecurityScopedResource()
+        // ⚠️ SECURITY SCOPE OWNERSHIP:
+        // Start access on ALL picked URLs while still inside the delegate callback
+        // where the grant is guaranteed to be live.
+        let accessedURLs = urls.filter { $0.startAccessingSecurityScopedResource() }
 
         controller.dismiss(animated: true)
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else {
-                if accessing { selectedURL.stopAccessingSecurityScopedResource() }
-                return
-            }
-            
-            // Deliver URL to LinkedLibrarySettingsView via finish().
-            // linkDrive immediately calls startAccessingSecurityScopedResource()
-            // inside its own Task, overlapping with our scope. Only after that
-            // succeeds do we stop ours — guaranteeing continuity.
-            DispatchQueue.main.async {
-                self.finish(with: selectedURL)
-                // linkDrive's scope is now active; we can safely relinquish ours.
-                if accessing { selectedURL.stopAccessingSecurityScopedResource() }
-            }
+        DispatchQueue.main.async { [weak self] in
+            self?.finish(with: urls)
+            // linkDrive() immediately re-acquires its own scope; release ours.
+            accessedURLs.forEach { $0.stopAccessingSecurityScopedResource() }
         }
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-        finish(with: nil)
+        finish(with: [])
     }
 
-    private func finish(with url: URL?) {
-        completion?(url)
+    // MARK: - Private
+
+    private func finish(with urls: [URL]) {
+        completion?(urls)
         completion = nil
         FolderLinkCoordinator.live = nil
     }

@@ -4,137 +4,125 @@ struct LinkedLibrarySettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject var appSettings = AppSettingsManager.shared
     @ObservedObject var driveMonitor = DriveMonitor.shared
+    @ObservedObject private var scanner = LinkedLibraryScanner.shared
 
     @State private var isLinkingDrive = false
-    @State private var scanningStatus: String? = nil   // live feedback during scan
+    @State private var isRelinkingDrive: AppSettingsManager.LinkedDriveEntry? = nil
     @State private var errorMessage: String?
     @State private var successMessage: String?
 
+    private static let syncFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
     var body: some View {
         Form {
+            // MARK: Explanation Banner
             Section {
-                Text("Linked Library allows you to read your comics directly from an external USB drive (SSD, Flash Drive, etc.) without copying the massive files to your iPad's internal storage.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 4)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Read files directly from external storage or cloud providers — without copying them to your device.", systemImage: "externaldrive.connected.to.line.below.fill")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+
+                    Label("Works with USB drives, Dropbox, iCloud Drive, Google Drive, and any other iOS Files provider.", systemImage: "cloud")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 4)
             }
 
-            Section(header: Text("Linked Drives")) {
+            // MARK: Linked Folders
+            Section(header: Text("Linked Folders")) {
                 if appSettings.linkedDrives.isEmpty {
-                    Text("No external drives linked.")
-                        .foregroundColor(.secondary)
-                        .italic()
+                    HStack {
+                        Image(systemName: "externaldrive.badge.questionmark")
+                            .foregroundColor(.secondary)
+                        Text("No folders linked yet.")
+                            .foregroundColor(.secondary)
+                            .italic()
+                    }
                 } else {
                     ForEach(appSettings.linkedDrives) { drive in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(drive.displayName)
-                                    .font(.headline)
-
-                                HStack {
-                                    Circle()
-                                        .fill(driveMonitor.isConnected(driveID: drive.id) ? Color.green : Color.red)
-                                        .frame(width: 8, height: 8)
-                                    Text(driveMonitor.isConnected(driveID: drive.id) ? "Connected" : "Disconnected")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-
-                                    Text("•")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    Text("\(drive.fileCount) files")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            Spacer()
-
-                            if driveMonitor.isConnected(driveID: drive.id) {
-                                Button(action: {
-                                    Task {
-                                        await LinkedLibraryScanner.shared.syncDrive(drive)
-                                    }
-                                }) {
-                                    Image(systemName: "arrow.triangle.2.circlepath")
-                                        .foregroundColor(.blue)
-                                }
-                                .buttonStyle(BorderlessButtonStyle())
-                                .padding(.trailing, 8)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                removeDrive(drive)
-                            } label: {
-                                Label("Unlink", systemImage: "trash")
-                            }
-                        }
+                        driveRow(drive)
                     }
                 }
             }
 
+            // MARK: Status Messages
             if let success = successMessage {
                 Section {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
                         Text(success)
                             .foregroundColor(.green)
-                            .font(.caption)
+                            .font(.callout)
                     }
                 }
             }
 
             if let error = errorMessage {
                 Section {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(.red)
                         Text(error)
                             .foregroundColor(.red)
-                            .font(.caption)
+                            .font(.callout)
                     }
+                    Button("Dismiss") { errorMessage = nil }
+                        .font(.callout)
                 }
             }
 
+            // MARK: Link Button
             Section {
-                Button(action: { linkNewDrive() }) {
-                    HStack {
-                        if isLinkingDrive {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle())
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "externaldrive.badge.plus")
+                Button(action: { linkNewFolders() }) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(isLinkingDrive ? Color.orange.opacity(0.15) : Color.blue.opacity(0.12))
+                                .frame(width: 36, height: 36)
+                            if isLinkingDrive {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(.orange)
+                            } else {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundColor(.blue)
+                                    .font(.title3)
+                            }
                         }
+
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(isLinkingDrive ? "Scanning Drive..." : "Link External USB Drive")
-                            if let status = scanningStatus, isLinkingDrive {
-                                Text(status)
-                                    .font(.caption2)
+                            Text(isLinkingDrive ? "Linking Folder…" : "Link External Folder")
+                                .fontWeight(.semibold)
+                            if isLinkingDrive, !scanner.scanStatus.isEmpty {
+                                Text(scanner.scanStatus)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("USB drives, Dropbox, iCloud, Google Drive…")
+                                    .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                         }
                     }
+                    .padding(.vertical, 4)
                 }
                 .disabled(isLinkingDrive)
             }
 
+            // MARK: How It Works
             Section(header: Text("How It Works")) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Connect your USB drive to your iPad via a USB-C hub or Lightning adapter.", systemImage: "1.circle")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Label("Tap \"Link External USB Drive\" and navigate to your comics folder in the Files picker.", systemImage: "2.circle")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Label("Tap \"Open\" — Inksync will scan and register your comics without copying them.", systemImage: "3.circle")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Label("Your comics appear in the Library. Re-link if the bookmark expires after a long disconnection.", systemImage: "4.circle")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 10) {
+                    howItWorksRow(icon: "1.circle", text: "For USB drives: connect via a USB-C hub or Lightning adapter and open the Files app to verify it appears.")
+                    howItWorksRow(icon: "2.circle", text: "For Dropbox / iCloud / Google Drive: install the app and enable it in Files → Browse → Edit.")
+                    howItWorksRow(icon: "3.circle", text: "Tap \"Link External Folder\" and navigate to your comics folder in the picker. Tap Open.")
+                    howItWorksRow(icon: "4.circle", text: "InksyncPro indexes your files instantly — nothing is copied to your device. Comics are streamed on demand.")
+                    howItWorksRow(icon: "5.circle", text: "If a link expires, tap the Re-link button next to the folder to refresh without losing your library data.")
                 }
                 .padding(.vertical, 4)
             }
@@ -142,65 +130,193 @@ struct LinkedLibrarySettingsView: View {
         .navigationTitle("Linked Library")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            // Ensure scanner has a reference to the live library so it can
-            // append files when the user picks a folder.
             LinkedLibraryScanner.shared.conversionManager = conversionManager
         }
     }
 
-    private func linkNewDrive() {
+    // MARK: - Drive Row
+
+    @ViewBuilder
+    private func driveRow(_ drive: AppSettingsManager.LinkedDriveEntry) -> some View {
+        let connected = driveMonitor.isConnected(driveID: drive.id)
+
+        HStack(spacing: 12) {
+            // Status indicator dot
+            ZStack {
+                Circle()
+                    .fill(connected ? Color.green.opacity(0.15) : Color.red.opacity(0.12))
+                    .frame(width: 32, height: 32)
+                Image(systemName: connected ? "externaldrive.fill" : "externaldrive.badge.exclamationmark")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(connected ? .green : .red)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(drive.displayName)
+                    .font(.headline)
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    Text(connected ? "Connected" : "Disconnected")
+                        .font(.caption)
+                        .foregroundColor(connected ? .green : .secondary)
+
+                    Text("·")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Text("\(drive.fileCount) files")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if let synced = drive.lastSyncedDate {
+                        Text("·")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("Synced \(Self.syncFormatter.localizedString(for: synced, relativeTo: Date()))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if drive.isReadOnly {
+                    Label("Read-only", systemImage: "lock.fill")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+            }
+
+            Spacer()
+
+            // Action buttons
+            HStack(spacing: 10) {
+                if connected {
+                    Button(action: {
+                        Task { await LinkedLibraryScanner.shared.syncDrive(drive) }
+                    }) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 15, weight: .medium))
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                    .help("Sync — scan for new files added to this folder")
+                } else {
+                    // Re-link: refresh the bookmark without wiping records
+                    Button(action: {
+                        relinkFolder(drive)
+                    }) {
+                        Image(systemName: "link.badge.plus")
+                            .foregroundColor(.orange)
+                            .font(.system(size: 15, weight: .medium))
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                    .disabled(isLinkingDrive)
+                    .help("Re-link — pick the folder again to refresh the connection")
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                removeDrive(drive)
+            } label: {
+                Label("Unlink", systemImage: "trash")
+            }
+        }
+    }
+
+    // MARK: - How It Works Row
+
+    @ViewBuilder
+    private func howItWorksRow(icon: String, text: String) -> some View {
+        Label {
+            Text(text)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        } icon: {
+            Image(systemName: icon)
+                .foregroundColor(.accentColor)
+                .font(.caption)
+        }
+    }
+
+    // MARK: - Actions
+
+    private func linkNewFolders() {
         errorMessage = nil
         successMessage = nil
-        scanningStatus = nil
         isLinkingDrive = true
 
-        // Capture a strong reference to conversionManager before the async gap.
-        // @EnvironmentObject can't be accessed across actor hops.
         let manager = conversionManager
-        // Ensure the scanner always has the live manager — belt + suspenders.
         LinkedLibraryScanner.shared.conversionManager = manager
 
-        FolderLinkCoordinator.present { url in
-            guard let url = url else {
-                // User cancelled — reset state on MainActor.
+        FolderLinkCoordinator.present { urls in
+            guard !urls.isEmpty else {
                 Task { @MainActor in self.isLinkingDrive = false }
                 return
             }
 
-            // ⚠️ UIKit dismiss completion runs on an arbitrary thread.
-            // LinkedLibraryScanner is @MainActor — we MUST hop explicitly
-            // or the await silently deadlocks on iPad.
             Task { @MainActor in
-                self.scanningStatus = "Reading folder structure…"
+                let scanner = LinkedLibraryScanner.shared
+                scanner.conversionManager = manager
 
-                do {
-                    let scanner = LinkedLibraryScanner.shared
-                    scanner.conversionManager = manager   // re-affirm before scan
+                var linked = 0
+                var totalFiles = 0
 
-                    let entry = try await scanner.linkDrive(
-                        folderURL: url,
-                        displayName: url.lastPathComponent
-                    )
+                for url in urls {
+                    do {
+                        let entry = try await scanner.linkDrive(
+                            folderURL: url,
+                            displayName: url.lastPathComponent
+                        )
+                        linked += 1
+                        totalFiles += entry.fileCount
+                    } catch {
+                        self.errorMessage = "Failed to link \"\(url.lastPathComponent)\": \(error.localizedDescription)"
+                    }
+                }
 
-                    self.isLinkingDrive = false
-                    self.scanningStatus = nil
+                self.isLinkingDrive = false
 
-                    if entry.fileCount == 0 {
-                        // Linked but found nothing — surface a diagnostic.
-                        self.errorMessage = "Drive linked but no comic files were found inside \"\(entry.displayName)\".\n\nMake sure you selected the folder containing your .cbz / .pdf / .epub files, not a file inside it."
+                if linked > 0 {
+                    if totalFiles == 0 {
+                        self.errorMessage = "Folder\(linked > 1 ? "s" : "") linked but no comic files were found inside. Make sure you selected the folder containing your .cbz / .pdf / .epub files."
                     } else {
-                        self.successMessage = "Linked \"\(entry.displayName)\" — \(entry.fileCount) comic\(entry.fileCount == 1 ? "" : "s") found."
+                        let folderLabel = linked == 1 ? "\"\(urls.first!.lastPathComponent)\"" : "\(linked) folders"
+                        self.successMessage = "Linked \(folderLabel) — \(totalFiles) comic\(totalFiles == 1 ? "" : "s") found."
                         Task {
-                            try? await Task.sleep(nanoseconds: 5_000_000_000)
+                            try? await Task.sleep(nanoseconds: 6_000_000_000)
                             self.successMessage = nil
                         }
                     }
-
-                } catch {
-                    self.isLinkingDrive = false
-                    self.scanningStatus = nil
-                    self.errorMessage = "Failed to link drive: \(error.localizedDescription).\n\nMake sure the drive is connected and try again."
                 }
+            }
+        }
+    }
+
+    private func relinkFolder(_ drive: AppSettingsManager.LinkedDriveEntry) {
+        errorMessage = nil
+        isLinkingDrive = true
+        let manager = conversionManager
+        LinkedLibraryScanner.shared.conversionManager = manager
+
+        FolderLinkCoordinator.present { urls in
+            guard let url = urls.first else {
+                Task { @MainActor in self.isLinkingDrive = false }
+                return
+            }
+            Task { @MainActor in
+                do {
+                    try await LinkedLibraryScanner.shared.relinkDrive(drive, newFolderURL: url)
+                    self.successMessage = "Re-linked \"\(url.lastPathComponent)\" successfully."
+                    Task {
+                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        self.successMessage = nil
+                    }
+                } catch {
+                    self.errorMessage = "Re-link failed: \(error.localizedDescription)"
+                }
+                self.isLinkingDrive = false
             }
         }
     }

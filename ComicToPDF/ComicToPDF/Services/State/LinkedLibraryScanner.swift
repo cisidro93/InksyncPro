@@ -16,6 +16,10 @@ import UIKit
 final class LinkedLibraryScanner {
 
     static let shared = LinkedLibraryScanner()
+
+    /// Published live during linkDrive scanning so the UI can display progress.
+    @Published private(set) var scanStatus: String = ""
+
     private init() {
         // Observe stale bookmark notifications from BookmarkResolver
         NotificationCenter.default.addObserver(
@@ -34,27 +38,37 @@ final class LinkedLibraryScanner {
 
     // MARK: - Link Drive
 
-    /// Register a folder on an external drive. Files are never copied — only referenced.
+    /// Register a folder on an external drive or cloud provider. Files are never copied — only referenced.
     func linkDrive(folderURL: URL, displayName: String? = nil) async throws -> AppSettingsManager.LinkedDriveEntry {
         let accessing = folderURL.startAccessingSecurityScopedResource()
         defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
 
-        // Create persistent bookmark for the root folder.
-        let bookmarkData = try folderURL.bookmarkData(
-            options: [],
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        )
+        scanStatus = "Creating bookmark…"
+
+        // Create persistent bookmark. `.withSecurityScope` is required for cloud providers
+        // (Dropbox, iCloud, Google Drive) so the bookmark survives app restarts.
+        let bookmarkData: Data
+        do {
+            bookmarkData = try folderURL.bookmarkData(
+                options: .minimalBookmark,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        } catch {
+            // Fallback: no options (works for most local/USB volumes)
+            bookmarkData = try folderURL.bookmarkData(
+                options: [],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        }
 
         // Probe write capability
         let isReadOnly = !FileManager.default.isWritableFile(atPath: folderURL.path)
 
-        // ━━ Move disk I/O off the MainActor ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // scanDirectory on large drives can take 5–10+ seconds.
-        // Running it synchronously on MainActor blocks the UI and can trigger
-        // iPadOS watchdog termination. Capture only Sendable value types so
-        // we never need [weak self] in a @Sendable Task closure.
-        let exts = supportedExtensions          // [String] — Sendable
+        // ━━ Move disk I/O off the MainActor ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        scanStatus = "Scanning folder…"
+        let exts = supportedExtensions
         let files: [URL] = await Task.detached(priority: .userInitiated) {
             guard let enumerator = FileManager.default.enumerator(
                 at: folderURL,
@@ -66,6 +80,8 @@ final class LinkedLibraryScanner {
             }
         }.value
 
+        scanStatus = "Found \(files.count) file\(files.count == 1 ? "" : "s") — registering…"
+
         Logger.shared.log("LinkedLibraryScanner: Scanned \(files.count) files in '\(folderURL.lastPathComponent)'", category: "Drive")
 
         // Build drive entry
@@ -73,6 +89,7 @@ final class LinkedLibraryScanner {
             displayName: displayName ?? folderURL.lastPathComponent,
             volumeBookmarkData: bookmarkData,
             lastSeenDate: Date(),
+            lastSyncedDate: Date(),
             fileCount: files.count,
             isReadOnly: isReadOnly
         )
@@ -87,6 +104,7 @@ final class LinkedLibraryScanner {
         // Inform DriveMonitor of the updated drive list
         DriveMonitor.shared.startMonitoring(drives: AppSettingsManager.shared.linkedDrives)
 
+        scanStatus = ""
         return entry
     }
 
@@ -118,8 +136,6 @@ final class LinkedLibraryScanner {
         }
 
         // Add newly appeared files.
-        // Compare by filename only — drive URLs change across reconnects and
-        // resolving per-file bookmarks here is both slow and unreliable.
         let existingFilenames = Set(manager.convertedPDFs.compactMap { pdf -> String? in
             guard case .linked = pdf.sourceMode else { return nil }
             return pdf.url.lastPathComponent
@@ -136,11 +152,49 @@ final class LinkedLibraryScanner {
             )
         }
 
-        // Update last seen date and file count
+        // Update last seen date, file count, and sync timestamp
         var updated = entry
         updated.lastSeenDate = Date()
+        updated.lastSyncedDate = Date()
         updated.fileCount = foundFiles.count
         AppSettingsManager.shared.updateLinkedDrive(updated)
+    }
+
+    // MARK: - Re-link Drive (update bookmark, preserve library records)
+
+    /// Called when a drive shows as disconnected but the user wants to re-establish the bookmark
+    /// without wiping all the file records that were already registered.
+    func relinkDrive(_ entry: AppSettingsManager.LinkedDriveEntry, newFolderURL: URL) async throws {
+        let accessing = newFolderURL.startAccessingSecurityScopedResource()
+        defer { if accessing { newFolderURL.stopAccessingSecurityScopedResource() } }
+
+        // Create a fresh bookmark for the re-selected folder
+        let newBookmark: Data
+        do {
+            newBookmark = try newFolderURL.bookmarkData(
+                options: .minimalBookmark,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        } catch {
+            newBookmark = try newFolderURL.bookmarkData(
+                options: [],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        }
+
+        // Update the drive entry's bookmark in-place
+        var updated = entry
+        updated.volumeBookmarkData = newBookmark
+        updated.lastSeenDate = Date()
+        updated.displayName = newFolderURL.lastPathComponent  // update in case path changed
+        AppSettingsManager.shared.updateLinkedDrive(updated)
+
+        // Run a sync to pick up any new files
+        await syncDrive(updated)
+
+        Logger.shared.log("LinkedLibraryScanner: Re-linked drive '\(updated.displayName)'", category: "Drive")
     }
 
     // MARK: - Unlink Drive

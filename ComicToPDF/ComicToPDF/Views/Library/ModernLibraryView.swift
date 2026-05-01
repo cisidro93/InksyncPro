@@ -475,8 +475,8 @@ struct ModernLibraryView: View {
                 Menu {
                     Button {
                         let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        FolderLinkCoordinator.present { url in
-                            guard let targetURL = url else { return }
+                        FolderLinkCoordinator.present { urls in
+                            guard let targetURL = urls.first else { return }
                             Task {
                                 await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
                                 do {

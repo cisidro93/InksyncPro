@@ -47,9 +47,10 @@ final class DriveMonitor: ObservableObject {
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.probeAll()
-                // 30s passive poll — battery friendly for idle iPads.
-                // Immediate foreground probe (in setupLifecycleObservers) keeps reconnect snappy.
-                try? await Task.sleep(for: .seconds(30))
+                // 8s poll — fast enough to detect a freshly-plugged USB drive within one cycle,
+                // while remaining gentle on battery for idle iPads.
+                // Immediate foreground probe (in setupLifecycleObservers) handles reconnect snappiness.
+                try? await Task.sleep(for: .seconds(8))
             }
         }
     }
