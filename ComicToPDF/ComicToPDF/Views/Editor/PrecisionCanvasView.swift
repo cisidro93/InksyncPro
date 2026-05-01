@@ -51,187 +51,12 @@ struct PrecisionCanvasView: View {
                             .frame(width: geo.size.width, height: geo.size.height)
                             .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
                         
-                        // Panels Overlay
-                        Canvas { context, size in
-                            // Draw Active Panels
-                            for (index, panel) in editorState.pageModel.panels.enumerated() {
-                                let rect = CoordinateConverter.denormalize(rect: panel, in: displayedRect)
-                                let isSelected = (index == editorState.selectedPanelIndex)
-                                
-                                // Fill
-                                context.fill(Path(rect), with: .color(Color.blue.opacity(0.1)))
-                                
-                                // Stroke
-                                let path = Path(rect)
-                                context.stroke(path, with: .color(isSelected ? .yellow : .blue), lineWidth: isSelected ? 3 : 2)
-                                
-                                // Label
-                                let text = Text("\(index + 1)")
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.white)
-                                
-                                let textPoint = CGPoint(x: rect.minX + 4, y: rect.minY + 4)
-                                context.draw(text, at: textPoint, anchor: .topLeading)
+                        panelOverlayCanvas(displayedRect: displayedRect)
+                            .gesture(canvasGesture(in: displayedRect))
 
-                                // ✅ DEV OVERLAY: normalized dimensions + origin
-                                if AppSettingsManager.shared.conversionSettings.showEditorDebug {
-                                    let dimLabel = Text(String(format: "%.0f×%.0f", panel.width, panel.height))
-                                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                        .foregroundColor(.yellow)
-                                    context.draw(dimLabel,
-                                                 at: CGPoint(x: rect.minX + 4, y: rect.maxY - 14),
-                                                 anchor: .topLeading)
-                                    let xyLabel = Text(String(format: "(%.0f, %.0f)", panel.x, panel.y))
-                                        .font(.system(size: 8, weight: .regular, design: .monospaced))
-                                        .foregroundColor(Color.yellow.opacity(0.75))
-                                    context.draw(xyLabel,
-                                                 at: CGPoint(x: rect.maxX - 4, y: rect.minY + 4),
-                                                 anchor: .topTrailing)
-                                }
-                            } // end for (index, panel)
-                            
-                            // Draw Proposed Panels
-                            if selectedTool == .scan {
-                                for (i, panel) in editorState.pageModel.proposedPanels.enumerated() {
-                                    let rect = CoordinateConverter.denormalize(rect: panel, in: displayedRect)
-                                    let path = Path(rect)
-                                    context.stroke(path, with: .color(Color.green.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
-
-                                    // ✅ DEV OVERLAY: confidence + detection method badge
-                                    if AppSettingsManager.shared.conversionSettings.showEditorDebug,
-                                       i < editorState.proposedCandidates.count {
-                                        let candidate = editorState.proposedCandidates[i]
-                                        let confPct = Int(candidate.confidence * 100)
-                                        let methodShort: String
-                                        switch candidate.method {
-                                        case .visionRectangle: methodShort = "VIS"
-                                        case .deepScanContour:  methodShort = "CTR"
-                                        case .textAnchor:       methodShort = "TXT"
-                                        case .fallbackGrid:     methodShort = "GRD"
-                                        }
-                                        let badgeColor: Color = confPct >= 70 ? .green : confPct >= 40 ? .yellow : .red
-                                        let badge = Text("\(methodShort) \(confPct)%")
-                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                            .foregroundColor(badgeColor)
-                                        context.draw(badge,
-                                                     at: CGPoint(x: rect.midX, y: rect.minY + 4),
-                                                     anchor: .top)
-                                    }
-                                }
-                            }
-                            
-                            // Draw Snap Guides
-                            if selectedTool == .edit || selectedTool == .anchor {
-                                for guide in editorState.snapGuides {
-                                    let start = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: displayedRect)
-                                    let end = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: displayedRect)
-                                    
-                                    var path = Path()
-                                    path.move(to: start)
-                                    path.addLine(to: end)
-                                    
-                                    context.stroke(path, with: .color(.blue.opacity(0.15)), lineWidth: 1)
-                                }
-                            }
-                            
-                            // 2. Active Snap Guides
-                            for guide in activeSnapGuides {
-                                let start = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: displayedRect)
-                                let end = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: displayedRect)
-                                
-                                var path = Path()
-                                path.move(to: start)
-                                path.addLine(to: end)
-                                
-                                context.stroke(path, with: .color(.cyan), lineWidth: 2)
-                                context.stroke(path, with: .color(.cyan.opacity(0.5)), lineWidth: 4)
-                            }
-                            
-                            // Draw Dragging Rect
-                            if let dragRect = currentDragRect {
-                                let rect = CoordinateConverter.denormalize(rect: dragRect, in: displayedRect)
-                                context.stroke(Path(rect), with: .color(.white), lineWidth: 1)
-                                
-                                // Draw Handles if Resizing
-                                if activeHandle != nil {
-                                    let handles = getHandleRects(for: rect)
-                                    for handle in handles {
-                                        context.fill(Path(handle), with: .color(.white))
-                                        context.stroke(Path(handle), with: .color(.black), lineWidth: 1)
-                                    }
-                                }
-                            } else if let index = editorState.selectedPanelIndex {
-                                // Draw Handles for Selected Panel (Idle)
-                                let rect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[index], in: displayedRect)
-                                let handles = getHandleRects(for: rect)
-                                for handle in handles {
-                                    context.fill(Path(handle), with: .color(.white))
-                                    context.stroke(Path(handle), with: .color(.blue), lineWidth: 1)
-                                }
-                            }
-                            
-                            // Anchor Tool Visuals
-                            if selectedTool == .anchor {
-                                if let dragRect = currentDragRect {
-                                    let rect = CoordinateConverter.denormalize(rect: dragRect, in: displayedRect)
-                                    context.fill(Path(rect), with: .color(.green.opacity(0.3)))
-                                    context.stroke(Path(rect), with: .color(.green), lineWidth: 2)
-                                    
-                                    // Removed broken text resolver that was erroring during layout passes
-                                }
-                            }
-                        }
-                        .gesture(canvasGesture(in: displayedRect))
-
-                        // ✅ DEV OVERLAY: Coordinate system watermark + panel count
-                        if AppSettingsManager.shared.conversionSettings.showEditorDebug {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                let sysTag = editorState.pageModel.coordinateSystem?.rawValue ?? "unknown"
-                                Text("coords: \(sysTag)")
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.cyan)
-                                Text("\(editorState.pageModel.panels.count) panels · \(editorState.pageModel.proposedPanels.count) proposed")
-                                    .font(.system(size: 9, weight: .regular, design: .monospaced))
-                                    .foregroundColor(.cyan.opacity(0.8))
-                            }
-                            .padding(6)
-                            .background(.black.opacity(0.55))
-                            .cornerRadius(6)
-                            .padding(8)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                            .allowsHitTesting(false)
-                        }
-
-                        // ✅ DEV OVERLAY: Scrollable debug log HUD
-                        if AppSettingsManager.shared.conversionSettings.showEditorDebug {
-                            ScrollViewReader { proxy in
-                                ScrollView {
-                                    LazyVStack(alignment: .leading, spacing: 2) {
-                                        ForEach(Array(editorState.debugLog.suffix(20).enumerated()), id: \.offset) { _, entry in
-                                            Text(entry)
-                                                .font(.system(size: 8, weight: .regular, design: .monospaced))
-                                                .foregroundColor(entry.contains("[DEV]") ? .cyan :
-                                                                 entry.contains("⚠️") ? .yellow :
-                                                                 entry.contains("✅") ? .green : .white)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                    }
-                                    .padding(6)
-                                }
-                                .frame(width: min(geo.size.width * 0.45, 280), height: 110)
-                                .background(.black.opacity(0.65))
-                                .cornerRadius(8)
-                                .padding(8)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                                .allowsHitTesting(false)
-                                .onChange(of: editorState.debugLog.count) { _, _ in
-                                    if let last = editorState.debugLog.indices.last {
-                                        proxy.scrollTo(last, anchor: .bottom)
-                                    }
-                                }
-                            }
-                        }
+                        // ✅ DEV overlays — extracted to break compiler type-check timeout
+                        devWatermarkOverlay
+                        devLogHUD(geoWidth: geo.size.width)
 
                     } // end ZStack alignment: .topLeading
                     .onAppear { viewSize = geo.size }
@@ -418,6 +243,142 @@ struct PrecisionCanvasView: View {
         }
     }
     
+
+    // MARK: - Dev Overlay Helpers (extracted to prevent Swift type-checker timeout)
+
+    /// Full Canvas drawing layer: active panels, proposed panels, snap guides, handles.
+    private func panelOverlayCanvas(displayedRect: CGRect) -> some View {
+        Canvas { [self] context, _ in
+            // Draw Active Panels
+            for (index, panel) in editorState.pageModel.panels.enumerated() {
+                let rect = CoordinateConverter.denormalize(rect: panel, in: displayedRect)
+                let isSelected = (index == editorState.selectedPanelIndex)
+                context.fill(Path(rect), with: .color(Color.blue.opacity(0.1)))
+                context.stroke(Path(rect), with: .color(isSelected ? .yellow : .blue), lineWidth: isSelected ? 3 : 2)
+                let numLabel = Text("\(index + 1)").font(.caption).fontWeight(.bold).foregroundColor(.white)
+                context.draw(numLabel, at: CGPoint(x: rect.minX + 4, y: rect.minY + 4), anchor: .topLeading)
+                if AppSettingsManager.shared.conversionSettings.showEditorDebug {
+                    let dimLabel = Text(String(format: "%.0f\u{00D7}%.0f", panel.width, panel.height))
+                        .font(.system(size: 9, weight: .medium, design: .monospaced)).foregroundColor(.yellow)
+                    context.draw(dimLabel, at: CGPoint(x: rect.minX + 4, y: rect.maxY - 14), anchor: .topLeading)
+                    let xyLabel = Text(String(format: "(%.0f, %.0f)", panel.x, panel.y))
+                        .font(.system(size: 8, weight: .regular, design: .monospaced)).foregroundColor(Color.yellow.opacity(0.75))
+                    context.draw(xyLabel, at: CGPoint(x: rect.maxX - 4, y: rect.minY + 4), anchor: .topTrailing)
+                }
+            }
+            // Draw Proposed Panels
+            if selectedTool == .scan {
+                for (i, panel) in editorState.pageModel.proposedPanels.enumerated() {
+                    let rect = CoordinateConverter.denormalize(rect: panel, in: displayedRect)
+                    context.stroke(Path(rect), with: .color(Color.green.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                    if AppSettingsManager.shared.conversionSettings.showEditorDebug,
+                       i < editorState.proposedCandidates.count {
+                        let candidate = editorState.proposedCandidates[i]
+                        let confPct = Int(candidate.confidence * 100)
+                        let methodShort: String
+                        switch candidate.method {
+                        case .visionRectangle: methodShort = "VIS"
+                        case .deepScanContour:  methodShort = "CTR"
+                        case .textAnchor:       methodShort = "TXT"
+                        case .fallbackGrid:     methodShort = "GRD"
+                        }
+                        let badgeColor: Color = confPct >= 70 ? .green : confPct >= 40 ? .yellow : .red
+                        let badge = Text("\(methodShort) \(confPct)%")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(badgeColor)
+                        context.draw(badge, at: CGPoint(x: rect.midX, y: rect.minY + 4), anchor: .top)
+                    }
+                }
+            }
+            // Draw Snap Guides (static + active)
+            for guide in editorState.snapGuides where selectedTool == .edit || selectedTool == .anchor {
+                let s = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: displayedRect)
+                let e = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: displayedRect)
+                var p = Path(); p.move(to: s); p.addLine(to: e)
+                context.stroke(p, with: .color(.blue.opacity(0.15)), lineWidth: 1)
+            }
+            for guide in activeSnapGuides {
+                let s = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: displayedRect)
+                let e = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: displayedRect)
+                var p = Path(); p.move(to: s); p.addLine(to: e)
+                context.stroke(p, with: .color(.cyan), lineWidth: 2)
+                context.stroke(p, with: .color(.cyan.opacity(0.5)), lineWidth: 4)
+            }
+            // Drag / Selection Handles
+            if let dragRect = currentDragRect {
+                let rect = CoordinateConverter.denormalize(rect: dragRect, in: displayedRect)
+                context.stroke(Path(rect), with: .color(.white), lineWidth: 1)
+                if activeHandle != nil {
+                    for h in getHandleRects(for: rect) { context.fill(Path(h), with: .color(.white)); context.stroke(Path(h), with: .color(.black), lineWidth: 1) }
+                }
+            } else if let idx = editorState.selectedPanelIndex {
+                let rect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[idx], in: displayedRect)
+                for h in getHandleRects(for: rect) { context.fill(Path(h), with: .color(.white)); context.stroke(Path(h), with: .color(.blue), lineWidth: 1) }
+            }
+            // Anchor Tool
+            if selectedTool == .anchor, let dragRect = currentDragRect {
+                let rect = CoordinateConverter.denormalize(rect: dragRect, in: displayedRect)
+                context.fill(Path(rect), with: .color(.green.opacity(0.3)))
+                context.stroke(Path(rect), with: .color(.green), lineWidth: 2)
+            }
+        }
+    }
+
+    /// Coordinate system watermark + panel/proposed count — top-right corner.
+    @ViewBuilder
+    private var devWatermarkOverlay: some View {
+        if AppSettingsManager.shared.conversionSettings.showEditorDebug {
+            let sysTag = editorState.pageModel.coordinateSystem?.rawValue ?? "unknown"
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("coords: \(sysTag)")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(.cyan)
+                Text("\(editorState.pageModel.panels.count) panels · \(editorState.pageModel.proposedPanels.count) proposed")
+                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                    .foregroundColor(.cyan.opacity(0.8))
+            }
+            .padding(6)
+            .background(.black.opacity(0.55))
+            .cornerRadius(6)
+            .padding(8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .allowsHitTesting(false)
+        }
+    }
+
+    /// Scrollable debug log HUD — bottom-left corner.
+    @ViewBuilder
+    private func devLogHUD(geoWidth: CGFloat) -> some View {
+        if AppSettingsManager.shared.conversionSettings.showEditorDebug {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(editorState.debugLog.suffix(20).enumerated()), id: \.offset) { _, entry in
+                            Text(entry)
+                                .font(.system(size: 8, weight: .regular, design: .monospaced))
+                                .foregroundColor(
+                                    entry.contains("[DEV]") ? .cyan :
+                                    entry.contains("⚠️")    ? .yellow :
+                                    entry.contains("✅")    ? .green  : .white
+                                )
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(6)
+                }
+                .frame(width: min(geoWidth * 0.45, 280), height: 110)
+                .background(.black.opacity(0.65))
+                .cornerRadius(8)
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .allowsHitTesting(false)
+                .onChange(of: editorState.debugLog.count) { _, _ in
+                    if let last = editorState.debugLog.indices.last {
+                        proxy.scrollTo(last, anchor: .bottom)
+                    }
+                }
+            }
+        }
+    }
 
     @State private var activeSnapGuides: [SnapGuide] = []
     

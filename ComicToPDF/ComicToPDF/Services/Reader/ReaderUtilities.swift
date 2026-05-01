@@ -39,9 +39,9 @@ final class OrientationLockManager: ObservableObject {
         scene.requestGeometryUpdate(pref) { _ in
             // Orientation change rejected by system — acceptable silent failure
         }
-        // Rotate to match if needed
-        if #available(iOS 16.0, *) {
-            UIViewController.attemptRotationToDeviceOrientation()
+        // Rotate to match if needed — use the modern instance-method API (iOS 16+)
+        DispatchQueue.main.async {
+            scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
         }
     }
 }
