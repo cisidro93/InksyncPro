@@ -245,7 +245,7 @@ struct ContentView: View {
             InkTabBar(
                 selectedTab: $selectedTab,
                 isHidden: $tabBarHidden,
-                convertingProgress: conversionManager.conversionProgress,
+                convertingProgress: max(conversionManager.conversionProgress, ImportMonitorManager.shared.progress),
                 isConverting: conversionManager.isConverting,
                 convertingMessage: conversionManager.processingStatus
             )
