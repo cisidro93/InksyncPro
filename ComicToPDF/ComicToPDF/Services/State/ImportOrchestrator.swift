@@ -354,6 +354,13 @@ actor ImportOrchestrator {
         
         await MainActor.run { ImportMonitorManager.shared.completeImport() }
         guard !importedPDFs.isEmpty else { return }
+
+        // ✅ Import History: log each successfully imported file
+        for pdf in importedPDFs {
+            let size = pdf.fileSize > 0 ? ByteCountFormatter.string(fromByteCount: pdf.fileSize, countStyle: .file) : "unknown size"
+            Logger.shared.log("✓ Imported: \(pdf.name) (\(size))", category: "Import", type: .success)
+        }
+        Logger.shared.log("✅ Import batch complete: \(importedPDFs.count) file(s) added to library.", category: "Import", type: .success)
         
         var clusters: [String: [ConvertedPDF]] = [:]
         
@@ -577,6 +584,12 @@ actor ImportOrchestrator {
         }.value
         
         if newPDFs.isEmpty { return }
+        // ✅ Import History: log linked-library sync batch
+        for pdf in newPDFs {
+            let size = pdf.fileSize > 0 ? ByteCountFormatter.string(fromByteCount: pdf.fileSize, countStyle: .file) : "unknown size"
+            Logger.shared.log("✓ Synced from linked folder: \(pdf.name) (\(size))", category: "Import", type: .success)
+        }
+        Logger.shared.log("✅ Linked library sync: \(newPDFs.count) file(s) added.", category: "Import", type: .success)
         await MainActor.run {
             for var newPdf in newPDFs {
                 if let seriesName = newPdf.metadata.series, !seriesName.isEmpty {

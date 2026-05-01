@@ -17,6 +17,9 @@ struct LogsView: View {
     @State private var showingMailErrorAlert = false
     @State private var isShowingMailView = false
     @State private var mailResult: Result<MFMailComposeResult, Error>? = nil
+    /// Pre-loaded attachment data — set at the same time as smartLogURL to prevent
+    /// the sheet body evaluating before the file is ready.
+    @State private var mailAttachmentData: Data? = nil
     
     // ✅ NEW: AI State Management
     @State private var showingAIExport = false
@@ -178,7 +181,7 @@ struct LogsView: View {
     
     @ViewBuilder
     private var mailSheetContent: some View {
-        if let targetURL = self.smartLogURL, let targetData = try? Data(contentsOf: targetURL) {
+        if let targetURL = self.smartLogURL, let targetData = self.mailAttachmentData {
             MailView(
                 subject: "Inksync Pro Support Request" + (selectedCategory != nil ? " [\(selectedCategory!)]" : ""),
                 recipients: ["support@inksyncpro.app"],
@@ -213,6 +216,8 @@ struct LogsView: View {
                     
                     if let smartURL = logger.generateSmartLog(categories: filterCategories, types: filterTypes) {
                         self.smartLogURL = smartURL
+                        // ✅ FIX: Pre-load attachment data NOW (not inside the @ViewBuilder)
+                        self.mailAttachmentData = try? Data(contentsOf: smartURL)
                         if MFMailComposeViewController.canSendMail() {
                             isShowingMailView = true
                         } else {
