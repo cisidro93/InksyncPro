@@ -104,6 +104,10 @@ final class LinkedLibraryScanner: ObservableObject {
         // Inform DriveMonitor of the updated drive list
         DriveMonitor.shared.startMonitoring(drives: AppSettingsManager.shared.linkedDrives)
 
+        if let manager = conversionManager {
+            Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
+        }
+
         scanStatus = ""
         return entry
     }
@@ -158,6 +162,8 @@ final class LinkedLibraryScanner: ObservableObject {
         updated.lastSyncedDate = Date()
         updated.fileCount = foundFiles.count
         AppSettingsManager.shared.updateLinkedDrive(updated)
+        
+        Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
     }
 
     // MARK: - Re-link Drive (update bookmark, preserve library records)

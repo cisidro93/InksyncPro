@@ -89,14 +89,13 @@ struct ModernGridFileCell: View {
             }
             .frame(maxWidth: .infinity)
             .aspectRatio(0.66, contentMode: .fit) // Standard comic aspect ratio
-            .cornerRadius(8)
+            .cornerRadius(12)
             .clipped()
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
             )
-                // ✅ FIXED: Removed heavy double-shadow passes to ensure buttery 120fps scrolling.
-                // Since the Library Grid is visually black, shadows were invisible anyway but triggering off-screen rendering.
+            .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
             
             // Text Details & Kindle-Style Progress
             VStack(alignment: .leading, spacing: 4) {
@@ -242,13 +241,13 @@ struct ModernGridSeriesCell: View {
                     }
                 }
                 .aspectRatio(0.66, contentMode: .fit) // Standard comic aspect ratio
-                .cornerRadius(8)
+                .cornerRadius(12)
                 .clipped()
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 12)
                         .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
                 )
-                // ✅ FIXED: Removed heavy double-shadow passes from the top-layer stack bounds.
+                .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
                 
                 // Floating Glass Series Badge
                 HStack(spacing: 4) {

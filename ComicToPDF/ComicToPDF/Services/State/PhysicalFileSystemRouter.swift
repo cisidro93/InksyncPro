@@ -59,6 +59,13 @@ class PhysicalFileSystemRouter {
         // Avoids an implicit actor-hop back to MainActor per cell during scroll.
         let coverURL = getCoverURL(for: pdf)
         return await Task.detached(priority: .userInitiated) { () -> UIImage? in
+            // 1. Check ultra-fast Daemon cache first
+            if let daemonCached = await ThumbnailDaemon.shared.getCachedThumbnail(for: pdf.id) {
+                await MainActor.run { manager.thumbnailCache.setObject(daemonCached, forKey: keyStr as NSString) }
+                return daemonCached
+            }
+            
+            // 2. Check standard Covers directory
             guard let url = coverURL,
                   FileManager.default.fileExists(atPath: url.path),
                   let data = try? Data(contentsOf: url, options: .mappedIfSafe),

@@ -368,6 +368,7 @@ struct LibraryHeaderView: View {
             }
             .padding(.bottom, 16)
         }
+        .background(.ultraThinMaterial)
         .overlay(
             Rectangle().frame(height: 1).foregroundColor(Theme.text.opacity(0.05)),
             alignment: .bottom
