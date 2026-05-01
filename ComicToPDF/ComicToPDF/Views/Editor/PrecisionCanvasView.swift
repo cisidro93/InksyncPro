@@ -327,7 +327,7 @@ struct PrecisionCanvasView: View {
     @ViewBuilder
     private var devWatermarkOverlay: some View {
         if AppSettingsManager.shared.conversionSettings.showEditorDebug {
-            let sysTag = editorState.pageModel.coordinateSystem?.rawValue ?? "unknown"
+            let sysTag = editorState.pageModel.coordinateSystem.rawValue
             VStack(alignment: .trailing, spacing: 2) {
                 Text("coords: \(sysTag)")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
