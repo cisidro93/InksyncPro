@@ -53,10 +53,10 @@ actor ThumbnailDaemon {
             // Extract static cover image
             if let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: url) {
                 // Downsample heavily for grid performance
-                if let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image,
-                   // WebP is highly optimized, but iOS doesn't have native WebP export without CoreImage tricks.
-                   // Using highly compressed JPEG as an alternative to WebP for native speed.
-                   let data = thumbnail.jpegData(compressionQuality: 0.5) {
+                let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
+                // WebP is highly optimized, but iOS doesn't have native WebP export without CoreImage tricks.
+                // Using highly compressed JPEG as an alternative to WebP for native speed.
+                if let data = thumbnail.jpegData(compressionQuality: 0.5) {
                     try? data.write(to: cachedURL, options: .atomic)
                 }
             }
