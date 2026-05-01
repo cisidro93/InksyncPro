@@ -856,6 +856,7 @@ struct ReaderView: View {
         progress.currentPageIndex = currentPageIndex
         if isPageTurn {
             progress.totalPagesRead += 1
+            GamificationManager.shared.logPageRead()
         }
         if !pages.isEmpty {
            progress.completionFraction = Double(currentPageIndex) / Double(max(1, pages.count - 1))
