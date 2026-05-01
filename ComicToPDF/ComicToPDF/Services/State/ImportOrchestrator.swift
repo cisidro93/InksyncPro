@@ -384,17 +384,18 @@ actor ImportOrchestrator {
             manager.saveLibrary()
         } // End MainActor.run
 
-        // ✅ PERF: Thumbnail generation — capped TaskGroup (4 concurrent) instead of
-        // launching N simultaneous Tasks that flood the main actor queue.
-        await withTaskGroup(of: Void.self) { group in
-            var inFlight = 0
-            for pdf in importedPDFs {
-                if inFlight >= 4 {
-                    await group.next()
-                    inFlight -= 1
+        // ✅ PERF: Thumbnail generation — detached to prevent locking the UI banner at 100%
+        Task.detached(priority: .background) {
+            await withTaskGroup(of: Void.self) { group in
+                var inFlight = 0
+                for pdf in importedPDFs {
+                    if inFlight >= 4 {
+                        await group.next()
+                        inFlight -= 1
+                    }
+                    group.addTask { await manager.generateCoverThumbnail(for: pdf) }
+                    inFlight += 1
                 }
-                group.addTask { await manager.generateCoverThumbnail(for: pdf) }
-                inFlight += 1
             }
         }
     }
@@ -428,17 +429,18 @@ actor ImportOrchestrator {
             manager.saveLibrary() // single debounced write for the entire series
         }
 
-        // ✅ PERF: Thumbnail generation — capped at 4 concurrent tasks instead of
-        // launching N simultaneous Tasks that all compete on the main actor queue.
-        await withTaskGroup(of: Void.self) { group in
-            var inFlight = 0
-            for pdf in pdfs {
-                if inFlight >= 4 {
-                    await group.next()
-                    inFlight -= 1
+        // ✅ PERF: Thumbnail generation — detached to prevent UI blocking
+        Task.detached(priority: .background) {
+            await withTaskGroup(of: Void.self) { group in
+                var inFlight = 0
+                for pdf in pdfs {
+                    if inFlight >= 4 {
+                        await group.next()
+                        inFlight -= 1
+                    }
+                    group.addTask { await manager.generateCoverThumbnail(for: pdf) }
+                    inFlight += 1
                 }
-                group.addTask { await manager.generateCoverThumbnail(for: pdf) }
-                inFlight += 1
             }
         }
     }
