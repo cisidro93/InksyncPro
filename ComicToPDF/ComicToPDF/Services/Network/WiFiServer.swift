@@ -747,19 +747,20 @@ class WiFiServer: ObservableObject {
                         // Safe encoding
                         let linkPath = relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath
                     
-                    let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                    let sizeStr = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
-                    
-                    fileLinks.append("""
-                        <li>
-                            <div class="file-info">
-                                <span class="name">\(fileURL.lastPathComponent)</span>
-                                <span class="meta">\(sizeStr)</span>
-                            </div>
-                            <!-- Ensure single slash -->
-                            <a href="/\(linkPath)" class="download-btn" download>Download</a>
-                        </li>
-                    """)
+                        let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                        let sizeStr = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+                        
+                        fileLinks.append("""
+                            <li>
+                                <div class="file-info">
+                                    <span class="name">\(fileURL.lastPathComponent)</span>
+                                    <span class="meta">\(sizeStr)</span>
+                                </div>
+                                <!-- Ensure single slash -->
+                                <a href="/\(linkPath)" class="download-btn" download>Download</a>
+                            </li>
+                        """)
+                    }
                 }
             }
         }
