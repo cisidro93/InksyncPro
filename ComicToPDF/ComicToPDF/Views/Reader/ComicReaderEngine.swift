@@ -105,9 +105,14 @@ class ComicImageCache: ObservableObject {
                    let url = try? BookmarkResolver.shared.resolve(bm) {
                     let didAccess = url.startAccessingSecurityScopedResource()
                     resolvedURL = url
-                    // Store reference so deinit can call stopAccessingSecurityScopedResource
+                    // Store reference so deinit can call stopAccessingSecurityScopedResource.
+                    // Set synchronously to avoid leaks if dismissed quickly.
                     if didAccess {
-                        await MainActor.run { [weak self] in self?.activelyAccessedURL = url }
+                        if let self = self {
+                            self.activelyAccessedURL = url
+                        } else {
+                            url.stopAccessingSecurityScopedResource()
+                        }
                     }
                 } else {
                     resolvedURL = pdf.url

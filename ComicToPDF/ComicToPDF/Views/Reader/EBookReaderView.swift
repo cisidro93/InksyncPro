@@ -5,7 +5,8 @@ import ZIPFoundation
 // MARK: - EBookReaderView
 struct EBookReaderView: View {
     let fileURL: URL
-        let title: String
+    let title: String
+    var pdf: ConvertedPDF? = nil
     var onExit: (() -> Void)? = nil
     
     @Environment(\.dismiss) private var dismiss
@@ -360,11 +361,23 @@ struct EBookReaderView: View {
         Logger.shared.log("EBookReader: opening \(fileURL.lastPathComponent)", category: "EBook")
         
         // Restore saved progress
-                let saved = UserDefaults.standard.integer(forKey: progressKey)
+        let saved = UserDefaults.standard.integer(forKey: progressKey)
         let savedPage = UserDefaults.standard.integer(forKey: pageKey)
         
+        // Linked Library: resolve security-scoped URL.
+        let resolvedURL: URL
+        var accessedURL: URL? = nil
+        if let pdf = pdf, case .linked(let bm) = pdf.sourceMode,
+           let url = try? await BookmarkResolver.shared.resolve(bm) {
+            let didAccess = url.startAccessingSecurityScopedResource()
+            resolvedURL = url
+            if didAccess { accessedURL = url }
+        } else {
+            resolvedURL = fileURL
+        }
+
         // Parse metadata (streaming OPF, no full unzip)
-        let parsed = await EBookParser.shared.parse(epub: fileURL)
+        let parsed = await EBookParser.shared.parse(epub: resolvedURL)
         
         // Unzip for content serving (WKWebView needs local file access)
         let tempID = UUID().uuidString
@@ -372,8 +385,9 @@ struct EBookReaderView: View {
         
         do {
             try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
-            try FileManager.default.unzipItem(at: fileURL, to: dest)
+            try FileManager.default.unzipItem(at: resolvedURL, to: dest)
         } catch {
+            accessedURL?.stopAccessingSecurityScopedResource()
             await MainActor.run {
                 errorMessage = "Could not extract book: \(error.localizedDescription)"
                 isLoading = false
@@ -381,6 +395,9 @@ struct EBookReaderView: View {
             Logger.shared.log("EBookReader: extraction failed — \(error.localizedDescription)", category: "EBook", type: .error)
             return
         }
+        
+        // Extraction done, stop security scope
+        accessedURL?.stopAccessingSecurityScopedResource()
         
         await MainActor.run {
             self.unzipDir = dest

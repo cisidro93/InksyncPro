@@ -104,6 +104,7 @@ struct ReaderView: View {
                     EBookReaderView(
                         fileURL: fileURL,
                         title: fileURL.deletingPathExtension().lastPathComponent,
+                        pdf: pdf,
                         onExit: onExit ?? { dismiss() }
                     )
                 } else {
