@@ -13,7 +13,7 @@ import UIKit
 // ============================================================================
 
 @MainActor
-final class LinkedLibraryScanner {
+final class LinkedLibraryScanner: ObservableObject {
 
     static let shared = LinkedLibraryScanner()
 

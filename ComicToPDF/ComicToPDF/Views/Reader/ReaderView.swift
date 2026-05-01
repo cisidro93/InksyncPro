@@ -269,7 +269,7 @@ struct ReaderView: View {
             .onChange(of: currentPageIndex) { trackProgress() }
             .onChange(of: isMangaMode) { savePerBookPreferences() }
             .onChange(of: colorFilter) { savePerBookPreferences() }
-            .onChange(of: sleepTimer.didFire) { fired in
+            .onChange(of: sleepTimer.didFire) { _, fired in
                 if fired { if let onExit = onExit { onExit() } else { dismiss() } }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in

@@ -373,7 +373,7 @@ struct SeriesDetailView: View {
         .onChange(of: jumpToVolume) { _, targetKey in
             guard let targetKey else { return }
             // 1. Expand the volume if it was collapsed
-            withAnimation(.easeInOut(duration: 0.2)) {
+            let _ = withAnimation(.easeInOut(duration: 0.2)) {
                 collapsedVolumes.remove(targetKey)
             }
             // 2. Scroll after the expand animation gives the List time to render
