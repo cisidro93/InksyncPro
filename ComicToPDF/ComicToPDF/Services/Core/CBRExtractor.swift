@@ -43,7 +43,7 @@ struct CBRExtractor {
                               !entry.fileName.contains("__MACOSX"),
                               !flatName.hasPrefix(".") else { continue }
 
-                        let ext = flatName.pathExtension.lowercased()
+                        let ext = (flatName as NSString).pathExtension.lowercased()
                         guard imageExtensions.contains(ext) else { continue }
 
                         // Flatten the path — all images land directly in tempDir
