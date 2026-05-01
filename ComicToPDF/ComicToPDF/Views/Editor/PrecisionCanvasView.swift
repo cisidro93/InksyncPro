@@ -73,15 +73,51 @@ struct PrecisionCanvasView: View {
                                 
                                 let textPoint = CGPoint(x: rect.minX + 4, y: rect.minY + 4)
                                 context.draw(text, at: textPoint, anchor: .topLeading)
-                            }
+
+                                // ✅ DEV OVERLAY: normalized dimensions + origin
+                                if AppSettingsManager.shared.conversionSettings.showEditorDebug {
+                                    let dimLabel = Text(String(format: "%.0f×%.0f", panel.width, panel.height))
+                                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                        .foregroundColor(.yellow)
+                                    context.draw(dimLabel,
+                                                 at: CGPoint(x: rect.minX + 4, y: rect.maxY - 14),
+                                                 anchor: .topLeading)
+                                    let xyLabel = Text(String(format: "(%.0f, %.0f)", panel.x, panel.y))
+                                        .font(.system(size: 8, weight: .regular, design: .monospaced))
+                                        .foregroundColor(Color.yellow.opacity(0.75))
+                                    context.draw(xyLabel,
+                                                 at: CGPoint(x: rect.maxX - 4, y: rect.minY + 4),
+                                                 anchor: .topTrailing)
+                                }
+                            } // end for (index, panel)
                             
                             // Draw Proposed Panels
                             if selectedTool == .scan {
-                                for panel in editorState.pageModel.proposedPanels {
+                                for (i, panel) in editorState.pageModel.proposedPanels.enumerated() {
                                     let rect = CoordinateConverter.denormalize(rect: panel, in: displayedRect)
                                     let path = Path(rect)
-                                    // Thinner, less opaque green
                                     context.stroke(path, with: .color(Color.green.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+
+                                    // ✅ DEV OVERLAY: confidence + detection method badge
+                                    if AppSettingsManager.shared.conversionSettings.showEditorDebug,
+                                       i < editorState.proposedCandidates.count {
+                                        let candidate = editorState.proposedCandidates[i]
+                                        let confPct = Int(candidate.confidence * 100)
+                                        let methodShort: String
+                                        switch candidate.method {
+                                        case .visionRectangle: methodShort = "VIS"
+                                        case .deepScanContour:  methodShort = "CTR"
+                                        case .textAnchor:       methodShort = "TXT"
+                                        case .fallbackGrid:     methodShort = "GRD"
+                                        }
+                                        let badgeColor: Color = confPct >= 70 ? .green : confPct >= 40 ? .yellow : .red
+                                        let badge = Text("\(methodShort) \(confPct)%")
+                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                            .foregroundColor(badgeColor)
+                                        context.draw(badge,
+                                                     at: CGPoint(x: rect.midX, y: rect.minY + 4),
+                                                     anchor: .top)
+                                    }
                                 }
                             }
                             
@@ -147,7 +183,57 @@ struct PrecisionCanvasView: View {
                             }
                         }
                         .gesture(canvasGesture(in: displayedRect))
-                    }
+
+                        // ✅ DEV OVERLAY: Coordinate system watermark + panel count
+                        if AppSettingsManager.shared.conversionSettings.showEditorDebug {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                let sysTag = editorState.pageModel.coordinateSystem?.rawValue ?? "unknown"
+                                Text("coords: \(sysTag)")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.cyan)
+                                Text("\(editorState.pageModel.panels.count) panels · \(editorState.pageModel.proposedPanels.count) proposed")
+                                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                                    .foregroundColor(.cyan.opacity(0.8))
+                            }
+                            .padding(6)
+                            .background(.black.opacity(0.55))
+                            .cornerRadius(6)
+                            .padding(8)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                            .allowsHitTesting(false)
+                        }
+
+                        // ✅ DEV OVERLAY: Scrollable debug log HUD
+                        if AppSettingsManager.shared.conversionSettings.showEditorDebug {
+                            ScrollViewReader { proxy in
+                                ScrollView {
+                                    LazyVStack(alignment: .leading, spacing: 2) {
+                                        ForEach(Array(editorState.debugLog.suffix(20).enumerated()), id: \.offset) { _, entry in
+                                            Text(entry)
+                                                .font(.system(size: 8, weight: .regular, design: .monospaced))
+                                                .foregroundColor(entry.contains("[DEV]") ? .cyan :
+                                                                 entry.contains("⚠️") ? .yellow :
+                                                                 entry.contains("✅") ? .green : .white)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                    .padding(6)
+                                }
+                                .frame(width: min(geo.size.width * 0.45, 280), height: 110)
+                                .background(.black.opacity(0.65))
+                                .cornerRadius(8)
+                                .padding(8)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                                .allowsHitTesting(false)
+                                .onChange(of: editorState.debugLog.count) { _, _ in
+                                    if let last = editorState.debugLog.indices.last {
+                                        proxy.scrollTo(last, anchor: .bottom)
+                                    }
+                                }
+                            }
+                        }
+
+                    } // end ZStack alignment: .topLeading
                     .onAppear { viewSize = geo.size }
                     .onChange(of: geo.size) { _, newSize in viewSize = newSize }
                     
@@ -392,10 +478,20 @@ struct PrecisionCanvasView: View {
             
             await MainActor.run {
                 editorState.pageModel.proposedPanels = normalized
+                // Retain raw candidates so the dev overlay can display confidence + method
+                editorState.proposedCandidates = detected
                 editorState.pageModel.coordinateSystem = .normalized // ✅ Tag as Trusted
                 editorState.isProcessing = false
                 selectedTool = .scan // Change state so the user can immediately see the green proposed panels!
                 editorState.log("AI Scan: Found \(normalized.count) panels")
+                if AppSettingsManager.shared.conversionSettings.showEditorDebug {
+                    let methods = Dictionary(grouping: detected, by: { $0.method.rawValue })
+                        .map { "\($0.key): \($0.value.count)" }
+                        .joined(separator: ", ")
+                    editorState.log("[DEV] Detection breakdown — \(methods)")
+                    let avgConf = detected.isEmpty ? 0.0 : detected.reduce(0.0) { $0 + Double($1.confidence) } / Double(detected.count)
+                    editorState.log(String(format: "[DEV] Avg confidence: %.2f%%", avgConf * 100))
+                }
             }
         }
     }

@@ -227,6 +227,16 @@ struct ModernLibraryView: View {
             listRenameGroup = group
             listRenamePendingName = group.title
         }
+        // ✅ DEV OVERLAY: Library debug HUD — bottom-trailing floating pill
+        .overlay(alignment: .bottomTrailing) {
+            if settingsManager.conversionSettings.showEditorDebug {
+                LibraryDebugHUD(
+                    allItems: viewModel.cachedLibraryItems,
+                    conversionManager: conversionManager,
+                    viewModel: viewModel
+                )
+            }
+        }
     }
     
     // MARK: - Extracted Router UI
