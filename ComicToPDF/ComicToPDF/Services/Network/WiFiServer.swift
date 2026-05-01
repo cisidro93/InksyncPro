@@ -635,11 +635,20 @@ class WiFiServer: ObservableObject {
             let rawFileName = String(path.dropFirst())
             let fileName = rawFileName.removingPercentEncoding ?? rawFileName
             
-            let fileURL = docDir.appendingPathComponent(fileName).standardizedFileURL
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
             
-            guard fileURL.path.hasPrefix(docDir.standardizedFileURL.path) else {
-                Logger.shared.log("WiFi Transfer - Rejected GET Path Traversal: \(path)", category: "Network", type: .error)
-                sendResponse(connection, 403, "Forbidden")
+            let docFileURL = docDir.appendingPathComponent(fileName).standardizedFileURL
+            let inboxFileURL = inboxDir.appendingPathComponent(fileName).standardizedFileURL
+            
+            let fileURL: URL
+            if FileManager.default.fileExists(atPath: inboxFileURL.path) && inboxFileURL.path.hasPrefix(inboxDir.standardizedFileURL.path) {
+                fileURL = inboxFileURL
+            } else if FileManager.default.fileExists(atPath: docFileURL.path) && docFileURL.path.hasPrefix(docDir.standardizedFileURL.path) {
+                fileURL = docFileURL
+            } else {
+                Logger.shared.log("WiFi Transfer - File not found or Path Traversal rejected: \(path)", category: "Network", type: .warning)
+                sendResponse(connection, 404, "Not Found")
                 return
             }
             
@@ -712,28 +721,31 @@ class WiFiServer: ObservableObject {
     
     private func generateHTML() -> String {
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.resolvingSymlinksInPath()
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.resolvingSymlinksInPath()
+        let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         
         // Relies on FileManager enumerator for recursive scan
         var fileLinks: [String] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
         
-        // Recursive Scan to find files in subfolders (Library structure)
-        if let enumerator = FileManager.default.enumerator(at: docDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
-            for case let rawFileURL as URL in enumerator {
-                let fileURL = rawFileURL.resolvingSymlinksInPath()
-                let ext = fileURL.pathExtension.lowercased()
-                
-                if ["pdf", "epub", "cbz"].contains(ext) {
-                    // Calculate Relative Path for Link
-                    var relativePath = fileURL.path.replacingOccurrences(of: docDir.path, with: "")
+        // Recursive Scan to find files in both Documents and Inbox
+        for dir in [docDir, inboxDir] {
+            if let enumerator = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+                for case let rawFileURL as URL in enumerator {
+                    let fileURL = rawFileURL.resolvingSymlinksInPath()
+                    let ext = fileURL.pathExtension.lowercased()
                     
-                    // Remove leading slash to prevent "//hostname" interpretation
-                    if relativePath.hasPrefix("/") {
-                        relativePath.removeFirst()
-                    }
-                    
-                    // Safe encoding
-                    let linkPath = relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath
+                    if ["pdf", "epub", "cbz"].contains(ext) {
+                        // Calculate Relative Path for Link
+                        var relativePath = fileURL.path.replacingOccurrences(of: dir.path, with: "")
+                        
+                        // Remove leading slash to prevent "//hostname" interpretation
+                        if relativePath.hasPrefix("/") {
+                            relativePath.removeFirst()
+                        }
+                        
+                        // Safe encoding
+                        let linkPath = relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath
                     
                     let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                     let sizeStr = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)

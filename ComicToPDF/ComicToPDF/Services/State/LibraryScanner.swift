@@ -122,28 +122,74 @@ actor LibraryScanner {
 
         // ── Deduplication & ghost-file pruning ───────────────────────────────
         let allPDFs = await MainActor.run { manager.convertedPDFs }
-        let missingIDs = allPDFs
-            .filter {
-                !$0.isLinked &&
-                !fileManager.fileExists(atPath: $0.url.path) &&
-                !fileManager.fileExists(atPath: docDir.appendingPathComponent($0.url.lastPathComponent).path)
-            }
-            .map { $0.id }
-
+        
         var uniquePDFs: [ConvertedPDF] = []
         var seenNames = Set<String>()
-        for pdf in allPDFs {
-            if !seenNames.contains(pdf.url.lastPathComponent) {
-                seenNames.insert(pdf.url.lastPathComponent)
+        var missingIDs = Set<UUID>()
+        
+        var didRepairURLs = false
+
+        for var pdf in allPDFs {
+            if seenNames.contains(pdf.url.lastPathComponent) {
+                missingIDs.insert(pdf.id)
+                continue
+            }
+            seenNames.insert(pdf.url.lastPathComponent)
+
+            if pdf.isLinked {
                 uniquePDFs.append(pdf)
+                continue
+            }
+
+            if fileManager.fileExists(atPath: pdf.url.path) {
+                uniquePDFs.append(pdf)
+                continue
+            }
+
+            // Sandbox-Shift Repair Logic
+            var repairedURL: URL? = nil
+            let oldPath = pdf.url.path
+
+            if let docRange = oldPath.range(of: "/Documents/") {
+                let relPath = String(oldPath[docRange.upperBound...])
+                let checkURL = docDir.appendingPathComponent(relPath)
+                if fileManager.fileExists(atPath: checkURL.path) {
+                    repairedURL = checkURL
+                }
+            }
+            if repairedURL == nil, let inboxRange = oldPath.range(of: "/InksyncVault/Inbox/") {
+                let relPath = String(oldPath[inboxRange.upperBound...])
+                let checkURL = inboxDir.appendingPathComponent(relPath)
+                if fileManager.fileExists(atPath: checkURL.path) {
+                    repairedURL = checkURL
+                }
+            }
+
+            // Fallback: Check root of Documents and Inbox
+            if repairedURL == nil {
+                let rootDoc = docDir.appendingPathComponent(pdf.url.lastPathComponent)
+                let rootInbox = inboxDir.appendingPathComponent(pdf.url.lastPathComponent)
+                if fileManager.fileExists(atPath: rootDoc.path) {
+                    repairedURL = rootDoc
+                } else if fileManager.fileExists(atPath: rootInbox.path) {
+                    repairedURL = rootInbox
+                }
+            }
+
+            if let newURL = repairedURL {
+                pdf.url = newURL
+                didRepairURLs = true
+                uniquePDFs.append(pdf)
+            } else {
+                missingIDs.insert(pdf.id)
             }
         }
 
-        let requiresPrune = !missingIDs.isEmpty || uniquePDFs.count != allPDFs.count
+        let requiresPrune = !missingIDs.isEmpty || didRepairURLs
         if requiresPrune {
             await MainActor.run {
-                manager.convertedPDFs = uniquePDFs.filter { !missingIDs.contains($0.id) }
-                Logger.shared.log("Library Pruned: Removed duplicates or sandbox-shifted files", category: "Library")
+                manager.convertedPDFs = uniquePDFs
+                Logger.shared.log("Library Pruned: Repaired sandbox-shifted URLs and removed \(missingIDs.count) missing files", category: "Library")
                 manager.saveLibrary()
             }
         }
