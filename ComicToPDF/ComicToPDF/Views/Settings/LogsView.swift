@@ -60,9 +60,15 @@ struct LogsView: View {
             }
 
             .alert("Cannot Send Email", isPresented: $showingMailErrorAlert) {
-                 Button("OK", role: .cancel) { }
+                 Button("Copy Logs & Open Mail") {
+                     copyToClipboard()
+                     if let url = URL(string: "mailto:support@inksyncpro.app") {
+                         UIApplication.shared.open(url)
+                     }
+                 }
+                 Button("Cancel", role: .cancel) { }
             } message: {
-                 Text("Please ensure the Apple Mail app is configured on this device, or email us directly with your logs at support@inksyncpro.app")
+                 Text("Please ensure the Apple Mail app is configured on this device. You can copy the logs and email us directly at support@inksyncpro.app")
             }
     }
     

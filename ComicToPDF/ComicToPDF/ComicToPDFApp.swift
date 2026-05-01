@@ -2,8 +2,15 @@ import SwiftUI
 import BackgroundTasks
 import SwiftData
 
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        return OrientationLockManager.shared.lockedOrientation
+    }
+}
+
 @main
 struct InksyncProApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     
     // ✅ Global Thread-Safe Model Container

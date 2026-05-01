@@ -251,7 +251,7 @@ struct ReaderView: View {
             .task {
                 await prepareArchive()
                 restorePerBookPreferences()
-                trackProgress()
+                trackProgress(isPageTurn: false)
                 // Build TOC from extracted pages
                 let extracted = pages
                 toc = CBZTableOfContents.build(from: extracted)
@@ -267,7 +267,7 @@ struct ReaderView: View {
                     toc = buildPDFTOC(from: doc)
                 }
             }
-            .onChange(of: currentPageIndex) { trackProgress() }
+            .onChange(of: currentPageIndex) { trackProgress(isPageTurn: true) }
             .onChange(of: isMangaMode) { savePerBookPreferences() }
             .onChange(of: colorFilter) { savePerBookPreferences() }
             .onChange(of: sleepTimer.didFire) { _, fired in
@@ -675,17 +675,11 @@ struct ReaderView: View {
     
     private func launchBingeJump(to nextPDF: ConvertedPDF) {
         withAnimation { showBingePrompt = false }
-        isLoading = true
-        fileURL = nextPDF.url
-        pdf = nextPDF
-        
-        // Cleanup old
-        if let dir = unzippedDir { try? FileManager.default.removeItem(at: dir) }
-        unzippedDir = nil
-        pages = []
-        currentPageIndex = 0
-        
-        Task { await prepareArchive() }
+        dismiss()
+        // Wait for the modal dismissal animation to complete before triggering the router
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            NotificationCenter.default.post(name: NSNotification.Name("OpenMergedBook"), object: nextPDF)
+        }
     }
     
     // MARK: - KOReader Casual Comforts (Edge Swipes)
@@ -832,6 +826,9 @@ struct ReaderView: View {
     private func restorePerBookPreferences() {
         guard let p = pdf,
               let saved = ReaderProgressTracker.shared.progress(for: p.id) else { return }
+        
+        self.currentPageIndex = saved.currentPageIndex
+        
         if let mangaMode = saved.prefersMangaMode {
             isMangaMode = mangaMode
         }
@@ -852,11 +849,14 @@ struct ReaderView: View {
     }
 
     // MARK: - Progress Tracking Integration
-    private func trackProgress() {
+    private func trackProgress(isPageTurn: Bool) {
         guard let p = pdf else { return }
         var progress = ReaderProgressTracker.shared.progress(for: p.id) ?? ReadingProgress(pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
         progress.lastOpenedAt = Date()
         progress.currentPageIndex = currentPageIndex
+        if isPageTurn {
+            progress.totalPagesRead += 1
+        }
         if !pages.isEmpty {
            progress.completionFraction = Double(currentPageIndex) / Double(max(1, pages.count - 1))
         }
