@@ -75,8 +75,9 @@ struct ZipUtilities {
                             // FORCE MEMORY CLEANUP
                             try autoreleasepool {
                                 let path = entry.path
+                                let filename = URL(fileURLWithPath: path).lastPathComponent
                                 // Skip macOS hidden files and folders
-                                if path.contains("__MACOSX") || path.hasPrefix(".") || path.hasSuffix("/") { return }
+                                if path.contains("__MACOSX") || filename.hasPrefix(".") || path.hasSuffix("/") { return }
                                 
                                 let destinationURL = tempDir.appendingPathComponent(path)
                                 

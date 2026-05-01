@@ -36,16 +36,17 @@ struct CBRExtractor {
                     var imageURLs: [URL] = []
 
                     for entry in entries {
+                        let flatName = (entry.fileName as NSString).lastPathComponent
+
                         // Skip directories and macOS metadata artefacts
                         guard !entry.directory,
                               !entry.fileName.contains("__MACOSX"),
-                              !entry.fileName.hasPrefix(".") else { continue }
+                              !flatName.hasPrefix(".") else { continue }
 
-                        let ext = (entry.fileName as NSString).pathExtension.lowercased()
+                        let ext = flatName.pathExtension.lowercased()
                         guard imageExtensions.contains(ext) else { continue }
 
                         // Flatten the path — all images land directly in tempDir
-                        let flatName = (entry.fileName as NSString).lastPathComponent
                         let destURL = tempDir.appendingPathComponent(flatName)
 
                         // Extract entry to Data then persist atomically

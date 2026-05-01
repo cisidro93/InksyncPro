@@ -519,6 +519,8 @@ struct ReaderView: View {
                 if let enumerator = fileManager.enumerator(at: dest, includingPropertiesForKeys: nil) {
                     var foundPages: [URL] = []
                     while let file = enumerator.nextObject() as? URL {
+                        if file.lastPathComponent.hasPrefix(".") { continue }
+                        
                         // ✅ RENOVATED: Extract Raw Images for Metal PPL Engine (Bypassing slow HTML WKWebViews)
                         if ["jpg", "jpeg", "png", "webp", "heic"].contains(file.pathExtension.lowercased()) {
                             // Filter out standard EPUB structural assets (like cover thumbnails or tiny icons)
