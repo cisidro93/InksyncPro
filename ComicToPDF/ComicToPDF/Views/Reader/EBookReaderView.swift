@@ -127,7 +127,7 @@ struct EBookReaderView: View {
         }
         .task { await loadBook() }
         .onDisappear { cleanup(); saveProgress() }
-        .onChange(of: sleepTimer.didFire) { fired in
+        .onChange(of: sleepTimer.didFire) { _, fired in
             if fired { if let onExit = onExit { onExit() } else { dismiss() } }
         }
     }

@@ -282,7 +282,7 @@ struct WiFiView: View {
                 server.triggerLocalNetworkPrivacyAlert()
                 if server.isRunning { generateQRCode() }
             }
-            .onChange(of: server.isRunning) { isRunning in
+            .onChange(of: server.isRunning) { _, isRunning in
                 if isRunning { generateQRCode() } else { qrCodeImage = nil }
             }
             .onDisappear { server.stop() }
