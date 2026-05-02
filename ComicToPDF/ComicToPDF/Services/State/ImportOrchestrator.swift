@@ -196,6 +196,7 @@ actor ImportOrchestrator {
             let fileManager = FileManager.default
             let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             var newPDFs: [ConvertedPDF] = []
+            var unstoredPDFs: [ConvertedPDF] = []
             
             var loopIndex = 0
             for url in urls {
@@ -326,13 +327,12 @@ actor ImportOrchestrator {
                     pdf.isPrivate = isVaultUnlocked
                     pdf.contentHash = nil // Deferred to prevent 20-minute synchronous UI freezes
                     newPDFs.append(pdf)
+                    unstoredPDFs.append(pdf)
                     
                     // 💥 CRITICAL ATOMICITY FIX: Chunk Save every 35 files!
-                    // If the user imports 1,300 files and iOS terminates the App after 30 seconds
-                    // in the background, ALL copied files become permanent untracked ghosts!
-                    // This natively commits them to the live SWIFT DATA database safely mid-flight.
-                    if newPDFs.count % 35 == 0 {
-                        let chunk = newPDFs
+                    if unstoredPDFs.count >= 35 {
+                        let chunk = unstoredPDFs
+                        unstoredPDFs.removeAll()
                         await MainActor.run {
                             for chunkPdf in chunk {
                                 if !manager.convertedPDFs.contains(where: { $0.url.lastPathComponent == chunkPdf.url.lastPathComponent }) {
@@ -349,6 +349,20 @@ actor ImportOrchestrator {
                     await ImportMonitorManager.shared.incrementFailure()
                 }
             }
+            
+            // Commit any remaining files that didn't hit the chunk boundary
+            if !unstoredPDFs.isEmpty {
+                let chunk = unstoredPDFs
+                await MainActor.run {
+                    for chunkPdf in chunk {
+                        if !manager.convertedPDFs.contains(where: { $0.url.lastPathComponent == chunkPdf.url.lastPathComponent }) {
+                            manager.convertedPDFs.append(chunkPdf)
+                        }
+                    }
+                    manager.saveLibrary()
+                }
+            }
+            
             return newPDFs
         }.value
         

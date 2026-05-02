@@ -31,13 +31,22 @@ struct LibraryHeaderView: View {
                 VStack(spacing: 8) {
                     // Row 1a: Title + icon buttons
                     HStack(spacing: 8) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "books.vertical.fill")
-                                .font(.system(size: 22, weight: .bold))
-                                .foregroundStyle(Theme.orange.gradient)
-                            Text("Library")
-                                .font(.system(size: 24, weight: .bold))
-                                .foregroundColor(Theme.text)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "books.vertical.fill")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundStyle(Theme.orange.gradient)
+                                Text("Library")
+                                    .font(.system(size: 24, weight: .bold))
+                                    .foregroundColor(Theme.text)
+                            }
+                            let fileCount = conversionManager.convertedPDFs.count
+                            let seriesCount = conversionManager.collections.count
+                            Text("\(fileCount) FILES • \(seriesCount) SERIES")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundColor(Theme.textSecondary)
+                                .tracking(1.2)
+                                .opacity(0.8)
                         }
                         Spacer()
                         // Sort
