@@ -14,6 +14,9 @@ struct PlannerEditorView: View {
     @State private var showingErrorAlert = false
     @State private var errorAlertTitle: String = "Export Failed"
     @State private var exportErrorMessage = ""
+    @State private var showingAIAssistant = false
+    @State private var isGeneratingAI = false
+    @State private var aiPrompt = ""
     
     var body: some View {
         VStack(spacing: 0) {
@@ -35,6 +38,60 @@ struct PlannerEditorView: View {
                                 Color.white
                                     .frame(width: geo.size.width, height: geo.size.height)
                                     .shadow(radius: 5)
+                                
+                                // AI Assistant Empty State Call-to-Action
+                                if !showingAIAssistant {
+                                    VStack(spacing: 16) {
+                                        Image(systemName: "wand.and.stars")
+                                            .font(.system(size: 48))
+                                            .foregroundColor(.gray.opacity(0.5))
+                                        Text("Blank Canvas Syndrome?")
+                                            .font(.title3).bold()
+                                            .foregroundColor(.gray)
+                                        Button(action: { showingAIAssistant = true }) {
+                                            Text("Generate AI Layout")
+                                                .font(.headline)
+                                                .padding(.horizontal, 24)
+                                                .padding(.vertical, 12)
+                                                .background(Color.accentColor.opacity(0.9))
+                                                .foregroundColor(.white)
+                                                .cornerRadius(12)
+                                        }
+                                    }
+                                }
+                                
+                                // AI Generation Sheet Overlay
+                                if showingAIAssistant {
+                                    VStack(spacing: 20) {
+                                        Text("AI Template Generator")
+                                            .font(.headline)
+                                        
+                                        TextField("e.g. Weekly workout grid, Storyboard, Meeting Notes...", text: $aiPrompt)
+                                            .textFieldStyle(.roundedBorder)
+                                        
+                                        HStack {
+                                            Button("Cancel") { showingAIAssistant = false }
+                                                .foregroundColor(.red)
+                                            Spacer()
+                                            Button(action: {
+                                                generateAILayout(prompt: aiPrompt.isEmpty ? "Grid Notes" : aiPrompt)
+                                            }) {
+                                                if isGeneratingAI {
+                                                    ProgressView()
+                                                } else {
+                                                    Text("Generate")
+                                                        .bold()
+                                                }
+                                            }
+                                            .disabled(isGeneratingAI)
+                                        }
+                                    }
+                                    .padding(24)
+                                    .frame(width: 350)
+                                    .background(Color(.systemBackground))
+                                    .cornerRadius(16)
+                                    .shadow(radius: 20)
+                                }
                             }
                         }
                         
@@ -228,4 +285,11 @@ struct PlannerEditorView: View {
         }
     }
     
+    private func generateAILayout(prompt: String) {
+        // External AI vendor integrations have been removed from InksyncPro.
+        // AI Layout generation is currently unavailable.
+        self.errorAlertTitle = "AI Layout Unavailable"
+        self.exportErrorMessage = "External AI integrations have been removed. AI layout generation is not available in this version."
+        self.showingErrorAlert = true
+    }
 }

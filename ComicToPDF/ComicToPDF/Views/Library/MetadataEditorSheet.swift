@@ -100,7 +100,7 @@ struct MetadataEditorSheet: View {
     private func autoFillSection() -> some View {
         Section(header: Text("Auto-Fill")) {
             if settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
-                Text("⚠️ Add a ComicVine API Key in Settings to enable Auto-Fill")
+                Text("⚠️ Add a ComicVine API Key in Settings → Integrations to enable Auto-Fill")
                     .font(.caption)
                     .foregroundColor(.orange)
             } else {

@@ -607,7 +607,6 @@ struct SettingsView: View {
             Link("Get Free API Key", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
                 .font(.caption).foregroundColor(.blue)
                 
-            
         } header: { Text("Integrations") }
     }
     
