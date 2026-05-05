@@ -538,10 +538,7 @@ struct CoverStudioView: View {
         isFetching = true
         
         Task {
-            // Check for BYOK AI Key
-            let aiKey = settingsManager.conversionSettings.openAIAPIKey
-            
-            let results = await CoverFetchService.shared.fetchCovers(for: livePDF.metadata, openAIKey: aiKey.isEmpty ? nil : aiKey, limit: fetchLimit)
+            let results = await CoverFetchService.shared.fetchCovers(for: livePDF.metadata, openAIKey: nil, limit: fetchLimit)
 
             
             await MainActor.run {

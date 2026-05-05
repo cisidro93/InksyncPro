@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import SwiftData
 import SwiftUI
 import CoreGraphics
@@ -8,19 +8,19 @@ import UniformTypeIdentifiers
 
 // MARK: - Core Data Models
 
-// âœ… NEW: Unified App UI Mode
+// Ã¢Å“â€¦ NEW: Unified App UI Mode
 enum AppUIMode: String, Codable, CaseIterable {
     case go = "Go"
     case pro = "Pro"
 }
 
-// âœ… NEW: Global Library Tap Action
+// Ã¢Å“â€¦ NEW: Global Library Tap Action
 enum LibraryTapAction: String, CaseIterable {
     case details = "Tap for Details"
     case read = "Tap to Read"
 }
 
-// âœ… NEW: Content Type Classification
+// Ã¢Å“â€¦ NEW: Content Type Classification
 enum ContentType: String, Codable, CaseIterable {
     case comic = "Comic"
     case manga = "Manga"
@@ -54,7 +54,7 @@ enum ContentType: String, Codable, CaseIterable {
     }
 }
 
-// âœ… NEW: Unified Reader Content Kinds
+// Ã¢Å“â€¦ NEW: Unified Reader Content Kinds
 enum ContentKind: String, Codable {
     case comic       // CBZ, CBR, CB7, CBT
     case book        // EPUB, MOBI
@@ -68,7 +68,7 @@ enum DocumentSubtype: String, Codable {
     case unknown
 }
 
-// ✅ Linked Library: Defines whether a file lives on-device or on a linked external drive
+// âœ… Linked Library: Defines whether a file lives on-device or on a linked external drive
 enum SourceMode: Sendable {
     case local
     case linked(bookmarkData: Data)
@@ -79,7 +79,7 @@ enum SourceMode: Sendable {
     }
 }
 
-// Custom Codable for SourceMode — .local is the default for all legacy data
+// Custom Codable for SourceMode â€” .local is the default for all legacy data
 extension SourceMode: Codable {
     enum CodingKeys: String, CodingKey { case type, bookmarkData }
     
@@ -121,14 +121,14 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     var metadata: PDFMetadata
     var collectionId: UUID?
     var isFavorite: Bool = false
-    var isPrivate: Bool = false // âœ… NEW: Privacy Flag
+    var isPrivate: Bool = false // Ã¢Å“â€¦ NEW: Privacy Flag
     var isExplicitSeriesCover: Bool = false
     var coverImageData: Data?
-    var contentType: ContentType = .comic  // âœ… NEW: Track content type
-    var chapters: [Chapter] = [] // âœ… NEW: Detected Chapters
-    var addedByMode: AppUIMode = .pro // âœ… NEW: Track source UI mode
+    var contentType: ContentType = .comic  // Ã¢Å“â€¦ NEW: Track content type
+    var chapters: [Chapter] = [] // Ã¢Å“â€¦ NEW: Detected Chapters
+    var addedByMode: AppUIMode = .pro // Ã¢Å“â€¦ NEW: Track source UI mode
     
-    // âœ… NEW: Unified Reader Properties
+    // Ã¢Å“â€¦ NEW: Unified Reader Properties
     var contentKind: ContentKind = .comic
     var documentSubtype: DocumentSubtype = .unknown
     var isOnDevice: Bool = false
@@ -140,7 +140,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     // SHA-256 content hash, set ONCE at import. Never update during rename, edit, or metadata refresh.
     var contentHash: String? = nil
     
-    // ✅ Linked Library: Source of this file (on-device local vault or external linked drive)
+    // âœ… Linked Library: Source of this file (on-device local vault or external linked drive)
     var sourceMode: SourceMode = .local
     
     // Computed helpers
@@ -150,7 +150,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         return nil
     }
     
-    // âœ… NEW: File Extension Tracker
+    // Ã¢Å“â€¦ NEW: File Extension Tracker
     var fileExtensionString: String {
         return url.pathExtension.uppercased()
     }
@@ -188,7 +188,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         return PDFDocument(url: url) ?? PDFDocument()
     }
     
-    // âœ… NEW: Explicit Equatable & Hashable for Core Rendering Performance
+    // Ã¢Å“â€¦ NEW: Explicit Equatable & Hashable for Core Rendering Performance
     // Instead of diffing the massive tree of metadata, dates, and chapters on every frame,
     // SwiftUI will now only compare the immutable ID, favorite status, name, and page count.
     
@@ -200,26 +200,32 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         hasher.combine(fileSize)
         hasher.combine(isPrivate)
         hasher.combine(metadata.series)
-        do {
-            let encoded = try JSONEncoder().encode(sourceMode)
-            hasher.combine(encoded)
-        } catch {}
+        // Cheap enum tag comparison â€” avoids JSONEncoder allocations on every scroll frame
+        switch sourceMode {
+        case .local:             hasher.combine(0)
+        case .linked(let data): hasher.combine(1); hasher.combine(data.hashValue)
+        }
     }
 
     static func == (lhs: ConvertedPDF, rhs: ConvertedPDF) -> Bool {
         // Fast paths to bypass heavy layout equality checks
-        return lhs.id == rhs.id &&
-               lhs.name == rhs.name &&
-               lhs.isFavorite == rhs.isFavorite &&
-               lhs.pageCount == rhs.pageCount &&
-               lhs.fileSize == rhs.fileSize &&
-               lhs.isPrivate == rhs.isPrivate &&
-               lhs.metadata.series == rhs.metadata.series &&
-               (try? JSONEncoder().encode(lhs.sourceMode)) == (try? JSONEncoder().encode(rhs.sourceMode))
+        guard lhs.id == rhs.id,
+              lhs.name == rhs.name,
+              lhs.isFavorite == rhs.isFavorite,
+              lhs.pageCount == rhs.pageCount,
+              lhs.fileSize == rhs.fileSize,
+              lhs.isPrivate == rhs.isPrivate,
+              lhs.metadata.series == rhs.metadata.series else { return false }
+        // Compare SourceMode without JSON encoding
+        switch (lhs.sourceMode, rhs.sourceMode) {
+        case (.local, .local): return true
+        case (.linked(let a), .linked(let b)): return a == b
+        default: return false
+        }
     }
 }
 
-// âœ… Shared Error Type
+// Ã¢Å“â€¦ Shared Error Type
 enum ConversionError: Error {
     case invalidFormat
     case archiveCreationFailed
@@ -259,27 +265,27 @@ struct PDFMetadata: Codable, Equatable, Hashable, Sendable {
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
-    // âœ… Rich Metadata
+    // Ã¢Å“â€¦ Rich Metadata
     var writer: String?
     var penciller: String?
     
-    // âœ… LEGACY PROPERTIES
+    // Ã¢Å“â€¦ LEGACY PROPERTIES
     @available(*, deprecated, message: "Use universalIssueID instead")
     var comicVineID: Int?
     @available(*, deprecated, message: "Use universalSeriesID instead")
     var seriesID: Int?
     
-    // âœ… Polymorphic String IDs
+    // Ã¢Å“â€¦ Polymorphic String IDs
     var externalSeriesID: String?
     var externalIssueID: String?
     
     var universalSeriesID: String? {
-        get { externalSeriesID ?? universalSeriesID }
+        get { externalSeriesID }
         set { externalSeriesID = newValue }
     }
     
     var universalIssueID: String? {
-        get { externalIssueID ?? universalIssueID }
+        get { externalIssueID }
         set { externalIssueID = newValue }
     }
     
@@ -287,23 +293,23 @@ struct PDFMetadata: Codable, Equatable, Hashable, Sendable {
     // Reading Progress
     public var lastReadPage: Int?
     
-    // âœ… NEW: Advanced Cover Variants Tracking
+    // Ã¢Å“â€¦ NEW: Advanced Cover Variants Tracking
     public var selectedCoverID: UUID? = nil
     public var coverVariants: [UUID: URL] = [:]
-    // âœ… Calibre-style Reading Options
+    // Ã¢Å“â€¦ Calibre-style Reading Options
     var isManga: Bool? // Overrides global setting if present
     var isWebtoon: Bool? // For vertical scroll support
     var bookmarkedPages: [Int] = [] // Stores indices of dog-eared pages
     var autoMatchFailed: Bool? = false
     
-    // âœ… Reading Order (Smart List / Event Mappings)
+    // Ã¢Å“â€¦ Reading Order (Smart List / Event Mappings)
     var readingOrder: String?
     var sortOrder: Int?
     var readingEventLabel: String?
     var isOptional: Bool?
 }
 
-// âœ… NEW: Chapter Structure
+// Ã¢Å“â€¦ NEW: Chapter Structure
 struct Chapter: Identifiable, Codable, Hashable, Sendable {
     var id: UUID = UUID()
     var title: String
@@ -379,14 +385,14 @@ enum KindleDeviceType: String, CaseIterable, Codable, Hashable {
     }
 }
 
-// âœ… NEW: Target E-Ink Device Profiles for Downsampling
+// Ã¢Å“â€¦ NEW: Target E-Ink Device Profiles for Downsampling
 enum TargetDeviceProfile: String, CaseIterable, Codable, Identifiable {
     // Original Size (No Scaling)
     case original = "Original Size (No Optimization)"
     
     // Amazon Kindle (Sorted by Release Year, Descending)
-    case scribeColorsoft = "Kindle Scribe Colorsoft 11\" (2025)"  // 11-inch — NOT the same as the 7" Colorsoft
-    case colorsoft7       = "Kindle Colorsoft 7\" (2024)"          // 7-inch colour reader — separate device
+    case scribeColorsoft = "Kindle Scribe Colorsoft 11\" (2025)"  // 11-inch â€” NOT the same as the 7" Colorsoft
+    case colorsoft7       = "Kindle Colorsoft 7\" (2024)"          // 7-inch colour reader â€” separate device
     case paperwhite2024  = "Kindle Paperwhite (2024)"
     case scribe          = "Kindle Scribe (2022)"
     case paperwhite11    = "Kindle Paperwhite 11th Gen (2021)"
@@ -418,14 +424,14 @@ enum TargetDeviceProfile: String, CaseIterable, Codable, Identifiable {
     }
     
     var resolution: CGSize? {
-        // Portrait (taller) resolution — the EInkOptimizer aspect-fits into these bounds.
+        // Portrait (taller) resolution â€” the EInkOptimizer aspect-fits into these bounds.
         switch self {
         case .original: return nil
 
         // Amazon Kindle
-        // Kindle Scribe Colorsoft 11" (2025): 300 PPI → 1980 × 2640
+        // Kindle Scribe Colorsoft 11" (2025): 300 PPI â†’ 1980 Ã— 2640
         case .scribeColorsoft: return CGSize(width: 1980, height: 2640)
-        // Kindle Colorsoft 7" (2024): 300 PPI → 1264 × 1680 — SEPARATE device, different physical dimensions
+        // Kindle Colorsoft 7" (2024): 300 PPI â†’ 1264 Ã— 1680 â€” SEPARATE device, different physical dimensions
         case .colorsoft7:       return CGSize(width: 1264, height: 1680)
         case .paperwhite2024: return CGSize(width: 1264, height: 1680)
         case .scribe:         return CGSize(width: 1860, height: 2480)
@@ -457,9 +463,9 @@ enum TargetDeviceProfile: String, CaseIterable, Codable, Identifiable {
     /// standard portrait resolution and let Kindle scale them.
     var landscapeHalfSlotResolution: CGSize? {
         switch self {
-        // Scribe Colorsoft 11": landscape = 2640 × 1980, each slot = 1320 × 1980
+        // Scribe Colorsoft 11": landscape = 2640 Ã— 1980, each slot = 1320 Ã— 1980
         case .scribeColorsoft: return CGSize(width: 1320, height: 1980)
-        // Kindle Scribe 1st gen 10.2": landscape = 2480 × 1860, each slot = 1240 × 1860
+        // Kindle Scribe 1st gen 10.2": landscape = 2480 Ã— 1860, each slot = 1240 Ã— 1860
         case .scribe:          return CGSize(width: 1240, height: 1860)
         default: return nil
         }
@@ -468,7 +474,7 @@ enum TargetDeviceProfile: String, CaseIterable, Codable, Identifiable {
 
 // MARK: - Settings Models
 
-// âœ… NEW: File Split Modes
+// Ã¢Å“â€¦ NEW: File Split Modes
 enum FileSizeSplitMode: String, CaseIterable, Codable, Identifiable {
     case none = "No Limit (One File)"
     case email = "Email Safe (23 MB)"
@@ -497,9 +503,9 @@ enum FileSizeSplitMode: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-// âœ… NEW: Panel Generation Strategy REMOVED
+// Ã¢Å“â€¦ NEW: Panel Generation Strategy REMOVED
 
-// âœ… NEW: App Text Size Preference
+// Ã¢Å“â€¦ NEW: App Text Size Preference
 enum AppTextSize: String, CaseIterable, Codable, Identifiable {
     case small = "Small"
     case medium = "Medium"
@@ -517,7 +523,7 @@ enum AppTextSize: String, CaseIterable, Codable, Identifiable {
 }
 
 
-// âœ… NEW: Panel Editor Presentation Mode
+// Ã¢Å“â€¦ NEW: Panel Editor Presentation Mode
 enum PanelEditorPresentationMode: String, CaseIterable, Codable, Identifiable {
     case sheet = "Windowed (Sheet)"
     case fullScreen = "Full Screen"
@@ -525,14 +531,7 @@ enum PanelEditorPresentationMode: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum AIVendor: String, CaseIterable, Codable, Identifiable {
-    case openRouter = "OpenRouter (All Models)"
-    case openAI = "OpenAI (GPT-4o)"
-    case anthropic = "Anthropic (Claude 3.5)"
-    case gemini = "Google (Gemini 2.5)"
-    
-    var id: String { rawValue }
-}
+// AIVendor enum removed â€” external AI provider integrations have been removed from InksyncPro.
 
 enum CoverBadgePlacement: String, Codable, CaseIterable, Identifiable {
     case topLeft = "Top Left"
@@ -549,42 +548,39 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
     var optimizeForDevice: Bool = true
-    var targetDeviceProfile: TargetDeviceProfile = .original // âœ… NEW: E-Ink Target
+    var targetDeviceProfile: TargetDeviceProfile = .original // Ã¢Å“â€¦ NEW: E-Ink Target
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
-    var splitWebtoon: Bool = false // âœ… Added for Smart Slicing
-    var splitSpreads: Bool = false // âœ… NEW: Landscape Double-Page Split for E-Ink
+    var splitWebtoon: Bool = false // Ã¢Å“â€¦ Added for Smart Slicing
+    var splitSpreads: Bool = false // Ã¢Å“â€¦ NEW: Landscape Double-Page Split for E-Ink
     var trimMargins: Bool = false
     var splitMode: FileSizeSplitMode = .none
     var enableBackgroundQueue: Bool = true
     var textSize: AppTextSize = .medium
     var panelEditorMode: PanelEditorPresentationMode = .sheet
-    var bindingMarginOffset: Int = 0             // âœ… NEW: Asymmetric Margin Padding
-    var bindingMarginSide: BindingMarginSide = .none // âœ… NEW: Asymmetric Margin Side
+    var bindingMarginOffset: Int = 0             // Ã¢Å“â€¦ NEW: Asymmetric Margin Padding
+    var bindingMarginSide: BindingMarginSide = .none // Ã¢Å“â€¦ NEW: Asymmetric Margin Side
     
-    // âœ… NEW: Omnibus Settings
+    // Ã¢Å“â€¦ NEW: Omnibus Settings
     var omnibusSplitThresholdMB: Int = 200
     var omnibusBadgePlacement: CoverBadgePlacement = .bottomRight
     
     // Debugger Visibility
     var showEditorDebug: Bool = false
     
-    // AI Integrations
-    var aiVendor: AIVendor = .openRouter
-    
     // Metadata Strategy
     var deepFetchComicVineIssues: Bool = false
     
-    // Export pipeline â€” the canonical source of truth for which converter to use.
-    // .standard  â†’ plain EPUB/PDF, no panel zoom metadata, cloud-safe
-    // .proPanel  â†’ KF8 EPUB (Kindle Region Magnification Panels) for sideloading/previewer
+    // Export pipeline Ã¢â‚¬â€ the canonical source of truth for which converter to use.
+    // .standard  Ã¢â€ â€™ plain EPUB/PDF, no panel zoom metadata, cloud-safe
+    // .proPanel  Ã¢â€ â€™ KF8 EPUB (Kindle Region Magnification Panels) for sideloading/previewer
     var outputPipeline: OutputPipeline = .standard
     
-    // Legacy computed property â€” kept for compatibility with existing code.
+    // Legacy computed property Ã¢â‚¬â€ kept for compatibility with existing code.
     // Do NOT set this directly; change outputPipeline instead.
     var isGuidedView: Bool { outputPipeline == .proPanel }
     
-    // âœ… Keychain Integration
+    // Ã¢Å“â€¦ Keychain Integration
     // We remove the stored property and use a computed one.
     // For migration, we define a private coding key to read old JSON.
     var comicVineAPIKey: String {
@@ -605,77 +601,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         }
     }
     
-    var openRouterAPIKey: String {
-        get {
-            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "openRouterAPIKey"),
-               let key = String(data: data, encoding: .utf8) {
-                return key
-            }
-            return ""
-        }
-        set {
-            if newValue.isEmpty {
-                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "openRouterAPIKey")
-            } else {
-                let data = Data(newValue.utf8)
-                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "openRouterAPIKey")
-            }
-        }
-    }
-    
-    var anthropicAPIKey: String {
-        get {
-            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "anthropicAPIKey"),
-               let key = String(data: data, encoding: .utf8) {
-                return key
-            }
-            return ""
-        }
-        set {
-            if newValue.isEmpty {
-                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "anthropicAPIKey")
-            } else {
-                let data = Data(newValue.utf8)
-                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "anthropicAPIKey")
-            }
-        }
-    }
-    
-    var openAIAPIKey: String {
-        get {
-            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "openAIAPIKey"),
-               let key = String(data: data, encoding: .utf8) {
-                return key
-            }
-            return ""
-        }
-        set {
-            if newValue.isEmpty {
-                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "openAIAPIKey")
-            } else {
-                let data = Data(newValue.utf8)
-                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "openAIAPIKey")
-            }
-        }
-    }
-    
-    var geminiAPIKey: String {
-        get {
-            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "geminiAPIKey"),
-               let key = String(data: data, encoding: .utf8) {
-                return key
-            }
-            return ""
-        }
-        set {
-            if newValue.isEmpty {
-                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "geminiAPIKey")
-            } else {
-                let data = Data(newValue.utf8)
-                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "geminiAPIKey")
-            }
-        }
-    }
+    // External AI provider API keys removed â€” AIVendor integrations have been removed from InksyncPro.
     
     var epubSettings: EPUBSettings = EPUBSettings()
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
@@ -684,11 +610,9 @@ struct ConversionSettings: Codable, Equatable, Sendable {
                             
     enum CodingKeys: String, CodingKey {
         case outputFormat, compressionQuality, optimizeForDevice, targetDeviceProfile, mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, bindingMarginOffset, bindingMarginSide, showEditorDebug
-        case aiVendor         // New AI Vendor choice
         case outputPipeline   // New canonical export mode
-        case isGuidedView     // Legacy â€” read-only for migration
+        case isGuidedView     // Legacy Ã¢â‚¬â€ read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
-        case openRouterAPIKey // Legacy migration only
     }
     
     init() {}
@@ -713,7 +637,6 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         bindingMarginOffset = try container.decodeIfPresent(Int.self, forKey: .bindingMarginOffset) ?? 0
         bindingMarginSide = try container.decodeIfPresent(BindingMarginSide.self, forKey: .bindingMarginSide) ?? .none
         showEditorDebug = try container.decodeIfPresent(Bool.self, forKey: .showEditorDebug) ?? false
-        aiVendor = try container.decodeIfPresent(AIVendor.self, forKey: .aiVendor) ?? .openRouter
         
         // Migration: if new outputPipeline key is present, decode it.
         // Otherwise fall back to the legacy isGuidedView bool to preserve user's previous setting.
@@ -731,15 +654,11 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         
         // Legacy API key migration
         if let legacyKey = try? container.decodeIfPresent(String.self, forKey: .comicVineAPIKey), !legacyKey.isEmpty {
-            print("ðŸ” Migrating Legacy API Key to Keychain...")
+            print("Ã°Å¸â€Â Migrating Legacy API Key to Keychain...")
             let data = Data(legacyKey.utf8)
             KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
         }
         
-        if let legacyRouterKey = try? container.decodeIfPresent(String.self, forKey: .openRouterAPIKey), !legacyRouterKey.isEmpty {
-            let data = Data(legacyRouterKey.utf8)
-            KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "openRouterAPIKey")
-        }
     }
     
     func encode(to encoder: Encoder) throws {
@@ -774,7 +693,7 @@ struct EPUBSettings: Codable, Equatable, Sendable {
         case rtl = "rtl"
     }
     
-    // âœ… Export Format (EPUB vs CBZ for Guided View) REMOVED - Enforcing EPUB/Virtual
+    // Ã¢Å“â€¦ Export Format (EPUB vs CBZ for Guided View) REMOVED - Enforcing EPUB/Virtual
     
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
     var includeTableOfContents: Bool = false
@@ -791,9 +710,9 @@ struct ImageEnhancementSettings: Codable, Equatable, Sendable {
     var brightness: Double = 0.0
     var sharpness: Double = 0.0
     var vibrance: Double = 0.0
-    // âœ… KCC: Gamma Correction (Crucial for E-Ink to prevent black crush)
+    // Ã¢Å“â€¦ KCC: Gamma Correction (Crucial for E-Ink to prevent black crush)
     var gamma: Double = 1.0 
-    // âœ… Pro E-Ink Enhancements
+    // Ã¢Å“â€¦ Pro E-Ink Enhancements
     var reduceMoire: Bool = false
     var ditheringEnabled: Bool = false
 }
@@ -945,7 +864,7 @@ struct PageModel: Identifiable, Codable, Equatable, Hashable {
     var panels: [NormalizedRect] = []
     var proposedPanels: [NormalizedRect] = [] // AI Suggestions
     
-    // âœ… NEW: Explicit Coordinate System Tracking
+    // Ã¢Å“â€¦ NEW: Explicit Coordinate System Tracking
     // This allows us to trust "Known Good" panels (e.g. from Auto-Scan) and only run heuristics on Legacy/Unknown data.
     var coordinateSystem: PageCoordinateSystem = .unknown 
     
@@ -993,7 +912,7 @@ struct PageModel: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
-// âœ… Coordinate System Helper
+// Ã¢Å“â€¦ Coordinate System Helper
 enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     case unknown = "check_required" // Legacy files, needs heuristic
     case normalized = "normalized_0_1000" // Known Good (New Scan, Validated)

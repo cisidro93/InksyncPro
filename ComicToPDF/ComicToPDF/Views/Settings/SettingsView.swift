@@ -607,59 +607,6 @@ struct SettingsView: View {
             Link("Get Free API Key", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
                 .font(.caption).foregroundColor(.blue)
                 
-            Divider()
-            
-            Picker("AI Provider (Pro Mode)", selection: $settingsManager.conversionSettings.aiVendor) {
-                ForEach(AIVendor.allCases) { vendor in
-                    Text(vendor.rawValue).tag(vendor)
-                }
-            }
-            
-            HStack {
-                settingsIcon("brain", color: .purple)
-                
-                switch settingsManager.conversionSettings.aiVendor {
-                case .openRouter:
-                    SecureField("OpenRouter API Key", text: $settingsManager.conversionSettings.openRouterAPIKey)
-                        .textContentType(.password)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                case .openAI:
-                    SecureField("OpenAI API Key", text: $settingsManager.conversionSettings.openAIAPIKey)
-                        .textContentType(.password)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                case .anthropic:
-                    SecureField("Anthropic API Key", text: $settingsManager.conversionSettings.anthropicAPIKey)
-                        .textContentType(.password)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                case .gemini:
-                    SecureField("Gemini API Key", text: $settingsManager.conversionSettings.geminiAPIKey)
-                        .textContentType(.password)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                }
-            }
-            
-            if settingsManager.conversionSettings.aiVendor == .openRouter {
-                Text("OpenRouter is a unified gateway that lets you access top models like Claude 3.5, GPT-4o, and Gemini 1.5 using a single account/balance without managing separate provider keys. InksyncPro's native integration routes to Google Gemini via OpenRouter for high-speed reliable JSON streaming.")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                Link("Get OpenRouter Key", destination: URL(string: "https://openrouter.ai/keys")!)
-                    .font(.caption).foregroundColor(.blue)
-            } else if settingsManager.conversionSettings.aiVendor == .openAI {
-                Link("Get OpenAI Key", destination: URL(string: "https://platform.openai.com/api-keys")!)
-                    .font(.caption).foregroundColor(.blue)
-            } else if settingsManager.conversionSettings.aiVendor == .anthropic {
-                Link("Get Anthropic Key", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
-                    .font(.caption).foregroundColor(.blue)
-            } else if settingsManager.conversionSettings.aiVendor == .gemini {
-                Link("Get Google Gemini Key", destination: URL(string: "https://aistudio.google.com/app/apikey")!)
-                    .font(.caption).foregroundColor(.blue)
-            }
             
         } header: { Text("Integrations") }
     }
