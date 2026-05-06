@@ -54,6 +54,12 @@ enum KindleSizeGuard {
             )
         }
 
-        Logger.shared.log("KindleSizeGuard: \(epubURL.lastPathComponent) → \(result.outcome) (\(String(format: "%.1f", result.fileSizeMB)) MB)", category: "Kindle")
+        let logType: LogType
+        switch result.outcome {
+        case .withinEmailLimit: logType = .info
+        case .withinWebLimit: logType = .warning
+        case .exceedsAllLimits: logType = .error
+        }
+        Logger.shared.log("KindleSizeGuard: \(epubURL.lastPathComponent) → \(result.outcome) (\(String(format: "%.1f", result.fileSizeMB)) MB)", category: "Kindle", type: logType)
     }
 }
