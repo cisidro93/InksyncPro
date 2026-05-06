@@ -69,7 +69,11 @@ class ConversionManager: ObservableObject {
     }
     
     private var progressSubscription: AnyCancellable?
-    
+    /// Forwards TaskEngine @Published changes through ConversionManager.objectWillChange
+    /// so SwiftUI views observing ConversionManager re-render whenever TaskEngine
+    /// state changes (conversion progress, processing status, active task list, etc.).
+    private var taskEngineRelay: AnyCancellable?
+
     init() {
         loadLibrary()
         
@@ -90,6 +94,18 @@ class ConversionManager: ObservableObject {
                 self?.saveLibrary()
             }
         }
+
+        // ✅ ISSUE 11 FIX: Relay TaskEngine state changes through ConversionManager.
+        // TaskEngine owns @Published properties (isConverting, conversionProgress, etc.)
+        // that ConversionManager exposes as computed forwarding properties.
+        // Without this subscription, changes to TaskEngine do NOT trigger
+        // ConversionManager.objectWillChange, so observing SwiftUI views never
+        // re-render (e.g. InkTabBar progress bar, processingStatus text).
+        taskEngineRelay = TaskEngine.shared.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
     }
     
     

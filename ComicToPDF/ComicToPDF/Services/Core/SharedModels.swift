@@ -616,11 +616,21 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     // Custom Codable implementation to handle migration
                             
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDeviceProfile, mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, bindingMarginOffset, bindingMarginSide, showEditorDebug
-                case outputPipeline   // Canonical export mode
-        case isGuidedView     // Legacy â€” read-only for migration
+        // Core conversion settings
+        case outputFormat, compressionQuality, optimizeForDevice, targetDeviceProfile
+        case mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins
+        case splitMode, enableBackgroundQueue, textSize, panelEditorMode
+        case bindingMarginOffset, bindingMarginSide, showEditorDebug
+        case epubSettings, imageEnhancement
+        // Omnibus settings (previously missing -- fixes silent per-launch reset)
+        case omnibusSplitThresholdMB, omnibusBadgePlacement
+        // Metadata strategy (previously missing -- fixes silent per-launch reset)
+        case deepFetchComicVineIssues
+        // Pipeline
+        case outputPipeline   // Canonical export mode
+        case isGuidedView     // Legacy -- read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
-            }
+    }
     
     init() {}
     
@@ -644,7 +654,12 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         bindingMarginOffset = try container.decodeIfPresent(Int.self, forKey: .bindingMarginOffset) ?? 0
         bindingMarginSide = try container.decodeIfPresent(BindingMarginSide.self, forKey: .bindingMarginSide) ?? .none
         showEditorDebug = try container.decodeIfPresent(Bool.self, forKey: .showEditorDebug) ?? false
-                // Migration: if new outputPipeline key is present, decode it.
+        // Omnibus settings -- previously missing from Codable; safe migration default.
+        omnibusSplitThresholdMB = try container.decodeIfPresent(Int.self, forKey: .omnibusSplitThresholdMB) ?? 200
+        omnibusBadgePlacement = try container.decodeIfPresent(CoverBadgePlacement.self, forKey: .omnibusBadgePlacement) ?? .bottomRight
+        // Metadata strategy -- previously missing from Codable; safe migration default.
+        deepFetchComicVineIssues = try container.decodeIfPresent(Bool.self, forKey: .deepFetchComicVineIssues) ?? false
+        // Migration: if new outputPipeline key is present, decode it.
         // Otherwise fall back to the legacy isGuidedView bool to preserve user's previous setting.
         if let pipeline = try? container.decodeIfPresent(OutputPipeline.self, forKey: .outputPipeline) {
             // Handle deprecated proPanelEPUB or AZW3 from old state by coalescing to proPanel
@@ -688,6 +703,11 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         try container.encode(bindingMarginSide, forKey: .bindingMarginSide)
         try container.encode(outputPipeline, forKey: .outputPipeline)
         try container.encode(showEditorDebug, forKey: .showEditorDebug)
+        // Omnibus settings
+        try container.encode(omnibusSplitThresholdMB, forKey: .omnibusSplitThresholdMB)
+        try container.encode(omnibusBadgePlacement, forKey: .omnibusBadgePlacement)
+        // Metadata strategy
+        try container.encode(deepFetchComicVineIssues, forKey: .deepFetchComicVineIssues)
         // comicVineAPIKey is intentionally not encoded (moved to Keychain)
         // isGuidedView is intentionally not encoded (computed from outputPipeline)
     }

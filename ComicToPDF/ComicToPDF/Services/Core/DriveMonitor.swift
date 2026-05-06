@@ -5,17 +5,28 @@ import Combine
 // ============================================================================
 // DriveMonitor
 // ============================================================================
-// Background actor that polls linked drive reachability every 3 seconds and
-// fires connect/disconnect notifications automatically.
-// - Immediate probe when app comes to foreground (no 3s wait)
-// - Pauses polling when app is backgrounded (battery friendly)
-// - On connect: triggers LinkedLibraryScanner.syncDrive to catch new files
+// Background actor that polls linked drive reachability every 8 seconds and
+// emits type-safe Combine events for connect/disconnect.
+//
+// Architecture:
+//  - driveConnected  publisher: emits the UUID of a newly-reachable drive
+//  - driveDisconnected publisher: emits the UUID of a newly-unreachable drive
+//  - Consumers subscribe with .receive(on: DispatchQueue.main) as needed.
+//  - On connect: auto-triggers LinkedLibraryScanner.syncDrive (background).
+//  - Pauses polling when backgrounded (battery-safe).
+//  - Immediate foreground probe (no 8s wait) for UX snappiness.
 // ============================================================================
 
 @MainActor
 final class DriveMonitor: ObservableObject {
 
     static let shared = DriveMonitor()
+
+    // ── Type-safe Combine publishers ─────────────────────────────────────────
+    // Prefer these over NotificationCenter for all new subscribers.
+    // Each emission carries the UUID of the affected drive.
+    let driveConnected    = PassthroughSubject<UUID, Never>()
+    let driveDisconnected = PassthroughSubject<UUID, Never>()
 
     @Published private(set) var connectedDriveIDs: Set<UUID> = []
 
@@ -81,12 +92,13 @@ final class DriveMonitor: ObservableObject {
             return connected
         }.value
 
-        // Fire connect events for newly-appeared drives
+        // ── Emit typed connect events ─────────────────────────────────────────
         let newlyConnected = nowConnected.subtracting(connectedDriveIDs)
         for id in newlyConnected {
             Logger.shared.log("DriveMonitor: Drive \(id) connected", category: "Drive")
-            NotificationCenter.default.post(name: .linkedDriveConnected, object: id)
-            // Trigger background sync to catch new files added while disconnected
+            // Typed publisher — consumers subscribe with their preferred scheduler.
+            driveConnected.send(id)
+            // Trigger background sync to catch new files added while disconnected.
             if let entry = drives.first(where: { $0.id == id }) {
                 Task.detached(priority: .background) {
                     await LinkedLibraryScanner.shared.syncDrive(entry)
@@ -94,11 +106,11 @@ final class DriveMonitor: ObservableObject {
             }
         }
 
-        // Fire disconnect events for drives that disappeared
+        // ── Emit typed disconnect events ──────────────────────────────────────
         let newlyDisconnected = connectedDriveIDs.subtracting(nowConnected)
         for id in newlyDisconnected {
             Logger.shared.log("DriveMonitor: Drive \(id) disconnected", category: "Drive")
-            NotificationCenter.default.post(name: .linkedDriveDisconnected, object: id)
+            driveDisconnected.send(id)
         }
 
         connectedDriveIDs = nowConnected
@@ -115,7 +127,7 @@ final class DriveMonitor: ObservableObject {
         NotificationCenter.default
             .publisher(for: UIScene.willEnterForegroundNotification)
             .sink { [weak self] _ in
-                // Immediate probe on foreground — no waiting for next 3s tick
+                // Immediate probe on foreground — no waiting for next 8s tick
                 Task { await self?.probeAll() }
             }
             .store(in: &cancellables)

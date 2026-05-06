@@ -66,4 +66,11 @@ final class SDRegisteredDevice: Identifiable, Equatable {
         self.rawTransferMethod = transferMethod.rawValue
         self.kindleEmail = kindleEmail
     }
+
+    // SwiftData @Model classes do NOT get synthesized Equatable from the compiler.
+    // Providing an explicit == based on `id` ensures identity is judged by the
+    // persistent primary key, not by pointer address or memberwise comparison.
+    static func == (lhs: SDRegisteredDevice, rhs: SDRegisteredDevice) -> Bool {
+        lhs.id == rhs.id
+    }
 }

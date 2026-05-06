@@ -50,18 +50,20 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        // ⚠️ SECURITY SCOPE OWNERSHIP:
-        // Start access on ALL picked URLs while still inside the delegate callback
-        // where the grant is guaranteed to be live.
-        let accessedURLs = urls.filter { $0.startAccessingSecurityScopedResource() }
-
+        // ✅ SECURITY SCOPE DESIGN:
+        // We intentionally do NOT call startAccessingSecurityScopedResource() here.
+        //
+        // The UIDocumentPickerDelegate grants the sandbox access right to the picked
+        // URL objects themselves. The security-scoped bookmark is created INSIDE
+        // linkDrive() which immediately calls startAccessingSecurityScopedResource()
+        // before any file I/O. That single, deferred acquisition with a matching
+        // defer-stop is the correct owner of the access lifetime.
+        //
+        // Pre-emptively acquiring access here and releasing it asynchronously would
+        // create a TOCTOU window where both tokens briefly lapse simultaneously on
+        // slow main-thread scheduling — eliminated by this design.
         controller.dismiss(animated: true)
-
-        DispatchQueue.main.async { [weak self] in
-            self?.finish(with: urls)
-            // linkDrive() immediately re-acquires its own scope; release ours.
-            accessedURLs.forEach { $0.stopAccessingSecurityScopedResource() }
-        }
+        finish(with: urls)
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {

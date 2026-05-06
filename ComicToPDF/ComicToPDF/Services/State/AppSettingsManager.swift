@@ -81,6 +81,10 @@ class AppSettingsManager: ObservableObject {
     
     func save() {
         saveTask?.cancel()
+        // Capture settingsURL as a local Sendable value BEFORE entering the
+        // detached task. This avoids accessing a MainActor-isolated property
+        // from a non-isolated context (Swift 6 strict-concurrency compliance).
+        let destinationURL = settingsURL
         saveTask = Task.detached(priority: .background) { [weak self] in
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled, let self = self else { return }
@@ -95,7 +99,11 @@ class AppSettingsManager: ObservableObject {
                 )
             }
             if let data = try? JSONEncoder().encode(config) {
-                try? data.write(to: self.settingsURL, options: .atomic)
+                do {
+                    try data.write(to: destinationURL, options: .atomic)
+                } catch {
+                    Logger.shared.log("AppSettingsManager: Failed to write settings — \(error.localizedDescription)", category: "Settings", type: .error)
+                }
             }
         }
     }

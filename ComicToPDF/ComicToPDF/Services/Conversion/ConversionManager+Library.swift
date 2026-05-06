@@ -196,20 +196,36 @@ extension ConversionManager {
     func renamePDF(_ pdf: ConvertedPDF, to newName: String) {
         let cleanName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty, cleanName != pdf.name else { return }
-        
+
         let fileManager = FileManager.default
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        
-        let newURL = docDir.appendingPathComponent(cleanName)
-        
+
+        // Always preserve the original file extension. If the user typed a name
+        // without extension (common UI pattern) we re-attach it; if they included
+        // a different extension we respect it. This prevents the file losing its
+        // .cbz/.epub/.pdf suffix, which would break format detection, comic parsers,
+        // and cover extraction on subsequent loads.
+        let originalExt = pdf.url.pathExtension
+        let nameHasExtension = !URL(fileURLWithPath: cleanName).pathExtension.isEmpty
+        let finalName: String
+        if nameHasExtension {
+            finalName = cleanName
+        } else if !originalExt.isEmpty {
+            finalName = cleanName + "." + originalExt
+        } else {
+            finalName = cleanName
+        }
+
+        let newURL = docDir.appendingPathComponent(finalName)
+
         if fileManager.fileExists(atPath: newURL.path) {
-            Logger.shared.log("Rename failed: File exists", category: "Library")
+            Logger.shared.log("Rename failed: File '\(finalName)' already exists", category: "Library")
             return
         }
-        
+
         do {
             try fileManager.moveItem(at: pdf.url, to: newURL)
-            
+
             if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 let updatedPDF = ConvertedPDF(
                     id: pdf.id,
@@ -224,13 +240,13 @@ extension ConversionManager {
                     contentHash: pdf.contentHash
                 )
                 convertedPDFs[idx] = updatedPDF
-                
+
                 // ✅ PERF: Migrate the thumbnail cache entry to the new UUID key (UUID is immutable, URL is not)
                 if let image = thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
                     thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
                     // Old URL-path entry (if any) can stay — NSCache will evict under pressure
                 }
-                
+
                 saveLibrary()
                 objectWillChange.send()
             }
@@ -238,6 +254,7 @@ extension ConversionManager {
             Logger.shared.log("Rename Error: \(error)", category: "Library")
         }
     }
+
     
     // Helpers
     func autoOrganize() {}

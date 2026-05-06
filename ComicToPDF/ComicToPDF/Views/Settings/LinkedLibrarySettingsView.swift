@@ -322,7 +322,8 @@ struct LinkedLibrarySettingsView: View {
     }
 
     private func removeDrive(_ drive: AppSettingsManager.LinkedDriveEntry) {
+        // unlinkDrive calls saveLibrary() internally, which fires the @Published
+        // objectWillChange pipeline automatically — no manual send() needed.
         LinkedLibraryScanner.shared.unlinkDrive(drive)
-        conversionManager.objectWillChange.send()
     }
 }

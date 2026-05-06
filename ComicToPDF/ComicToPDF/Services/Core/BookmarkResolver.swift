@@ -67,7 +67,12 @@ actor BookmarkResolver {
     }
 
     /// Open a linked file, run an async operation on its resolved URL, then release access.
-    /// A configurable timeout watchdog fires BookmarkError.timedOut if the drive stalls.
+    ///
+    /// The timeout is a watchdog, NOT a racing competitor. It only fires if the
+    /// operation is still running when the deadline expires. If the operation
+    /// completes (successfully or with an error) before the deadline, the watchdog
+    /// is cancelled and its result is discarded — eliminating the scheduler-ordering
+    /// race that existed in the previous withThrowingTaskGroup implementation.
     func withAccess<T: Sendable>(
         _ bookmarkData: Data,
         timeout: Duration = .seconds(600),
@@ -79,22 +84,33 @@ actor BookmarkResolver {
             if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
         }
 
-        return try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask {
-                try await operation(resolvedURL)
-            }
-            group.addTask {
-                try await Task.sleep(for: timeout)
-                throw BookmarkError.timedOut
-            }
-            let result = try await group.next()!
-            group.cancelAll()
-            // Wait for cancelled tasks to physically terminate before returning, 
-            // otherwise defer block halts security access while the task is mid-termination.
-            while let _ = await group.nextResult() {}
+        // Start the operation as an independent child Task.
+        let operationTask = Task { try await operation(resolvedURL) }
+
+        // Watchdog: cancels the operation if the drive stalls past the deadline.
+        // It is cancelled immediately when the operation finishes normally.
+        let watchdog = Task {
+            try await Task.sleep(for: timeout)
+            // Only reaches here if the operation is still running.
+            operationTask.cancel()
+        }
+
+        do {
+            let result = try await operationTask.value
+            // Operation completed — discard the watchdog before it fires.
+            watchdog.cancel()
             return result
+        } catch is CancellationError {
+            // CancellationError means the watchdog cancelled the operation task.
+            watchdog.cancel()
+            throw BookmarkError.timedOut
+        } catch {
+            // Propagate all other errors from the operation unchanged.
+            watchdog.cancel()
+            throw error
         }
     }
+
 
     /// Quick reachability probe — does NOT hold access open.
     func isReachable(_ bookmarkData: Data) async -> Bool {

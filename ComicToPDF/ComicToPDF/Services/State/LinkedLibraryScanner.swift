@@ -124,7 +124,20 @@ final class LinkedLibraryScanner: ObservableObject {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-        let foundFiles = scanDirectory(url)
+        // ━━ Offload recursive directory enumeration off MainActor ━━━━━━━━━━━━━━━━━━━━
+        // scanDirectory calls FileManager.enumerator which can block for multiple
+        // seconds on large USB drives. Never call it synchronously on @MainActor.
+        let exts = supportedExtensions
+        let foundFiles: [URL] = await Task.detached(priority: .userInitiated) { [exts] in
+            guard let enumerator = FileManager.default.enumerator(
+                at: url,
+                includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else { return [] }
+            return enumerator.compactMap { $0 as? URL }.filter {
+                exts.contains($0.pathExtension.lowercased())
+            }
+        }.value
         let foundPaths = Set(foundFiles.map { $0.path })
 
         guard let manager = conversionManager else { return }
@@ -515,18 +528,9 @@ final class LinkedLibraryScanner: ObservableObject {
         manager.saveLibrary()
     }
 
-    private func generateAndCacheCover(for pdf: inout ConvertedPDF, at url: URL) async {
-        // Extract first image from archive as a small cover thumbnail
-        let coverImage = await Task.detached(priority: .background) {
-            ConversionManager.loadDownsampledImageStatic(at: url, maxDimension: 300)
-        }.value
+    // generateAndCacheCover removed -- it was dead code superseded by
+    // PhysicalFileSystemRouter.extractCoverImageStatic (called inside registerFiles).
 
-        if let img = coverImage, let data = img.pngData() {
-            pdf.coverImageData = data
-        }
-    }
-
-    // MARK: - Stale Bookmark Refresh
 
     @objc private func handleStaleBookmark(_ notification: Notification) {
         guard let staleData = notification.object as? Data,
