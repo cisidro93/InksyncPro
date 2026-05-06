@@ -386,7 +386,23 @@ struct SettingsView: View {
                 settingsIcon("crop", color: .green)
                 Toggle("Smart Border Trimming", isOn: $settingsManager.conversionSettings.trimMargins)
             }
-            
+
+            // Read-Ahead Buffer
+            HStack {
+                settingsIcon("forward.fill", color: .cyan)
+                Stepper(
+                    value: $settingsManager.conversionSettings.readingPrefetchLimit,
+                    in: 1...8
+                ) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Read-Ahead Buffer")
+                        Text("Pre-fetch \(settingsManager.conversionSettings.readingPrefetchLimit) page\(settingsManager.conversionSettings.readingPrefetchLimit == 1 ? "" : "s") in each direction while reading")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
         } header: { Text("Processing Engine") }
     }
     
@@ -606,7 +622,29 @@ struct SettingsView: View {
             
             Link("Get Free API Key", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
                 .font(.caption).foregroundColor(.blue)
-                
+
+            NavigationLink(destination: CloudConnectionSettingsView()) {
+                HStack {
+                    settingsIcon("cloud.fill", color: .blue)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cloud Storage")
+                        Text("Dropbox & Google Drive direct integration")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    // Live connection badges
+                    HStack(spacing: 4) {
+                        if DropboxProvider.shared.isConnected {
+                            Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
+                        }
+                        if GoogleDriveProvider.shared.isConnected {
+                            Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
+                        }
+                    }
+                }
+            }
+
         } header: { Text("Integrations") }
     }
     
