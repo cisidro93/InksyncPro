@@ -7,6 +7,7 @@ struct ModernLibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
     @StateObject private var viewModel = LibraryViewModel()
+    @ObservedObject private var jobQueue = ConversionJobQueue.shared
     
     @Query(sort: \SDConvertedPDF.lastModified, order: .reverse) private var swiftDataPDFs: [SDConvertedPDF]
     @Query private var swiftDataCollections: [SDPDFCollection]
@@ -316,6 +317,35 @@ struct ModernLibraryView: View {
             }
         }
     }
+
+    // MARK: - Job Banner Helpers
+    private func jobBannerIcon(_ job: ConversionJob) -> String {
+        switch job.status {
+        case .suspended:       return "pause.circle.fill"
+        case .failed:          return "exclamationmark.circle.fill"
+        case .waitingForDownload: return "arrow.down.circle.fill"
+        default:               return "arrow.triangle.2.circlepath.circle.fill"
+        }
+    }
+
+    private func jobBannerColor(_ job: ConversionJob) -> Color {
+        switch job.status {
+        case .failed:    return Theme.red
+        case .suspended: return Theme.orange
+        default:         return Theme.blue
+        }
+    }
+
+    private func jobBannerMessage(_ job: ConversionJob) -> String {
+        switch job.status {
+        case .waitingForDownload: return "Downloading from cloud..."
+        case .extracting:         return "Extracting & converting..."
+        case .merging:            return "Merging volumes..."
+        case .suspended:          return "Conversion paused — tap Resume to continue"
+        case .failed:             return "Download failed — tap Retry to try again"
+        default:                  return ""
+        }
+    }
     
     private func loadFiles(from providers: [NSItemProvider]) {
         for provider in providers {
@@ -377,6 +407,78 @@ struct ModernLibraryView: View {
                 .background(Theme.red.opacity(0.2))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.red.opacity(0.4), lineWidth: 1))
                 .cornerRadius(12)
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+            }
+            
+            // ✅ Background Conversion Jobs Banner
+            let pendingJobs = jobQueue.jobs.filter {
+                $0.status == .suspended || $0.status == .waitingForDownload ||
+                $0.status == .extracting || $0.status == .failed
+            }
+            if !pendingJobs.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(pendingJobs) { job in
+                        HStack {
+                            Image(systemName: jobBannerIcon(job))
+                                .foregroundColor(jobBannerColor(job))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(job.targetFileName)
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                Text(jobBannerMessage(job))
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                            Spacer()
+
+                            // Resume (suspended) / Retry (failed)
+                            if job.status == .suspended || job.status == .failed {
+                                Button(job.status == .failed ? "Retry" : "Resume") {
+                                    if job.status == .failed {
+                                        // Re-trigger the download for failed jobs
+                                        jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .waitingForDownload)
+                                        if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == job.pdfID }) {
+                                            Task { await CloudDownloadManager.shared.downloadCloudFile(pdf: pdf) }
+                                        }
+                                    } else {
+                                        jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .extracting)
+                                        Task {
+                                            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == job.pdfID }) {
+                                                if job.isMerge {
+                                                    await ConversionOrchestrator.shared.convertAndMerge(sourceFiles: [pdf], outputName: job.outputName ?? "", mangaMode: job.mangaMode ?? false, manager: conversionManager)
+                                                } else {
+                                                    await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: job.mangaMode, manager: conversionManager)
+                                                }
+                                                jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .completed)
+                                                jobQueue.removeJob(pdfID: job.pdfID)
+                                            }
+                                        }
+                                    }
+                                }
+                                .font(.caption.bold())
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(jobBannerColor(job))
+                                .clipShape(Capsule())
+                            }
+
+                            Button {
+                                jobQueue.removeJob(pdfID: job.pdfID)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.white.opacity(0.5))
+                                    .font(.title3)
+                            }
+                        }
+                        .padding()
+                        .background(jobBannerColor(job).opacity(0.2))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(jobBannerColor(job).opacity(0.4), lineWidth: 1))
+                        .cornerRadius(12)
+                    }
+                }
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
             }

@@ -6,6 +6,17 @@ final class ConversionOrchestrator {
     private init() {}
     
     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, manager: ConversionManager) async {
+        #if os(iOS)
+        var bgTask: UIBackgroundTaskIdentifier = .invalid
+        bgTask = UIApplication.shared.beginBackgroundTask { 
+            UIApplication.shared.endBackgroundTask(bgTask)
+            bgTask = .invalid
+        }
+        defer { 
+            if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) }
+        }
+        #endif
+        
         await MainActor.run {
             manager.isConverting = true; manager.conversionProgress = 0.0; manager.processingStatus = "Converting..."; manager.statusMessage = "Starting..."
         }
@@ -99,6 +110,18 @@ final class ConversionOrchestrator {
     
     func convertQueue(_ pdfs: [ConvertedPDF], manager: ConversionManager) async {
         guard !pdfs.isEmpty else { return }
+        
+        #if os(iOS)
+        var bgTask: UIBackgroundTaskIdentifier = .invalid
+        bgTask = UIApplication.shared.beginBackgroundTask { 
+            UIApplication.shared.endBackgroundTask(bgTask)
+            bgTask = .invalid
+        }
+        defer { 
+            if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) }
+        }
+        #endif
+        
         await MainActor.run { manager.isConverting = true }
         
         for (index, pdf) in pdfs.enumerated() {
@@ -182,6 +205,18 @@ final class ConversionOrchestrator {
     @discardableResult
     func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, manager: ConversionManager) async -> [ConvertedPDF] {
         guard !sourceFiles.isEmpty else { return [] }
+        
+        #if os(iOS)
+        var bgTask: UIBackgroundTaskIdentifier = .invalid
+        bgTask = UIApplication.shared.beginBackgroundTask { 
+            UIApplication.shared.endBackgroundTask(bgTask)
+            bgTask = .invalid
+        }
+        defer { 
+            if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) }
+        }
+        #endif
+        
         await MainActor.run { manager.isConverting = true }
         var newMergedPDFs: [ConvertedPDF] = []
         

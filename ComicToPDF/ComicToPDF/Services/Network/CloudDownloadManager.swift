@@ -41,17 +41,27 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
     func downloadCloudFile(pdf: ConvertedPDF) async {
         guard case .cloud(let provider, let remoteID) = pdf.sourceMode else { return }
 
+        // Derive the target filename from the comic's own name (which IS reliable),
+        // not from pdf.url which is a dummy cloud:// URL with no real extension.
+        let ext = pdf.name.components(separatedBy: ".").last?.lowercased() ?? "cbz"
+        let isKnownComicExt = ["cbz", "cbr", "zip", "epub", "pdf"].contains(ext)
+        let fileName = isKnownComicExt ? pdf.name : (pdf.name + ".cbz")
+
         do {
             if provider == "Dropbox" {
                 let url = try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
-                downloadFromDropbox(fileID: remoteID, fileName: pdf.name + "." + pdf.url.pathExtension, temporaryURL: url)
+                downloadFromDropbox(fileID: remoteID, fileName: fileName, temporaryURL: url)
             } else if provider == "Google Drive" {
                 let mediaURL = try await GoogleDriveProvider.shared.getDownloadURL(fileID: remoteID)
                 let authHeader = try await GoogleDriveProvider.shared.currentAuthHeader()
-                downloadFromGoogleDrive(fileID: remoteID, fileName: pdf.name + "." + pdf.url.pathExtension, mediaURL: mediaURL, authHeader: authHeader)
+                downloadFromGoogleDrive(fileID: remoteID, fileName: fileName, mediaURL: mediaURL, authHeader: authHeader)
             }
         } catch {
             Logger.shared.log("CloudDownloadManager: Failed to initiate download for '\(pdf.name)': \(error.localizedDescription)", category: "Cloud", type: .error)
+            // Also mark any queued job as failed
+            if let job = ConversionJobQueue.shared.getJob(for: pdf.id) {
+                ConversionJobQueue.shared.updateJobStatus(pdfID: job.pdfID, newStatus: .failed)
+            }
         }
     }
 
@@ -101,12 +111,39 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
             // Notify ConversionManager to flip the sourceMode from .cloud → .local
             DispatchQueue.main.async {
                 let manager = LinkedLibraryScanner.shared.conversionManager
+                var updatedPDF: ConvertedPDF?
+                
                 if let idx = manager?.convertedPDFs.firstIndex(where: { $0.url.lastPathComponent == meta.fileName }) {
                     manager?.convertedPDFs[idx].url = targetURL
                     manager?.convertedPDFs[idx].sourceMode = .local
                     manager?.saveLibrary()
+                    updatedPDF = manager?.convertedPDFs[idx]
                 }
                 self.activeDownloads.removeValue(forKey: meta.fileID)
+                
+                // ✅ Check if this file has a pending conversion job
+                if let pdf = updatedPDF, let job = ConversionJobQueue.shared.getJobByTargetFileName(meta.fileName) {
+                    Logger.shared.log("CloudDownloadManager: Found pending conversion job for '\(meta.fileName)'. Handoff to Orchestrator.", category: "Cloud")
+                    ConversionJobQueue.shared.updateJobStatus(pdfID: pdf.id, newStatus: .extracting)
+                    
+                    Task {
+                        // We must pass the correct parameters depending on if it's a merge or a single convert
+                        if let manager = manager {
+                            if job.isMerge {
+                                await ConversionOrchestrator.shared.convertAndMerge(
+                                    sourceFiles: [pdf], 
+                                    outputName: job.outputName ?? "", 
+                                    mangaMode: job.mangaMode ?? false, 
+                                    manager: manager
+                                )
+                            } else {
+                                await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: job.mangaMode, manager: manager)
+                            }
+                            ConversionJobQueue.shared.updateJobStatus(pdfID: pdf.id, newStatus: .completed)
+                            ConversionJobQueue.shared.removeJob(pdfID: pdf.id)
+                        }
+                    }
+                }
             }
         } catch {
             Logger.shared.log("CloudDownloadManager: Failed to move '\(meta.fileName)' to Vault: \(error.localizedDescription)", category: "Cloud", type: .error)
@@ -122,7 +159,13 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
               let meta = downloadTaskMeta[downloadTask] else { return }
 
         Logger.shared.log("CloudDownloadManager: Download failed for '\(meta.fileName)': \(error.localizedDescription)", category: "Cloud", type: .error)
-        DispatchQueue.main.async { self.activeDownloads.removeValue(forKey: meta.fileID) }
+        DispatchQueue.main.async {
+            self.activeDownloads.removeValue(forKey: meta.fileID)
+            // Mark any waiting job as failed so the library banner reflects the real state
+            if let job = ConversionJobQueue.shared.getJobByTargetFileName(meta.fileName) {
+                ConversionJobQueue.shared.updateJobStatus(pdfID: job.pdfID, newStatus: .failed)
+            }
+        }
         downloadTaskMeta.removeValue(forKey: downloadTask)
     }
 }
