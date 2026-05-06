@@ -3,11 +3,6 @@ import MessageUI
 import UIKit
 import UniformTypeIdentifiers
 
-struct MailPayload: Identifiable {
-    let id = UUID()
-    let url: URL
-    let data: Data
-}
 
 struct LogsView: View {
     @ObservedObject var logger = Logger.shared
@@ -21,8 +16,9 @@ struct LogsView: View {
     
     // ✅ NEW: Mail State
     @State private var showingMailErrorAlert = false
-    @State private var mailPayload: MailPayload? = nil
+    @State private var isShowingMailView = false
     @State private var mailResult: Result<MFMailComposeResult, Error>? = nil
+    @State private var mailAttachmentData: Data? = nil
     
     // ✅ NEW: AI State Management
     @State private var showingAIExport = false
@@ -55,20 +51,25 @@ struct LogsView: View {
                     ShareSheet(activityItems: [url])
                 }
             }
-            .sheet(item: $mailPayload) { payload in
-                MailView(
-                    subject: "Inksync Pro Support Request" + (selectedCategory != nil ? " [\(selectedCategory!)]" : ""),
-                    recipients: ["support@inksyncpro.app"],
-                    messageBody: getDeviceInfo(),
-                    isHTML: false,
-                    attachments: [(payload.data, "text/plain", payload.url.lastPathComponent)],
-                    isShowing: Binding(
-                        get: { mailPayload != nil },
-                        set: { if !$0 { mailPayload = nil } }
-                    ),
-                    result: $mailResult
-                )
-                .ignoresSafeArea()
+            .sheet(isPresented: $isShowingMailView) {
+                if let targetURL = self.smartLogURL, let targetData = self.mailAttachmentData {
+                    MailView(
+                        subject: "Inksync Pro Support Request" + (selectedCategory != nil ? " [\(selectedCategory!)]" : ""),
+                        recipients: ["support@inksyncpro.app"],
+                        messageBody: getDeviceInfo(),
+                        isHTML: false,
+                        attachments: [(targetData, "text/plain", targetURL.lastPathComponent)],
+                        isShowing: $isShowingMailView,
+                        result: $mailResult
+                    )
+                    .ignoresSafeArea()
+                } else {
+                    VStack(spacing: 20) {
+                        Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.red)
+                        Text("Error generating logs for email.").font(.headline)
+                        Button("Dismiss") { isShowingMailView = false }
+                    }
+                }
             }
             .fileExporter(isPresented: $showingAIExport, document: aiDocumentToExport, contentType: .json, defaultFilename: "inksync_ai_settings") { result in
                 handleAIExport(result: result)
@@ -217,8 +218,9 @@ struct LogsView: View {
                        let targetData = try? Data(contentsOf: smartURL) {
                         
                         self.smartLogURL = smartURL
+                        self.mailAttachmentData = targetData
                         if MFMailComposeViewController.canSendMail() {
-                            self.mailPayload = MailPayload(url: smartURL, data: targetData)
+                            isShowingMailView = true
                         } else {
                             showingMailErrorAlert = true
                         }
@@ -334,7 +336,11 @@ struct LogsView: View {
     }
     
     private func copyToClipboard() {
-        UIPasteboard.general.string = logger.getLogs()
+        if let data = mailAttachmentData, let text = String(data: data, encoding: .utf8) {
+            UIPasteboard.general.string = text
+        } else {
+            UIPasteboard.general.string = logger.getLogs()
+        }
         withAnimation { showingCopiedAlert = true }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 s
