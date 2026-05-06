@@ -262,6 +262,15 @@ class LibraryViewModel: ObservableObject {
                         }
                     }
                 }
+            case .sendToKindle:
+                // EPUB files go straight to iOS share sheet — the Amazon "Send to Kindle"
+                // app registers itself as a share target, so it will appear automatically.
+                // Non-EPUB files route through the export sheet so the user converts first.
+                if pdf.url.pathExtension.lowercased() == "epub" {
+                    self.activeSheet = .directShare(pdf)
+                } else {
+                    self.activeSheet = .export(pdf)
+                }
             }
         }
     }

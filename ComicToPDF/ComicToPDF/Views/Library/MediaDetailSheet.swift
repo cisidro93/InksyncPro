@@ -117,6 +117,30 @@ struct MediaDetailSheet: View {
                         .shadow(color: .blue.opacity(0.3), radius: 5, y: 3)
                     }
                     
+                    // Send to Kindle — prominent dedicated button
+                    Button {
+                        handle(.sendToKindle)
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Image(systemName: "paperplane.fill")
+                            Text("SEND TO KINDLE")
+                                .fontWeight(.bold)
+                            Spacer()
+                        }
+                        .font(.system(size: 16))
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(
+                            LinearGradient(
+                                colors: [Color(red: 0.98, green: 0.60, blue: 0.0), Color(red: 0.95, green: 0.35, blue: 0.0)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .shadow(color: Color.orange.opacity(0.35), radius: 5, y: 3)
+                    }
+
                     // Secondary Duo
                     HStack(spacing: 12) {
                         actionButton(title: "Cover Studio", icon: "paintbrush.pointed.fill", color: .purple, action: .covers)

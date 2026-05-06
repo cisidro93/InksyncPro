@@ -90,6 +90,10 @@ final class ConversionOrchestrator {
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: pdf.metadata) }
+                // 📦 Kindle size audit — alert if file will be too large for email delivery
+                if let firstEPUB = newURLs.first {
+                    await KindleSizeGuard.auditAndNotify(epubURL: firstEPUB, manager: manager)
+                }
                 await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Panel View EPUB Ready!"; manager.scanLibrary() }
                 Logger.shared.log("PanelView Conversion Successful: \(pdf.name)", category: "Converter")
             } else {
@@ -98,6 +102,10 @@ final class ConversionOrchestrator {
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata) }
+                // 📦 Kindle size audit — alert if file will be too large for email delivery
+                if let firstEPUB = newURLs.first {
+                    await KindleSizeGuard.auditAndNotify(epubURL: firstEPUB, manager: manager)
+                }
                 await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
             }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -397,6 +405,8 @@ final class ConversionOrchestrator {
                 let outputPDF = ConvertedPDF(name: outputFilename, url: finalOutputURL, pageCount: totalPages, fileSize: finalFileSize, metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: mangaMode))
                 newMergedPDFs.append(outputPDF)
                 await MainActor.run { manager.convertedPDFs.insert(outputPDF, at: 0) }
+                // 📦 Kindle size audit — warn if merged EPUB exceeds delivery limits
+                await KindleSizeGuard.auditAndNotify(epubURL: finalOutputURL, manager: manager)
             }
 
             await MainActor.run { manager.statusMessage = "Cleaning up..." }
