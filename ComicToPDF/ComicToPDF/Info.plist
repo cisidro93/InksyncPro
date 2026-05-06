@@ -130,5 +130,19 @@
             <dict/>
         </dict>
     </array>
+
+    <!-- OAUTH CALLBACK URL SCHEMES -->
+    <!-- Registers inksyncpro:// so iOS routes Dropbox & Google OAuth callbacks back into this app -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.antigravity.InksyncPro.oauth</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>inksyncpro</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

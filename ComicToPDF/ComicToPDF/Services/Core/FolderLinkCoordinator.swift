@@ -29,7 +29,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         // the entire cloud folder (Dropbox, iCloud, etc.) into the app sandbox.
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
         picker.delegate = coordinator
-        picker.allowsMultipleSelection = true
+        picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
         // Full-screen prevents iPadOS from swallowing events when presented over a form sheet.
         picker.modalPresentationStyle = .fullScreen
@@ -62,8 +62,15 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         // Pre-emptively acquiring access here and releasing it asynchronously would
         // create a TOCTOU window where both tokens briefly lapse simultaneously on
         // slow main-thread scheduling — eliminated by this design.
+        // We pre-emptively dismiss the controller to avoid animation locks,
+        // then dispatch the callback onto a background queue exactly like ImportCoordinator.
         controller.dismiss(animated: true)
-        finish(with: urls)
+        
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            DispatchQueue.main.async {
+                self?.finish(with: urls)
+            }
+        }
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {

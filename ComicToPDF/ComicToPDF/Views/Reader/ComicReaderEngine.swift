@@ -264,7 +264,8 @@ class ComicImageCache: ObservableObject {
     }
     
     private func prefetchSurrounding(index: Int) {
-        let range = max(0, index - 2)...min(pageCount - 1, index + 2)
+        let limit = AppSettingsManager.shared.conversionSettings.readingPrefetchLimit
+        let range = max(0, index - limit)...min(pageCount - 1, index + limit)
         for i in range {
             if i == index { continue }
             if self.cache.object(forKey: NSNumber(value: i)) == nil && !self.fetchingQueue.contains(i) {

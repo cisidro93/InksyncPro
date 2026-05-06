@@ -72,16 +72,22 @@ enum DocumentSubtype: String, Codable {
 enum SourceMode: Sendable {
     case local
     case linked(bookmarkData: Data)
+    case cloud(provider: String, remoteID: String)
     
     var isLinked: Bool {
         if case .linked = self { return true }
+        return false
+    }
+    
+    var isCloud: Bool {
+        if case .cloud = self { return true }
         return false
     }
 }
 
 // Custom Codable for SourceMode — .local is the default for all legacy data
 extension SourceMode: Codable {
-    enum CodingKeys: String, CodingKey { case type, bookmarkData }
+    enum CodingKeys: String, CodingKey { case type, bookmarkData, provider, remoteID }
     
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -91,6 +97,10 @@ extension SourceMode: Codable {
         case .linked(let data):
             try container.encode("linked", forKey: .type)
             try container.encode(data, forKey: .bookmarkData)
+        case .cloud(let provider, let remoteID):
+            try container.encode("cloud", forKey: .type)
+            try container.encode(provider, forKey: .provider)
+            try container.encode(remoteID, forKey: .remoteID)
         }
     }
     
@@ -101,6 +111,10 @@ extension SourceMode: Codable {
         case "linked":
             let data = try container.decode(Data.self, forKey: .bookmarkData)
             self = .linked(bookmarkData: data)
+        case "cloud":
+            let provider = try container.decode(String.self, forKey: .provider)
+            let remoteID = try container.decode(String.self, forKey: .remoteID)
+            self = .cloud(provider: provider, remoteID: remoteID)
         default:
             self = .local
         }
@@ -221,6 +235,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         switch (lhs.sourceMode, rhs.sourceMode) {
         case (.local, .local): return true
         case (.linked(let a), .linked(let b)): return a == b
+        case (.cloud(let p1, let id1), .cloud(let p2, let id2)): return p1 == p2 && id1 == id2
         default: return false
         }
     }
@@ -560,8 +575,11 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var enableBackgroundQueue: Bool = true
     var textSize: AppTextSize = .medium
     var panelEditorMode: PanelEditorPresentationMode = .sheet
-    var bindingMarginOffset: Int = 0             // âœ… NEW: Asymmetric Margin Padding
-    var bindingMarginSide: BindingMarginSide = .none // âœ… NEW: Asymmetric Margin Side
+    var bindingMarginOffset: Int = 0             // ✅ NEW: Asymmetric Margin Padding
+    var bindingMarginSide: BindingMarginSide = .none // ✅ NEW: Asymmetric Margin Side
+    
+    // ✅ NEW: Read-Ahead Buffer
+    var readingPrefetchLimit: Int = 2
     
     // âœ… NEW: Omnibus Settings
     var omnibusSplitThresholdMB: Int = 200
@@ -621,6 +639,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         case mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins
         case splitMode, enableBackgroundQueue, textSize, panelEditorMode
         case bindingMarginOffset, bindingMarginSide, showEditorDebug
+        case readingPrefetchLimit
         case epubSettings, imageEnhancement
         // Omnibus settings (previously missing -- fixes silent per-launch reset)
         case omnibusSplitThresholdMB, omnibusBadgePlacement
@@ -654,6 +673,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         bindingMarginOffset = try container.decodeIfPresent(Int.self, forKey: .bindingMarginOffset) ?? 0
         bindingMarginSide = try container.decodeIfPresent(BindingMarginSide.self, forKey: .bindingMarginSide) ?? .none
         showEditorDebug = try container.decodeIfPresent(Bool.self, forKey: .showEditorDebug) ?? false
+        readingPrefetchLimit = try container.decodeIfPresent(Int.self, forKey: .readingPrefetchLimit) ?? 2
         // Omnibus settings -- previously missing from Codable; safe migration default.
         omnibusSplitThresholdMB = try container.decodeIfPresent(Int.self, forKey: .omnibusSplitThresholdMB) ?? 200
         omnibusBadgePlacement = try container.decodeIfPresent(CoverBadgePlacement.self, forKey: .omnibusBadgePlacement) ?? .bottomRight
@@ -703,6 +723,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         try container.encode(bindingMarginSide, forKey: .bindingMarginSide)
         try container.encode(outputPipeline, forKey: .outputPipeline)
         try container.encode(showEditorDebug, forKey: .showEditorDebug)
+        try container.encode(readingPrefetchLimit, forKey: .readingPrefetchLimit)
         // Omnibus settings
         try container.encode(omnibusSplitThresholdMB, forKey: .omnibusSplitThresholdMB)
         try container.encode(omnibusBadgePlacement, forKey: .omnibusBadgePlacement)
