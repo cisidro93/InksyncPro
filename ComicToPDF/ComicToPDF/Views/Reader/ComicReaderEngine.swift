@@ -43,6 +43,7 @@ class ComicImageCache: ObservableObject {
     private var accessQueue: [Int] = []
     private var fetchingQueue: Set<Int> = [] // Track pending extractions
     private let maxCacheSize = 7 // Can hold about ~15MB of images in memory depending on screen size
+    private let prefetchLimit: Int // Configurable read-ahead page buffer
     
     // For CBZ extraction
     private var cbzArchive: Archive?
@@ -58,7 +59,8 @@ class ComicImageCache: ObservableObject {
     /// Released in `deinit` when the reader is dismissed.
     var activelyAccessedURL: URL?
     
-    init(pdf: ConvertedPDF) {
+    init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
+        self.prefetchLimit = prefetchLimit
         let scheme = pdf.url.scheme?.lowercased() ?? ""
         isStream = (scheme == "http" || scheme == "https")
         
@@ -264,8 +266,7 @@ class ComicImageCache: ObservableObject {
     }
     
     private func prefetchSurrounding(index: Int) {
-        let limit = AppSettingsManager.shared.conversionSettings.readingPrefetchLimit
-        let range = max(0, index - limit)...min(pageCount - 1, index + limit)
+        let range = max(0, index - prefetchLimit)...min(pageCount - 1, index + prefetchLimit)
         for i in range {
             if i == index { continue }
             if self.cache.object(forKey: NSNumber(value: i)) == nil && !self.fetchingQueue.contains(i) {
@@ -315,7 +316,10 @@ struct ComicReaderEngine: View {
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void) {
         self.pdf = pdf
         self.onDismiss = onDismiss
-        self._cache = StateObject(wrappedValue: ComicImageCache(pdf: pdf))
+        self._cache = StateObject(wrappedValue: ComicImageCache(
+            pdf: pdf,
+            prefetchLimit: AppSettingsManager.shared.conversionSettings.readingPrefetchLimit
+        ))
     }
     
     var body: some View {

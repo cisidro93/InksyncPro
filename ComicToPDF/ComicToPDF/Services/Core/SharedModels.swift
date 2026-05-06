@@ -219,6 +219,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         switch sourceMode {
         case .local:              hasher.combine(0)
         case .linked(let data):   hasher.combine(1); hasher.combine(data.hashValue)
+        case .cloud(let p, let id): hasher.combine(2); hasher.combine(p); hasher.combine(id)
         }
     }
 

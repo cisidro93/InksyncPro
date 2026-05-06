@@ -11,7 +11,7 @@ private struct DropboxListFolderResponse: Decodable {
 }
 
 private struct DropboxEntry: Decodable {
-    let .tag: String
+    let tag: String
     let id: String?
     let name: String
     let size: Int64?
