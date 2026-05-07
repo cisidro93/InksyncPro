@@ -396,3 +396,124 @@ private extension String {
         (self as NSString).pathExtension
     }
 }
+
+// MARK: - CloudBrowserPickerView
+// Smart entry point surfaced by the "Cloud" action pill in the library header.
+// - If only Dropbox is connected → goes straight to Dropbox browser
+// - If only Google Drive is connected → goes straight to Drive browser
+// - If both are connected → shows a provider picker
+// - If neither is connected → shows an onboarding prompt linking to Settings
+
+struct CloudBrowserPickerView: View {
+    @ObservedObject private var dropbox = DropboxProvider.shared
+    @ObservedObject private var gdrive  = GoogleDriveProvider.shared
+    @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.dismiss) private var dismiss
+
+    // If only one is connected, jump straight in
+    private var autoProvider: CloudBrowserProvider? {
+        if dropbox.isConnected && !gdrive.isConnected { return .dropbox }
+        if gdrive.isConnected && !dropbox.isConnected { return .googleDrive }
+        return nil
+    }
+
+    var body: some View {
+        if let solo = autoProvider {
+            // Single provider — present browser immediately
+            CloudFileBrowserView(provider: solo)
+                .environmentObject(conversionManager)
+        } else if dropbox.isConnected && gdrive.isConnected {
+            // Both connected — let user pick
+            NavigationStack {
+                List {
+                    pickerRow(
+                        name: "Dropbox",
+                        subtitle: "Browse your Dropbox comics",
+                        icon: "shippingbox.fill",
+                        color: .blue,
+                        provider: .dropbox
+                    )
+                    pickerRow(
+                        name: "Google Drive",
+                        subtitle: "Browse your Google Drive comics",
+                        icon: "externaldrive.fill.badge.icloud",
+                        color: .green,
+                        provider: .googleDrive
+                    )
+                }
+                .navigationTitle("Select Cloud Account")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+            }
+        } else {
+            // Nothing connected — onboarding prompt
+            NavigationStack {
+                VStack(spacing: 28) {
+                    Spacer()
+                    Image(systemName: "cloud.slash.fill")
+                        .font(.system(size: 64))
+                        .foregroundColor(.secondary)
+                    VStack(spacing: 12) {
+                        Text("No Cloud Accounts Connected")
+                            .font(.title2.bold())
+                        Text("Connect Dropbox or Google Drive in Settings to stream and import comics directly — no file picker required.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                    }
+                    Button {
+                        dismiss()
+                        // Post notification so settings can deep-link to Cloud Storage
+                        NotificationCenter.default.post(name: NSNotification.Name("OpenCloudSettings"), object: nil)
+                    } label: {
+                        Label("Connect in Settings", systemImage: "gear")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 32)
+                            .padding(.vertical, 14)
+                            .background(Color.blue)
+                            .clipShape(Capsule())
+                    }
+                    Spacer()
+                }
+                .navigationTitle("Cloud Storage")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pickerRow(name: String, subtitle: String, icon: String, color: Color, provider: CloudBrowserProvider) -> some View {
+        NavigationLink {
+            CloudFileBrowserView(provider: provider)
+                .environmentObject(conversionManager)
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(color.opacity(0.12))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(color)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).fontWeight(.semibold)
+                    Text(subtitle).font(.caption).foregroundColor(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
+

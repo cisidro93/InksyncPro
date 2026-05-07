@@ -4,7 +4,7 @@ enum LibrarySheetDestination: Identifiable {
     case smartListImporter
     case wifi
     case merge
-    case cloud
+    case cloudBrowser          // NEW: premium direct-API cloud browser
     case cloudSync(ConvertedPDF)
     case export(ConvertedPDF)
     case directShare(ConvertedPDF)
@@ -22,7 +22,7 @@ enum LibrarySheetDestination: Identifiable {
         case .smartListImporter: return "smartList"
         case .wifi: return "wifi"
         case .merge: return "merge"
-        case .cloud: return "cloud"
+        case .cloudBrowser: return "cloudBrowser"
         case .cloudSync(let p): return "cloudSync_\(p.id)"
         case .export(let p): return "export_\(p.id)"
         case .directShare(let p): return "directShare_\(p.id)"

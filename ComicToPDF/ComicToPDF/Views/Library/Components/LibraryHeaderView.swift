@@ -288,6 +288,15 @@ struct LibraryHeaderView: View {
                         
                         ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
                         ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
+                        ActionPill(
+                            title: "Cloud",
+                            icon: (DropboxProvider.shared.isConnected || GoogleDriveProvider.shared.isConnected)
+                                ? "checkmark.icloud.fill"
+                                : "icloud.and.arrow.down",
+                            color: (DropboxProvider.shared.isConnected || GoogleDriveProvider.shared.isConnected)
+                                ? Theme.green
+                                : Theme.blue
+                        ) { onSheetTrigger(.cloudBrowser) }
                         
                         // Metadata Engine State
                         Group {
