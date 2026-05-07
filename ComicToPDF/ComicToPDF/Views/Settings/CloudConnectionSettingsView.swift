@@ -8,6 +8,8 @@ struct CloudConnectionSettingsView: View {
     @State private var isConnectingDropbox = false
     @State private var isConnectingGoogle  = false
     @State private var errorMessage: String?
+    @State private var showDropboxBrowser  = false
+    @State private var showGDriveBrowser   = false
 
     var body: some View {
         Form {
@@ -44,6 +46,37 @@ struct CloudConnectionSettingsView: View {
                     onDisconnect: { dropbox.signOut() }
                 )
 
+                // Browse Dropbox (shown only when connected)
+                if dropbox.isConnected {
+                    Button {
+                        showDropboxBrowser = true
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.blue.opacity(0.12))
+                                    .frame(width: 36, height: 36)
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.blue)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Browse Dropbox")
+                                    .fontWeight(.semibold)
+                                Text("Stream comics directly to your Library")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .foregroundColor(.primary)
+                }
+
                 // Google Drive Row
                 providerRow(
                     name: "Google Drive",
@@ -54,6 +87,37 @@ struct CloudConnectionSettingsView: View {
                     onConnect: connectGoogle,
                     onDisconnect: { gdrive.signOut() }
                 )
+
+                // Browse Google Drive (shown only when connected)
+                if gdrive.isConnected {
+                    Button {
+                        showGDriveBrowser = true
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.green.opacity(0.12))
+                                    .frame(width: 36, height: 36)
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.green)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Browse Google Drive")
+                                    .fontWeight(.semibold)
+                                Text("Stream comics directly to your Library")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .foregroundColor(.primary)
+                }
             }
 
             // MARK: - Active Downloads
@@ -91,14 +155,22 @@ struct CloudConnectionSettingsView: View {
 
             // MARK: - How It Works
             Section(header: Text("How It Works")) {
-                howItWorksRow(icon: "1.circle", text: "Tap Connect to sign in to your cloud account via the secure OAuth flow in Safari.")
-                howItWorksRow(icon: "2.circle", text: "InksyncPro indexes your files without downloading them. Comics are streamed page-by-page on demand.")
-                howItWorksRow(icon: "3.circle", text: "Tap \"Download to Device\" on any cloud comic in the Library to save it for offline reading.")
-                howItWorksRow(icon: "4.circle", text: "Your login tokens are stored in the iOS Keychain — they never leave your device and cannot be accessed by other apps.")
+                howItWorksRow(icon: "1.circle", text: "Tap Connect — a secure OAuth sign-in sheet appears without ever leaving the app. InksyncPro never sees your password.")
+                howItWorksRow(icon: "2.circle", text: "Your token is saved in the iOS Keychain. It never leaves your device and cannot be accessed by other apps.")
+                howItWorksRow(icon: "3.circle", text: "Tap 'Browse' to navigate your cloud folders and add comics to your Library. Files are registered instantly — nothing downloads yet.")
+                howItWorksRow(icon: "4.circle", text: "Open a cloud comic to stream it page-by-page, or tap 'Download to Device' to save it for offline use.")
             }
         }
         .navigationTitle("Cloud Storage")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showDropboxBrowser) {
+            CloudFileBrowserView(provider: .dropbox)
+                .environmentObject(LinkedLibraryScanner.shared.conversionManager ?? ConversionManager())
+        }
+        .sheet(isPresented: $showGDriveBrowser) {
+            CloudFileBrowserView(provider: .googleDrive)
+                .environmentObject(LinkedLibraryScanner.shared.conversionManager ?? ConversionManager())
+        }
     }
 
     // MARK: - Provider Row
@@ -174,10 +246,12 @@ struct CloudConnectionSettingsView: View {
         Task {
             do {
                 try await dropbox.authenticate()
+                Logger.shared.log("Dropbox: OAuth authentication successful", category: "Cloud", type: .success)
             } catch {
                 await MainActor.run {
                     errorMessage = "Dropbox: \(error.localizedDescription)"
                 }
+                Logger.shared.log("Dropbox: OAuth failed — \(error.localizedDescription)", category: "Cloud", type: .error)
             }
             await MainActor.run { isConnectingDropbox = false }
         }
@@ -189,12 +263,15 @@ struct CloudConnectionSettingsView: View {
         Task {
             do {
                 try await gdrive.authenticate()
+                Logger.shared.log("Google Drive: OAuth authentication successful", category: "Cloud", type: .success)
             } catch {
                 await MainActor.run {
                     errorMessage = "Google Drive: \(error.localizedDescription)"
                 }
+                Logger.shared.log("Google Drive: OAuth failed — \(error.localizedDescription)", category: "Cloud", type: .error)
             }
             await MainActor.run { isConnectingGoogle = false }
         }
     }
 }
+

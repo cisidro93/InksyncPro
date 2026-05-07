@@ -94,7 +94,14 @@ class GoogleDriveProvider: NSObject, CloudStorageProvider, ObservableObject {
                         continuation.resume(throwing: URLError(.cancelled))
                     }
                 }
-                session.prefersEphemeralWebBrowserSession = true
+                // UIWindow IS an ASPresentationAnchor — grab the key window directly.
+                let keyWindow = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene })
+                    .flatMap({ $0.windows })
+                    .first(where: { $0.isKeyWindow })
+                if let window = keyWindow {
+                    session.presentationContextProvider = OAuthWindowAnchor(window: window)
+                }
                 session.start()
             }
         }

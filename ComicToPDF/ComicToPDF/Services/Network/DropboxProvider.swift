@@ -92,7 +92,9 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
 
         guard let authURL = comps.url else { throw URLError(.badURL) }
 
-        // 3. Launch web auth session
+        // 3. Launch in-app browser via ASWebAuthenticationSession
+        //    Must present from the key window — UIWindow itself conforms to ASPresentationAnchor
+        //    but we must call session.presentationContextProvider with a conforming object.
         let callbackURL: URL = try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.main.async {
                 let session = ASWebAuthenticationSession(
@@ -107,11 +109,13 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
                         continuation.resume(throwing: URLError(.cancelled))
                     }
                 }
-                session.prefersEphemeralWebBrowserSession = true
-                // presentationContextProvider must be set – use a UIWindowScene root window
-                if let provider = UIApplication.shared.connectedScenes
-                    .compactMap({ $0 as? UIWindowScene }).first?.windows.first as? ASWebAuthenticationPresentationContextProviding {
-                    session.presentationContextProvider = provider
+                // UIWindow IS an ASPresentationAnchor — grab the key window directly.
+                let keyWindow = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene })
+                    .flatMap({ $0.windows })
+                    .first(where: { $0.isKeyWindow })
+                if let window = keyWindow {
+                    session.presentationContextProvider = OAuthWindowAnchor(window: window)
                 }
                 session.start()
             }
