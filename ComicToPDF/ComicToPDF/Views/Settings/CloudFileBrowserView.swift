@@ -266,7 +266,7 @@ struct CloudFileBrowserView: View {
         isLoading = true
         errorMessage = nil
         do {
-            let all = try await provider.listDirectory(folderID: currentFolderID)
+            let all = try await provider.listDirectory(currentFolderID)
             // Filter to supported comic/book formats plus directories
             let supported: Set<String> = ["cbz", "cbr", "epub", "zip", "pdf", "cb7", "cbt"]
             let filtered = all.filter { f in
