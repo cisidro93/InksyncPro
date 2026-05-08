@@ -67,6 +67,12 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         }
     }
 
+    /// Retained for the duration of the OAuth session.
+    /// ASWebAuthenticationSession holds presentationContextProvider as WEAK —
+    /// if we don't retain the anchor it gets deallocated immediately → error 2.
+    private var _oauthAnchor: OAuthWindowAnchor?
+    private var _oauthSession: ASWebAuthenticationSession?
+
     private override init() {
         super.init()
         self.isConnected = (accessToken != nil)
@@ -92,15 +98,22 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
 
         guard let authURL = comps.url else { throw URLError(.badURL) }
 
-        // 3. Launch in-app browser via ASWebAuthenticationSession
-        //    Must present from the key window — UIWindow itself conforms to ASPresentationAnchor
-        //    but we must call session.presentationContextProvider with a conforming object.
+        // 3. Launch in-app browser via ASWebAuthenticationSession.
+        //    IMPORTANT: retain both the session AND the anchor as instance properties.
+        //    ASWebAuthenticationSession holds presentationContextProvider as WEAK;
+        //    local variables go out of scope immediately, causing error 2.
         let callbackURL: URL = try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    continuation.resume(throwing: URLError(.cancelled))
+                    return
+                }
                 let session = ASWebAuthenticationSession(
                     url: authURL,
                     callbackURLScheme: "inksyncpro"
-                ) { callbackURL, error in
+                ) { [weak self] callbackURL, error in
+                    self?._oauthSession = nil
+                    self?._oauthAnchor = nil
                     if let error = error {
                         continuation.resume(throwing: error)
                     } else if let callbackURL = callbackURL {
@@ -109,14 +122,22 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
                         continuation.resume(throwing: URLError(.cancelled))
                     }
                 }
-                // UIWindow IS an ASPresentationAnchor — grab the key window directly.
+                // Grab the key window and retain the anchor on self.
                 let keyWindow = UIApplication.shared.connectedScenes
                     .compactMap({ $0 as? UIWindowScene })
                     .flatMap({ $0.windows })
                     .first(where: { $0.isKeyWindow })
-                if let window = keyWindow {
-                    session.presentationContextProvider = OAuthWindowAnchor(window: window)
+                guard let window = keyWindow else {
+                    continuation.resume(throwing: NSError(
+                        domain: "Dropbox", code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "No key window available for OAuth presentation"]
+                    ))
+                    return
                 }
+                let anchor = OAuthWindowAnchor(window: window)
+                self._oauthAnchor = anchor    // strong retain
+                self._oauthSession = session  // strong retain
+                session.presentationContextProvider = anchor
                 session.start()
             }
         }

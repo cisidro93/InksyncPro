@@ -157,11 +157,22 @@ struct DevicesView: View {
     }
 
     private func handleAppear() {
-        // ✅ Bug fix: never auto-show AddDevice before onboarding is complete.
-        // DevicesView is alive in the background even on Tab 0 — guard here.
-        guard UserDefaults.standard.bool(forKey: "hasSeenOnboarding") else { return }
+        // Guard 1: Never auto-prompt before the user has finished onboarding.
+        // NOTE: The app uses 'hasCompletedOnboarding', NOT 'hasSeenOnboarding'.
+        guard UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") else { return }
+        // Guard 2: Only prompt on the Devices tab itself — DevicesView stays alive
+        // in the background on other tabs, so onAppear fires spuriously.
+        // We use a debounce flag so it only triggers on a deliberate navigation to this tab.
+        guard UserDefaults.standard.bool(forKey: "hasVisitedDevicesTab") else {
+            // First time visiting the tab — mark it, but don't auto-show the sheet.
+            UserDefaults.standard.set(true, forKey: "hasVisitedDevicesTab")
+            if hSizeClass == .regular { selectedDeviceID = savedDevices.first?.id }
+            return
+        }
+        // Guard 3: If user already dismissed/completed setup once, never re-prompt.
         if savedDevices.isEmpty &&
-           !UserDefaults.standard.bool(forKey: "hasCompletedDeviceSetup") {
+           !UserDefaults.standard.bool(forKey: "hasCompletedDeviceSetup") &&
+           !UserDefaults.standard.bool(forKey: "userDismissedDevicePrompt") {
             showAddDevice = true
         } else if hSizeClass == .regular && selectedDeviceID == nil {
             selectedDeviceID = savedDevices.first?.id
