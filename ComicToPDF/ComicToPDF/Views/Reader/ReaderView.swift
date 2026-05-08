@@ -747,7 +747,7 @@ struct ReaderView: View {
             swipeStartWarmth = warmthLevel
             withAnimation { showSwipeHUD = true }
         }
-        
+        guard geo.size.height > 0 else { return }
         let deltaY = val.translation.height / geo.size.height
         
         if isLeft {
@@ -1099,6 +1099,7 @@ struct ReaderScrubber: View {
                     DragGesture(minimumDistance: 0, coordinateSpace: .local)
                         .onChanged { val in
                             isDragging = true
+                            guard geo.size.width > 0 else { return }
                             let percentage = min(max(val.location.x / geo.size.width, 0), 1)
                             let rawIndex = Int(round(percentage * CGFloat(totalPages - 1)))
                             let targeted = isMangaMode ? (totalPages - 1 - rawIndex) : rawIndex

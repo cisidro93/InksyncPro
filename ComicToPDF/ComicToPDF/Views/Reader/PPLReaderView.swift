@@ -130,6 +130,19 @@ struct PPLReaderView: View {
                 bufferManager.render(pageIndex: newIndex, bounds: geo.size)
                 // If PPL is enabled, the buffer renderer will automatically slice the buffer against the new page
             }
+            // ROTATION FIX: Re-render with the new viewport size after orientation changes.
+            // Also reset zoom/pan state — stale offsets are relative to the old orientation's coordinate space.
+            .onChange(of: geo.size) { _, newSize in
+                guard newSize.width > 0, newSize.height > 0 else { return }
+                withAnimation(.easeOut(duration: 0.15)) {
+                    scale = 1.0
+                    offset = .zero
+                    dragOffset = .zero
+                }
+                bufferManager.isPPLEnabled = false
+                bufferManager.updateViewport(rect: .full)
+                bufferManager.render(pageIndex: currentPageIndex, bounds: newSize)
+            }
             .background(Color.black)
         }
     }
