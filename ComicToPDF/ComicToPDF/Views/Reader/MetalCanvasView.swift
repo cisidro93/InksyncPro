@@ -113,6 +113,25 @@ struct MetalCanvasView: UIViewRepresentable {
                 // Shift the origin back down to 0,0 avoiding blank offset gaps
                 ciImage = ciImage.transformed(by: CGAffineTransform(translationX: -cgCropRect.origin.x, y: -cgCropRect.origin.y))
             }
+            
+            // ✅ Phase 1: Smart Upscaling & Auto Contrast Layer
+            let contrastLevel = UserDefaults.standard.double(forKey: "comic_autoContrastLevel")
+            if contrastLevel > 1.0 {
+                if let filter = CIFilter(name: "CIColorControls") {
+                    filter.setValue(ciImage, forKey: kCIInputImageKey)
+                    filter.setValue(contrastLevel, forKey: kCIInputContrastKey)
+                    if let output = filter.outputImage { ciImage = output }
+                }
+            }
+            
+            let useSharpening = UserDefaults.standard.bool(forKey: "comic_smartSharpen")
+            if useSharpening {
+                if let filter = CIFilter(name: "CISharpenLuminance") {
+                    filter.setValue(ciImage, forKey: kCIInputImageKey)
+                    filter.setValue(0.7, forKey: kCIInputSharpnessKey) // A balanced sharp threshold
+                    if let output = filter.outputImage { ciImage = output }
+                }
+            }
 
             let imageSize = ciImage.extent.size
             // SAFETY: Guard against zero or infinite image extent (e.g., corrupt PPL crop result)

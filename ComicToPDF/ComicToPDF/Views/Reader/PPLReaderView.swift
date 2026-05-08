@@ -3,6 +3,7 @@ import SwiftUI
 struct PPLReaderView: View {
     let pages: [URL]
     @Binding var currentPageIndex: Int
+    var pdfID: UUID?
     var isMangaMode: Bool
     var isDoublePageOverride: Bool = false  // Landscape auto-dual-page from parent
     var onCenterTap: () -> Void
@@ -21,6 +22,11 @@ struct PPLReaderView: View {
     // ✅ Phase 2: Spread Splitting State
     @State private var splitHalf: Int = 0 // 0 = first half, 1 = second half
     @AppStorage("autoSplitPortraitSpreads") private var autoSplitPortraitSpreads = true
+    
+    // ✅ Phase 1: Guided Reading State
+    @State private var isGuidedReadingActive: Bool = false
+    @State private var guidedPanelIndex: Int = 0
+    @State private var guidedPanels: [NormalizedRect] = []
     
     var body: some View {
         GeometryReader { geo in
@@ -89,7 +95,28 @@ struct PPLReaderView: View {
                     )
                     // Zero-Latency Edge Tap Gestures
                     .onTapGesture(count: 2) { location in
-                        // Double Tap to Smart Zoom
+                        // Phase 1: Guided Reading Activation via Double Tap
+                        if scale == 1.0 {
+                            if isGuidedReadingActive {
+                                isGuidedReadingActive = false
+                                updatePPL(in: geo.size) // resets to full
+                                return
+                            } else {
+                                refreshGuidedPanels()
+                                if !guidedPanels.isEmpty {
+                                    isGuidedReadingActive = true
+                                    guidedPanelIndex = 0
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        bufferManager.lockedRect = guidedPanels[guidedPanelIndex]
+                                        bufferManager.isPPLEnabled = true
+                                    }
+                                    Haptics.shared.playImpact(style: .medium)
+                                    return
+                                }
+                            }
+                        }
+                        
+                        // Fallback: Double Tap to Smart Zoom
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             if scale > 1.0 {
                                 scale = 1.0
@@ -108,14 +135,26 @@ struct PPLReaderView: View {
                         }
                     }
                     .onTapGesture { location in
-                        if scale <= 1.0 {
+                        if scale <= 1.0 || isGuidedReadingActive {
                             let width = geo.size.width
-                            if location.x < width * 0.3 {
-                                isMangaMode ? nextPage(geo: geo.size) : prevPage(geo: geo.size)
-                            } else if location.x > width * 0.7 {
-                                isMangaMode ? prevPage(geo: geo.size) : nextPage(geo: geo.size)
+                            
+                            // Route Tap to Guided Reading Navigation or Standard Page Turn
+                            if isGuidedReadingActive {
+                                if location.x < width * 0.3 {
+                                    isMangaMode ? nextGuidedPanel(geo: geo.size) : prevGuidedPanel(geo: geo.size)
+                                } else if location.x > width * 0.7 {
+                                    isMangaMode ? prevGuidedPanel(geo: geo.size) : nextGuidedPanel(geo: geo.size)
+                                } else {
+                                    onCenterTap()
+                                }
                             } else {
-                                onCenterTap()
+                                if location.x < width * 0.3 {
+                                    isMangaMode ? nextPage(geo: geo.size) : prevPage(geo: geo.size)
+                                } else if location.x > width * 0.7 {
+                                    isMangaMode ? prevPage(geo: geo.size) : nextPage(geo: geo.size)
+                                } else {
+                                    onCenterTap()
+                                }
                             }
                         }
                     }
@@ -238,6 +277,68 @@ struct PPLReaderView: View {
         if currentPageIndex > 0 {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = max(0, currentPageIndex - hopCount)
+        }
+    }
+    
+    // MARK: - Guided Reading Engine
+    private func refreshGuidedPanels() {
+        guard let pdfID = pdfID else { return }
+        let model = PageModelStore.shared.getPageModel(for: pdfID, pageIndex: currentPageIndex)
+        // Sort panels to read top-to-bottom, right-to-left if Manga, otherwise top-to-bottom, left-to-right
+        self.guidedPanels = model.panels.sorted { a, b in
+            // Tolerate minor Y alignment variations (e.g. 5% of height) to group rows
+            if abs(a.origin.y - b.origin.y) > 50 {
+                return a.origin.y < b.origin.y // top first
+            } else {
+                return isMangaMode ? (a.origin.x > b.origin.x) : (a.origin.x < b.origin.x)
+            }
+        }
+    }
+    
+    private func nextGuidedPanel(geo: CGSize) {
+        if guidedPanelIndex + 1 < guidedPanels.count {
+            guidedPanelIndex += 1
+            withAnimation(.easeInOut(duration: 0.25)) {
+                bufferManager.lockedRect = guidedPanels[guidedPanelIndex]
+            }
+        } else {
+            nextPage(geo: geo)
+            if isGuidedReadingActive {
+                // Must wait briefly for the new page buffer to render, or just pre-calculate
+                refreshGuidedPanels()
+                guidedPanelIndex = 0
+                if guidedPanels.isEmpty { 
+                    isGuidedReadingActive = false
+                    updatePPL(in: geo)
+                } else { 
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        bufferManager.lockedRect = guidedPanels[guidedPanelIndex] 
+                    }
+                }
+            }
+        }
+    }
+    
+    private func prevGuidedPanel(geo: CGSize) {
+        if guidedPanelIndex > 0 {
+            guidedPanelIndex -= 1
+            withAnimation(.easeInOut(duration: 0.25)) {
+                bufferManager.lockedRect = guidedPanels[guidedPanelIndex]
+            }
+        } else {
+            prevPage(geo: geo)
+            if isGuidedReadingActive {
+                refreshGuidedPanels()
+                if guidedPanels.isEmpty { 
+                    isGuidedReadingActive = false
+                    updatePPL(in: geo)
+                } else { 
+                    guidedPanelIndex = guidedPanels.count - 1
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        bufferManager.lockedRect = guidedPanels[guidedPanelIndex] 
+                    }
+                }
+            }
         }
     }
 }

@@ -44,6 +44,11 @@ struct ReaderView: View {
     @State private var isToolbarVisible = true
     @Environment(\.horizontalSizeClass) private var hSizeClass
     
+    // ✅ Phase 1: QoL Image Enhancements
+    @AppStorage("comic_autoContrastLevel") private var autoContrastLevel: Double = 1.0
+    @AppStorage("comic_smartSharpen") private var smartSharpen: Bool = false
+    @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled: Bool = false
+    
     // ✅ Phase 30: Advanced Reader Features
     @AppStorage("isVerticalScroll") private var isVerticalScroll = false
     @AppStorage("isDoublePageMode") private var isDoublePageMode = false
@@ -150,7 +155,7 @@ struct ReaderView: View {
                         if fileURL.pathExtension.lowercased() != "pdf" {
                             if !pages.isEmpty {
                                 let effectiveDoublePage = isDoublePageMode || (autoLandscapeDualPage && deviceOrientation.isLandscape)
-                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage) {
+                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, pdfID: pdf?.id, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage) {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         isToolbarVisible.toggle()
                                     }
@@ -390,6 +395,29 @@ struct ReaderView: View {
                 Section("Layout") {
                     Toggle("Dual Page (Manual)", isOn: $isDoublePageMode)
                     Toggle("Auto Dual Page in Landscape", isOn: $autoLandscapeDualPage)
+                }
+                Section("Image Enhancements") {
+                    Toggle("Smart Margin Crop", isOn: Binding(
+                        get: { isAutoCropEnabled },
+                        set: { val in 
+                            isAutoCropEnabled = val 
+                            PageBufferManager.shared.render(pageIndex: currentPageIndex, bounds: .zero)
+                        }
+                    ))
+                    Toggle("Auto Contrast", isOn: Binding(
+                        get: { autoContrastLevel > 1.0 },
+                        set: { val in
+                            autoContrastLevel = val ? 1.5 : 1.0
+                            PageBufferManager.shared.render(pageIndex: currentPageIndex, bounds: .zero)
+                        }
+                    ))
+                    Toggle("Smart Sharpening", isOn: Binding(
+                        get: { smartSharpen },
+                        set: { val in
+                            smartSharpen = val
+                            PageBufferManager.shared.render(pageIndex: currentPageIndex, bounds: .zero)
+                        }
+                    ))
                 }
                 Section("Color Filter") {
                     ForEach(ReaderColorFilter.allCases, id: \.self) { filter in
