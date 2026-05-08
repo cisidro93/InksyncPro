@@ -197,70 +197,55 @@ actor ImportOrchestrator {
             let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             var newPDFs: [ConvertedPDF] = []
             var unstoredPDFs: [ConvertedPDF] = []
-            
+
+            // O(1) in-batch dedup set — replaces the O(n²) newPDFs.contains(where:) scan
+            var batchKeys = Set<String>()        // "filename||size"
+            var batchFileNames = Set<String>()   // filename only (for collision rename logic)
+
             var loopIndex = 0
             for url in urls {
                 loopIndex += 1
-                if loopIndex % 10 == 0 {
+                // Yield every 50 files — enough to breathe without 1400 individual MainActor trips
+                if loopIndex % 50 == 0 {
                     await Task.yield()
+                    let idx = loopIndex
+                    await MainActor.run { manager.processingStatus = "Importing \(idx) of \(urls.count)…" }
                 }
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                
+
                 var fileName = url.lastPathComponent
                 var destURL = documentsDir.appendingPathComponent(fileName)
                 let overrideMeta = overrides[url]
-                
+
                 // ── Duplicate Detection ────────────────────────────────────────────────
                 let incomingSize = (try? fileManager.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
                 let compositeKey = "\(fileName)||\(incomingSize)"
-                
+
                 // 1. Exact match: same filename AND same byte-count in library → true duplicate, skip
-                let isExactLibraryDuplicate = incomingSize > 0 && existingKeys.contains(compositeKey)
-                
-                // 2. In-batch collision: already queued this exact file in the current run
-                let isBatchDuplicate = incomingSize > 0 && newPDFs.contains(where: {
-                    $0.url.lastPathComponent == fileName && $0.fileSize == incomingSize
-                })
-                
-                if isExactLibraryDuplicate || isBatchDuplicate {
+                if incomingSize > 0 && (existingKeys.contains(compositeKey) || batchKeys.contains(compositeKey)) {
                     Logger.shared.log("Skipping duplicate: \(fileName) (\(incomingSize) bytes)", category: "Import", type: .info)
                     continue
                 }
-                
-                // 3. Content-hash check: catches renamed copies of already-imported files
-                // 💥 DISABLED: Hashing 1,371 multi-hundred-megabyte files synchronously completely chokes the iOS Watchdog timer.
-                // We rely exclusively on the ultra-fast Filename + Byte-Count composite key above for dedup.
-                /*
-                if !existingHashes.isEmpty {
-                    let quickHash = ContentHasher.sha256(of: url)
-                    if let hash = quickHash, existingHashes.contains(hash) {
-                        Logger.shared.log("Skipping hash-duplicate: \(fileName) (hash match)", category: "Import", type: .info)
-                        continue
-                    }
-                }
-                */
-                
-                // 🚀 PREVENT DESTRUCTIVE COLLISION: Instead of destructively dropping chapters named "1.cbz", 
-                // we inject their validated Series Name mapping into the physical Document namespace!
-                if existingPaths.contains(fileName) || newPDFs.contains(where: { $0.url.lastPathComponent == fileName }) {
+
+                // 2. Filename collision — rename to avoid overwriting a different file with the same name
+                if existingPaths.contains(fileName) || batchFileNames.contains(fileName) {
                     if let seriesPrefix = overrideMeta?.series, !seriesPrefix.isEmpty {
                         fileName = "\(seriesPrefix) - \(fileName)"
                         destURL = documentsDir.appendingPathComponent(fileName)
                     }
-                    
-                    // Failsafe Random UUID extension if multiple duplicate nested series exist!
-                    while existingPaths.contains(fileName) || newPDFs.contains(where: { $0.url.lastPathComponent == fileName }) || fileManager.fileExists(atPath: destURL.path) {
+                    // Failsafe UUID suffix for repeated collisions
+                    while existingPaths.contains(fileName) || batchFileNames.contains(fileName) || fileManager.fileExists(atPath: destURL.path) {
                         let nameWithoutExt = (fileName as NSString).deletingPathExtension
                         let ext = (fileName as NSString).pathExtension
                         fileName = "\(nameWithoutExt)_\(UUID().uuidString.prefix(6)).\(ext)"
                         destURL = documentsDir.appendingPathComponent(fileName)
                     }
                 }
-                
+
                 do {
                     if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-                    
+
                     // Aggressive APFS Inode Optimization (Move instead of Copy for Staged Items)
                     if url.path.contains("InksyncStaging_") {
                         try fileManager.moveItem(at: url, to: destURL)
@@ -269,32 +254,28 @@ actor ImportOrchestrator {
                     }
                     let attr = try fileManager.attributesOfItem(atPath: destURL.path)
                     let size = attr[.size] as? Int64 ?? 0
-                    
+
                     let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
-                    
+
                     var smartDisplayName = fileName
                     var smartMetadata = PDFMetadata(title: fileName)
-                    
+
                     // Always calculate the Safe Parent Folder fallback
                     let parentName = url.deletingLastPathComponent().lastPathComponent
                     let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads", "inksyncstaging_", "folder_spider_", "folderspider_"]
                     var validParentFolder: String? = nil
-                    
+
                     if !invalidParents.contains(where: { parentName.lowercased().hasPrefix($0) }) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
                         validParentFolder = parentName
                     }
-                    
+
                     // 1. Highest Priority: Native ComicInfo.xml Archive Tagging
                     if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
                         smartDisplayName = xmlData.displayName
                         smartMetadata.title = xmlData.parsedTitle ?? overrideMeta?.title ?? smartDisplayName
-                        
-                        // Cascade: XML Series -> Folder Override -> validParentFolder -> nil
                         smartMetadata.series = xmlData.parsedSeries ?? overrideMeta?.series ?? validParentFolder
                         smartMetadata.issueNumber = xmlData.parsedNumber
                         smartMetadata.tags.append("Auto XML Scrape")
-                        
-                        // Merge safe remaining attributes from the heuristic override
                         if smartMetadata.issueNumber == nil, let overMeta = overrideMeta {
                             smartMetadata.issueNumber = overMeta.issueNumber
                         }
@@ -306,12 +287,12 @@ actor ImportOrchestrator {
                         // 3. Absolute Fallback
                         smartMetadata.series = validParentFolder
                     }
-                    
+
                     // Parse full metadata to extract Manga layout
                     if let parsedInfo = ComicInfoParser.parse(from: destURL) {
                         smartMetadata.isManga = parsedInfo.manga
                     }
-                    
+
                     var pdf = ConvertedPDF(
                         name: smartDisplayName,
                         url: destURL,
@@ -325,49 +306,60 @@ actor ImportOrchestrator {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                     }
                     pdf.isPrivate = isVaultUnlocked
-                    pdf.contentHash = nil // Deferred to prevent 20-minute synchronous UI freezes
+                    pdf.contentHash = nil // Deferred to prevent UI freeze
+
+                    // Register in O(1) dedup sets
+                    batchKeys.insert("\(fileName)||\(size)")
+                    batchFileNames.insert(fileName)
+
                     newPDFs.append(pdf)
                     unstoredPDFs.append(pdf)
-                    
-                    // 💥 CRITICAL ATOMICITY FIX: Chunk Save every 35 files!
-                    if unstoredPDFs.count >= 35 {
+
+                    // Chunk commit every 150 files — updates live library UI without thrashing JSON save.
+                    // saveLibrary() is intentionally NOT called here; the single save at the end is enough.
+                    if unstoredPDFs.count >= 150 {
                         let chunk = unstoredPDFs
                         unstoredPDFs.removeAll()
                         await MainActor.run {
-                            for chunkPdf in chunk {
-                                if !manager.convertedPDFs.contains(where: { $0.url.lastPathComponent == chunkPdf.url.lastPathComponent }) {
-                                    manager.convertedPDFs.append(chunkPdf)
-                                }
+                            // Build a snapshot set once for O(1) per-item lookup
+                            let existing = Set(manager.convertedPDFs.map { $0.url.lastPathComponent })
+                            for chunkPdf in chunk where !existing.contains(chunkPdf.url.lastPathComponent) {
+                                manager.convertedPDFs.append(chunkPdf)
                             }
-                            manager.saveLibrary()
+                            // Intentionally no saveLibrary() here — avoids 10× expensive JSON serializations
                         }
                     }
-                    
+
                     await ImportMonitorManager.shared.incrementSuccess()
                 } catch {
                     Logger.shared.log("importFilesAsSeries: Failed to copy \(fileName): \(error.localizedDescription)", category: "Import", type: .error)
                     await ImportMonitorManager.shared.incrementFailure()
                 }
             }
-            
-            // Commit any remaining files that didn't hit the chunk boundary
+
+            // Commit remaining files and trigger the SINGLE end-of-import save
             if !unstoredPDFs.isEmpty {
                 let chunk = unstoredPDFs
                 await MainActor.run {
-                    for chunkPdf in chunk {
-                        if !manager.convertedPDFs.contains(where: { $0.url.lastPathComponent == chunkPdf.url.lastPathComponent }) {
-                            manager.convertedPDFs.append(chunkPdf)
-                        }
+                    let existing = Set(manager.convertedPDFs.map { $0.url.lastPathComponent })
+                    for chunkPdf in chunk where !existing.contains(chunkPdf.url.lastPathComponent) {
+                        manager.convertedPDFs.append(chunkPdf)
                     }
-                    manager.saveLibrary()
                 }
             }
-            
+            // Single authoritative save for the entire import batch
+            await MainActor.run { manager.saveLibrary() }
+
             return newPDFs
         }.value
         
         await MainActor.run { ImportMonitorManager.shared.completeImport() }
         guard !importedPDFs.isEmpty else { return }
+
+        // Fast-path SwiftData insert for ONLY the new records.
+        // This bypasses the expensive full-library reconciliation that syncToSwiftData does.
+        // The regular saveLibrary debounce will run syncToSwiftData later for full consistency.
+        await MigrationService.shared.batchInsertToSwiftData(newPDFs: importedPDFs)
 
         // ✅ Import History: log each successfully imported file
         for pdf in importedPDFs {

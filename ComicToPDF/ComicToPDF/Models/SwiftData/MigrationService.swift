@@ -130,18 +130,19 @@ class MigrationService {
         return generatedCount + assignedCount
     }
     
-    // ✅ NEW: Dual-Write Background Sync
-    // Silently builds the SwiftData database while legacy monolithic arrays are still being used by the UI layer.
+    // ✅ Full reconciliation sync (used on app save / quit).
+    // Fetches entire DB, upserts changed records, prunes deleted ones.
+    // O(n) in library size. Do NOT call this in a tight per-file loop.
     func syncToSwiftData(pdfs: [ConvertedPDF], collections: [PDFCollection]) {
         let container = InksyncProApp.sharedModelContainer
         Task.detached(priority: .background) {
             do {
                 let context = ModelContext(container)
-                
+
                 // O(1) Bulk Fetch Collections
                 let allExistingCols = (try? context.fetch(FetchDescriptor<SDPDFCollection>())) ?? []
                 let colDict = Dictionary(grouping: allExistingCols, by: { $0.id }).compactMapValues { $0.first }
-                
+
                 // 1. Sync Collections
                 for col in collections {
                     if let existing = colDict[col.id] {
@@ -154,11 +155,11 @@ class MigrationService {
                         context.insert(newCol)
                     }
                 }
-                
-                // O(1) Bulk Fetch PDFs
+
+                // O(1) Bulk Fetch PDFs — build ID set for upsert logic
                 let allExistingPdfs = (try? context.fetch(FetchDescriptor<SDConvertedPDF>())) ?? []
                 let pdfDict = Dictionary(grouping: allExistingPdfs, by: { $0.id }).compactMapValues { $0.first }
-                
+
                 // 2. Sync PDFs
                 for pdf in pdfs {
                     if let existing = pdfDict[pdf.id] {
@@ -179,25 +180,60 @@ class MigrationService {
                         context.insert(doc)
                     }
                 }
-                
+
                 // 3. Prune Deleted or Orphaned Duplicates
                 let validPDFIds = Set(pdfs.map { $0.id })
-                for existing in allExistingPdfs {
-                    if !validPDFIds.contains(existing.id) {
-                        context.delete(existing)
-                    }
+                for existing in allExistingPdfs where !validPDFIds.contains(existing.id) {
+                    context.delete(existing)
                 }
-                
+
                 let validColIds = Set(collections.map { $0.id })
-                for existingCol in allExistingCols {
-                    if !validColIds.contains(existingCol.id) {
-                        context.delete(existingCol)
-                    }
+                for existingCol in allExistingCols where !validColIds.contains(existingCol.id) {
+                    context.delete(existingCol)
                 }
-                
+
                 try context.save()
             } catch {
                 Logger.shared.log("Dual-Write SwiftData sync failed: \(error.localizedDescription)", category: "Migration", type: .error)
+            }
+        }
+    }
+
+    // ✅ Fast import-only insert path.
+    // Called at the end of an import batch with ONLY the newly imported PDFs.
+    // Skips the expensive full-table fetch + upsert loop — just inserts new rows
+    // and saves once. The next full syncToSwiftData (app save) will reconcile.
+    func batchInsertToSwiftData(newPDFs: [ConvertedPDF]) {
+        guard !newPDFs.isEmpty else { return }
+        let container = InksyncProApp.sharedModelContainer
+        Task.detached(priority: .background) {
+            do {
+                let context = ModelContext(container)
+                // Only fetch IDs to avoid a full object hydration of 1400+ rows
+                var idDesc = FetchDescriptor<SDConvertedPDF>()
+                idDesc.propertiesToFetch = [\SDConvertedPDF.id]
+                let existingIDs = Set((try? context.fetch(idDesc))?.map { $0.id } ?? [])
+
+                var insertCount = 0
+                for pdf in newPDFs where !existingIDs.contains(pdf.id) {
+                    let doc = SDConvertedPDF(
+                        id: pdf.id, name: pdf.name, url: pdf.url,
+                        pageCount: pdf.pageCount, fileSize: pdf.fileSize,
+                        metadata: pdf.metadata, collectionId: pdf.collectionId,
+                        isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate,
+                        coverImageData: nil, // cover written separately by PhysicalFileSystemRouter
+                        contentType: pdf.contentType, chapters: pdf.chapters,
+                        addedByMode: pdf.addedByMode, sourceMode: pdf.sourceMode
+                    )
+                    context.insert(doc)
+                    insertCount += 1
+                }
+                if insertCount > 0 {
+                    try context.save()
+                    Logger.shared.log("batchInsertToSwiftData: committed \(insertCount) new record(s)", category: "Migration")
+                }
+            } catch {
+                Logger.shared.log("batchInsertToSwiftData failed: \(error.localizedDescription)", category: "Migration", type: .error)
             }
         }
     }
