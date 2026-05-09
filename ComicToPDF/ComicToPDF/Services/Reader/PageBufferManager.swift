@@ -4,198 +4,282 @@ import CoreImage
 import Combine
 import ImageIO
 
+// ============================================================================
+// SpreadPair
+// ============================================================================
+// A spread pair represents the two pages that appear side-by-side in dual-page
+// mode. In LTR mode: left = even index, right = odd index (after page 0 cover).
+// In Manga (RTL) mode: right = current, left = next.
+//
+// Page 0 (cover) is always a solo spread.
+// Any page whose image is wider than tall (a physical spread) forces solo display.
+// ============================================================================
+struct SpreadPair {
+    let leftIndex: Int?   // nil = blank gutter slot
+    let rightIndex: Int?  // nil = blank gutter slot
+
+    var leftImage: CGImage?
+    var rightImage: CGImage?
+
+    /// The "primary" index for progress tracking — always the first in reading order.
+    var leadIndex: Int { leftIndex ?? rightIndex ?? 0 }
+}
+
+// ============================================================================
+// PageBufferManager
+// ============================================================================
+// Dual-page aware, look-ahead buffer engine. In single-page mode behaviour is
+// unchanged. In dual-page mode the manager preloads a full spread window:
+//   currentLeft, currentRight, prevLeft, prevRight, nextLeft, nextRight
+// so that every page turn has zero-latency.
+// ============================================================================
 @MainActor
 class PageBufferManager: ObservableObject {
     static let shared = PageBufferManager()
-    
+    private init() {}
+
+    // MARK: - Published State (Single Page Mode)
     @Published var currentImage: CGImage?
     @Published var nextImage: CGImage?
     @Published var prevImage: CGImage?
     @Published var isLoading: Bool = false
-    
+
+    // MARK: - Published State (Dual Page Mode)
+    @Published var currentSpread: SpreadPair?
+    @Published var nextSpread: SpreadPair?
+    @Published var prevSpread: SpreadPair?
+
+    // MARK: - PPL State
+    @Published var isPPLEnabled: Bool = false
+    @Published var lockedRect: NormalizedRect = .full
+
+    // MARK: - Internal
+    private var pageURLs: [URL] = []
+    private var renderTask: Task<Void, Never>?
+
     // ✅ Phase 1: Smart Margin Cropping
     var isAutoCropEnabled: Bool {
         UserDefaults.standard.bool(forKey: "isAutoCropEnabled")
     }
-    
-    private var pageURLs: [URL] = []
-    
-    // Page Position Lock (PPL) State
-    @Published var isPPLEnabled: Bool = false
-    @Published var lockedRect: NormalizedRect = .full
-    
-    private var renderTask: Task<Void, Never>?
-    
+
+    // MARK: - Setup
+
     func setup(pages: [URL]) {
-        self.pageURLs = pages
-        self.lockedRect = .full
-        self.currentImage = nil
-        self.nextImage = nil
-        self.prevImage = nil
+        pageURLs = pages
+        lockedRect = .full
+        currentImage = nil
+        nextImage = nil
+        prevImage = nil
+        currentSpread = nil
+        nextSpread = nil
+        prevSpread = nil
     }
-    
+
     func updateViewport(rect: NormalizedRect) {
-        // Debounce or directly update buffer bounds
-        self.lockedRect = rect
+        lockedRect = rect
     }
-    
+
+    // MARK: - Single Page Render
+
     func render(pageIndex: Int, bounds: CGSize) {
         renderTask?.cancel()
-
         renderTask = Task {
             self.isLoading = true
 
-            // Concurrent render for maximum hardware utilization
             async let current = renderPage(at: pageIndex)
-            async let next = (pageIndex + 1 < pageURLs.count) ? renderPage(at: pageIndex + 1) : nil
-            async let prev = (pageIndex - 1 >= 0) ? renderPage(at: pageIndex - 1) : nil
+            async let next    = renderPage(at: pageIndex + 1)
+            async let prev    = renderPage(at: pageIndex - 1)
 
             let (cImage, nImage, pImage) = await (current, next, prev)
-
-            if Task.isCancelled { return }
+            guard !Task.isCancelled else { return }
 
             self.currentImage = cImage
-            self.nextImage = nImage
-            self.prevImage = pImage
-            self.isLoading = false
+            self.nextImage    = nImage
+            self.prevImage    = pImage
+            self.isLoading    = false
 
-            // ✅ Near-end detection: signal to preload next volume when 5 pages from end
-            let totalPages = pageURLs.count
-            if totalPages > 0 && pageIndex >= totalPages - 5 {
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("Reader_NearingEnd"),
-                    object: nil,
-                    userInfo: ["pagesRemaining": totalPages - pageIndex]
-                )
-            }
+            emitNearingEndIfNeeded(at: pageIndex)
         }
     }
 
-    
-    private func renderPage(at index: Int) async -> CGImage? {
-        guard index >= 0 && index < pageURLs.count else { return nil }
+    // MARK: - Dual Page Render
+
+    /// Render a spread window around `leadIndex` (the left page of the current spread).
+    /// `isMangaMode` controls which physical page index maps to left vs right.
+    func renderDual(leadIndex: Int, pages allPages: [URL], isMangaMode: Bool) {
+        renderTask?.cancel()
+        renderTask = Task {
+            self.isLoading = true
+
+            // Build the three spread pairs: prev, current, next
+            let curPair  = buildSpreadPair(leadIndex: leadIndex, allPages: allPages, isMangaMode: isMangaMode)
+            let prevPair = buildSpreadPair(leadIndex: leadIndex - 2, allPages: allPages, isMangaMode: isMangaMode)
+            let nextPair = buildSpreadPair(leadIndex: leadIndex + 2, allPages: allPages, isMangaMode: isMangaMode)
+
+            // Decode all 6 images concurrently
+            async let curL  = renderPage(at: curPair.leftIndex)
+            async let curR  = renderPage(at: curPair.rightIndex)
+            async let prevL = renderPage(at: prevPair.leftIndex)
+            async let prevR = renderPage(at: prevPair.rightIndex)
+            async let nextL = renderPage(at: nextPair.leftIndex)
+            async let nextR = renderPage(at: nextPair.rightIndex)
+
+            let (cL, cR, pL, pR, nL, nR) = await (curL, curR, prevL, prevR, nextL, nextR)
+            guard !Task.isCancelled else { return }
+
+            self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
+            self.prevSpread    = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
+            self.nextSpread    = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
+
+            // Keep single-page slots populated so switching back to single-page mode doesn't flash blank
+            self.currentImage = cL ?? cR
+            self.nextImage    = nL ?? nR
+            self.prevImage    = pL ?? pR
+
+            self.isLoading = false
+            emitNearingEndIfNeeded(at: leadIndex)
+        }
+    }
+
+    // MARK: - Spread Layout Engine
+
+    /// Determine which two page indices form a spread whose left (or Manga right)
+    /// is at `leadIndex`. Returns a raw index pair — rendering is done separately.
+    ///
+    /// Rules:
+    ///  - Page 0 is always solo (cover).
+    ///  - Any page wider than tall (physical spread) is always solo.
+    ///  - All other pages are paired: even index = left, odd index = right.
+    func buildSpreadPair(leadIndex: Int, allPages: [URL], isMangaMode: Bool) -> (leftIndex: Int?, rightIndex: Int?) {
+        let total = allPages.count
+        guard leadIndex >= 0, leadIndex < total else { return (nil, nil) }
+
+        // Cover is always solo
+        if leadIndex == 0 {
+            return isMangaMode ? (nil, 0) : (nil, 0)
+        }
+
+        // Determine the right index
+        let rightIndex = leadIndex + 1 < total ? leadIndex + 1 : nil
+
+        if isMangaMode {
+            return (rightIndex, leadIndex)
+        } else {
+            return (leadIndex, rightIndex)
+        }
+    }
+
+    /// Given a `currentPageIndex` (the leading page in the pair), compute the
+    /// canonical lead index for dual-page mode. This ensures parity is maintained
+    /// when jumping to arbitrary pages.
+    ///
+    /// Rule: In LTR mode, even-numbered pages (1, 3, 5...) are always left-page leads.
+    /// The cover (0) is solo. So lead indices are: 0, 1, 3, 5, 7...
+    static func canonicalLeadIndex(for rawIndex: Int, isMangaMode: Bool) -> Int {
+        if rawIndex <= 0 { return 0 }
+        // After the cover, spreads start at index 1.
+        // Index 1 = lead for spread (1,2), index 3 = lead for (3,4), etc.
+        let offset = rawIndex - 1
+        let leadOffset = (offset / 2) * 2
+        return 1 + leadOffset
+    }
+
+    // MARK: - Private Helpers
+
+    private func renderPage(at index: Int?) async -> CGImage? {
+        guard let index = index, index >= 0, index < pageURLs.count else { return nil }
         let url = pageURLs[index]
-        
-        // Detached hardware task for heavy lifting
+
         return await Task.detached(priority: .userInitiated) {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                  let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { 
-                
+                  let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
                 await MainActor.run {
-                    Logger.shared.log("PageBufferManager: Failed to render page at index: \(index). Malformed Image Array or IO Failure.", category: "Engine", type: .error)
+                    Logger.shared.log("PageBufferManager: Failed to decode page \(index)", category: "Engine", type: .error)
                 }
-                
-                return nil 
+                return nil
             }
-            
-            // ✅ Phase 1: Smart Margin Cropping
-            // Strips white bounding boxes off before pumping to the Metal engine, saving RAM and increasing visual real estate.
-            let cropEnabled = await MainActor.run { return self.isAutoCropEnabled }
+
+            let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
             if cropEnabled {
                 return Self.autoCropMargins(from: cgImage)
             }
-            
             return cgImage
         }.value
     }
-    
-    // ✅ Phase 1: Smart Margin Cropping Core Engine
+
+    private func emitNearingEndIfNeeded(at index: Int) {
+        let total = pageURLs.count
+        guard total > 0, index >= total - 5 else { return }
+        NotificationCenter.default.post(
+            name: NSNotification.Name("Reader_NearingEnd"),
+            object: nil,
+            userInfo: ["pagesRemaining": total - index]
+        )
+    }
+
+    // MARK: - Smart Margin Crop Engine
+
     nonisolated static func autoCropMargins(from image: CGImage) -> CGImage {
-        // CoreImage has a native CITextImageGenerator or CIFilter meant to crop to bounding box, 
-        // but an even faster way for comics is CIDetector or simply filtering to contrast boundaries.
-        // `CIColorControls` + `CIAreaMinMax` can be slow. 
-        // A direct Accelerate or vImage function is fastest, but CoreImage pipeline is acceptable for background tasks.
-        
-        // Fast path: use CoreImage to find the bounding box of non-border pixels.
-        // We will look for edges using `CICrop` after extracting the foreground.
-        let ciImage = CIImage(cgImage: image)
-        
-        let filter = CIFilter(name: "CIMaskToAlpha")!
-        filter.setValue(ciImage, forKey: kCIInputImageKey)
-        
-        // For white borders, we might need to invert first, but simply creating a bounding box based on the highest contrast gradient bounds is safer.
-        // Actually, Apple's `isAutoCrop` could be implemented safely via Accelerate. Let's use a heuristic fixed percentage crop if complex analysis fails, OR simpler: we'll build a heuristic manual edge scan.
-        
         guard let data = image.dataProvider?.data,
               let ptr = CFDataGetBytePtr(data) else { return image }
-        
+
         let width = image.width
         let height = image.height
         let bytesPerRow = image.bytesPerRow
         let bytesPerPixel = image.bitsPerPixel / 8
-        
-        if bytesPerPixel < 3 { return image } // unsupported format fallback
-        
-        let threshold: UInt8 = 245 // Almost white
-        
-        // Scan Top
+        guard bytesPerPixel >= 3 else { return image }
+
+        let threshold: UInt8 = 245
+
         var top = 0
         outerTop: for y in 0..<height {
             let rowOffset = y * bytesPerRow
-            for x in stride(from: 0, to: width, by: 10) { // sampling every 10px for speed
-                let pixelOffset = rowOffset + (x * bytesPerPixel)
-                let r = ptr[pixelOffset]
-                let g = ptr[pixelOffset + 1]
-                let b = ptr[pixelOffset + 2]
-                if r < threshold || g < threshold || b < threshold { break outerTop }
+            for x in stride(from: 0, to: width, by: 10) {
+                let o = rowOffset + (x * bytesPerPixel)
+                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold { break outerTop }
             }
             top = y
         }
-        
-        // Scan Bottom
+
         var bottom = height - 1
         outerBottom: for y in stride(from: height - 1, through: 0, by: -1) {
             let rowOffset = y * bytesPerRow
             for x in stride(from: 0, to: width, by: 10) {
-                let pixelOffset = rowOffset + (x * bytesPerPixel)
-                let r = ptr[pixelOffset]
-                let g = ptr[pixelOffset + 1]
-                let b = ptr[pixelOffset + 2]
-                if r < threshold || g < threshold || b < threshold { break outerBottom }
+                let o = rowOffset + (x * bytesPerPixel)
+                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold { break outerBottom }
             }
             bottom = y
         }
-        
-        // Scan Left
+
         var left = 0
         outerLeft: for x in 0..<width {
             for y in stride(from: top, to: bottom, by: 10) {
-                let pixelOffset = (y * bytesPerRow) + (x * bytesPerPixel)
-                let r = ptr[pixelOffset]
-                let g = ptr[pixelOffset + 1]
-                let b = ptr[pixelOffset + 2]
-                if r < threshold || g < threshold || b < threshold { break outerLeft }
+                let o = (y * bytesPerRow) + (x * bytesPerPixel)
+                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold { break outerLeft }
             }
             left = x
         }
-        
-        // Scan Right
+
         var right = width - 1
         outerRight: for x in stride(from: width - 1, through: 0, by: -1) {
             for y in stride(from: top, to: bottom, by: 10) {
-                let pixelOffset = (y * bytesPerRow) + (x * bytesPerPixel)
-                let r = ptr[pixelOffset]
-                let g = ptr[pixelOffset + 1]
-                let b = ptr[pixelOffset + 2]
-                if r < threshold || g < threshold || b < threshold { break outerRight }
+                let o = (y * bytesPerRow) + (x * bytesPerPixel)
+                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold { break outerRight }
             }
             right = x
         }
-        
-        // Add a 10px padding buffer back to prevent clipping artwork exactly on the line
-        let padding = 10
-        top = max(0, top - padding)
-        bottom = min(height - 1, bottom + padding)
-        left = max(0, left - padding)
-        right = min(width - 1, right + padding)
-        
-        let cropRect = CGRect(x: left, y: top, width: right - left, height: bottom - top)
-        
-        // Safety check to ensure we didn't just crop the entire page
-        if cropRect.width < CGFloat(width) * 0.3 || cropRect.height < CGFloat(height) * 0.3 {
-            return image
-        }
-        
+
+        let pad = 10
+        let cropRect = CGRect(
+            x: max(0, left - pad),
+            y: max(0, top - pad),
+            width: min(width - 1, right + pad) - max(0, left - pad),
+            height: min(height - 1, bottom + pad) - max(0, top - pad)
+        )
+
+        guard cropRect.width > CGFloat(width) * 0.3,
+              cropRect.height > CGFloat(height) * 0.3 else { return image }
+
         return image.cropping(to: cropRect) ?? image
     }
 }

@@ -200,7 +200,7 @@ struct ReaderView: View {
                 // Apply color filter overlay
                 colorFilterOverlay
                 
-                // Hardware Hardware Binding
+                // Hardware Button Binding (dual-page aware)
                 VolumeHook(onUp: {
                     isMangaMode ? nextPage() : prevPage()
                 }, onDown: {
@@ -222,8 +222,17 @@ struct ReaderView: View {
                             .padding(.bottom, 20)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                         } else {
-                            // Micro-pill that fades out the visual pollution
-                            Text("\(currentPageIndex + 1) / \(pages.count)")
+                            // Micro-pill — shows dual page pair when applicable
+                            let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                            let pillText: String = {
+                                if isDual && currentPageIndex > 0 {
+                                    let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
+                                    let right = min(lead + 1, pages.count - 1)
+                                    return "\(lead + 1)–\(right + 1) / \(pages.count)"
+                                }
+                                return "\(currentPageIndex + 1) / \(pages.count)"
+                            }()
+                            Text(pillText)
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundColor(.white.opacity(0.7))
                                 .padding(.horizontal, 10)
@@ -244,6 +253,10 @@ struct ReaderView: View {
             }
             .onKeyPress(.rightArrow) {
                 isMangaMode ? prevPage() : nextPage()
+                return .handled
+            }
+            .onKeyPress(.space) {
+                nextPage()
                 return .handled
             }
             .navigationBarHidden(true)
@@ -307,7 +320,12 @@ struct ReaderView: View {
                     .keyboardType(.numberPad)
                 Button("Go") {
                     if let n = Int(jumpToPageText), n >= 1, n <= pages.count {
-                        currentPageIndex = n - 1
+                        let rawIndex = n - 1
+                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                        // Snap to canonical spread lead so parity is maintained
+                        currentPageIndex = isDual
+                            ? PageBufferManager.canonicalLeadIndex(for: rawIndex, isMangaMode: isMangaMode)
+                            : rawIndex
                     }
                     jumpToPageText = ""
                 }
@@ -602,6 +620,8 @@ struct ReaderView: View {
     }
     
     // MARK: - Navigation
+    // These are used by volume hardware buttons, keyboard, and the Binge Mode bridge.
+    // PPLReaderView handles its own gesture-driven navigation internally.
     private func nextPage() {
         if currentPageIndex < pages.count - 1 {
             currentPageIndex += 1
@@ -613,7 +633,7 @@ struct ReaderView: View {
             }
         }
     }
-    
+
     private func prevPage() {
         if currentPageIndex > 0 {
             currentPageIndex -= 1
