@@ -1,19 +1,37 @@
 import Foundation
 
+/// One reading session's worth of velocity data.
+struct ReadingSessionEvent: Codable {
+    let date: Date
+    let pagesRead: Int
+    let secondsSpent: Double
+
+    /// Pages per minute for this session.
+    var pagesPerMinute: Double {
+        guard secondsSpent > 0 else { return 0 }
+        return Double(pagesRead) / (secondsSpent / 60.0)
+    }
+}
+
 struct ReadingProgress: Codable, Identifiable {
     var id: UUID { pdfID }
     var pdfID: UUID
     var lastOpenedAt: Date
-    var currentPageIndex: Int           // comics and documents
-    var currentChapterIndex: Int?       // books
-    var currentChapterOffset: Double?   // 0.0–1.0 scroll position in chapter
-    var totalPagesRead: Int             // cumulative, never decrements
-    var completionFraction: Double      // 0.0–1.0
-    var readingSessionDates: [Date]     // for streak calculation
-    var estimatedMinutesRemaining: Int? // books only
-    var prefersMangaMode: Bool?         // per-book RTL preference memory
-    var colorFilter: String?            // "none" | "sepia" | "grayscale"
-}
+    var currentPageIndex: Int
+    var currentChapterIndex: Int?
+    var currentChapterOffset: Double?
+    var totalPagesRead: Int
+    var completionFraction: Double
+    var readingSessionDates: [Date]
+    var estimatedMinutesRemaining: Int?
+    var prefersMangaMode: Bool?
+    var colorFilter: String?
+
+    // Precise velocity tracking
+    var sessionEvents: [ReadingSessionEvent] = []
+    // Spread-mode parity — saves canonical lead index so resume restores correct spread
+    var lastCanonicalLeadIndex: Int?
+    var wasInDualPageMode: Bool?
 
 @MainActor
 class ReaderProgressTracker: ObservableObject {
@@ -46,22 +64,44 @@ class ReaderProgressTracker: ObservableObject {
     }
     func update(_ progress: ReadingProgress) {
         var updated = progress
-        
-        // Calculate Time-To-Finish Heuristic (Phase 3 Casual Comfort)
-        // Assume rough velocity of 1.5 minutes per page for books, 0.5 minutes for manga/comics
-        _ = max(0, updated.totalPagesRead > 0 ? (updated.currentChapterIndex == nil ? 100 /* fallback */ : 100) : 100)
-        // Wait, totalPages is not in progress. CompletionFraction is!
-        if updated.completionFraction > 0 && updated.completionFraction <= 1.0 {
-            // We can estimate total pages or directly estimate time remaining if we know average velocity
-            let isBook = updated.currentChapterIndex != nil
-            let velocityPerPercent = isBook ? 4.0 : 1.5 // minutes per 1% completion
-            
-            let percentRemaining = (1.0 - updated.completionFraction) * 100.0
-            updated.estimatedMinutesRemaining = Int(percentRemaining * velocityPerPercent)
+
+        // Estimate time remaining using rolling velocity if available, else fallback
+        let velocity = rollingVelocity(for: updated.pdfID) // pages per minute
+        if updated.completionFraction > 0, updated.completionFraction <= 1.0 {
+            let ppm = velocity > 0 ? velocity : (updated.currentChapterIndex != nil ? 0.25 : 2.0)
+            let pagesRemaining = Double(max(0, updated.totalPagesRead)) * (1.0 - updated.completionFraction) / max(updated.completionFraction, 0.001)
+            updated.estimatedMinutesRemaining = Int(pagesRemaining / ppm)
         }
-        
+
         progressMap[updated.pdfID] = updated
         save(pdfID: updated.pdfID)
+    }
+
+    /// Record pages turned and time spent during a session turn.
+    /// Call this on every page turn from ReaderView.
+    func logPageTurn(pdfID: UUID, pages: Int, seconds: Double) {
+        guard pages > 0, seconds > 0 else { return }
+        guard var prog = progressMap[pdfID] else { return }
+        let event = ReadingSessionEvent(date: Date(), pagesRead: pages, secondsSpent: seconds)
+        prog.sessionEvents.append(event)
+        // Trim to last 200 events to prevent unbounded growth
+        if prog.sessionEvents.count > 200 {
+            prog.sessionEvents.removeFirst(prog.sessionEvents.count - 200)
+        }
+        progressMap[pdfID] = prog
+        save(pdfID: pdfID)
+    }
+
+    /// Rolling 7-day average velocity in pages per minute. Returns 0 if no data.
+    func rollingVelocity(for pdfID: UUID) -> Double {
+        guard let prog = progressMap[pdfID] else { return 0 }
+        let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
+        let recent = prog.sessionEvents.filter { $0.date >= cutoff }
+        guard !recent.isEmpty else { return 0 }
+        let totalPages   = recent.reduce(0) { $0 + $1.pagesRead }
+        let totalMinutes = recent.reduce(0.0) { $0 + ($1.secondsSpent / 60.0) }
+        guard totalMinutes > 0 else { return 0 }
+        return Double(totalPages) / totalMinutes
     }
     
     func markComplete(pdfID: UUID) {

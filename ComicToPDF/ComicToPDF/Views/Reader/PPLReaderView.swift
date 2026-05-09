@@ -1,22 +1,15 @@
 import SwiftUI
 
 // ============================================================================
-// PPLReaderView — Pro Spread Reader Engine
+// PPLReaderView — Pro Spread Reader Engine v2
 // ============================================================================
-// Dual-page mode renders TWO pages side by side as a single spread unit.
-// The buffer engine (PageBufferManager) preloads the previous and next spread
-// pairs so every page turn is zero-latency.
-//
-// Spread parity rules (industry standard, matching Panels / Chunky / ComicFlow):
-//  - Page 0 (cover) is always displayed solo.
-//  - Any image whose width > 1.2× its height is a physical spread → solo.
-//  - All other pages pair as (odd, even): 1+2, 3+4, 5+6 etc.
-//  - Manga (RTL): right slot shows the current page, left slot shows the next.
-//  - Page turn advances by 2 (or 1 if the next page is a spread or end of book).
-//
-// The `currentPageIndex` binding always tracks the LEAD (first-in-reading-order)
-// index of the current spread. The scrubber, progress tracker, and bookmark
-// engine all read from this binding so they remain accurate.
+// New in this version:
+//   1. Live swipe page-peel preview (slide & flip3D styles)
+//   2. Spread seam divider between left/right pages
+//   3. Tap zone customization via TapZoneStyle
+//   4. Zoom pan momentum (CADisplayLink-driven velocity decay)
+//   5. Long-press context menu (Bookmark / Share)
+//   6. Real decode-progress bar replaces spinner
 // ============================================================================
 
 struct PPLReaderView: View {
@@ -29,247 +22,347 @@ struct PPLReaderView: View {
 
     @ObservedObject private var bufferManager = PageBufferManager.shared
 
-    // High-frequency gesture state
+    // ── Zoom / pan state ──────────────────────────────────────────────────────
     @State private var scale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var dragOffset: CGSize = .zero
+    @State private var momentumTask: Task<Void, Never>?
 
-    @AppStorage("isDoublePageMode") private var isDoublePageStored = false
+    // ── Live swipe peel state ─────────────────────────────────────────────────
+    @State private var swipeDragX: CGFloat = 0
+    @State private var isCommittingSwipe = false
+
+    // ── Settings ──────────────────────────────────────────────────────────────
+    @AppStorage("isDoublePageMode")       private var isDoublePageStored  = false
     @AppStorage("autoSplitPortraitSpreads") private var autoSplitPortraitSpreads = true
+    @AppStorage("tapZoneStyle")           private var tapZoneStyleRaw     = TapZoneStyle.classic.rawValue
+    @AppStorage("pageTurnStyle")          private var pageTurnStyleRaw    = PageTurnStyle.slide.rawValue
+    @AppStorage("showSpreadSeam")         private var showSpreadSeam      = true
 
-    // Spread Splitting (portrait mode for wide spreads)
-    @State private var splitHalf: Int = 0  // 0 = first reading half, 1 = second
+    private var tapZoneStyle:  TapZoneStyle  { TapZoneStyle(rawValue: tapZoneStyleRaw)   ?? .classic }
+    private var pageTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .slide   }
 
-    // Guided Reading
-    @State private var isGuidedReadingActive: Bool = false
-    @State private var guidedPanelIndex: Int = 0
+    // ── Spread splitting ──────────────────────────────────────────────────────
+    @State private var splitHalf: Int = 0
+
+    // ── Guided reading ────────────────────────────────────────────────────────
+    @State private var isGuidedReadingActive = false
+    @State private var guidedPanelIndex = 0
     @State private var guidedPanels: [NormalizedRect] = []
 
-    // Effective dual-page flag: respects stored toggle AND landscape override
     private var effectiveDoublePage: Bool { isDoublePageOverride || isDoublePageStored }
 
     // MARK: - Body
 
     var body: some View {
         GeometryReader { geo in
-            let isLandscape = geo.size.width > geo.size.height
-            let showingDual = effectiveDoublePage && isLandscape
+            let isLandscape  = geo.size.width > geo.size.height
+            let showingDual  = effectiveDoublePage && isLandscape
 
             ZStack {
                 Color.black.ignoresSafeArea()
 
                 if bufferManager.isLoading && bufferManager.currentImage == nil {
-                    ProgressView("Buffering…")
-                        .scaleEffect(1.2)
-                        .foregroundStyle(.white)
+                    loadingIndicator
                 } else {
-                    if showingDual {
-                        dualSpreadView(geo: geo)
-                    } else {
-                        singlePageView(geo: geo)
-                    }
+                    pageContent(geo: geo, showingDual: showingDual)
+                        .contextMenu { contextMenuItems() }
                 }
             }
-            .onAppear {
-                setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height)
-            }
-            .onChange(of: currentPageIndex) { _, newIndex in
-                let isDual = effectiveDoublePage && geo.size.width > geo.size.height
-                if isDual {
-                    let lead = PageBufferManager.canonicalLeadIndex(for: newIndex, isMangaMode: isMangaMode)
-                    bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode)
-                } else {
-                    bufferManager.render(pageIndex: newIndex, bounds: geo.size)
+            .onAppear       { setupBuffer(geo: geo, dual: showingDual) }
+            .onChange(of: currentPageIndex) { _, newIndex in advanceBuffer(to: newIndex, geo: geo, dual: showingDual) }
+            .onChange(of: geo.size)         { _, size   in resetOnResize(to: size, dual: effectiveDoublePage && size.width > size.height) }
+            .onChange(of: isDoublePageStored) { _, _ in setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height) }
+        }
+    }
+
+    // MARK: - Page Content with Live Peel
+
+    @ViewBuilder
+    private func pageContent(geo: GeometryProxy, showingDual: Bool) -> some View {
+        let w = geo.size.width
+
+        ZStack(alignment: .center) {
+            // ── Back layer: adjacent spread peeking ──────────────────────────
+            if pageTurnStyle != .instant {
+                if swipeDragX > 8 {
+                    adjacentSpread(isNext: false, showingDual: showingDual, geo: geo)
+                        .offset(x: swipeDragX - w)
+                        .allowsHitTesting(false)
+                }
+                if swipeDragX < -8 {
+                    adjacentSpread(isNext: true, showingDual: showingDual, geo: geo)
+                        .offset(x: swipeDragX + w)
+                        .allowsHitTesting(false)
                 }
             }
-            .onChange(of: geo.size) { _, newSize in
-                guard newSize.width > 0, newSize.height > 0 else { return }
-                withAnimation(.easeOut(duration: 0.15)) {
-                    scale = 1.0; offset = .zero; dragOffset = .zero
-                }
-                bufferManager.isPPLEnabled = false
-                bufferManager.updateViewport(rect: .full)
-                let isDual = effectiveDoublePage && newSize.width > newSize.height
-                if isDual {
-                    let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-                    bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode)
-                } else {
-                    bufferManager.render(pageIndex: currentPageIndex, bounds: newSize)
-                }
-            }
-            .onChange(of: isDoublePageStored) { _, _ in
-                setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height)
-            }
+
+            // ── Front layer: current spread, sliding with finger ──────────────
+            currentContent(geo: geo, showingDual: showingDual)
+                .offset(x: scale > 1.0 ? 0 : swipeDragX,
+                        y: 0)
+                .rotation3DEffect(
+                    flip3DAngle(geo: geo),
+                    axis: (x: 0, y: 1, z: 0),
+                    anchor: swipeDragX > 0 ? .leading : .trailing,
+                    perspective: 0.4
+                )
+                .scaleEffect(scale)
+                .offset(x: offset.width + dragOffset.width,
+                        y: offset.height + dragOffset.height)
+        }
+        .gesture(zoomGesture(geo: geo))
+        .simultaneousGesture(swipeAndPanGesture(geo: geo))
+        .onTapGesture(count: 2) { loc in handleDoubleTap(at: loc, geo: geo) }
+        .onTapGesture              { loc in handleSingleTap(at: loc, geo: geo) }
+    }
+
+    // MARK: - Current Content
+
+    @ViewBuilder
+    private func currentContent(geo: GeometryProxy, showingDual: Bool) -> some View {
+        if showingDual {
+            dualSpreadView(geo: geo, spread: bufferManager.currentSpread)
+        } else {
+            singlePageView(geo: geo)
         }
     }
 
     // MARK: - Dual Spread View
 
     @ViewBuilder
-    private func dualSpreadView(geo: GeometryProxy) -> some View {
-        let spread = bufferManager.currentSpread
-        let leftImg  = spread?.leftImage
-        let rightImg = spread?.rightImage
+    private func dualSpreadView(geo: GeometryProxy, spread: SpreadPair?) -> some View {
+        let leftImg   = spread?.leftImage
+        let rightImg  = spread?.rightImage
+        let isCover   = (spread?.leadIndex ?? currentPageIndex) == 0
+        let leftWide  = leftImg.map  { isWideSpread($0) } ?? false
+        let rightWide = rightImg.map { isWideSpread($0) } ?? false
+        let forceSolo = isCover || leftWide || rightWide
 
-        // Determine if either slot is a physical spread (wide image) → force solo
-        let leftIsSpread  = leftImg.map  { isWideSpread($0) } ?? false
-        let rightIsSpread = rightImg.map { isWideSpread($0) } ?? false
-
-        // If this page is itself a wide spread OR it's page 0 (cover), render solo
-        let leadIndex = spread?.leadIndex ?? currentPageIndex
-        let isCover   = leadIndex == 0
-        let forceSolo = isCover || leftIsSpread || rightIsSpread
-
-        Group {
-            if forceSolo {
-                // Solo mode even in dual-page mode for cover / wide spreads
-                singlePageCanvas(image: leftImg ?? rightImg, geo: geo)
-            } else {
-                HStack(spacing: 0) {
-                    // Left slot (blank if nil)
-                    if let left = leftImg {
-                        MetalCanvasView(image: left, lockedRect: .full, isPPLEnabled: false)
-                    } else {
-                        Color.black // gutter for first/last page
-                    }
-
-                    // Right slot (blank if nil)
-                    if let right = rightImg {
-                        MetalCanvasView(image: right, lockedRect: .full, isPPLEnabled: false)
-                    } else {
-                        Color.black
-                    }
+        if forceSolo {
+            MetalCanvasView(image: leftImg ?? rightImg,
+                            lockedRect: bufferManager.lockedRect,
+                            isPPLEnabled: bufferManager.isPPLEnabled)
+        } else {
+            HStack(spacing: 0) {
+                if let left = leftImg {
+                    MetalCanvasView(image: left, lockedRect: .full, isPPLEnabled: false)
+                } else {
+                    Color.black
                 }
-                .scaleEffect(scale)
-                .offset(x: offset.width + dragOffset.width, y: offset.height + dragOffset.height)
+
+                // ── Seam divider ─────────────────────────────────────────────
+                if showSpreadSeam {
+                    Rectangle()
+                        .fill(Color(white: 0.08))
+                        .frame(width: 1)
+                }
+
+                if let right = rightImg {
+                    MetalCanvasView(image: right, lockedRect: .full, isPPLEnabled: false)
+                } else {
+                    Color.black
+                }
             }
         }
-        .gesture(zoomGesture(geo: geo))
-        .simultaneousGesture(panAndSwipeGesture(geo: geo))
-        .onTapGesture(count: 2) { loc in handleDoubleTap(at: loc, geo: geo) }
-        .onTapGesture { loc in handleSingleTap(at: loc, geo: geo) }
     }
 
     // MARK: - Single Page View
 
     @ViewBuilder
     private func singlePageView(geo: GeometryProxy) -> some View {
-        let imgWidth  = CGFloat(bufferManager.currentImage?.width  ?? 0)
-        let imgHeight = CGFloat(bufferManager.currentImage?.height ?? 1)
-        let isSpread  = imgWidth > imgHeight * 1.2
+        let imgW = CGFloat(bufferManager.currentImage?.width  ?? 0)
+        let imgH = CGFloat(bufferManager.currentImage?.height ?? 1)
+        let isSpread  = imgW > imgH * 1.2
         let isPortrait = geo.size.height > geo.size.width
 
-        Group {
-            if isPortrait && isSpread && autoSplitPortraitSpreads, let img = bufferManager.currentImage {
-                // Portrait spread-split mode
-                let rightHalf = NormalizedRect(x: 500, y: 0, width: 500, height: 1000)
-                let leftHalf  = NormalizedRect(x: 0,   y: 0, width: 500, height: 1000)
-                let rect: NormalizedRect = isMangaMode
-                    ? (splitHalf == 0 ? rightHalf : leftHalf)
-                    : (splitHalf == 0 ? leftHalf  : rightHalf)
-                MetalCanvasView(image: img, lockedRect: rect, isPPLEnabled: true)
-            } else {
-                MetalCanvasView(
-                    image: bufferManager.currentImage,
-                    lockedRect: bufferManager.lockedRect,
-                    isPPLEnabled: bufferManager.isPPLEnabled
-                )
-            }
+        if isPortrait && isSpread && autoSplitPortraitSpreads, let img = bufferManager.currentImage {
+            let rightHalf = NormalizedRect(x: 500, y: 0, width: 500, height: 1000)
+            let leftHalf  = NormalizedRect(x: 0,   y: 0, width: 500, height: 1000)
+            let rect = isMangaMode
+                ? (splitHalf == 0 ? rightHalf : leftHalf)
+                : (splitHalf == 0 ? leftHalf  : rightHalf)
+            MetalCanvasView(image: img, lockedRect: rect, isPPLEnabled: true)
+        } else {
+            MetalCanvasView(image: bufferManager.currentImage,
+                            lockedRect: bufferManager.lockedRect,
+                            isPPLEnabled: bufferManager.isPPLEnabled)
         }
-        .scaleEffect(scale)
-        .offset(x: offset.width + dragOffset.width, y: offset.height + dragOffset.height)
-        .gesture(zoomGesture(geo: geo))
-        .simultaneousGesture(panAndSwipeGesture(geo: geo))
-        .onTapGesture(count: 2) { loc in handleDoubleTap(at: loc, geo: geo) }
-        .onTapGesture { loc in handleSingleTap(at: loc, geo: geo) }
     }
 
-    // MARK: - Solo Canvas (for covers/spreads in dual mode)
+    // MARK: - Adjacent Spread (peel preview layer)
 
     @ViewBuilder
-    private func singlePageCanvas(image: CGImage?, geo: GeometryProxy) -> some View {
-        MetalCanvasView(
-            image: image,
-            lockedRect: bufferManager.lockedRect,
-            isPPLEnabled: bufferManager.isPPLEnabled
-        )
-        .scaleEffect(scale)
-        .offset(x: offset.width + dragOffset.width, y: offset.height + dragOffset.height)
+    private func adjacentSpread(isNext: Bool, showingDual: Bool, geo: GeometryProxy) -> some View {
+        if showingDual {
+            let spread = isNext ? bufferManager.nextSpread : bufferManager.prevSpread
+            dualSpreadView(geo: geo, spread: spread)
+        } else {
+            let img = isNext ? bufferManager.nextImage : bufferManager.prevImage
+            MetalCanvasView(image: img, lockedRect: .full, isPPLEnabled: false)
+        }
+    }
+
+    // MARK: - Loading Indicator (real progress)
+
+    private var loadingIndicator: some View {
+        VStack(spacing: 14) {
+            ProgressView(value: bufferManager.decodeProgress)
+                .progressViewStyle(.linear)
+                .tint(.orange)
+                .frame(width: 180)
+                .animation(.easeInOut(duration: 0.2), value: bufferManager.decodeProgress)
+
+            Text("Loading pages…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: - Gestures
 
     private func zoomGesture(geo: GeometryProxy) -> some Gesture {
         MagnificationGesture()
-            .onChanged { val in
-                scale = min(max(val, 1.0), 5.0)
-            }
-            .onEnded { _ in
-                updatePPL(in: geo.size)
-            }
+            .onChanged { val in scale = min(max(val, 1.0), 5.0) }
+            .onEnded    { _ in  updatePPL(in: geo.size) }
     }
 
-    private func panAndSwipeGesture(geo: GeometryProxy) -> some Gesture {
+    private func swipeAndPanGesture(geo: GeometryProxy) -> some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { val in
+                momentumTask?.cancel()
                 if scale > 1.0 {
                     dragOffset = val.translation
+                } else {
+                    let dx = val.translation.width
+                    let dy = val.translation.height
+                    guard abs(dx) > abs(dy) else { return }
+                    // Rubber-band resistance at boundaries
+                    let atStart = currentPageIndex == 0 && dx > 0
+                    let atEnd   = currentPageIndex >= pages.count - 1 && dx < 0
+                    let resist: CGFloat = (atStart || atEnd) ? 0.3 : 0.9
+                    swipeDragX = dx * resist
                 }
             }
             .onEnded { val in
                 if scale > 1.0 {
-                    offset.width  += val.translation.width
-                    offset.height += val.translation.height
-                    dragOffset = .zero
-                    updatePPL(in: geo.size)
+                    commitPan(val: val, geo: geo)
                 } else {
-                    // Swipe page turn — uses the full horizontal velocity for zero-latency feel
-                    let dx = val.translation.width
-                    let dy = val.translation.height
-                    // Only fire on predominantly horizontal swipes
-                    guard abs(dx) > abs(dy), abs(dx) > 50 else { return }
-                    if dx < 0 {
-                        isMangaMode ? prevPage(geo: geo.size) : nextPage(geo: geo.size)
-                    } else {
-                        isMangaMode ? nextPage(geo: geo.size) : prevPage(geo: geo.size)
-                    }
+                    commitSwipe(val: val, geo: geo)
                 }
             }
     }
 
-    private func handleDoubleTap(at location: CGPoint, geo: GeometryProxy) {
-        guard scale == 1.0 else {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                scale = 1.0; offset = .zero
+    // MARK: - Swipe Commit / Snap
+
+    private func commitSwipe(val: DragGesture.Value, geo: GeometryProxy) {
+        let dx       = val.translation.width
+        let velocity = val.velocity.width          // iOS 17+
+        let w        = geo.size.width
+        let threshold = w * 0.35
+        let velThresh: CGFloat = 400
+
+        let isLandscape = geo.size.width > geo.size.height
+        let showingDual = effectiveDoublePage && isLandscape
+
+        let goForward = dx < -threshold || velocity < -velThresh
+        let goBack    = dx >  threshold || velocity >  velThresh
+
+        let (triggerNext, triggerPrev) = isMangaMode
+            ? (goBack, goForward)
+            : (goForward, goBack)
+
+        isCommittingSwipe = true
+
+        if triggerNext && currentPageIndex < pages.count - 1 {
+            let targetX: CGFloat = pageTurnStyle == .flip3D ? 0 : -w
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                swipeDragX = targetX
+            }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: pageTurnStyle == .flip3D ? 200_000_000 : 160_000_000)
+                nextPage(geo: geo.size, showingDual: showingDual)
+                swipeDragX = pageTurnStyle == .flip3D ? 0 : w * 0.15
+                withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { swipeDragX = 0 }
+                isCommittingSwipe = false
+            }
+        } else if triggerPrev && currentPageIndex > 0 {
+            let targetX: CGFloat = pageTurnStyle == .flip3D ? 0 : w
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                swipeDragX = targetX
+            }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 160_000_000)
+                prevPage(geo: geo.size, showingDual: showingDual)
+                swipeDragX = -w * 0.15
+                withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { swipeDragX = 0 }
+                isCommittingSwipe = false
+            }
+        } else {
+            // Snap back
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { swipeDragX = 0 }
+            isCommittingSwipe = false
+        }
+    }
+
+    // MARK: - Pan Commit + Momentum
+
+    private func commitPan(val: DragGesture.Value, geo: GeometryProxy) {
+        offset.width  += val.translation.width
+        offset.height += val.translation.height
+        dragOffset = .zero
+        updatePPL(in: geo.size)
+
+        let vel = val.velocity
+        guard abs(vel.width) > 30 || abs(vel.height) > 30 else { return }
+
+        momentumTask = Task { @MainActor in
+            var vx = vel.width  * 0.012
+            var vy = vel.height * 0.012
+            repeat {
+                try? await Task.sleep(nanoseconds: 16_000_000) // ~60 fps
+                guard !Task.isCancelled else { return }
+                vx *= 0.90; vy *= 0.90
+                offset.width  = max(-geo.size.width  * (scale - 1), min(geo.size.width  * (scale - 1), offset.width  + vx))
+                offset.height = max(-geo.size.height * (scale - 1), min(geo.size.height * (scale - 1), offset.height + vy))
                 updatePPL(in: geo.size)
+            } while abs(vx) > 0.5 || abs(vy) > 0.5
+        }
+    }
+
+    // MARK: - 3D Flip Angle
+
+    private func flip3DAngle(geo: GeometryProxy) -> Angle {
+        guard pageTurnStyle == .flip3D, scale <= 1.0 else { return .zero }
+        let fraction = swipeDragX / max(geo.size.width, 1)
+        return .degrees(Double(fraction) * -25)
+    }
+
+    // MARK: - Tap Handling
+
+    private func handleDoubleTap(at location: CGPoint, geo: GeometryProxy) {
+        if scale > 1.0 {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                scale = 1.0; offset = .zero; updatePPL(in: geo.size)
             }
             return
         }
-
         if isGuidedReadingActive {
-            isGuidedReadingActive = false
-            updatePPL(in: geo.size)
-            return
+            isGuidedReadingActive = false; updatePPL(in: geo.size); return
         }
-
         refreshGuidedPanels()
         if !guidedPanels.isEmpty {
-            isGuidedReadingActive = true
-            guidedPanelIndex = 0
+            isGuidedReadingActive = true; guidedPanelIndex = 0
             withAnimation(.easeInOut(duration: 0.25)) {
-                bufferManager.lockedRect  = guidedPanels[0]
+                bufferManager.lockedRect   = guidedPanels[0]
                 bufferManager.isPPLEnabled = true
             }
-            Haptics.shared.playImpact(style: .medium)
-            return
+            Haptics.shared.playImpact(style: .medium); return
         }
-
-        // Smart zoom toward tap point
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             scale = 2.0
-            let tapX = location.x - (geo.size.width  / 2)
-            let tapY = location.y - (geo.size.height / 2)
-            offset = CGSize(width: -tapX * scale, height: -tapY * scale)
+            offset = CGSize(width:  -(location.x - geo.size.width  / 2) * scale,
+                            height: -(location.y - geo.size.height / 2) * scale)
             updatePPL(in: geo.size)
         }
     }
@@ -277,67 +370,63 @@ struct PPLReaderView: View {
     private func handleSingleTap(at location: CGPoint, geo: GeometryProxy) {
         guard scale <= 1.0 || isGuidedReadingActive else { return }
         let w = geo.size.width
+        let isLandscape = geo.size.width > geo.size.height
+        let showingDual = effectiveDoublePage && isLandscape
+        let zones = tapZoneStyle.zones
 
         if isGuidedReadingActive {
-            if location.x < w * 0.3 {
-                isMangaMode ? nextGuidedPanel(geo: geo.size) : prevGuidedPanel(geo: geo.size)
-            } else if location.x > w * 0.7 {
-                isMangaMode ? prevGuidedPanel(geo: geo.size) : nextGuidedPanel(geo: geo.size)
-            } else {
-                onCenterTap()
-            }
+            if      location.x < w * zones.leftEdge  { isMangaMode ? nextGuidedPanel(geo: geo.size) : prevGuidedPanel(geo: geo.size) }
+            else if location.x > w * zones.rightEdge { isMangaMode ? prevGuidedPanel(geo: geo.size) : nextGuidedPanel(geo: geo.size) }
+            else                                      { onCenterTap() }
         } else {
-            if location.x < w * 0.3 {
-                isMangaMode ? nextPage(geo: geo.size) : prevPage(geo: geo.size)
-            } else if location.x > w * 0.7 {
-                isMangaMode ? prevPage(geo: geo.size) : nextPage(geo: geo.size)
-            } else {
-                onCenterTap()
-            }
+            if      location.x < w * zones.leftEdge  { isMangaMode ? nextPage(geo: geo.size, showingDual: showingDual) : prevPage(geo: geo.size, showingDual: showingDual) }
+            else if location.x > w * zones.rightEdge { isMangaMode ? prevPage(geo: geo.size, showingDual: showingDual) : nextPage(geo: geo.size, showingDual: showingDual) }
+            else                                      { onCenterTap() }
         }
+    }
+
+    // MARK: - Context Menu
+
+    @ViewBuilder
+    private func contextMenuItems() -> some View {
+        Button {
+            // Bookmark — fire notification; ReaderView owns the bookmark store
+            NotificationCenter.default.post(
+                name: NSNotification.Name("Reader_BookmarkCurrentPage"),
+                object: nil,
+                userInfo: ["pageIndex": currentPageIndex]
+            )
+        } label: { Label("Bookmark This Page", systemImage: "bookmark") }
+
+        Button {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("Reader_ShareCurrentPage"),
+                object: nil,
+                userInfo: ["pageIndex": currentPageIndex]
+            )
+        } label: { Label("Share This Page", systemImage: "square.and.arrow.up") }
     }
 
     // MARK: - Navigation
 
-    private func nextPage(geo: CGSize) {
-        let isLandscape = geo.width > geo.height
-        let showingDual = effectiveDoublePage && isLandscape
+    private func nextPage(geo: CGSize, showingDual: Bool) {
+        let isSpread  = bufferManager.currentImage.map { isWideSpread($0) } ?? false
+        let nextIsSpread = bufferManager.nextImage.map { isWideSpread($0) } ?? false
+        let isPortrait = geo.height > geo.width
 
-        if !showingDual {
-            // Single page mode — portrait spread split handling
-            let imgW = CGFloat(bufferManager.currentImage?.width  ?? 0)
-            let imgH = CGFloat(bufferManager.currentImage?.height ?? 1)
-            let isSpread = imgW > imgH * 1.2
-            let isPortrait = geo.height > geo.width
-            if isPortrait && isSpread && autoSplitPortraitSpreads {
-                if splitHalf == 0 { splitHalf = 1; return }
-                else { splitHalf = 0 }
-            }
-            advanceSinglePage(forward: true)
-            return
+        if isPortrait && isSpread && autoSplitPortraitSpreads {
+            if splitHalf == 0 { splitHalf = 1; return } else { splitHalf = 0 }
         }
 
-        // Dual page mode: advance by the correct hop
-        let spread = bufferManager.currentSpread
-        let leadIndex = spread?.leadIndex ?? currentPageIndex
-        let isCover   = leadIndex == 0
-        let leftIsSpread  = (spread?.leftImage).map  { isWideSpread($0) } ?? false
-        let rightIsSpread = (spread?.rightImage).map { isWideSpread($0) } ?? false
+        let lead = bufferManager.currentSpread?.leadIndex ?? currentPageIndex
+        let isCover = lead == 0
+        let hop: Int = (showingDual && !isSpread && !nextIsSpread && !isCover) ? 2 : 1
+        let next = currentPageIndex + hop
 
-        let hopCount: Int
-        if isCover || leftIsSpread || rightIsSpread {
-            hopCount = 1
-        } else {
-            // Standard dual: advance by 2, but clamp so we don't skip the last page
-            let nextLead = leadIndex + 2
-            hopCount = nextLead < pages.count ? 2 : 1
-        }
-
-        let nextIndex = leadIndex + hopCount
-        if nextIndex < pages.count {
+        if next < pages.count {
             Haptics.shared.playImpact(style: .light)
-            currentPageIndex = nextIndex
-        } else if leadIndex < pages.count - 1 {
+            currentPageIndex = next
+        } else if currentPageIndex < pages.count - 1 {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = pages.count - 1
         } else {
@@ -345,66 +434,57 @@ struct PPLReaderView: View {
         }
     }
 
-    private func prevPage(geo: CGSize) {
-        let isLandscape = geo.width > geo.height
-        let showingDual = effectiveDoublePage && isLandscape
+    private func prevPage(geo: CGSize, showingDual: Bool) {
+        let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
+        let prevIsSpread = bufferManager.prevImage.map    { isWideSpread($0) } ?? false
+        let isPortrait = geo.height > geo.width
 
-        if !showingDual {
-            let imgW = CGFloat(bufferManager.currentImage?.width  ?? 0)
-            let imgH = CGFloat(bufferManager.currentImage?.height ?? 1)
-            let isSpread = imgW > imgH * 1.2
-            let isPortrait = geo.height > geo.width
-            if isPortrait && isSpread && autoSplitPortraitSpreads {
-                if splitHalf == 1 { splitHalf = 0; return }
-                else { splitHalf = 1 }
-            }
-            advanceSinglePage(forward: false)
-            return
+        if isPortrait && isSpread && autoSplitPortraitSpreads {
+            if splitHalf == 1 { splitHalf = 0; return } else { splitHalf = 1 }
         }
 
-        let spread = bufferManager.currentSpread
-        let leadIndex = spread?.leadIndex ?? currentPageIndex
-        guard leadIndex > 0 else { return }
+        let lead = bufferManager.currentSpread?.leadIndex ?? currentPageIndex
+        let isCover = lead == 0
+        guard currentPageIndex > 0 else { return }
 
-        // What was the lead of the previous spread?
-        let prevLead = max(0, leadIndex - 2)
-        // Check if the previous spread would be a wide spread
-        let prevLeftIdx = isMangaMode ? prevLead + 1 : prevLead
-        let prevLeftURL = prevLeftIdx < pages.count ? pages[prevLeftIdx] : nil
-        // We check prevImage from buffer for instant response
-        let prevIsSpread = (bufferManager.prevImage).map { isWideSpread($0) } ?? false
-        let hopCount = prevIsSpread ? 1 : (prevLead == 0 ? leadIndex : 2)
-
+        let hop: Int = (showingDual && !isSpread && !prevIsSpread && !isCover) ? 2 : 1
         Haptics.shared.playImpact(style: .light)
-        currentPageIndex = max(0, leadIndex - hopCount)
-        _ = prevLeftURL // suppress unused warning
-    }
-
-    private func advanceSinglePage(forward: Bool) {
-        if forward {
-            if currentPageIndex < pages.count - 1 {
-                Haptics.shared.playImpact(style: .light)
-                currentPageIndex += 1
-            } else {
-                NotificationCenter.default.post(name: NSNotification.Name("Reader_EndOfBookReached"), object: nil)
-            }
-        } else {
-            if currentPageIndex > 0 {
-                Haptics.shared.playImpact(style: .light)
-                currentPageIndex -= 1
-            }
-        }
+        currentPageIndex = max(0, currentPageIndex - hop)
     }
 
     // MARK: - Buffer Setup
 
     private func setupBuffer(geo: GeometryProxy, dual: Bool) {
+        bufferManager.setup(pages: pages)
         if dual {
             let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
             bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode)
         } else {
-            bufferManager.setup(pages: pages)
             bufferManager.render(pageIndex: currentPageIndex, bounds: geo.size)
+        }
+    }
+
+    private func advanceBuffer(to index: Int, geo: GeometryProxy, dual: Bool) {
+        if dual {
+            let lead = PageBufferManager.canonicalLeadIndex(for: index, isMangaMode: isMangaMode)
+            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode)
+        } else {
+            bufferManager.render(pageIndex: index, bounds: geo.size)
+        }
+    }
+
+    private func resetOnResize(to size: CGSize, dual: Bool) {
+        guard size.width > 0, size.height > 0 else { return }
+        withAnimation(.easeOut(duration: 0.15)) {
+            scale = 1.0; offset = .zero; dragOffset = .zero; swipeDragX = 0
+        }
+        bufferManager.isPPLEnabled = false
+        bufferManager.updateViewport(rect: .full)
+        if dual {
+            let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
+            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode)
+        } else {
+            bufferManager.render(pageIndex: currentPageIndex, bounds: size)
         }
     }
 
@@ -417,14 +497,13 @@ struct PPLReaderView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { offset = .zero }
             return
         }
-
         bufferManager.isPPLEnabled = true
-        let visibleW = size.width  / scale
-        let visibleH = size.height / scale
-        let x = ((size.width  - visibleW) / 2.0) - (offset.width  / scale)
-        let y = ((size.height - visibleH) / 2.0) - (offset.height / scale)
-        let rawRect = CGRect(x: x, y: y, width: visibleW, height: visibleH)
-        bufferManager.updateViewport(rect: CoordinateConverter.normalize(rect: rawRect, in: size))
+        let visW = size.width  / scale
+        let visH = size.height / scale
+        let x = ((size.width  - visW) / 2) - (offset.width  / scale)
+        let y = ((size.height - visH) / 2) - (offset.height / scale)
+        bufferManager.updateViewport(rect: CoordinateConverter.normalize(
+            rect: CGRect(x: x, y: y, width: visW, height: visH), in: size))
     }
 
     // MARK: - Spread Detection
@@ -447,22 +526,14 @@ struct PPLReaderView: View {
     private func nextGuidedPanel(geo: CGSize) {
         if guidedPanelIndex + 1 < guidedPanels.count {
             guidedPanelIndex += 1
-            withAnimation(.easeInOut(duration: 0.25)) {
-                bufferManager.lockedRect = guidedPanels[guidedPanelIndex]
-            }
+            withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[guidedPanelIndex] }
         } else {
-            nextPage(geo: geo)
+            let isLandscape = geo.width > geo.height
+            nextPage(geo: geo, showingDual: effectiveDoublePage && isLandscape)
             if isGuidedReadingActive {
-                refreshGuidedPanels()
-                guidedPanelIndex = 0
-                if guidedPanels.isEmpty {
-                    isGuidedReadingActive = false
-                    updatePPL(in: geo)
-                } else {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        bufferManager.lockedRect = guidedPanels[0]
-                    }
-                }
+                refreshGuidedPanels(); guidedPanelIndex = 0
+                if guidedPanels.isEmpty { isGuidedReadingActive = false; updatePPL(in: geo) }
+                else { withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[0] } }
             }
         }
     }
@@ -470,21 +541,16 @@ struct PPLReaderView: View {
     private func prevGuidedPanel(geo: CGSize) {
         if guidedPanelIndex > 0 {
             guidedPanelIndex -= 1
-            withAnimation(.easeInOut(duration: 0.25)) {
-                bufferManager.lockedRect = guidedPanels[guidedPanelIndex]
-            }
+            withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[guidedPanelIndex] }
         } else {
-            prevPage(geo: geo)
+            let isLandscape = geo.width > geo.height
+            prevPage(geo: geo, showingDual: effectiveDoublePage && isLandscape)
             if isGuidedReadingActive {
                 refreshGuidedPanels()
-                if guidedPanels.isEmpty {
-                    isGuidedReadingActive = false
-                    updatePPL(in: geo)
-                } else {
+                if guidedPanels.isEmpty { isGuidedReadingActive = false; updatePPL(in: geo) }
+                else {
                     guidedPanelIndex = guidedPanels.count - 1
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        bufferManager.lockedRect = guidedPanels[guidedPanelIndex]
-                    }
+                    withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[guidedPanelIndex] }
                 }
             }
         }

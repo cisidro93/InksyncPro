@@ -53,6 +53,10 @@ class PageBufferManager: ObservableObject {
     @Published var isPPLEnabled: Bool = false
     @Published var lockedRect: NormalizedRect = .full
 
+    // MARK: - Decode Progress (0.0 → 1.0)
+    /// Exposed so PPLReaderView can show a real progress bar instead of a spinner
+    @Published var decodeProgress: Double = 0.0
+
     // MARK: - Internal
     private var pageURLs: [URL] = []
     private var renderTask: Task<Void, Never>?
@@ -110,13 +114,14 @@ class PageBufferManager: ObservableObject {
         renderTask?.cancel()
         renderTask = Task {
             self.isLoading = true
+            self.decodeProgress = 0.0
 
             // Build the three spread pairs: prev, current, next
             let curPair  = buildSpreadPair(leadIndex: leadIndex, allPages: allPages, isMangaMode: isMangaMode)
             let prevPair = buildSpreadPair(leadIndex: leadIndex - 2, allPages: allPages, isMangaMode: isMangaMode)
             let nextPair = buildSpreadPair(leadIndex: leadIndex + 2, allPages: allPages, isMangaMode: isMangaMode)
 
-            // Decode all 6 images concurrently
+            // Decode all 6 images concurrently — update progress as each resolves
             async let curL  = renderPage(at: curPair.leftIndex)
             async let curR  = renderPage(at: curPair.rightIndex)
             async let prevL = renderPage(at: prevPair.leftIndex)
@@ -124,7 +129,19 @@ class PageBufferManager: ObservableObject {
             async let nextL = renderPage(at: nextPair.leftIndex)
             async let nextR = renderPage(at: nextPair.rightIndex)
 
-            let (cL, cR, pL, pR, nL, nR) = await (curL, curR, prevL, prevR, nextL, nextR)
+            // Resolve current pair first (visible immediately) then background pairs
+            let cL = await curL;  self.decodeProgress = 1/6
+            let cR = await curR;  self.decodeProgress = 2/6
+            // Publish partial state so first spread appears before prev/next finish
+            if !Task.isCancelled {
+                self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
+                self.currentImage  = cL ?? cR
+                self.isLoading     = false  // UI unlocks here
+            }
+            let pL = await prevL; self.decodeProgress = 3/6
+            let pR = await prevR; self.decodeProgress = 4/6
+            let nL = await nextL; self.decodeProgress = 5/6
+            let nR = await nextR; self.decodeProgress = 6/6
             guard !Task.isCancelled else { return }
 
             self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)

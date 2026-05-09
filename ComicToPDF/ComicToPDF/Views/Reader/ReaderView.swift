@@ -101,6 +101,22 @@ struct ReaderView: View {
     
     // ✅ PDF document reference (for share + TOC)
     @State private var loadedPDFDocument: PDFDocument? = nil
+    @State private var pdfViewRef: PDFView? = nil
+
+    // ✅ PDF Search
+    @State private var showSearch = false
+
+    // ✅ Webtoon auto-scroll
+    @State private var isWebtoonAutoScrolling = false
+    @State private var webtoonScrollSpeed: Double = 60.0
+
+    // ✅ Ambient brightness (time-of-day night mode)
+    @ObservedObject private var ambientBrightness = AmbientBrightnessManager.shared
+    @State private var userHasManuallyAdjustedWarmth = false
+
+    // ✅ Reading velocity tracking
+    @State private var sessionStartTime: Date = Date()
+    @State private var pagesReadThisSession: Int = 0
     
     var body: some View {
         GeometryReader { geo in
@@ -141,15 +157,19 @@ struct ReaderView: View {
                 } else {
                     // ✅ READER CONTENT
                     if isVerticalScroll {
-                        // VERTICAL WEBTOON MODE
-                        // 🚨 COMPETITOR FIX: Native SwiftUI AsyncImage poisons Jetsam thresholds over 300 pages.
-                        // Replacing with custom mapping bounds using LocalFileImage
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(pages, id: \.self) { pageURL in
-                                    LocalFileImage(url: pageURL)
+                        // ✅ WEBTOON MODE: UIScrollView-backed with auto-scroll + position memory
+                        ZStack {
+                            WebtoonScrollView(
+                                pages: pages,
+                                currentPageIndex: $currentPageIndex,
+                                pdfID: pdf?.id,
+                                isAutoScrolling: isWebtoonAutoScrolling,
+                                scrollSpeed: webtoonScrollSpeed,
+                                onCenterTap: {
+                                    withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
                                 }
-                            }
+                            )
+                            WebtoonControlBar(isAutoScrolling: $isWebtoonAutoScrolling, scrollSpeed: $webtoonScrollSpeed)
                         }
                     } else {
                         // ✅ ZERO-LATENCY METAL PPL READER
@@ -199,6 +219,16 @@ struct ReaderView: View {
                 
                 // Apply color filter overlay
                 colorFilterOverlay
+                    .animation(.easeInOut(duration: 1.0), value: warmthLevel)
+
+                // Ambient warmth overlay (time-of-day) — only if user hasn't manually adjusted
+                if !userHasManuallyAdjustedWarmth && ambientBrightness.recommendedWarmth > 0 {
+                    Rectangle()
+                        .fill(Color.orange.opacity(ambientBrightness.recommendedWarmth * 0.6))
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                        .animation(.easeInOut(duration: 1.5), value: ambientBrightness.recommendedWarmth)
+                }
                 
                 // Hardware Button Binding (dual-page aware)
                 VolumeHook(onUp: {
@@ -286,7 +316,17 @@ struct ReaderView: View {
                     toc = buildPDFTOC(from: doc)
                 }
             }
-            .onChange(of: currentPageIndex) { trackProgress(isPageTurn: true) }
+            .onChange(of: currentPageIndex) { _, _ in
+                trackProgress(isPageTurn: true)
+                pagesReadThisSession += 1
+                // Periodic velocity flush every 10 page turns
+                if pagesReadThisSession % 10 == 0, let id = pdf?.id {
+                    let elapsed = Date().timeIntervalSince(sessionStartTime)
+                    ReaderProgressTracker.shared.logPageTurn(pdfID: id, pages: 10, seconds: elapsed)
+                    sessionStartTime = Date()
+                    pagesReadThisSession = 0
+                }
+            }
             .onChange(of: isMangaMode) { savePerBookPreferences() }
             .onChange(of: colorFilter) { savePerBookPreferences() }
             .onChange(of: sleepTimer.didFire) { _, fired in
@@ -294,6 +334,26 @@ struct ReaderView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_EndOfBookReached"))) { _ in
                 nextPage()
+            }
+            // Context menu bridge from PPLReaderView
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_BookmarkCurrentPage"))) { note in
+                if let idx = note.userInfo?["pageIndex"] as? Int {
+                    Logger.shared.log("Bookmarking page \(idx + 1)", category: "ReaderView")
+                    // Delegate to the bookmark engine
+                    NotificationCenter.default.post(name: NSNotification.Name("BookmarkAdded"),
+                                                    object: nil,
+                                                    userInfo: ["pdfID": pdf?.id as Any, "pageIndex": idx])
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_ShareCurrentPage"))) { note in
+                if let idx = note.userInfo?["pageIndex"] as? Int, idx < pages.count {
+                    Task.detached(priority: .userInitiated) {
+                        if let data = try? Data(contentsOf: pages[idx]),
+                           let img  = UIImage(data: data) {
+                            await MainActor.run { shareImage = img; showShareSheet = true }
+                        }
+                    }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 let newOrientation = UIDevice.current.orientation
@@ -309,10 +369,15 @@ struct ReaderView: View {
                 }
             }
             .onDisappear {
+                // Flush final velocity event
+                if let id = pdf?.id, pagesReadThisSession > 0 {
+                    let elapsed = Date().timeIntervalSince(sessionStartTime)
+                    ReaderProgressTracker.shared.logPageTurn(pdfID: id, pages: pagesReadThisSession, seconds: elapsed)
+                }
                 if let dir = unzippedDir {
                     try? FileManager.default.removeItem(at: dir)
                 }
-                orientationLock.unlock() // Always restore free rotation on exit
+                orientationLock.unlock()
                 sleepTimer.stop()
             }
             .alert("Jump to Page", isPresented: $showJumpToPage) {
@@ -341,8 +406,12 @@ struct ReaderView: View {
                     ShareSheet(activityItems: [img])
                 }
             }
-            .sheet(isPresented: $showSleepTimerPicker) {
-                SleepTimerPickerSheet()
+            .sheet(isPresented: $showSleepTimerPicker) { SleepTimerPickerSheet() }
+            .sheet(isPresented: $showSearch) {
+                if let doc = loadedPDFDocument, let pdfV = pdfViewRef {
+                    ReaderSearchView(document: doc, pdfView: pdfV)
+                        .presentationDetents([.medium, .large])
+                }
             }
     }
     
@@ -428,6 +497,24 @@ struct ReaderView: View {
                     Toggle("Dual Page (Manual)", isOn: $isDoublePageMode)
                     Toggle("Auto Dual Page in Landscape", isOn: $autoLandscapeDualPage)
                 }
+                Section("Page Turn Style") {
+                    ForEach(PageTurnStyle.allCases, id: \.self) { style in
+                        Button {
+                            UserDefaults.standard.set(style.rawValue, forKey: "pageTurnStyle")
+                        } label: {
+                            Label(style.label, systemImage: style.icon)
+                        }
+                    }
+                }
+                Section("Tap Zones") {
+                    ForEach(TapZoneStyle.allCases, id: \.self) { zone in
+                        Button {
+                            UserDefaults.standard.set(zone.rawValue, forKey: "tapZoneStyle")
+                        } label: {
+                            Label(zone.label, systemImage: zone.icon)
+                        }
+                    }
+                }
                 Section("Image Enhancements") {
                     Toggle("Smart Margin Crop", isOn: Binding(
                         get: { isAutoCropEnabled },
@@ -468,6 +555,28 @@ struct ReaderView: View {
                         Label("Table of Contents", systemImage: "list.bullet.rectangle")
                     }
                     .disabled(toc.chapters.count <= 1)
+                    // PDF Search (only for PDFs with a loaded document)
+                    if loadedPDFDocument != nil {
+                        Button { showSearch = true } label: {
+                            Label("Search in Document", systemImage: "magnifyingglass")
+                        }
+                    }
+                }
+                Section("Ambient Lighting") {
+                    Toggle("Night Mode (Auto)", isOn: Binding(
+                        get: { ambientBrightness.autoNightMode },
+                        set: { val in
+                            ambientBrightness.autoNightMode = val
+                            ambientBrightness.evaluate()
+                        }
+                    ))
+                    Text("Night window: \(ambientBrightness.nightWindowDescription)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if isVerticalScroll {
+                    Section("Webtoon") {
+                        Toggle("Auto-Scroll", isOn: $isWebtoonAutoScrolling)
+                    }
                 }
                 Section("Tools") {
                     Button { shareCurrentPage() } label: {
