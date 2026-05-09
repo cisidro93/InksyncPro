@@ -171,9 +171,9 @@ class PageBufferManager: ObservableObject {
         let total = allPages.count
         guard leadIndex >= 0, leadIndex < total else { return (nil, nil) }
 
-        // Cover is always solo
+        // Cover is always solo — left slot holds the cover, right is blank
         if leadIndex == 0 {
-            return isMangaMode ? (nil, 0) : (nil, 0)
+            return isMangaMode ? (nil, 0) : (0, nil)
         }
 
         // Determine the right index

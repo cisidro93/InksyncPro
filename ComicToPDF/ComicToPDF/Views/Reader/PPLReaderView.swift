@@ -418,15 +418,16 @@ struct PPLReaderView: View {
     // MARK: - Navigation
 
     private func nextPage(geo: CGSize, showingDual: Bool) {
-        let isSpread  = bufferManager.currentImage.map { isWideSpread($0) } ?? false
-        let nextIsSpread = bufferManager.nextImage.map { isWideSpread($0) } ?? false
-        let isPortrait = geo.height > geo.width
+        let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
+        let nextIsSpread = bufferManager.nextImage.map   { isWideSpread($0) } ?? false
+        let isPortrait   = geo.height > geo.width
 
         if isPortrait && isSpread && autoSplitPortraitSpreads {
             if splitHalf == 0 { splitHalf = 1; return } else { splitHalf = 0 }
         }
 
-        let lead = bufferManager.currentSpread?.leadIndex ?? currentPageIndex
+        // Use synchronous canonical lead — never depends on async buffer state
+        let lead    = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
         let isCover = lead == 0
         let hop: Int = (showingDual && !isSpread && !nextIsSpread && !isCover) ? 2 : 1
         let next = currentPageIndex + hop
@@ -445,13 +446,14 @@ struct PPLReaderView: View {
     private func prevPage(geo: CGSize, showingDual: Bool) {
         let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
         let prevIsSpread = bufferManager.prevImage.map    { isWideSpread($0) } ?? false
-        let isPortrait = geo.height > geo.width
+        let isPortrait   = geo.height > geo.width
 
         if isPortrait && isSpread && autoSplitPortraitSpreads {
             if splitHalf == 1 { splitHalf = 0; return } else { splitHalf = 1 }
         }
 
-        let lead = bufferManager.currentSpread?.leadIndex ?? currentPageIndex
+        // Use synchronous canonical lead — never depends on async buffer state
+        let lead    = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
         let isCover = lead == 0
         guard currentPageIndex > 0 else { return }
 
