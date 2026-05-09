@@ -27,11 +27,12 @@ struct ReadingProgress: Codable, Identifiable {
     var prefersMangaMode: Bool?
     var colorFilter: String?
 
-    // Precise velocity tracking
-    var sessionEvents: [ReadingSessionEvent] = []
+    // Precise velocity tracking — optional for backwards-compatible JSON decoding of existing saves
+    var sessionEvents: [ReadingSessionEvent]?
     // Spread-mode parity — saves canonical lead index so resume restores correct spread
     var lastCanonicalLeadIndex: Int?
     var wasInDualPageMode: Bool?
+}
 
 @MainActor
 class ReaderProgressTracker: ObservableObject {
@@ -83,22 +84,23 @@ class ReaderProgressTracker: ObservableObject {
         guard pages > 0, seconds > 0 else { return }
         guard var prog = progressMap[pdfID] else { return }
         let event = ReadingSessionEvent(date: Date(), pagesRead: pages, secondsSpent: seconds)
-        prog.sessionEvents.append(event)
+        var events = prog.sessionEvents ?? []
+        events.append(event)
         // Trim to last 200 events to prevent unbounded growth
-        if prog.sessionEvents.count > 200 {
-            prog.sessionEvents.removeFirst(prog.sessionEvents.count - 200)
-        }
+        if events.count > 200 { events.removeFirst(events.count - 200) }
+        prog.sessionEvents = events
         progressMap[pdfID] = prog
         save(pdfID: pdfID)
     }
 
     /// Rolling 7-day average velocity in pages per minute. Returns 0 if no data.
     func rollingVelocity(for pdfID: UUID) -> Double {
-        guard let prog = progressMap[pdfID] else { return 0 }
+        guard let prog = progressMap[pdfID],
+              let events = prog.sessionEvents, !events.isEmpty else { return 0 }
         let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
-        let recent = prog.sessionEvents.filter { $0.date >= cutoff }
+        let recent = events.filter { $0.date >= cutoff }
         guard !recent.isEmpty else { return 0 }
-        let totalPages   = recent.reduce(0) { $0 + $1.pagesRead }
+        let totalPages   = recent.reduce(0)   { $0 + $1.pagesRead }
         let totalMinutes = recent.reduce(0.0) { $0 + ($1.secondsSpent / 60.0) }
         guard totalMinutes > 0 else { return 0 }
         return Double(totalPages) / totalMinutes

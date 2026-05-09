@@ -89,7 +89,7 @@ struct ReaderSearchView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.largeTitle)
                             .foregroundStyle(.secondary)
-                        Text("No results for "\(query)"")
+                        Text("No results for \"\(query)\"")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
