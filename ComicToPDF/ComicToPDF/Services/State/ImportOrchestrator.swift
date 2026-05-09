@@ -269,8 +269,13 @@ actor ImportOrchestrator {
                         validParentFolder = parentName
                     }
 
-                    // 1. Highest Priority: Native ComicInfo.xml Archive Tagging
-                    if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
+                    // ── Single ZIP pass: merge ComicInfo fetch + full parse ─────────────
+                    // Previously two separate ZIP opens (fetchNonDestructiveMetadata + ComicInfoParser.parse)
+                    // each re-opened the archive; now we do one pass and use both results.
+                    let xmlData  = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)
+                    let parsedInfo = ComicInfoParser.parse(from: destURL)
+
+                    if let xmlData = xmlData {
                         smartDisplayName = xmlData.displayName
                         smartMetadata.title = xmlData.parsedTitle ?? overrideMeta?.title ?? smartDisplayName
                         smartMetadata.series = xmlData.parsedSeries ?? overrideMeta?.series ?? validParentFolder
@@ -280,17 +285,29 @@ actor ImportOrchestrator {
                             smartMetadata.issueNumber = overMeta.issueNumber
                         }
                     } else if let meta = overrideMeta {
-                        // 2. Fallback: Smart Heuristics and Folder Hierarchy Mappings
                         smartDisplayName = meta.title
                         smartMetadata = meta
                     } else {
-                        // 3. Absolute Fallback
                         smartMetadata.series = validParentFolder
                     }
 
-                    // Parse full metadata to extract Manga layout
-                    if let parsedInfo = ComicInfoParser.parse(from: destURL) {
+                    // Apply manga flag and any fields not covered by the XML display layer
+                    if let parsedInfo = parsedInfo {
                         smartMetadata.isManga = parsedInfo.manga
+                        // Only backfill fields that xmlData didn't already populate
+                        if xmlData == nil {
+                            smartMetadata.writer    = parsedInfo.writer
+                            smartMetadata.publisher = parsedInfo.publisher
+                            smartMetadata.summary   = parsedInfo.summary
+                            if let year = parsedInfo.year {
+                                var comps = DateComponents()
+                                comps.year = year; comps.month = 1; comps.day = 1
+                                smartMetadata.publicationDate = Calendar.current.date(from: comps)
+                            }
+                            for tag in parsedInfo.tags {
+                                if !smartMetadata.tags.contains(tag) { smartMetadata.tags.append(tag) }
+                            }
+                        }
                     }
 
                     var pdf = ConvertedPDF(
@@ -510,9 +527,10 @@ actor ImportOrchestrator {
                     guard let enumerator = fileManager.enumerator(at: resolvedURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { continue }
                     
                     var fileCount = 0
+                    var syncedFileNames = Set<String>() // O(1) per-file dedup within this folder scan
                     while let fileURL = enumerator.nextObject() as? URL {
                         fileCount += 1
-                        if fileCount % 10 == 0 {
+                        if fileCount % 50 == 0 {
                             let currentCount = fileCount
                             await MainActor.run { manager.processingStatus = "Scanning \(folder.name) (\(currentCount) items)..." }
                             await Task.yield()
@@ -527,7 +545,8 @@ actor ImportOrchestrator {
                         let fileName = fileURL.lastPathComponent
                         let destURL = documentsDir.appendingPathComponent(fileName)
                         
-                        if existingPaths.contains(fileName) || newlyImported.contains(where: { $0.url.lastPathComponent == fileName }) { continue }
+                    // O(1) dedup — Set built per-folder, updated per file
+                    if existingPaths.contains(fileName) || syncedFileNames.contains(fileName) { continue }
                         
                         do {
                             await MainActor.run { manager.processingStatus = "Syncing \(fileName)..." }
@@ -579,6 +598,7 @@ actor ImportOrchestrator {
                                 pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                             }
                             newlyImported.append(pdf)
+                            syncedFileNames.insert(fileName) // track within this scan pass
                         } catch {
                             Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import", type: .error)
                         }
