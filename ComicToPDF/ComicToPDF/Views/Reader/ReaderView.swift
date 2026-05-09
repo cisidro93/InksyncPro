@@ -114,7 +114,7 @@ struct ReaderView: View {
                         onExit: onExit ?? { dismiss() }
                     )
                 } else {
-                    comicReaderBody
+                    comicReaderBody(in: geo)
                 }
                 
                 // KOReader Casual Comforts Overlay
@@ -129,7 +129,7 @@ struct ReaderView: View {
     }
     
     // MARK: - Comic / Manga Reader
-    private var comicReaderBody: some View {
+    private func comicReaderBody(in geo: GeometryProxy) -> some View {
         ZStack {
             if isLoading {
                 ProgressView("Opening Book...").scaleEffect(1.2)
