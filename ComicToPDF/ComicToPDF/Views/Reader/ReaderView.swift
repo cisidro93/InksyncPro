@@ -279,6 +279,9 @@ struct ReaderView: View {
             .onChange(of: sleepTimer.didFire) { _, fired in
                 if fired { if let onExit = onExit { onExit() } else { dismiss() } }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_EndOfBookReached"))) { _ in
+                nextPage()
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 let newOrientation = UIDevice.current.orientation
                 guard newOrientation.isValidInterfaceOrientation else { return }

@@ -261,9 +261,15 @@ struct PPLReaderView: View {
         let shouldShowDual = effectiveDoublePage && geo.width > geo.height && !isSpread && !nextIsSpread && currentPageIndex != 0
         let hopCount = shouldShowDual ? 2 : 1
 
-        if currentPageIndex + hopCount < pages.count + (hopCount - 1) {
+        let nextIndex = currentPageIndex + hopCount
+        if nextIndex < pages.count {
             Haptics.shared.playImpact(style: .light)
-            currentPageIndex += hopCount
+            currentPageIndex = nextIndex
+        } else if currentPageIndex < pages.count - 1 {
+            Haptics.shared.playImpact(style: .light)
+            currentPageIndex = pages.count - 1
+        } else {
+            NotificationCenter.default.post(name: NSNotification.Name("Reader_EndOfBookReached"), object: nil)
         }
     }
     
