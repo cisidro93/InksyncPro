@@ -13,9 +13,11 @@ struct LocalFileImage: View {
     var body: some View {
         Group {
             if let uiImage = loadedImage {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
+                ZoomableScrollView {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                }
             } else if isFailed {
                 VStack {
                     Image(systemName: "photo.badge.exclamationmark")

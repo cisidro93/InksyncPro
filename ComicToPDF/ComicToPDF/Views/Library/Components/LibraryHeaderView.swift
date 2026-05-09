@@ -7,6 +7,7 @@ struct LibraryHeaderView: View {
     // Bindings to parent view
     @Binding var searchText: String
     @Binding var sortOption: ModernLibraryView.SortOption
+    @Binding var filterState: LibraryFilterState
     @Binding var viewStyle: ModernLibraryView.LibraryViewStyle
     @Binding var tapAction: LibraryTapAction
     var onSheetTrigger: (LibrarySheetDestination) -> Void
@@ -58,6 +59,19 @@ struct LibraryHeaderView: View {
                             Image(systemName: "arrow.up.arrow.down")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(Theme.text)
+                                .frame(width: 38, height: 38)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                        }
+                        // Filter
+                        Menu {
+                            Picker("Filter", selection: $filterState) {
+                                ForEach(LibraryFilterState.allCases) { state in Text(state.rawValue).tag(state) }
+                            }
+                        } label: {
+                            Image(systemName: filterState == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(filterState == .all ? Theme.text : Theme.orange)
                                 .frame(width: 38, height: 38)
                                 .background(.ultraThinMaterial)
                                 .clipShape(Circle())
@@ -159,6 +173,19 @@ struct LibraryHeaderView: View {
                         Image(systemName: "arrow.up.arrow.down")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(Theme.text)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Theme.text.opacity(0.1), lineWidth: 1))
+                    }
+                    Menu {
+                        Picker("Filter By", selection: $filterState) {
+                            ForEach(LibraryFilterState.allCases) { state in Text(state.rawValue).tag(state) }
+                        }
+                    } label: {
+                        Image(systemName: filterState == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(filterState == .all ? Theme.text : Theme.orange)
                             .frame(width: 44, height: 44)
                             .background(.ultraThinMaterial)
                             .clipShape(Circle())

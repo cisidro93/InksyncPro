@@ -377,16 +377,23 @@ actor ImportOrchestrator {
         
         let finalClusters = clusters
         await MainActor.run {
+            // Optimize O(N^2) removeAll by building a Set of incoming names
+            var unclusteredPDFs: [ConvertedPDF] = []
+            
             for (series, clusterPDFs) in finalClusters {
                 if clusterPDFs.count > 1 && series != "Ungrouped" {
                     Task { await self.finalizeSeriesImport(pdfs: clusterPDFs, seriesName: series, manager: manager) }
                 } else {
-                    for pdf in clusterPDFs {
-                        manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
-                        manager.convertedPDFs.append(pdf)
-                    }
+                    unclusteredPDFs.append(contentsOf: clusterPDFs)
                 }
             }
+            
+            if !unclusteredPDFs.isEmpty {
+                let incomingNames = Set(unclusteredPDFs.map { $0.url.lastPathComponent })
+                manager.convertedPDFs.removeAll(where: { incomingNames.contains($0.url.lastPathComponent) })
+                manager.convertedPDFs.append(contentsOf: unclusteredPDFs)
+            }
+            
             manager.saveLibrary()
         } // End MainActor.run
 

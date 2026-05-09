@@ -106,10 +106,16 @@ class GoogleDriveProvider: NSObject, CloudStorageProvider, ObservableObject {
                         continuation.resume(throwing: URLError(.cancelled))
                     }
                 }
-                let keyWindow = UIApplication.shared.connectedScenes
+                let activeScene = UIApplication.shared.connectedScenes
                     .compactMap({ $0 as? UIWindowScene })
-                    .flatMap({ $0.windows })
-                    .first(where: { $0.isKeyWindow })
+                    .first(where: { $0.activationState == .foregroundActive })
+                    
+                let keyWindow = activeScene?.windows.first(where: { $0.isKeyWindow })
+                    ?? activeScene?.windows.first
+                    ?? UIApplication.shared.connectedScenes
+                        .compactMap({ $0 as? UIWindowScene })
+                        .flatMap({ $0.windows })
+                        .first
                 guard let window = keyWindow else {
                     continuation.resume(throwing: NSError(
                         domain: "GoogleDrive", code: 2,

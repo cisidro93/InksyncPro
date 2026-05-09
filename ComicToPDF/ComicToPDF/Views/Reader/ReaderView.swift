@@ -56,6 +56,7 @@ struct ReaderView: View {
     @State private var isDrawingMode = false
     @State private var canvasView = PKCanvasView()
     @State private var deviceOrientation: UIDeviceOrientation = UIDevice.current.orientation
+    @State private var rotationDebounceTask: Task<Void, Never>? = nil
     
     // ✅ Color Filter
     @State private var colorFilter: ReaderColorFilter = .none
@@ -279,7 +280,17 @@ struct ReaderView: View {
                 if fired { if let onExit = onExit { onExit() } else { dismiss() } }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-                deviceOrientation = UIDevice.current.orientation
+                let newOrientation = UIDevice.current.orientation
+                guard newOrientation.isValidInterfaceOrientation else { return }
+                
+                rotationDebounceTask?.cancel()
+                rotationDebounceTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 200_000_000) // 200ms debounce
+                    guard !Task.isCancelled else { return }
+                    withAnimation {
+                        deviceOrientation = newOrientation
+                    }
+                }
             }
             .onDisappear {
                 if let dir = unzippedDir {

@@ -14,6 +14,10 @@ class LibraryViewModel: ObservableObject {
     @Published var activeSheet: LibrarySheetDestination?
     @Published var activeFullScreen: LibraryFullScreenDestination?
     
+    // ✅ Phase 2: Nested Folders & Progress Filters
+    @Published var currentFolderID: UUID? = nil
+    @Published var filterState: LibraryFilterState = .all
+    
     // Single-view specific state that isn't cleanly enum-mappable due to alerts
     @Published var pdfToRename: ConvertedPDF?
     @Published var renameText: String = ""
@@ -41,6 +45,8 @@ class LibraryViewModel: ObservableObject {
 
         let currentSearchText = debouncedSearchText
         let sortedPDFs = sortPDFs(pdfs, sortOption: sortOption)
+        let folderID = self.currentFolderID
+        let filter = self.filterState
 
         rebuilTask = Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
@@ -50,11 +56,30 @@ class LibraryViewModel: ObservableObject {
             var singles: [ConvertedPDF] = []
             var firstAppearanceIndex: [String: Int] = [:]
             
+            // ✅ PHASE 2: Ensure all child collections of the current folder exist, even if empty
+            for collection in collections where collection.parentId == folderID {
+                let colKey = "col_\(collection.id.uuidString)"
+                groups[colKey] = SeriesGroup(id: collection.id.uuidString, title: collection.name, coverIssueID: collection.explicitCoverFileID, count: 0, issues: [])
+            }
+            
             for (index, pdf) in sortedPDFs.enumerated() {
+                // Apply Reading Progress Filters
+                if filter == .unread {
+                    if let read = pdf.metadata.lastReadPage, read > 0 { continue }
+                } else if filter == .reading {
+                    let maxPages = max(pdf.pageCount, 1)
+                    let read = pdf.metadata.lastReadPage ?? 0
+                    if read == 0 || read >= maxPages - 1 { continue }
+                } else if filter == .completed {
+                    let maxPages = max(pdf.pageCount, 1)
+                    let read = pdf.metadata.lastReadPage ?? 0
+                    if read < maxPages - 1 { continue }
+                }
+                
                 var inAnyGroup = false
                 
-                // 1. Process standard Publisher Series
-                if let seriesName = pdf.metadata.series, !seriesName.isEmpty {
+                // 1. Process standard Publisher Series (Only at Root)
+                if folderID == nil, let seriesName = pdf.metadata.series, !seriesName.isEmpty, pdf.collectionId == nil {
                     let seriesKey = "series_\(seriesName)"
                     if firstAppearanceIndex[seriesKey] == nil { firstAppearanceIndex[seriesKey] = index }
                     
@@ -66,23 +91,31 @@ class LibraryViewModel: ObservableObject {
                     inAnyGroup = true
                 }
                 
-                // 2. Process Custom Collections (Events)
+                // 2. Process Custom Collections (Events / Folders)
                 if let cid = pdf.collectionId, let collection = collections.first(where: { $0.id == cid }) {
-                    let colKey = "col_\(collection.id.uuidString)"
-                    if firstAppearanceIndex[colKey] == nil { firstAppearanceIndex[colKey] = index }
-                    
-                    if groups[colKey] == nil {
-                        // Use explicit cover if specified, otherwise the first generated
-                        let coverID = collection.explicitCoverFileID ?? pdf.id
-                        groups[colKey] = SeriesGroup(id: collection.id.uuidString, title: collection.name, coverIssueID: coverID, count: 0, issues: [])
+                    // Only render if the collection is a direct child of the current view
+                    if collection.parentId == folderID {
+                        let colKey = "col_\(collection.id.uuidString)"
+                        if firstAppearanceIndex[colKey] == nil { firstAppearanceIndex[colKey] = index }
+                        
+                        if groups[colKey] == nil {
+                            let coverID = collection.explicitCoverFileID ?? pdf.id
+                            groups[colKey] = SeriesGroup(id: collection.id.uuidString, title: collection.name, coverIssueID: coverID, count: 0, issues: [])
+                        }
+                        groups[colKey]?.issues.append(pdf)
+                        groups[colKey]?.count += 1
+                        inAnyGroup = true
+                    } else if cid == folderID {
+                        // If the PDF is INSIDE the current folder we are viewing, render it as a single
+                        inAnyGroup = false
+                    } else {
+                        // The PDF is in a different nested folder, hide it
+                        inAnyGroup = true
                     }
-                    groups[colKey]?.issues.append(pdf)
-                    groups[colKey]?.count += 1
-                    inAnyGroup = true
                 }
                 
-                // 3. Fallback to Singles if not in ANY group
-                if !inAnyGroup {
+                // 3. Fallback to Singles if not in ANY group, and we are at the correct level
+                if !inAnyGroup && pdf.collectionId == folderID {
                     let singleKey = "single_\(pdf.id)"
                     if firstAppearanceIndex[singleKey] == nil { firstAppearanceIndex[singleKey] = index }
                     singles.append(pdf)
@@ -194,8 +227,13 @@ class LibraryViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             let finalItems = items.map { $0.1 }
 
-            await MainActor.run { [weak self] in
-                self?.cachedLibraryItems = finalItems
+            // Publish results back to main thread
+            Task { @MainActor in
+                guard !Task.isCancelled else { return }
+                self.cachedLibraryItems = finalItems
+                
+                // ✅ Phase 2 Logging Integration
+                Logger.shared.log("Library Cache Rebuilt: \(finalItems.count) total UI groups rendered (Filter: \(filter.rawValue), Depth: \(folderID?.uuidString ?? "Root"))", category: "Library")
             }
         }
     }
@@ -310,4 +348,13 @@ class LibraryViewModel: ObservableObject {
             }
         }
     }
+}
+
+enum LibraryFilterState: String, CaseIterable, Identifiable {
+    case all = "All"
+    case unread = "Unread"
+    case reading = "Reading"
+    case completed = "Completed"
+    
+    var id: String { rawValue }
 }

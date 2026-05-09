@@ -43,7 +43,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
     var providerName: String { "Dropbox" }
 
     // TODO: Replace with your values from https://www.dropbox.com/developers/apps
-    private let clientID     = "YOUR_DROPBOX_CLIENT_ID"
+    private let clientID     = "v7dgt5q4j19mbha"
     private let redirectURI  = "inksyncpro://oauth/dropbox"
 
     private let keychainService = "com.antigravity.InksyncPro"
@@ -122,11 +122,17 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
                         continuation.resume(throwing: URLError(.cancelled))
                     }
                 }
-                // Grab the key window and retain the anchor on self.
-                let keyWindow = UIApplication.shared.connectedScenes
+                // Grab the key window safely, falling back to the first available window
+                let activeScene = UIApplication.shared.connectedScenes
                     .compactMap({ $0 as? UIWindowScene })
-                    .flatMap({ $0.windows })
-                    .first(where: { $0.isKeyWindow })
+                    .first(where: { $0.activationState == .foregroundActive })
+                    
+                let keyWindow = activeScene?.windows.first(where: { $0.isKeyWindow })
+                    ?? activeScene?.windows.first
+                    ?? UIApplication.shared.connectedScenes
+                        .compactMap({ $0 as? UIWindowScene })
+                        .flatMap({ $0.windows })
+                        .first
                 guard let window = keyWindow else {
                     continuation.resume(throwing: NSError(
                         domain: "Dropbox", code: 2,

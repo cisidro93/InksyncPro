@@ -57,12 +57,15 @@ class SyncCoordinator: ObservableObject {
         
         for incomingCol in payload.collections {
             if let existing = localCollectionMapping[incomingCol.name] {
-                // Device alignment
-                existing.color = incomingCol.color
+                // Update properties
+                existing.name = incomingCol.name
                 existing.icon = incomingCol.icon
+                existing.color = incomingCol.color
+                existing.creationDate = incomingCol.creationDate
                 existing.explicitCoverFileID = incomingCol.explicitCoverFileID
+                existing.parentId = incomingCol.parentId
             } else {
-                let newCol = SDPDFCollection(id: incomingCol.id, name: incomingCol.name, icon: incomingCol.icon, color: incomingCol.color, creationDate: incomingCol.creationDate, explicitCoverFileID: incomingCol.explicitCoverFileID)
+                let newCol = SDPDFCollection(id: incomingCol.id, name: incomingCol.name, icon: incomingCol.icon, color: incomingCol.color, creationDate: incomingCol.creationDate, explicitCoverFileID: incomingCol.explicitCoverFileID, parentId: incomingCol.parentId)
                 context.insert(newCol)
                 localCollectionMapping[newCol.name] = newCol
             }

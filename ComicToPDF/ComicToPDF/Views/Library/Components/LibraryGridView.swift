@@ -61,6 +61,7 @@ struct LibraryGridView: View {
 
     let onAction: (LibraryRowAction, ConvertedPDF) -> Void
     let onImport: () -> Void
+    let onFolderTap: (UUID?) -> Void
     /// Called immediately after any drop merge is committed so the parent
     /// can force-rebuild the cache from live in-memory data without waiting
     /// for the SwiftData @Query async refresh cycle.
@@ -174,34 +175,62 @@ struct LibraryGridView: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             } else {
-                NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
-                    ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
-                }
-                .buttonStyle(PlainButtonStyle())
-                .contextMenu {
+                if let folderUUID = UUID(uuidString: group.id) {
+                    // It's a custom Collection folder — drill down natively
                     Button {
-                        if let next = nextUnread(in: group) {
-                            HapticEngine.success()
-                            onAction(.read, next)
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            onFolderTap(folderUUID)
                         }
-                    } label: { Label("Read Next Issue", systemImage: "play.fill") }
+                    } label: {
+                        ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .contextMenu {
+                        // Standard Series context actions...
+                        Button {
+                            if let next = nextUnread(in: group) {
+                                HapticEngine.success()
+                                onAction(.read, next)
+                            }
+                        } label: { Label("Read Next Issue", systemImage: "play.fill") }
+                        Divider()
+                        Button {
+                            pendingSeriesName = group.title
+                            renamingGroup = group
+                        } label: { Label("Rename Folder", systemImage: "pencil") }
+                        Divider()
+                        Button(role: .destructive) {
+                            for issue in group.issues { conversionManager.deletePDF(issue) }
+                        } label: { Label("Delete Folder", systemImage: "trash") }
+                    }
+                } else {
+                    // It's a generated Publisher Series — show the details sheet/stack
+                    NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
+                        ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .contextMenu {
+                        Button {
+                            if let next = nextUnread(in: group) {
+                                HapticEngine.success()
+                                onAction(.read, next)
+                            }
+                        } label: { Label("Read Next Issue", systemImage: "play.fill") }
 
-                    Divider()
+                        Divider()
 
-                    Button {
-                        pendingSeriesName = group.title
-                        renamingGroup = group
-                    } label: { Label("Rename Series", systemImage: "pencil") }
+                        Button {
+                            pendingSeriesName = group.title
+                            renamingGroup = group
+                        } label: { Label("Rename Series", systemImage: "pencil") }
 
-                    Divider()
+                        Divider()
 
-                    Button(role: .destructive) {
-                        for issue in group.issues { conversionManager.deletePDF(issue) }
-                    } label: { Label("Delete Series", systemImage: "trash") }
+                        Button(role: .destructive) {
+                            for issue in group.issues { conversionManager.deletePDF(issue) }
+                        } label: { Label("Delete Series", systemImage: "trash") }
+                    }
                 }
-                // ✅ Bug fix #4: preview: block removed on iPhone.
-                // On compact size class, contextMenu preview: expands and dims the
-                // entire grid, masking all sibling cells. iPad-only feature.
             }
         }
         // ── Drag: series cards are draggable — lifting a series lets you combine it with another.

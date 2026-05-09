@@ -13,6 +13,7 @@ struct LibraryListView: View {
     // Action callback to bubble events up to ModernLibraryView where the sheets live
     let onAction: (LibraryRowAction, ConvertedPDF) -> Void
     let onImport: () -> Void
+    let onFolderTap: (UUID?) -> Void
     
     var body: some View {
         if conversionManager.visiblePDFs.isEmpty {
@@ -37,61 +38,99 @@ struct LibraryListView: View {
                             .listRowBackground(Theme.bg)
                             .listRowSeparatorTint(Color(UIColor.separator))
                         } else {
-                            NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
-                                ModernSeriesRow(group: group, isSelected: false, isBatch: false)
-                            }
-                            .listRowBackground(Theme.bg)
-                            .listRowSeparatorTint(Color(UIColor.separator))
-                            .contextMenu {
+                            if let folderUUID = UUID(uuidString: group.id) {
                                 Button {
-                                    if let next = nextUnread(in: group) {
-                                        HapticEngine.success()
-                                        onAction(.read, next)
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        onFolderTap(folderUUID)
                                     }
-                                } label: { Label("Read Next Issue", systemImage: "play.fill") }
-
-                                Divider()
-
-                                Button {
-                                    // Trigger series rename via the ViewModel rename alert
-                                    // Re-use the same approach as the grid: post a notification
-                                    // so ModernLibraryView can present the alert without
-                                    // needing a local @State here.
-                                    NotificationCenter.default.post(
-                                        name: Notification.Name("RequestSeriesRename"),
-                                        object: group
-                                    )
-                                } label: { Label("Rename Series", systemImage: "pencil") }
-
-                                Divider()
-
-                                Button(role: .destructive) {
-                                    for issue in group.issues { conversionManager.deletePDF(issue) }
-                                } label: { Label("Delete Series", systemImage: "trash") }
-                            }
-                            // Swipe right → Read next unread issue immediately
-                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                Button {
-                                    if let next = nextUnread(in: group) {
-                                        HapticEngine.success()
-                                        onAction(.read, next)
-                                    }
-                                } label: { Label("Read Next", systemImage: "play.fill") }
-                                .tint(Color.inkBlue)
-                            }
-                            // Swipe left → select all or delete
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button {
-                                    isBatchMode = true
-                                    for issue in group.issues { multiSelection.insert(issue.id) }
                                 } label: {
-                                    Label("Select Group", systemImage: "checkmark.circle.fill")
+                                    ModernSeriesRow(group: group, isSelected: false, isBatch: false)
                                 }
-                                .tint(.green)
-                                
-                                Button(role: .destructive) {
-                                    for issue in group.issues { conversionManager.deletePDF(issue) }
-                                } label: { Label("Delete Series", systemImage: "trash") }
+                                .listRowBackground(Theme.bg)
+                                .listRowSeparatorTint(Color(UIColor.separator))
+                                .contextMenu {
+                                    Button {
+                                        if let next = nextUnread(in: group) {
+                                            HapticEngine.success()
+                                            onAction(.read, next)
+                                        }
+                                    } label: { Label("Read Next Issue", systemImage: "play.fill") }
+                                    Divider()
+                                    Button {
+                                        NotificationCenter.default.post(name: Notification.Name("RequestSeriesRename"), object: group)
+                                    } label: { Label("Rename Folder", systemImage: "pencil") }
+                                    Divider()
+                                    Button(role: .destructive) {
+                                        for issue in group.issues { conversionManager.deletePDF(issue) }
+                                    } label: { Label("Delete Folder", systemImage: "trash") }
+                                }
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        if let next = nextUnread(in: group) {
+                                            HapticEngine.success()
+                                            onAction(.read, next)
+                                        }
+                                    } label: { Label("Read Next", systemImage: "play.fill") }
+                                    .tint(Color.inkBlue)
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button {
+                                        isBatchMode = true
+                                        for issue in group.issues { multiSelection.insert(issue.id) }
+                                    } label: { Label("Select Group", systemImage: "checkmark.circle.fill") }
+                                    .tint(.green)
+                                    Button(role: .destructive) {
+                                        for issue in group.issues { conversionManager.deletePDF(issue) }
+                                    } label: { Label("Delete Folder", systemImage: "trash") }
+                                }
+                            } else {
+                                NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
+                                    ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+                                }
+                                .listRowBackground(Theme.bg)
+                                .listRowSeparatorTint(Color(UIColor.separator))
+                                .contextMenu {
+                                    Button {
+                                        if let next = nextUnread(in: group) {
+                                            HapticEngine.success()
+                                            onAction(.read, next)
+                                        }
+                                    } label: { Label("Read Next Issue", systemImage: "play.fill") }
+
+                                    Divider()
+
+                                    Button {
+                                        NotificationCenter.default.post(name: Notification.Name("RequestSeriesRename"), object: group)
+                                    } label: { Label("Rename Series", systemImage: "pencil") }
+
+                                    Divider()
+
+                                    Button(role: .destructive) {
+                                        for issue in group.issues { conversionManager.deletePDF(issue) }
+                                    } label: { Label("Delete Series", systemImage: "trash") }
+                                }
+                                // Swipe right → Read next unread issue immediately
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        if let next = nextUnread(in: group) {
+                                            HapticEngine.success()
+                                            onAction(.read, next)
+                                        }
+                                    } label: { Label("Read Next", systemImage: "play.fill") }
+                                    .tint(Color.inkBlue)
+                                }
+                                // Swipe left → select all or delete
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button {
+                                        isBatchMode = true
+                                        for issue in group.issues { multiSelection.insert(issue.id) }
+                                    } label: { Label("Select Group", systemImage: "checkmark.circle.fill") }
+                                    .tint(.green)
+                                    
+                                    Button(role: .destructive) {
+                                        for issue in group.issues { conversionManager.deletePDF(issue) }
+                                    } label: { Label("Delete Series", systemImage: "trash") }
+                                }
                             }
                         }
                     case .single(let pdf):

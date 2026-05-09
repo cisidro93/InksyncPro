@@ -189,6 +189,8 @@ struct ModernLibraryView: View {
         .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
         .onChange(of: swiftDataCollections) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
         .onChange(of: viewModel.debouncedSearchText) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+        .onChange(of: viewModel.filterState) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+        .onChange(of: viewModel.currentFolderID) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenMergedBook"))) { notification in
             if let newBook = notification.object as? ConvertedPDF {
                 // Brief yield lets the current sheet dismiss before the fullscreen cover appears.
@@ -369,6 +371,7 @@ struct ModernLibraryView: View {
             LibraryHeaderView(
                 searchText: $viewModel.searchText,
                 sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(nativeVisiblePDFs, sortOption: $0) }),
+                filterState: $viewModel.filterState,
                 viewStyle: $viewStyle,
                 tapAction: $tapAction,
                 onSheetTrigger: { dest in 
@@ -494,6 +497,31 @@ struct ModernLibraryView: View {
                 viewModel.activeFullScreen = .read(pdf)
             }
 
+            // MARK: - Breadcrumb Navigation for Nested Folders
+            if let folderID = viewModel.currentFolderID, let folder = conversionManager.collections.first(where: { $0.id == folderID }) {
+                HStack {
+                    Button {
+                        withAnimation { viewModel.currentFolderID = folder.parentId }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                    }
+                    .font(.subheadline.bold())
+                    .foregroundColor(Theme.blue)
+                    
+                    Spacer()
+                    
+                    Text(folder.name)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial)
+            }
+
             // MARK: - Discrete Layout Layers
             if viewStyle == .list {
                 LibraryListView(
@@ -504,7 +532,8 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) }
+                    onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
+                    onFolderTap: { uuid in viewModel.currentFolderID = uuid }
                 )
             } else {
                 LibraryGridView(
@@ -516,6 +545,7 @@ struct ModernLibraryView: View {
                     selectedPDF: $selectedPDF,
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
                     onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
+                    onFolderTap: { uuid in viewModel.currentFolderID = uuid },
                     // Rebuild immediately from live in-memory data so the grid updates the
                     // instant a drop is confirmed — without waiting for the SwiftData
                     // @Query async refresh cycle to propagate the changes.

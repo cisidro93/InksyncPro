@@ -340,6 +340,7 @@ struct PDFCollection: Identifiable, Codable, Equatable, Sendable {
     var color: String
     var creationDate: Date
     var explicitCoverFileID: UUID?
+    var parentId: UUID? = nil
     var manualSortOrder: [UUID]? = nil // ENFORCED reading order
 }
 
@@ -1068,18 +1069,20 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     var color: String
     var creationDate: Date
     var explicitCoverFileID: UUID?
+    var parentId: UUID?
     
-    init(id: UUID, name: String, icon: String, color: String, creationDate: Date, explicitCoverFileID: UUID? = nil) {
+    init(id: UUID, name: String, icon: String, color: String, creationDate: Date, explicitCoverFileID: UUID? = nil, parentId: UUID? = nil) {
         self.id = id
         self.name = name
         self.icon = icon
         self.color = color
         self.creationDate = creationDate
         self.explicitCoverFileID = explicitCoverFileID
+        self.parentId = parentId
     }
     
     func toDTO() -> PDFCollection {
-        PDFCollection(id: self.id, name: self.name, icon: self.icon, color: self.color, creationDate: self.creationDate, explicitCoverFileID: self.explicitCoverFileID)
+        PDFCollection(id: self.id, name: self.name, icon: self.icon, color: self.color, creationDate: self.creationDate, explicitCoverFileID: self.explicitCoverFileID, parentId: self.parentId)
     }
 }
 

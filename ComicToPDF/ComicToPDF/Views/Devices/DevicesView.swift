@@ -169,12 +169,8 @@ struct DevicesView: View {
             if hSizeClass == .regular { selectedDeviceID = savedDevices.first?.id }
             return
         }
-        // Guard 3: If user already dismissed/completed setup once, never re-prompt.
-        if savedDevices.isEmpty &&
-           !UserDefaults.standard.bool(forKey: "hasCompletedDeviceSetup") &&
-           !UserDefaults.standard.bool(forKey: "userDismissedDevicePrompt") {
-            showAddDevice = true
-        } else if hSizeClass == .regular && selectedDeviceID == nil {
+        
+        if hSizeClass == .regular && selectedDeviceID == nil {
             selectedDeviceID = savedDevices.first?.id
         }
     }
