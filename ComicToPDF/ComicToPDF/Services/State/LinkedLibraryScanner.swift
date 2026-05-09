@@ -10,6 +10,13 @@ import UIKit
 //  - Unlink a drive (clean removal)
 //  - Offload to Drive (copy local → drive, flip sourceMode, free device storage)
 //  - Download to Device (copy drive → local, flip sourceMode back)
+//
+// Bookmark Strategy (root cause of prior failures):
+//  - All bookmarks MUST use .withSecurityScope so that resolved URLs can
+//    call startAccessingSecurityScopedResource() AFTER the picker session ends.
+//  - .minimalBookmark and [] options only work within the picker's active
+//    security grant window — they silently break on every subsequent app launch.
+//  - Per-file bookmarks are also security-scoped for the same reason.
 // ============================================================================
 
 @MainActor
@@ -21,7 +28,6 @@ final class LinkedLibraryScanner: ObservableObject {
     @Published private(set) var scanStatus: String = ""
 
     private init() {
-        // Observe stale bookmark notifications from BookmarkResolver
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleStaleBookmark(_:)),
@@ -39,23 +45,28 @@ final class LinkedLibraryScanner: ObservableObject {
     // MARK: - Link Drive
 
     /// Register a folder on an external drive or cloud provider. Files are never copied — only referenced.
+    /// Uses .withSecurityScope bookmarks so that access survives app restarts and new sessions.
     func linkDrive(folderURL: URL, displayName: String? = nil) async throws -> AppSettingsManager.LinkedDriveEntry {
         let accessing = folderURL.startAccessingSecurityScopedResource()
         defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
 
         scanStatus = "Creating bookmark…"
 
-        // Create persistent bookmark. `.withSecurityScope` is required for cloud providers
-        // (Dropbox, iCloud, Google Drive) so the bookmark survives app restarts.
+        // ✅ FIX #1: Always use .withSecurityScope for the drive root bookmark.
+        // .minimalBookmark creates a non-scoped bookmark that becomes invalid the
+        // moment the UIDocumentPickerViewController's implicit security grant expires.
+        // .withSecurityScope is the ONLY option that survives app restarts on USB/cloud.
         let bookmarkData: Data
         do {
             bookmarkData = try folderURL.bookmarkData(
-                options: .minimalBookmark,
-                includingResourceValuesForKeys: nil,
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: [.isUbiquitousItemKey],
                 relativeTo: nil
             )
         } catch {
-            // Fallback: no options (works for most local/USB volumes)
+            // Fallback for cloud providers (Dropbox, Google Drive) that don't support
+            // security-scoped bookmarks directly — they manage their own access tokens.
+            Logger.shared.log("LinkedLibraryScanner: .withSecurityScope bookmark failed, falling back for cloud provider: \(error.localizedDescription)", category: "Drive", type: .warning)
             bookmarkData = try folderURL.bookmarkData(
                 options: [],
                 includingResourceValuesForKeys: nil,
@@ -63,7 +74,7 @@ final class LinkedLibraryScanner: ObservableObject {
             )
         }
 
-        // Probe write capability
+        // Probe write capability while access is still active
         let isReadOnly = !FileManager.default.isWritableFile(atPath: folderURL.path)
 
         // ━━ Move disk I/O off the MainActor ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -81,11 +92,10 @@ final class LinkedLibraryScanner: ObservableObject {
         }.value
 
         scanStatus = "Found \(files.count) file\(files.count == 1 ? "" : "s") — registering…"
-
         Logger.shared.log("LinkedLibraryScanner: Scanned \(files.count) files in '\(folderURL.lastPathComponent)'", category: "Drive")
 
         // Build drive entry
-        var entry = AppSettingsManager.LinkedDriveEntry(
+        let entry = AppSettingsManager.LinkedDriveEntry(
             displayName: displayName ?? folderURL.lastPathComponent,
             volumeBookmarkData: bookmarkData,
             lastSeenDate: Date(),
@@ -95,9 +105,9 @@ final class LinkedLibraryScanner: ObservableObject {
         )
 
         // Register all found files as linked ConvertedPDF entries
+        // Pass folderURL so that per-file bookmarks are created while access is still live.
         await registerFiles(files, driveEntry: entry, rootURL: folderURL)
 
-        // Save drive entry
         AppSettingsManager.shared.addLinkedDrive(entry)
         Logger.shared.log("LinkedLibraryScanner: Linked drive '\(entry.displayName)' with \(files.count) files", category: "Drive")
 
@@ -116,17 +126,32 @@ final class LinkedLibraryScanner: ObservableObject {
 
     /// Non-destructive re-scan when a drive reconnects. Preserves all metadata, progress, and collections.
     func syncDrive(_ entry: AppSettingsManager.LinkedDriveEntry) async {
-        guard let url = try? await BookmarkResolver.shared.resolve(entry.volumeBookmarkData) else {
+        // ✅ FIX #2: Use the async BookmarkResolver.resolve() correctly with scoped access.
+        // The nonisolated sync version silently succeeds with a URL that can't be opened.
+        var isStale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: entry.volumeBookmarkData,
+            options: .withSecurityScope,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else {
             Logger.shared.log("LinkedLibraryScanner: Could not resolve bookmark for '\(entry.displayName)'", category: "Drive", type: .warning)
             return
+        }
+
+        if isStale {
+            Logger.shared.log("LinkedLibraryScanner: Bookmark stale for '\(entry.displayName)' — requesting re-link", category: "Drive", type: .warning)
+            NotificationCenter.default.post(name: .bookmarkBecameStale, object: entry.volumeBookmarkData)
         }
 
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-        // ━━ Offload recursive directory enumeration off MainActor ━━━━━━━━━━━━━━━━━━━━
-        // scanDirectory calls FileManager.enumerator which can block for multiple
-        // seconds on large USB drives. Never call it synchronously on @MainActor.
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            Logger.shared.log("LinkedLibraryScanner: Drive root not accessible for '\(entry.displayName)' — drive may have been disconnected", category: "Drive", type: .warning)
+            return
+        }
+
         let exts = supportedExtensions
         let foundFiles: [URL] = await Task.detached(priority: .userInitiated) { [exts] in
             guard let enumerator = FileManager.default.enumerator(
@@ -144,20 +169,27 @@ final class LinkedLibraryScanner: ObservableObject {
 
         // Mark files that are no longer present on the drive
         for idx in manager.convertedPDFs.indices {
-            if case .linked(let bm) = manager.convertedPDFs[idx].sourceMode,
-               let resolved = try? await BookmarkResolver.shared.resolve(bm),
-               !foundPaths.contains(resolved.path) {
-                manager.convertedPDFs[idx].metadata.autoMatchFailed = true  // Reuse as "missing" flag
-                Logger.shared.log("LinkedLibraryScanner: '\(manager.convertedPDFs[idx].name)' no longer found on drive", category: "Drive", type: .warning)
+            if case .linked(let bm) = manager.convertedPDFs[idx].sourceMode {
+                // ✅ FIX #3: Resolve per-file bookmark with .withSecurityScope so the
+                // resolved URL can actually be probed. Without this the path check is meaningless.
+                var fileIsStale = false
+                if let resolved = try? URL(
+                    resolvingBookmarkData: bm,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &fileIsStale
+                ), !foundPaths.contains(resolved.path) {
+                    manager.convertedPDFs[idx].metadata.autoMatchFailed = true
+                    Logger.shared.log("LinkedLibraryScanner: '\(manager.convertedPDFs[idx].name)' no longer found on drive", category: "Drive", type: .warning)
+                }
             }
         }
 
-        // Add newly appeared files.
+        // Add newly appeared files
         let existingFilenames = Set(manager.convertedPDFs.compactMap { pdf -> String? in
             guard case .linked = pdf.sourceMode else { return nil }
             return pdf.url.lastPathComponent
         })
-
         let newFiles = foundFiles.filter { !existingFilenames.contains($0.lastPathComponent) }
         if !newFiles.isEmpty {
             await registerFiles(newFiles, driveEntry: entry, rootURL: url)
@@ -169,30 +201,29 @@ final class LinkedLibraryScanner: ObservableObject {
             )
         }
 
-        // Update last seen date, file count, and sync timestamp
         var updated = entry
         updated.lastSeenDate = Date()
         updated.lastSyncedDate = Date()
         updated.fileCount = foundFiles.count
         AppSettingsManager.shared.updateLinkedDrive(updated)
-        
+
         Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
     }
 
     // MARK: - Re-link Drive (update bookmark, preserve library records)
 
-    /// Called when a drive shows as disconnected but the user wants to re-establish the bookmark
+    /// Called when a drive shows as disconnected. Re-establishes the security-scoped bookmark
     /// without wiping all the file records that were already registered.
     func relinkDrive(_ entry: AppSettingsManager.LinkedDriveEntry, newFolderURL: URL) async throws {
         let accessing = newFolderURL.startAccessingSecurityScopedResource()
         defer { if accessing { newFolderURL.stopAccessingSecurityScopedResource() } }
 
-        // Create a fresh bookmark for the re-selected folder
+        // ✅ FIX #4: Re-link also must produce a .withSecurityScope bookmark.
         let newBookmark: Data
         do {
             newBookmark = try newFolderURL.bookmarkData(
-                options: .minimalBookmark,
-                includingResourceValuesForKeys: nil,
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: [.isUbiquitousItemKey],
                 relativeTo: nil
             )
         } catch {
@@ -203,14 +234,13 @@ final class LinkedLibraryScanner: ObservableObject {
             )
         }
 
-        // Update the drive entry's bookmark in-place
         var updated = entry
         updated.volumeBookmarkData = newBookmark
         updated.lastSeenDate = Date()
-        updated.displayName = newFolderURL.lastPathComponent  // update in case path changed
+        updated.displayName = newFolderURL.lastPathComponent
         AppSettingsManager.shared.updateLinkedDrive(updated)
 
-        // Run a sync to pick up any new files
+        // Re-sync to refresh per-file bookmarks for files that may have moved
         await syncDrive(updated)
 
         Logger.shared.log("LinkedLibraryScanner: Re-linked drive '\(updated.displayName)'", category: "Drive")
@@ -219,41 +249,50 @@ final class LinkedLibraryScanner: ObservableObject {
     // MARK: - Unlink Drive
 
     /// Removes all linked entries for this drive from the library.
+    /// Resolves bookmarks off the main thread to avoid USB I/O blocking.
     func unlinkDrive(_ entry: AppSettingsManager.LinkedDriveEntry) {
         guard let manager = conversionManager else { return }
 
-        let rootPath: String?
-        if let rootURL = try? BookmarkResolver.shared.resolve(entry.volumeBookmarkData) {
-            rootPath = rootURL.path
-        } else {
-            rootPath = nil  // Bookmark unresolvable — fall back to bookmark-data match below
-        }
+        // ✅ FIX #5: Resolve the root bookmark asynchronously off @MainActor to prevent
+        // USB I/O from blocking the UI during unlink.
+        Task.detached(priority: .userInitiated) { [weak manager] in
+            // Attempt to resolve the root path. Failure is safe — fall back to bookmark equality.
+            var rootPath: String? = nil
+            if let rootURL = try? URL(
+                resolvingBookmarkData: entry.volumeBookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: nil
+            ) {
+                rootPath = rootURL.path
+            }
 
-        manager.convertedPDFs.removeAll { pdf in
-            guard case .linked(let bm) = pdf.sourceMode else { return false }
-            if let rp = rootPath {
-                // Primary: path prefix match (reliable when drive is connected)
-                if let resolved = try? BookmarkResolver.shared.resolve(bm) {
-                    return resolved.path.hasPrefix(rp)
+            await MainActor.run {
+                manager?.convertedPDFs.removeAll { pdf in
+                    guard case .linked(let bm) = pdf.sourceMode else { return false }
+                    if let rp = rootPath {
+                        if let resolved = try? URL(
+                            resolvingBookmarkData: bm,
+                            options: .withSecurityScope,
+                            relativeTo: nil,
+                            bookmarkDataIsStale: nil
+                        ) {
+                            return resolved.path.hasPrefix(rp)
+                        }
+                        return bm == entry.volumeBookmarkData
+                    } else {
+                        return bm == entry.volumeBookmarkData
+                    }
                 }
-                // Fallback: if individual bookmark is stale/unresolvable, match by drive bookmark equality
-                return bm == entry.volumeBookmarkData
-            } else {
-                // Drive not connected — match by drive bookmark equality
-                return bm == entry.volumeBookmarkData
+                AppSettingsManager.shared.removeLinkedDrive(entry)
+                manager?.saveLibrary()
+                Logger.shared.log("LinkedLibraryScanner: Unlinked drive '\(entry.displayName)'", category: "Drive")
             }
         }
-
-        AppSettingsManager.shared.removeLinkedDrive(entry)
-        manager.saveLibrary()
-        Logger.shared.log("LinkedLibraryScanner: Unlinked drive '\(entry.displayName)'", category: "Drive")
     }
 
     // MARK: - Save File to Drive (Copy, No Delete)
 
-    /// Copy one or more files into a user-chosen folder on the external drive.
-    /// Unlike offloadToExternalDrive, the originals are NEVER deleted.
-    /// Returns the number of files successfully saved.
     func saveFilesToDrive(
         _ pdfs: [ConvertedPDF],
         targetFolderURL: URL,
@@ -273,10 +312,11 @@ final class LinkedLibraryScanner: ObservableObject {
         for (i, pdf) in pdfs.enumerated() {
             progress(Double(i) / Double(total), "Saving \(pdf.name)…")
 
-            // Resolve source URL (linked files need bookmark resolution)
             let sourceURL: URL
             if case .linked(let bm) = pdf.sourceMode,
-               let resolved = try? BookmarkResolver.shared.resolve(bm) {
+               let resolved = try? URL(resolvingBookmarkData: bm, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: nil) {
+                let didAccess = resolved.startAccessingSecurityScopedResource()
+                defer { if didAccess { resolved.stopAccessingSecurityScopedResource() } }
                 sourceURL = resolved
             } else {
                 sourceURL = pdf.url
@@ -287,7 +327,6 @@ final class LinkedLibraryScanner: ObservableObject {
                 continue
             }
 
-            // Build destination URL, deduplicating if a file already exists
             var destURL = targetFolderURL.appendingPathComponent(sourceURL.lastPathComponent)
             if FileManager.default.fileExists(atPath: destURL.path) {
                 let stem = destURL.deletingPathExtension().lastPathComponent
@@ -314,14 +353,11 @@ final class LinkedLibraryScanner: ObservableObject {
 
     // MARK: - Offload to Drive (Local → Drive)
 
-    /// Copy local files to drive, verify, delete originals, flip sourceMode.
     func offloadToExternalDrive(
         files: [ConvertedPDF],
         targetFolderURL: URL,
         progress: @escaping (Double, String) -> Void
     ) async throws {
-        // ⚠️ targetFolderURL is on an external drive — must acquire security-scoped access
-        // before ANY file system operations underneath it.
         let accessing = targetFolderURL.startAccessingSecurityScopedResource()
         defer { if accessing { targetFolderURL.stopAccessingSecurityScopedResource() } }
 
@@ -335,17 +371,14 @@ final class LinkedLibraryScanner: ObservableObject {
             do {
                 try FileManager.default.copyItem(at: pdf.url, to: destURL)
 
-                // Verify copy succeeded
                 guard FileManager.default.fileExists(atPath: destURL.path) else {
                     Logger.shared.log("LinkedLibraryScanner: Copy verification failed for \(pdf.name) — skipping", category: "Drive", type: .warning)
                     continue
                 }
                 copiedPairs.append((pdf.url, destURL, pdf.id))
             } catch {
-                // Clean up any partial copy so we don't orphan data on the drive
                 try? FileManager.default.removeItem(at: destURL)
                 Logger.shared.log("LinkedLibraryScanner: Offload copy failed for \(pdf.name): \(error.localizedDescription) — skipping", category: "Drive", type: .warning)
-                // Continue with remaining files — partial success is better than total abort
             }
         }
 
@@ -355,24 +388,25 @@ final class LinkedLibraryScanner: ObservableObject {
 
         progress(0.95, "Linking drive files...")
 
-        // All copies verified — now delete originals and flip sourceMode
         guard let manager = conversionManager else { return }
 
         for pair in copiedPairs {
-            // Create bookmark for new drive location
-            guard let bookmark = try? pair.driveURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) else {
+            // ✅ FIX #6: Per-file bookmark for offloaded files must also be .withSecurityScope.
+            guard let bookmark = try? pair.driveURL.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ) else {
                 Logger.shared.log("LinkedLibraryScanner: Could not bookmark drive file \(pair.driveURL.lastPathComponent) — keeping local copy", category: "Drive", type: .warning)
-                try? FileManager.default.removeItem(at: pair.driveURL)  // Remove orphaned drive copy
+                try? FileManager.default.removeItem(at: pair.driveURL)
                 continue
             }
 
-            // Update the ConvertedPDF entry in place (ID, metadata, collections preserved)
             if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pair.pdfID }) {
                 manager.convertedPDFs[idx].url = pair.driveURL
                 manager.convertedPDFs[idx].sourceMode = .linked(bookmarkData: bookmark)
             }
 
-            // Delete original local file only after bookmark is secured
             try? FileManager.default.removeItem(at: pair.originalURL)
         }
 
@@ -383,7 +417,6 @@ final class LinkedLibraryScanner: ObservableObject {
 
     // MARK: - Download to Device (Drive → Local)
 
-    /// Reverse offload: copy from drive back to local vault, flip sourceMode to .local.
     func downloadToDevice(
         files: [ConvertedPDF],
         progress: @escaping (Double, String) -> Void
@@ -404,12 +437,9 @@ final class LinkedLibraryScanner: ObservableObject {
             do {
                 try await BookmarkResolver.shared.withAccess(bookmarkData) { driveURL in
                     let destURL = vault.appendingPathComponent(driveURL.lastPathComponent)
-
-                    // Remove existing file if present — prevents NSCocoaError.fileWriteFileExists crash
                     if FileManager.default.fileExists(atPath: destURL.path) {
                         try FileManager.default.removeItem(at: destURL)
                     }
-
                     try FileManager.default.copyItem(at: driveURL, to: destURL)
 
                     await MainActor.run {
@@ -432,18 +462,6 @@ final class LinkedLibraryScanner: ObservableObject {
 
     // MARK: - Private Helpers
 
-    private func scanDirectory(_ url: URL) -> [URL] {
-        guard let enumerator = FileManager.default.enumerator(
-            at: url,
-            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
-
-        return enumerator.compactMap { $0 as? URL }.filter { file in
-            supportedExtensions.contains(file.pathExtension.lowercased())
-        }
-    }
-
     private func registerFiles(
         _ files: [URL],
         driveEntry: AppSettingsManager.LinkedDriveEntry,
@@ -451,58 +469,45 @@ final class LinkedLibraryScanner: ObservableObject {
     ) async {
         guard let manager = conversionManager else { return }
 
-        // Build PDF entries serially (bookmark creation must be on the calling actor context)
-        // but parallelize cover thumbnail extraction with a concurrency cap of 4.
         var newPDFs: [ConvertedPDF] = []
 
         for fileURL in files {
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-                  let fileSize = attrs[.size] as? Int64,
-                  let bookmark = try? fileURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+                  let fileSize = attrs[.size] as? Int64
             else { continue }
 
-            // Skip if already registered (filename + linked status check)
-            if manager.convertedPDFs.contains(where: { $0.url.lastPathComponent == fileURL.lastPathComponent && $0.isLinked }) {
+            // ✅ FIX #7: Per-file bookmarks MUST be .withSecurityScope.
+            // Without this, the URL returned by resolve() cannot call
+            // startAccessingSecurityScopedResource() and every file read fails silently.
+            guard let bookmark = try? fileURL.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ) else {
+                // Cloud providers (Dropbox, Google Drive) may not support per-file scoped
+                // bookmarks. Fall back gracefully with an unscoped bookmark.
+                guard let fallbackBookmark = try? fileURL.bookmarkData(
+                    options: [],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                ) else { continue }
+
+                Logger.shared.log("LinkedLibraryScanner: Fell back to unscoped bookmark for '\(fileURL.lastPathComponent)' — cloud provider detected", category: "Drive", type: .warning)
+                await buildAndAppend(pdf: &newPDFs, fileURL: fileURL, fileSize: fileSize, bookmark: fallbackBookmark, manager: manager)
                 continue
             }
 
-            let stem = fileURL.deletingPathExtension().lastPathComponent
-            var metadata = PDFMetadata(title: stem)
-            if let parsed = ComicInfoParser.parse(from: fileURL) {
-                metadata.title = parsed.title ?? stem
-                metadata.series = parsed.series ?? SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
-                metadata.issueNumber = parsed.number
-                metadata.volume = parsed.volume.map { String($0) }
-                metadata.publisher = parsed.publisher
-                metadata.summary = parsed.summary
-                metadata.writer = parsed.writer
-                metadata.isManga = parsed.manga ? true : nil
-                metadata.tags = parsed.tags
-            } else {
-                metadata.series = SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
-            }
-
-            var pdf = ConvertedPDF(
-                name: stem,
-                url: fileURL,
-                pageCount: 0,
-                fileSize: fileSize,
-                metadata: metadata
-            )
-            pdf.sourceMode = .linked(bookmarkData: bookmark)
-            newPDFs.append(pdf)
+            await buildAndAppend(pdf: &newPDFs, fileURL: fileURL, fileSize: fileSize, bookmark: bookmark, manager: manager)
         }
 
         guard !newPDFs.isEmpty else { return }
 
-        // Parallelize cover thumbnail extraction (capped at 4 concurrent tasks to avoid
-        // thrashing the disk I/O bus on drives with slow random-access speeds).
+        // Parallelize cover thumbnail extraction (capped at 4 concurrent tasks)
         await withTaskGroup(of: (Int, Data?).self) { group in
             var inFlight = 0
             let cap = 4
 
             for (index, pdf) in newPDFs.enumerated() {
-                // Throttle concurrency
                 if inFlight >= cap {
                     if let (idx, data) = await group.next() {
                         if let data { newPDFs[idx].coverImageData = data }
@@ -518,7 +523,6 @@ final class LinkedLibraryScanner: ObservableObject {
                 }
                 inFlight += 1
             }
-            // Drain remaining
             for await (idx, data) in group {
                 if let data { newPDFs[idx].coverImageData = data }
             }
@@ -528,9 +532,45 @@ final class LinkedLibraryScanner: ObservableObject {
         manager.saveLibrary()
     }
 
-    // generateAndCacheCover removed -- it was dead code superseded by
-    // PhysicalFileSystemRouter.extractCoverImageStatic (called inside registerFiles).
+    /// Builds a ConvertedPDF entry and appends it if not already registered.
+    private func buildAndAppend(
+        pdf newPDFs: inout [ConvertedPDF],
+        fileURL: URL,
+        fileSize: Int64,
+        bookmark: Data,
+        manager: ConversionManager
+    ) async {
+        // Skip if already registered (filename + linked status check)
+        if manager.convertedPDFs.contains(where: { $0.url.lastPathComponent == fileURL.lastPathComponent && $0.isLinked }) {
+            return
+        }
 
+        let stem = fileURL.deletingPathExtension().lastPathComponent
+        var metadata = PDFMetadata(title: stem)
+        if let parsed = ComicInfoParser.parse(from: fileURL) {
+            metadata.title = parsed.title ?? stem
+            metadata.series = parsed.series ?? SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
+            metadata.issueNumber = parsed.number
+            metadata.volume = parsed.volume.map { String($0) }
+            metadata.publisher = parsed.publisher
+            metadata.summary = parsed.summary
+            metadata.writer = parsed.writer
+            metadata.isManga = parsed.manga ? true : nil
+            metadata.tags = parsed.tags
+        } else {
+            metadata.series = SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
+        }
+
+        var pdf = ConvertedPDF(
+            name: stem,
+            url: fileURL,
+            pageCount: 0,
+            fileSize: fileSize,
+            metadata: metadata
+        )
+        pdf.sourceMode = .linked(bookmarkData: bookmark)
+        newPDFs.append(pdf)
+    }
 
     @objc private func handleStaleBookmark(_ notification: Notification) {
         guard let staleData = notification.object as? Data,
@@ -541,11 +581,18 @@ final class LinkedLibraryScanner: ObservableObject {
                 let name = manager.convertedPDFs[idx].name
                 Logger.shared.log("LinkedLibraryScanner: Stale bookmark for '\(name)' — attempting refresh", category: "Drive", type: .warning)
 
-                // Attempt to re-create a fresh bookmark from the stale URL.
-                // resolve() returns a URL even when stale — it just flags isStale=true.
-                // We can re-bookmark from that URL to get a fresh, durable bookmark.
-                if let staleURL = try? BookmarkResolver.shared.resolve(staleData),
-                   let freshBookmark = try? staleURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                // Re-resolve the stale bookmark to get a URL, then re-create a .withSecurityScope bookmark.
+                var isStale = false
+                if let staleURL = try? URL(
+                    resolvingBookmarkData: staleData,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ), let freshBookmark = try? staleURL.bookmarkData(
+                    options: .withSecurityScope,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                ) {
                     manager.convertedPDFs[idx].sourceMode = .linked(bookmarkData: freshBookmark)
                     Logger.shared.log("LinkedLibraryScanner: Refreshed bookmark for '\(name)'", category: "Drive")
                 } else {
