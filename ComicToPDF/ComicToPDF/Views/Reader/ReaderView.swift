@@ -101,7 +101,7 @@ struct ReaderView: View {
     
     // ✅ PDF document reference (for share + TOC)
     @State private var loadedPDFDocument: PDFDocument? = nil
-    @State private var pdfViewRef: PDFView? = nil
+    @State private var pdfViewRef: PDFView? = nil  // wired via PDFKitView onViewCreated
 
     // ✅ PDF Search
     @State private var showSearch = false
@@ -193,10 +193,9 @@ struct ReaderView: View {
                                 isDoublePageMode: isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height),
                                 loadedDocument: $loadedPDFDocument,
                                 onSingleTap: {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        isToolbarVisible.toggle()
-                                    }
-                                }
+                                    withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
+                                },
+                                onViewCreated: { ref in pdfViewRef = ref }
                             )
                             .colorMultiply(.white)
                             .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
@@ -930,6 +929,7 @@ struct ReaderView: View {
         } else {
             let newWarmth = max(0.0, min(0.4, swipeStartWarmth - deltaY))
             self.warmthLevel = newWarmth
+            self.userHasManuallyAdjustedWarmth = true  // suppress ambient auto-warmth
             self.hudMessage = "Warmth: \(Int((newWarmth / 0.4) * 100))%"
         }
     }
@@ -1052,6 +1052,7 @@ struct PDFKitView: UIViewRepresentable {
     let isDoublePageMode: Bool
     @Binding var loadedDocument: PDFDocument?
     let onSingleTap: () -> Void
+    var onViewCreated: ((PDFView) -> Void)? = nil  // surfaces the UIKit view reference
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -1093,6 +1094,10 @@ struct PDFKitView: UIViewRepresentable {
                 }
             }
         }
+        // Surface the live PDFView back to the parent (search, share, TOC).
+        // Deferred one runloop to avoid mutating state during SwiftUI layout.
+        let cb = onViewCreated
+        DispatchQueue.main.async { cb?(pdfView) }
         return pdfView
     }
 

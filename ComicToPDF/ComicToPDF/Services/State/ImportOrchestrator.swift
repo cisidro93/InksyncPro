@@ -547,7 +547,6 @@ actor ImportOrchestrator {
                         
                     // O(1) dedup — Set built per-folder, updated per file
                     if existingPaths.contains(fileName) || syncedFileNames.contains(fileName) { continue }
-                        
                         do {
                             await MainActor.run { manager.processingStatus = "Syncing \(fileName)..." }
                             if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
