@@ -39,7 +39,11 @@ struct PPLReaderView: View {
                     // We utilize the preexisting asynchronous buffer predictions (`nextImage`)
                     // instead of synthesizing a merged bitmap, saving 40-70MB of RAM per swap.
                     HStack(spacing: 0) {
-                        if effectiveDoublePage && geo.size.width > geo.size.height {
+                        let isSpread = bufferManager.currentImage != nil && CGFloat(bufferManager.currentImage!.width) > CGFloat(bufferManager.currentImage!.height) * 1.2
+                        let nextIsSpread = bufferManager.nextImage != nil && CGFloat(bufferManager.nextImage!.width) > CGFloat(bufferManager.nextImage!.height) * 1.2
+                        let shouldShowDual = effectiveDoublePage && geo.size.width > geo.size.height && !isSpread && !nextIsSpread && currentPageIndex != 0
+
+                        if shouldShowDual {
                             if isMangaMode {
                                 // RTL (Manga) -> Next Page is on the Left
                                 if let next = bufferManager.nextImage {
@@ -243,6 +247,7 @@ struct PPLReaderView: View {
     private func nextPage(geo: CGSize) {
         let isPortrait = geo.height > geo.width
         let isSpread = bufferManager.currentImage != nil && CGFloat(bufferManager.currentImage!.width) > CGFloat(bufferManager.currentImage!.height) * 1.2
+        let nextIsSpread = bufferManager.nextImage != nil && CGFloat(bufferManager.nextImage!.width) > CGFloat(bufferManager.nextImage!.height) * 1.2
         
         if isPortrait && isSpread && autoSplitPortraitSpreads {
             if splitHalf == 0 {
@@ -253,7 +258,9 @@ struct PPLReaderView: View {
             }
         }
         
-        let hopCount = (effectiveDoublePage && geo.width > geo.height) ? 2 : 1
+        let shouldShowDual = effectiveDoublePage && geo.width > geo.height && !isSpread && !nextIsSpread && currentPageIndex != 0
+        let hopCount = shouldShowDual ? 2 : 1
+
         if currentPageIndex + hopCount < pages.count + (hopCount - 1) {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex += hopCount
@@ -263,6 +270,8 @@ struct PPLReaderView: View {
     private func prevPage(geo: CGSize) {
         let isPortrait = geo.height > geo.width
         let isSpread = bufferManager.currentImage != nil && CGFloat(bufferManager.currentImage!.width) > CGFloat(bufferManager.currentImage!.height) * 1.2
+        let nextIsSpread = bufferManager.nextImage != nil && CGFloat(bufferManager.nextImage!.width) > CGFloat(bufferManager.nextImage!.height) * 1.2
+        let prevIsSpread = bufferManager.prevImage != nil && CGFloat(bufferManager.prevImage!.width) > CGFloat(bufferManager.prevImage!.height) * 1.2
         
         if isPortrait && isSpread && autoSplitPortraitSpreads {
             if splitHalf == 1 {
@@ -273,7 +282,17 @@ struct PPLReaderView: View {
             }
         }
         
-        let hopCount = (effectiveDoublePage && geo.width > geo.height) ? 2 : 1
+        let shouldShowDual = effectiveDoublePage && geo.width > geo.height && !isSpread && !nextIsSpread && currentPageIndex != 0
+
+        let hopCount: Int
+        if prevIsSpread {
+            hopCount = 1
+        } else if !shouldShowDual {
+            hopCount = 1
+        } else {
+            hopCount = 2
+        }
+
         if currentPageIndex > 0 {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = max(0, currentPageIndex - hopCount)

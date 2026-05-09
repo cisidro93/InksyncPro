@@ -155,7 +155,7 @@ struct ReaderView: View {
                         // ✅ ZERO-LATENCY METAL PPL READER
                         if fileURL.pathExtension.lowercased() != "pdf" {
                             if !pages.isEmpty {
-                                let effectiveDoublePage = isDoublePageMode || (autoLandscapeDualPage && deviceOrientation.isLandscape)
+                                let effectiveDoublePage = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
                                 PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, pdfID: pdf?.id, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage) {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         isToolbarVisible.toggle()
@@ -170,7 +170,7 @@ struct ReaderView: View {
                                 totalPages: $pages,
                                 isVerticalScroll: isVerticalScroll,
                                 isMangaMode: isMangaMode,
-                                isDoublePageMode: isDoublePageMode,
+                                isDoublePageMode: isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height),
                                 loadedDocument: $loadedPDFDocument,
                                 onSingleTap: {
                                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -966,6 +966,7 @@ struct PDFKitView: UIViewRepresentable {
     func updateUIView(_ pdfView: PDFView, context: Context) {
         pdfView.displayDirection = isVerticalScroll ? .vertical : .horizontal
         pdfView.displayMode = isDoublePageMode ? .twoUpContinuous : .singlePage
+        pdfView.displaysAsBook = isDoublePageMode
         pdfView.displaysRTL = isMangaMode
         
         if let doc = pdfView.document,
