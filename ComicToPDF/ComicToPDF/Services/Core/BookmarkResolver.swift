@@ -4,16 +4,18 @@ import Foundation
 // BookmarkResolver
 // ============================================================================
 // The single, centralized actor for ALL security-scoped bookmark resolution.
-// Every component that needs to open a linked file goes through here.
 //
-// Key improvements learned from Infuse / Apple WWDC patterns:
-//  - All reads/writes through external-drive URLs are wrapped in NSFileCoordinator.
-//    Without coordination, concurrent access from Spotlight, the Files app, or a
-//    background sync daemon can silently corrupt reads (truncated data, partial writes).
-//  - Bookmark creation always uses .withSecurityScope so the resolved URL remains
-//    valid across app restarts without re-prompting the user.
-//  - The .withoutUI option on resolution prevents iOS from displaying its own dialog
-//    boxes, which would block the caller in unexpected places.
+// iOS vs macOS Bookmark API:
+//  - .withSecurityScope is macOS-ONLY and unavailable on iOS.
+//  - On iOS, bookmark creation uses options: [] (no special flag needed).
+//  - Resolution uses options: .withoutUI (prevents system dialogs blocking callers).
+//  - startAccessingSecurityScopedResource() is still required on resolved URLs
+//    to activate the security grant that the document picker established.
+//
+// NSFileCoordinator (learned from WWDC + Infuse patterns):
+//  - Wrapping reads in NSFileCoordinator prevents silent data corruption when
+//    Spotlight, the Files app, or a cloud sync daemon accesses the same file
+//    concurrently on an external drive.
 // ============================================================================
 
 enum BookmarkError: Error, LocalizedError {
@@ -44,14 +46,18 @@ actor BookmarkResolver {
     // MARK: - Public API
 
     /// Resolve a bookmark to a live URL.
-    /// Uses .withSecurityScope so the resolved URL is usable AFTER the picker session ends.
-    /// Emits .bookmarkBecameStale notification when iOS reports the bookmark as stale.
+    ///
+    /// iOS bookmark resolution uses .withoutUI (NOT .withSecurityScope — that flag
+    /// is macOS-only). The caller must still call startAccessingSecurityScopedResource()
+    /// on the returned URL to activate the document-picker security grant.
     nonisolated func resolve(_ bookmarkData: Data) throws -> URL {
         var isStale = false
         do {
+            // ✅ iOS CORRECT: options: .withoutUI — prevents system UI dialogs.
+            // Do NOT use .withSecurityScope — that is macOS App Sandbox only.
             let url = try URL(
                 resolvingBookmarkData: bookmarkData,
-                options: .withSecurityScope,
+                options: .withoutUI,
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
@@ -62,20 +68,6 @@ actor BookmarkResolver {
             }
             return url
         } catch {
-            // Fallback: try without security scope (cloud providers that manage their own tokens)
-            if let fallbackURL = try? URL(
-                resolvingBookmarkData: bookmarkData,
-                options: .withoutUI,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            ) {
-                if isStale {
-                    Task { @MainActor in
-                        NotificationCenter.default.post(name: .bookmarkBecameStale, object: bookmarkData)
-                    }
-                }
-                return fallbackURL
-            }
             throw BookmarkError.resolutionFailed(underlying: error)
         }
     }
@@ -88,15 +80,13 @@ actor BookmarkResolver {
         return pdf.url
     }
 
-    // MARK: - Coordinated Access (the Infuse/WWDC-recommended pattern)
+    // MARK: - Coordinated Access
 
     /// Open a linked file, acquire security scope, wrap the operation in NSFileCoordinator,
-    /// then release access. This is the ONLY safe way to read from external drives.
+    /// then release access. This is the safest way to read from external drives on iOS.
     ///
     /// NSFileCoordinator prevents data corruption when Spotlight, the Files app, or any
     /// other process is simultaneously accessing the same external drive file.
-    ///
-    /// The timeout watchdog cancels the operation if the drive stalls past the deadline.
     func withAccess<T: Sendable>(
         _ bookmarkData: Data,
         timeout: Duration = .seconds(600),
@@ -108,8 +98,6 @@ actor BookmarkResolver {
             if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
         }
 
-        // NSFileCoordinator: wrap the entire operation so the system can safely
-        // coordinate concurrent access from other processes (Spotlight, Files app).
         var coordinationError: NSError?
         var coordinatedURL: URL = resolvedURL
 
@@ -140,9 +128,7 @@ actor BookmarkResolver {
         }
     }
 
-    /// Coordinated write access — use this for any mutation on external drive files.
-    /// Without coordination, a write from Inksync can collide with a Files app sync,
-    /// producing a corrupted file on the drive.
+    /// Coordinated write access — use for any mutation on external drive files.
     func withWriteAccess<T: Sendable>(
         _ bookmarkData: Data,
         timeout: Duration = .seconds(600),
@@ -193,16 +179,13 @@ actor BookmarkResolver {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-        // Use NSFileCoordinator to bypass the kernel's inode metadata cache.
-        // Without coordination, fileExists() can return true for a disconnected
-        // drive because the metadata is cached in the kernel's VFS layer.
+        // Use NSFileCoordinator with .immediatelyAvailableMetadataOnly to bypass
+        // the kernel's stale inode cache. fileExists() can return true for a
+        // physically disconnected drive whose metadata is still cached in VFS.
         var coordError: NSError?
         var isReachable = false
         let coordinator = NSFileCoordinator()
         coordinator.coordinate(readingItemAt: url, options: .immediatelyAvailableMetadataOnly, error: &coordError) { safeURL in
-            // .immediatelyAvailableMetadataOnly tells the coordinator not to wait
-            // for a network drive to spin up — if the metadata isn't immediately
-            // available, it won't block. For USB drives, this resolves instantly.
             var resourceValues: URLResourceValues?
             var attemptError: Error?
             do {
