@@ -217,24 +217,25 @@ struct ReaderView: View {
                     }
                 }
                 
-                // Apply color filter overlay
-                colorFilterOverlay
-                    .animation(.easeInOut(duration: 1.0), value: warmthLevel)
-
-                // Ambient warmth overlay (time-of-day) — only if user hasn't manually adjusted
-                if !userHasManuallyAdjustedWarmth && ambientBrightness.recommendedWarmth > 0 {
-                    Rectangle()
-                        .fill(Color.orange.opacity(ambientBrightness.recommendedWarmth * 0.6))
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
-                        .animation(.easeInOut(duration: 1.5), value: ambientBrightness.recommendedWarmth)
+                // Apply overlays in a Group so modifiers chain cleanly
+                Group {
+                    colorFilterOverlay
+                    // Ambient warmth overlay (time-of-day) — only if user hasn't manually adjusted
+                    if !userHasManuallyAdjustedWarmth && ambientBrightness.recommendedWarmth > 0 {
+                        Rectangle()
+                            .fill(Color.orange.opacity(ambientBrightness.recommendedWarmth * 0.6))
+                            .ignoresSafeArea()
+                            .allowsHitTesting(false)
+                    }
                 }
-                
+                .animation(.easeInOut(duration: 1.0), value: warmthLevel)
+                .animation(.easeInOut(duration: 1.5), value: ambientBrightness.recommendedWarmth)
+
                 // Hardware Button Binding (dual-page aware)
                 VolumeHook(onUp: {
-                    isMangaMode ? nextPage() : prevPage()
+                    if isMangaMode { nextPage() } else { prevPage() }
                 }, onDown: {
-                    isMangaMode ? prevPage() : nextPage()
+                    if isMangaMode { prevPage() } else { nextPage() }
                 })
                 .frame(width: 0, height: 0)
                 
@@ -278,11 +279,11 @@ struct ReaderView: View {
             .focusable()
             .focusEffectDisabled()
             .onKeyPress(.leftArrow) {
-                isMangaMode ? nextPage() : prevPage()
+                if isMangaMode { nextPage() } else { prevPage() }
                 return .handled
             }
             .onKeyPress(.rightArrow) {
-                isMangaMode ? prevPage() : nextPage()
+                if isMangaMode { prevPage() } else { nextPage() }
                 return .handled
             }
             .onKeyPress(.space) {

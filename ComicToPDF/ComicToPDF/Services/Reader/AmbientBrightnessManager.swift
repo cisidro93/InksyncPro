@@ -20,11 +20,24 @@ final class AmbientBrightnessManager: ObservableObject {
     @Published private(set) var recommendedWarmth: Double = 0.0
     @Published private(set) var isNightMode: Bool = false
 
-    // MARK: - Settings (persisted)
-    @AppStorage("reader_autoNightMode")       var autoNightMode: Bool   = true
-    @AppStorage("reader_nightModeStartHour")  var nightStartHour: Double = 20.0  // 8 PM
-    @AppStorage("reader_nightModeEndHour")    var nightEndHour: Double   = 7.0   // 7 AM
-    @AppStorage("reader_nightModeWarmth")     var nightWarmth: Double    = 0.22
+    // MARK: - Settings (persisted via UserDefaults)
+    // Note: @AppStorage is a View-only property wrapper; use UserDefaults directly in ObservableObject classes.
+    var autoNightMode: Bool {
+        get { UserDefaults.standard.object(forKey: "reader_autoNightMode") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "reader_autoNightMode") }
+    }
+    var nightStartHour: Double {
+        get { UserDefaults.standard.object(forKey: "reader_nightModeStartHour") as? Double ?? 20.0 }
+        set { UserDefaults.standard.set(newValue, forKey: "reader_nightModeStartHour") }
+    }
+    var nightEndHour: Double {
+        get { UserDefaults.standard.object(forKey: "reader_nightModeEndHour") as? Double ?? 7.0 }
+        set { UserDefaults.standard.set(newValue, forKey: "reader_nightModeEndHour") }
+    }
+    var nightWarmth: Double {
+        get { UserDefaults.standard.object(forKey: "reader_nightModeWarmth") as? Double ?? 0.22 }
+        set { UserDefaults.standard.set(newValue, forKey: "reader_nightModeWarmth") }
+    }
 
     // MARK: - Private
     private var timer: Timer?

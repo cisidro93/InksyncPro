@@ -375,13 +375,21 @@ struct PPLReaderView: View {
         let zones = tapZoneStyle.zones
 
         if isGuidedReadingActive {
-            if      location.x < w * zones.leftEdge  { isMangaMode ? nextGuidedPanel(geo: geo.size) : prevGuidedPanel(geo: geo.size) }
-            else if location.x > w * zones.rightEdge { isMangaMode ? prevGuidedPanel(geo: geo.size) : nextGuidedPanel(geo: geo.size) }
-            else                                      { onCenterTap() }
+            if location.x < w * zones.leftEdge {
+                if isMangaMode { nextGuidedPanel(geo: geo.size) } else { prevGuidedPanel(geo: geo.size) }
+            } else if location.x > w * zones.rightEdge {
+                if isMangaMode { prevGuidedPanel(geo: geo.size) } else { nextGuidedPanel(geo: geo.size) }
+            } else {
+                onCenterTap()
+            }
         } else {
-            if      location.x < w * zones.leftEdge  { isMangaMode ? nextPage(geo: geo.size, showingDual: showingDual) : prevPage(geo: geo.size, showingDual: showingDual) }
-            else if location.x > w * zones.rightEdge { isMangaMode ? prevPage(geo: geo.size, showingDual: showingDual) : nextPage(geo: geo.size, showingDual: showingDual) }
-            else                                      { onCenterTap() }
+            if location.x < w * zones.leftEdge {
+                if isMangaMode { nextPage(geo: geo.size, showingDual: showingDual) } else { prevPage(geo: geo.size, showingDual: showingDual) }
+            } else if location.x > w * zones.rightEdge {
+                if isMangaMode { prevPage(geo: geo.size, showingDual: showingDual) } else { nextPage(geo: geo.size, showingDual: showingDual) }
+            } else {
+                onCenterTap()
+            }
         }
     }
 

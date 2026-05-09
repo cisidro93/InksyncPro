@@ -160,29 +160,25 @@ struct ReaderSearchView: View {
     private func scrollToCurrentResult() {
         guard currentResultIndex < results.count else { return }
         let sel = results[currentResultIndex]
-        // Highlight all matches, scroll to current
+        // Reset all match colours, then highlight current
         document.findString(query, withOptions: [.caseInsensitive]).forEach {
             $0.color = .systemYellow.withAlphaComponent(0.4)
         }
         sel.color = .systemOrange
         pdfView.setCurrentSelection(sel, animate: true)
-        pdfView.scrollSelectionToVisible(self)
+        pdfView.scrollSelectionToVisible(nil)
     }
 
     // MARK: - Snippet Extraction
 
     private func snippet(for selection: PDFSelection) -> String {
         guard let str = selection.string else { return "" }
-        // Try to get surrounding context from the page
         if let page = selection.pages.first,
-           let full = page.string {
-            let ns = full as NSString
-            if let range = full.range(of: str, options: [.caseInsensitive, .diacriticInsensitive]) {
-                let lower = full.index(range.lowerBound, offsetBy: -30, limitedBy: full.startIndex) ?? full.startIndex
-                let upper = full.index(range.upperBound, offsetBy:  60, limitedBy: full.endIndex)   ?? full.endIndex
-                _ = ns // suppress warning
-                return "…\(String(full[lower..<upper]))…"
-            }
+           let full = page.string,
+           let range = full.range(of: str, options: [.caseInsensitive, .diacriticInsensitive]) {
+            let lower = full.index(range.lowerBound, offsetBy: -30, limitedBy: full.startIndex) ?? full.startIndex
+            let upper = full.index(range.upperBound, offsetBy:  60, limitedBy: full.endIndex)   ?? full.endIndex
+            return "…\(String(full[lower..<upper]))…"
         }
         return str
     }

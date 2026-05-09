@@ -213,9 +213,9 @@ struct WebtoonScrollView: UIViewRepresentable {
             guard let sv = scrollView else { return }
             let x = gr.location(in: sv).x
             let w = sv.bounds.width
-            let (left, right) = parentView.parentView.tapZoneStyle.zones
-            if x < w * left || x > w * right {
-                // Edge tap: these are scrolling-mode page hints — do nothing special
+            let zones = parentView.tapZoneStyle.zones
+            if x < w * zones.leftEdge || x > w * zones.rightEdge {
+                // Edge tap in webtoon: no page navigation (scroll handles position)
             } else {
                 parentView.onCenterTap()
             }
@@ -225,9 +225,6 @@ struct WebtoonScrollView: UIViewRepresentable {
             _ gr: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
         ) -> Bool { true }
-
-        // Hold a back-reference for zone style
-        var parentView2: WebtoonScrollView { parentView }
     }
 
     // Expose tap zone to coordinator
