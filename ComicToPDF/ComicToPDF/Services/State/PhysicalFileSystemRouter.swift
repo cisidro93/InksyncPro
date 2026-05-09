@@ -140,7 +140,12 @@ class PhysicalFileSystemRouter {
         if let coverURL = getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) { return }
         
         let url: URL
+        var needsStopAccess = false
         if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+            // ✅ FIX: Start security-scoped access BEFORE launching the background task.
+            // The detached task captures `url` and reads the file — the scope must remain
+            // live for the full duration of the background work, not just URL resolution.
+            needsStopAccess = resolved.startAccessingSecurityScopedResource()
             url = resolved
         } else {
             url = pdf.url
@@ -149,6 +154,9 @@ class PhysicalFileSystemRouter {
         let image = await Task.detached(priority: .background) { () -> UIImage? in
             return PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
         }.value
+        
+        // Release scope after background work completes.
+        if needsStopAccess { url.stopAccessingSecurityScopedResource() }
         
         guard let image = image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
         saveCoverImage(jpegData, for: pdf, manager: manager)

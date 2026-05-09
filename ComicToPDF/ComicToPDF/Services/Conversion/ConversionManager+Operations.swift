@@ -157,11 +157,16 @@ extension ConversionManager {
         
         // ✅ Linked Library: resolve any linked source files before merging
         var sourceURLs: [URL] = []
+        // ✅ FIX: Collect (url, accessingToken) pairs so the access scope stays live
+        // for the ENTIRE duration of the detached merge task, not just URL resolution.
+        // Immediately releasing after resolve() is wrong — the detached task needs the
+        // scope open while Archive(url:) reads from the external drive.
+        var accessingTokens: [(URL, Bool)] = []
         for pdf in pdfs {
             if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
                 let accessing = resolved.startAccessingSecurityScopedResource()
+                accessingTokens.append((resolved, accessing))
                 sourceURLs.append(resolved)
-                if accessing { resolved.stopAccessingSecurityScopedResource() }  // We'll re-acquire inside mergeEPUBs
             } else {
                 sourceURLs.append(pdf.url)
             }
@@ -173,6 +178,10 @@ extension ConversionManager {
             var mergeSettings = ConversionSettings()
             mergeSettings.mangaMode = mangaMode
             try await Task.detached { try await merger.mergeEPUBs(sourceURLs: sourceURLs, outputURL: outputURL, settings: mergeSettings) }.value
+            // ✅ FIX: Release all security-scoped access tokens after the merge is fully complete.
+            for (url, wasAccessing) in accessingTokens where wasAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
             let fileSize = (try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
             
             let totalPages = pdfs.reduce(0) { $0 + $1.pageCount }
@@ -180,16 +189,19 @@ extension ConversionManager {
             let newPDF = ConvertedPDF(name: outputURL.lastPathComponent, url: outputURL, pageCount: totalPages, fileSize: fileSize, metadata: PDFMetadata(title: safeName))
             await MainActor.run { self.convertedPDFs.append(newPDF) }
             if let cover = inheritedCover {
-                // ✅ PERF: Key by UUID, not URL path; send is needed here to trigger cover display
                 thumbnailCache.setObject(cover, forKey: newPDF.id.uuidString as NSString)
                 objectWillChange.send()
             } else { Task { await self.generateCoverThumbnail(for: newPDF) } }
             isConverting = false; statusMessage = "✅ Merge Complete!"; scanLibrary()
             Logger.shared.log("Merge Successful: \(outputName)", category: "Converter")
             try? await Task.sleep(nanoseconds: 3 * 1_000_000_000); self.statusMessage = nil
-        } catch { 
+        } catch {
+            // Release tokens on failure path too
+            for (url, wasAccessing) in accessingTokens where wasAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
             Logger.shared.log("Merge Failed: \(error)", category: "Converter", type: .error)
-            isConverting = false; statusMessage = "Merge Error: \(error.localizedDescription)" 
+            isConverting = false; statusMessage = "Merge Error: \(error.localizedDescription)"
         }
     }
     

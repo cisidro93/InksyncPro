@@ -26,15 +26,27 @@ class ArchiveMutatorService {
     
     // MARK: - Page Deletion
     func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>, manager: ConversionManager) async throws {
-        try await assertWritable(pdf)  // \u2705 Linked Library write guard
+        try await assertWritable(pdf)
         guard !pageIndices.isEmpty else { return }
         await MainActor.run { TaskEngine.shared.processingStatus = "Deleting \(pageIndices.count) pages..." }
-        
-        let result = try await EditorSessionManager.shared.extractImageFiles(from: pdf.url)
+
+        // ✅ FIX: Resolve security-scoped URL for linked drive files before any I/O.
+        // pdf.url is the raw registration path — it needs an active scope token to read.
+        let resolvedURL: URL
+        var needsStopAccess = false
+        if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+            needsStopAccess = resolved.startAccessingSecurityScopedResource()
+            resolvedURL = resolved
+        } else {
+            resolvedURL = pdf.url
+        }
+
+        let result = try await EditorSessionManager.shared.extractImageFiles(from: resolvedURL)
         let tempDir = result.workingDir
         let imageFiles = result.files
-        
-        defer { 
+
+        defer {
+            if needsStopAccess { resolvedURL.stopAccessingSecurityScopedResource() }
             try? FileManager.default.removeItem(at: tempDir)
             Task { @MainActor in TaskEngine.shared.processingStatus = "" }
         }
@@ -76,9 +88,20 @@ class ArchiveMutatorService {
     
     // MARK: - Page Reordering
     func reorderPages(_ pdf: ConvertedPDF, newOrder: [Int], manager: ConversionManager) async throws -> URL {
-        try await assertWritable(pdf)  // ✅ Linked Library write guard
+        try await assertWritable(pdf)
         let fileManager = FileManager.default
-        let url = pdf.url
+
+        // ✅ FIX: Resolve security-scoped URL for linked drive files.
+        let url: URL
+        var needsStopAccess = false
+        if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+            needsStopAccess = resolved.startAccessingSecurityScopedResource()
+            url = resolved
+        } else {
+            url = pdf.url
+        }
+        defer { if needsStopAccess { url.stopAccessingSecurityScopedResource() } }
+
         let tempID = UUID().uuidString
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(tempID)
         let tempArchiveURL = fileManager.temporaryDirectory.appendingPathComponent("\(tempID).cbz")
@@ -141,14 +164,24 @@ class ArchiveMutatorService {
     
     // MARK: - Trimming Pages
     func trimPages(from pdf: ConvertedPDF, pageIndices: Set<Int>, trim: (top: Double, bottom: Double, left: Double, right: Double), manager: ConversionManager) async throws {
-        try await assertWritable(pdf)  // ✅ Linked Library write guard
+        try await assertWritable(pdf)
         let ext = pdf.url.pathExtension.lowercased()
         guard ["cbz", "zip", "epub"].contains(ext) else {
             throw NSError(domain: "TrimError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Trimming is only supported for CBZ, ZIP, or EPUB files."])
         }
-        
-        let sourceURL = pdf.url
-        
+
+        // ✅ FIX: Resolve security-scoped URL for linked drive files.
+        // Must hold the scope open for the ENTIRE detached task, not just URL resolution.
+        let sourceURL: URL
+        var needsStopAccess = false
+        if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+            needsStopAccess = resolved.startAccessingSecurityScopedResource()
+            sourceURL = resolved
+        } else {
+            sourceURL = pdf.url
+        }
+        defer { if needsStopAccess { sourceURL.stopAccessingSecurityScopedResource() } }
+
         try await Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
             let tempID = UUID().uuidString
