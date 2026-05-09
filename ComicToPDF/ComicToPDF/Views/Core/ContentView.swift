@@ -147,6 +147,11 @@ struct ContentView: View {
         } message: {
             Text("\(globalErrorMessage)\n\nA trace has been recorded. Navigate to Settings ➔ Logs and filter by '\(globalErrorCategory)' to export the failure context to Support.")
         }
+        // ✅ Memory Pressure: purge reader image cache to prevent Jetsam kills
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            Task { await ReaderImageFilterEngine.shared.purgeCache() }
+            Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache.", category: "Memory", type: .warning)
+        }
         // ✅ Hardware Shortcuts
         .modifier(iPadKeyboardShortcuts(
             selectedTab: $selectedTab,

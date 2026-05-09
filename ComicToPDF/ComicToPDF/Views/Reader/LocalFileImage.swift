@@ -35,31 +35,34 @@ struct LocalFileImage: View {
             }
         }
         .task(id: url) {
+            // Reset stale error state from a previous URL so the spinner shows on navigation.
+            isFailed = false
             await loadImage()
         }
         .onDisappear {
-            // Aggressively dump the bitmap from memory when the view scrolls off-screen
+            // Aggressively dump the bitmap from memory when the view scrolls off-screen.
+            // The .task modifier will automatically cancel the in-flight load when the
+            // view disappears, preventing a stale image from landing after nil.
             loadedImage = nil
         }
     }
     
     @MainActor
     private func loadImage() async {
-        // Offload IO blocking to background thread
         let localURL = url
         let decoded = await Task.detached(priority: .userInitiated) { () -> UIImage? in
             guard let data = try? Data(contentsOf: localURL, options: .mappedIfSafe),
                   let image = UIImage(data: data) else {
-                // Fallback to absolute path
                 return UIImage(contentsOfFile: localURL.path)
             }
-            
-            // Force synchronous decompression off the main thread to prevent frame dropping
+            // Force synchronous decompression off the main thread to prevent frame dropping.
             _ = image.cgImage
             return image
         }.value
-        
-        // ✅ Apply Advanced Display Filters & Smart Crop Bounds securely on background thread Actor
+
+        // Guard: if the .task was cancelled (view disappeared), don't apply the stale image.
+        guard !Task.isCancelled else { return }
+
         if let rawDecoded = decoded {
             let prefs = EBookPreferences.shared
             let processed = await ReaderImageFilterEngine.shared.process(
@@ -70,6 +73,8 @@ struct LocalFileImage: View {
                 saturation: prefs.saturationLevel,
                 warmth: prefs.warmthLevel
             )
+            // Second cancellation check after the async filter pass.
+            guard !Task.isCancelled else { return }
             self.loadedImage = processed
         } else {
             self.isFailed = true

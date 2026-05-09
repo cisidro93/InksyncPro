@@ -489,7 +489,8 @@ struct LibraryGridView: View {
         Button { onAction(.covers, pdf) } label: { Label("Edit Workspace (Covers)", systemImage: "paintbrush.pointed") }
         Button { onAction(.favorite, pdf) } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star") }
         Button { onAction(.export, pdf) } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
-        Button { onAction(.share, pdf) } label: { Label("Send to Kindle / Share", systemImage: "paperplane") }
+        Button { onAction(.sendToKindle, pdf) } label: { Label("Send to Kindle", systemImage: "k.circle.fill") }
+        Button { onAction(.share, pdf) } label: { Label("Share File", systemImage: "square.and.arrow.up") }
         Button { onAction(.sync, pdf) } label: { Label("Direct Cloud Sync", systemImage: "icloud.and.arrow.up") }
 
         // Show "Save to Drive" only when there is at least one linked drive configured

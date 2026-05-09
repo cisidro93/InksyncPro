@@ -290,8 +290,12 @@ struct LibraryListView: View {
         } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
         
         Button {
+            onAction(.sendToKindle, pdf)
+        } label: { Label("Send to Kindle", systemImage: "k.circle.fill") }
+        
+        Button {
             onAction(.share, pdf)
-        } label: { Label("Send to Kindle / Share", systemImage: "paperplane") }
+        } label: { Label("Share File", systemImage: "square.and.arrow.up") }
         
         Button {
             onAction(.sync, pdf)
