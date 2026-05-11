@@ -18,18 +18,38 @@ extension ConversionManager {
             // This handles both local files and linked drive files transparently.
             var resolvedURLs: [URL] = []
             var accessingTokens: [(URL, Bool)] = []  // Track which URLs we opened so we can close them all
+            var tempCloudURLs: [URL] = []             // Track cloud temp files for cleanup after merge
             defer {
                 for (url, wasAccessing) in accessingTokens where wasAccessing {
                     url.stopAccessingSecurityScopedResource()
                 }
+                // Clean up any cloud-downloaded temp files
+                tempCloudURLs.forEach { try? FileManager.default.removeItem(at: $0) }
             }
             for (url, mode, _) in pdfPairs {
-                if case .linked(let bm) = mode,
-                   let resolved = try? BookmarkResolver.shared.resolve(bm) {
-                    let accessing = resolved.startAccessingSecurityScopedResource()
-                    accessingTokens.append((resolved, accessing))
-                    resolvedURLs.append(resolved)
-                } else {
+                switch mode {
+                case .linked(let bm):
+                    if let resolved = try? BookmarkResolver.shared.resolve(bm) {
+                        let accessing = resolved.startAccessingSecurityScopedResource()
+                        accessingTokens.append((resolved, accessing))
+                        resolvedURLs.append(resolved)
+                    } else {
+                        resolvedURLs.append(url) // fallback
+                    }
+                case .cloud:
+                    // Download cloud file to a temp location for the duration of the merge.
+                    // Matched by URL since pdfPairs only carries (url, mode, cover).
+                    if let matchedPDF = await MainActor.run(body: { sourceFiles.first(where: { $0.url == url }) }) {
+                        do {
+                            let localURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: matchedPDF)
+                            tempCloudURLs.append(localURL)
+                            resolvedURLs.append(localURL)
+                        } catch {
+                            Logger.shared.log("enqueueOmnibus: Cloud download failed for '\(matchedPDF.name)': \(error.localizedDescription)", category: "Cloud", type: .error)
+                            // Skip this file rather than crashing the whole omnibus
+                        }
+                    }
+                default:
                     resolvedURLs.append(url)
                 }
             }
@@ -159,15 +179,29 @@ extension ConversionManager {
         var sourceURLs: [URL] = []
         // ✅ FIX: Collect (url, accessingToken) pairs so the access scope stays live
         // for the ENTIRE duration of the detached merge task, not just URL resolution.
-        // Immediately releasing after resolve() is wrong — the detached task needs the
-        // scope open while Archive(url:) reads from the external drive.
         var accessingTokens: [(URL, Bool)] = []
+        var tempCloudURLs: [URL] = []  // Cloud temp files — cleaned up after merge
         for pdf in pdfs {
-            if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
-                let accessing = resolved.startAccessingSecurityScopedResource()
-                accessingTokens.append((resolved, accessing))
-                sourceURLs.append(resolved)
-            } else {
+            switch pdf.sourceMode {
+            case .linked(let bm):
+                if let resolved = try? BookmarkResolver.shared.resolve(bm) {
+                    let accessing = resolved.startAccessingSecurityScopedResource()
+                    accessingTokens.append((resolved, accessing))
+                    sourceURLs.append(resolved)
+                } else {
+                    sourceURLs.append(pdf.url) // fallback
+                }
+            case .cloud:
+                // Download cloud file to temp for merge. Cleaned up in defer below.
+                do {
+                    let localURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
+                    tempCloudURLs.append(localURL)
+                    sourceURLs.append(localURL)
+                } catch {
+                    Logger.shared.log("mergePDFs: Cloud download failed for '\(pdf.name)': \(error.localizedDescription)", category: "Cloud", type: .error)
+                    // Skip rather than aborting the whole merge
+                }
+            default:
                 sourceURLs.append(pdf.url)
             }
         }
@@ -182,6 +216,8 @@ extension ConversionManager {
             for (url, wasAccessing) in accessingTokens where wasAccessing {
                 url.stopAccessingSecurityScopedResource()
             }
+            // ✅ Clean up any cloud temp files after merge succeeds
+            tempCloudURLs.forEach { try? FileManager.default.removeItem(at: $0) }
             let fileSize = (try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
             
             let totalPages = pdfs.reduce(0) { $0 + $1.pageCount }
@@ -200,6 +236,8 @@ extension ConversionManager {
             for (url, wasAccessing) in accessingTokens where wasAccessing {
                 url.stopAccessingSecurityScopedResource()
             }
+            // Clean up cloud temps on failure path too
+            tempCloudURLs.forEach { try? FileManager.default.removeItem(at: $0) }
             Logger.shared.log("Merge Failed: \(error)", category: "Converter", type: .error)
             isConverting = false; statusMessage = "Merge Error: \(error.localizedDescription)"
         }

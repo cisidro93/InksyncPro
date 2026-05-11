@@ -130,6 +130,40 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         Logger.shared.log("CloudDownloadManager: Cache evicted for \(remoteID.prefix(8))…", category: "Cloud")
     }
 
+    // MARK: - Universal URL Resolver
+
+    /// Returns a guaranteed-local URL for any ConvertedPDF, regardless of source.
+    ///
+    /// - For `.local` files      → returns `pdf.url` directly (zero overhead)
+    /// - For `.linked` files     → resolves the security-scoped bookmark (zero network)
+    /// - For `.cloud` files      → downloads to a temp file via `streamCloudFile`
+    ///
+    /// The `needsCleanup` flag tells the caller whether to delete the URL after use.
+    /// **Cloud callers MUST delete the temp file when done to preserve storage.**
+    ///
+    /// This is the standard entry point for Convert / Export / Merge operations.
+    /// The traditional local import path is completely unaffected.
+    func resolveLocalURL(for pdf: ConvertedPDF) async throws -> (url: URL, needsCleanup: Bool) {
+        switch pdf.sourceMode {
+        case .cloud:
+            Logger.shared.log(
+                "CloudDownloadManager: Resolving cloud file '\(pdf.name)' for operation…",
+                category: "Cloud"
+            )
+            let url = try await streamCloudFile(pdf: pdf)
+            return (url, needsCleanup: true)
+
+        case .linked(let bookmark):
+            let url = try BookmarkResolver.shared.resolve(bookmark)
+            return (url, needsCleanup: false)
+
+        default:
+            // .local, .wifi, or any other local-storage mode — pass through unchanged
+            return (pdf.url, needsCleanup: false)
+        }
+    }
+
+
     private func _performStream(provider: String, remoteID: String, pdf: ConvertedPDF) async throws -> URL {
         // ── Step 0: Temp-file cache — skip network if recently streamed ──────────
         if let cached = tempFileCache[remoteID],

@@ -9,12 +9,25 @@ class ExportOrchestrator {
     func exportForCloudSync(_ pdf: ConvertedPDF, manager: ConversionManager) async -> URL? {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
-        
+
+        // ── Cloud-resolve gate ────────────────────────────────────────────────────
+        // Local/linked files pass through instantly. Cloud files download to a temp
+        // location and are cleaned up automatically when this function returns.
+        let localSourceURL: URL
+        let needsSourceCleanup: Bool
+        do {
+            (localSourceURL, needsSourceCleanup) = try await CloudDownloadManager.shared.resolveLocalURL(for: pdf)
+        } catch {
+            Logger.shared.log("❌ Cloud Sync Export: Could not resolve source — \(error.localizedDescription)", category: "Export", type: .error)
+            return nil
+        }
+        defer { if needsSourceCleanup { try? fileManager.removeItem(at: localSourceURL) } }
+
         if pdf.contentType == .book {
             let exportURL = tempDir.appendingPathComponent(pdf.name)
             try? fileManager.removeItem(at: exportURL)
             do {
-                try fileManager.copyItem(at: pdf.url, to: exportURL)
+                try fileManager.copyItem(at: localSourceURL, to: exportURL)
                 Logger.shared.log("Book Export: Safe pass-through for \(pdf.name)", category: "Export")
                 return exportURL
             } catch {
@@ -34,7 +47,7 @@ class ExportOrchestrator {
             }
             
             do {
-                let imageURLs = try await EditorSessionManager.shared.extractImageURLs(from: pdf.url)
+                let imageURLs = try await EditorSessionManager.shared.extractImageURLs(from: localSourceURL)
                 try PDFGenerator.generate(from: imageURLs, to: exportURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { progress in
                     Task { @MainActor in TaskEngine.shared.processingStatus = "Processing \(Int(progress * 100))%" }
                 }
@@ -44,8 +57,8 @@ class ExportOrchestrator {
                 return nil
             }
         }
-        
-        let exportName = pdf.url.lastPathComponent
+
+        let exportName = localSourceURL.lastPathComponent
         let exportURL = tempDir.appendingPathComponent(exportName)
         try? fileManager.removeItem(at: exportURL)
         
@@ -58,7 +71,7 @@ class ExportOrchestrator {
         
         do {
             Logger.shared.log("Starting Cloud Export for \(pdf.name)", category: "Export")
-            try fileManager.copyItem(at: pdf.url, to: exportURL)
+            try fileManager.copyItem(at: localSourceURL, to: exportURL)
             
             var panelsToInject = [Int: [PanelExtractor.Panel]]()
             if AppSettingsManager.shared.conversionSettings.isGuidedView {
@@ -100,17 +113,28 @@ class ExportOrchestrator {
         TaskEngine.shared.isConverting = true
         TaskEngine.shared.processingStatus = "Building KFX Package..."
         TaskEngine.shared.statusMessage = "Extracting images and scripts..."
-        
+
         defer {
             TaskEngine.shared.isConverting = false
             TaskEngine.shared.statusMessage = nil
             Task { @MainActor in TaskEngine.shared.processingStatus = "" }
         }
-        
+
+        // ── Cloud-resolve gate ────────────────────────────────────────────────────
+        let localSourceURL: URL
+        let needsSourceCleanup: Bool
+        do {
+            (localSourceURL, needsSourceCleanup) = try await CloudDownloadManager.shared.resolveLocalURL(for: pdf)
+        } catch {
+            Logger.shared.log("❌ KFX Export: Could not resolve source — \(error.localizedDescription)", category: "Export", type: .error)
+            return nil
+        }
+        defer { if needsSourceCleanup { try? FileManager.default.removeItem(at: localSourceURL) } }
+
         do {
             let converter = CBZToEPUBConverter()
             let outputURL = try await converter.buildKFXPackage(
-                sourceURL: pdf.url,
+                sourceURL: localSourceURL,
                 settings: AppSettingsManager.shared.conversionSettings,
                 metadata: pdf.metadata,
                 progress: { progress in
@@ -129,33 +153,44 @@ class ExportOrchestrator {
         let fileManager = FileManager.default
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let exportDir = docDir.appendingPathComponent("KindleExports")
-        
+
         try? fileManager.createDirectory(at: exportDir, withIntermediateDirectories: true, attributes: nil)
-        
+
         let tempName = "Kindle_HQ_\(pdf.name)"
         let targetURL = exportDir.appendingPathComponent(tempName)
         try? fileManager.removeItem(at: targetURL)
-        
+
+        // ── Cloud-resolve gate ────────────────────────────────────────────────────
+        let localSourceURL: URL
+        let needsSourceCleanup: Bool
+        do {
+            (localSourceURL, needsSourceCleanup) = try await CloudDownloadManager.shared.resolveLocalURL(for: pdf)
+        } catch {
+            Logger.shared.log("❌ Sideload Export: Could not resolve source — \(error.localizedDescription)", category: "Export", type: .error)
+            return nil
+        }
+        defer { if needsSourceCleanup { try? fileManager.removeItem(at: localSourceURL) } }
+
         if pdf.contentType == .book {
             do {
-                try fileManager.copyItem(at: pdf.url, to: targetURL)
+                try fileManager.copyItem(at: localSourceURL, to: targetURL)
                 Logger.shared.log("Book Export: Safe pass-through HQ for \(pdf.name)", category: "Export")
                 return targetURL
             } catch {
                 return nil
             }
         }
-        
+
         if AppSettingsManager.shared.conversionSettings.outputFormat == .pdf {
             TaskEngine.shared.isConverting = true; TaskEngine.shared.processingStatus = "Generating PDF..."
             defer { TaskEngine.shared.isConverting = false; Task { @MainActor in TaskEngine.shared.processingStatus = "" } }
-            
+
             do {
                 let pdName = pdf.name.replacingOccurrences(of: ".cbz", with: ".pdf")
                 let pdfURL = exportDir.appendingPathComponent(pdName)
                 try? fileManager.removeItem(at: pdfURL)
-                
-                let imageURLs = try await EditorSessionManager.shared.extractImageURLs(from: pdf.url)
+
+                let imageURLs = try await EditorSessionManager.shared.extractImageURLs(from: localSourceURL)
                 try PDFGenerator.generate(from: imageURLs, to: pdfURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { progress in
                     Task { @MainActor in TaskEngine.shared.processingStatus = "Processing \(Int(progress * 100))%" }
                 }
@@ -164,10 +199,10 @@ class ExportOrchestrator {
                 return nil
             }
         }
-        
+
         do {
             manager.saveLibrary()
-            let finalEPUB = try await ConversionEngine.shared.process(url: pdf.url, settings: AppSettingsManager.shared.conversionSettings)
+            let finalEPUB = try await ConversionEngine.shared.process(url: localSourceURL, settings: AppSettingsManager.shared.conversionSettings)
             let finalName = finalEPUB.lastPathComponent
             let destURL = exportDir.appendingPathComponent(finalName)
             if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }

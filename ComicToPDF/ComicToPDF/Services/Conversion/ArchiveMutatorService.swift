@@ -6,14 +6,28 @@ import UIKit
 class ArchiveMutatorService {
     static let shared = ArchiveMutatorService()
     
-    // MARK: - Linked File Write Guard
-    
-    /// Throws if a linked file is on a read-only drive.
-    /// All mutating operations call this first before touching the file.
+    // MARK: - Write Guard
+
+    /// Blocks mutating operations on files that cannot be safely written back.
+    /// - Cloud files: Cannot be edited in-place — user must download/save locally first.
+    /// - Linked read-only drives: Cannot be written to.
+    /// Local and linked writable files pass through unchanged.
     private func assertWritable(_ pdf: ConvertedPDF) async throws {
+        // ── Block cloud files ──────────────────────────────────────────────────
+        // Mutations require a real local file to write back to. Cloud files are
+        // streaming-only; the user must save or download them before editing.
+        if case .cloud = pdf.sourceMode {
+            throw NSError(
+                domain: "ArchiveMutatorService.CloudFile",
+                code: 403,
+                userInfo: [NSLocalizedDescriptionKey: "'\(pdf.name)' is stored in the cloud and cannot be edited directly. Download it to your device library first, then edit the local copy."]
+            )
+        }
+
+        // ── Block read-only linked drives ──────────────────────────────────────
         guard pdf.isLinked else { return }  // Local files always writable
         guard let bm = pdf.driveBookmarkData else { return }
-        
+
         let writable = await BookmarkResolver.shared.checkWritable(bm)
         if !writable {
             throw NSError(
@@ -23,7 +37,7 @@ class ArchiveMutatorService {
             )
         }
     }
-    
+
     // MARK: - Page Deletion
     func deletePages(from pdf: ConvertedPDF, pageIndices: Set<Int>, manager: ConversionManager) async throws {
         try await assertWritable(pdf)
