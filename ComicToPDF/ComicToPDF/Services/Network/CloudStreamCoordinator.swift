@@ -124,16 +124,44 @@ final class CloudStreamCoordinator: ObservableObject {
         await MainActor.run { self.phase = .downloading(0.0) }
         let localCBR = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
         let cbrFileSize = (try? FileManager.default.attributesOfItem(atPath: localCBR.path)[.size] as? Int64) ?? 0
+        
+        guard cbrFileSize > 0 else {
+            try? FileManager.default.removeItem(at: localCBR)
+            throw CloudCoordinatorError.noPages
+        }
 
         // ── B: Extract pages, then DELETE the source CBR immediately ─────────────
         await MainActor.run { self.phase = .extracting(0.0) }
         Logger.shared.log("CloudStreamCoordinator: Extracting CBR '\(pdf.name)'…", category: "Cloud")
 
-        let (workingDir, pages) = try await CBRExtractor.extract(from: localCBR)
+        let workingDir: URL
+        let pages: [URL]
+
+        do {
+            (workingDir, pages) = try await CBRExtractor.extract(from: localCBR)
+        } catch {
+            Logger.shared.log("CloudStreamCoordinator: CBR extraction failed (\(error.localizedDescription)). Checking if file is actually a ZIP…", category: "Cloud", type: .warning)
+            
+            // Fallback: It's extremely common for ZIP/CBZ files to be mislabelled as .cbr.
+            // If libunrar rejects it (Error 2), try parsing it as a ZIP file.
+            let fallbackCBZ = localCBR.deletingPathExtension().appendingPathExtension("cbz")
+            try? FileManager.default.moveItem(at: localCBR, to: fallbackCBZ)
+            
+            do {
+                (workingDir, pages) = try await ZipUtilities.extractComic(from: fallbackCBZ)
+                try? FileManager.default.removeItem(at: fallbackCBZ) // cleanup
+                Logger.shared.log("CloudStreamCoordinator: ZIP fallback succeeded for mislabelled CBR.", category: "Cloud", type: .success)
+            } catch _ {
+                // If ZIP extraction also fails, it's genuinely corrupted. Clean up and throw original RAR error.
+                try? FileManager.default.removeItem(at: fallbackCBZ)
+                throw error
+            }
+        }
 
         // ✅ Storage clean-up: source CBR is no longer needed — delete it right away.
         // Peak storage now = extracted pages only (~1× original file size).
         try? FileManager.default.removeItem(at: localCBR)
+        
         // Also evict it from CloudDownloadManager's temp cache to prevent re-use of a deleted path
         await MainActor.run {
             if case .cloud(_, let remoteID) = pdf.sourceMode {
@@ -143,7 +171,7 @@ final class CloudStreamCoordinator: ObservableObject {
 
         await MainActor.run { self.phase = .ready }
         Logger.shared.log(
-            "CloudStreamCoordinator: '\(pdf.name)' → \(pages.count) pages extracted (CBR deleted)",
+            "CloudStreamCoordinator: '\(pdf.name)' → \(pages.count) pages extracted (Archive deleted)",
             category: "Cloud", type: .success
         )
 
