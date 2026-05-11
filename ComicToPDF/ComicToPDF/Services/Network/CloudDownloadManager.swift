@@ -123,6 +123,13 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         return try await task.value
     }
 
+    /// Removes a remoteID from the temp-file cache.
+    /// Call this after manually deleting the cached file to prevent stale path returns.
+    func evictCache(for remoteID: String) {
+        tempFileCache.removeValue(forKey: remoteID)
+        Logger.shared.log("CloudDownloadManager: Cache evicted for \(remoteID.prefix(8))…", category: "Cloud")
+    }
+
     private func _performStream(provider: String, remoteID: String, pdf: ConvertedPDF) async throws -> URL {
         // ── Step 0: Temp-file cache — skip network if recently streamed ──────────
         if let cached = tempFileCache[remoteID],

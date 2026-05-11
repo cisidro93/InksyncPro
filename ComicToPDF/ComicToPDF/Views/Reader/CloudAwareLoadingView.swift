@@ -82,7 +82,7 @@ struct CloudAwareLoadingView: View {
             }
 
             // Progress indicator
-            if case .streaming(let fraction) = coordinator.phase {
+            if case .downloading(let fraction) = coordinator.phase {
                 // CBR fallback — show full percentage bar
                 VStack(spacing: 6) {
                     if fraction > 0 {
@@ -113,13 +113,18 @@ struct CloudAwareLoadingView: View {
                             .scaleEffect(x: 1, y: 1.5)
                     }
                 }
-            } else if coordinator.phase == .resolvingURL || coordinator.phase == .fetchingIndex {
-                // Fast-path — brief indeterminate bar (gone in < 500ms for CBZ)
-                ProgressView()
-                    .progressViewStyle(.linear)
-                    .tint(.orange)
-                    .frame(width: 240)
-                    .scaleEffect(x: 1, y: 1.5)
+            } else {
+                switch coordinator.phase {
+                case .resolvingURL, .fetchingIndex, .extracting:
+                    // Show indeterminate bar for these transition phases
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .tint(.orange)
+                        .frame(width: 240)
+                        .scaleEffect(x: 1, y: 1.5)
+                default:
+                    EmptyView()
+                }
             }
 
             Text(footerText)
@@ -151,7 +156,8 @@ struct CloudAwareLoadingView: View {
         case .idle:             return "Preparing…"
         case .resolvingURL:     return "Connecting to Cloud…"
         case .fetchingIndex:    return "Reading File Index…"
-        case .streaming:        return "Downloading…"
+        case .downloading:      return "Downloading Archive…"
+        case .extracting:       return "Unpacking Archive…"
         case .ready:            return "Opening…"
         case .failed:           return "Connection Failed"
         }
@@ -159,15 +165,16 @@ struct CloudAwareLoadingView: View {
 
     private var iconName: String {
         switch coordinator.phase {
-        case .streaming: return "arrow.down.circle"
-        default:         return "icloud.and.arrow.down"
+        case .downloading, .extracting: return "arrow.down.circle"
+        default:                         return "icloud.and.arrow.down"
         }
     }
 
     private var footerText: String {
         switch coordinator.phase {
-        case .streaming: return "Large archive — only needed for RAR format"
-        default:         return "Files stay in the cloud — this session only"
+        case .downloading:  return "RAR archive — requires full download"
+        case .extracting:   return "Extracting pages — storage cleared when done"
+        default:            return "Files stay in the cloud — this session only"
         }
     }
 }

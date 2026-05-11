@@ -292,7 +292,7 @@ class ComicImageCache: ObservableObject {
             if i == index { continue }
             if self.cache.object(forKey: NSNumber(value: i)) == nil && !self.fetchingQueue.contains(i) {
                 if isStream {
-                    fetchStreamImage(at: i)
+                    fetchCloudPageImage(at: i)
                 } else {
                     fetchLocalImageAsync(at: i)
                 }

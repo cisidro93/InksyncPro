@@ -702,12 +702,32 @@ struct ReaderView: View {
                     }
                     return  // Reader will render from cloudPageSource — no archive extraction needed
 
+                case .extractedPages(let workingDir, let pages):
+                    // ✅ CBR BEST PRACTICE: Pages already extracted to temp dir by CBRExtractor.
+                    // Reader experience is now IDENTICAL to opening a local CBZ.
+                    // No further extraction needed — set pages directly and open immediately.
+                    await MainActor.run {
+                        self.unzippedDir = workingDir
+                        self.pages = pages
+                        self.isLoading = false
+                        if pages.isEmpty { self.errorMessage = "No images found in archive." }
+                    }
+
+                    // Generate cover from first extracted page (already local — instant)
+                    if let firstPage = pages.first,
+                       let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
+                        Task(priority: .background) {
+                            await PhysicalFileSystemRouter.shared
+                                .generateCoverThumbnailFromLocalURL(for: pdf, localURL: firstPage, manager: convManager)
+                        }
+                    }
+                    return
+
                 case .localTemp(let url):
-                    // ⚠️ FALLBACK: CBR or malformed ZIP — full archive downloaded, extract normally
+                    // ⚠️ GENERIC FALLBACK: CB7, CBT or malformed ZIP — archive downloaded, extract below
                     await MainActor.run { self.fileURL = url }
                     activeFileURL = url
 
-                    // Generate cover from the local temp file
                     if let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
                         Task(priority: .background) {
                             await PhysicalFileSystemRouter.shared
