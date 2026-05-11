@@ -120,78 +120,119 @@ final class CloudStreamCoordinator: ObservableObject {
 
     private func prepareCBRStream(url: URL, authHeader: String?, pdf: ConvertedPDF) async throws -> CloudReadyState {
 
-        // ── A: Download CBR to temp ──────────────────────────────────────────────
+        // ── A: Download to temp ───────────────────────────────────────────────────
         await MainActor.run { self.phase = .downloading(0.0) }
         let localCBR = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
         let cbrFileSize = (try? FileManager.default.attributesOfItem(atPath: localCBR.path)[.size] as? Int64) ?? 0
-        
+
+        // Guard: bail immediately on an empty file — avoids Unrar Error 2 on 0-byte bodies
         guard cbrFileSize > 0 else {
             try? FileManager.default.removeItem(at: localCBR)
-            throw CloudCoordinatorError.noPages
+            CloudDownloadManager.shared.evictCache(for: archiveRemoteID(pdf))
+            throw CloudCoordinatorError.emptyArchive
         }
 
-        // ── B: Extract pages, then DELETE the source CBR immediately ─────────────
+        // ── B: Attempt RAR extraction ─────────────────────────────────────────────
         await MainActor.run { self.phase = .extracting(0.0) }
         Logger.shared.log("CloudStreamCoordinator: Extracting CBR '\(pdf.name)'…", category: "Cloud")
 
-        let workingDir: URL
-        let pages: [URL]
+        // `fileToCleanUp` tracks whichever local file we ultimately own so cleanup is exact.
+        var fileToCleanUp: URL = localCBR
 
         do {
-            (workingDir, pages) = try await CBRExtractor.extract(from: localCBR)
+            // Happy path: genuine RAR archive
+            let (workingDir, pages) = try await CBRExtractor.extract(from: localCBR)
+
+            try? FileManager.default.removeItem(at: fileToCleanUp)
+            CloudDownloadManager.shared.evictCache(for: archiveRemoteID(pdf))
+            await MainActor.run { self.phase = .ready }
+
+            Logger.shared.log("CloudStreamCoordinator: '\(pdf.name)' → \(pages.count) RAR pages extracted", category: "Cloud", type: .success)
+
+            scheduleRepackIfPossible(workingDir: workingDir, fileSize: cbrFileSize, pdfName: pdf.name)
+            return .extractedPages(workingDir: workingDir, pages: pages)
+
         } catch {
-            Logger.shared.log("CloudStreamCoordinator: CBR extraction failed (\(error.localizedDescription)). Checking if file is actually a ZIP…", category: "Cloud", type: .warning)
-            
-            // Fallback: It's extremely common for ZIP/CBZ files to be mislabelled as .cbr.
-            // If libunrar rejects it (Error 2), try parsing it as a ZIP file.
+            // ── C: ZIP-masquerading-as-CBR fallback ──────────────────────────────
+            // Unrar Error 2 (ERAR_BAD_DATA) fires when libunrar sees a ZIP magic number.
+            // Rather than extracting locally, try the byte-range stream path first — it
+            // opens instantly and writes nothing to disk.
+            Logger.shared.log(
+                "CloudStreamCoordinator: CBR failed (\(error.localizedDescription)) — checking if mislabelled ZIP…",
+                category: "Cloud", type: .warning
+            )
+
+            // Rename to .cbz so ZipCentralDirectory can fetch the EOCD
             let fallbackCBZ = localCBR.deletingPathExtension().appendingPathExtension("cbz")
-            try? FileManager.default.moveItem(at: localCBR, to: fallbackCBZ)
-            
             do {
-                (workingDir, pages) = try await ZipUtilities.extractComic(from: fallbackCBZ)
-                try? FileManager.default.removeItem(at: fallbackCBZ) // cleanup
-                Logger.shared.log("CloudStreamCoordinator: ZIP fallback succeeded for mislabelled CBR.", category: "Cloud", type: .success)
-            } catch _ {
-                // If ZIP extraction also fails, it's genuinely corrupted. Clean up and throw original RAR error.
-                try? FileManager.default.removeItem(at: fallbackCBZ)
+                try FileManager.default.moveItem(at: localCBR, to: fallbackCBZ)
+                fileToCleanUp = fallbackCBZ   // ← ownership transferred
+            } catch {
+                // Rename failed (e.g. destination already exists). Clean up and surface original error.
+                try? FileManager.default.removeItem(at: localCBR)
+                CloudDownloadManager.shared.evictCache(for: archiveRemoteID(pdf))
                 throw error
             }
-        }
 
-        // ✅ Storage clean-up: source CBR is no longer needed — delete it right away.
-        // Peak storage now = extracted pages only (~1× original file size).
-        try? FileManager.default.removeItem(at: localCBR)
-        
-        // Also evict it from CloudDownloadManager's temp cache to prevent re-use of a deleted path
-        await MainActor.run {
-            if case .cloud(_, let remoteID) = pdf.sourceMode {
-                CloudDownloadManager.shared.evictCache(for: remoteID)
+            do {
+                // ✅ Best-case: parse the ZIP central directory and return an instant page-stream.
+                // This writes ZERO bytes to disk — identical to a normal CBZ open.
+                let manifest = try await ZipCentralDirectory.fetch(from: url, authHeader: authHeader)
+                guard manifest.pageEntries.count > 0 else { throw CloudCoordinatorError.emptyArchive }
+
+                try? FileManager.default.removeItem(at: fileToCleanUp)
+                CloudDownloadManager.shared.evictCache(for: archiveRemoteID(pdf))
+                await MainActor.run { self.phase = .ready }
+
+                Logger.shared.log(
+                    "CloudStreamCoordinator: '\(pdf.name)' is a mislabelled ZIP → page-stream (\(manifest.pageEntries.count) pages)",
+                    category: "Cloud", type: .success
+                )
+                return .pageStream(CloudPageSource(manifest: manifest))
+
+            } catch {
+                // Page-stream also failed — try local extraction of the renamed .cbz
+                do {
+                    let (workingDir, pages) = try await ZipUtilities.extractComic(from: fallbackCBZ)
+                    try? FileManager.default.removeItem(at: fileToCleanUp)
+                    CloudDownloadManager.shared.evictCache(for: archiveRemoteID(pdf))
+                    await MainActor.run { self.phase = .ready }
+
+                    Logger.shared.log(
+                        "CloudStreamCoordinator: '\(pdf.name)' mislabelled ZIP extracted locally (\(pages.count) pages)",
+                        category: "Cloud", type: .success
+                    )
+                    scheduleRepackIfPossible(workingDir: workingDir, fileSize: cbrFileSize, pdfName: pdf.name)
+                    return .extractedPages(workingDir: workingDir, pages: pages)
+
+                } catch {
+                    // All paths exhausted — file is genuinely corrupt or unsupported
+                    try? FileManager.default.removeItem(at: fileToCleanUp)
+                    CloudDownloadManager.shared.evictCache(for: archiveRemoteID(pdf))
+                    throw error
+                }
             }
         }
+    }
 
-        await MainActor.run { self.phase = .ready }
-        Logger.shared.log(
-            "CloudStreamCoordinator: '\(pdf.name)' → \(pages.count) pages extracted (Archive deleted)",
-            category: "Cloud", type: .success
-        )
-
-        // ── C: Background CBZ repack — only if storage headroom allows ───────────
-        // Require ≥2× the original file size of free space so we don't pressure the device.
+    /// Schedule a background ZIP repack of extracted images if storage headroom allows.
+    /// Uses `ZipUtilities.zipDirectory` directly on the already-extracted working dir,
+    /// NOT `CBRExtractor.convertToCBZ` (which expects an archive source, not a directory).
+    private func scheduleRepackIfPossible(workingDir: URL, fileSize: Int64, pdfName: String) {
         Task(priority: .background) {
             let freeSpace = availableDiskSpace()
-            let requiredSpace = cbrFileSize * 2
-            guard freeSpace > requiredSpace else {
+            guard freeSpace > fileSize * 2 else {
                 Logger.shared.log(
-                    "CloudStreamCoordinator: CBZ repack skipped — insufficient free space (\(freeSpace / 1_048_576)MB free, need \(requiredSpace / 1_048_576)MB)",
+                    "CloudStreamCoordinator: CBZ repack skipped — only \(freeSpace / 1_048_576)MB free",
                     category: "Cloud"
                 )
                 return
             }
             do {
-                let cbzURL = workingDir.appendingPathComponent("\(pdf.name).cbz")
-                let repacked = try await CBRExtractor.convertToCBZ(from: workingDir, destination: cbzURL)
+                let cbzURL = workingDir.appendingPathComponent("\(pdfName).cbz")
+                try await ZipUtilities.zipDirectory(workingDir, to: cbzURL)
                 Logger.shared.log(
-                    "CloudStreamCoordinator: CBR silently repacked → '\(repacked.lastPathComponent)'",
+                    "CloudStreamCoordinator: '\(pdfName)' silently repacked to CBZ",
                     category: "Cloud", type: .success
                 )
             } catch {
@@ -201,8 +242,6 @@ final class CloudStreamCoordinator: ObservableObject {
                 )
             }
         }
-
-        return .extractedPages(workingDir: workingDir, pages: pages)
     }
 
     /// Returns available bytes in the temporary directory's volume.
@@ -234,6 +273,7 @@ enum CloudCoordinatorError: LocalizedError {
     case notACloudFile
     case unknownProvider(String)
     case noPages
+    case emptyArchive
 
     var errorDescription: String? {
         switch self {
@@ -243,6 +283,8 @@ enum CloudCoordinatorError: LocalizedError {
             return "'\(name)' is not a supported cloud provider. Please reconnect in Settings."
         case .noPages:
             return "No readable pages were found in this archive."
+        case .emptyArchive:
+            return "The archive downloaded from the cloud was empty (0 bytes). Check your connection and try again."
         }
     }
 }
