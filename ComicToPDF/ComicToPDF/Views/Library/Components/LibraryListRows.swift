@@ -102,6 +102,33 @@ struct ModernFileRow: View {
                             .cornerRadius(4)
                     }
                     
+                    // ✅ NEW: Storage Location Badge
+                    if case .linked(_) = pdf.sourceMode {
+                        HStack(spacing: 3) {
+                            Image(systemName: "externaldrive.fill")
+                                .font(.system(size: 8))
+                            Text("EXTERNAL")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Theme.blue.opacity(0.2))
+                        .foregroundColor(Theme.blue)
+                        .cornerRadius(4)
+                    } else if case .cloud(_, _) = pdf.sourceMode {
+                        HStack(spacing: 3) {
+                            Image(systemName: "icloud.fill")
+                                .font(.system(size: 8))
+                            Text("CLOUD")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Theme.orange.opacity(0.2))
+                        .foregroundColor(Theme.orange)
+                        .cornerRadius(4)
+                    }
+                    
                     Text(pdf.formattedSize)
                         .font(.caption)
                         .foregroundColor(Theme.textSecondary)

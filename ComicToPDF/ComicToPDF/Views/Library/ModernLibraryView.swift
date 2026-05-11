@@ -48,6 +48,7 @@ struct ModernLibraryView: View {
         case favorites = "Favorites First"
         case type = "Single / Series"
         case extensionType = "Format (CBZ/PDF)"
+        case location = "Storage (Local / Cloud)"
         var id: String { rawValue }
     }
     @State private var sortOption: SortOption = .dateAdded

@@ -346,6 +346,13 @@ class LibraryViewModel: ObservableObject {
             return pdfs.sorted {
                 $0.fileExtensionString.localizedStandardCompare($1.fileExtensionString) == .orderedAscending
             }
+        case .location:
+            return pdfs.sorted {
+                let rank0 = $0.sourceMode.isCloud ? 2 : ($0.sourceMode.isLinked ? 1 : 0)
+                let rank1 = $1.sourceMode.isCloud ? 2 : ($1.sourceMode.isLinked ? 1 : 0)
+                if rank0 != rank1 { return rank0 < rank1 }
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
         }
     }
 }

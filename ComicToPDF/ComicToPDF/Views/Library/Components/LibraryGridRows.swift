@@ -60,7 +60,7 @@ struct ModernGridFileCell: View {
                         .foregroundColor(Theme.textSecondary)
                 }
                 
-                // ✅ NEW: Top-Left External Drive Badge
+                // ✅ NEW: Top-Left External Drive & Cloud Badge
                 if case .linked(_) = pdf.sourceMode {
                     VStack {
                         HStack {
@@ -69,6 +69,21 @@ struct ModernGridFileCell: View {
                                 .foregroundColor(.white)
                                 .padding(6)
                                 .background(Theme.blue.opacity(0.9))
+                                .clipShape(Circle())
+                                .padding(6)
+                                .shadow(color: .black.opacity(0.3), radius: 3)
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                } else if case .cloud(_, _) = pdf.sourceMode {
+                    VStack {
+                        HStack {
+                            Image(systemName: "icloud.fill")
+                                .font(.caption2)
+                                .foregroundColor(.white)
+                                .padding(6)
+                                .background(Theme.orange.opacity(0.9))
                                 .clipShape(Circle())
                                 .padding(6)
                                 .shadow(color: .black.opacity(0.3), radius: 3)
