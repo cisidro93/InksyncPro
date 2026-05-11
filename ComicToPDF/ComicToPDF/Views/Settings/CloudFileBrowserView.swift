@@ -13,9 +13,11 @@ struct CloudFileBrowserView: View {
     @State private var files: [CloudFile] = []
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
-    @State private var selectedFiles: Set<String> = []
+    @State private var selectedFiles: Set<String> = []       // individual file IDs
+    @State private var selectedFolders: Set<String> = []     // folder IDs for bulk-add
     @State private var addingToLibrary = false
     @State private var addedCount = 0
+    @State private var scanningFolderName: String? = nil     // shows during recursive scan
     @State private var showingSuccessBanner = false
 
     @EnvironmentObject var conversionManager: ConversionManager
@@ -107,7 +109,11 @@ struct CloudFileBrowserView: View {
                 Text(file.name)
                     .font(.subheadline)
                     .lineLimit(1)
-                if !file.isDirectory {
+                if file.isDirectory {
+                    Text("Tap folder icon to browse · tap \u{2295} to add all")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                } else {
                     HStack(spacing: 8) {
                         Text(formattedSize(file.size))
                             .font(.caption2)
@@ -125,11 +131,31 @@ struct CloudFileBrowserView: View {
             Spacer()
 
             if file.isDirectory {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                // Folder row: checkbox on left, navigate chevron on right
+                HStack(spacing: 10) {
+                    // Folder select toggle — does NOT navigate
+                    Button {
+                        toggleFolderSelection(file)
+                    } label: {
+                        Image(systemName: selectedFolders.contains(file.id)
+                              ? "checkmark.circle.fill" : "circle")
+                            .font(.title3)
+                            .foregroundColor(selectedFolders.contains(file.id) ? .accentColor : .secondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    // Navigate into folder
+                    Button {
+                        navigateInto(file)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
             } else {
-                // Selection toggle
+                // File selection toggle
                 Button {
                     toggleSelection(file)
                 } label: {
@@ -199,9 +225,15 @@ struct CloudFileBrowserView: View {
                 ProgressView()
                     .controlSize(.large)
                     .tint(.white)
-                Text("Adding \(addedCount) file(s) to Library…")
-                    .font(.subheadline.bold())
-                    .foregroundColor(.white)
+                if let folderName = scanningFolderName {
+                    Text("Scanning \"\(folderName)\"…")
+                        .font(.subheadline.bold())
+                        .foregroundColor(.white)
+                } else {
+                    Text("Adding \(addedCount) file(s) to Library…")
+                        .font(.subheadline.bold())
+                        .foregroundColor(.white)
+                }
             }
             .padding(32)
             .background(Material.thick)
@@ -234,9 +266,18 @@ struct CloudFileBrowserView: View {
             Button("Close") { dismiss() }
         }
         ToolbarItem(placement: .navigationBarTrailing) {
-            if !selectedFiles.isEmpty {
-                Button("Add \(selectedFiles.count) to Library") {
+            let totalSelected = selectedFiles.count + selectedFolders.count
+            if totalSelected > 0 {
+                Button {
                     Task { await addSelectedToLibrary() }
+                } label: {
+                    if selectedFolders.isEmpty {
+                        Text("Add \(selectedFiles.count) File\(selectedFiles.count == 1 ? "" : "s")")
+                    } else if selectedFiles.isEmpty {
+                        Text("Add \(selectedFolders.count) Folder\(selectedFolders.count == 1 ? "" : "s")")
+                    } else {
+                        Text("Add \(totalSelected) Items")
+                    }
                 }
                 .fontWeight(.semibold)
             }
@@ -297,37 +338,72 @@ struct CloudFileBrowserView: View {
         }
     }
 
+    private func toggleFolderSelection(_ folder: CloudFile) {
+        if selectedFolders.contains(folder.id) {
+            selectedFolders.remove(folder.id)
+        } else {
+            selectedFolders.insert(folder.id)
+        }
+    }
+
     private func addSelectedToLibrary() async {
-        guard !selectedFiles.isEmpty else { return }
-        let toAdd = files.filter { selectedFiles.contains($0.id) }
-        addedCount = toAdd.count
+        guard !selectedFiles.isEmpty || !selectedFolders.isEmpty else { return }
         addingToLibrary = true
+        var allFilesToAdd: [CloudFile] = []
+
+        // 1. Direct file selections
+        allFilesToAdd.append(contentsOf: files.filter { selectedFiles.contains($0.id) })
+
+        // 2. Recursive folder enumeration
+        let folderItems = files.filter { selectedFolders.contains($0.id) }
+        for folder in folderItems {
+            await MainActor.run { scanningFolderName = folder.name }
+            do {
+                let folderFiles = try await provider.listAllFiles(folderID: folder.id)
+                allFilesToAdd.append(contentsOf: folderFiles)
+                Logger.shared.log(
+                    "CloudBrowser: scanned folder \"\(folder.name)\" → \(folderFiles.count) file(s)",
+                    category: "Cloud"
+                )
+            } catch {
+                Logger.shared.log(
+                    "CloudBrowser: failed to scan folder \"\(folder.name)\": \(error.localizedDescription)",
+                    category: "Cloud", type: .error
+                )
+            }
+        }
+
+        // Deduplicate (same file ID selected directly AND found inside a folder)
+        var seen = Set<String>()
+        let deduped = allFilesToAdd.filter { seen.insert($0.id).inserted }
+
+        addedCount = deduped.count
+        await MainActor.run { scanningFolderName = nil }
 
         await MainActor.run {
-            for file in toAdd {
-                // Create a cloud-sourced ConvertedPDF entry — no local file yet.
-                // SourceMode .cloud(provider, remoteID) tells ConversionManager
-                // to stream or background-download this file on demand.
+            for file in deduped {
                 let dummyURL = URL(string: "cloud://\(provider.providerID)/\(file.id)")!
-                let cloudPDF = ConvertedPDF(
+                var cloudPDF = ConvertedPDF(
                     name: file.name,
                     url: dummyURL,
                     pageCount: 0,
                     fileSize: file.size,
                     metadata: PDFMetadata(title: file.name)
                 )
-                // Register source mode
-                var mutable = cloudPDF
-                mutable.sourceMode = .cloud(provider: provider.name, remoteID: file.id)
-                conversionManager.convertedPDFs.insert(mutable, at: 0)
+                cloudPDF.sourceMode = .cloud(provider: provider.name, remoteID: file.id)
+                conversionManager.convertedPDFs.insert(cloudPDF, at: 0)
             }
             conversionManager.saveLibrary()
         }
 
         addingToLibrary = false
         selectedFiles = []
+        selectedFolders = []
         withAnimation(.spring()) { showingSuccessBanner = true }
-        Logger.shared.log("CloudBrowser: Added \(addedCount) cloud file(s) to Library from \(provider.name)", category: "Cloud", type: .success)
+        Logger.shared.log(
+            "CloudBrowser: Added \(addedCount) cloud file(s) from \(provider.name) (incl. folder contents)",
+            category: "Cloud", type: .success
+        )
 
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_500_000_000)
@@ -367,6 +443,8 @@ struct CloudBrowserProvider {
     let name: String
     let providerID: String  // "dropbox" | "googledrive"
     let listDirectory: (_ folderID: String?) async throws -> [CloudFile]
+    /// Recursively lists all supported files inside a folder (for bulk-add).
+    let listAllFiles: (_ folderID: String) async throws -> [CloudFile]
 
     static var dropbox: CloudBrowserProvider {
         CloudBrowserProvider(
@@ -374,6 +452,9 @@ struct CloudBrowserProvider {
             providerID: "dropbox",
             listDirectory: { folderID in
                 try await DropboxProvider.shared.listDirectory(folderID: folderID)
+            },
+            listAllFiles: { folderID in
+                try await DropboxProvider.shared.listAllFiles(inFolderID: folderID)
             }
         )
     }
@@ -384,6 +465,10 @@ struct CloudBrowserProvider {
             providerID: "googledrive",
             listDirectory: { folderID in
                 try await GoogleDriveProvider.shared.listDirectory(folderID: folderID)
+            },
+            listAllFiles: { _ in
+                // Google Drive recursive enumeration — implement when GDrive folder-add is needed
+                []
             }
         )
     }

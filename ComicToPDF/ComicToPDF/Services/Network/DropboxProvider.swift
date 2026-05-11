@@ -261,6 +261,78 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         return url
     }
 
+    // MARK: - Recursive Folder Enumeration
+
+    /// Returns ALL files (not folders) inside a given Dropbox folder, recursively.
+    /// Handles Dropbox cursor-based pagination automatically.
+    /// Used by CloudFileBrowserView when the user selects an entire folder to add.
+    func listAllFiles(inFolderID folderID: String) async throws -> [CloudFile] {
+        try await refreshAccessTokenIfNeeded()
+        guard let token = accessToken else {
+            throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+
+        let supported: Set<String> = ["cbz", "cbr", "epub", "zip", "pdf", "cb7", "cbt"]
+        var allFiles: [CloudFile] = []
+        var cursor: String? = nil
+        var hasMore = true
+
+        // First page
+        var request = URLRequest(url: URL(string: "https://api.dropboxapi.com/2/files/list_folder")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "path": folderID,
+            "recursive": true,          // spider the entire subtree in one API call
+            "include_deleted": false
+        ])
+
+        let (firstData, _) = try await URLSession.shared.data(for: request)
+        let firstPage = try JSONDecoder().decode(DropboxListFolderResponse.self, from: firstData)
+        cursor = firstPage.cursor
+        hasMore = firstPage.has_more
+
+        let iso = ISO8601DateFormatter()
+        func mapEntry(_ entry: DropboxEntry) -> CloudFile? {
+            guard entry.tag == "file",
+                  let ext = (entry.name as NSString).pathExtension.lowercased() as String?,
+                  supported.contains(ext) else { return nil }
+            return CloudFile(
+                id: entry.path_lower ?? entry.name,
+                name: entry.name,
+                isDirectory: false,
+                size: entry.size ?? 0,
+                modifiedDate: entry.server_modified.flatMap { iso.date(from: $0) } ?? Date(),
+                downloadURL: nil
+            )
+        }
+
+        allFiles.append(contentsOf: firstPage.entries.compactMap(mapEntry))
+
+        // Continue with cursor pagination
+        while hasMore, let currentCursor = cursor {
+            var contRequest = URLRequest(url: URL(string: "https://api.dropboxapi.com/2/files/list_folder/continue")!)
+            contRequest.httpMethod = "POST"
+            contRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            contRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            contRequest.httpBody = try JSONSerialization.data(withJSONObject: ["cursor": currentCursor])
+
+            let (contData, _) = try await URLSession.shared.data(for: contRequest)
+            let page = try JSONDecoder().decode(DropboxListFolderResponse.self, from: contData)
+            allFiles.append(contentsOf: page.entries.compactMap(mapEntry))
+            cursor = page.cursor
+            hasMore = page.has_more
+        }
+
+        Logger.shared.log(
+            "DropboxProvider: recursive scan of \(folderID) → \(allFiles.count) supported file(s)",
+            category: "Cloud"
+        )
+        return allFiles
+    }
+
+
     // MARK: - Keychain Helpers
 
     private func keychainString(account: String) -> String? {
