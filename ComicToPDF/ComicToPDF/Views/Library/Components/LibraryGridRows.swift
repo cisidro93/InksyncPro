@@ -53,6 +53,11 @@ struct ModernGridFileCell: View {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                } else if case .cloud = pdf.sourceMode {
+                    Rectangle().fill(Theme.surfaceElevated)
+                    Image(systemName: "icloud.and.arrow.down")
+                        .font(.largeTitle)
+                        .foregroundColor(Theme.orange.opacity(0.8))
                 } else {
                     Rectangle().fill(Theme.surfaceElevated)
                     Image(systemName: "doc.text.fill")

@@ -365,15 +365,28 @@ struct EBookReaderView: View {
         let savedPage = UserDefaults.standard.integer(forKey: pageKey)
         
         // Linked Library: resolve security-scoped URL.
-        let resolvedURL: URL
+        var resolvedURL: URL = fileURL
         var accessedURL: URL? = nil
-        if let pdf = pdf, case .linked(let bm) = pdf.sourceMode,
-           let url = try? await BookmarkResolver.shared.resolve(bm) {
-            let didAccess = url.startAccessingSecurityScopedResource()
-            resolvedURL = url
-            if didAccess { accessedURL = url }
-        } else {
-            resolvedURL = fileURL
+        
+        if let pdf = pdf {
+            if case .cloud = pdf.sourceMode {
+                await MainActor.run { self.errorMessage = nil }
+                do {
+                    resolvedURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
+                } catch {
+                    await MainActor.run {
+                        Logger.shared.log("EBookReader cloud stream failed: \(error.localizedDescription)", category: "EBook", type: .error)
+                        self.errorMessage = "Failed to stream cloud file: \(error.localizedDescription)"
+                        self.isLoading = false
+                    }
+                    return
+                }
+            } else if case .linked(let bm) = pdf.sourceMode,
+               let url = try? await BookmarkResolver.shared.resolve(bm) {
+                let didAccess = url.startAccessingSecurityScopedResource()
+                resolvedURL = url
+                if didAccess { accessedURL = url }
+            }
         }
 
         // Parse metadata (streaming OPF, no full unzip)

@@ -185,7 +185,10 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
 
     private func refreshAccessTokenIfNeeded() async throws {
         guard let expiry = tokenExpiry, expiry < Date().addingTimeInterval(60) else { return }
-        guard let rToken = refreshToken else { throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "No refresh token — please reconnect"]) }
+        guard let rToken = refreshToken else {
+            await MainActor.run { self.isConnected = false }
+            throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "No refresh token — please reconnect"])
+        }
 
         var request = URLRequest(url: URL(string: "https://api.dropboxapi.com/oauth2/token")!)
         request.httpMethod = "POST"
@@ -194,12 +197,19 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         let params = ["grant_type": "refresh_token", "refresh_token": rToken, "client_id": clientID]
         request.httpBody = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&").data(using: .utf8)
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
+            await MainActor.run { self.isConnected = false }
+            self.accessToken = nil
+            self.refreshToken = nil
+            throw NSError(domain: "Dropbox", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Refresh token rejected by Dropbox. Please reconnect."])
+        }
         let tokenResponse = try JSONDecoder().decode(DropboxTokenResponse.self, from: data)
         accessToken = tokenResponse.access_token
         if let expiresIn = tokenResponse.expires_in {
             tokenExpiry = Date().addingTimeInterval(TimeInterval(expiresIn))
         }
+        await MainActor.run { self.isConnected = true }
     }
 
     // MARK: - Sign Out
@@ -252,7 +262,21 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["path": fileID])
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        // Validate HTTP status before attempting JSON decode.
+        // A deleted or moved file returns a 409 with a JSON error_summary, not a TemporaryLinkResponse.
+        if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+            // Attempt to surface Dropbox's own error_summary if present
+            let summary = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+                .flatMap { $0["error_summary"] as? String } ?? "HTTP \(httpResponse.statusCode)"
+            throw NSError(
+                domain: "Dropbox",
+                code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "Dropbox error: \(summary)"]
+            )
+        }
+
         let linkResponse = try JSONDecoder().decode(DropboxTemporaryLinkResponse.self, from: data)
         guard let url = URL(string: linkResponse.link) else {
             throw NSError(domain: "Dropbox", code: 5, userInfo: [NSLocalizedDescriptionKey: "Invalid temporary link returned from Dropbox"])
@@ -266,7 +290,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
     /// Returns ALL files (not folders) inside a given Dropbox folder, recursively.
     /// Handles Dropbox cursor-based pagination automatically.
     /// Used by CloudFileBrowserView when the user selects an entire folder to add.
-    func listAllFiles(inFolderID folderID: String) async throws -> [CloudFile] {
+    func listAllFiles(inFolderID folderID: String, onProgress: ((Int) -> Void)? = nil) async throws -> [CloudFile] {
         try await refreshAccessTokenIfNeeded()
         guard let token = accessToken else {
             throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
@@ -309,6 +333,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         }
 
         allFiles.append(contentsOf: firstPage.entries.compactMap(mapEntry))
+        onProgress?(allFiles.count)
 
         // Continue with cursor pagination
         while hasMore, let currentCursor = cursor {
@@ -321,6 +346,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
             let (contData, _) = try await URLSession.shared.data(for: contRequest)
             let page = try JSONDecoder().decode(DropboxListFolderResponse.self, from: contData)
             allFiles.append(contentsOf: page.entries.compactMap(mapEntry))
+            onProgress?(allFiles.count)
             cursor = page.cursor
             hasMore = page.has_more
         }

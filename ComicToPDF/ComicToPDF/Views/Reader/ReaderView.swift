@@ -148,7 +148,7 @@ struct ReaderView: View {
     private func comicReaderBody(in geo: GeometryProxy) -> some View {
         ZStack {
             if isLoading {
-                ProgressView("Opening Book...").scaleEffect(1.2)
+                CloudAwareLoadingView(pdf: pdf)
             } else if let error = errorMessage {
                     VStack {
                         Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundColor(.red)
@@ -668,11 +668,44 @@ struct ReaderView: View {
 
     // MARK: - Archive Preparation
     private func prepareArchive() async {
-        let ext = fileURL.pathExtension.lowercased()
+        var activeFileURL = fileURL
+        
+        // ✅ CLOUD STREAMING: Fetch cloud files directly to temp directory
+        if let pdf = pdf, case .cloud(_, let remoteID) = pdf.sourceMode {
+            await MainActor.run { 
+                self.isLoading = true
+                self.errorMessage = nil
+            }
+            do {
+                let localStreamURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
+                await MainActor.run { self.fileURL = localStreamURL }
+                activeFileURL = localStreamURL
+
+                // ✅ Generate cover thumbnail from the streamed file (background, non-blocking)
+                if let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
+                    Task(priority: .background) {
+                        await PhysicalFileSystemRouter.shared.generateCoverThumbnailFromLocalURL(
+                            for: pdf,
+                            localURL: localStreamURL,
+                            manager: convManager
+                        )
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    Logger.shared.log("Reader cloud stream failed: \(error.localizedDescription)", category: "ReaderView", type: .error)
+                    self.errorMessage = error.localizedDescription  // Use LocalizedError message directly
+                    self.isLoading = false
+                }
+                return
+            }
+        }
+        
+        let ext = activeFileURL.pathExtension.lowercased()
         
         // PDFs are handled directly by PDFKitView without extraction
         if ext == "pdf" {
-            await MainActor.run { isLoading = false }
+            await MainActor.run { self.isLoading = false }
             return
         }
         
@@ -683,7 +716,7 @@ struct ReaderView: View {
                 let dest = fileManager.temporaryDirectory.appendingPathComponent("Reader_\(tempID)")
                 
                 try fileManager.createDirectory(at: dest, withIntermediateDirectories: true)
-                try fileManager.unzipItem(at: fileURL, to: dest)
+                try fileManager.unzipItem(at: activeFileURL, to: dest)
                 await MainActor.run { self.unzippedDir = dest }
                 
                 if let enumerator = fileManager.enumerator(at: dest, includingPropertiesForKeys: nil) {
@@ -711,7 +744,7 @@ struct ReaderView: View {
                 }
             } else {
                 // CBZ / ZIP
-                let result = try await ZipUtilities.extractComic(from: fileURL)
+                let result = try await ZipUtilities.extractComic(from: activeFileURL)
                 await MainActor.run {
                     self.unzippedDir = result.workingDir
                     self.pages = result.imageURLs

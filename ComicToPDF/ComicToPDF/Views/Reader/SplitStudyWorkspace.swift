@@ -118,27 +118,35 @@ struct SplitStudyWorkspace: View {
     
     @ViewBuilder
     private func divider(geo: GeometryProxy, axis: Axis) -> some View {
-        Rectangle()
-            .fill(Color.inkSurfaceRaised)
-            .frame(width: axis == .horizontal ? 8 : nil, height: axis == .vertical ? 8 : nil)
-            .overlay(
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.inkTextTertiary)
-                    .frame(width: axis == .horizontal ? 2 : 30, height: axis == .vertical ? 2 : 30)
-            )
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(coordinateSpace: .global)
-                    .onChanged { val in
-                        if axis == .horizontal {
-                            let newFraction = val.location.x / geo.size.width
-                            splitFraction = min(max(newFraction, 0.2), 0.8)
-                        } else {
-                            let newFraction = val.location.y / geo.size.height
-                            splitFraction = min(max(newFraction, 0.2), 0.8)
-                        }
+        ZStack {
+            // Invisible larger hit area for easier grabbing
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: axis == .horizontal ? 24 : nil, height: axis == .vertical ? 24 : nil)
+            
+            // Visible glass pill
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .frame(width: axis == .horizontal ? 6 : 40, height: axis == .vertical ? 6 : 40)
+                .shadow(color: Color.black.opacity(0.15), radius: 2, x: 0, y: 1)
+                .overlay(
+                    Capsule()
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                )
+        }
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(coordinateSpace: .global)
+                .onChanged { val in
+                    if axis == .horizontal {
+                        let newFraction = val.location.x / geo.size.width
+                        splitFraction = min(max(newFraction, 0.2), 0.8)
+                    } else {
+                        let newFraction = val.location.y / geo.size.height
+                        splitFraction = min(max(newFraction, 0.2), 0.8)
                     }
-            )
+                }
+        )
     }
     
     private var compactNotebookToggle: some View {
@@ -164,53 +172,59 @@ struct SplitStudyWorkspace: View {
     
     private var floatingProToolbar: some View {
         VStack {
-            HStack(spacing: 12) {
+            HStack {
                 Spacer()
                 
-                // Dock Position Cycler
-                Button {
-                    cycleDockPosition()
-                } label: {
-                    Image(systemName: "uiwindow.split.2x1")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .padding(10)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.1), radius: 5)
-                }
-                
-                // Cheat Sheet Toggle
-                Button {
-                    showCheatSheet.toggle()
-                } label: {
-                    Image(systemName: "questionmark")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(Theme.blue)
-                        .padding(10)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.1), radius: 5)
-                }
-                
-                // Notebook Toggle
-                Button {
-                    withAnimation(.spring()) {
-                        showNotebook.toggle()
+                HStack(spacing: 4) {
+                    // Dock Position Cycler
+                    Button {
+                        cycleDockPosition()
+                    } label: {
+                        Image(systemName: "uiwindow.split.2x1")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .padding(12)
+                            .contentShape(Rectangle())
                     }
-                } label: {
-                    Image(systemName: showNotebook ? "sidebar.right" : "sidebar.right")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.primary)
-                        .padding(10)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.1), radius: 5)
+                    
+                    Divider().frame(height: 20)
+                    
+                    // Cheat Sheet Toggle
+                    Button {
+                        showCheatSheet.toggle()
+                    } label: {
+                        Image(systemName: "questionmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(Theme.blue)
+                            .padding(12)
+                            .contentShape(Rectangle())
+                    }
+                    
+                    Divider().frame(height: 20)
+                    
+                    // Notebook Toggle
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showNotebook.toggle()
+                        }
+                    } label: {
+                        Image(systemName: showNotebook ? "sidebar.right" : "sidebar.right")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(showNotebook ? Theme.blue : .primary)
+                            .padding(12)
+                            .contentShape(Rectangle())
+                    }
                 }
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+                .overlay(
+                    Capsule()
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                )
+                .padding(.top, 110)
+                .padding(.trailing, 20)
             }
-            .padding(.top, 50)
-            .padding(.trailing, 20)
-            
             Spacer()
         }
     }

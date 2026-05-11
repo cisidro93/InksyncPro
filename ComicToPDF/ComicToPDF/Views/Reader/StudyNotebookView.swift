@@ -230,9 +230,14 @@ struct MarkdownHighlighter {
         let h3Font = UIFont.boldSystemFont(ofSize: 18)
         let defaultColor = UIColor.label
         
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = 6
+        paragraphStyle.paragraphSpacing = 12
+
         let attrString = NSMutableAttributedString(string: text, attributes: [
             .font: defaultFont,
-            .foregroundColor: defaultColor
+            .foregroundColor: defaultColor,
+            .paragraphStyle: paragraphStyle
         ])
         
         let fullRange = NSRange(text.startIndex..., in: text)
@@ -266,6 +271,18 @@ struct MarkdownHighlighter {
                 attrString.addAttributes([
                     .foregroundColor: UIColor.systemBlue,
                     .underlineStyle: NSUnderlineStyle.single.rawValue
+                ], range: match.range)
+            }
+        }
+        
+        // Tags (#tag)
+        let tagPattern = "(?<!\\w)#\\w+"
+        if let regex = try? NSRegularExpression(pattern: tagPattern, options: []) {
+            let matches = regex.matches(in: text, range: fullRange)
+            for match in matches {
+                attrString.addAttributes([
+                    .foregroundColor: UIColor.systemOrange,
+                    .font: boldFont
                 ], range: match.range)
             }
         }

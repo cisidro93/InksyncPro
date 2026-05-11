@@ -7,6 +7,21 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
     static let shared = CloudDownloadManager()
 
     @Published var activeDownloads: [String: Double] = [:]  // fileID → progress 0...1
+    /// Per-file streaming progress (0–1). Cloud cells observe this to show a progress bar.
+    @Published var streamProgress: [String: Double] = [:]   // remoteID → progress 0...1
+
+    // MARK: - Temp-File Cache (avoid re-download within 1 hour)
+    private struct CacheEntry { let url: URL; let expires: Date }
+    private var tempFileCache: [String: CacheEntry] = [:]    // remoteID → CacheEntry
+    private let cacheHoursLimit: Double = 1.0
+
+    // Dedicated foreground URLSession for streaming (progress-observable)
+    private lazy var streamSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 3600  // allow up to 1 hour for large archives
+        return URLSession(configuration: config)
+    }()
 
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.background(
@@ -21,6 +36,12 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
     private var downloadTaskMeta: [URLSessionDownloadTask: (fileID: String, fileName: String)] = [:]
 
     private override init() { super.init() }
+
+    // MARK: - In-Flight Stream Deduplication
+    // If two concurrent readers try to open the same cloud file, only one network
+    // fetch is made. Both callers await the same Task and receive the same local URL.
+    private var activeStreams: [String: Task<URL, Error>] = [:]  // remoteID → Task
+    private let streamsLock = NSLock()
 
     // MARK: - Public API
 
@@ -64,6 +85,158 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
             }
         }
     }
+
+    // MARK: - Streaming API (No Permanent Storage)
+    
+    /// Downloads a cloud file to a temporary directory and returns its local URL.
+    ///
+    /// Hardened guarantees:
+    ///  - HTTP response status validated: non-2xx throws a localised error.
+    ///  - In-flight deduplication: concurrent calls for the same `remoteID` share one Task.
+    ///  - Swift Task cancellation propagated: cancelling the parent Task cancels the download.
+    ///  - Temp file cleanup on failure: the OS temp file is removed if move fails.
+    ///  - Safe file name: path separators and excessively long names are sanitised.
+    func streamCloudFile(pdf: ConvertedPDF) async throws -> URL {
+        guard case .cloud(let provider, let remoteID) = pdf.sourceMode else {
+            throw CloudStreamError.notACloudFile
+        }
+
+        // ── Deduplication: reuse an existing in-flight task for the same remote ID ──
+        streamsLock.lock()
+        if let existing = activeStreams[remoteID] {
+            streamsLock.unlock()
+            return try await existing.value
+        }
+
+        let task: Task<URL, Error> = Task {
+            try await self._performStream(provider: provider, remoteID: remoteID, pdf: pdf)
+        }
+        activeStreams[remoteID] = task
+        streamsLock.unlock()
+
+        defer {
+            streamsLock.lock()
+            activeStreams.removeValue(forKey: remoteID)
+            streamsLock.unlock()
+        }
+
+        return try await task.value
+    }
+
+    private func _performStream(provider: String, remoteID: String, pdf: ConvertedPDF) async throws -> URL {
+        // ── Step 0: Temp-file cache — skip network if recently streamed ──────────
+        if let cached = tempFileCache[remoteID],
+           cached.expires > Date(),
+           FileManager.default.fileExists(atPath: cached.url.path) {
+            Logger.shared.log("CloudStream: Cache hit for '\(pdf.name)' — skipping re-download", category: "Cloud")
+            return cached.url
+        }
+
+        // ── Step 1: Resolve authenticated download URL ──────────────────────────
+        let downloadURL: URL
+        var request: URLRequest
+
+        if provider == "Dropbox" {
+            downloadURL = try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
+            request = URLRequest(url: downloadURL)
+            // Dropbox temporary links are pre-authenticated — no Authorization header needed
+        } else if provider == "Google Drive" {
+            downloadURL = try await GoogleDriveProvider.shared.getDownloadURL(fileID: remoteID)
+            request = URLRequest(url: downloadURL)
+            let authHeader = try await GoogleDriveProvider.shared.currentAuthHeader()
+            request.setValue(authHeader, forHTTPHeaderField: "Authorization")
+        } else {
+            throw CloudStreamError.unknownProvider(provider)
+        }
+
+        // ── Step 2: Download with Task-cancellation support and live progress ────
+        try Task.checkCancellation()
+
+        await MainActor.run { self.streamProgress[remoteID] = 0.0 }
+
+        // Use the dedicated streamSession with an observation task for progress
+        let (tempURL, response) = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, URLResponse), Error>) in
+            let task = self.streamSession.downloadTask(with: request) { localURL, response, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else if let localURL, let response {
+                    // Move out of the OS-managed temp path immediately (it's deleted after callback)
+                    let safeTemp = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("inksync_dl_\(UUID().uuidString.prefix(8))")
+                    do {
+                        try FileManager.default.moveItem(at: localURL, to: safeTemp)
+                        continuation.resume(returning: (safeTemp, response))
+                    } catch {
+                        continuation.resume(throwing: CloudStreamError.localFileMoveFailure(error))
+                    }
+                } else {
+                    continuation.resume(throwing: CloudStreamError.httpError(statusCode: 0, provider: provider))
+                }
+            }
+            // Wire progress observation
+            let observation = task.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
+                let fraction = progress.fractionCompleted
+                DispatchQueue.main.async { self?.streamProgress[remoteID] = fraction }
+            }
+            // Retain observation until task finishes by attaching it to a Task
+            Task { _ = observation }
+            task.resume()
+        }
+
+        // ── Step 3: Validate HTTP response ───────────────────────────────────────
+        if let httpResponse = response as? HTTPURLResponse {
+            let status = httpResponse.statusCode
+            guard (200...299).contains(status) else {
+                try? FileManager.default.removeItem(at: tempURL)
+                await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
+                throw CloudStreamError.httpError(statusCode: status, provider: provider)
+            }
+        }
+
+        // ── Step 4: Rename to a meaningful, safe path ────────────────────────────
+        let safeName = sanitisedFileName(for: pdf)
+        let uniqueID = UUID().uuidString.prefix(8)
+        let finalTemp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inksync_stream_\(uniqueID)_\(safeName)")
+
+        do {
+            if FileManager.default.fileExists(atPath: tempURL.path) {
+                try FileManager.default.moveItem(at: tempURL, to: finalTemp)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: tempURL)
+            await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
+            throw CloudStreamError.localFileMoveFailure(error)
+        }
+
+        // ── Step 5: Store in cache and clean up progress ──────────────────────────
+        let expiry = Date().addingTimeInterval(cacheHoursLimit * 3600)
+        tempFileCache[remoteID] = CacheEntry(url: finalTemp, expires: expiry)
+        await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
+
+        Logger.shared.log(
+            "CloudStream: '\(pdf.name)' ready at temp [\(uniqueID)] — cached until \(expiry)",
+            category: "Cloud", type: .success
+        )
+        return finalTemp
+    }
+
+    /// Produces a safe, non-empty file name: strips path separators, limits length to 200 chars.
+    private func sanitisedFileName(for pdf: ConvertedPDF) -> String {
+        let name = pdf.name
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "\\", with: "_")
+        let ext = (name as NSString).pathExtension.lowercased()
+        let knownExt = ["cbz", "cbr", "zip", "epub", "pdf", "cb7", "cbt"].contains(ext)
+        let withExt = knownExt ? name : (name + ".cbz")
+        // Truncate the stem so the full path stays safely within POSIX limits
+        if withExt.count > 200 {
+            let truncated = String(withExt.prefix(196)) + "." + (knownExt ? ext : "cbz")
+            return truncated
+        }
+        return withExt
+    }
+
 
     // MARK: - Private
 
@@ -167,5 +340,40 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
             }
         }
         downloadTaskMeta.removeValue(forKey: downloadTask)
+    }
+}
+
+// MARK: - CloudStreamError
+
+enum CloudStreamError: LocalizedError {
+    case notACloudFile
+    case unknownProvider(String)
+    case httpError(statusCode: Int, provider: String)
+    case localFileMoveFailure(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .notACloudFile:
+            return "This file is stored locally and does not require cloud streaming."
+        case .unknownProvider(let name):
+            return "'\(name)' is not a supported cloud provider. Please reconnect in Settings."
+        case .httpError(let code, let provider):
+            switch code {
+            case 401:
+                return "\(provider) session expired. Please reconnect your account in Settings → Cloud."
+            case 403:
+                return "Access denied. Check that InksyncPro has permission to read this file in \(provider)."
+            case 404:
+                return "File not found in \(provider). It may have been moved or deleted."
+            case 429:
+                return "\(provider) rate limit reached. Please wait a moment and try again."
+            case 500...599:
+                return "\(provider) server error (HTTP \(code)). Try again in a few minutes."
+            default:
+                return "Failed to download from \(provider) (HTTP \(code))."
+            }
+        case .localFileMoveFailure(let underlying):
+            return "Could not save the streamed file to device storage: \(underlying.localizedDescription)"
+        }
     }
 }

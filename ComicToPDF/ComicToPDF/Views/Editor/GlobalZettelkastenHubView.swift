@@ -121,17 +121,11 @@ struct GlobalZettelkastenHubView: View {
                                         .padding(.horizontal)
                                         
                                         // Group Items
-                                        VStack(spacing: 0) {
+                                        VStack(spacing: 12) {
                                             ForEach(group.value) { item in
                                                 GlobalHighlightRow(annotation: item)
-                                                if item != group.value.last {
-                                                    Divider().padding(.leading, 16)
-                                                }
                                             }
                                         }
-                                        .background(Color(UIColor.secondarySystemGroupedBackground))
-                                        .cornerRadius(12)
-                                        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
                                         .padding(.horizontal)
                                     }
                                 }
@@ -325,31 +319,38 @@ struct GlobalHighlightRow: View {
                 // Highlight text with left color bar
                 HStack(alignment: .top, spacing: 0) {
                     if let hex = annotation.colorHex {
-                        RoundedRectangle(cornerRadius: 2)
+                        RoundedRectangle(cornerRadius: 3)
                             .fill(Color(hex: hex))
-                            .frame(width: 3)
+                            .frame(width: 4)
                             .padding(.vertical, 2)
                     }
                     if let text = annotation.selectedText, !text.isEmpty {
                         Text(text)
-                            .font(.body)
+                            .font(.system(size: 16, weight: .regular, design: .serif))
                             .foregroundStyle(.primary)
-                            .padding(.leading, 8)
+                            .lineSpacing(4)
+                            .padding(.leading, 12)
                     }
                 }
 
                 // User's thought (noteText)
                 if let note = annotation.noteText, !note.isEmpty {
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "text.bubble.fill")
-                            .font(.caption2)
-                            .foregroundStyle(Color.accentColor.opacity(0.7))
-                            .padding(.top, 2)
-                        Text(note)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .italic()
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "text.bubble.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.accentColor)
+                                .padding(.top, 2)
+                            Text(note)
+                                .font(.system(size: 15, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.accentColor)
+                                .lineSpacing(2)
+                        }
                     }
+                    .padding(12)
+                    .background(Color.accentColor.opacity(0.08))
+                    .cornerRadius(10)
+                    .padding(.top, 4)
                 }
 
                 // Tags row — user tags in orange, Readwise tags in blue
@@ -382,9 +383,18 @@ struct GlobalHighlightRow: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
-                .padding(.top, 2)
+                .padding(.top, 6)
             }
-            .padding()
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(UIColor.secondarySystemGroupedBackground))
+                    .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 3)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 0.5)
+            )
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showingEdit) {

@@ -141,12 +141,13 @@ class PhysicalFileSystemRouter {
         
         let url: URL
         var needsStopAccess = false
-        if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
-            // ✅ FIX: Start security-scoped access BEFORE launching the background task.
-            // The detached task captures `url` and reads the file — the scope must remain
-            // live for the full duration of the background work, not just URL resolution.
+        if case .linked(let bm) = pdf.sourceMode, let resolved = try? await BookmarkResolver.shared.resolve(bm) {
             needsStopAccess = resolved.startAccessingSecurityScopedResource()
             url = resolved
+        } else if case .cloud = pdf.sourceMode {
+            // Cloud files: cover must be generated from a pre-streamed local temp URL.
+            // Call generateCoverThumbnailFromLocalURL(for:localURL:manager:) instead.
+            return
         } else {
             url = pdf.url
         }
@@ -160,6 +161,21 @@ class PhysicalFileSystemRouter {
         
         guard let image = image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
         saveCoverImage(jpegData, for: pdf, manager: manager)
+    }
+
+    /// Generates and persists a cover thumbnail from an already-downloaded temp file.
+    /// Call this immediately after `CloudDownloadManager.streamCloudFile` returns.
+    func generateCoverThumbnailFromLocalURL(for pdf: ConvertedPDF, localURL: URL, manager: ConversionManager) async {
+        // Skip if cover already exists on disk
+        if let coverURL = getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) { return }
+        
+        let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+            PhysicalFileSystemRouter.extractCoverImageStatic(from: localURL)
+        }.value
+        
+        guard let image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
+        saveCoverImage(jpegData, for: pdf, manager: manager)
+        Logger.shared.log("PhysicalFileSystemRouter: Cloud cover generated for '\(pdf.name)'", category: "Cloud", type: .success)
     }
     
     func backfillMissingThumbnails(manager: ConversionManager) {

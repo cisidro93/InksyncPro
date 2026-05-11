@@ -229,6 +229,11 @@ struct CloudFileBrowserView: View {
                     Text("Scanning \"\(folderName)\"…")
                         .font(.subheadline.bold())
                         .foregroundColor(.white)
+                    if addedCount > 0 {
+                        Text("\(addedCount) files found")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                 } else {
                     Text("Adding \(addedCount) file(s) to Library…")
                         .font(.subheadline.bold())
@@ -357,9 +362,14 @@ struct CloudFileBrowserView: View {
         // 2. Recursive folder enumeration
         let folderItems = files.filter { selectedFolders.contains($0.id) }
         for folder in folderItems {
-            await MainActor.run { scanningFolderName = folder.name }
+            await MainActor.run { 
+                scanningFolderName = folder.name
+                addedCount = 0 
+            }
             do {
-                let folderFiles = try await provider.listAllFiles(folder.id)
+                let folderFiles = try await provider.listAllFiles(folder.id) { count in
+                    Task { @MainActor in self.addedCount = count }
+                }
                 allFilesToAdd.append(contentsOf: folderFiles)
                 Logger.shared.log(
                     "CloudBrowser: scanned folder \"\(folder.name)\" → \(folderFiles.count) file(s)",
@@ -444,7 +454,7 @@ struct CloudBrowserProvider {
     let providerID: String  // "dropbox" | "googledrive"
     let listDirectory: (_ folderID: String?) async throws -> [CloudFile]
     /// Recursively lists all supported files inside a folder (for bulk-add).
-    let listAllFiles: (_ folderID: String) async throws -> [CloudFile]
+    let listAllFiles: (_ folderID: String, _ onProgress: ((Int) -> Void)?) async throws -> [CloudFile]
 
     /// The official brand icon image name in Assets.xcassets.
     /// Use with .renderingMode(.original) to preserve brand colours.
@@ -463,8 +473,8 @@ struct CloudBrowserProvider {
             listDirectory: { folderID in
                 try await DropboxProvider.shared.listDirectory(folderID: folderID)
             },
-            listAllFiles: { folderID in
-                try await DropboxProvider.shared.listAllFiles(inFolderID: folderID)
+            listAllFiles: { folderID, onProgress in
+                try await DropboxProvider.shared.listAllFiles(inFolderID: folderID, onProgress: onProgress)
             }
         )
     }
@@ -476,7 +486,7 @@ struct CloudBrowserProvider {
             listDirectory: { folderID in
                 try await GoogleDriveProvider.shared.listDirectory(folderID: folderID)
             },
-            listAllFiles: { _ in
+            listAllFiles: { _, _ in
                 // Google Drive recursive enumeration — implement when GDrive folder-add is needed
                 []
             }
