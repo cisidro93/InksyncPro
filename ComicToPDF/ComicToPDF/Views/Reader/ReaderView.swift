@@ -685,20 +685,17 @@ struct ReaderView: View {
 
                 case .pageStream(let source):
                     // ✅ BYTE-RANGE STREAMING: Fetch all pages into a temp dir via range requests.
-                    // Pages are fetched concurrently, in batches, and added to self.pages as they arrive.
-                    // The reader opens as soon as the first page is ready — remaining pages fill in behind it.
+                    // All pages are fetched concurrently. The reader opens once all pages are
+                    // ready — same pattern as .extractedPages for consistency.
                     let tempDir = FileManager.default.temporaryDirectory
                         .appendingPathComponent("stream_\(pdf.id.uuidString.prefix(8))")
                     try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-                    await MainActor.run {
-                        self.unzippedDir = tempDir
-                        // Pre-allocate the pages array with placeholder nil-converted URLs
-                        // so page count and scrubber are correct from the start
-                        self.pages = Array(repeating: tempDir, count: source.pageCount)
-                    }
+                    // Accumulate results without pre-allocating placeholder URLs.
+                    // Pre-allocating with tempDir (a directory) causes PageBufferManager
+                    // to attempt to decode a directory as an image — always nil.
+                    var fetchedPages: [URL?] = Array(repeating: nil, count: source.pageCount)
 
-                    // Fetch pages concurrently in a TaskGroup, writing each to the temp dir
                     await withTaskGroup(of: (Int, URL?).self) { group in
                         for (i, entry) in source.pages.enumerated() {
                             group.addTask {
@@ -722,20 +719,23 @@ struct ReaderView: View {
                             }
                         }
                         for await (index, pageURL) in group {
-                            if let url = pageURL {
-                                await MainActor.run {
-                                    self.pages[index] = url
-                                    // Open reader on first successful page
-                                    if self.isLoading { self.isLoading = false }
-                                }
-                            }
+                            fetchedPages[index] = pageURL
                         }
                     }
 
-                    await MainActor.run { self.isLoading = false }
+                    // Compact to only successfully fetched pages and open the reader.
+                    let resolvedPages = fetchedPages.compactMap { $0 }
+                    await MainActor.run {
+                        self.unzippedDir = tempDir
+                        self.pages = resolvedPages
+                        self.isLoading = false
+                        if resolvedPages.isEmpty {
+                            self.errorMessage = "Could not load any pages from the cloud archive."
+                        }
+                    }
 
-                    // Generate cover from the already-fetched page 0 temp file
-                    if let firstPage = await MainActor.run(body: { self.pages.first }),
+                    // Generate cover from page 0 (already on disk — no network hit)
+                    if let firstPage = resolvedPages.first,
                        let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
                         Task(priority: .background) {
                             await PhysicalFileSystemRouter.shared
@@ -743,6 +743,7 @@ struct ReaderView: View {
                         }
                     }
                     return
+
 
                 case .extractedPages(let workingDir, let pages):
                     // ✅ CBR BEST PRACTICE: Pages already extracted to temp dir by CBRExtractor.

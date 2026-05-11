@@ -8,14 +8,14 @@ extension ConversionManager {
         let task = AppBackgroundTask(title: "Building Omnibus: \(name)", progress: 0.0)
         activeTasks.append(task)
         
-        let pdfPairs = sourceFiles.map { ($0.url, $0.sourceMode, $0.coverImageData) }
+        let pdfPairs = sourceFiles  // pass full objects — avoids fragile URL equality match for cloud files
         let startCover = sourceFiles.first?.coverImageData
         let settings = AppSettingsManager.shared.conversionSettings
         let saveDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         
         Task.detached(priority: .userInitiated) {
             // ✅ Linked Library: Resolve all source URLs through BookmarkResolver
-            // This handles both local files and linked drive files transparently.
+            // This handles both local files, linked drive files, and cloud files transparently.
             var resolvedURLs: [URL] = []
             var accessingTokens: [(URL, Bool)] = []  // Track which URLs we opened so we can close them all
             var tempCloudURLs: [URL] = []             // Track cloud temp files for cleanup after merge
@@ -26,31 +26,28 @@ extension ConversionManager {
                 // Clean up any cloud-downloaded temp files
                 tempCloudURLs.forEach { try? FileManager.default.removeItem(at: $0) }
             }
-            for (url, mode, _) in pdfPairs {
-                switch mode {
+            for pdf in pdfPairs {
+                switch pdf.sourceMode {
                 case .linked(let bm):
                     if let resolved = try? BookmarkResolver.shared.resolve(bm) {
                         let accessing = resolved.startAccessingSecurityScopedResource()
                         accessingTokens.append((resolved, accessing))
                         resolvedURLs.append(resolved)
                     } else {
-                        resolvedURLs.append(url) // fallback
+                        resolvedURLs.append(pdf.url) // fallback
                     }
                 case .cloud:
                     // Download cloud file to a temp location for the duration of the merge.
-                    // Matched by URL since pdfPairs only carries (url, mode, cover).
-                    if let matchedPDF = await MainActor.run(body: { sourceFiles.first(where: { $0.url == url }) }) {
-                        do {
-                            let localURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: matchedPDF)
-                            tempCloudURLs.append(localURL)
-                            resolvedURLs.append(localURL)
-                        } catch {
-                            Logger.shared.log("enqueueOmnibus: Cloud download failed for '\(matchedPDF.name)': \(error.localizedDescription)", category: "Cloud", type: .error)
-                            // Skip this file rather than crashing the whole omnibus
-                        }
+                    do {
+                        let localURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
+                        tempCloudURLs.append(localURL)
+                        resolvedURLs.append(localURL)
+                    } catch {
+                        Logger.shared.log("enqueueOmnibus: Cloud download failed for '\(pdf.name)': \(error.localizedDescription)", category: "Cloud", type: .error)
+                        // Skip this file rather than crashing the whole omnibus
                     }
                 default:
-                    resolvedURLs.append(url)
+                    resolvedURLs.append(pdf.url)
                 }
             }
             do {

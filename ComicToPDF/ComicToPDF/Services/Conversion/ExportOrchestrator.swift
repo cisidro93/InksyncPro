@@ -58,10 +58,12 @@ class ExportOrchestrator {
             }
         }
 
-        let exportName = localSourceURL.lastPathComponent
+        // Use pdf.name so the exported file always has the user-facing name,
+        // not the temp UUID path used for cloud-downloaded intermediates.
+        let exportName = pdf.name
         let exportURL = tempDir.appendingPathComponent(exportName)
         try? fileManager.removeItem(at: exportURL)
-        
+
         TaskEngine.shared.isConverting = true; TaskEngine.shared.processingStatus = "Preparing Export..."; TaskEngine.shared.statusMessage = "Embedding Metadata..."
         defer { 
             TaskEngine.shared.isConverting = false 
@@ -76,7 +78,9 @@ class ExportOrchestrator {
             var panelsToInject = [Int: [PanelExtractor.Panel]]()
             if AppSettingsManager.shared.conversionSettings.isGuidedView {
                 panelsToInject = await manager.getCombinedManifest(for: pdf)
-                let files = try await EditorSessionManager.shared.extractImageURLs(from: pdf.url)
+                // Use the already-copied exportURL for panel extraction —
+                // it's a real local file even when the source was cloud.
+                let files = try await EditorSessionManager.shared.extractImageURLs(from: exportURL)
                 
                 for (index, fileURL) in files.enumerated() {
                     if panelsToInject[index] == nil && AppSettingsManager.shared.conversionSettings.enablePanelSplit {
