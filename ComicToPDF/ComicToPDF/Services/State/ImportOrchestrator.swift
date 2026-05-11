@@ -83,10 +83,12 @@ actor ImportOrchestrator {
             let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
             guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { return [] }
             
+            // O(1) in-batch dedup — avoids O(n²) newlyImported.contains(where:) scan
+            var batchFileNames = Set<String>()
             var fileCount = 0
             while let fileURL = enumerator.nextObject() as? URL {
                 fileCount += 1
-                if fileCount % 10 == 0 {
+                if fileCount % 25 == 0 {
                     let currentCount = fileCount
                     await MainActor.run { manager.processingStatus = "Scanning \(folderURL.lastPathComponent) (\(currentCount) items)..." }
                     await Task.yield()
@@ -101,15 +103,16 @@ actor ImportOrchestrator {
                 let fileName = fileURL.lastPathComponent
                 let destURL = documentsDir.appendingPathComponent(fileName)
                 
-                if existingPaths.contains(fileName) || newlyImported.contains(where: { $0.url.lastPathComponent == fileName }) { continue }
+                // O(1) dedup using pre-built sets (FIX: was O(n) contains(where:) per file)
+                guard !existingPaths.contains(fileName) && !batchFileNames.contains(fileName) else { continue }
                 
                 do {
                     await MainActor.run { manager.processingStatus = "Importing \(fileName)..." }
                     if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
                     try fileManager.copyItem(at: fileURL, to: destURL)
                     
-                    let attr = try fileManager.attributesOfItem(atPath: destURL.path)
-                    let size = attr[.size] as? Int64 ?? 0
+                    // FIX: read size from enumerator's pre-fetched resourceValues — saves one attributesOfItem syscall per file
+                    let size = resourceValues.fileSize.map(Int64.init) ?? 0
                     
                     let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
                     var smartDisplayName = fileName
@@ -118,32 +121,43 @@ actor ImportOrchestrator {
                     
                     let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
                     
-                    if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
+                    // FIX: Single ZIP open — previously called fetchNonDestructiveMetadata AND
+                    // ComicInfoParser.parse separately, each re-opening the archive.
+                    let isArchive = ["cbz", "zip"].contains(ext)
+                    let xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
+                    let parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
+
+                    if let xmlData = xmlData {
                         smartDisplayName = xmlData.displayName
-                    }
-                    
-                    if let parsedInfo = ComicInfoParser.parse(from: destURL) {
-                        smartMetadata.title = parsedInfo.title ?? smartDisplayName
-                        smartMetadata.series = parsedInfo.series ?? seriesName
-                        smartMetadata.issueNumber = parsedInfo.number
-                        smartMetadata.writer = parsedInfo.writer
-                        smartMetadata.publisher = parsedInfo.publisher
-                        smartMetadata.summary = parsedInfo.summary
-                        smartMetadata.isManga = parsedInfo.manga
-                        if let year = parsedInfo.year {
-                            var comps = DateComponents()
-                            comps.year = year; comps.month = 1; comps.day = 1
-                            smartMetadata.publicationDate = Calendar.current.date(from: comps)
-                        }
-                        for tag in parsedInfo.tags {
-                            if !smartMetadata.tags.contains(tag) { smartMetadata.tags.append(tag) }
-                        }
+                        smartMetadata.title = xmlData.parsedTitle ?? smartDisplayName
+                        smartMetadata.series = xmlData.parsedSeries ?? seriesName
+                        smartMetadata.issueNumber = xmlData.parsedNumber
                         smartMetadata.tags.append("Auto XML Scrape")
-                    } else {
+                    }
+
+                    if let parsedInfo = parsedInfo {
+                        smartMetadata.isManga = parsedInfo.manga
+                        if xmlData == nil {
+                            smartMetadata.title = parsedInfo.title ?? smartDisplayName
+                            smartMetadata.series = parsedInfo.series ?? seriesName
+                            smartMetadata.issueNumber = parsedInfo.number
+                            smartMetadata.writer = parsedInfo.writer
+                            smartMetadata.publisher = parsedInfo.publisher
+                            smartMetadata.summary = parsedInfo.summary
+                            if let year = parsedInfo.year {
+                                var comps = DateComponents()
+                                comps.year = year; comps.month = 1; comps.day = 1
+                                smartMetadata.publicationDate = Calendar.current.date(from: comps)
+                            }
+                            for tag in parsedInfo.tags {
+                                if !smartMetadata.tags.contains(tag) { smartMetadata.tags.append(tag) }
+                            }
+                        }
+                    } else if xmlData == nil {
                         smartMetadata.title = smartDisplayName
                         smartMetadata.series = seriesName
                     }
-                    
+
                     var pdf = ConvertedPDF(
                         name: smartDisplayName,
                         url: destURL,
@@ -156,6 +170,7 @@ actor ImportOrchestrator {
                     if pdf.contentKind == .document {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                     }
+                    batchFileNames.insert(fileName)
                     newlyImported.append(pdf)
                 } catch {
                     Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import", type: .error)
@@ -252,8 +267,8 @@ actor ImportOrchestrator {
                     } else {
                         try fileManager.copyItem(at: url, to: destURL)
                     }
-                    let attr = try fileManager.attributesOfItem(atPath: destURL.path)
-                    let size = attr[.size] as? Int64 ?? 0
+                    // Re-use incomingSize if known, otherwise fallback to destURL attribute
+                    let size = incomingSize > 0 ? incomingSize : ((try? fileManager.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0)
 
                     let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
 
@@ -272,8 +287,11 @@ actor ImportOrchestrator {
                     // ── Single ZIP pass: merge ComicInfo fetch + full parse ─────────────
                     // Previously two separate ZIP opens (fetchNonDestructiveMetadata + ComicInfoParser.parse)
                     // each re-opened the archive; now we do one pass and use both results.
-                    let xmlData  = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)
-                    let parsedInfo = ComicInfoParser.parse(from: destURL)
+                    let ext = destURL.pathExtension.lowercased()
+                    let isArchive = ["cbz", "zip"].contains(ext)
+                    
+                    let xmlData  = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
+                    let parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
 
                     if let xmlData = xmlData {
                         smartDisplayName = xmlData.displayName
@@ -551,20 +569,22 @@ actor ImportOrchestrator {
                             await MainActor.run { manager.processingStatus = "Syncing \(fileName)..." }
                             if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
                             try fileManager.copyItem(at: fileURL, to: destURL)
-                            
-                            let attr = try fileManager.attributesOfItem(atPath: destURL.path)
-                            let size = attr[.size] as? Int64 ?? 0
-                            
+
+                            // FIX: read size from enumerator resource values — saves one attributesOfItem syscall per file
+                            let size = resourceValues.fileSize.map(Int64.init) ?? 0
+
+                            // FIX: restored missing declaration (compile error introduced by previous edit)
                             var smartDisplayName = fileName
-                            if let xmlData = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL) {
-                                smartDisplayName = xmlData.displayName
-                            }
+
+                            let isArchive = ["cbz", "zip"].contains(ext)
+                            let xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
+                            if let xmlData = xmlData { smartDisplayName = xmlData.displayName }
                             
                             let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
                             var metadata = PDFMetadata(title: smartDisplayName)
                             metadata.series = seriesName
                             
-                            if let parsedInfo = ComicInfoParser.parse(from: destURL) {
+                            if isArchive, let parsedInfo = ComicInfoParser.parse(from: destURL) {
                                 metadata.title = parsedInfo.title ?? smartDisplayName
                                 metadata.series = parsedInfo.series ?? seriesName
                                 metadata.issueNumber = parsedInfo.number
@@ -640,7 +660,21 @@ actor ImportOrchestrator {
             }
             manager.saveLibrary()
         }
-        for pdf in newPDFs { Task { await manager.generateCoverThumbnail(for: pdf) } }
+        // FIX: was one unstructured Task per file — floods thread pool with 1400 simultaneous zip opens.
+        // Now uses the same 4-slot TaskGroup pattern as importFilesAsSeries.
+        Task.detached(priority: .background) {
+            await withTaskGroup(of: Void.self) { group in
+                var inFlight = 0
+                for pdf in newPDFs {
+                    if inFlight >= 4 {
+                        await group.next()
+                        inFlight -= 1
+                    }
+                    group.addTask { await manager.generateCoverThumbnail(for: pdf) }
+                    inFlight += 1
+                }
+            }
+        }
     }
     
     nonisolated func detectContentType(from url: URL, mangaMode: Bool) -> ContentType {

@@ -359,7 +359,7 @@ struct CloudFileBrowserView: View {
         for folder in folderItems {
             await MainActor.run { scanningFolderName = folder.name }
             do {
-                let folderFiles = try await provider.listAllFiles(folderID: folder.id)
+                let folderFiles = try await provider.listAllFiles(folder.id)
                 allFilesToAdd.append(contentsOf: folderFiles)
                 Logger.shared.log(
                     "CloudBrowser: scanned folder \"\(folder.name)\" → \(folderFiles.count) file(s)",
