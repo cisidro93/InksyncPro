@@ -12,16 +12,51 @@ struct CBRExtractor {
     /// Extracts a CBR/RAR archive to a temporary directory.
     /// - Returns: (workingDir, sorted image URLs) — same contract as ZipUtilities.extractComic
     static func extract(from sourceURL: URL) async throws -> (workingDir: URL, imageURLs: [URL]) {
+        let fileManager = FileManager.default
+
+        // ── Phase 1: Resolve local file URL ────────────────────────────────────
+        // Unrar.Archive calls into libunrar which uses fopen() internally.
+        // fopen() only accepts local filesystem paths — passing an https:// URL
+        // returns ERAR_BAD_DATA (error 2). Download remote files to a temp path first.
+        let localSourceURL: URL
+        var tempDownloadURL: URL? = nil
+        let scheme = sourceURL.scheme?.lowercased() ?? ""
+
+        if scheme == "http" || scheme == "https" {
+            Logger.shared.log(
+                "CBRExtractor: remote CBR detected — downloading to temp file before extraction",
+                category: "System"
+            )
+            let downloadDest = fileManager.temporaryDirectory
+                .appendingPathComponent("cbr_dl_\(UUID().uuidString).cbr")
+            // URLSession.download is natively async — no DispatchQueue bridge needed
+            let (downloaded, response) = try await URLSession.shared.download(from: sourceURL)
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                throw NSError(
+                    domain: "CBRExtractor", code: http.statusCode,
+                    userInfo: [NSLocalizedDescriptionKey: "Remote CBR download failed (HTTP \(http.statusCode))"]
+                )
+            }
+            try fileManager.moveItem(at: downloaded, to: downloadDest)
+            localSourceURL = downloadDest
+            tempDownloadURL = downloadDest
+        } else {
+            localSourceURL = sourceURL
+        }
+
+        // ── Phase 2: Sync RAR extraction on a background thread ────────────────
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    let fileManager = FileManager.default
+                    // Security-scoped access (only applies to local sandbox-scoped URLs)
+                    let secured = localSourceURL.startAccessingSecurityScopedResource()
+                    defer {
+                        if secured { localSourceURL.stopAccessingSecurityScopedResource() }
+                        // Clean up the temporary downloaded file after extraction
+                        if let tmp = tempDownloadURL { try? fileManager.removeItem(at: tmp) }
+                    }
 
-                    // Security-scoped access
-                    let secured = sourceURL.startAccessingSecurityScopedResource()
-                    defer { if secured { sourceURL.stopAccessingSecurityScopedResource() } }
-
-                    // Create temp destination
+                    // Create extraction destination
                     let stem = sourceURL.deletingPathExtension().lastPathComponent
                     let uniqueID = UUID().uuidString.prefix(8)
                     let tempDir = fileManager.temporaryDirectory
@@ -29,7 +64,7 @@ struct CBRExtractor {
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
                     // Open archive — Unrar.Archive disambiguates from ZIPFoundation.Archive
-                    let archive = try Unrar.Archive(fileURL: sourceURL)
+                    let archive = try Unrar.Archive(fileURL: localSourceURL)
 
                     // List all entries
                     let entries = try archive.entries()
