@@ -123,7 +123,26 @@ struct WebtoonScrollView: UIViewRepresentable {
                 stack.addArrangedSubview(ph)
                 imageViews.append(iv)
 
-                // Async image decode — top 5 pages eagerly, rest lazily
+                // 1. Fast aspect ratio metadata extraction (prevents layout jitter during scroll)
+                Task.detached(priority: .userInitiated) {
+                    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+                          let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
+                          let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat,
+                          width > 0 else { return }
+                    
+                    let ratio = height / width
+                    await MainActor.run {
+                        if let superview = iv.superview {
+                            for constraint in superview.constraints where constraint.firstAttribute == .height && constraint.relation == .equal {
+                                constraint.isActive = false
+                            }
+                            superview.heightAnchor.constraint(equalTo: superview.widthAnchor, multiplier: ratio).isActive = true
+                        }
+                    }
+                }
+
+                // 2. Async image decode — top 5 pages eagerly, rest lazily
                 if index < 5 { loadImage(at: index, url: url, into: iv) }
             }
         }
@@ -133,23 +152,31 @@ struct WebtoonScrollView: UIViewRepresentable {
             loadTasks[index] = Task.detached(priority: .userInitiated) {
                 guard let data = try? Data(contentsOf: url),
                       let img  = UIImage(data: data) else { return }
+                
+                let isSmartCrop = UserDefaults.standard.bool(forKey: "isAutoCropEnabled")
+                let contrast = UserDefaults.standard.double(forKey: "comic_autoContrastLevel")
+                // CoreImage filters applied universally
+                let processed = await ReaderImageFilterEngine.shared.process(
+                    url: url,
+                    image: img,
+                    isSmartCrop: isSmartCrop,
+                    contrast: contrast,
+                    saturation: 1.0,
+                    warmth: 0.0
+                )
+                
                 await MainActor.run {
                     guard !Task.isCancelled else { return }
-                    iv.image = img
-                    // Correct the placeholder height now we know the real aspect
-                    if let ph = iv.superview, img.size.width > 0 {
-                        let ratio = img.size.height / img.size.width
-                        for constraint in ph.constraints where
-                            constraint.firstAttribute == .height &&
-                            constraint.relation == .equal {
-                            constraint.isActive = false
-                        }
-                        ph.heightAnchor.constraint(
-                            equalTo: ph.widthAnchor, multiplier: ratio
-                        ).isActive = true
-                    }
+                    iv.image = processed
                 }
             }
+        }
+
+        private func unloadImage(at index: Int) {
+            guard index >= 0, index < imageViews.count else { return }
+            loadTasks[index]?.cancel()
+            loadTasks[index] = nil
+            imageViews[index].image = nil
         }
 
         // MARK: - Scroll delegate
@@ -173,6 +200,14 @@ struct WebtoonScrollView: UIViewRepresentable {
                             loadImage(at: ni, url: parentView.pages[ni], into: imageViews[ni])
                         }
                     }
+                    
+                    // Sliding Window Eviction: Unload images outside [-4, +4] radius to prevent OOM memory leak
+                    for key in loadTasks.keys {
+                        if abs(key - idx) > 4 {
+                            unloadImage(at: key)
+                        }
+                    }
+                    
                     break
                 }
             }

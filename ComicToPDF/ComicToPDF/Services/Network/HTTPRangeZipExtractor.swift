@@ -22,6 +22,10 @@ class HTTPRangeZipExtractor {
     private(set) var entries: [ZipEntry] = []
     private var totalFileSize: Int64 = 0
     
+    // MARK: - Caching & Prefetching
+    private let chunkCache = NSCache<NSString, NSData>()
+    private var inflightTasks: [String: Task<Data, Error>] = [:]
+    
     init(url: URL, authHeader: String? = nil) {
         self.remoteURL = url
         self.authHeader = authHeader
@@ -77,6 +81,46 @@ class HTTPRangeZipExtractor {
     }
     
     func extractFile(entry: ZipEntry) async throws -> Data {
+        let cacheKey = entry.name as NSString
+        
+        // 1. Check Cache
+        if let cached = chunkCache.object(forKey: cacheKey) {
+            return cached as Data
+        }
+        
+        // 2. Check if already fetching
+        if let existingTask = inflightTasks[entry.name] {
+            return try await existingTask.value
+        }
+        
+        // 3. Start new fetch
+        let task = Task<Data, Error> {
+            let data = try await performExtraction(entry: entry)
+            chunkCache.setObject(data as NSData, forKey: cacheKey)
+            inflightTasks[entry.name] = nil
+            return data
+        }
+        inflightTasks[entry.name] = task
+        return try await task.value
+    }
+    
+    /// Pre-fetches entries into memory. Call this to mask network latency.
+    func prefetch(entries: [ZipEntry]) {
+        for entry in entries {
+            let cacheKey = entry.name as NSString
+            if chunkCache.object(forKey: cacheKey) == nil && inflightTasks[entry.name] == nil {
+                let task = Task<Data, Error> {
+                    let data = try await performExtraction(entry: entry)
+                    chunkCache.setObject(data as NSData, forKey: cacheKey)
+                    inflightTasks[entry.name] = nil
+                    return data
+                }
+                inflightTasks[entry.name] = task
+            }
+        }
+    }
+    
+    private func performExtraction(entry: ZipEntry) async throws -> Data {
         // Optimization: Fetch Local File Header + compressed payload in one go.
         // We assume extra fields won't exceed 1024 bytes (usually 0-32 bytes).
         let safeBuffer: Int64 = 1024
