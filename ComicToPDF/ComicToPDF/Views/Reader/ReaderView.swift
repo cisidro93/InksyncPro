@@ -114,9 +114,8 @@ struct ReaderView: View {
     @ObservedObject private var ambientBrightness = AmbientBrightnessManager.shared
     @State private var userHasManuallyAdjustedWarmth = false
 
-    // ✅ CLOUD STREAMING: OPDS-style page source (set by CloudStreamCoordinator)
-    @State private var cloudPageSource: CloudPageSource? = nil
-    @StateObject private var streamCoordinator = CloudStreamCoordinator.shared
+    // ✅ CLOUD STREAMING: Phase-aware loading UI driven by CloudStreamCoordinator
+    @ObservedObject private var streamCoordinator = CloudStreamCoordinator.shared
 
     // ✅ Reading velocity tracking
     @State private var sessionStartTime: Date = Date()
@@ -685,22 +684,65 @@ struct ReaderView: View {
                 switch readyState {
 
                 case .pageStream(let source):
-                    // ✅ INSTANT OPEN: Hand the page manifest to ComicImageCache — no local file needed.
-                    // The cache will issue per-page byte-range requests as the user reads.
+                    // ✅ BYTE-RANGE STREAMING: Fetch all pages into a temp dir via range requests.
+                    // Pages are fetched concurrently, in batches, and added to self.pages as they arrive.
+                    // The reader opens as soon as the first page is ready — remaining pages fill in behind it.
+                    let tempDir = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("stream_\(pdf.id.uuidString.prefix(8))")
+                    try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
                     await MainActor.run {
-                        self.cloudPageSource = source
-                        // isLoading is cleared inside setupCloudSource via the cache
-                        self.isLoading = false
+                        self.unzippedDir = tempDir
+                        // Pre-allocate the pages array with placeholder nil-converted URLs
+                        // so page count and scrubber are correct from the start
+                        self.pages = Array(repeating: tempDir, count: source.pageCount)
                     }
 
-                    // ✅ Generate cover from page 0 in background (one byte-range fetch)
-                    if let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
-                        Task(priority: .background) {
-                            await PhysicalFileSystemRouter.shared
-                                .generateCoverFromCloudSource(for: pdf, source: source, manager: convManager)
+                    // Fetch pages concurrently in a TaskGroup, writing each to the temp dir
+                    await withTaskGroup(of: (Int, URL?).self) { group in
+                        for (i, entry) in source.pages.enumerated() {
+                            group.addTask {
+                                do {
+                                    let data = try await ZipCentralDirectory.fetchEntryData(
+                                        entry: entry, manifest: source.manifest
+                                    )
+                                    let ext = (entry.name as NSString).pathExtension.lowercased()
+                                    let pageFile = tempDir.appendingPathComponent(
+                                        String(format: "page_%05d.\(ext.isEmpty ? "jpg" : ext)", i)
+                                    )
+                                    try data.write(to: pageFile, options: .atomic)
+                                    return (i, pageFile)
+                                } catch {
+                                    Logger.shared.log(
+                                        "CloudStream: Page \(i) fetch failed: \(error.localizedDescription)",
+                                        category: "ReaderView", type: .error
+                                    )
+                                    return (i, nil)
+                                }
+                            }
+                        }
+                        for await (index, pageURL) in group {
+                            if let url = pageURL {
+                                await MainActor.run {
+                                    self.pages[index] = url
+                                    // Open reader on first successful page
+                                    if self.isLoading { self.isLoading = false }
+                                }
+                            }
                         }
                     }
-                    return  // Reader will render from cloudPageSource — no archive extraction needed
+
+                    await MainActor.run { self.isLoading = false }
+
+                    // Generate cover from the already-fetched page 0 temp file
+                    if let firstPage = await MainActor.run(body: { self.pages.first }),
+                       let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
+                        Task(priority: .background) {
+                            await PhysicalFileSystemRouter.shared
+                                .generateCoverThumbnailFromLocalURL(for: pdf, localURL: firstPage, manager: convManager)
+                        }
+                    }
+                    return
 
                 case .extractedPages(let workingDir, let pages):
                     // ✅ CBR BEST PRACTICE: Pages already extracted to temp dir by CBRExtractor.
