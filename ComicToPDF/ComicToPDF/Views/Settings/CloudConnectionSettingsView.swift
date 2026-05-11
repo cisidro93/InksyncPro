@@ -1,82 +1,33 @@
 import SwiftUI
 
 // MARK: - Branded Cloud Icon Views
+// Using official brand assets from Assets.xcassets.
+// .renderingMode(.original) preserves exact brand colours as required
+// by Dropbox and Google brand guidelines.
 
-/// Dropbox-branded icon: white open box shape on Dropbox blue (#0061FF)
+/// Dropbox brand icon — sourced from dropbox_icon.imageset in Assets.xcassets.
 struct DropboxIcon: View {
     let size: CGFloat
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.22)
-                .fill(Color(red: 0, green: 0.38, blue: 1.0))
-                .frame(width: size, height: size)
-            // Dropbox diamond/box simplified mark
-            VStack(spacing: size * 0.04) {
-                HStack(spacing: size * 0.06) {
-                    dropboxDiamond(size: size * 0.3)
-                    dropboxDiamond(size: size * 0.3)
-                }
-                HStack(spacing: size * 0.06) {
-                    dropboxDiamond(size: size * 0.3)
-                    dropboxDiamond(size: size * 0.3)
-                }
-            }
-        }
-    }
-    private func dropboxDiamond(size: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(.white)
+        Image("dropbox_icon")
+            .renderingMode(.original)
+            .resizable()
+            .scaledToFit()
             .frame(width: size, height: size)
-            .rotationEffect(.degrees(45))
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
     }
 }
 
-/// Google Drive–branded icon: colored triangle on white background
+/// Google Drive brand icon — sourced from google_drive_icon.imageset in Assets.xcassets.
 struct GoogleDriveIcon: View {
     let size: CGFloat
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.22)
-                .fill(.white)
-                .frame(width: size, height: size)
-                .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
-            // Google Drive triangle mark (three-color)
-            Canvas { ctx, sz in
-                let cx = sz.width / 2
-                let cy = sz.height / 2
-                let r  = sz.width * 0.36
-
-                // Bottom-left (green) segment
-                var p1 = Path(); p1.move(to: CGPoint(x: cx, y: cy - r))
-                p1.addLine(to: CGPoint(x: cx - r * 0.87, y: cy + r * 0.5))
-                p1.addLine(to: CGPoint(x: cx - r * 0.1, y: cy + r * 0.5))
-                p1.addLine(to: CGPoint(x: cx + r * 0.37, y: cy - r * 0.25))
-                p1.closeSubpath()
-                ctx.fill(p1, with: .color(Color(red: 0.13, green: 0.65, blue: 0.27)))
-
-                // Bottom-right (yellow) segment
-                var p2 = Path(); p2.move(to: CGPoint(x: cx, y: cy - r))
-                p2.addLine(to: CGPoint(x: cx + r * 0.87, y: cy + r * 0.5))
-                p2.addLine(to: CGPoint(x: cx + r * 0.1, y: cy + r * 0.5))
-                p2.addLine(to: CGPoint(x: cx - r * 0.37, y: cy - r * 0.25))
-                p2.closeSubpath()
-                ctx.fill(p2, with: .color(Color(red: 1.0, green: 0.73, blue: 0.0)))
-
-                // Bottom (blue) segment
-                var p3 = Path()
-                p3.move(to: CGPoint(x: cx - r * 0.87, y: cy + r * 0.5))
-                p3.addLine(to: CGPoint(x: cx + r * 0.87, y: cy + r * 0.5))
-                p3.addLine(to: CGPoint(x: cx + r * 0.1, y: cy + r * 0.5))
-                p3.addLine(to: CGPoint(x: cx - r * 0.1, y: cy + r * 0.5))
-                p3.closeSubpath()
-                // Use a thin bar instead for the bottom band
-                var bar = Path()
-                bar.addRect(CGRect(x: cx - r * 0.87, y: cy + r * 0.38,
-                                   width: r * 1.74, height: r * 0.24))
-                ctx.fill(bar, with: .color(Color(red: 0.26, green: 0.52, blue: 0.96)))
-            }
+        Image("google_drive_icon")
+            .renderingMode(.original)
+            .resizable()
+            .scaledToFit()
             .frame(width: size, height: size)
-        }
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
     }
 }
 
