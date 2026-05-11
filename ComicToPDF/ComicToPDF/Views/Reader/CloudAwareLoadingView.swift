@@ -2,15 +2,20 @@ import SwiftUI
 
 // MARK: - CloudAwareLoadingView
 // Shown during ReaderView's isLoading phase.
-// • Cloud file  → shows a branded iCloud icon + live download percentage bar
-// • Local file  → shows the original "Opening Book…" spinner
 //
-// This view observes CloudDownloadManager.streamProgress so it updates automatically
-// as bytes arrive without requiring any additional @State threading in ReaderView.
+// Fast path  (CBZ/ZIP/EPUB) → 2 phases, both complete in < 1 second:
+//   1. "Connecting…"     — resolving auth'd download URL
+//   2. "Reading index…"  — fetching ZIP central directory (~50ms)
+//   Then reader opens immediately with no wait for page data.
+//
+// Fallback path (CBR/RAR) → Full progress bar with % until download completes.
+//
+// Local file → Plain spinner (unchanged from before).
 
 struct CloudAwareLoadingView: View {
     let pdf: ConvertedPDF?
 
+    @ObservedObject private var coordinator = CloudStreamCoordinator.shared
     @ObservedObject private var downloadManager = CloudDownloadManager.shared
 
     private var remoteID: String? {
@@ -18,12 +23,11 @@ struct CloudAwareLoadingView: View {
         return id
     }
 
-    private var streamFraction: Double? {
-        guard let id = remoteID else { return nil }
-        return downloadManager.streamProgress[id]
+    private var isCloudFile: Bool {
+        guard let pdf else { return false }
+        if case .cloud = pdf.sourceMode { return true }
+        return false
     }
-
-    private var isCloudFile: Bool { remoteID != nil }
 
     var body: some View {
         ZStack {
@@ -38,6 +42,8 @@ struct CloudAwareLoadingView: View {
     }
 
     // MARK: - Cloud Loading UI
+
+    @ViewBuilder
     private var cloudLoadingContent: some View {
         VStack(spacing: 24) {
             // Icon
@@ -45,7 +51,7 @@ struct CloudAwareLoadingView: View {
                 Circle()
                     .fill(Color.orange.opacity(0.12))
                     .frame(width: 80, height: 80)
-                Image(systemName: "icloud.and.arrow.down")
+                Image(systemName: iconName)
                     .font(.system(size: 36, weight: .light))
                     .foregroundStyle(
                         LinearGradient(
@@ -54,13 +60,16 @@ struct CloudAwareLoadingView: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                    .symbolEffect(.pulse, isActive: streamFraction == nil || streamFraction! < 1.0)
+                    .symbolEffect(.pulse, isActive: coordinator.phase != .ready)
+                    .animation(.easeInOut, value: coordinator.phase)
             }
 
             VStack(spacing: 8) {
-                Text("Streaming from Cloud")
+                Text(headlineText)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(.white)
+                    .contentTransition(.opacity)
+                    .animation(.easeInOut(duration: 0.3), value: headlineText)
 
                 if let name = pdf?.name {
                     Text(name)
@@ -72,55 +81,58 @@ struct CloudAwareLoadingView: View {
                 }
             }
 
-            // Progress bar
-            VStack(spacing: 6) {
-                if let fraction = streamFraction, fraction > 0 {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.12))
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
+            // Progress indicator
+            if case .streaming(let fraction) = coordinator.phase {
+                // CBR fallback — show full percentage bar
+                VStack(spacing: 6) {
+                    if fraction > 0 {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.12))
+                                Capsule()
+                                    .fill(LinearGradient(
                                         colors: [.orange, .yellow],
                                         startPoint: .leading,
                                         endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: geo.size.width * CGFloat(fraction))
-                                .animation(.easeInOut(duration: 0.3), value: fraction)
+                                    ))
+                                    .frame(width: geo.size.width * CGFloat(fraction))
+                                    .animation(.easeInOut(duration: 0.3), value: fraction)
+                            }
                         }
+                        .frame(width: 240, height: 6)
+
+                        Text("\(Int(fraction * 100))%")
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            .foregroundColor(.orange)
+                            .contentTransition(.numericText())
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .tint(.orange)
+                            .frame(width: 240)
+                            .scaleEffect(x: 1, y: 1.5)
                     }
-                    .frame(width: 240, height: 6)
-
-                    Text("\(Int(fraction * 100))%")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundColor(.orange)
-                        .contentTransition(.numericText())
-                        .animation(.easeInOut, value: Int(fraction * 100))
-                } else {
-                    // Indeterminate — waiting for URL resolution / first bytes
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .tint(.orange)
-                        .frame(width: 240)
-                        .scaleEffect(x: 1, y: 1.5)
-
-                    Text("Connecting…")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.5))
                 }
+            } else if coordinator.phase == .resolvingURL || coordinator.phase == .fetchingIndex {
+                // Fast-path — brief indeterminate bar (gone in < 500ms for CBZ)
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .tint(.orange)
+                    .frame(width: 240)
+                    .scaleEffect(x: 1, y: 1.5)
             }
 
-            Text("Files stay in the cloud — this session only")
+            Text(footerText)
                 .font(.system(size: 11))
                 .foregroundColor(.white.opacity(0.35))
+                .multilineTextAlignment(.center)
         }
         .padding(40)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     // MARK: - Local Loading UI
+
     private var localLoadingContent: some View {
         VStack(spacing: 16) {
             ProgressView()
@@ -129,6 +141,33 @@ struct CloudAwareLoadingView: View {
             Text("Opening Book…")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.7))
+        }
+    }
+
+    // MARK: - Dynamic Text
+
+    private var headlineText: String {
+        switch coordinator.phase {
+        case .idle:             return "Preparing…"
+        case .resolvingURL:     return "Connecting to Cloud…"
+        case .fetchingIndex:    return "Reading File Index…"
+        case .streaming:        return "Downloading…"
+        case .ready:            return "Opening…"
+        case .failed:           return "Connection Failed"
+        }
+    }
+
+    private var iconName: String {
+        switch coordinator.phase {
+        case .streaming: return "arrow.down.circle"
+        default:         return "icloud.and.arrow.down"
+        }
+    }
+
+    private var footerText: String {
+        switch coordinator.phase {
+        case .streaming: return "Large archive — only needed for RAR format"
+        default:         return "Files stay in the cloud — this session only"
         }
     }
 }

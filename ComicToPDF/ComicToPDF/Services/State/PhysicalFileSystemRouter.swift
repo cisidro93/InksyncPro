@@ -177,6 +177,26 @@ class PhysicalFileSystemRouter {
         saveCoverImage(jpegData, for: pdf, manager: manager)
         Logger.shared.log("PhysicalFileSystemRouter: Cloud cover generated for '\(pdf.name)'", category: "Cloud", type: .success)
     }
+
+    /// Generates and persists a cover thumbnail from a live CloudPageSource.
+    /// Fetches only page 0 via a single HTTP byte-range request — no full archive download.
+    func generateCoverFromCloudSource(for pdf: ConvertedPDF, source: CloudPageSource, manager: ConversionManager) async {
+        // Skip if cover already exists
+        if let coverURL = getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) { return }
+        guard let firstEntry = source.pages.first else { return }
+
+        do {
+            let data = try await ZipCentralDirectory.fetchEntryData(entry: firstEntry, manifest: source.manifest)
+            let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                UIImage(data: data)
+            }.value
+            guard let image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
+            saveCoverImage(jpegData, for: pdf, manager: manager)
+            Logger.shared.log("PhysicalFileSystemRouter: Cloud cover from byte-range for '\(pdf.name)'", category: "Cloud", type: .success)
+        } catch {
+            Logger.shared.log("PhysicalFileSystemRouter: Cloud cover byte-range fetch failed: \(error.localizedDescription)", category: "Cloud", type: .error)
+        }
+    }
     
     func backfillMissingThumbnails(manager: ConversionManager) {
         let pdfsNeedingCovers = manager.convertedPDFs.filter { pdf in

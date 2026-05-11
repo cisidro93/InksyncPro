@@ -114,6 +114,10 @@ struct ReaderView: View {
     @ObservedObject private var ambientBrightness = AmbientBrightnessManager.shared
     @State private var userHasManuallyAdjustedWarmth = false
 
+    // ✅ CLOUD STREAMING: OPDS-style page source (set by CloudStreamCoordinator)
+    @State private var cloudPageSource: CloudPageSource? = nil
+    @StateObject private var streamCoordinator = CloudStreamCoordinator.shared
+
     // ✅ Reading velocity tracking
     @State private var sessionStartTime: Date = Date()
     @State private var pagesReadThisSession: Int = 0
@@ -670,31 +674,51 @@ struct ReaderView: View {
     private func prepareArchive() async {
         var activeFileURL = fileURL
         
-        // ✅ CLOUD STREAMING: Fetch cloud files directly to temp directory
-        if let pdf = pdf, case .cloud(_, let remoteID) = pdf.sourceMode {
-            await MainActor.run { 
+        // ✅ CLOUD STREAMING: Route through CloudStreamCoordinator
+        if let pdf = pdf, case .cloud = pdf.sourceMode {
+            await MainActor.run {
                 self.isLoading = true
                 self.errorMessage = nil
             }
             do {
-                let localStreamURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
-                await MainActor.run { self.fileURL = localStreamURL }
-                activeFileURL = localStreamURL
+                let readyState = try await CloudStreamCoordinator.shared.prepare(pdf: pdf)
+                switch readyState {
 
-                // ✅ Generate cover thumbnail from the streamed file (background, non-blocking)
-                if let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
-                    Task(priority: .background) {
-                        await PhysicalFileSystemRouter.shared.generateCoverThumbnailFromLocalURL(
-                            for: pdf,
-                            localURL: localStreamURL,
-                            manager: convManager
-                        )
+                case .pageStream(let source):
+                    // ✅ INSTANT OPEN: Hand the page manifest to ComicImageCache — no local file needed.
+                    // The cache will issue per-page byte-range requests as the user reads.
+                    await MainActor.run {
+                        self.cloudPageSource = source
+                        // isLoading is cleared inside setupCloudSource via the cache
+                        self.isLoading = false
+                    }
+
+                    // ✅ Generate cover from page 0 in background (one byte-range fetch)
+                    if let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
+                        Task(priority: .background) {
+                            await PhysicalFileSystemRouter.shared
+                                .generateCoverFromCloudSource(for: pdf, source: source, manager: convManager)
+                        }
+                    }
+                    return  // Reader will render from cloudPageSource — no archive extraction needed
+
+                case .localTemp(let url):
+                    // ⚠️ FALLBACK: CBR or malformed ZIP — full archive downloaded, extract normally
+                    await MainActor.run { self.fileURL = url }
+                    activeFileURL = url
+
+                    // Generate cover from the local temp file
+                    if let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
+                        Task(priority: .background) {
+                            await PhysicalFileSystemRouter.shared
+                                .generateCoverThumbnailFromLocalURL(for: pdf, localURL: url, manager: convManager)
+                        }
                     }
                 }
             } catch {
                 await MainActor.run {
                     Logger.shared.log("Reader cloud stream failed: \(error.localizedDescription)", category: "ReaderView", type: .error)
-                    self.errorMessage = error.localizedDescription  // Use LocalizedError message directly
+                    self.errorMessage = error.localizedDescription
                     self.isLoading = false
                 }
                 return

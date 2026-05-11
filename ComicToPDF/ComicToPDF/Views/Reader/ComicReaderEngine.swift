@@ -45,9 +45,12 @@ class ComicImageCache: ObservableObject {
     private let maxCacheSize = 7 // Can hold about ~15MB of images in memory depending on screen size
     private let prefetchLimit: Int // Configurable read-ahead page buffer
     
-    // For CBZ extraction
+    // For CBZ extraction (local file path)
     private var cbzArchive: Archive?
     private var entries: [Entry] = []
+    
+    // ✅ OPDS-style cloud page streaming
+    private var cloudPageSource: CloudPageSource?
     
     @Published var isLoading = true
     @Published var cacheUpdatedTick = 0 // Triggers SwiftUI redraw for async streams
@@ -68,9 +71,10 @@ class ComicImageCache: ObservableObject {
         isPDF = (ext == "pdf")
         
         if isStream {
+            // Cloud stream placeholder — pageCount will be set via setupCloudSource
             self.pdfDocument = nil
-            self.pageCount = 100
-            self.isLoading = false
+            self.pageCount = 0
+            self.isLoading = true
         } else if isPDF {
             self.pdfDocument = nil
             Task.detached(priority: .userInitiated) { [weak self] in
@@ -144,6 +148,20 @@ class ComicImageCache: ObservableObject {
         activelyAccessedURL?.stopAccessingSecurityScopedResource()
     }
     
+    // MARK: - Cloud Page Source Setup
+
+    /// Called by the reader after CloudStreamCoordinator resolves the manifest.
+    /// Replaces the placeholder isLoading=true state with real page data.
+    @MainActor
+    func setupCloudSource(_ source: CloudPageSource) {
+        self.cloudPageSource = source
+        self.pageCount = source.pageCount
+        self.isLoading = false
+        Logger.shared.log("ComicImageCache: Cloud source set — \(source.pageCount) pages", category: "Engine")
+    }
+
+    // MARK: - Fetching
+
     func getImage(at index: Int) -> UIImage? {
         guard index >= 0 && index < pageCount else { return nil }
         
@@ -156,8 +174,11 @@ class ComicImageCache: ObservableObject {
         // 2. Prevent redundant fetching
         if fetchingQueue.contains(index) { return nil }
         
-        if isStream {
-            fetchStreamImage(at: index)
+        if isStream && cloudPageSource != nil {
+            fetchCloudPageImage(at: index)
+        } else if isStream {
+            // Source not yet set — will redraw when setupCloudSource is called
+            return nil
         } else {
             // ✅ PROFESSIONAL ASYNC STREAMING (Eliminates UI Stutter/Main Thread lockups)
             fetchLocalImageAsync(at: index)
@@ -279,24 +300,56 @@ class ComicImageCache: ObservableObject {
         }
     }
 
-    private func fetchStreamImage(at index: Int) {
-        // Prevent duplicate network calls for same index
-        if accessQueue.contains(index) { return }
-        
-        guard let url = URL(string: "\(pdfDocument == nil ? "http://prototype-stream" : .init())/\(index)") else { return } // Replace with actual pdf.url in production
-        
-        accessQueue.append(index) // Mark as fetching before the Task starts
+    private func fetchCloudPageImage(at index: Int) {
+        guard let source = cloudPageSource, index < source.pages.count else { return }
+        fetchingQueue.insert(index)
+        let entry = source.pages[index]
+        let manifest = source.manifest
+
         Task.detached(priority: .userInitiated) { [weak self] in
-            guard let self = self else { return }
-            // Use URLSession async/await — no GCD dataTask callback needed
-            if let (data, _) = try? await URLSession.shared.data(from: url),
-               let image = UIImage(data: data) {
+            guard let self else { return }
+            do {
+                let data = try await ZipCentralDirectory.fetchEntryData(entry: entry, manifest: manifest)
+                guard let image = Self.decodeImageData(data, maxPixelSize: Self.targetMaxPixelSize()) else {
+                    await MainActor.run { [weak self] in self?.fetchingQueue.remove(index) }
+                    return
+                }
                 self.cache.setObject(image, forKey: NSNumber(value: index))
                 await MainActor.run { [weak self] in
+                    self?.fetchingQueue.remove(index)
+                    self?.updateLRUOnMain(index)
                     self?.cacheUpdatedTick += 1
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.fetchingQueue.remove(index)
+                    Logger.shared.log("ComicImageCache: Page \(index) fetch failed: \(error.localizedDescription)",
+                                      category: "Engine", type: .error)
                 }
             }
         }
+    }
+
+    /// Decode raw image data with downsampling to avoid OOM on 4K images.
+    private static func decodeImageData(_ data: Data, maxPixelSize: CGFloat) -> UIImage? {
+        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {
+            return UIImage(data: data)
+        }
+        let downsampleOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions as CFDictionary) else {
+            return UIImage(data: data)
+        }
+        return UIImage(cgImage: cgImage)
+    }
+
+    private static func targetMaxPixelSize() -> CGFloat {
+        max(UIScreen.main.bounds.width, UIScreen.main.bounds.height) * UIScreen.main.scale
     }
 }
 
