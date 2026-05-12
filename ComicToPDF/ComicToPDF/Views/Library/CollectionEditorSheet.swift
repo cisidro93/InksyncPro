@@ -97,7 +97,7 @@ struct CollectionEditorSheet: View {
                             .font(.headline)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 14)
-                            .background(Color(UIColor.secondarySystemBackground))
+                            .background(Color.inkSurface)
                             .cornerRadius(10)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)

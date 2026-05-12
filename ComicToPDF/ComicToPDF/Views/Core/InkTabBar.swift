@@ -26,8 +26,8 @@ struct InkTabBar: View {
         InkTabItem(tag: 0, label: "Library",    icon: "books.vertical",        activeIcon: "books.vertical.fill"),
         InkTabItem(tag: 1, label: "Reader",     icon: "book",                  activeIcon: "book.fill"),
         InkTabItem(tag: 2, label: "Inbox",      icon: "tray",                  activeIcon: "tray.full.fill"),
-        InkTabItem(tag: 3, label: "Devices",    icon: "ipad.and.iphone",       activeIcon: "ipad.and.iphone"),
-        InkTabItem(tag: 4, label: "Work Area",  icon: "scissors",              activeIcon: "scissors"),
+        InkTabItem(tag: 3, label: "Devices",    icon: "ipad.and.iphone",       activeIcon: "ipad.and.iphone.fill"),
+        InkTabItem(tag: 4, label: "Work Area",  icon: "scissors",              activeIcon: "scissors.badge.ellipsis"),
         InkTabItem(tag: 5, label: "Highlights", icon: "text.badge.star",       activeIcon: "text.badge.star"),
         InkTabItem(tag: 6, label: "Settings",   icon: "gear",                  activeIcon: "gearshape.fill"),
     ]

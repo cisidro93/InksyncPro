@@ -69,7 +69,7 @@ struct CloudFileBrowserView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 8)
             }
-            .background(Color(UIColor.secondarySystemBackground))
+            .background(Color.inkSurface)
 
             Divider()
 

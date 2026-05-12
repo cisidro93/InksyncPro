@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
@@ -7,43 +8,40 @@ struct SettingsView: View {
     @AppStorage("useSidebar") private var useSidebar = true
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
-    
-    // ✅ NEW: Kindle Email Storage
+
+    // Kindle Email Storage
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
-    
-    // ✅ NEW: Background Auto-Sync
+
+    // Background Auto-Sync
     @AppStorage("enableBackgroundSync") private var enableBackgroundSync = false
-    
-    // ✅ NEW: Gamification Settings
+
+    // Gamification Settings
     @AppStorage("enableSerendipity") private var enableSerendipity = true
     @AppStorage("dailyPageGoal") private var dailyPageGoal = 5
     @AppStorage("streakTheme") private var streakTheme: StreakTheme = .classic
-    
-    // ✅ PHASE 7: Library Typography Themes
+
+    // Library Typography Themes
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
-    
-    // ✅ NEW: Observe the Brain
+
+    // Adaptive Learning Engine
     @ObservedObject private var aiManager = AdaptiveLearningManager.shared
-    
+
     @State private var showingAddDevice = false
     @State private var showingDeleteAlert = false
-    @State private var deviceToDelete: KindleDevice?
     
-    // ✅ NEW: Preset Alert State
+    // Preset & AI Export State
     @State private var showingPresetAlert = false
     @State private var customPresetName = "Custom Base"
     @Environment(\.dismiss) var dismiss
-    
-    // ✅ NEW: AI State File Export
-    @State private var showingAIExport = false
 
+    @State private var showingAIExport = false
     @State private var aiExportDocument: JSONFileDocument?
     @State private var showingAIFeedbackAlert = false
     @State private var aiFeedbackTitle = ""
     @State private var aiFeedbackMessage = ""
-    
-    // ✅ NEW: API Key Verification State
+
+    // ComicVine API key verification state
     @State private var isVerifying = false
     @State private var verificationStatus: KeyStatus = .none
     
@@ -240,10 +238,10 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
         } header: { Text("General UI") }
     }
-    
+
     @ViewBuilder
     private var sendToKindleSection: some View {
-        Section(header: Text("Send to Kindle").font(.footnote).foregroundColor(.secondary)) {
+        Section(header: Text("Send to Kindle")) {
             HStack {
                 settingsIcon("envelope.fill", color: Color(UIColor.systemGray))
                 TextField("Your @kindle.com Email", text: $kindleEmail)
@@ -458,143 +456,125 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                 }
             }
-            
-            // Dashboard Header
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Core Neural Engine State")
-                    .font(.caption).bold()
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                Text("Your localized CoreML model adapts based on your corrections in the Panel Editor.")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.bottom, 8)
-            }
-            .padding(.vertical, 4)
-            
-            let params = aiManager.currentSettings
-            
-            // Visual Gauges
-            VStack(spacing: 16) {
-                HStack(spacing: 20) {
-                    Gauge(value: params.minConfidence, in: 0...1.0) {
-                        Image(systemName: "network.badge.shield.half.filled").foregroundColor(.cyan)
-                    } currentValueLabel: {
-                        Text("\(Int(params.minConfidence * 100))%").font(.caption.bold())
-                    }
-                    .gaugeStyle(.accessoryCircularCapacity)
-                    .tint(Gradient(colors: [.blue, .cyan]))
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Confidence Threshold").font(.subheadline.bold())
-                        Text("Lower value = more sensitive").font(.caption2).foregroundColor(.secondary)
-                    }
-                    Spacer()
+
+            if settingsManager.conversionSettings.showEditorDebug {
+                // Dashboard Header
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Core Neural Engine State")
+                        .font(.caption).bold()
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                    Text("Your localized CoreML model adapts based on your corrections in the Panel Editor.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 8)
                 }
-                
-                HStack(spacing: 20) {
-                    Gauge(value: params.minSize, in: 0...0.5) {
-                        Image(systemName: "perspective").foregroundColor(.purple)
-                    } currentValueLabel: {
-                        Text("\(Int(params.minSize * 100))%").font(.caption.bold())
+                .padding(.vertical, 4)
+
+                let params = aiManager.currentSettings
+
+                // Visual Gauges
+                VStack(spacing: 16) {
+                    HStack(spacing: 20) {
+                        Gauge(value: params.minConfidence, in: 0...1.0) {
+                            Image(systemName: "network.badge.shield.half.filled").foregroundColor(.cyan)
+                        } currentValueLabel: {
+                            Text("\(Int(params.minConfidence * 100))%").font(.caption.bold())
+                        }
+                        .gaugeStyle(.accessoryCircularCapacity)
+                        .tint(Gradient(colors: [.blue, .cyan]))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Confidence Threshold").font(.subheadline.bold())
+                            Text("Lower value = more sensitive").font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
                     }
-                    .gaugeStyle(.accessoryCircularCapacity)
-                    .tint(Gradient(colors: [.purple, .pink]))
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Size Relevancy").font(.subheadline.bold())
-                        Text("Ignores panels smaller than this").font(.caption2).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                }
-            }
-            .padding(.vertical, 8)
-            
-            // Analytics Block
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Historical Corrections")
-                    .font(.caption).bold()
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Manually Added")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("\(aiManager.addedPanelsCount)")
-                            .font(.title3.bold())
-                            .foregroundColor(.green)
-                    }
-                    Spacer()
-                    VStack(alignment: .center) {
-                        Text("Manually Deleted")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("\(aiManager.deletedPanelsCount)")
-                            .font(.title3.bold())
-                            .foregroundColor(.red)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing) {
-                        Text("Resized Box")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("\(aiManager.resizedPanelsCount)")
-                            .font(.title3.bold())
-                            .foregroundColor(.orange)
+                    HStack(spacing: 20) {
+                        Gauge(value: params.minSize, in: 0...0.5) {
+                            Image(systemName: "perspective").foregroundColor(.purple)
+                        } currentValueLabel: {
+                            Text("\(Int(params.minSize * 100))%").font(.caption.bold())
+                        }
+                        .gaugeStyle(.accessoryCircularCapacity)
+                        .tint(Gradient(colors: [.purple, .pink]))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Size Relevancy").font(.subheadline.bold())
+                            Text("Ignores panels smaller than this").font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
                     }
                 }
-                .padding()
-                .background(Color(UIColor.secondarySystemGroupedBackground))
-                .cornerRadius(10)
-            }
-            .padding(.vertical, 4)
-            
-            Button(action: { aiManager.resetToFactorySettings() }) {
-                Text("Reset Learning History")
-                    .foregroundColor(.red)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-            
-            HStack(spacing: 12) {
-                Button(action: { 
-                    ImportCoordinator.present(type: .json) { urls in
-                        if let url = urls.first {
-                            importAIProfile(url)
+                .padding(.vertical, 8)
+
+                // Analytics Block
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Historical Corrections")
+                        .font(.caption).bold()
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Manually Added").font(.caption).foregroundColor(.secondary)
+                            Text("\(aiManager.addedPanelsCount)").font(.title3.bold()).foregroundColor(.green)
+                        }
+                        Spacer()
+                        VStack(alignment: .center) {
+                            Text("Manually Deleted").font(.caption).foregroundColor(.secondary)
+                            Text("\(aiManager.deletedPanelsCount)").font(.title3.bold()).foregroundColor(.red)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing) {
+                            Text("Resized Box").font(.caption).foregroundColor(.secondary)
+                            Text("\(aiManager.resizedPanelsCount)").font(.title3.bold()).foregroundColor(.orange)
                         }
                     }
-                }) {
-                    Label("Import Config", systemImage: "square.and.arrow.down")
-                        .font(.caption)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 12)
-                        .background(Color.blue.opacity(0.1))
-                        .foregroundColor(.blue)
-                        .cornerRadius(8)
+                    .padding()
+                    .background(Color(UIColor.secondarySystemGroupedBackground))
+                    .cornerRadius(10)
                 }
-                .buttonStyle(.plain)
-                
-                Button(action: {
-                    if let data = aiManager.exportState() {
-                        aiExportDocument = JSONFileDocument(data: data)
-                        showingAIExport = true
+                .padding(.vertical, 4)
+
+                Button(action: { aiManager.resetToFactorySettings() }) {
+                    Text("Reset Learning History")
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+
+                HStack(spacing: 12) {
+                    Button(action: {
+                        ImportCoordinator.present(type: .json) { urls in
+                            if let url = urls.first { importAIProfile(url) }
+                        }
+                    }) {
+                        Label("Import Config", systemImage: "square.and.arrow.down")
+                            .font(.caption)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(Color.blue.opacity(0.1))
+                            .foregroundColor(.blue)
+                            .cornerRadius(8)
                     }
-                }) {
-                    Label("Export Config", systemImage: "square.and.arrow.up")
-                        .font(.caption)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 12)
-                        .background(Color.blue.opacity(0.1))
-                        .foregroundColor(.blue)
-                        .cornerRadius(8)
+                    .buttonStyle(.plain)
+                    Button(action: {
+                        if let data = aiManager.exportState() {
+                            aiExportDocument = JSONFileDocument(data: data)
+                            showingAIExport = true
+                        }
+                    }) {
+                        Label("Export Config", systemImage: "square.and.arrow.up")
+                            .font(.caption)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(Color.blue.opacity(0.1))
+                            .foregroundColor(.blue)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 4)
             }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 4)
-            
-        } header: { Text("AI Dashboard") }
+        } header: { Text("Panel Intelligence") }
     }
     
     @ViewBuilder

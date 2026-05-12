@@ -749,7 +749,7 @@ struct BookNavigationSheet: View {
                         }
                     }
                     .padding(8)
-                    .background(Color(UIColor.secondarySystemBackground))
+                    .background(Color.inkSurface)
                     .cornerRadius(8)
                     .padding()
                     

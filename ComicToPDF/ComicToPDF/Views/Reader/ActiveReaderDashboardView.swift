@@ -78,7 +78,7 @@ struct ActiveReaderDashboardView: View {
                 }
             }
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .background(Color.inkBackground.ignoresSafeArea())
         .navigationTitle("Reading")
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $pdfToRead) { pdf in
@@ -168,7 +168,7 @@ struct ActiveReaderDashboardView: View {
             .padding(.vertical, 10)
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.inkSurface)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: Color.black.opacity(0.05), radius: 10, y: 5)
         .padding(.horizontal, 20)

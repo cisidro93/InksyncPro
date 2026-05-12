@@ -569,9 +569,11 @@ struct ComicReaderEngine: View {
             currentIndex: $currentIndex,
             cache: cache,
             activeFilterPreset: activeFilterPreset,
+            isMangaRTL: readingMode == .mangaRTL || pdf.metadata.isManga == true,
             onChromeTap: { chromeVisible.toggle() }
         )
     }
+
 
     // MARK: - Orientation Helper
 

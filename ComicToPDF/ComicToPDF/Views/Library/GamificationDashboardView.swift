@@ -1,7 +1,4 @@
 import SwiftUI
-
-import Combine
-
 import Combine
 
 enum StreakTheme: String, CaseIterable, Identifiable {
@@ -119,7 +116,7 @@ struct GamificationDashboardView: View {
                 }
             }
             .padding()
-            .background(Color(UIColor.secondarySystemBackground))
+            .background(Color.inkSurface)
             .cornerRadius(12)
             .shadow(color: streakTheme.glowColor, radius: 10)
             
@@ -138,7 +135,7 @@ struct GamificationDashboardView: View {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule()
-                            .fill(Color(UIColor.tertiarySystemGroupedBackground))
+                            .fill(Color.inkSurfaceRaised)
                             .frame(height: 8)
                         
                         let progress = min(1.0, Double(gamification.pagesReadToday) / Double(max(1, gamification.dailyPageGoal)))
@@ -151,7 +148,7 @@ struct GamificationDashboardView: View {
                 .frame(height: 8)
             }
             .padding()
-            .background(Color(UIColor.secondarySystemBackground))
+            .background(Color.inkSurface)
             .cornerRadius(12)
             .shadow(color: streakTheme.glowColor, radius: 10)
             
@@ -184,13 +181,13 @@ struct GamificationDashboardView: View {
                             }
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(UIColor.tertiarySystemGroupedBackground))
+                            .background(Color.inkSurfaceRaised)
                             .cornerRadius(8)
                         }
                     }
                 }
                 .padding()
-                .background(Color(UIColor.secondarySystemBackground))
+                .background(Color.inkSurface)
                 .cornerRadius(12)
                 .shadow(color: streakTheme.glowColor, radius: 10)
                 .onAppear { loadSerendipity() }

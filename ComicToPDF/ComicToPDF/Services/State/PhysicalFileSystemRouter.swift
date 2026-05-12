@@ -199,18 +199,58 @@ class PhysicalFileSystemRouter {
     }
     
     func backfillMissingThumbnails(manager: ConversionManager) {
-        let pdfsNeedingCovers = manager.convertedPDFs.filter { pdf in
+        let allPDFs = manager.convertedPDFs
+
+        // Pass 1 — warm in-memory NSCache for covers that exist on disk but aren't cached.
+        // This is the "cold-start" fix: covers appear immediately on first library open.
+        Task(priority: .userInitiated) {
+            var warmedAny = false
+            for pdf in allPDFs {
+                let key = pdf.id.uuidString as NSString
+                guard manager.thumbnailCache.object(forKey: key) == nil,
+                      let coverURL = getCoverURL(for: pdf),
+                      FileManager.default.fileExists(atPath: coverURL.path) else { continue }
+
+                let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                    let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                    guard let src = CGImageSourceCreateWithURL(coverURL as CFURL, srcOpts) else { return nil }
+                    let downsampleOpts = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceShouldCacheImmediately: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 360
+                    ] as CFDictionary
+                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
+                    return UIImage(cgImage: cg)
+                }.value
+
+                if let image {
+                    await MainActor.run {
+                        manager.thumbnailCache.setObject(image, forKey: key)
+                        warmedAny = true
+                    }
+                }
+            }
+            // Signal SwiftUI to re-render cells so they pick up newly-cached covers
+            if warmedAny {
+                await MainActor.run { manager.objectWillChange.send() }
+            }
+        }
+
+
+        // Pass 2 — generate covers for files that have no on-disk cover yet.
+        let pdfsNeedingCovers = allPDFs.filter { pdf in
             guard let coverURL = getCoverURL(for: pdf) else { return true }
             return !FileManager.default.fileExists(atPath: coverURL.path)
         }
         guard !pdfsNeedingCovers.isEmpty else { return }
-        // Process sequentially in a single background task to avoid I/O saturation
         Task(priority: .background) {
             for pdf in pdfsNeedingCovers {
                 await generateCoverThumbnail(for: pdf, manager: manager)
             }
         }
     }
+
     
     func loadThumbnailAsync(for pdf: ConvertedPDF, manager: ConversionManager) async {
         if manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil { return }

@@ -18,14 +18,14 @@ struct ModernLibraryView: View {
     @Binding var showingBatchMergeReorder: Bool
     @Binding var batchMergeItems: [ConvertedPDF]
     
-    // ✅ Navigation Mode
+    // Navigation Mode
     var useNavigationStack: Bool = false
     var onFolderImport: (() -> Void)? = nil
-    
+
     @State private var listRenameGroup: SeriesGroup? = nil
     @State private var listRenamePendingName: String = ""
 
-    // ✅ NEW: View Style State
+    // View Style State
     enum LibraryViewStyle: String {
         case list = "List"
         case grid = "Grid"
@@ -33,9 +33,9 @@ struct ModernLibraryView: View {
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
     @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
-    @State private var scrollToTopTrigger = false  // toggled by double-tap on Library tab
-    
-    // ✅ NEW: Storage Transfer State
+    @State private var scrollToTopTrigger = false
+
+    // Storage Transfer State
     @State private var isStorageTransferring = false
     @State private var transferProgress: Double = 0.0
     @State private var transferStatus: String = ""
@@ -106,19 +106,39 @@ struct ModernLibraryView: View {
                 }
                 .overlay(alignment: .top) {
                     if isStorageTransferring {
-                        VStack(spacing: 8) {
-                            Text("Storage Transfer")
-                                .font(.headline)
-                            Text(transferStatus)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            ProgressView(value: transferProgress)
-                                .progressViewStyle(.linear)
+                        VStack(spacing: 10) {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(Color(hex: "#7B5EA7"))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Storage Transfer")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Theme.text)
+                                    Text(transferStatus)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
+                                Spacer()
+                                Text("\(Int(transferProgress * 100))%")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundStyle(Color(hex: "#7B5EA7"))
+                            }
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Theme.surface).frame(height: 3)
+                                    Capsule()
+                                        .fill(Color(hex: "#7B5EA7"))
+                                        .frame(width: geo.size.width * transferProgress, height: 3)
+                                        .animation(.easeInOut(duration: 0.3), value: transferProgress)
+                                }
+                            }
+                            .frame(height: 3)
                         }
-                        .padding()
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(12)
-                        .shadow(radius: 10)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
                         .padding(.top, 60)
                         .padding(.horizontal, 40)
                         .transition(.move(edge: .top).combined(with: .opacity))

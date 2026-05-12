@@ -51,7 +51,7 @@ struct GlassTextField: View {
                 .keyboardType(keyboardType)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color(UIColor.secondarySystemBackground))
+                .background(Color.inkSurface)
                 .cornerRadius(10)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
@@ -137,7 +137,7 @@ struct AdvancedMetadataEditorView: View {
                                 .scaledToFill()
                         } else {
                             Rectangle()
-                                .fill(Color(UIColor.secondarySystemBackground))
+                                .fill(Color.inkSurface)
                                 .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(Theme.textSecondary))
                         }
                     }
@@ -193,7 +193,7 @@ struct AdvancedMetadataEditorView: View {
         CustomGlassCard(title: "Tags", icon: "tag.fill") {
             TagEditorView(tags: $tags)
                 .padding()
-                .background(Color(UIColor.secondarySystemBackground))
+                .background(Color.inkSurface)
                 .cornerRadius(10)
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         }

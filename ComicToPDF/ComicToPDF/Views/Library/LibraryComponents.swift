@@ -287,16 +287,20 @@ import SwiftUI
 struct RecentlyReadShelf: View {
     let pdfs: [ConvertedPDF]
     let onTap: (ConvertedPDF) -> Void
-    
-    /// Returns the 10 most recently read items, sorted by last read page existing
+    @EnvironmentObject var conversionManager: ConversionManager
+
     var recentItems: [ConvertedPDF] {
         pdfs
             .filter { ($0.metadata.lastReadPage ?? 0) > 0 }
-            .sorted { ($0.metadata.publicationDate ?? .distantPast) > ($1.metadata.publicationDate ?? .distantPast) }
+            .sorted {
+                let aDate = ReaderProgressTracker.shared.progress(for: $0.id)?.lastOpenedAt ?? .distantPast
+                let bDate = ReaderProgressTracker.shared.progress(for: $1.id)?.lastOpenedAt ?? .distantPast
+                return aDate > bDate
+            }
             .prefix(10)
             .map { $0 }
     }
-    
+
     var body: some View {
         if !recentItems.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -310,45 +314,15 @@ struct RecentlyReadShelf: View {
                     Spacer()
                 }
                 .padding(.horizontal, 16)
-                
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(recentItems) { pdf in
-                            Button {
-                                onTap(pdf)
-                            } label: {
-                                VStack(spacing: 6) {
-                                    // Cover thumbnail
-                                    if let data = pdf.coverImageData, let img = UIImage(data: data) {
-                                        Image(uiImage: img)
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fill)
-                                            .frame(width: 70, height: 100)
-                                            .cornerRadius(8)
-                                            .clipped()
-                                    } else {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Theme.surface)
-                                            .frame(width: 70, height: 100)
-                                            .overlay(
-                                                Image(systemName: "book.fill")
-                                                    .foregroundColor(Theme.textSecondary)
-                                            )
-                                    }
-                                    
-                                    Text(pdf.name)
-                                        .font(.system(size: 10))
-                                        .foregroundColor(Theme.textSecondary)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.center)
-                                        .frame(width: 70)
-                                    
-                                    // Progress indicator
-                                    let progress = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
-                                    ProgressView(value: min(progress, 1.0))
-                                        .tint(progress >= 1.0 ? .green : Theme.orange)
-                                        .frame(width: 60)
-                                }
+                            Button { onTap(pdf) } label: {
+                                RecentlyReadCell(
+                                    pdf: pdf,
+                                    conversionManager: conversionManager
+                                )
                             }
                             .buttonStyle(.plain)
                         }
@@ -361,12 +335,76 @@ struct RecentlyReadShelf: View {
     }
 }
 
+/// Isolated per-item cell with its own async thumbnail state.
+private struct RecentlyReadCell: View {
+    let pdf: ConvertedPDF
+    let conversionManager: ConversionManager
+    @State private var cover: UIImage? = nil
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                if let img = cover {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Theme.surface)
+                    Image(systemName: "book.fill")
+                        .foregroundColor(Theme.textSecondary)
+                }
+            }
+            .frame(width: 70, height: 100)
+            .cornerRadius(8)
+            .clipped()
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.1), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.25), radius: 4, y: 3)
+
+            Text(pdf.name)
+                .font(.system(size: 10))
+                .foregroundColor(Theme.textSecondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(width: 70)
+
+            let progress = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
+            ProgressView(value: min(progress, 1.0))
+                .tint(progress >= 1.0 ? .green : Theme.orange)
+                .frame(width: 60)
+        }
+        .task(id: pdf.id) {
+            let key = pdf.id.uuidString as NSString
+            if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                cover = cached; return
+            }
+            guard let coverURL = conversionManager.getCoverURL(for: pdf),
+                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
+            let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                let src = [kCGImageSourceShouldCache: false] as CFDictionary
+                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, src) else { return nil }
+                let opts = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                            kCGImageSourceShouldCacheImmediately: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceThumbnailMaxPixelSize: 300] as CFDictionary
+                guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, opts) else { return nil }
+                return UIImage(cgImage: cg)
+            }.value
+            if let img {
+                conversionManager.thumbnailCache.setObject(img, forKey: key)
+                cover = img
+            }
+        }
+    }
+}
+
 // MARK: - 1.5 Up Next Smart Binge Shelf (Phase 3)
 
 struct UpNextBingeShelf: View {
     let allPDFs: [ConvertedPDF]
     let onTap: (ConvertedPDF) -> Void
-    
+    @EnvironmentObject var conversionManager: ConversionManager
+
     // Engine to calculate the exact next issue to read based on completed volumes
     var upNextItems: [ConvertedPDF] {
         var nextToRead: [String: ConvertedPDF] = [:] // SeriesName : PDF
@@ -408,58 +446,19 @@ struct UpNextBingeShelf: View {
                 HStack {
                     Image(systemName: "sparkles.tv")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(Theme.purple) // Differentiate from Recently Read
+                        .foregroundColor(Theme.purple)
                     Text("Up Next")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(Theme.text)
                     Spacer()
                 }
                 .padding(.horizontal, 16)
-                
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(items) { pdf in
-                            Button {
-                                onTap(pdf)
-                            } label: {
-                                VStack(spacing: 6) {
-                                    // Cover thumbnail
-                                    if let data = pdf.coverImageData, let img = UIImage(data: data) {
-                                        Image(uiImage: img)
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fill)
-                                            .frame(width: 90, height: 135)
-                                            .cornerRadius(8)
-                                            .clipped()
-                                    } else {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Theme.surface)
-                                            .frame(width: 90, height: 135)
-                                            .overlay(
-                                                Image(systemName: "book.fill")
-                                                    .foregroundColor(Theme.textSecondary)
-                                            )
-                                    }
-                                    
-                                    if let issue = pdf.metadata.issueNumber ?? pdf.metadata.volume {
-                                        Text("Vol. \(issue)")
-                                            .font(.system(size: 10, weight: .heavy))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 3)
-                                            .background(Theme.purple)
-                                            .clipShape(Capsule())
-                                            .offset(y: -20)
-                                            .padding(.bottom, -20)
-                                    }
-                                    
-                                    Text(pdf.name)
-                                        .font(.system(size: 11))
-                                        .foregroundColor(Theme.textSecondary)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.center)
-                                        .frame(width: 90)
-                                }
+                            Button { onTap(pdf) } label: {
+                                UpNextCell(pdf: pdf, conversionManager: conversionManager)
                             }
                             .buttonStyle(.plain)
                         }
@@ -469,6 +468,75 @@ struct UpNextBingeShelf: View {
                 }
             }
             .padding(.top, 16)
+        }
+    }
+}
+
+private struct UpNextCell: View {
+    let pdf: ConvertedPDF
+    let conversionManager: ConversionManager
+    @State private var cover: UIImage? = nil
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                if let img = cover {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Theme.surface)
+                    Image(systemName: "book.fill")
+                        .foregroundColor(Theme.textSecondary)
+                }
+            }
+            .frame(width: 90, height: 135)
+            .cornerRadius(8)
+            .clipped()
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.1), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.25), radius: 6, y: 4)
+
+            if let issue = pdf.metadata.issueNumber ?? pdf.metadata.volume {
+                Text("Vol. \(issue)")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Theme.purple)
+                    .clipShape(Capsule())
+                    .offset(y: -20)
+                    .padding(.bottom, -20)
+            }
+
+            Text(pdf.name)
+                .font(.system(size: 11))
+                .foregroundColor(Theme.textSecondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(width: 90)
+        }
+        .task(id: pdf.id) {
+            let key = pdf.id.uuidString as NSString
+            if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                cover = cached; return
+            }
+            guard let coverURL = conversionManager.getCoverURL(for: pdf),
+                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
+            let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                let src = [kCGImageSourceShouldCache: false] as CFDictionary
+                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, src) else { return nil }
+                let opts = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                            kCGImageSourceShouldCacheImmediately: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceThumbnailMaxPixelSize: 360] as CFDictionary
+                guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, opts) else { return nil }
+                return UIImage(cgImage: cg)
+            }.value
+            if let img {
+                conversionManager.thumbnailCache.setObject(img, forKey: key)
+                cover = img
+            }
         }
     }
 }

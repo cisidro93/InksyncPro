@@ -116,6 +116,7 @@ struct EBookReaderView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        // Settings sheet lives here only — NOT duplicated inside chapterDrawer
         .sheet(isPresented: $showingSettingsPanel) {
             EBookSettingsPanel()
                 .presentationDetents([.medium, .large])
@@ -273,18 +274,23 @@ struct EBookReaderView: View {
                                 saveProgress()
                             } label: {
                                 HStack(spacing: 12) {
-                                    if idx == currentIndex {
-                                        RoundedRectangle(cornerRadius: 2)
-                                            .fill(Color(hex: "#7B5EA7"))
-                                            .frame(width: 3, height: 22)
-                                    } else {
-                                        Color.clear.frame(width: 3, height: 22)
-                                    }
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(idx == currentIndex ? Color(hex: "#7B5EA7") : Color.clear)
+                                        .frame(width: 3, height: 22)
                                     Text(chapter.label)
                                         .font(.subheadline)
                                         .fontWeight(idx == currentIndex ? .semibold : .regular)
-                                        .foregroundStyle(idx == currentIndex ? Color(hex: "#7B5EA7") : prefs.activeTheme.foreground(colorScheme: colorScheme))
+                                        .foregroundStyle(
+                                            idx == currentIndex
+                                                ? Color(hex: "#7B5EA7")
+                                                : prefs.activeTheme.foreground(colorScheme: colorScheme)
+                                        )
                                     Spacer()
+                                    if idx == currentIndex {
+                                        Image(systemName: "speaker.wave.2.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Color(hex: "#7B5EA7").opacity(0.7))
+                                    }
                                 }
                                 .padding(.horizontal, 16).padding(.vertical, 13)
                                 .background(idx == currentIndex ? Color(hex: "#7B5EA7").opacity(0.08) : Color.clear)
@@ -295,10 +301,7 @@ struct EBookReaderView: View {
                         }
                     }
                 }
-                .sheet(isPresented: $showingSettingsPanel) {
-            EBookSettingsPanel().presentationDetents([.medium, .large])
-        }
-        .onAppear { proxy.scrollTo(currentIndex, anchor: .center) }
+                .onAppear { proxy.scrollTo(currentIndex, anchor: .center) }
             }
             .frame(maxWidth: 320)
             .background(prefs.activeTheme.background(colorScheme: colorScheme).opacity(0.97))
@@ -317,14 +320,35 @@ struct EBookReaderView: View {
     
     // MARK: - Loading & Error States
     private var readerLoadingView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
+            ZStack {
+                Circle()
+                    .fill(Color(hex: "#7B5EA7").opacity(0.12))
+                    .frame(width: 72, height: 72)
+                Image(systemName: "book.pages.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color(hex: "#7B5EA7"), Color(hex: "#B39DDB")],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .symbolEffect(.pulse, options: .repeating)
+
+            VStack(spacing: 6) {
+                Text("Opening Book")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
+                Text(title)
+                    .font(.system(size: 13))
+                    .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.5))
+                    .lineLimit(1)
+            }
+
             ProgressView()
                 .progressViewStyle(.circular)
-                .controlSize(.large)
                 .tint(Color(hex: "#7B5EA7"))
-            Text("Opening Book…")
-                .font(.subheadline)
-                .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.6))
         }
     }
     
@@ -535,10 +559,9 @@ struct EBookWebReader: UIViewRepresentable {
     }
         private func injectReaderCSS(into html: String, prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
-        _ = isPaged ? """
-            /* Paged */
-            column-width: calc(100vw - \\(prefs.textMargin * 2)px) !important;
-            column-gap: \\(prefs.textMargin * 2)px !important;
+        let pagedCSS = isPaged ? """
+            column-width: calc(100vw - \(prefs.textMargin * 2)px) !important;
+            column-gap: \(prefs.textMargin * 2)px !important;
             column-fill: auto !important;
         """ : ""
 
@@ -722,15 +745,3 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-

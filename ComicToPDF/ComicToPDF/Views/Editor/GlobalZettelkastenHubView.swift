@@ -73,8 +73,8 @@ struct GlobalZettelkastenHubView: View {
     
     var body: some View {
         ZStack {
-            Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all)
-            
+            Theme.background.edgesIgnoringSafeArea(.all)
+
             if allAnnotations.isEmpty {
                 emptyStateView
             } else {
@@ -88,18 +88,15 @@ struct GlobalZettelkastenHubView: View {
                     .padding()
                     
                     if viewMode == .list {
-                        // Filter Strip
-                        HStack {
-                            Text("Filter:").font(.caption).foregroundColor(.secondary)
-                            Picker("Filter", selection: $filterMode) {
-                                Text("All Notes").tag(ZettelFilterMode.all)
-                                Text("Permanent Notes").tag(ZettelFilterMode.permanent)
-                                Text("Fleeting Notes").tag(ZettelFilterMode.fleeting)
+                        // Filter pill strip
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                filterPill(.all, label: "All", icon: "note.text")
+                                filterPill(.permanent, label: "Permanent", icon: "bookmark.fill")
+                                filterPill(.fleeting, label: "Fleeting", icon: "wind")
                             }
-                            .labelsHidden()
-                            Spacer()
+                            .padding(.horizontal)
                         }
-                        .padding(.horizontal)
                         .padding(.bottom, 8)
                         
                         ScrollView {
@@ -185,49 +182,103 @@ struct GlobalZettelkastenHubView: View {
         }
         .overlay {
             if isImporting || isExporting {
-                ProgressView(isImporting ? "Importing Readwise Database..." : "Compiling Mind Palace Archive...")
-                    .padding()
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(12)
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(Color(hex: "#7B5EA7"))
+                        .controlSize(.large)
+                    Text(isImporting ? "Importing Readwise…" : "Compiling Mind Palace…")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(Theme.text)
+                }
+                .padding(.horizontal, 32)
+                .padding(.vertical, 24)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: .black.opacity(0.15), radius: 20, y: 8)
             }
         }
-        .alert(isPresented: Binding<Bool>(
-            get: { importMessage != nil },
-            set: { if !$0 { importMessage = nil } }
-        )) {
-            Alert(title: Text("System Status"), message: Text(importMessage ?? ""), dismissButton: .default(Text("OK")))
+        .alert("Status", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
+            Button("OK") { importMessage = nil }
+        } message: {
+            Text(importMessage ?? "")
         }
     }
     
-    private var emptyStateView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "highlighter")
-                .font(.system(size: 60))
-                .foregroundColor(.gray.opacity(0.5))
-            Text("Your Mind Palace is Empty")
-                .font(.title2).bold()
-            Text("Highlights and Zettelkasten notes from all your books will appear here.")
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-            
-            Button(action: { 
-                ImportCoordinator.present(type: .smartList) { urls in
-                    if let first = urls.first {
-                        handleCSVImport(result: .success([first]))
-                    }
-                }
-            }) {
-                Text("Import from Readwise")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding()
-                    .frame(maxWidth: 250)
-                    .background(Color.blue)
-                    .cornerRadius(12)
-            }
-            .padding(.top, 10)
+    // MARK: - Filter Pill
+    @ViewBuilder
+    private func filterPill(_ mode: ZettelFilterMode, label: String, icon: String) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.28)) { filterMode = mode }
+        } label: {
+            Label(label, systemImage: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(filterMode == mode ? Color(hex: "#7B5EA7") : Theme.surface)
+                .foregroundStyle(filterMode == mode ? Color.white : Theme.textSecondary)
+                .clipShape(Capsule())
         }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Empty State
+    private var emptyStateView: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color(hex: "#7B5EA7").opacity(0.2), Color.clear],
+                            center: .center, startRadius: 0, endRadius: 60
+                        )
+                    )
+                    .frame(width: 120, height: 120)
+                Image(systemName: "brain.filled.head.profile")
+                    .font(.system(size: 52))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color(hex: "#7B5EA7"), Color(hex: "#B39DDB")],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            VStack(spacing: 8) {
+                Text("Your Mind Palace is Empty")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.text)
+                Text("Every highlight, annotation, and note from your books lives here — connected, searchable, and yours forever.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+            Button {
+                ImportCoordinator.present(type: .smartList) { urls in
+                    if let first = urls.first { handleCSVImport(result: .success([first])) }
+                }
+            } label: {
+                Label("Import from Readwise", systemImage: "arrow.down.doc.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 28)
+                    .background(
+                        LinearGradient(
+                            colors: [Color(hex: "#7B5EA7"), Color(hex: "#9C6BC4")],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .shadow(color: Color(hex: "#7B5EA7").opacity(0.35), radius: 12, y: 6)
+            }
+            .buttonStyle(.plain)
+            Text("Start by highlighting in the reader, or import your Readwise CSV export.")
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     private func bookTitle(for annotation: SDAnnotation?, cache: [UUID: String]? = nil) -> String {
@@ -388,12 +439,12 @@ struct GlobalHighlightRow: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(UIColor.secondarySystemGroupedBackground))
-                    .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 3)
+                    .fill(Theme.surface)
+                    .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 0.5)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)

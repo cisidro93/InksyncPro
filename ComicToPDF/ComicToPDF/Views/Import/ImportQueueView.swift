@@ -155,7 +155,7 @@ struct ImportQueueView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .background(Color.inkSurface)
 
             List {
                 ForEach(queue.stagedURLs, id: \.self) { url in
@@ -174,7 +174,7 @@ struct ImportQueueView: View {
                         }
                         Spacer()
                     }
-                    .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
+                    .listRowBackground(Color.inkSurface)
                     .listRowSeparatorTint(Color.primary.opacity(0.08))
                 }
                 .onDelete { queue.remove(at: $0) }
@@ -186,7 +186,7 @@ struct ImportQueueView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .background(Color.inkSurface)
         }
     }
 
@@ -202,7 +202,7 @@ struct ImportQueueView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(Color.blue)
+            .background(Color.inkBlue)
             .foregroundColor(.white)
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
@@ -220,10 +220,9 @@ struct ImportQueueView: View {
                 queue.isStagingFiles = false
                 return
             }
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task.detached(priority: .userInitiated) {
                 let result = queue.stageWithDuplicateCheck(urls)
-                
-                DispatchQueue.main.async {
+                await MainActor.run {
                     queue.isStagingFiles = false
                     if result.skippedDuplicates > 0 {
                         pendingDuplicates = result.duplicateURLs

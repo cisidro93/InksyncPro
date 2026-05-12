@@ -66,12 +66,22 @@ struct DevicesView: View {
                 DeviceDetailView(device: device)
             } else {
                 VStack(spacing: 16) {
-                    Image(systemName: "ipad.and.iphone")
-                        .font(.system(size: 52))
-                        .foregroundColor(.inkTextTertiary)
-                    Text("Select a device")
-                        .font(.system(size: 17))
-                        .foregroundColor(.inkTextSecondary)
+                    ZStack {
+                        Circle()
+                            .fill(Color.inkBlue.opacity(0.08))
+                            .frame(width: 64, height: 64)
+                        Image(systemName: "ipad.and.iphone")
+                            .font(.system(size: 28, weight: .light))
+                            .foregroundStyle(Color.inkBlue.opacity(0.5))
+                    }
+                    Text("Select a Device")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(Color.inkTextSecondary)
+                    Text("Choose a device from the list to view its details and send files.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.inkTextTertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.inkBackground)
@@ -87,24 +97,49 @@ struct DevicesView: View {
             List(selection: $selectedDeviceID) {
                 Section {
                     if savedDevices.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "ipad.and.iphone")
-                                .font(.system(size: 40))
-                                .foregroundColor(.inkTextSecondary)
-                            Text("No devices configured")
-                                .foregroundColor(.inkTextSecondary)
-                            Button("Add your Kindle or iPad") {
-                                showAddDevice = true
+                        VStack(spacing: 20) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.inkBlue.opacity(0.1))
+                                    .frame(width: 80, height: 80)
+                                Image(systemName: "ipad.and.iphone")
+                                    .font(.system(size: 34, weight: .light))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color.inkBlue, Color.inkBlue.opacity(0.6)],
+                                            startPoint: .topLeading, endPoint: .bottomTrailing
+                                        )
+                                    )
                             }
-                            .foregroundColor(.inkBlue)
+                            VStack(spacing: 6) {
+                                Text("No Reading Devices")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Color.inkTextPrimary)
+                                Text("Add your Kindle, Kobo, or iPad to send converted files directly.")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.inkTextSecondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 24)
+                            }
+                            Button {
+                                showAddDevice = true
+                            } label: {
+                                Label("Add a Device", systemImage: "plus")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(Color.inkBlue)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
+                        .padding(.vertical, 28)
                         .listRowBackground(Color.inkSurface)
                     } else {
                         ForEach(savedDevices) { device in
                             if hSizeClass == .regular {
-                                // iPad: use NavigationLink-style selection
                                 NavigationLink(value: device.id) {
                                     DeviceRow(
                                         device: device,
@@ -117,7 +152,6 @@ struct DevicesView: View {
                                 }
                                 .listRowBackground(selectedDeviceID == device.id ? Color.inkBlue.opacity(0.15) : Color.inkSurface)
                             } else {
-                                // iPhone: traditional action row
                                 DeviceRow(
                                     device: device,
                                     isPrimary: device.id == registry.primaryDeviceID,
@@ -128,7 +162,7 @@ struct DevicesView: View {
                                 }
                                 .listRowBackground(Color.inkSurface)
                             }
-                        } // ForEach
+                        }
                         .onDelete { indexSet in
                             for index in indexSet {
                                 modelContext.delete(savedDevices[index])
@@ -137,17 +171,10 @@ struct DevicesView: View {
                         }
                     }
                 } header: {
-                    Text("My Devices")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.inkTextSecondary)
-                }
-                .listRowBackground(Color.inkSurface)
-
-                Section {
-                    Button("How does the desktop KFX conversion work?") {
-                        // Show KFX guide sheet
-                    }
-                    .foregroundColor(.inkBlue)
+                    Text("MY DEVICES")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.inkTextSecondary)
+                        .tracking(1.2)
                 }
                 .listRowBackground(Color.inkSurface)
             }
@@ -182,15 +209,25 @@ struct DeviceRow: View {
     let isOnline: Bool
     let onSetPrimary: () -> Void
 
+    private var transferIcon: String {
+        switch device.transferMethod {
+        case .airDrop:        return "airplayvideo"
+        case .webDAV:         return "server.rack"
+        case .kfxHandoff:     return "desktopcomputer"
+        case .sendToKindle:   return "envelope.fill"
+        case .saveToFiles:    return "folder.fill"
+        }
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                Circle()
-                    .fill(Color.inkBlue.opacity(0.15))
-                    .frame(width: 40, height: 40)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.inkBlue.opacity(0.12))
+                    .frame(width: 42, height: 42)
                 Image(systemName: device.deviceType.sfSymbol)
                     .foregroundColor(.inkBlue)
-                    .font(.system(size: 18))
+                    .font(.system(size: 19))
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -208,11 +245,14 @@ struct DeviceRow: View {
                             .clipShape(Capsule())
                     }
                 }
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     Circle()
                         .fill(isOnline ? Color.inkGreen : Color.inkTextTertiary)
                         .frame(width: 6, height: 6)
-                    Text(isOnline ? "Online · \(device.transferMethod.rawValue)" : device.transferMethod.rawValue)
+                    Image(systemName: transferIcon)
+                        .font(.system(size: 10))
+                        .foregroundColor(.inkTextTertiary)
+                    Text(isOnline ? "Online" : device.transferMethod.rawValue)
                         .font(.system(size: 12))
                         .foregroundColor(.inkTextSecondary)
                 }
@@ -224,7 +264,6 @@ struct DeviceRow: View {
                 Button("Set primary") { onSetPrimary() }
                     .font(.system(size: 12))
                     .foregroundColor(.inkTextSecondary)
-                    // Added buttonStyle to prevent tapping row capturing button on iPhone
                     .buttonStyle(.plain)
             }
         }

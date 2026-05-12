@@ -9,43 +9,42 @@ struct ContentView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @StateObject private var conversionManager = ConversionManager()
     @StateObject private var settingsManager = AppSettingsManager.shared
-    // ✅ NEW: Wi-Fi Server for Kindle Sync
+    // Wi-Fi Server for Kindle Sync
     @StateObject private var wifiServer = WiFiServer()
-    
+
     @State private var selectedTab = 0   // 0 = Library (default launch tab)
     @State private var tabBarHidden = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var selectedPDF: ConvertedPDF?
-    
+
     // Global Sheets
     @State private var pdfToShare: ConvertedPDF?
     @State private var pdfToEdit: ConvertedPDF?
     @State private var showingLargeFileAlert = false
     @State private var largeFilePDF: ConvertedPDF?
-    
+
     // Batch Mode State (Hoisted)
     @State private var isBatchMode = false
     @State private var multiSelection = Set<UUID>()
     @State private var showingBatchMergeReorder = false
     @State private var batchMergeItems: [ConvertedPDF] = []
-    
-    // ✅ New State for "Save & Open Workflow"
+
+    // Save & Open Workflow
     @State private var showingWebExport = false
     @State private var webExportPDF: ConvertedPDF?
-    
-    // ✅ Onboarding State
+
+    // Onboarding State
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @State private var showOnboarding = false
-    
-    // ✅ UI Mode State
+
+    // UI Mode
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
-    
-    // ✅ iPad Layout Toggles
+
+    // iPad Layout
     @AppStorage("useSidebar") private var useSidebar = true
     @State private var showingSettingsInspector = false
-    // (columnVisibility managed above)
-    
-    // ✅ PHASE 8: Universal Alerts
+
+    // Universal Error State
     @State private var showingGlobalError = false
     @State private var globalErrorMessage = ""
     @State private var globalErrorCategory = "System"
@@ -83,8 +82,7 @@ struct ContentView: View {
             if !hasSeenOnboarding {
                 showOnboarding = true
             }
-            // ✅ CRITICAL: Wire LinkedLibraryScanner to this live ConversionManager instance.
-            // The scanner holds a weak ref — this must be set here where the @StateObject lives.
+            // Wire LinkedLibraryScanner to this live ConversionManager instance.
             LinkedLibraryScanner.shared.conversionManager = conversionManager
             // Bind legacy memory-cache mapping to active SwiftData context
             AnnotationStore.shared.initialize(with: modelContext)
@@ -131,7 +129,6 @@ struct ContentView: View {
                 )
             }
         }
-        // ✅ PHASE 8: Educational Alert Trap
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("GlobalErrorTriggered"))) { notification in
             if let userInfo = notification.userInfo,
                let message = userInfo["message"] as? String,
@@ -147,12 +144,12 @@ struct ContentView: View {
         } message: {
             Text("\(globalErrorMessage)\n\nA trace has been recorded. Navigate to Settings ➔ Logs and filter by '\(globalErrorCategory)' to export the failure context to Support.")
         }
-        // ✅ Memory Pressure: purge reader image cache to prevent Jetsam kills
+        // Memory Pressure: purge reader image cache to prevent Jetsam kills
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
             Task { await ReaderImageFilterEngine.shared.purgeCache() }
             Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache.", category: "Memory", type: .warning)
         }
-        // ✅ Hardware Shortcuts
+        // Hardware Shortcuts
         .modifier(iPadKeyboardShortcuts(
             selectedTab: $selectedTab,
             showImport: $showingWebExport
@@ -295,18 +292,15 @@ struct ContentView: View {
                 .navigationTitle("Inksync")
                 
                 Spacer()
-                
-                // Settings button at the bottom of the sidebar
-                Button(action: {
+
+                // Settings button pinned at the bottom of the sidebar
+                Button {
                     showingSettingsInspector.toggle()
-                }) {
-                    HStack {
-                        Image(systemName: "gear")
-                        Text("Settings")
-                        Spacer()
-                    }
-                    .padding()
-                    .foregroundColor(.primary)
+                } label: {
+                    Label("Settings", systemImage: showingSettingsInspector ? "gearshape.fill" : "gear")
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .foregroundStyle(showingSettingsInspector ? Color.orange : Color.primary)
                 }
             }
         } detail: {

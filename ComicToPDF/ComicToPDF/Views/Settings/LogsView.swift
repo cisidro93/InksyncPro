@@ -116,7 +116,7 @@ struct LogsView: View {
                     .font(.caption)
             }
             .padding()
-            .background(Color(UIColor.secondarySystemBackground))
+            .background(Color.inkSurface)
             
             Divider()
             

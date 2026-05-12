@@ -743,46 +743,71 @@ struct SeriesDetailView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 80, height: 120)
-                        .cornerRadius(8)
-                        .shadow(radius: 4)
+                        .cornerRadius(10)
+                        .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
                         .clipped()
                 } else {
-                    Rectangle()
-                        .fill(Color(UIColor.secondarySystemBackground))
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Theme.surface)
                         .frame(width: 80, height: 120)
-                        .overlay(Image(systemName: "books.vertical").foregroundColor(.gray))
-                        .cornerRadius(8)
+                        .overlay(
+                            Image(systemName: "books.vertical")
+                                .font(.system(size: 24, weight: .light))
+                                .foregroundStyle(Theme.textTertiary)
+                        )
+                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(series.title)
-                        .font(.title2).bold()
-                        .foregroundColor(.primary)
-                    Text("\(series.count) Issues")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    if let publisher = series.issues.first?.metadata.publisher {
-                        Text(publisher)
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                            .padding(.top, 4)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Theme.text)
+
+                    HStack(spacing: 6) {
+                        Text("\(series.count) ISSUES")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.textSecondary)
+                            .tracking(0.8)
+                        if let publisher = series.issues.first?.metadata.publisher {
+                            Text(publisher)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Color.inkBlue)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Color.inkBlue.opacity(0.1))
+                                .clipShape(Capsule())
+                        }
                     }
-                    
+
                     // Series-wide reading progress
                     let seriesProgress = readingProgress(for: localIssues)
                     let seriesCompleted = completedCount(for: localIssues)
-                    
-                    HStack(spacing: 6) {
-                        Text("\(Int(seriesProgress * 100))%")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundColor(seriesProgress >= 1.0 ? .green : Theme.orange)
-                        
-                        Text("\(seriesCompleted)/\(localIssues.count) read")
-                            .font(.system(size: 11, design: .rounded))
-                            .foregroundColor(Theme.textSecondary)
+
+                    if seriesProgress >= 1.0 {
+                        HStack(spacing: 5) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.system(size: 11))
+                            Text("Complete")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.inkGreen)
+                        .clipShape(Capsule())
+                        .padding(.top, 2)
+                    } else {
+                        HStack(spacing: 6) {
+                            Text("\(Int(seriesProgress * 100))%")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(Theme.orange)
+                            Text("\(seriesCompleted)/\(localIssues.count) read")
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .padding(.top, 2)
                     }
-                    .padding(.top, 2)
-                    
+
                     // QoL: Missing issue awareness
                     if !missingIssues.isEmpty {
                         HStack(spacing: 4) {
@@ -791,7 +816,7 @@ struct SeriesDetailView: View {
                             Text("\(missingIssues.count) missing issue\(missingIssues.count == 1 ? "" : "s") detected")
                                 .font(.system(size: 11, design: .rounded))
                         }
-                        .foregroundColor(.orange)
+                        .foregroundStyle(Theme.orange)
                         .padding(.top, 2)
                     }
                 }

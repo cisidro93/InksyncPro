@@ -43,13 +43,13 @@ struct ReaderView: View {
     @State private var isPanelViewEnabled = true
     @State private var isToolbarVisible = true
     @Environment(\.horizontalSizeClass) private var hSizeClass
-    
-    // ✅ Phase 1: QoL Image Enhancements
+
+    // Image Enhancements
     @AppStorage("comic_autoContrastLevel") private var autoContrastLevel: Double = 1.0
     @AppStorage("comic_smartSharpen") private var smartSharpen: Bool = false
     @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled: Bool = false
-    
-    // ✅ Phase 30: Advanced Reader Features
+
+    // Advanced Reader Features
     @AppStorage("isVerticalScroll") private var isVerticalScroll = false
     @AppStorage("isDoublePageMode") private var isDoublePageMode = false
     @AppStorage("autoLandscapeDualPage") private var autoLandscapeDualPage = true
@@ -58,10 +58,10 @@ struct ReaderView: View {
     @State private var deviceOrientation: UIDeviceOrientation = UIDevice.current.orientation
     @State private var rotationDebounceTask: Task<Void, Never>? = nil
     
-    // ✅ Color Filter
+    // Color Filter
     @State private var colorFilter: ReaderColorFilter = .none
-    
-    // ✅ Jump to Page
+
+    // Jump to Page
     @State private var showJumpToPage = false
     @State private var jumpToPageText = ""
     
@@ -99,25 +99,25 @@ struct ReaderView: View {
     @State private var shareImage: UIImage? = nil
     @State private var showShareSheet = false
     
-    // ✅ PDF document reference (for share + TOC)
+    // PDF document reference (for share + TOC)
     @State private var loadedPDFDocument: PDFDocument? = nil
-    @State private var pdfViewRef: PDFView? = nil  // wired via PDFKitView onViewCreated
+    @State private var pdfViewRef: PDFView? = nil
 
-    // ✅ PDF Search
+    // PDF Search
     @State private var showSearch = false
 
-    // ✅ Webtoon auto-scroll
+    // Webtoon auto-scroll
     @State private var isWebtoonAutoScrolling = false
     @State private var webtoonScrollSpeed: Double = 60.0
 
-    // ✅ Ambient brightness (time-of-day night mode)
+    // Ambient brightness (time-of-day night mode)
     @ObservedObject private var ambientBrightness = AmbientBrightnessManager.shared
     @State private var userHasManuallyAdjustedWarmth = false
 
-    // ✅ CLOUD STREAMING: Phase-aware loading UI driven by CloudStreamCoordinator
+    // Cloud streaming phase-aware loading
     @ObservedObject private var streamCoordinator = CloudStreamCoordinator.shared
 
-    // ✅ Reading velocity tracking
+    // Reading velocity tracking
     @State private var sessionStartTime: Date = Date()
     @State private var pagesReadThisSession: Int = 0
     
@@ -617,27 +617,25 @@ struct ReaderView: View {
     // MARK: - Share Current Page (format-aware)
     private func shareCurrentPage() {
         if fileURL.pathExtension.lowercased() == "pdf" {
-            // PDF path: render current page via PDFKit
             let pageIdx = currentPageIndex
             let docURL = fileURL
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task.detached(priority: .userInitiated) {
                 if let doc = PDFDocument(url: docURL),
                    let page = doc.page(at: pageIdx) {
                     let size = CGSize(width: 1024, height: 1408)
                     let thumb = page.thumbnail(of: size, for: .mediaBox)
-                    DispatchQueue.main.async {
+                    await MainActor.run {
                         self.shareImage = thumb
                         self.showShareSheet = true
                     }
                 }
             }
         } else {
-            // CBZ / image archive path
             guard currentPageIndex < pages.count else { return }
             let url = pages[currentPageIndex]
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task.detached(priority: .userInitiated) {
                 if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
-                    DispatchQueue.main.async {
+                    await MainActor.run {
                         self.shareImage = image
                         self.showShareSheet = true
                     }
@@ -896,70 +894,73 @@ struct ReaderView: View {
             VStack(spacing: 24) {
                 Image(systemName: "books.vertical.fill")
                     .font(.system(size: 60))
-                    .foregroundColor(Theme.orange)
-                
-                Text("Volume Complete!")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                
-                Text("Continue reading the next issue in the series?")
-                    .font(.headline)
-                    .foregroundColor(.gray)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-                
-                VStack(spacing: 12) {
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Theme.orange, Theme.red],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+
+                VStack(spacing: 8) {
+                    Text("Volume Complete!")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+
+                    Text("Continue reading the next issue in the series?")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
+
+                VStack(spacing: 6) {
                     Text(nextVol.name)
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                    
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+
                     if let issue = nextVol.metadata.issueNumber {
                         Text("Issue #\(issue)")
-                            .font(.subheadline)
-                            .foregroundColor(Theme.orange)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.orange)
                     }
                 }
-                .padding()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
                 .frame(maxWidth: .infinity)
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(12)
+                .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .padding(.horizontal, 32)
-                
+
                 HStack(spacing: 16) {
-                    Button(action: {
+                    Button {
                         withAnimation { showBingePrompt = false }
-                    }) {
+                    } label: {
                         Text("Later")
-                            .font(.headline)
-                            .foregroundColor(.white)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.white.opacity(0.2))
-                            .cornerRadius(12)
+                            .padding(.vertical, 14)
+                            .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
-                    
-                    Button(action: {
-                        launchBingeJump(to: nextVol)
-                    }) {
+                    .buttonStyle(.plain)
+
+                    Button { launchBingeJump(to: nextVol) } label: {
                         Text("Read Now")
-                            .font(.headline)
-                            .foregroundColor(.white)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Theme.orange)
-                            .cornerRadius(12)
+                            .padding(.vertical, 14)
+                            .background(Theme.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .shadow(color: Theme.orange.opacity(0.4), radius: 10, y: 4)
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 32)
-                .padding(.top, 16)
+                .padding(.top, 8)
             }
             .padding(32)
-            .background(BlurView(style: .systemMaterialDark))
-            .cornerRadius(24)
-            .shadow(radius: 20)
-            .padding(40)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .shadow(color: .black.opacity(0.4), radius: 30, y: 10)
+            .padding(32)
         }
         .zIndex(1000)
     }

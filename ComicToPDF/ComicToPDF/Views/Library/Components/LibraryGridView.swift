@@ -709,14 +709,14 @@ struct DropResolutionSheet: View {
                         if useCustomName {
                             TextField("Series name…", text: $customName)
                                 .padding(12)
-                                .background(Color(UIColor.secondarySystemBackground))
+                                .background(Color.inkSurface)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.inkAmber.opacity(0.5), lineWidth: 1))
                                 .autocorrectionDisabled()
                         }
                     }
                     .padding(14)
-                    .background(Color(UIColor.secondarySystemBackground))
+                    .background(Color.inkSurface)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .padding(.horizontal, 20)
@@ -782,7 +782,7 @@ private struct OptionRow: View {
                 .font(.system(size: 22))
         }
         .padding(14)
-        .background(Color(UIColor.secondarySystemBackground))
+        .background(Color.inkSurface)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)

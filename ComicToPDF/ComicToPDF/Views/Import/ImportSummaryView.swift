@@ -146,7 +146,7 @@ struct ImportSummaryView: View {
             }
         }
         .padding(14)
-        .background(Color(UIColor.secondarySystemBackground))
+        .background(Color.inkSurface)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 16)
     }

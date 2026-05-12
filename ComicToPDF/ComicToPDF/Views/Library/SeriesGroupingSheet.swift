@@ -49,7 +49,7 @@ struct SeriesGroupingSheet: View {
                     TextField("e.g. One Piece", text: $seriesName)
                         .font(.body)
                         .padding(14)
-                        .background(Color(UIColor.secondarySystemBackground))
+                        .background(Color.inkSurface)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -80,7 +80,7 @@ struct SeriesGroupingSheet: View {
                                             .clipShape(RoundedRectangle(cornerRadius: 6))
                                     } else {
                                         RoundedRectangle(cornerRadius: 6)
-                                            .fill(Color(UIColor.secondarySystemBackground))
+                                            .fill(Color.inkSurface)
                                             .frame(width: 64, height: 90)
                                             .overlay(Image(systemName: "doc.fill").foregroundColor(.secondary))
                                     }
@@ -99,7 +99,7 @@ struct SeriesGroupingSheet: View {
                                         .foregroundColor(.secondary)
                                 }
                                 .frame(width: 64, height: 90)
-                                .background(Color(UIColor.secondarySystemBackground))
+                                .background(Color.inkSurface)
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                             }
                         }

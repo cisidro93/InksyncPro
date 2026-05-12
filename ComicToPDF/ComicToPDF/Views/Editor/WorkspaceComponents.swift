@@ -453,7 +453,7 @@ struct CoverStudioView: View {
                             Text("Hunting...").font(.caption).foregroundColor(.secondary)
                         }
                         .frame(width: 140, height: 210)
-                        .background(Color(UIColor.secondarySystemBackground))
+                        .background(Color.inkSurface)
                         .cornerRadius(12)
                     } else {
                         Button(action: fetchCoverRecommendations) {
@@ -634,7 +634,7 @@ struct CoverVariantCell: View {
                                 } else {
                                     ProgressView()
                                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                        .background(Color(UIColor.secondarySystemBackground))
+                                        .background(Color.inkSurface)
                                         .onAppear {
                                             loadWebImage(from: url)
                                         }
