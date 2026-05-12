@@ -4,7 +4,16 @@ import UIKit
 // Actor-isolated cloud cover extractor.
 // Max 2 concurrent downloads via AsyncSemaphore.
 // Skips files already in-flight. 15s per-request timeout.
-// Writes covers atomically via PhysicalFileSystemRouter pattern.
+// Writes covers atomically (tmp→replaceItem pattern).
+//
+// SUPPORTED FORMATS:
+//   CBZ (.cbz, .zip)  — ZIP Central Directory byte-range parse (no full download)
+//   CBR (.cbr)        — RAR4/RAR5 header parse; stored entries extracted in-place;
+//                       compressed entries fall back gracefully (logged, skipped)
+//
+// DROPBOX LINK LIFETIME:
+//   get_temporary_link URLs expire after exactly 4 hours.
+//   A fresh link is fetched per extraction job. Never cache a link across jobs.
 
 actor CloudCoverExtractor {
     static let shared = CloudCoverExtractor()
@@ -43,7 +52,7 @@ actor CloudCoverExtractor {
         }
     }
 
-    // MARK: - Single File Extraction
+    // MARK: - Single File Extraction (format-aware router)
 
     private func extractCover(for pdf: ConvertedPDF) async {
         defer {
@@ -54,41 +63,103 @@ actor CloudCoverExtractor {
         guard case .cloud(let provider, let remoteID) = pdf.sourceMode,
               provider == "Dropbox" else { return }
 
+        let ext = (pdf.name as NSString).pathExtension.lowercased()
+
         do {
-            let manifest = try await withTimeout(seconds: 15) {
-                let downloadURL = try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
-                return try await ZipCentralDirectory.fetch(from: downloadURL, authHeader: nil)
+            // ── Step 1: Get a fresh temporary link (valid for 4 hours) ─────────
+            let downloadURL = try await withTimeout(seconds: 15) {
+                try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
             }
 
-            guard let coverEntry = manifest.pageEntries.first else {
-                Logger.shared.log("CloudCoverExtractor: No page entries in \(pdf.name)", category: "Cloud", type: .warning)
+            // ── Step 2: Extract cover image based on archive format ────────────
+            let imageData: Data
+
+            switch ext {
+            case "cbz", "zip":
+                imageData = try await extractFromZip(url: downloadURL, pdfName: pdf.name)
+
+            case "cbr":
+                imageData = try await extractFromRar(url: downloadURL, pdfName: pdf.name)
+
+            default:
+                Logger.shared.log(
+                    "CloudCoverExtractor: Unsupported format '.\(ext)' for \(pdf.name) — skipping",
+                    category: "Cloud", type: .warning
+                )
                 return
             }
 
-            let imageData = try await withTimeout(seconds: 15) {
-                try await ZipCentralDirectory.fetchEntryData(entry: coverEntry, manifest: manifest)
-            }
-
+            // ── Step 3: Decode → thumbnail ────────────────────────────────────
             guard let image = UIImage(data: imageData),
                   let thumbnail = image.preparingThumbnail(of: CGSize(width: 360, height: 540)) else {
-                Logger.shared.log("CloudCoverExtractor: Could not decode cover image for \(pdf.name)", category: "Cloud", type: .error)
+                Logger.shared.log(
+                    "CloudCoverExtractor: Could not decode cover image for \(pdf.name)",
+                    category: "Cloud", type: .error
+                )
                 return
             }
 
             guard let jpegData = thumbnail.jpegData(compressionQuality: 0.85) else { return }
 
-            // Atomic write via tmp→replaceItem
+            // ── Step 4: Atomic write ──────────────────────────────────────────
             let coversDir = coversDirectory()
-            let coverURL = coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
-            let tmpURL   = coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).tmp.jpg")
+            let coverURL  = coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
+            let tmpURL    = coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).tmp.jpg")
 
             try jpegData.write(to: tmpURL)
             _ = try FileManager.default.replaceItemAt(coverURL, withItemAt: tmpURL)
 
-            Logger.shared.log("CloudCoverExtractor: Cover extracted for \(pdf.name)", category: "Cloud")
+            Logger.shared.log(
+                "CloudCoverExtractor: [\(ext.uppercased())] Cover extracted for \(pdf.name)",
+                category: "Cloud"
+            )
 
         } catch {
-            Logger.shared.log("CloudCoverExtractor: Failed for \(pdf.name) — \(error.localizedDescription)", category: "Cloud", type: .error)
+            Logger.shared.log(
+                "CloudCoverExtractor: Failed for \(pdf.name) — \(error.localizedDescription)",
+                category: "Cloud", type: .error
+            )
+        }
+    }
+
+    // MARK: - Format Extractors
+
+    /// CBZ / ZIP: parse the Central Directory from the file's tail (no full download).
+    private func extractFromZip(url: URL, pdfName: String) async throws -> Data {
+        let manifest = try await withTimeout(seconds: 15) {
+            try await ZipCentralDirectory.fetch(from: url, authHeader: nil)
+        }
+        guard let coverEntry = manifest.pageEntries.first else {
+            throw NSError(domain: "CloudCoverExtractor", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "No page images in ZIP: \(pdfName)"])
+        }
+        return try await withTimeout(seconds: 15) {
+            try await ZipCentralDirectory.fetchEntryData(entry: coverEntry, manifest: manifest)
+        }
+    }
+
+    /// CBR / RAR: parse sequential block headers from the file's head.
+    /// Stored (method 0x30) entries are fetched byte-range directly.
+    /// Compressed entries are not supported — most CBR cover pages use RAR store mode
+    /// because JPEG/PNG images don't benefit from re-compression.
+    private func extractFromRar(url: URL, pdfName: String) async throws -> Data {
+        let entry = try await withTimeout(seconds: 15) {
+            try await RARHeaderParser.fetchFirstEntry(from: url, authHeader: nil)
+        }
+
+        guard entry.isStored else {
+            // CBR author used RAR compression on images — rare but possible.
+            // We log this and skip rather than crash; a full RAR decompressor
+            // would be needed (e.g. UnrarKit), which is not yet bundled.
+            Logger.shared.log(
+                "CloudCoverExtractor: CBR cover '\(entry.name)' in \(pdfName) is compressed (method 0x\(String(entry.method, radix: 16))) — byte-range extraction not possible. Add UnrarKit to support this file.",
+                category: "Cloud", type: .warning
+            )
+            throw RARParseError.compressedEntryUnsupported
+        }
+
+        return try await withTimeout(seconds: 15) {
+            try await RARHeaderParser.fetchEntryData(entry: entry, from: url, authHeader: nil)
         }
     }
 
@@ -97,6 +168,9 @@ actor CloudCoverExtractor {
     private func shouldExtract(_ pdf: ConvertedPDF) -> Bool {
         guard !inFlight.contains(pdf.id) else { return false }
         guard case .cloud(let provider, _) = pdf.sourceMode, provider == "Dropbox" else { return false }
+
+        let ext = (pdf.name as NSString).pathExtension.lowercased()
+        guard ["cbz", "zip", "cbr"].contains(ext) else { return false }
 
         let coverURL = coversDirectory()
             .appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
