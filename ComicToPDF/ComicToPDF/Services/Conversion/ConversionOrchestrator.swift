@@ -130,12 +130,25 @@ final class ConversionOrchestrator {
         }
         #endif
         
+        var ledgerIDs: [UUID: UUID] = [:]
+        for pdf in pdfs {
+            let jid = await ConversionLedger.shared.enqueue(
+                fileID: pdf.id,
+                fileName: pdf.name,
+                outputFormat: await MainActor.run { AppSettingsManager.shared.conversionSettings.outputFormat.rawValue }
+            )
+            ledgerIDs[pdf.id] = jid
+        }
+
         await MainActor.run { manager.isConverting = true }
         
         for (index, pdf) in pdfs.enumerated() {
             if Task.isCancelled { break }
             let currentNum = index + 1
             let total = pdfs.count
+            let jobID = ledgerIDs[pdf.id]
+
+            if let jid = jobID { await ConversionLedger.shared.markStarted(jid) }
             
             await MainActor.run { manager.processingStatus = "Converting \(currentNum) of \(total)"; manager.statusMessage = "Processing \(pdf.name)..."; manager.conversionProgress = 0.0 }
             
@@ -202,7 +215,9 @@ final class ConversionOrchestrator {
                     for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata) }
                     await MainActor.run { manager.scanLibrary() }
                 }
+                if let jid = jobID { await ConversionLedger.shared.markSucceeded(jid) }
             } catch {
+                if let jid = jobID { await ConversionLedger.shared.markFailed(jid, reason: error.localizedDescription) }
                 await MainActor.run { manager.statusMessage = "Error on \(pdf.name)" }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }

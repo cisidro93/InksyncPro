@@ -1,5 +1,9 @@
 import Foundation
 
+// PERSISTENCE NOTE: SQLite (GRDB) is local-only by design.
+// iCloud portability is handled via JSON export in BackupRestoreView.
+// Do NOT move library.db into the iCloud Documents container.
+
 /// Coordinates the extraction of the massive Application Memory arrays into monolithic JSON bounds without violently throttling the Main Actor's 120Hz pipeline.
 class LibraryPersistenceManager {
     static let shared = LibraryPersistenceManager()
@@ -22,14 +26,13 @@ class LibraryPersistenceManager {
         let syncCols = manager.collections
         
         Task.detached(priority: .background) {
-            // ✅ Trigger Dual-Write Sync to SwiftData
             await MigrationService.shared.syncToSwiftData(pdfs: syncPDFs, collections: syncCols)
+            await LibraryDatabaseService.shared.save(syncPDFs)
         }
     }
     
     /// Awakens the Database structure from the filesystem memory blocks natively onto the Main Queue arrays.
     func load(manager: ConversionManager) {
-        // Unshackled from legacy filesystem array extraction, natively bridge from ModelContainer
         Task.detached(priority: .userInitiated) {
             do {
                 let (sdPdfs, sdCols) = try await MigrationService.shared.fetchSwiftDataLegacyBridge()
@@ -41,14 +44,12 @@ class LibraryPersistenceManager {
                     manager.convertedPDFs = legacyPDFs
                     manager.collections = legacyCols
                     
-                    // We only load Settings/History from JSON now
                     if let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName),
                        FileManager.default.fileExists(atPath: url.path),
                        let data = try? Data(contentsOf: url),
                        let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) {
                         
                         if let legacyPanels = index.panelOverrides, !legacyPanels.isEmpty {
-                            // ✅ Deep Migrate Legacy Panels to SQLite
                             for (pdfID, pages) in legacyPanels {
                                 for (pageIndex, visionPanels) in pages {
                                     var newModel = PageModel(pageIndex: pageIndex)
@@ -75,8 +76,6 @@ class LibraryPersistenceManager {
                         DeviceRegistry.shared.registeredDevices = index.registeredDevices ?? []
                         DeviceRegistry.shared.primaryDeviceID = index.primaryDeviceID
                         
-                        // 💥 ANNIHILATE the legacy JSON from the physical disk natively to force iCloud to issue a Global Document Deletion.
-                        // This mathematically ensures ghost data cannot be restored on subsequent remote re-installs.
                         try? FileManager.default.removeItem(at: url)
                     }
                 }
@@ -99,3 +98,4 @@ class LibraryPersistenceManager {
         }
     }
 }
+

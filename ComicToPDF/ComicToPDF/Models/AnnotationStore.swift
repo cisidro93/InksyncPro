@@ -32,6 +32,8 @@ struct Annotation: Codable, Identifiable {
     var noteText: String?                 // user's note on the annotation
     var tags: [String]?                   // NLP auto-generated tags
     var bounds: CodableCGRect?            // page-relative bounds (0–1 normalized)
+    // SHA-256 thumbprint of the page at annotation time. nil for pre-Phase5 annotations.
+    var contentHash: String? = nil
 
     enum AnnotationKind: String, Codable {
         case highlight
@@ -76,6 +78,7 @@ struct Annotation: Codable, Identifiable {
     var boundsY: Double?
     var boundsW: Double?
     var boundsH: Double?
+    var contentHash: String? = nil
     
     init(from dto: Annotation) {
         self.id = dto.id
@@ -189,12 +192,16 @@ class AnnotationStore: ObservableObject {
     
     @Published private var store: [UUID: [Annotation]] = [:]
     private var modelContext: ModelContext?
+
+    // Maps SHA-256 page content hash → [annotation IDs] for cross-format lookup.
+    private var hashIndex: [String: [String]] = [:]
     
     private init() {}
     
     func initialize(with context: ModelContext) {
         self.modelContext = context
         loadAll()
+
     }
     
     func annotations(for pdfID: UUID) -> [Annotation] {
@@ -203,6 +210,23 @@ class AnnotationStore: ObservableObject {
     
     var allAnnotations: [Annotation] {
         return store.values.flatMap { $0 }
+    }
+
+    // Returns all annotations whose page content hash matches (cross-format lookup).
+    func annotations(forContentHash hash: String) -> [Annotation] {
+        guard let ids = hashIndex[hash] else { return [] }
+        let idSet = Set(ids)
+        return allAnnotations.filter { idSet.contains($0.id.uuidString) }
+    }
+
+    // Associates a SHA-256 page content hash with an annotation (call at annotation creation time).
+    func setContentHash(_ hash: String, for annotationID: UUID) {
+        hashIndex[hash, default: []].append(annotationID.uuidString)
+        for key in store.keys {
+            if let idx = store[key]?.firstIndex(where: { $0.id == annotationID }) {
+                store[key]?[idx].contentHash = hash
+            }
+        }
     }
     
     func add(_ annotation: Annotation) {

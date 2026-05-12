@@ -249,6 +249,17 @@ class PhysicalFileSystemRouter {
                 await generateCoverThumbnail(for: pdf, manager: manager)
             }
         }
+
+        // Pass 3 — cloud cover extraction for Dropbox files still missing on-disk covers.
+        let cloudFilesNeedingCovers = pdfsNeedingCovers.filter {
+            if case .cloud = $0.sourceMode { return true }
+            return false
+        }
+        if !cloudFilesNeedingCovers.isEmpty {
+            Task(priority: .background) {
+                await CloudCoverExtractor.shared.extract(for: cloudFilesNeedingCovers)
+            }
+        }
     }
 
     

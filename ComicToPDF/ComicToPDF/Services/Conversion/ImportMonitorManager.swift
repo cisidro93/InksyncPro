@@ -12,9 +12,11 @@ class ImportMonitorManager: ObservableObject {
     @Published private(set) var filesProcessed: Int = 0
     @Published private(set) var filesFailed: Int = 0
     
-    // ✅ PHASE 9: Unrestricted Background Processing Survival Token
+    // Unrestricted Background Processing Survival Token
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
-    
+
+    // Publisher fires with the batch UUID when all jobs in a queue reach terminal state.
+    let batchCompletionPublisher = PassthroughSubject<UUID, Never>()
 
     
     private init() {}

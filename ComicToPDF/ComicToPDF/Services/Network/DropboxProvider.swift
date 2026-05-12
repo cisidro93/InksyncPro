@@ -214,6 +214,17 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
 
     // MARK: - Sign Out
 
+    // Exposes current token for use by CloudCoverExtractor (read-only).
+    var currentAccessToken: String? { accessToken }
+
+    // Authenticated URLSession for cloud cover byte-range requests.
+    var authenticatedSession: URLSession {
+        guard let token = accessToken else { return .shared }
+        let config = URLSessionConfiguration.default
+        config.httpAdditionalHeaders = ["Authorization": "Bearer \(token)"]
+        return URLSession(configuration: config)
+    }
+
     func signOut() {
         accessToken = nil
         refreshToken = nil

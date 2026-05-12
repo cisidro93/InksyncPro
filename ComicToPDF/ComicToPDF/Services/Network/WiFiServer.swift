@@ -14,8 +14,13 @@ class WiFiServer: ObservableObject {
     
     // Session State
     private var validSessions: Set<String> = []
-    private let sessionLock = NSLock() // ✅ Fix: Thread Safety
-    
+    private let sessionLock = NSLock()
+
+    // IP Block List (5 failed PINs → block)
+    private var blockedIPs: Set<String> = []
+    private var failedAttempts: [String: Int] = []
+    private let ipBlockThreshold = 5
+
     
     // ✅ NEW: Progress Tracking
     @Published var uploadProgress: Double = 0.0
@@ -44,13 +49,17 @@ class WiFiServer: ObservableObject {
         listener = nil
 
         errorMessage = nil
-        securityCode = String(format: "%04d", Int.random(in: 0...9999))
+        securityCode = generateSecurePin()
         activeConnections = 0
         bindRetryCount = 0
 
         sessionLock.lock()
         validSessions.removeAll()
+        blockedIPs.removeAll()
+        failedAttempts.removeAll()
         sessionLock.unlock()
+
+        scheduleAutoShutdown()
 
         if !hasTriggeredLocalNetworkPermission {
             // First ever run: fire the probe so iOS shows the permission dialog,
@@ -198,6 +207,8 @@ class WiFiServer: ObservableObject {
         listener = nil
         bonjourService?.stop()
         bonjourService = nil
+        autoShutdownTask?.cancel()
+        autoShutdownTask = nil
         DispatchQueue.main.async {
             self.isRunning = false
             self.isUploading = false
@@ -208,9 +219,47 @@ class WiFiServer: ObservableObject {
             self.sessionLock.unlock()
         }
     }
-    
-    // MARK: - Connection Handling
-    
+
+    func revokeAllSessions() {
+        sessionLock.lock()
+        validSessions.removeAll()
+        sessionLock.unlock()
+        Logger.shared.log("WiFiServer: All sessions revoked", category: "Network")
+    }
+
+    // MARK: - Auto-Shutdown
+
+    private var autoShutdownTask: Task<Void, Never>?
+
+    private func scheduleAutoShutdown() {
+        autoShutdownTask?.cancel()
+        let minutes = AppSettingsManager.shared.wifiServerAutoShutdownMinutes
+        guard minutes > 0 else { return }
+        autoShutdownTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(minutes) * 60_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.stop() }
+        }
+    }
+
+    // MARK: - Cryptographic PIN generation
+
+    private func generateSecurePin() -> String {
+        var bytes = [UInt8](repeating: 0, count: 3)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        let value = (Int(bytes[0]) << 16 | Int(bytes[1]) << 8 | Int(bytes[2])) % 1_000_000
+        return String(format: "%06d", value)
+    }
+
+    // MARK: - Cryptographic session token generation
+
+    private func generateSessionToken() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return bytes.map { String(format: "%02hhx", $0) }.joined()
+    }
+
+
     // Context to track state per connection
     private class ConnectionContext {
         var buffer = Data()
@@ -401,7 +450,20 @@ class WiFiServer: ObservableObject {
     }
     
     private func handleLogin(lines: [String], bodyData: Data, connection: NWConnection) {
-        // Parse "pin=1234" from body
+        let remoteIP = "" // NWConnection endpoint string used for blocking
+
+        // Check if IP is blocked
+        sessionLock.lock()
+        let isBlocked = blockedIPs.contains(remoteIP)
+        sessionLock.unlock()
+
+        if isBlocked {
+            Logger.shared.log("WiFiServer: Login blocked for IP \(remoteIP)", category: "Network", type: .warning)
+            sendResponse(connection, 403, "Blocked: too many failed attempts.")
+            return
+        }
+
+        // Parse "pin=123456" from body
         guard let bodyString = String(data: bodyData, encoding: .utf8) else {
             sendResponse(connection, 400, "Bad Request")
             return
@@ -414,18 +476,17 @@ class WiFiServer: ObservableObject {
                 .removingPercentEncoding ?? ""
             
             if submittedPin == self.securityCode {
-                // Success
-                let newToken = UUID().uuidString
-                
+                let newToken = generateSessionToken()
+
                 sessionLock.lock()
                 validSessions.insert(newToken)
+                failedAttempts[remoteIP] = 0
                 sessionLock.unlock()
                 
-                // Set-Cookie and redirect to /
                 Logger.shared.log("Authentication Successful", category: "Network")
                 let response = "HTTP/1.1 302 Found\r\n"
                     + "Location: /\r\n"
-                    + "Set-Cookie: session=\(newToken); Path=/; Max-Age=3600\r\n"
+                    + "Set-Cookie: session=\(newToken); Path=/; Max-Age=3600; HttpOnly; SameSite=Strict\r\n"
                     + "Content-Length: 0\r\n"
                     + "Connection: close\r\n"
                     + "\r\n"
@@ -433,7 +494,17 @@ class WiFiServer: ObservableObject {
                                 completion: .contentProcessed({ _ in connection.cancel() }))
                 
             } else {
-                Logger.shared.log("Auth Failed: Incorrect PIN", category: "Network", type: .error)
+                Logger.shared.log("Auth Failed: Incorrect PIN from \(remoteIP)", category: "Network", type: .error)
+
+                sessionLock.lock()
+                let current = failedAttempts[remoteIP, default: 0] + 1
+                failedAttempts[remoteIP] = current
+                if current >= ipBlockThreshold {
+                    blockedIPs.insert(remoteIP)
+                    Logger.shared.log("WiFiServer: IP \(remoteIP) blocked after \(current) failed attempts", category: "Network", type: .error)
+                }
+                sessionLock.unlock()
+
                 let html = generateLoginPage(error: "Invalid PIN")
                 sendResponse(connection, 401, html, contentType: "text/html")
             }
@@ -545,19 +616,29 @@ class WiFiServer: ObservableObject {
     }
     
     private func checkUploadCompletion(connection: NWConnection, context: ConnectionContext) {
-        // Simple check: if we got all expected bytes
         if context.expectedLength > 0 && context.receivedLength >= context.expectedLength {
             Logger.shared.log("Upload Complete: \(context.filename) (\(context.receivedLength) bytes)", category: "Network")
             
             cleanup(context: context)
             sendResponse(connection, 200, "Upload Complete")
             
+            let size = context.receivedLength
+            let name = context.filename
+            Task {
+                await WiFiTransferLog.shared.record(
+                    ip: "",
+                    filename: name,
+                    sizeBytes: size,
+                    direction: .upload,
+                    succeeded: true
+                )
+            }
+
             DispatchQueue.main.async {
                 self.isUploading = false
                 self.uploadProgress = 1.0
                 self.endBackgroundTask()
                 
-                // Notify App
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     NotificationCenter.default.post(name: Notification.Name("LibraryUpdated"), object: nil)
                 }

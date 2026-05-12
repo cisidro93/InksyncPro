@@ -17,7 +17,14 @@ class AppSettingsManager: ObservableObject {
     // Aesthetic & Library State
     @Published var isVaultUnlocked: Bool = false
     @Published var showSeriesHealthScore: Bool = UserDefaults.standard.bool(forKey: "showSeriesHealthScore")
-    
+
+    // iCloud Sync
+    @AppStorage("iCloudSyncEnabled") var iCloudSyncEnabled: Bool = true
+
+    // WiFi Server Security
+    @AppStorage("wifiServerHTTPS") var wifiServerHTTPS: Bool = true
+    @AppStorage("wifiServerAutoShutdownMinutes") var wifiServerAutoShutdownMinutes: Int = 30
+
     // ✅ Persistent Watched Folders
     struct WatchedFolder: Codable, Identifiable, Equatable {
         var id: UUID = UUID()
