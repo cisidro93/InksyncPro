@@ -221,7 +221,7 @@ struct ImportQueueView: View {
                 return
             }
             Task.detached(priority: .userInitiated) {
-                let result = queue.stageWithDuplicateCheck(urls)
+                let result = await queue.stageWithDuplicateCheck(urls)
                 await MainActor.run {
                     queue.isStagingFiles = false
                     if result.skippedDuplicates > 0 {

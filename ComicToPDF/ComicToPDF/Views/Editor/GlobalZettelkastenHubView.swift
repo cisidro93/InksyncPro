@@ -73,7 +73,7 @@ struct GlobalZettelkastenHubView: View {
     
     var body: some View {
         ZStack {
-            Theme.background.edgesIgnoringSafeArea(.all)
+            Color.inkBackground.ignoresSafeArea()
 
             if allAnnotations.isEmpty {
                 emptyStateView
