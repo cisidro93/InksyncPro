@@ -30,7 +30,7 @@ struct SyncFileRecord: Codable {
 
 struct SyncProgressRecord: Codable {
     let fileID: String
-    let progress: ReaderProgressTracker
+    let progress: ReadingProgress
     let modifiedBy: String
     let modifiedClock: Int
 }

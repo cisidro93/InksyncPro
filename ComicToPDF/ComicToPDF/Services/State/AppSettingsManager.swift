@@ -19,11 +19,20 @@ class AppSettingsManager: ObservableObject {
     @Published var showSeriesHealthScore: Bool = UserDefaults.standard.bool(forKey: "showSeriesHealthScore")
 
     // iCloud Sync
-    @AppStorage("iCloudSyncEnabled") var iCloudSyncEnabled: Bool = true
+    var iCloudSyncEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "iCloudSyncEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "iCloudSyncEnabled") }
+    }
 
     // WiFi Server Security
-    @AppStorage("wifiServerHTTPS") var wifiServerHTTPS: Bool = true
-    @AppStorage("wifiServerAutoShutdownMinutes") var wifiServerAutoShutdownMinutes: Int = 30
+    var wifiServerHTTPS: Bool {
+        get { UserDefaults.standard.object(forKey: "wifiServerHTTPS") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "wifiServerHTTPS") }
+    }
+    var wifiServerAutoShutdownMinutes: Int {
+        get { UserDefaults.standard.object(forKey: "wifiServerAutoShutdownMinutes") as? Int ?? 30 }
+        set { UserDefaults.standard.set(newValue, forKey: "wifiServerAutoShutdownMinutes") }
+    }
 
     // ✅ Persistent Watched Folders
     struct WatchedFolder: Codable, Identifiable, Equatable {

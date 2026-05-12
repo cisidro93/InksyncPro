@@ -121,11 +121,3 @@ struct LibraryQueryService {
         }
     }
 }
-
-// MARK: - LibraryDatabaseService internal accessor for query service
-
-extension LibraryDatabaseService {
-    func databaseHandle() -> LibraryDB? {
-        return self.db
-    }
-}

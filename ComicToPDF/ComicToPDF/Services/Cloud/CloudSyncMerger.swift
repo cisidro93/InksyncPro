@@ -84,8 +84,8 @@ struct CloudSyncMerger {
                 if p.progress.completionFraction > existing.progress.completionFraction {
                     progressMap[p.fileID] = p
                 } else if p.progress.completionFraction == existing.progress.completionFraction {
-                    let remoteDate = p.progress.lastOpenedAt ?? .distantPast
-                    let localDate  = existing.progress.lastOpenedAt ?? .distantPast
+                    let remoteDate = p.progress.lastOpenedAt
+                    let localDate  = existing.progress.lastOpenedAt
                     if remoteDate > localDate { progressMap[p.fileID] = p }
                 }
             } else {

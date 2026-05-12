@@ -15,9 +15,9 @@ import Combine
 
 private enum WriteRequest {
     case saveFiles([ConvertedPDF])
-    case saveProgress(ReaderProgressTracker, String)
+    case saveProgress(ReadingProgress, String)
     case saveAnnotations([Annotation], String)
-    case saveZettel(Zettel)
+    case saveZettelRecord(ZettelRecord)
 }
 
 // MARK: - LibraryDatabaseService
@@ -98,8 +98,8 @@ actor LibraryDatabaseService {
                             let rec = LibraryFileRecord.from(pdf)
                             try rec.upsert(handle)
                         }
-                    case .saveProgress(let tracker, let fileID):
-                        let rec = ReadingProgressRecord.from(fileID: fileID, tracker: tracker)
+                    case .saveProgress(let progress, let fileID):
+                        let rec = ReadingProgressRecord.from(fileID: fileID, progress: progress)
                         try rec.upsert(handle)
                     case .saveAnnotations(let anns, let fileID):
                         try handle.execute("DELETE FROM annotations WHERE fileID = ?", arguments: [fileID])
@@ -107,18 +107,7 @@ actor LibraryDatabaseService {
                             let rec = AnnotationRecord.from(ann)
                             try rec.upsert(handle)
                         }
-                    case .saveZettel(let zettel):
-                        let rec = ZettelRecord(
-                            id: zettel.id,
-                            title: zettel.title,
-                            body: zettel.body ?? "",
-                            tags: (try? JSONEncoder().encode(zettel.tags)).flatMap { String(data: $0, encoding: .utf8) },
-                            backlinks: (try? JSONEncoder().encode(zettel.backlinks ?? [])).flatMap { String(data: $0, encoding: .utf8) },
-                            sourceFileID: nil,
-                            sourcePage: nil,
-                            createdAt: zettel.createdAt.timeIntervalSince1970,
-                            modifiedAt: Date().timeIntervalSince1970
-                        )
+                    case .saveZettelRecord(let rec):
                         try rec.upsert(handle)
                     }
                 }
@@ -152,11 +141,11 @@ actor LibraryDatabaseService {
         }
     }
 
-    func saveProgress(_ progress: ReaderProgressTracker, for fileID: String) {
+    func saveProgress(_ progress: ReadingProgress, for fileID: String) {
         writeStream?.yield(.saveProgress(progress, fileID))
     }
 
-    func loadProgress(for fileID: String) async -> ReaderProgressTracker? {
+    func loadProgress(for fileID: String) async -> ReadingProgress? {
         guard let db = self.db else { return nil }
         do {
             return try await Task.detached(priority: .userInitiated) {
@@ -196,30 +185,21 @@ actor LibraryDatabaseService {
         }
     }
 
-    func saveZettel(_ zettel: Zettel) {
-        writeStream?.yield(.saveZettel(zettel))
+    func saveZettelRecord(_ record: ZettelRecord) {
+        writeStream?.yield(.saveZettelRecord(record))
     }
 
-    func loadAllZettels() async -> [Zettel] {
+    func loadAllZettelRecords() async -> [ZettelRecord] {
         guard let db = self.db else { return [] }
         do {
             return try await Task.detached(priority: .userInitiated) {
                 try db.read { handle in
                     let rows = try handle.fetchAll("SELECT * FROM zettel_notes ORDER BY modifiedAt DESC")
-                    let decoder = JSONDecoder()
-                    return rows.compactMap { row -> Zettel? in
-                        guard let rec = ZettelRecord(row: row) else { return nil }
-                        var z = Zettel(id: rec.id, title: rec.title)
-                        z.body = rec.body.isEmpty ? nil : rec.body
-                        if let tagStr = rec.tags, let d = tagStr.data(using: .utf8) {
-                            z.tags = (try? decoder.decode([String].self, from: d)) ?? []
-                        }
-                        return z
-                    }
+                    return rows.compactMap { ZettelRecord(row: $0) }
                 }
             }.value
         } catch {
-            Logger.shared.log("LibraryDatabaseService: loadAllZettels failed — \(error.localizedDescription)", category: "Import", type: .error)
+            Logger.shared.log("LibraryDatabaseService: loadAllZettelRecords failed — \(error.localizedDescription)", category: "Import", type: .error)
             return []
         }
     }
@@ -261,6 +241,11 @@ actor LibraryDatabaseService {
         } catch {
             Logger.shared.log("LibraryDatabaseService: Migration failed — \(error.localizedDescription). Falling back to SwiftData path.", category: "Import", type: .error)
         }
+    }
+
+    // Used by LibraryQueryService (same module, different file — needs internal access)
+    func databaseHandle() -> LibraryDB? {
+        return self.db
     }
 }
 
@@ -491,7 +476,7 @@ extension ReadingProgressRecord {
             INSERT OR REPLACE INTO reading_progress
             (fileID, currentPage, totalPages, completionFraction, lastOpenedAt, isCompleted)
             VALUES (?,?,?,?,?,?)
-        """, arguments: [fileID, currentPage, totalPages, completionFraction, lastOpenedAt as Any, isCompleted])
+        """, arguments: [fileID, currentPage, totalPages, completionFraction, lastOpenedAt, isCompleted])
     }
 
     init?(row: [String: Any]) {
@@ -500,7 +485,7 @@ extension ReadingProgressRecord {
         self.currentPage = (row["currentPage"] as? Int) ?? 0
         self.totalPages = (row["totalPages"] as? Int) ?? 0
         self.completionFraction = (row["completionFraction"] as? Double) ?? 0
-        self.lastOpenedAt = row["lastOpenedAt"] as? Double
+        self.lastOpenedAt = (row["lastOpenedAt"] as? Double) ?? 0
         self.isCompleted = (row["isCompleted"] as? Int) ?? 0
     }
 }

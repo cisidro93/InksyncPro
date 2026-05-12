@@ -162,30 +162,31 @@ struct ReadingProgressRecord: Codable {
     var currentPage: Int
     var totalPages: Int
     var completionFraction: Double
-    var lastOpenedAt: Double?
+    var lastOpenedAt: Double
     var isCompleted: Int
 
-    static func from(fileID: String, tracker: ReaderProgressTracker) -> ReadingProgressRecord {
+    static func from(fileID: String, progress: ReadingProgress) -> ReadingProgressRecord {
         ReadingProgressRecord(
             fileID: fileID,
-            currentPage: tracker.currentPage,
-            totalPages: tracker.totalPages,
-            completionFraction: tracker.completionFraction,
-            lastOpenedAt: tracker.lastOpenedAt?.timeIntervalSince1970,
-            isCompleted: tracker.isCompleted ? 1 : 0
+            currentPage: progress.currentPageIndex,
+            totalPages: 0,
+            completionFraction: progress.completionFraction,
+            lastOpenedAt: progress.lastOpenedAt.timeIntervalSince1970,
+            isCompleted: progress.completionFraction >= 1.0 ? 1 : 0
         )
     }
 
-    func toDomainModel() -> ReaderProgressTracker {
-        var tracker = ReaderProgressTracker()
-        tracker.currentPage = currentPage
-        tracker.totalPages = totalPages
-        tracker.completionFraction = completionFraction
-        tracker.isCompleted = isCompleted == 1
-        if let ts = lastOpenedAt {
-            tracker.lastOpenedAt = Date(timeIntervalSince1970: ts)
-        }
-        return tracker
+    func toDomainModel() -> ReadingProgress {
+        ReadingProgress(
+            pdfID: UUID(uuidString: fileID) ?? UUID(),
+            lastOpenedAt: Date(timeIntervalSince1970: lastOpenedAt),
+            currentPageIndex: currentPage,
+            currentChapterIndex: nil,
+            currentChapterOffset: nil,
+            totalPagesRead: currentPage,
+            completionFraction: completionFraction,
+            readingSessionDates: []
+        )
     }
 }
 

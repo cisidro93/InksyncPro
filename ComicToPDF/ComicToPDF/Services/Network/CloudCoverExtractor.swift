@@ -15,6 +15,14 @@ actor CloudCoverExtractor {
 
     private init() {}
 
+    // Nonisolated: safe to call from inside actor without @MainActor crossing.
+    private nonisolated func coversDirectory() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = appSupport.appendingPathComponent("Covers")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
     // MARK: - Public API
 
     func extract(for pdfs: [ConvertedPDF]) async {
@@ -70,10 +78,9 @@ actor CloudCoverExtractor {
             guard let jpegData = thumbnail.jpegData(compressionQuality: 0.85) else { return }
 
             // Atomic write via tmp→replaceItem
-            let coverURL = PhysicalFileSystemRouter.getCoversDirectory()
-                .appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
-            let tmpURL = PhysicalFileSystemRouter.getCoversDirectory()
-                .appendingPathComponent("cover_\(pdf.id.uuidString).tmp.jpg")
+            let coversDir = coversDirectory()
+            let coverURL = coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
+            let tmpURL   = coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).tmp.jpg")
 
             try jpegData.write(to: tmpURL)
             _ = try FileManager.default.replaceItemAt(coverURL, withItemAt: tmpURL)
@@ -91,7 +98,7 @@ actor CloudCoverExtractor {
         guard !inFlight.contains(pdf.id) else { return false }
         guard case .cloud(let provider, _) = pdf.sourceMode, provider == "Dropbox" else { return false }
 
-        let coverURL = PhysicalFileSystemRouter.getCoversDirectory()
+        let coverURL = coversDirectory()
             .appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
         return !FileManager.default.fileExists(atPath: coverURL.path)
     }

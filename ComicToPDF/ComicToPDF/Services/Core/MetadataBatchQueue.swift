@@ -24,9 +24,9 @@ struct MetadataBatchItem: Identifiable {
 actor MetadataBatchQueue {
     static let shared = MetadataBatchQueue()
 
-    @Published private(set) var items: [MetadataBatchItem] = []
-    @Published private(set) var isPaused: Bool = false
-    @Published private(set) var resumesAt: Date?
+    private(set) var items: [MetadataBatchItem] = []
+    private(set) var isPaused: Bool = false
+    private(set) var resumesAt: Date?
 
     private var fetchTask: Task<Void, Never>?
     private let subject = PassthroughSubject<[MetadataBatchItem], Never>()
@@ -87,15 +87,13 @@ actor MetadataBatchQueue {
             }
 
             if waitSeconds > 0 {
-                await MainActor.run {
-                    self.isPaused = true
-                    self.resumesAt = Date().addingTimeInterval(waitSeconds)
-                }
+                isPaused = true
+                resumesAt = Date().addingTimeInterval(waitSeconds)
+                subject.send(items)
                 try? await Task.sleep(nanoseconds: UInt64(waitSeconds * 1_000_000_000))
-                await MainActor.run {
-                    self.isPaused = false
-                    self.resumesAt = nil
-                }
+                isPaused = false
+                resumesAt = nil
+                subject.send(items)
             }
 
             guard !Task.isCancelled else { return }

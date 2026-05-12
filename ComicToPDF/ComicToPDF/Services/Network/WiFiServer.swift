@@ -18,7 +18,7 @@ class WiFiServer: ObservableObject {
 
     // IP Block List (5 failed PINs → block)
     private var blockedIPs: Set<String> = []
-    private var failedAttempts: [String: Int] = []
+    private var failedAttempts: [String: Int] = [:]
     private let ipBlockThreshold = 5
 
     
@@ -233,7 +233,7 @@ class WiFiServer: ObservableObject {
 
     private func scheduleAutoShutdown() {
         autoShutdownTask?.cancel()
-        let minutes = AppSettingsManager.shared.wifiServerAutoShutdownMinutes
+        let minutes = UserDefaults.standard.object(forKey: "wifiServerAutoShutdownMinutes") as? Int ?? 30
         guard minutes > 0 else { return }
         autoShutdownTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(minutes) * 60_000_000_000)

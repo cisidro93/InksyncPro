@@ -21,7 +21,10 @@ struct WiFiCertificateManager {
         return (identity as! SecIdentity)
     }
 
-    // Generates a new P-256 self-signed cert valid for 825 days and stores in Keychain.
+    // Generates a new P-256 key pair and stores the private key in Keychain.
+    // Full self-signed cert generation requires an ASN.1 DER encoder (not available
+    // in iOS Security framework natively) — this generates the key material ready
+    // for when the app integrates a TLS library.
     static func generateAndStore() {
         let attrs: [CFString: Any] = [
             kSecAttrKeyType:       kSecAttrKeyTypeECSECPrimeRandom,
@@ -34,13 +37,7 @@ struct WiFiCertificateManager {
             Logger.shared.log("WiFiCertificateManager: Key generation failed — \(error?.takeRetainedValue().localizedDescription ?? "unknown")", category: "Network", type: .error)
             return
         }
-        guard let publicKey = SecKeyCopyPublicKey(privateKey) else { return }
-
-        let certParams: [String: Any] = [
-            kSecCertificateLifetime as String:  825 * 86400,
-            kSecCertificateSubject as String:   "CN=InkSyncPro,O=Antigravity,C=US"
-        ]
-
-        Logger.shared.log("WiFiCertificateManager: Self-signed cert generated (825-day validity)", category: "Network")
+        _ = SecKeyCopyPublicKey(privateKey)
+        Logger.shared.log("WiFiCertificateManager: P-256 key pair generated and stored in Keychain", category: "Network")
     }
 }
