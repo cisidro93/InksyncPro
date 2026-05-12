@@ -76,7 +76,14 @@ actor MetadataBatchQueue {
             if isManga {
                 waitSeconds = await MangaDexRateTracker.shared.consume()
             } else {
-                waitSeconds = await ComicVineRateTracker.shared.consume()
+                // Use existing ComicVine tracker (persists across launches via UserDefaults)
+                do {
+                    try ComicVineRateTracker.shared.registerRequestAttempt()
+                    waitSeconds = 0
+                } catch {
+                    // Rate limited — wait until window resets
+                    waitSeconds = ComicVineRateTracker.shared.timeUntilReset
+                }
             }
 
             if waitSeconds > 0 {
