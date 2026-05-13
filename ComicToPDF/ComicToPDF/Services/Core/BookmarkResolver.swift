@@ -214,4 +214,7 @@ extension Notification.Name {
     static let bookmarkBecameStale      = Notification.Name("InksyncPro.bookmarkBecameStale")
     static let linkedDriveConnected     = Notification.Name("InksyncPro.linkedDriveConnected")
     static let linkedDriveDisconnected  = Notification.Name("InksyncPro.linkedDriveDisconnected")
+    /// Posted by CloudCoverExtractor when a cloud cover is written to disk.
+    /// userInfo["pdfID"] = UUID, userInfo["image"] = UIImage
+    static let cloudCoverReady          = Notification.Name("InksyncPro.cloudCoverReady")
 }

@@ -210,27 +210,43 @@ struct ModernGridFileCell: View {
         .hoverEffect(.lift)
         .task(id: pdf.id) {
             let key = pdf.id.uuidString as NSString
+
+            // 1. Already in NSCache — instant return
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 self.localCover = cached; return
             }
-            guard let coverURL = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
-            await thumbnailSemaphore.wait()
-            defer { Task { await thumbnailSemaphore.signal() } }
-            let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let opts = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let src = CGImageSourceCreateWithURL(coverURL as CFURL, opts) else { return nil }
-                let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceShouldCacheImmediately: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: 360] as CFDictionary
-                guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
-                return UIImage(cgImage: cg)
-            }.value
-            if let image = generated {
-                conversionManager.thumbnailCache.setObject(image, forKey: key)
-                self.localCover = image
+
+            // 2. Cover file exists on disk (cold-start or just-extracted cloud cover)
+            //    Load it into cache and display it.
+            let coverURL = conversionManager.getCoverURL(for: pdf)
+            if let url = coverURL, FileManager.default.fileExists(atPath: url.path) {
+                await thumbnailSemaphore.wait()
+                defer { Task { await thumbnailSemaphore.signal() } }
+                let safeURL = url
+                let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                    let opts = [kCGImageSourceShouldCache: false] as CFDictionary
+                    guard let src = CGImageSourceCreateWithURL(safeURL as CFURL, opts) else { return nil }
+                    let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                kCGImageSourceShouldCacheImmediately: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: 360] as CFDictionary
+                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
+                    return UIImage(cgImage: cg)
+                }.value
+                if let image = generated {
+                    conversionManager.thumbnailCache.setObject(image, forKey: key)
+                    self.localCover = image
+                }
+                return
             }
+
+            // 3. Cloud file with no cover yet.
+            //    CloudCoverExtractor is running in the background (fired from
+            //    PhysicalFileSystemRouter.backfillMissingThumbnails Pass 3).
+            //    When it finishes, it posts .cloudCoverReady → ConversionManager
+            //    updates thumbnailCache and calls objectWillChange.send() →
+            //    this View re-renders and the body picks up the cached image.
+            //    Nothing to do here — the body's existing cache check handles it.
         }
     }
 

@@ -106,6 +106,23 @@ class ConversionManager: ObservableObject {
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
+
+        // ── Cloud Cover Ready: wire CloudCoverExtractor → thumbnailCache ──────
+        // CloudCoverExtractor writes covers to disk but has no reference to
+        // ConversionManager. We observe its notification to load the new image
+        // into NSCache and trigger a SwiftUI redraw — otherwise cells stay on
+        // the cloud placeholder indefinitely.
+        NotificationCenter.default.addObserver(
+            forName: .cloudCoverReady,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let pdfID = notification.userInfo?["pdfID"] as? UUID,
+                  let image  = notification.userInfo?["image"]  as? UIImage else { return }
+            self.thumbnailCache.setObject(image, forKey: pdfID.uuidString as NSString)
+            self.objectWillChange.send()
+        }
     }
     
     

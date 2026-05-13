@@ -118,6 +118,20 @@ actor CloudCoverExtractor {
             try jpegData.write(to: tmpURL)
             _ = try FileManager.default.replaceItemAt(coverURL, withItemAt: tmpURL)
 
+            // ── Step 5: Invalidate NSCache + wake SwiftUI cells ───────────────
+            // CloudCoverExtractor writes directly to disk without going through
+            // saveCoverImage(). We must manually post the notification so cells
+            // re-render — otherwise they stay on the cloud placeholder forever.
+            let pdfID = pdf.id
+            let finalImage = thumbnail
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: .cloudCoverReady,
+                    object: nil,
+                    userInfo: ["pdfID": pdfID, "image": finalImage]
+                )
+            }
+
             Logger.shared.log(
                 "CloudCoverExtractor: [\(ext.uppercased())] Cover extracted for \(pdf.name)",
                 category: "Cloud"
