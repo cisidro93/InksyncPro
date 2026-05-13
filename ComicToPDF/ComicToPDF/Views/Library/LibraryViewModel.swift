@@ -240,81 +240,70 @@ class LibraryViewModel: ObservableObject {
     
     // MARK: - Action Router Endpoint
     func handleDetailAction(action: LibraryRowAction, for pdf: ConvertedPDF, conversionManager: ConversionManager) {
-        // A slight delay ensures any active sheet finishes dismissing before popping a new one
-        Task {
-            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 s
-            switch action {
-            case .read:
-                self.activeFullScreen = .read(pdf)
-            case .details:
-                self.activeSheet = .details(pdf)
-            case .covers:
-                self.activeFullScreen = .advancedWorkspace(pdf)
-            case .fetchMetadata:
-                self.activeSheet = .searchMetadata(pdf)
-            case .editMetadata:
-                self.activeSheet = .editMetadata(pdf)
-            case .export:
-                self.activeSheet = .export(pdf)
-            case .share:
-                self.activeSheet = .directShare(pdf)
-            case .sync:
-                self.activeSheet = .cloudSync(pdf)
-            case .rename:
-                self.renameText = pdf.name
-                self.pdfToRename = pdf
-            case .addToSeries:
-                self.activeSheet = .seriesAssignment(pdf, isBatch: false, selection: [])
-            case .favorite:
-                if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    withAnimation {
-                        conversionManager.convertedPDFs[index].isFavorite.toggle()
-                    }
+        switch action {
+        case .read:
+            self.activeFullScreen = .read(pdf)
+        case .details:
+            self.activeSheet = .details(pdf)
+        case .covers:
+            self.activeFullScreen = .advancedWorkspace(pdf)
+        case .fetchMetadata:
+            self.activeSheet = .searchMetadata(pdf)
+        case .editMetadata:
+            self.activeSheet = .editMetadata(pdf)
+        case .export:
+            self.activeSheet = .export(pdf)
+        case .share:
+            self.activeSheet = .directShare(pdf)
+        case .sync:
+            self.activeSheet = .cloudSync(pdf)
+        case .rename:
+            self.renameText = pdf.name
+            self.pdfToRename = pdf
+        case .addToSeries:
+            self.activeSheet = .seriesAssignment(pdf, isBatch: false, selection: [])
+        case .favorite:
+            if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                withAnimation {
+                    conversionManager.convertedPDFs[index].isFavorite.toggle()
                 }
-            case .toggleVault:
-                if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        conversionManager.convertedPDFs[index].isPrivate.toggle()
-                    }
-                    conversionManager.saveLibrary()
-                }
-            case .delete:
-                conversionManager.deletePDF(pdf)
-            case .saveToDrive:
-                // Present a folder picker so the user can choose (or create)
-                // any folder on the external drive as the save destination.
-                DriveSaveCoordinator.present { targetURL in
-                    guard let targetURL = targetURL else { return }
-                    Task { @MainActor in
-                        do {
-                            let count = try await LinkedLibraryScanner.shared.saveFilesToDrive(
-                                [pdf],
-                                targetFolderURL: targetURL
-                            ) { _, _ in }
-                            let msg = count > 0
-                                ? "'\(pdf.name)' saved to '\(targetURL.lastPathComponent)' on your drive."
-                                : "Save failed — file could not be copied to the drive."
-                            Logger.shared.log(msg, category: "Drive")
-                        } catch {
-                            Logger.shared.log("Save to Drive failed: \(error.localizedDescription)", category: "Drive", type: .error)
-                        }
-                    }
-                }
-            case .sendToKindle:
-                // EPUB files go straight to iOS share sheet — the Amazon "Send to Kindle"
-                // app registers itself as a share target, so it will appear automatically.
-                // Non-EPUB files route through the export sheet so the user converts first.
-                if pdf.url.pathExtension.lowercased() == "epub" {
-                    self.activeSheet = .directShare(pdf)
-                } else {
-                    self.activeSheet = .export(pdf)
-                }
-            case .convert:
-                // Enqueue conversion — for cloud files, ConversionManager automatically
-                // downloads the file first via CloudDownloadManager, then converts.
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                Task { await conversionManager.convertComic(pdf) }
             }
+        case .toggleVault:
+            if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    conversionManager.convertedPDFs[index].isPrivate.toggle()
+                }
+                conversionManager.saveLibrary()
+            }
+        case .delete:
+            conversionManager.deletePDF(pdf)
+        case .saveToDrive:
+            DriveSaveCoordinator.present { targetURL in
+                guard let targetURL = targetURL else { return }
+                Task { @MainActor in
+                    do {
+                        let count = try await LinkedLibraryScanner.shared.saveFilesToDrive(
+                            [pdf],
+                            targetFolderURL: targetURL
+                        ) { _, _ in }
+                        let msg = count > 0
+                            ? "'\(pdf.name)' saved to '\(targetURL.lastPathComponent)' on your drive."
+                            : "Save failed — file could not be copied to the drive."
+                        Logger.shared.log(msg, category: "Drive")
+                    } catch {
+                        Logger.shared.log("Save to Drive failed: \(error.localizedDescription)", category: "Drive", type: .error)
+                    }
+                }
+            }
+        case .sendToKindle:
+            if pdf.url.pathExtension.lowercased() == "epub" {
+                self.activeSheet = .directShare(pdf)
+            } else {
+                self.activeSheet = .export(pdf)
+            }
+        case .convert:
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Task { await conversionManager.convertComic(pdf) }
         }
     }
     

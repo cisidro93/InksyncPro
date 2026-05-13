@@ -177,19 +177,21 @@ struct LibraryListView: View {
                                     contextMenuContent(pdf)
                                 }
                             } else if useNavigationStack && tapAction == .details {
-                                NavigationLink(value: pdf) {
+                                // ── Route through onAction \u2014 NavigationLink(value:) removed.
+                                // It previously pushed ConvertView, bypassing onAction entirely.
+                                Button {
+                                    onAction(.details, pdf)
+                                } label: {
                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                                 }
                                 .listRowBackground(Theme.bg)
                                 .listRowSeparatorTint(Color(UIColor.separator))
-                                // ✅ Comic Zeal Swipe Selection Action (Swipe Left)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button {
                                         isBatchMode = true
                                         multiSelection.insert(pdf.id)
                                     } label: { Label("Select", systemImage: "checkmark.circle.fill") }
                                     .tint(.green)
-                                    
                                     swipeActionsTrailing(pdf)
                                 }
                                 .swipeActions(edge: .leading) {

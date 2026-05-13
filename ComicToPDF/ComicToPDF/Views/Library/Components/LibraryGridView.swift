@@ -312,40 +312,11 @@ struct LibraryGridView: View {
                         }
                         contextMenuContent(pdf)
                     }
-                } else if useNavigationStack && tapAction == .details {
-                    NavigationLink(value: pdf) {
-                        ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .contextMenu {
-                        // ✅ Bug fix #3: iPhone drag-and-drop fallback.
-                        // .draggable() / Transferable only fires reliably on iPad.
-                        // On iPhone, expose 'Move to Series…' in the context menu instead.
-                        if hSizeClass == .compact {
-                            Button {
-                                let destinationName = pdf.metadata.series?.isEmpty == false
-                                    ? pdf.metadata.series!
-                                    : pdf.metadata.title
-                                pendingDropInfo = DropResolutionInfo(
-                                    draggedID: pdf.id,
-                                    draggedSeriesName: pdf.metadata.series,
-                                    destinationSeriesName: destinationName,
-                                    isFileDroppingOntoSeries: false
-                                )
-                            } label: { Label("Move to Series…", systemImage: "folder.badge.plus") }
-                            Divider()
-                        }
-                        contextMenuContent(pdf)
-                    } preview: {
-                        // ✅ Bug fix #4: preview: only on iPad.
-                        if hSizeClass == .regular {
-                            CoverPreviewCard(pdf: pdf, manager: conversionManager)
-                        } else {
-                            // Return an empty view on iPhone — SwiftUI still needs a body.
-                            EmptyView()
-                        }
-                    }
                 } else {
+                    // ── Local/Linked files: always route through onAction so LibraryViewModel
+                    // can open the correct fullScreenCover (read) or sheet (details).
+                    // NavigationLink(value:) was removed — it routed to ConvertView which
+                    // is not the intended destination for a library tap.
                     Button {
                         if tapAction == .read {
                             onAction(.read, pdf)
@@ -372,8 +343,13 @@ struct LibraryGridView: View {
                             Divider()
                         }
                         contextMenuContent(pdf)
+                    } preview: {
+                        if hSizeClass == .regular {
+                            CoverPreviewCard(pdf: pdf, manager: conversionManager)
+                        } else {
+                            EmptyView()
+                        }
                     }
-                    // No preview: on iPhone path — avoids grid masking entirely
                 }
             }
         }
