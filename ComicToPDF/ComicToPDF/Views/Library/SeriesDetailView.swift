@@ -621,6 +621,24 @@ struct SeriesDetailView: View {
                             topVC.present(activityVC, animated: true)
                         }
                     }
+                case .favorite:
+                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        conversionManager.convertedPDFs[idx].isFavorite.toggle()
+                        conversionManager.saveLibrary()
+                    }
+                case .addToSeries:
+                    assignSeriesText = pdf.metadata.series ?? ""
+                    pdfToAssignSeries = pdf
+                case .covers:
+                    // Cover Studio requires the main library context — navigate there after dismiss
+                    pdfToDetails = nil
+                    // Post notification so ModernLibraryView can open the Cover Studio sheet
+                    NotificationCenter.default.post(name: .init("InksyncPro.openCoverStudio"), object: pdf)
+                case .toggleVault:
+                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        conversionManager.convertedPDFs[idx].isPrivate.toggle()
+                        conversionManager.saveLibrary()
+                    }
                 default: break
                 }
             }

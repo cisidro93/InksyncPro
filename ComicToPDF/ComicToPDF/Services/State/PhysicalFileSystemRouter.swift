@@ -94,8 +94,9 @@ class PhysicalFileSystemRouter {
         
         if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
             manager.convertedPDFs[index].coverImageData = nil
-            // ✅ PERF: Removed objectWillChange.send() — NSCache mutations don't trigger SwiftUI renders.
-            // Thumbnail state is managed by isolated @State in LibraryComponents.
+            // ✅ Notify grid/list cells that a new cover is available (needed for cloud covers
+            // written asynchronously after the cell's .task has already exited).
+            Task { @MainActor in manager.objectWillChange.send() }
         }
     }
     

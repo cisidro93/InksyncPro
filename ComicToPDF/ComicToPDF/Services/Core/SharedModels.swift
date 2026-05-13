@@ -697,7 +697,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         
         // Legacy API key migration
         if let legacyKey = try? container.decodeIfPresent(String.self, forKey: .comicVineAPIKey), !legacyKey.isEmpty {
-            print("ðŸ” Migrating Legacy API Key to Keychain...")
+            Logger.shared.log("Migrating Legacy API Key to Keychain...", category: "Migration")
             let data = Data(legacyKey.utf8)
             KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
         }

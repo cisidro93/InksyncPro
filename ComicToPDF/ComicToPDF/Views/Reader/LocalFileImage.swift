@@ -23,7 +23,7 @@ struct LocalFileImage: View {
                     Image(systemName: "photo.badge.exclamationmark")
                         .font(.largeTitle)
                         .foregroundColor(.gray)
-                    Text("Decompressed OOM")
+                    Text("Page could not be loaded")
                         .font(.caption)
                         .foregroundColor(.gray)
                 }

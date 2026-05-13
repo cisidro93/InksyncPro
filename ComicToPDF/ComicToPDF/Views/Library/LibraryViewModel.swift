@@ -312,6 +312,7 @@ class LibraryViewModel: ObservableObject {
             case .convert:
                 // Enqueue conversion — for cloud files, ConversionManager automatically
                 // downloads the file first via CloudDownloadManager, then converts.
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 Task { await conversionManager.convertComic(pdf) }
             }
         }

@@ -157,17 +157,12 @@ class ReaderProgressTracker: ObservableObject {
     }
     
     func totalPagesThisWeek() -> Int {
-        let calendar = Calendar.current
-        guard let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) else { return 0 }
-        
-        // Note: For an accurate "pages this week", we would need a history of pages read per day.
-        // As a proxy based on the model, we filter for sessions this week, but since totalPagesRead
-        // is cumulative, we can't easily isolate the week's delta without storing an explicit log.
-        // For now, we'll return a rough metric: total pages read of books opened this week.
-        // Real implementation would log `(Date, pagesRead)` events.
-        
-        let recentlyOpened = progressMap.values.filter { $0.lastOpenedAt >= weekAgo }
-        return recentlyOpened.reduce(0) { $0 + $1.totalPagesRead }
+        // Uses sessionEvents for an accurate weekly count — each event stores exact pages read
+        // in that turn, so filtering by date gives a true delta rather than cumulative total.
+        let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
+        return progressMap.values.reduce(0) { sum, prog in
+            sum + (prog.sessionEvents?.filter { $0.date >= cutoff }.reduce(0) { $0 + $1.pagesRead } ?? 0)
+        }
     }
     
     func seriesCompletion(collectionID: UUID, manager: ConversionManager) -> Double {
@@ -229,7 +224,7 @@ class ReaderProgressTracker: ObservableObject {
                     self.progressMap = loadedMap
                 }
             } catch {
-                print("Failed to load progress data: \(error)")
+                Logger.shared.log("Failed to load progress data: \(error)", category: "Progress", type: .error)
             }
         }
     }
@@ -244,15 +239,17 @@ class ReaderProgressTracker: ObservableObject {
             
             guard let self = self, let progress = self.progressMap[pdfID] else { return }
             let fileURL = self.getProgressDir().appendingPathComponent("\(pdfID.uuidString).json")
-            
-            self.queue.async {
+
+            // ✅ Swift 6: Use Task.detached for background I/O instead of DispatchQueue.async
+            // to avoid crossing actor isolation boundaries from @MainActor context.
+            await Task.detached(priority: .background) {
                 do {
                     let data = try JSONEncoder().encode(progress)
                     try data.write(to: fileURL, options: .atomic)
                 } catch {
-                    print("Failed to save progress for \(pdfID): \(error)")
+                    Logger.shared.log("Failed to save progress for \(pdfID): \(error)", category: "Progress", type: .error)
                 }
-            }
+            }.value
         }
     }
 }
