@@ -292,7 +292,12 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
     private var vault: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let vaultURL = appSupport.appendingPathComponent("InksyncVault", isDirectory: true)
-        try? FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+        // Use try? with withIntermediateDirectories:true — idempotent and thread-safe
+        // (URLSessionDownloadDelegate callbacks arrive on a background queue, so we
+        // cannot rely on the lazy initialiser being called on the main thread.)
+        if !FileManager.default.fileExists(atPath: vaultURL.path) {
+            try? FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true, attributes: nil)
+        }
         return vaultURL
     }
 

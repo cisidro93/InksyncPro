@@ -286,7 +286,33 @@ struct LibraryGridView: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             } else {
-                if useNavigationStack && tapAction == .details {
+                // ── Cloud files: always open the detail sheet regardless of tapAction.
+                // Cloud-sourced files cannot be read locally — they need Download & Convert first.
+                if case .cloud = pdf.sourceMode {
+                    Button {
+                        onAction(.details, pdf)
+                    } label: {
+                        ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .contextMenu {
+                        if hSizeClass == .compact {
+                            Button {
+                                let destinationName = pdf.metadata.series?.isEmpty == false
+                                    ? pdf.metadata.series!
+                                    : pdf.metadata.title
+                                pendingDropInfo = DropResolutionInfo(
+                                    draggedID: pdf.id,
+                                    draggedSeriesName: pdf.metadata.series,
+                                    destinationSeriesName: destinationName,
+                                    isFileDroppingOntoSeries: false
+                                )
+                            } label: { Label("Move to Series…", systemImage: "folder.badge.plus") }
+                            Divider()
+                        }
+                        contextMenuContent(pdf)
+                    }
+                } else if useNavigationStack && tapAction == .details {
                     NavigationLink(value: pdf) {
                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
                     }

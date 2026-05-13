@@ -52,6 +52,15 @@ actor CloudCoverExtractor {
         }
     }
 
+    // MARK: - ConversionManager reference for streaming fallback
+    // Weak so we never keep the manager alive longer than the app.
+    private weak var conversionManagerRef: ConversionManager?
+
+    /// Call once at startup to wire the streaming fallback.
+    func setConversionManager(_ manager: ConversionManager) {
+        conversionManagerRef = manager
+    }
+
     // MARK: - Single File Extraction (format-aware router)
 
     private func extractCover(for pdf: ConvertedPDF) async {
@@ -79,7 +88,7 @@ actor CloudCoverExtractor {
                 imageData = try await extractFromZip(url: downloadURL, pdfName: pdf.name)
 
             case "cbr":
-                imageData = try await extractFromRar(url: downloadURL, pdfName: pdf.name)
+                imageData = try await extractFromRar(url: downloadURL, pdfName: pdf.name, pdf: pdf)
 
             default:
                 Logger.shared.log(
@@ -140,26 +149,33 @@ actor CloudCoverExtractor {
 
     /// CBR / RAR: parse sequential block headers from the file's head.
     /// Stored (method 0x30) entries are fetched byte-range directly.
-    /// Compressed entries are not supported — most CBR cover pages use RAR store mode
-    /// because JPEG/PNG images don't benefit from re-compression.
-    private func extractFromRar(url: URL, pdfName: String) async throws -> Data {
+    /// Compressed entries fall back to a full-file stream + local extraction.
+    private func extractFromRar(url: URL, pdfName: String, pdf: ConvertedPDF) async throws -> Data {
         let entry = try await withTimeout(seconds: 15) {
             try await RARHeaderParser.fetchFirstEntry(from: url, authHeader: nil)
         }
 
-        guard entry.isStored else {
-            // CBR author used RAR compression on images — rare but possible.
-            // We log this and skip rather than crash; a full RAR decompressor
-            // would be needed (e.g. UnrarKit), which is not yet bundled.
+        if entry.isStored {
+            // Fast path: byte-range fetch for uncompressed images
+            return try await withTimeout(seconds: 15) {
+                try await RARHeaderParser.fetchEntryData(entry: entry, from: url, authHeader: nil)
+            }
+        } else {
+            // Slow path: full download → local UnrarKit extraction.
+            // Most CBRs use RAR-compressed images; byte-range is not possible without decompression.
             Logger.shared.log(
-                "CloudCoverExtractor: CBR cover '\(entry.name)' in \(pdfName) is compressed (method 0x\(String(entry.method, radix: 16))) — byte-range extraction not possible. Add UnrarKit to support this file.",
-                category: "Cloud", type: .warning
+                "CloudCoverExtractor: CBR '\(pdfName)' uses compressed RAR — falling back to full-file stream.",
+                category: "Cloud", type: .info
             )
-            throw RARParseError.compressedEntryUnsupported
-        }
+            let localURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
+            defer { try? FileManager.default.removeItem(at: localURL) }
 
-        return try await withTimeout(seconds: 15) {
-            try await RARHeaderParser.fetchEntryData(entry: entry, from: url, authHeader: nil)
+            guard let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: localURL),
+                  let data = image.jpegData(compressionQuality: 0.85) else {
+                throw NSError(domain: "CloudCoverExtractor", code: 2,
+                              userInfo: [NSLocalizedDescriptionKey: "Could not extract cover from downloaded CBR: \(pdfName)"])
+            }
+            return data
         }
     }
 

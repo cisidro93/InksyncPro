@@ -147,7 +147,36 @@ struct LibraryListView: View {
                              .listRowBackground(Theme.bg)
                              .listRowSeparatorTint(Color(UIColor.separator))
                         } else {
-                            if useNavigationStack && tapAction == .details {
+                            // ── Cloud files: always open the detail sheet.
+                            // Cloud-sourced files cannot be read locally — they need Download & Convert first.
+                            if case .cloud = pdf.sourceMode {
+                                Button {
+                                    onAction(.details, pdf)
+                                } label: {
+                                    ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
+                                }
+                                .tag(pdf)
+                                .listRowBackground(Theme.bg)
+                                .listRowSeparatorTint(Color(UIColor.separator))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button {
+                                        isBatchMode = true
+                                        multiSelection.insert(pdf.id)
+                                    } label: { Label("Select", systemImage: "checkmark.circle.fill") }
+                                    .tint(.green)
+                                    swipeActionsTrailing(pdf)
+                                }
+                                .swipeActions(edge: .leading) {
+                                    // Leading swipe for cloud = open details (not read)
+                                    Button {
+                                        onAction(.details, pdf)
+                                    } label: { Label("Details", systemImage: "info.circle.fill") }
+                                    .tint(Theme.orange)
+                                }
+                                .contextMenu {
+                                    contextMenuContent(pdf)
+                                }
+                            } else if useNavigationStack && tapAction == .details {
                                 NavigationLink(value: pdf) {
                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                                 }

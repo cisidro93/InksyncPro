@@ -70,21 +70,7 @@ struct ModernLibraryView: View {
         return settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
     }
     
-    // ✅ NEW: Extracted to relieve compiler timeout
-    @ViewBuilder
-    private var ambientGlow: some View {
-        GeometryReader { geo in
-            Circle()
-                .fill(
-                    RadialGradient(gradient: Gradient(colors: [Theme.purple.opacity(0.4), Theme.blue.opacity(0.1), .clear]), center: .top, startRadius: 10, endRadius: 300)
-                )
-                .frame(width: geo.size.width * 1.5, height: 400)
-                .position(x: geo.size.width / 2, y: -50)
-                .blur(radius: 60)
-                .ignoresSafeArea()
-        }
-    }
-    
+
     private var nativeCollections: [PDFCollection] {
         swiftDataCollections.map { $0.toDTO() }
     }
@@ -95,8 +81,6 @@ struct ModernLibraryView: View {
                 // Background Depth
                 Theme.bg.ignoresSafeArea()
                 
-                // Ambient Header Glow
-                ambientGlow
                 
                 libraryContent
                 .safeAreaInset(edge: .bottom) {
