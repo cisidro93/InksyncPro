@@ -194,11 +194,6 @@ struct InkTabBar: View {
     private var taskBanner: some View {
         VStack(spacing: 6) {
             HStack(spacing: 10) {
-                // Animated spinner — works on all iOS versions
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(Color.orange)
-
                 Text(activeMessage)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.primary)
@@ -206,7 +201,7 @@ struct InkTabBar: View {
 
                 Spacer()
 
-                Text("\(Int(combinedProgress * 100))%")
+                Text(combinedProgress < 0.01 && combinedProgress > 0 ? "<1%" : "\(Int(combinedProgress * 100))%")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.orange)
                     .contentTransition(.numericText())

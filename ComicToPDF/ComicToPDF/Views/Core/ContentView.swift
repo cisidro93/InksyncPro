@@ -215,11 +215,6 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 10) {
                 // Header row
                 HStack(spacing: 8) {
-                    // Animated spinner — works on all iOS versions
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(Color.orange)
-
                     Text(label)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.primary)
@@ -229,7 +224,7 @@ struct ContentView: View {
                     Spacer()
 
                     // Percentage badge
-                    Text("\(Int(progress * 100))%")
+                    Text(progress < 0.01 && progress > 0 ? "<1%" : "\(Int(progress * 100))%")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.orange)
                         .contentTransition(.numericText())
