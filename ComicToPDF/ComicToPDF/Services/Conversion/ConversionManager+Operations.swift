@@ -242,41 +242,35 @@ extension ConversionManager {
     
     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil) async {
         if case .cloud = pdf.sourceMode {
-            await MainActor.run { 
+            await MainActor.run {
                 self.processingStatus = "Queuing Cloud Download..."
                 self.statusMessage = "Downloading for Conversion"
             }
-            ConversionJobQueue.shared.enqueueJob(
-                pdfID: pdf.id,
-                targetFileName: pdf.name + "." + pdf.url.pathExtension,
-                mangaMode: mangaMode,
-                settings: AppSettingsManager.shared.conversionSettings,
-                isMerge: false
+            // downloadAndStore streams the file, saves it to vault, flips sourceMode → .local,
+            // then fires ConversionOrchestrator.convertComic automatically.
+            await CloudDownloadManager.shared.downloadAndStore(
+                pdf: pdf,
+                thenConvert: true,
+                manager: self,
+                mangaMode: mangaMode
             )
-            await CloudDownloadManager.shared.downloadCloudFile(pdf: pdf)
             return
         }
         await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: mangaMode, manager: self)
     }
     
     func convertQueue(_ pdfs: [ConvertedPDF]) async {
-        // Split cloud vs local files — cloud files are enqueued for download-then-convert
         let cloudFiles = pdfs.filter { if case .cloud = $0.sourceMode { return true } else { return false } }
         let localFiles = pdfs.filter { if case .cloud = $0.sourceMode { return false } else { return true } }
 
+        // Download each cloud file to vault, then convert sequentially
         for pdf in cloudFiles {
-            await MainActor.run {
-                self.processingStatus = "Queuing Cloud Download..."
-                self.statusMessage = "Downloading \(pdf.name) for Conversion"
-            }
-            ConversionJobQueue.shared.enqueueJob(
-                pdfID: pdf.id,
-                targetFileName: pdf.name + "." + pdf.url.pathExtension,
-                mangaMode: nil,
-                settings: AppSettingsManager.shared.conversionSettings,
-                isMerge: false
+            await CloudDownloadManager.shared.downloadAndStore(
+                pdf: pdf,
+                thenConvert: true,
+                manager: self,
+                mangaMode: nil
             )
-            await CloudDownloadManager.shared.downloadCloudFile(pdf: pdf)
         }
 
         if !localFiles.isEmpty {
@@ -286,23 +280,26 @@ extension ConversionManager {
     
     @discardableResult
     func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil) async -> [ConvertedPDF] {
-        // If any file is a cloud file, we must enqueue the whole batch (for now, simplistic implementation: download the first cloud file. A full robust implementation would need a multi-file queue state)
+        // Cloud files: download the first cloud file to vault, then re-run convertAndMerge
+        // once it's local. A full multi-file parallel download would need queue state.
         if let firstCloud = sourceFiles.first(where: { if case .cloud = $0.sourceMode { return true } else { return false } }) {
-             await MainActor.run { 
-                 self.processingStatus = "Queuing Cloud Merge..."
-                 self.statusMessage = "Downloading for Merge"
-             }
-             // Queue the job using the first file's ID as the primary tracker
-             ConversionJobQueue.shared.enqueueJob(
-                 pdfID: firstCloud.id,
-                 targetFileName: firstCloud.name + "." + firstCloud.url.pathExtension,
-                 outputName: outputName,
-                 mangaMode: mangaMode,
-                 settings: AppSettingsManager.shared.conversionSettings,
-                 isMerge: true
-             )
-             await CloudDownloadManager.shared.downloadCloudFile(pdf: firstCloud)
-             return []
+            await MainActor.run {
+                self.processingStatus = "Downloading for Merge…"
+                self.statusMessage = "Downloading for Merge"
+            }
+            await CloudDownloadManager.shared.downloadAndStore(
+                pdf: firstCloud,
+                thenConvert: false,
+                manager: self
+            )
+            // After download completes, firstCloud's sourceMode is .local — retry the merge
+            return await ConversionOrchestrator.shared.convertAndMerge(
+                sourceFiles: sourceFiles,
+                outputName: outputName,
+                mangaMode: mangaMode,
+                overrideSeries: overrideSeries,
+                manager: self
+            )
         }
         return await ConversionOrchestrator.shared.convertAndMerge(sourceFiles: sourceFiles, outputName: outputName, mangaMode: mangaMode, overrideSeries: overrideSeries, manager: self)
     }

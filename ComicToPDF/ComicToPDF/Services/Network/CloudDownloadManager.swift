@@ -43,48 +43,98 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
     private var activeStreams: [String: Task<URL, Error>] = [:]  // remoteID → Task
     private let streamsLock = NSLock()
 
-    // MARK: - Public API
+    // MARK: - Download-to-Vault (Permanent Storage)
 
-    /// Download a Dropbox file. Dropbox temporary links are public — no auth header needed.
-    func downloadFromDropbox(fileID: String, fileName: String, temporaryURL: URL) {
-        let request = URLRequest(url: temporaryURL)
-        startTask(request: request, fileID: fileID, fileName: fileName)
-    }
+    /// Downloads a Dropbox/GDrive file permanently into InksyncVault, then optionally
+    /// triggers conversion. This replaces the old URLSessionDownloadDelegate approach
+    /// which had three compounding bugs:
+    ///   1. `targetFileName` used `pdf.url.pathExtension` which is always "" for cloud files.
+    ///   2. Library lookup used `url.lastPathComponent` which never matched the cloud placeholder.
+    ///   3. Background URLSession `didFinishDownloadingTo` fired on an unknown queue before
+    ///      the vault directory was guaranteed to exist.
+    ///
+    /// The new flow reuses the battle-tested `streamCloudFile` pipeline, then moves the
+    /// result to the permanent vault path on the `@MainActor`.
+    func downloadAndStore(
+        pdf: ConvertedPDF,
+        thenConvert: Bool = false,
+        manager: ConversionManager? = nil,
+        mangaMode: Bool? = nil
+    ) async {
+        let ext: String
+        if let lastDot = pdf.name.lastIndex(of: ".") {
+            ext = String(pdf.name[pdf.name.index(after: lastDot)...]).lowercased()
+        } else {
+            ext = "cbz"
+        }
+        let knownExts: Set<String> = ["cbz", "cbr", "zip", "epub", "pdf", "cb7", "cbt"]
+        let safeFileName = knownExts.contains(ext) ? pdf.name : (pdf.name + ".cbz")
 
-    /// Download a Google Drive file. Requires a live Bearer token.
-    func downloadFromGoogleDrive(fileID: String, fileName: String, mediaURL: URL, authHeader: String) {
-        var request = URLRequest(url: mediaURL)
-        request.setValue(authHeader, forHTTPHeaderField: "Authorization")
-        startTask(request: request, fileID: fileID, fileName: fileName)
-    }
-
-    /// Convenience: resolve URL and auth automatically from the provider.
-    func downloadCloudFile(pdf: ConvertedPDF) async {
-        guard case .cloud(let provider, let remoteID) = pdf.sourceMode else { return }
-
-        // Derive the target filename from the comic's own name (which IS reliable),
-        // not from pdf.url which is a dummy cloud:// URL with no real extension.
-        let ext = pdf.name.components(separatedBy: ".").last?.lowercased() ?? "cbz"
-        let isKnownComicExt = ["cbz", "cbr", "zip", "epub", "pdf"].contains(ext)
-        let fileName = isKnownComicExt ? pdf.name : (pdf.name + ".cbz")
+        await MainActor.run {
+            manager?.processingStatus = "Downloading \(pdf.name)…"
+            manager?.statusMessage = "Downloading…"
+        }
 
         do {
-            if provider == "Dropbox" {
-                let url = try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
-                downloadFromDropbox(fileID: remoteID, fileName: fileName, temporaryURL: url)
-            } else if provider == "Google Drive" {
-                let mediaURL = try await GoogleDriveProvider.shared.getDownloadURL(fileID: remoteID)
-                let authHeader = try await GoogleDriveProvider.shared.currentAuthHeader()
-                downloadFromGoogleDrive(fileID: remoteID, fileName: fileName, mediaURL: mediaURL, authHeader: authHeader)
+            // Step 1: Stream to temp (reuses proven streamCloudFile path)
+            let tempURL = try await streamCloudFile(pdf: pdf)
+
+            // Step 2: Move temp → permanent vault (on a background thread, but vault is
+            //         always guaranteed to exist because we compute it fresh each call)
+            let destination = vaultURL.appendingPathComponent(safeFileName)
+            try await Task.detached(priority: .userInitiated) {
+                let fm = FileManager.default
+                if fm.fileExists(atPath: destination.path) {
+                    try fm.removeItem(at: destination)
+                }
+                try fm.moveItem(at: tempURL, to: destination)
+            }.value
+
+            Logger.shared.log("CloudDownloadManager: '\(safeFileName)' saved to Vault", category: "Cloud", type: .success)
+
+            // Step 3: Flip sourceMode in the library record → .local
+            let finalURL = destination
+            await MainActor.run {
+                if let mgr = manager ?? LinkedLibraryScanner.shared.conversionManager,
+                   let idx = mgr.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    mgr.convertedPDFs[idx].url = finalURL
+                    mgr.convertedPDFs[idx].sourceMode = .local
+                    mgr.saveLibrary()
+
+                    // Step 4: Kick off conversion if requested
+                    if thenConvert {
+                        let updatedPDF = mgr.convertedPDFs[idx]
+                        Task { await ConversionOrchestrator.shared.convertComic(updatedPDF, mangaMode: mangaMode, manager: mgr) }
+                    }
+                }
+                manager?.processingStatus = ""
+                manager?.statusMessage = nil
+                // Evict the temp-file cache so a fresh stream picks up the vault copy
+                self.evictCache(for: { if case .cloud(_, let id) = pdf.sourceMode { return id } else { return "" } }())
             }
+
         } catch {
-            Logger.shared.log("CloudDownloadManager: Failed to initiate download for '\(pdf.name)': \(error.localizedDescription)", category: "Cloud", type: .error)
-            // Also mark any queued job as failed
-            if let job = ConversionJobQueue.shared.getJob(for: pdf.id) {
-                ConversionJobQueue.shared.updateJobStatus(pdfID: job.pdfID, newStatus: .failed)
+            Logger.shared.log(
+                "CloudDownloadManager: Download failed for '\(pdf.name)': \(error.localizedDescription)",
+                category: "Cloud", type: .error
+            )
+            await MainActor.run {
+                manager?.processingStatus = ""
+                manager?.statusMessage = "Download failed: \(error.localizedDescription)"
             }
         }
     }
+
+    // MARK: - Vault URL (thread-safe, eager directory creation)
+    private var vaultURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let vaultURL = appSupport.appendingPathComponent("InksyncVault", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: vaultURL.path) {
+            try? FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true, attributes: nil)
+        }
+        return vaultURL
+    }
+
 
     // MARK: - Streaming API (No Permanent Storage)
     
@@ -279,29 +329,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
     }
 
 
-    // MARK: - Private
-
-    private func startTask(request: URLRequest, fileID: String, fileName: String) {
-        let task = urlSession.downloadTask(with: request)
-        downloadTaskMeta[task] = (fileID, fileName)
-        DispatchQueue.main.async { self.activeDownloads[fileID] = 0.0 }
-        task.resume()
-        Logger.shared.log("CloudDownloadManager: Download started for '\(fileName)'", category: "Cloud")
-    }
-
-    private var vault: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let vaultURL = appSupport.appendingPathComponent("InksyncVault", isDirectory: true)
-        // Use try? with withIntermediateDirectories:true — idempotent and thread-safe
-        // (URLSessionDownloadDelegate callbacks arrive on a background queue, so we
-        // cannot rely on the lazy initialiser being called on the main thread.)
-        if !FileManager.default.fileExists(atPath: vaultURL.path) {
-            try? FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true, attributes: nil)
-        }
-        return vaultURL
-    }
-
-    // MARK: - URLSessionDownloadDelegate
+    // MARK: - URLSessionDownloadDelegate (kept for progress tracking only)
 
     func urlSession(
         _ session: URLSession,
@@ -316,59 +344,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let meta = downloadTaskMeta[downloadTask] else { return }
-
-        let targetURL = vault.appendingPathComponent(meta.fileName)
-
-        do {
-            if FileManager.default.fileExists(atPath: targetURL.path) {
-                try FileManager.default.removeItem(at: targetURL)
-            }
-            try FileManager.default.moveItem(at: location, to: targetURL)
-            Logger.shared.log("CloudDownloadManager: '\(meta.fileName)' downloaded to Vault", category: "Cloud", type: .success)
-
-            // Notify ConversionManager to flip the sourceMode from .cloud → .local
-            DispatchQueue.main.async {
-                let manager = LinkedLibraryScanner.shared.conversionManager
-                var updatedPDF: ConvertedPDF?
-                
-                if let idx = manager?.convertedPDFs.firstIndex(where: { $0.url.lastPathComponent == meta.fileName }) {
-                    manager?.convertedPDFs[idx].url = targetURL
-                    manager?.convertedPDFs[idx].sourceMode = .local
-                    manager?.saveLibrary()
-                    updatedPDF = manager?.convertedPDFs[idx]
-                }
-                self.activeDownloads.removeValue(forKey: meta.fileID)
-                
-                // ✅ Check if this file has a pending conversion job
-                if let pdf = updatedPDF, let job = ConversionJobQueue.shared.getJobByTargetFileName(meta.fileName) {
-                    Logger.shared.log("CloudDownloadManager: Found pending conversion job for '\(meta.fileName)'. Handoff to Orchestrator.", category: "Cloud")
-                    ConversionJobQueue.shared.updateJobStatus(pdfID: pdf.id, newStatus: .extracting)
-                    
-                    Task {
-                        // We must pass the correct parameters depending on if it's a merge or a single convert
-                        if let manager = manager {
-                            if job.isMerge {
-                                await ConversionOrchestrator.shared.convertAndMerge(
-                                    sourceFiles: [pdf], 
-                                    outputName: job.outputName ?? "", 
-                                    mangaMode: job.mangaMode ?? false, 
-                                    manager: manager
-                                )
-                            } else {
-                                await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: job.mangaMode, manager: manager)
-                            }
-                            ConversionJobQueue.shared.updateJobStatus(pdfID: pdf.id, newStatus: .completed)
-                            ConversionJobQueue.shared.removeJob(pdfID: pdf.id)
-                        }
-                    }
-                }
-            }
-        } catch {
-            Logger.shared.log("CloudDownloadManager: Failed to move '\(meta.fileName)' to Vault: \(error.localizedDescription)", category: "Cloud", type: .error)
-            DispatchQueue.main.async { self.activeDownloads.removeValue(forKey: meta.fileID) }
-        }
-
+        // No-op: download-to-vault is now handled by downloadAndStore()
         downloadTaskMeta.removeValue(forKey: downloadTask)
     }
 
@@ -377,14 +353,8 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
               let downloadTask = task as? URLSessionDownloadTask,
               let meta = downloadTaskMeta[downloadTask] else { return }
 
-        Logger.shared.log("CloudDownloadManager: Download failed for '\(meta.fileName)': \(error.localizedDescription)", category: "Cloud", type: .error)
-        DispatchQueue.main.async {
-            self.activeDownloads.removeValue(forKey: meta.fileID)
-            // Mark any waiting job as failed so the library banner reflects the real state
-            if let job = ConversionJobQueue.shared.getJobByTargetFileName(meta.fileName) {
-                ConversionJobQueue.shared.updateJobStatus(pdfID: job.pdfID, newStatus: .failed)
-            }
-        }
+        Logger.shared.log("CloudDownloadManager: URLSession task error for '\(meta.fileName)': \(error.localizedDescription)", category: "Cloud", type: .error)
+        DispatchQueue.main.async { self.activeDownloads.removeValue(forKey: meta.fileID) }
         downloadTaskMeta.removeValue(forKey: downloadTask)
     }
 }
