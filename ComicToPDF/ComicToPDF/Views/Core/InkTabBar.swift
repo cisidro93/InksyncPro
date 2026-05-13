@@ -17,6 +17,21 @@ struct InkTabBar: View {
     var convertingProgress: Double = 0
     var isConverting: Bool = false
     var convertingMessage: String = ""
+    var isImporting: Bool = false
+    var importProgress: Double = 0
+    var importMessage: String = ""
+
+    private var isAnyTaskActive: Bool { isConverting || isImporting }
+    private var combinedProgress: Double {
+        if isConverting { return convertingProgress }
+        if isImporting  { return importProgress }
+        return 0
+    }
+    private var activeMessage: String {
+        if isConverting { return convertingMessage.isEmpty ? "Converting…" : convertingMessage }
+        if isImporting  { return importMessage.isEmpty ? "Importing…" : importMessage }
+        return ""
+    }
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var hSizeClass
@@ -53,9 +68,9 @@ struct InkTabBar: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            // Conversion progress banner (floats just above the pill)
-            if isConverting {
-                conversionBanner
+            // Unified task progress banner (conversion OR import)
+            if isAnyTaskActive {
+                taskBanner
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
@@ -106,7 +121,7 @@ struct InkTabBar: View {
         .offset(y: isHidden ? 100 : 0)
         .opacity(isHidden ? 0 : 1)
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: isHidden)
-        .animation(.easeInOut(duration: 0.25), value: isConverting)
+        .animation(.easeInOut(duration: 0.25), value: isAnyTaskActive)
     }
 
     // MARK: - Tab Button
@@ -174,30 +189,34 @@ struct InkTabBar: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Conversion Banner
+    // MARK: - Unified Task Banner
 
-    private var conversionBanner: some View {
+    private var taskBanner: some View {
         VStack(spacing: 6) {
             HStack(spacing: 10) {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(Color.orange)
+                // Animated icon reflects operation type
+                Image(systemName: isConverting ? "arrow.triangle.2.circlepath" : "arrow.down.circle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.orange)
+                    .symbolEffect(.rotate, options: .repeating)
 
-                Text(convertingMessage.isEmpty ? "Converting…" : convertingMessage)
+                Text(activeMessage)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Spacer()
 
-                Text("\(Int(convertingProgress * 100))%")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                Text("\(Int(combinedProgress * 100))%")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.orange)
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.2), value: combinedProgress)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
-            // Progress bar
+            // Animated progress track
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.primary.opacity(0.1)).frame(height: 3)
@@ -206,8 +225,8 @@ struct InkTabBar: View {
                             LinearGradient(colors: [Color.orange, Color.orange.opacity(0.6)],
                                            startPoint: .leading, endPoint: .trailing)
                         )
-                        .frame(width: geo.size.width * convertingProgress, height: 3)
-                        .animation(.easeInOut(duration: 0.3), value: convertingProgress)
+                        .frame(width: geo.size.width * max(0.02, combinedProgress), height: 3)
+                        .animation(.easeInOut(duration: 0.3), value: combinedProgress)
                 }
             }
             .frame(height: 3)

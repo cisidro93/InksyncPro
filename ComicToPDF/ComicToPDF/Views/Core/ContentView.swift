@@ -182,6 +182,92 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - iPad Sidebar Progress Panel
+
+    @ViewBuilder
+    private var iPadProgressPanel: some View {
+        let isConverting  = conversionManager.isConverting
+        let isImporting   = ImportMonitorManager.shared.isImporting
+        let isActive      = isConverting || isImporting
+
+        let progress: Double = {
+            if isConverting { return conversionManager.conversionProgress }
+            if isImporting  { return ImportMonitorManager.shared.progress }
+            return 0
+        }()
+
+        let label: String = {
+            if isConverting {
+                let msg = conversionManager.processingStatus
+                return msg.isEmpty ? "Converting…" : msg
+            }
+            if isImporting {
+                let done  = ImportMonitorManager.shared.filesProcessed
+                let total = ImportMonitorManager.shared.totalFilesToProcess
+                return "Importing \(done) / \(total)"
+            }
+            return ""
+        }()
+
+        let icon = isConverting ? "arrow.triangle.2.circlepath" : "arrow.down.circle"
+
+        if isActive {
+            VStack(alignment: .leading, spacing: 10) {
+                // Header row
+                HStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.orange)
+                        .symbolEffect(.rotate, options: .repeating)
+
+                    Text(label)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer()
+
+                    // Percentage badge
+                    Text("\(Int(progress * 100))%")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.orange)
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.2), value: progress)
+                }
+
+                // Animated progress track
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.primary.opacity(0.1))
+                            .frame(height: 4)
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.orange, Color.orange.opacity(0.55)],
+                                    startPoint: .leading, endPoint: .trailing
+                                )
+                            )
+                            .frame(width: geo.size.width * max(0.02, progress), height: 4)
+                            .animation(.easeInOut(duration: 0.35), value: progress)
+                    }
+                }
+                .frame(height: 4)
+            }
+            .padding(14)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.orange.opacity(0.25), lineWidth: 0.75)
+            )
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isActive)
+        }
+    }
+
     // ✅ iOS + iPad Layout — Pure Custom Tab Router (NO TabView = NO native tab bar)
     var liquidGlassLayout: some View {
         ZStack(alignment: .bottom) {
@@ -247,9 +333,12 @@ struct ContentView: View {
             InkTabBar(
                 selectedTab: $selectedTab,
                 isHidden: $tabBarHidden,
-                convertingProgress: max(conversionManager.conversionProgress, ImportMonitorManager.shared.progress),
+                convertingProgress: conversionManager.conversionProgress,
                 isConverting: conversionManager.isConverting,
-                convertingMessage: conversionManager.processingStatus
+                convertingMessage: conversionManager.processingStatus,
+                isImporting: ImportMonitorManager.shared.isImporting,
+                importProgress: ImportMonitorManager.shared.progress,
+                importMessage: "Importing \(ImportMonitorManager.shared.filesProcessed)/\(ImportMonitorManager.shared.totalFilesToProcess)"
             )
             .padding(.bottom, 12)
         }
@@ -292,6 +381,9 @@ struct ContentView: View {
                 .navigationTitle("Inksync")
                 
                 Spacer()
+
+                // ── iPad Sidebar Progress Panel ────────────────────────────────
+                iPadProgressPanel
 
                 // Settings button pinned at the bottom of the sidebar
                 Button {

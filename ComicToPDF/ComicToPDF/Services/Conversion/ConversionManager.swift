@@ -68,11 +68,8 @@ class ConversionManager: ObservableObject {
         convertedPDFs.filter { (AppSettingsManager.shared.isVaultUnlocked ? true : !$0.isPrivate) && $0.addedByMode == .pro }
     }
     
-    private var progressSubscription: AnyCancellable?
-    /// Forwards TaskEngine @Published changes through ConversionManager.objectWillChange
-    /// so SwiftUI views observing ConversionManager re-render whenever TaskEngine
-    /// state changes (conversion progress, processing status, active task list, etc.).
     private var taskEngineRelay: AnyCancellable?
+    private var importMonitorRelay: AnyCancellable?
 
     init() {
         loadLibrary()
@@ -102,6 +99,14 @@ class ConversionManager: ObservableObject {
         // ConversionManager.objectWillChange, so observing SwiftUI views never
         // re-render (e.g. InkTabBar progress bar, processingStatus text).
         taskEngineRelay = TaskEngine.shared.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+
+        // Relay ImportMonitorManager changes so both iPhone InkTabBar and iPad sidebar
+        // progress panels re-render when import progress ticks forward.
+        importMonitorRelay = ImportMonitorManager.shared.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
