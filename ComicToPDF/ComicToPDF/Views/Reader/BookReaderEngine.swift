@@ -633,7 +633,6 @@ struct BookReaderEngine: View {
             }
             
             ReaderChrome(
-                pdf: pdf,
                 title: pdf.name,
                 pageText: vm.tocItems.indices.contains(vm.currentChapterIndex) ? vm.tocItems[vm.currentChapterIndex].label : "Ch. \(vm.currentChapterIndex + 1) / \(max(1, vm.chapterHtmlFiles.count))",
                 isVisible: $chromeVisible,

@@ -45,7 +45,6 @@ struct DocumentReaderEngine: View {
             }
             
             ReaderChrome(
-                pdf: pdf,
                 title: pdf.name,
                 pageText: "\(currentPageIndex + 1) / \(pdf.pageCount)",
                 isVisible: $chromeVisible,
