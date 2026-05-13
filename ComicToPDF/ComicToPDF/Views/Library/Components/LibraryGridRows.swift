@@ -33,180 +33,261 @@ struct ModernGridFileCell: View {
     let isSelected: Bool
     let isBatch: Bool
     @EnvironmentObject var conversionManager: ConversionManager
-    
-    // ✅ NEW: Isolated Image State for Lazy Loading
+
     @State private var localCover: UIImage? = nil
-    
-    // ✅ PHASE 7: Dynamic User Aesthetic Colors
+    @GestureState private var isPressed = false
+
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
-    
+
+    private var readingProgress: Double {
+        Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
+    }
+    private var isFullyRead: Bool { readingProgress >= 0.98 && pdf.pageCount > 0 }
+    private var isInProgress: Bool { readingProgress > 0.01 && !isFullyRead }
+    private var isNew: Bool { (pdf.metadata.lastReadPage ?? 0) == 0 }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Cover Image Setup
-            ZStack(alignment: .topTrailing) {
-                if let directCacheImg = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
-                    Image(uiImage: directCacheImg)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else if let img = localCover {
-                    Image(uiImage: img)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else if case .cloud = pdf.sourceMode {
-                    Rectangle().fill(Theme.surfaceElevated)
-                    Image(systemName: "icloud.and.arrow.down")
-                        .font(.largeTitle)
-                        .foregroundColor(Theme.orange.opacity(0.8))
-                } else {
-                    Rectangle().fill(Theme.surfaceElevated)
-                    Image(systemName: "doc.text.fill")
-                        .font(.largeTitle)
-                        .foregroundColor(Theme.textSecondary)
+        VStack(alignment: .leading, spacing: 6) {
+
+            // ── Cover ─────────────────────────────────────────────────────────
+            ZStack(alignment: .bottom) {
+                // Image or placeholder
+                Group {
+                    if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) ?? localCover {
+                        Image(uiImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else if case .cloud = pdf.sourceMode {
+                        cloudPlaceholder
+                    } else {
+                        formatPlaceholder
+                    }
                 }
-                
-                // ✅ NEW: Top-Left External Drive & Cloud Badge
-                if case .linked(_) = pdf.sourceMode {
+
+                // Bottom scrim + progress bar (Kindle-style)
+                if isInProgress || isFullyRead {
+                    VStack(spacing: 0) {
+                        Spacer()
+                        LinearGradient(
+                            colors: [.clear, .black.opacity(0.65)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 52)
+                    }
+
+                    VStack(spacing: 4) {
+                        Spacer()
+                        HStack {
+                            Text(isFullyRead ? "Finished" : "\(Int(readingProgress * 100))% read")
+                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                                .foregroundColor(.white.opacity(0.9))
+                            Spacer()
+                        }
+                        .padding(.horizontal, 8)
+
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.2))
+                                    .frame(height: 3)
+                                Capsule()
+                                    .fill(isFullyRead ? Color.green : Color.white)
+                                    .frame(width: g.size.width * CGFloat(readingProgress), height: 3)
+                            }
+                        }
+                        .frame(height: 3)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
+                    }
+                }
+
+                // "New" badge — frosted pill at bottom-left (Manga Plus style)
+                if isNew {
+                    HStack {
+                        Text("NEW")
+                            .font(.system(size: 8, weight: .black, design: .rounded))
+                            .foregroundColor(.white)
+                            .tracking(0.6)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 4)
+                            .background(Color.blue, in: Capsule())
+                            .padding(8)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                // Fully-read checkmark (Panels style)
+                if isFullyRead {
                     VStack {
                         HStack {
-                            Image(systemName: "externaldrive.fill")
-                                .font(.caption2)
-                                .foregroundColor(.white)
-                                .padding(6)
-                                .background(Theme.blue.opacity(0.9))
-                                .clipShape(Circle())
-                                .padding(6)
-                                .shadow(color: .black.opacity(0.3), radius: 3)
                             Spacer()
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.white, Color.green)
+                                .padding(8)
+                                .shadow(color: .black.opacity(0.4), radius: 4)
                         }
                         Spacer()
                     }
-                } else if case .cloud(_, _) = pdf.sourceMode {
-                    VStack {
-                        HStack {
-                            Image(systemName: "icloud.fill")
-                                .font(.caption2)
-                                .foregroundColor(.white)
-                                .padding(6)
-                                .background(Theme.orange.opacity(0.9))
-                                .clipShape(Circle())
-                                .padding(6)
-                                .shadow(color: .black.opacity(0.3), radius: 3)
-                            Spacer()
+                }
+
+                // Source badges (cloud / linked drive) — top-left
+                VStack {
+                    HStack {
+                        if case .linked = pdf.sourceMode {
+                            sourceBadge(icon: "externaldrive.fill", color: Theme.blue)
+                        } else if case .cloud = pdf.sourceMode {
+                            sourceBadge(icon: "icloud.fill", color: Theme.orange)
                         }
                         Spacer()
                     }
+                    Spacer()
                 }
-                
-                // Batch Selection Overlay
+
+                // Batch selection overlay
                 if isBatch {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundColor(isSelected ? Theme.blue : .white)
-                        .padding(8)
-                        .shadow(radius: 2)
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.title3)
+                                .foregroundColor(isSelected ? Theme.blue : .white)
+                                .padding(8)
+                                .shadow(radius: 2)
+                        }
+                        Spacer()
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
-            .aspectRatio(0.66, contentMode: .fit) // Standard comic aspect ratio
-            .cornerRadius(12)
-            .clipped()
+            .aspectRatio(0.66, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.white.opacity(isSelected && !isBatch ? 0.7 : 0.1), lineWidth: isSelected && !isBatch ? 2 : 0.5)
             )
-            .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
-            
-            // Text Details & Kindle-Style Progress
-            VStack(alignment: .leading, spacing: 4) {
+            // Dual shadow: crisp near + soft ambient (Apple Books technique)
+            .shadow(color: .black.opacity(0.22), radius: 3, y: 2)
+            .shadow(color: .black.opacity(0.10), radius: 12, y: 8)
+            // Touch press animation
+            .scaleEffect(isPressed ? 0.97 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($isPressed) { _, state, _ in state = true }
+            )
+
+            // ── Text + type badge ────────────────────────────────────────────
+            VStack(alignment: .leading, spacing: 3) {
                 Text(pdf.name)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Theme.text)
                     .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(height: 38, alignment: .topLeading) // Fixed height to align rows
-                
-                // Reading Progress Bar
-                GeometryReader { geo in
-                    let progress = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color(.secondarySystemFill))
-                        Capsule().fill(Theme.orange)
-                            .frame(width: max(0, geo.size.width * CGFloat(progress)))
-                    }
-                }
-                .frame(height: 3)
-                .padding(.top, 2)
-                
-                HStack {
-                    if pdf.metadata.lastReadPage == pdf.pageCount && pdf.pageCount > 0 {
-                        Text("Read")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(Theme.textSecondary)
-                    } else if let lastRead = pdf.metadata.lastReadPage, lastRead > 0 {
-                        let progress = Double(lastRead) / Double(max(pdf.pageCount, 1))
-                        Text("\(Int(progress * 100))%")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(Theme.textSecondary)
-                    } else {
-                        Text("New")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(Theme.blue)
-                    }
-                    Spacer()
-                    if pdf.contentType == .comic {
-                        let isManga = pdf.metadata.isManga ?? false
-                        Text(isManga ? "MANGA" : "COMIC")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
-                    } else {
-                        Text(pdf.fileExtensionString.uppercased())
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(Theme.textTertiary)
-                    }
+                    .frame(height: 36, alignment: .topLeading)
+
+                if pdf.contentType == .comic {
+                    let isManga = pdf.metadata.isManga ?? false
+                    Text(isManga ? "MANGA" : "COMIC")
+                        .font(.system(size: 9, weight: .black, design: .rounded))
+                        .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
+                        .tracking(0.8)
+                } else {
+                    Text(pdf.fileExtensionString.uppercased())
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundColor(Theme.textTertiary)
+                        .tracking(0.8)
                 }
             }
+            .padding(.horizontal, 2)
         }
-        .padding(8)
+        .padding(6)
         .background(isSelected && !isBatch ? Theme.surfaceElevated : Color.clear)
         .cornerRadius(12)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
-        // Throttled background thumbnail loader — acquires semaphore before hitting disk
         .task(id: pdf.id) {
             let key = pdf.id.uuidString as NSString
-            // Fast path: already in memory cache
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 self.localCover = cached; return
             }
             guard let coverURL = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: coverURL.path) else {
-                // Cover not on disk yet — let the import pipeline generate it
-                return
-            }
+                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
             await thumbnailSemaphore.wait()
             defer { Task { await thumbnailSemaphore.signal() } }
-            
             let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) else { return nil }
-                let downsampleOptions = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 360
-                ] as CFDictionary
-                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
-                return UIImage(cgImage: cgImage)
+                let opts = [kCGImageSourceShouldCache: false] as CFDictionary
+                guard let src = CGImageSourceCreateWithURL(coverURL as CFURL, opts) else { return nil }
+                let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                            kCGImageSourceShouldCacheImmediately: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceThumbnailMaxPixelSize: 360] as CFDictionary
+                guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
+                return UIImage(cgImage: cg)
             }.value
-            
             if let image = generated {
                 conversionManager.thumbnailCache.setObject(image, forKey: key)
                 self.localCover = image
             }
         }
     }
+
+    // MARK: - Placeholder Views
+
+    private var formatPlaceholder: some View {
+        let ext = pdf.fileExtensionString.uppercased()
+        let (bg1, bg2): (Color, Color) = {
+            switch ext {
+            case "CBZ", "CBR": return (Color(red: 0.15, green: 0.25, blue: 0.6), Color(red: 0.1, green: 0.15, blue: 0.4))
+            case "PDF":        return (Color(red: 0.6, green: 0.15, blue: 0.15), Color(red: 0.4, green: 0.1, blue: 0.1))
+            case "EPUB":       return (Color(red: 0.15, green: 0.5, blue: 0.3),  Color(red: 0.1, green: 0.35, blue: 0.2))
+            default:           return (Color(red: 0.25, green: 0.25, blue: 0.3), Color(red: 0.15, green: 0.15, blue: 0.2))
+            }
+        }()
+        return ZStack {
+            LinearGradient(colors: [bg1, bg2], startPoint: .topLeading, endPoint: .bottomTrailing)
+            VStack(spacing: 8) {
+                Image(systemName: "doc.text.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(.white.opacity(0.5))
+                Text(ext)
+                    .font(.system(size: 11, weight: .black, design: .rounded))
+                    .foregroundColor(.white.opacity(0.4))
+                    .tracking(1.5)
+            }
+        }
+    }
+
+    private var cloudPlaceholder: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.1, green: 0.35, blue: 0.55), Color(red: 0.05, green: 0.2, blue: 0.4)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            VStack(spacing: 8) {
+                Image(systemName: "icloud.and.arrow.down")
+                    .font(.system(size: 28))
+                    .foregroundColor(.white.opacity(0.7))
+                Text("CLOUD")
+                    .font(.system(size: 10, weight: .black, design: .rounded))
+                    .foregroundColor(.white.opacity(0.5))
+                    .tracking(1.5)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sourceBadge(icon: String, color: Color) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundColor(.white)
+            .padding(5)
+            .background(color.opacity(0.9), in: Circle())
+            .padding(6)
+            .shadow(color: .black.opacity(0.3), radius: 3)
+    }
 }
+
 
 struct ModernGridSeriesCell: View {
     let group: SeriesGroup
