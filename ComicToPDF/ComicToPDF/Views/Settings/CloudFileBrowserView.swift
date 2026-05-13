@@ -390,6 +390,7 @@ struct CloudFileBrowserView: View {
         addedCount = deduped.count
         await MainActor.run { scanningFolderName = nil }
 
+        var newCloudPDFs: [ConvertedPDF] = []
         await MainActor.run {
             for file in deduped {
                 let dummyURL = URL(string: "cloud://\(provider.providerID)/\(file.id)")!
@@ -402,8 +403,14 @@ struct CloudFileBrowserView: View {
                 )
                 cloudPDF.sourceMode = .cloud(provider: provider.name, remoteID: file.id)
                 conversionManager.convertedPDFs.insert(cloudPDF, at: 0)
+                newCloudPDFs.append(cloudPDF)
             }
             conversionManager.saveLibrary()
+        }
+
+        // Kick off asynchronous cover extraction for the newly linked files
+        Task {
+            await CloudCoverExtractor.shared.extract(for: newCloudPDFs)
         }
 
         addingToLibrary = false
