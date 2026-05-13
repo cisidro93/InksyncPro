@@ -280,7 +280,7 @@ struct GlobalZettelkastenHubView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .background(filterMode == mode ? Color(hex: "#7B5EA7") : AnyShapeStyle(.regularMaterial))
+                .background(filterMode == mode ? AnyShapeStyle(Color(hex: "#7B5EA7")) : AnyShapeStyle(.regularMaterial))
                 .foregroundStyle(filterMode == mode ? Color.white : Theme.textSecondary)
                 .clipShape(Capsule())
                 .overlay(Capsule().stroke(Color.primary.opacity(filterMode == mode ? 0 : 0.08), lineWidth: 0.5))
