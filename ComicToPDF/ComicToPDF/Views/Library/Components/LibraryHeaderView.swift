@@ -209,209 +209,203 @@ struct LibraryHeaderView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
             } // end hSizeClass branches
-            // Row 2: Cohesive Action Center (Scrollable Pills)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    Group {
-                        // 1. Target Selector Pill (Fixed & Prominent)
-                        Menu {
-                            Section("Standard Formats") {
-                                Picker("Target Format", selection: $settingsManager.conversionSettings.outputFormat) {
-                                    ForEach(OutputFormat.allCases) { format in
-                                        Label(format.rawValue, systemImage: format.icon).tag(format)
-                                    }
-                                }
-                            }
-                            
-                            if !settingsManager.conversionPresets.isEmpty {
-                                Section("Custom Profiles") {
-                                    ForEach(settingsManager.conversionPresets) { preset in
-                                        Button {
-                                            settingsManager.conversionSettings = preset.settings
-                                        } label: {
-                                            Label(preset.name, systemImage: "list.clipboard.fill")
-                                        }
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("TARGET")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(Theme.textSecondary)
-                                    .tracking(1)
-                                
-                                // Separator
-                                Rectangle().fill(Theme.textSecondary.opacity(0.3)).frame(width: 1, height: 12)
-                                
-                                // Value
-                                Text(settingsManager.conversionSettings.outputFormat.rawValue)
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(Theme.orange)
-                                    .fixedSize() // Prevent truncation
-                                
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(Theme.textSecondary)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(.thickMaterial)
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(Theme.text.opacity(0.1), lineWidth: 1))
-                        }
-                        
-                        // Divider
-                        Rectangle().fill(Theme.text.opacity(0.1)).frame(width: 1, height: 24)
-                        
-                        // 2. Action Pick
-                        Menu {
-                            Picker("Tap Action", selection: $tapAction) {
-                                ForEach(LibraryTapAction.allCases, id: \.self) { action in
-                                    Text(action.rawValue).tag(action)
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("TAP ACTION:")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(Theme.textSecondary)
-                                    .tracking(1)
-                                
-                                HStack(spacing: 4) {
-                                    Text(tapAction.rawValue)
-                                        .font(.system(size: 14, weight: .semibold))
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: 10))
-                                }
-                                .foregroundColor(Theme.orange)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(.thickMaterial)
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(Theme.text.opacity(0.1), lineWidth: 1))
-                        }
-                        
-                        // 3. One-Click Import Queue (opens staging queue then "Import All")
-                        Button(action: { showImportQueue = true }) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.white)
-                                Text("Import")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 12)
-                            .background(Theme.blue)
-                            .clipShape(Capsule())
-                        }
-                        .sheet(isPresented: $showImportQueue) {
-                            ImportQueueView()
-                                .environmentObject(conversionManager)
-                        }
-                        
-                        ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
-                        ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
-                        ActionPill(
-                            title: "Cloud",
-                            icon: (DropboxProvider.shared.isConnected || GoogleDriveProvider.shared.isConnected)
-                                ? "checkmark.icloud.fill"
-                                : "icloud.and.arrow.down",
-                            color: (DropboxProvider.shared.isConnected || GoogleDriveProvider.shared.isConnected)
-                                ? Theme.green
-                                : Theme.blue
-                        ) { onSheetTrigger(.cloudBrowser) }
-                        
-                        // Metadata Engine State
-                        Group {
-                            ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) { 
-                                Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
-                            }
-                            if !conversionManager.failedMetadataPDFs.isEmpty {
-                                ActionPill(title: "Review Missing", icon: "exclamationmark.triangle.fill", color: Theme.red) {
-                                    onSheetTrigger(.reviewMetadata)
-                                }
-                            }
-                        }
-                        
-                        // Divider
-                        Rectangle().fill(Theme.text.opacity(0.1)).frame(width: 1, height: 24)
-                    }
-                    
-                    Group {
-                        ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {
-                            if multiSelection.count >= 1 {
-                                showCognitiveBatchRenamer = true
-                            } else {
-                                withAnimation { isBatchMode = true }
-                                conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.")
-                            }
-                        })
-                        ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.purple) { onSheetTrigger(.merge) }
-                        ActionPill(title: "Convert & Merge", icon: "doc.on.doc.fill", color: Theme.purple, action: {
-                            if multiSelection.count >= 2 {
-                                batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                                showingBatchMergeReorder = true
-                            } else {
-                                withAnimation { isBatchMode = true }
-                                conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.")
-                            }
-                        })
-                    }
-                    
-                    // Divider
-                    Rectangle().fill(Theme.text.opacity(0.1)).frame(width: 1, height: 24)
-                    
-                    Group {
-                        ActionPill(title: settingsManager.isVaultUnlocked ? "Vault Unlocked" : "Vault", icon: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill", color: settingsManager.isVaultUnlocked ? Theme.red : Theme.textSecondary) { 
-                            onVaultToggle() 
-                        }
-                        ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }
 
+            // ── Row A: Fixed Primary Actions (Apollo/Reeder pattern) ─────────
+            // Always visible — the 3 actions 95% of users actually need.
+            HStack(spacing: 10) {
+                // Import — gradient fill matching empty-state CTA
+                Button(action: { showImportQueue = true }) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("Import")
+                            .font(.system(size: 14, weight: .bold))
                     }
-                    
-                    // 3. Selection / Batch
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            isBatchMode.toggle()
-                            if !isBatchMode { multiSelection.removeAll() }
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.circle.badge.questionmark")
-                            Text(isBatchMode ? "Done" : "Select")
-                        }
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isBatchMode ? Theme.text : Theme.text)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(isBatchMode ? AnyShapeStyle(Theme.orange) : AnyShapeStyle(.thickMaterial))
-                        .clipShape(Capsule())
-                    }
-                    
-                    if isBatchMode {
-                        Button(action: {
-                            onSelectAll?()
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "checkmark.square.fill")
-                                Text("All")
-                            }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(
+                            colors: [Theme.orange, Color(red: 0.9, green: 0.45, blue: 0.1)],
+                            startPoint: .leading, endPoint: .trailing
+                        ),
+                        in: Capsule()
+                    )
+                    .shadow(color: Theme.orange.opacity(0.3), radius: 6, y: 3)
+                }
+                .sheet(isPresented: $showImportQueue) {
+                    ImportQueueView().environmentObject(conversionManager)
+                }
+
+                // Cloud — live status tint (Infuse/Plex pattern)
+                let cloudConnected = DropboxProvider.shared.isConnected || GoogleDriveProvider.shared.isConnected
+                Button(action: { onSheetTrigger(.cloudBrowser) }) {
+                    HStack(spacing: 7) {
+                        Image(systemName: cloudConnected ? "checkmark.icloud.fill" : "icloud.and.arrow.down")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(cloudConnected ? Theme.green : Theme.blue)
+                        Text("Cloud")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(Theme.text)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Theme.blue)
-                            .clipShape(Capsule())
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(
+                        Capsule().stroke(
+                            (cloudConnected ? Theme.green : Theme.blue).opacity(0.3),
+                            lineWidth: 1
+                        )
+                    )
+                }
+
+                Spacer()
+
+                // Select / Done + All (batch mode)
+                if isBatchMode {
+                    Button(action: { onSelectAll?() }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "checkmark.square.fill")
+                            Text("All")
+                        }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Theme.blue, in: Capsule())
+                    }
+                    .transition(.scale.combined(with: .opacity))
+                }
+
+                Button(action: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        isBatchMode.toggle()
+                        if !isBatchMode { multiSelection.removeAll() }
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: isBatchMode ? "xmark.circle.fill" : "checkmark.circle")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(isBatchMode ? "Done" : "Select")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundColor(isBatchMode ? .white : Theme.text)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        isBatchMode
+                            ? AnyShapeStyle(Theme.orange)
+                            : AnyShapeStyle(.regularMaterial),
+                        in: Capsule()
+                    )
+                    .overlay(Capsule().stroke(Theme.text.opacity(isBatchMode ? 0 : 0.1), lineWidth: 1))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isBatchMode)
+
+            // ── Row B: Power-User Overflow Tools (slim scrollable strip) ──────
+            // Format picker, tap action, Wi-Fi, tools, metadata engine, vault.
+            // Inspired by Reeder's compact toolbar — power tools tucked away but reachable.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    // Target format
+                    Menu {
+                        Section("Standard Formats") {
+                            Picker("Target Format", selection: $settingsManager.conversionSettings.outputFormat) {
+                                ForEach(OutputFormat.allCases) { format in
+                                    Label(format.rawValue, systemImage: format.icon).tag(format)
+                                }
+                            }
+                        }
+                        if !settingsManager.conversionPresets.isEmpty {
+                            Section("Custom Profiles") {
+                                ForEach(settingsManager.conversionPresets) { preset in
+                                    Button {
+                                        settingsManager.conversionSettings = preset.settings
+                                    } label: {
+                                        Label(preset.name, systemImage: "list.clipboard.fill")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Theme.orange)
+                            Text(settingsManager.conversionSettings.outputFormat.rawValue)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(Theme.text)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .overflowPill()
+                    }
+
+                    // Tap action
+                    Menu {
+                        Picker("Tap Action", selection: $tapAction) {
+                            ForEach(LibraryTapAction.allCases, id: \.self) { action in
+                                Text(action.rawValue).tag(action)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "hand.tap.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Theme.blue)
+                            Text(tapAction.rawValue)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(Theme.text)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .overflowPill()
+                    }
+
+                    // Wi-Fi
+                    ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
+
+                    // Smart List
+                    ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
+
+                    // Batch tools
+                    ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {
+                        if multiSelection.count >= 1 { showCognitiveBatchRenamer = true }
+                        else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.") }
+                    })
+                    ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.purple) { onSheetTrigger(.merge) }
+                    ActionPill(title: "Convert & Merge", icon: "doc.on.doc.fill", color: Theme.purple, action: {
+                        if multiSelection.count >= 2 { batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }; showingBatchMergeReorder = true }
+                        else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.") }
+                    })
+
+                    // Metadata + stats
+                    ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) {
+                        Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
+                    }
+                    if !conversionManager.failedMetadataPDFs.isEmpty {
+                        ActionPill(title: "Review Missing", icon: "exclamationmark.triangle.fill", color: Theme.red) {
+                            onSheetTrigger(.reviewMetadata)
                         }
                     }
+                    ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }
+
+                    // Vault
+                    ActionPill(
+                        title: settingsManager.isVaultUnlocked ? "Vault Open" : "Vault",
+                        icon: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill",
+                        color: settingsManager.isVaultUnlocked ? Theme.red : Theme.textSecondary
+                    ) { onVaultToggle() }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
             }
-            .padding(.bottom, 16)
+            .padding(.top, 6)
+            .padding(.bottom, 14)
         }
         .background(.ultraThinMaterial)
         .overlay(
@@ -421,5 +415,16 @@ struct LibraryHeaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowImportQueue"))) { _ in
             showImportQueue = true
         }
+    }
+}
+
+// MARK: - Overflow pill style helper
+private extension View {
+    func overflowPill() -> some View {
+        self
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
     }
 }
