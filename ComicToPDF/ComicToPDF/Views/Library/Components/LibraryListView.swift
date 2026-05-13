@@ -276,6 +276,14 @@ struct LibraryListView: View {
         Button {
             onAction(.read, pdf)
         } label: { Label("Read / Preview", systemImage: "book.pages") }
+
+        // Cloud files: offer inline convert so the user doesn't need to open the detail sheet
+        if case .cloud = pdf.sourceMode {
+            Button {
+                onAction(.convert, pdf)
+            } label: { Label("Download & Convert", systemImage: "arrow.down.circle.fill") }
+            Divider()
+        }
         
         Button {
             onAction(.covers, pdf)

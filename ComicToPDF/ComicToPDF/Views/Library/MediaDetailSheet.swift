@@ -116,6 +116,31 @@ struct MediaDetailSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .shadow(color: .blue.opacity(0.3), radius: 5, y: 3)
                     }
+                    // Cloud files: Download & Convert primary CTA
+                    if case .cloud = pdf.sourceMode {
+                        Button {
+                            handle(.convert)
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "arrow.down.circle.fill")
+                                Text("DOWNLOAD & CONVERT")
+                                    .fontWeight(.bold)
+                                Spacer()
+                            }
+                            .font(.system(size: 16))
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(red: 0.3, green: 0.7, blue: 0.3), Color(red: 0.1, green: 0.55, blue: 0.3)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .shadow(color: Color.green.opacity(0.3), radius: 5, y: 3)
+                        }
+                    }
                     
                     // Send to Kindle — prominent dedicated button
                     Button {

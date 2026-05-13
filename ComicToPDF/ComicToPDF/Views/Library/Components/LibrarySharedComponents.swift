@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum LibraryRowAction {
-    case read, covers, fetchMetadata, editMetadata, export, share, sync, rename, addToSeries, delete, favorite, details, toggleVault, saveToDrive, sendToKindle
+    case read, covers, fetchMetadata, editMetadata, export, share, sync, rename, addToSeries, delete, favorite, details, toggleVault, saveToDrive, sendToKindle, convert
 }
 
 // MARK: - Theme Colors

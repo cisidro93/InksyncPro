@@ -486,6 +486,12 @@ struct LibraryGridView: View {
     @ViewBuilder
     private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
         Button { onAction(.read, pdf) } label: { Label("Read / Preview", systemImage: "book.pages") }
+
+        // Cloud files: offer inline convert so the user doesn't need to open the detail sheet
+        if case .cloud = pdf.sourceMode {
+            Button { onAction(.convert, pdf) } label: { Label("Download & Convert", systemImage: "arrow.down.circle.fill") }
+            Divider()
+        }
         Button { onAction(.covers, pdf) } label: { Label("Edit Workspace (Covers)", systemImage: "paintbrush.pointed") }
         Button { onAction(.favorite, pdf) } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star") }
         Button { onAction(.export, pdf) } label: { Label("Export Options", systemImage: "square.and.arrow.up") }

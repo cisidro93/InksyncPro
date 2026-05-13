@@ -33,6 +33,7 @@ struct SeriesDetailView: View {
     @State private var pdfToAssignSeries: ConvertedPDF?
     @State private var assignSeriesText = ""
     @State private var pdfToRead: ConvertedPDF? // Added for Reader
+    @State private var pdfToDetails: ConvertedPDF? // Details sheet (non-nav-stack path)
     @State private var pdfToDelete: ConvertedPDF? // QoL: Delete confirmation gate
 
     enum SeriesSortOption: String, CaseIterable, Identifiable {
@@ -592,6 +593,39 @@ struct SeriesDetailView: View {
         .sheet(item: $pdfToSearchMetadata) { pdf in
             MetadataSearchSheet(pdf: pdf)
         }
+        // ✅ Fix: pdfToDetails now correctly presents MediaDetailSheet in all non-nav-stack contexts.
+        .sheet(item: $pdfToDetails) { pdf in
+            MediaDetailSheet(pdf: pdf) { action in
+                switch action {
+                case .read:          pdfToRead = pdf
+                case .export:        pdfToExport = pdf
+                case .fetchMetadata: pdfToSearchMetadata = pdf
+                case .editMetadata:  pdfToSearchMetadata = pdf
+                case .rename:        renameText = pdf.name; pdfToRename = pdf
+                case .delete:        pdfToDelete = pdf
+                case .convert:       Task { await conversionManager.convertComic(pdf) }
+                case .share, .sync, .sendToKindle:
+                    // For share/kindle we dismiss and fire via UIActivityViewController
+                    let url = pdf.url
+                    Task { @MainActor in
+                        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let rootVC = windowScene.windows.first?.rootViewController {
+                            var topVC = rootVC
+                            while let presented = topVC.presentedViewController { topVC = presented }
+                            if let popover = activityVC.popoverPresentationController {
+                                popover.sourceView = topVC.view
+                                popover.sourceRect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 0, height: 0)
+                                popover.permittedArrowDirections = []
+                            }
+                            topVC.present(activityVC, animated: true)
+                        }
+                    }
+                default: break
+                }
+            }
+            .environmentObject(conversionManager)
+        }
         .sheet(isPresented: $showBatchVolumeAssignment) {
             BatchVolumeAssignmentSheet(selectedIDs: selection)
                 .environmentObject(conversionManager)
@@ -722,7 +756,9 @@ struct SeriesDetailView: View {
                 if tapAction == .read {
                     pdfToRead = pdf
                 } else {
-                    selectedPDF = pdf
+                    // ✅ Fixed: was setting selectedPDF (only highlights row, no sheet).
+                    // Now opens MediaDetailSheet via pdfToDetails.
+                    pdfToDetails = pdf
                 }
             } label: {
                 LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
@@ -922,6 +958,14 @@ struct SeriesDetailView: View {
         Button {
             pdfToRead = pdf
         } label: { Label("Read / Preview", systemImage: "book.pages") }
+
+        // Cloud files: offer inline convert (downloads first, then converts)
+        if case .cloud = pdf.sourceMode {
+            Button {
+                Task { await conversionManager.convertComic(pdf) }
+            } label: { Label("Download & Convert", systemImage: "arrow.down.circle.fill") }
+            Divider()
+        }
         
         Button {
             pdfToExport = pdf

@@ -309,6 +309,10 @@ class LibraryViewModel: ObservableObject {
                 } else {
                     self.activeSheet = .export(pdf)
                 }
+            case .convert:
+                // Enqueue conversion — for cloud files, ConversionManager automatically
+                // downloads the file first via CloudDownloadManager, then converts.
+                Task { await conversionManager.convertComic(pdf) }
             }
         }
     }

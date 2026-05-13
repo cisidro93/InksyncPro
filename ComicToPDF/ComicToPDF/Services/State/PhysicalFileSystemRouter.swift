@@ -3,6 +3,7 @@ import UIKit
 import SwiftUI
 import PDFKit
 import ZIPFoundation
+import Unrar
 
 /// Safely handles all iOS Storage interactions, including disk persistence, thumbnail caching into Application Support, and atomic NSFileCoordinator bindings independent from the Presentation logic.
 @MainActor
@@ -474,6 +475,46 @@ class PhysicalFileSystemRouter {
                 Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", type: .error)
             }
         }
+
+        // ── CBR / RAR Archives ─────────────────────────────────────────────────
+        if ext == "cbr" || ext == "rar" {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+
+            do {
+                let archive = try Unrar.Archive(fileURL: url)
+                let entries = try archive.entries()
+
+                let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
+                let sorted = entries
+                    .filter { entry in
+                        guard !entry.directory,
+                              !entry.fileName.contains("__MACOSX"),
+                              !(entry.fileName as NSString).lastPathComponent.hasPrefix(".") else { return false }
+                        return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
+                    }
+                    .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
+
+                var firstSpread: UIImage? = nil
+                var attempts = 0
+                for entry in sorted.prefix(5) {
+                    let data = try archive.extract(entry)
+                    guard let image = UIImage(data: data) else { continue }
+                    attempts += 1
+                    // Skip landscape (two-page spread) on first attempt — prefer portrait cover
+                    if attempts == 1 && image.size.width > image.size.height && sorted.count > 1 {
+                        firstSpread = image
+                        continue
+                    }
+                    return image
+                }
+                return firstSpread  // fallback if every page is landscape
+            } catch {
+                Logger.shared.log("PhysicalFileSystemRouter: CBR cover extraction failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
+            }
+        }
+
         return nil
     }
     
@@ -505,6 +546,27 @@ class PhysicalFileSystemRouter {
             }
             return count
         }
+
+        // ── CBR / RAR Archives ─────────────────────────────────────────────────
+        if ext == "cbr" || ext == "rar" {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            guard FileManager.default.fileExists(atPath: url.path) else { return 0 }
+            let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
+            do {
+                let archive = try Unrar.Archive(fileURL: url)
+                let entries = try archive.entries()
+                return entries.filter { entry in
+                    guard !entry.directory,
+                          !entry.fileName.contains("__MACOSX"),
+                          !(entry.fileName as NSString).lastPathComponent.hasPrefix(".") else { return false }
+                    return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
+                }.count
+            } catch {
+                Logger.shared.log("PhysicalFileSystemRouter: CBR page count failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
+            }
+        }
+
         return 0
     }
 
