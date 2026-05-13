@@ -269,23 +269,32 @@ struct TwoUpBookPager: View {
                 }
             }
         }
-        .id("spread_\(leftIdx)_\(cache.cacheUpdatedTick)")
+        .id("spread_\(leftIdx)")
+        // Observe cache ticks WITHOUT rebuilding the full spread view:
+        // opacity stays 1 always; this merely gives SwiftUI a value to watch
+        // so that individual pageSlot views redraw in place.
+        .animation(.easeIn(duration: 0.18), value: cache.cacheUpdatedTick)
     }
 
     @ViewBuilder
     private func pageSlot(_ index: Int) -> some View {
-        if let img = cache.getImage(at: index) {
-            Image(uiImage: img)
-                .resizable()
-                .applyFilterPreset(activeFilterPreset)
-                .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ZStack {
-                Color.black
+        // Use ZStack + opacity transition so the loaded image fades in over
+        // the black placeholder — eliminates the hard white/black flash.
+        ZStack {
+            Color.black
+            if let img = cache.getImage(at: index) {
+                Image(uiImage: img)
+                    .resizable()
+                    .applyFilterPreset(activeFilterPreset)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
+            } else {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                    .transition(.opacity)
             }
         }
+        .animation(.easeIn(duration: 0.18), value: cache.getImage(at: index) != nil)
     }
 }

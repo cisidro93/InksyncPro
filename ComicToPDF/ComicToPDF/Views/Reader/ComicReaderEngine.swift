@@ -53,7 +53,8 @@ class ComicImageCache: ObservableObject {
     private var cloudPageSource: CloudPageSource?
     
     @Published var isLoading = true
-    @Published var cacheUpdatedTick = 0 // Triggers SwiftUI redraw for async streams
+    @Published var loadError: String? = nil   // Non-nil = show error view with exit button
+    @Published var cacheUpdatedTick = 0
     var pageCount: Int = 0
     let isPDF: Bool
     let isStream: Bool
@@ -124,7 +125,10 @@ class ComicImageCache: ObservableObject {
                     resolvedURL = pdf.url
                 }
                 guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
-                    await MainActor.run { [weak self] in self?.isLoading = false }
+                    await MainActor.run { [weak self] in
+                        self?.loadError = "Could not open the comic archive. The file may be corrupted, password-protected, or in an unsupported format."
+                        self?.isLoading = false
+                    }
                     return
                 }
                 
@@ -364,6 +368,7 @@ struct ComicReaderEngine: View {
     @State private var readingMode: ComicReadingMode = .pageHorizontal
     @State private var activeFilterPreset: ReadingFilterPreset = .original
     @State private var showingFilterHUD = false
+    @State private var showingSettingsHUD = false    // ← new: replaces cycling tap
     @State private var lastBrightnessDragValue: CGFloat = 0
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void) {
@@ -377,9 +382,40 @@ struct ComicReaderEngine: View {
     
     var body: some View {
         ZStack {
-            Color.black.edgesIgnoringSafeArea(.all)
-            
-            if cache.isLoading {
+            Color.black.ignoresSafeArea()
+
+            if let error = cache.loadError {
+                // ── Failed file: show error + escape hatch ─────────────────────
+                VStack(spacing: 24) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 52))
+                        .foregroundStyle(.orange)
+
+                    Text("Couldn't Open File")
+                        .font(.title2.bold())
+                        .foregroundColor(.white)
+
+                    Text(error)
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.65))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+
+                    Button {
+                        onDismiss()
+                    } label: {
+                        Label("Close Reader", systemImage: "xmark.circle.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 28)
+                            .padding(.vertical, 14)
+                            .background(Color.white, in: Capsule())
+                    }
+                    .padding(.top, 8)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            } else if cache.isLoading {
                 ProgressView("Loading Comic...")
                     .foregroundColor(.white)
             } else {
@@ -391,17 +427,17 @@ struct ComicReaderEngine: View {
                     } else if readingMode == .panelNavigation {
                         guidedView
                     } else {
-                    // Book-style page flip (single or RTL)
-                    BookPager(
-                        currentIndex: $currentIndex,
-                        totalPages: cache.pageCount,
-                        cache: cache,
-                        readingMode: readingMode,
-                        activeFilterPreset: activeFilterPreset,
-                        onChromeTap: { chromeVisible.toggle() }
-                    )
+                        BookPager(
+                            currentIndex: $currentIndex,
+                            totalPages: cache.pageCount,
+                            cache: cache,
+                            readingMode: readingMode,
+                            activeFilterPreset: activeFilterPreset,
+                            onChromeTap: { chromeVisible.toggle() }
+                        )
                     }
                 }
+                .ignoresSafeArea()   // ← images fill the full screen edge-to-edge
             }
             
             // Edge Brightness Gesture Zones
@@ -454,12 +490,9 @@ struct ComicReaderEngine: View {
                 },
                 onAnnotationsToggle: {},
                 onSettingsToggle: {
-                    // Quick toggle reading mode
-                    if readingMode == .pageHorizontal { readingMode = .panelNavigation }
-                    else if readingMode == .panelNavigation { readingMode = .mangaRTL }
-                    else if readingMode == .mangaRTL { readingMode = .webtoonScroll }
-                    else if readingMode == .webtoonScroll { readingMode = .pageTwoUp }
-                    else { readingMode = .pageHorizontal }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showingSettingsHUD.toggle()
+                    }
                 },
                 currentProgress: Binding(
                     get: { Double(currentIndex) / Double(max(1, cache.pageCount - 1)) },
@@ -475,7 +508,9 @@ struct ComicReaderEngine: View {
                     )
                 ),
                 isEnhanced: activeFilterPreset != .original,
-                onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } }
+                onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
+                isSettingsActive: readingMode != .pageHorizontal,
+                currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil
             )
             
             if showingFilterHUD {
@@ -484,10 +519,39 @@ struct ComicReaderEngine: View {
                     FilterHUDView(activePreset: $activeFilterPreset, onDismiss: {
                         withAnimation(.easeInOut) { showingFilterHUD = false }
                     })
-                    .padding(.bottom, 80) // Stay above the scrub bar
+                    .padding(.bottom, 80)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(10)
+            }
+
+            // ── Reader Settings HUD (replaces cycling tap) ─────────────────────
+            if showingSettingsHUD {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showingSettingsHUD = false
+                        }
+                    }
+                    .zIndex(11)
+
+                VStack {
+                    Spacer()
+                    ReaderSettingsHUD(
+                        readingMode: $readingMode,
+                        activeFilterPreset: $activeFilterPreset,
+                        onDismiss: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showingSettingsHUD = false
+                            }
+                        }
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(12)
             }
         }
         .onAppear {

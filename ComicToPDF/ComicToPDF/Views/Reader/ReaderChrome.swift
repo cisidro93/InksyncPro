@@ -31,7 +31,11 @@ struct ReaderChrome: View {
     // Image Enhancement
     var isEnhanced: Bool = false
     var onEnhanceToggle: (() -> Void)? = nil
-    
+
+    // Settings state indicator
+    var isSettingsActive: Bool = false      // true when non-default mode/filter
+    var currentModeLabel: String? = nil    // short label shown on the button badge
+
     var body: some View {
         VStack {
             // Top Bar
@@ -89,11 +93,24 @@ struct ReaderChrome: View {
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     Button(action: onSettingsToggle) {
-                        Image(systemName: "ellipsis")
-                            .font(.body.weight(.semibold))
-                            .foregroundColor(.white)
-                            .padding(12)
-                            .background(.ultraThinMaterial, in: Circle())
+                        VStack(spacing: 2) {
+                            Image(systemName: isSettingsActive ? "slider.horizontal.3" : "ellipsis")
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(isSettingsActive ? .black : .white)
+                            if let label = currentModeLabel, isSettingsActive {
+                                Text(label)
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundColor(.black)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(isSettingsActive ? 10 : 12)
+                        .background(
+                            isSettingsActive
+                                ? AnyShapeStyle(Color.white)
+                                : AnyShapeStyle(.ultraThinMaterial),
+                            in: Circle()
+                        )
                     }
                 }
             .padding(.horizontal)
