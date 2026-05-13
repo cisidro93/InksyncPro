@@ -215,10 +215,10 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 10) {
                 // Header row
                 HStack(spacing: 8) {
-                    Image(systemName: icon)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.orange)
-                        .symbolEffect(.rotate, options: .repeating)
+                    // Animated spinner — works on all iOS versions
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Color.orange)
 
                     Text(label)
                         .font(.system(size: 12, weight: .medium))

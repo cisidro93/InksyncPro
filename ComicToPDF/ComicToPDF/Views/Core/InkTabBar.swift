@@ -194,11 +194,10 @@ struct InkTabBar: View {
     private var taskBanner: some View {
         VStack(spacing: 6) {
             HStack(spacing: 10) {
-                // Animated icon reflects operation type
-                Image(systemName: isConverting ? "arrow.triangle.2.circlepath" : "arrow.down.circle")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.orange)
-                    .symbolEffect(.rotate, options: .repeating)
+                // Animated spinner — works on all iOS versions
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(Color.orange)
 
                 Text(activeMessage)
                     .font(.system(size: 12, weight: .medium))
