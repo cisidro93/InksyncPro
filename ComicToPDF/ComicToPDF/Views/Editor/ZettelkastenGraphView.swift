@@ -335,6 +335,7 @@ struct ZettelkastenGraphView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var hoverNodeID: String? = nil
+    @State private var isPanning: Bool = false          // prevents HUD appearing during canvas pan
     @State private var canvasSize: CGSize = UIScreen.main.bounds.size
     @State private var labelScale: CGFloat = 1.0  // zoomed-in label suppression
 
@@ -552,11 +553,18 @@ struct ZettelkastenGraphView: View {
                             if let tapped = engine.nodes.first(where: {
                                 distance(from: $0.position, to: touchPos) < $0.hitRadius
                             }) {
+                                // Deliberate node touch — show HUD
+                                guard !isPanning else { return }
                                 engine.draggedNodeID = tapped.id
                                 hoverNodeID = tapped.id
                                 engine.startSimulation()
                             } else {
-                                hoverNodeID = nil
+                                // No node hit — this is a pan; suppress HUD
+                                if val.translation.width * val.translation.width +
+                                   val.translation.height * val.translation.height > 64 {
+                                    isPanning = true
+                                    hoverNodeID = nil
+                                }
                                 engine.offset.width += val.translation.width / engine.scale
                                 engine.offset.height += val.translation.height / engine.scale
                             }
@@ -569,6 +577,7 @@ struct ZettelkastenGraphView: View {
                     }
                     .onEnded { _ in
                         engine.draggedNodeID = nil
+                        isPanning = false
                     }
             )
             .gesture(

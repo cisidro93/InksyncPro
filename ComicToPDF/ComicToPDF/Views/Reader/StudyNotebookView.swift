@@ -33,15 +33,19 @@ struct StudyNotebookView: View {
                         .foregroundColor(.primary)
                     
                     Spacer()
-                    
+
+                    // Live word count (Bear-style)
+                    let words = localNotes.split { $0.isWhitespace || $0.isNewline }.count
+                    Text("\(words)w")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(Theme.textSecondary)
+                        .monospacedDigit()
+
                     if isFocused {
                         Image(systemName: "circle.fill")
                             .font(.system(size: 8))
                             .foregroundColor(Theme.blue)
                             .symbolEffect(.pulse)
-                        Text("Saving...")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundColor(.secondary)
                     } else {
                         Button {
                             isFocused = false
@@ -134,7 +138,7 @@ struct StudyNotebookView: View {
     private func debounceSave(_ text: String) {
         saveTask?.cancel()
         saveTask = Task {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 400_000_000) // 400ms — fast enough to protect against quick dismiss
             if !Task.isCancelled {
                 await MainActor.run {
                     self.activeNoteAnnotation?.noteText = text
@@ -159,15 +163,58 @@ struct MarkdownTextEditor: UIViewRepresentable {
         textView.textColor = UIColor.label
         textView.isScrollEnabled = true
         textView.keyboardDismissMode = .interactive
-        
-        // Add Done toolbar for easy dismissal
-        let toolBar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
-        let flexBtn = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
-        let doneBtn = UIBarButtonItem(title: "Done", style: .done, target: context.coordinator, action: #selector(Coordinator.doneButtonTapped))
-        toolBar.items = [flexBtn, doneBtn]
-        toolBar.sizeToFit()
-        textView.inputAccessoryView = toolBar
-        
+
+        // MARK: Formatting Shortcut Bar (Bear/Notability pattern)
+        // Replaces the plain "Done" toolbar with a 7-button formatting bar.
+        let bar = UIInputView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44),
+                              inputViewStyle: .keyboard)
+        bar.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.92)
+
+        let items: [(title: String, insert: String, after: String?)] = [
+            ("B",   "**",    "**"),
+            ("I",   "_",     "_"),
+            ("H1",  "# ",    nil),
+            ("H2",  "## ",   nil),
+            ("[[",  "[[",    "]]"),
+            ("#",   "#",     nil),
+            (">",   "> ",    nil),
+        ]
+
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.distribution = .fill
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        for item in items {
+            let btn = FormatButton(title: item.title, insertBefore: item.insert, insertAfter: item.after, textView: textView)
+            btn.setTitleColor(UIColor.label, for: .normal)
+            btn.titleLabel?.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
+            btn.backgroundColor = UIColor.secondarySystemFill
+            btn.layer.cornerRadius = 6
+            btn.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+            stack.addArrangedSubview(btn)
+        }
+
+        // Spacer + Done button on trailing
+        let spacer = UIView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        stack.addArrangedSubview(spacer)
+
+        let doneBtn = UIButton(type: .system)
+        doneBtn.setTitle("Done", for: .normal)
+        doneBtn.titleLabel?.font = UIFont.systemFont(ofSize: 15, weight: .semibold)
+        doneBtn.addTarget(context.coordinator, action: #selector(Coordinator.doneButtonTapped), for: .touchUpInside)
+        stack.addArrangedSubview(doneBtn)
+
+        bar.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -12),
+            stack.centerYAnchor.constraint(equalTo: bar.centerYAnchor)
+        ])
+        textView.inputAccessoryView = bar
+
         return textView
     }
     
@@ -309,5 +356,48 @@ struct MarkdownHighlighter {
         }
         
         return attrString
+    }
+}
+
+// MARK: - Formatting Button (Bear-style — inserts markdown syntax at cursor)
+private final class FormatButton: UIButton {
+    let insertBefore: String
+    let insertAfter: String?
+    weak var textView: UITextView?
+
+    init(title: String, insertBefore: String, insertAfter: String?, textView: UITextView) {
+        self.insertBefore = insertBefore
+        self.insertAfter  = insertAfter
+        self.textView = textView
+        super.init(frame: .zero)
+        setTitle(title, for: .normal)
+        addTarget(self, action: #selector(tapped), for: .touchUpInside)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func tapped() {
+        guard let tv = textView,
+              let selectedRange = tv.selectedTextRange else { return }
+
+        let selectedText = tv.text(in: selectedRange) ?? ""
+
+        let replacement: String
+        if let after = insertAfter {
+            replacement = insertBefore + selectedText + after
+        } else {
+            replacement = insertBefore + selectedText
+        }
+        tv.replace(selectedRange, withText: replacement)
+
+        // Move cursor inside wrapping syntax when selection was empty
+        if selectedText.isEmpty, let after = insertAfter {
+            let offset = insertBefore.count
+            if let startPos = tv.position(from: selectedRange.start, offset: offset) {
+                tv.selectedTextRange = tv.textRange(from: startPos, to: startPos)
+            }
+            _ = after
+        }
+
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 }

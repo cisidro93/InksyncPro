@@ -3,7 +3,13 @@ import SwiftData
 import UniformTypeIdentifiers
 
 enum ZettelViewMode { case list, map }
-enum ZettelFilterMode { case all, permanent, fleeting }
+enum ZettelFilterMode { case all, annotated, highlightsOnly }
+enum ZettelSortMode: String, CaseIterable {
+    case dateModified = "Date Modified"
+    case dateAdded    = "Date Added"
+    case bookName     = "Book Name"
+    case tagCount     = "Most Tagged"
+}
 
 struct GlobalZettelkastenHubView: View {
     @Environment(\.modelContext) private var modelContext
@@ -16,6 +22,7 @@ struct GlobalZettelkastenHubView: View {
     @State private var searchText = ""
     @State private var viewMode: ZettelViewMode = .list
     @State private var filterMode: ZettelFilterMode = .all
+    @State private var sortMode: ZettelSortMode = .dateModified
     
 
     @State private var isImporting = false
@@ -25,27 +32,37 @@ struct GlobalZettelkastenHubView: View {
     @State private var exportDocument: ZettelArchiveDocument?
     @State private var showingExporterDialog = false
     
-    // Filtered Annotations based on UI states
+    // Filtered + Sorted Annotations
     var activeAnnotations: [SDAnnotation] {
         var filtered = allAnnotations
-        
+
+        // Filter (user-friendly labels, same underlying logic)
         switch filterMode {
-        case .all: break
-        case .permanent:
-            filtered = filtered.filter { $0.noteText != nil && !$0.noteText!.isEmpty }
-        case .fleeting:
-            filtered = filtered.filter { $0.noteText == nil || $0.noteText!.isEmpty }
+        case .all:            break
+        case .annotated:      filtered = filtered.filter { $0.noteText != nil && !($0.noteText!.isEmpty) }
+        case .highlightsOnly: filtered = filtered.filter { $0.noteText == nil || $0.noteText!.isEmpty }
         }
-        
+
+        // Search
         if !searchText.isEmpty {
             let cache = makePDFNameCache()
             filtered = filtered.filter { ann in
-                let txt = ann.selectedText?.localizedCaseInsensitiveContains(searchText) ?? false
+                let txt  = ann.selectedText?.localizedCaseInsensitiveContains(searchText) ?? false
                 let note = ann.noteText?.localizedCaseInsensitiveContains(searchText) ?? false
                 let book = bookTitle(for: ann, cache: cache).localizedCaseInsensitiveContains(searchText)
                 return txt || note || book
             }
         }
+
+        // Sort
+        let cache = makePDFNameCache()
+        switch sortMode {
+        case .dateModified: break  // already sorted by @Query
+        case .dateAdded:    filtered.sort { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+        case .bookName:     filtered.sort { bookTitle(for: $0, cache: cache) < bookTitle(for: $1, cache: cache) }
+        case .tagCount:     filtered.sort { ($0.tags?.count ?? 0) > ($1.tags?.count ?? 0) }
+        }
+
         return filtered
     }
     
@@ -79,46 +96,60 @@ struct GlobalZettelkastenHubView: View {
                 emptyStateView
             } else {
                 VStack(spacing: 0) {
-                    // Segmented Layout Controls
-                    Picker("View Mode", selection: $viewMode) {
-                        Text("List").tag(ZettelViewMode.list)
-                        Text("Mind Map").tag(ZettelViewMode.map)
+                    // ── View Mode Toggle: frosted capsule pills (matches app design language)
+                    HStack(spacing: 0) {
+                        viewModePill(.list,  label: "List",     icon: "list.bullet")
+                        viewModePill(.map,   label: "Mind Map", icon: "point.3.connected.trianglepath.dotted")
                     }
-                    .pickerStyle(.segmented)
-                    .padding()
-                    
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+
                     if viewMode == .list {
-                        // Filter pill strip
+                        // ── Filter pill strip (user-friendly labels)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                filterPill(.all, label: "All", icon: "note.text")
-                                filterPill(.permanent, label: "Permanent", icon: "bookmark.fill")
-                                filterPill(.fleeting, label: "Fleeting", icon: "wind")
+                                filterPill(.all,            label: "All",             icon: "note.text")
+                                filterPill(.annotated,      label: "Annotated",       icon: "text.bubble.fill")
+                                filterPill(.highlightsOnly, label: "Highlights Only", icon: "highlighter")
                             }
                             .padding(.horizontal)
                         }
-                        .padding(.bottom, 8)
-                        
+                        .padding(.top, 10)
+                        .padding(.bottom, 4)
+
                         ScrollView {
-                            LazyVStack(spacing: 24, pinnedViews: []) {
+                            LazyVStack(spacing: 20, pinnedViews: []) {
                                 ForEach(groupedAnnotations, id: \.key) { group in
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        // Group Header
-                                        HStack {
-                                            Image(systemName: group.value.first?.isReadwiseImport == true ? "books.vertical.fill" : "book.closed.fill")
-                                                .foregroundColor(group.value.first?.isReadwiseImport == true ? .yellow : .blue)
-                                            Text(group.key)
-                                                .font(.headline)
-                                                .foregroundColor(.primary)
-                                            Spacer()
-                                            Text("\(group.value.count) Notes")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        // ── Lightweight section header (Readwise-style)
+                                        HStack(spacing: 8) {
+                                            Rectangle()
+                                                .fill(Color.primary.opacity(0.08))
+                                                .frame(height: 1)
+                                            HStack(spacing: 5) {
+                                                Image(systemName: group.value.first?.isReadwiseImport == true
+                                                      ? "bird.fill" : "book.closed.fill")
+                                                    .font(.system(size: 9, weight: .bold))
+                                                    .foregroundColor(group.value.first?.isReadwiseImport == true
+                                                                     ? .blue : Theme.textSecondary)
+                                                Text(group.key)
+                                                    .font(.system(size: 11, weight: .semibold))
+                                                    .foregroundColor(Theme.textSecondary)
+                                                    .lineLimit(1)
+                                                Text("\(group.value.count)")
+                                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                                    .foregroundColor(.white)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Color.primary.opacity(0.2), in: Capsule())
+                                            }
+                                            .fixedSize()
                                         }
                                         .padding(.horizontal)
-                                        
+                                        .padding(.top, 8)
+
                                         // Group Items
-                                        VStack(spacing: 12) {
+                                        VStack(spacing: 10) {
                                             ForEach(group.value) { item in
                                                 GlobalHighlightRow(annotation: item)
                                             }
@@ -130,7 +161,6 @@ struct GlobalZettelkastenHubView: View {
                             .padding(.vertical)
                         }
                     } else {
-                        // Canvas Mind Map View
                         ZettelkastenGraphView(annotations: activeAnnotations, pdfs: allPDFs)
                     }
                 }
@@ -156,17 +186,26 @@ struct GlobalZettelkastenHubView: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Button(action: { 
-                        ImportCoordinator.present(type: .smartList) { urls in
-                            if let first = urls.first {
-                                handleCSVImport(result: .success([first]))
+                    // Sort options
+                    Section("Sort By") {
+                        Picker("Sort", selection: $sortMode) {
+                            ForEach(ZettelSortMode.allCases, id: \.self) { mode in
+                                Text(mode.rawValue).tag(mode)
                             }
                         }
-                    }) {
-                        Label("Import Readwise", systemImage: "arrow.down.doc")
                     }
-                    Button(action: triggerExport) {
-                        Label("Export Mind Palace", systemImage: "square.and.arrow.up")
+                    // Data actions
+                    Section {
+                        Button(action: {
+                            ImportCoordinator.present(type: .smartList) { urls in
+                                if let first = urls.first { handleCSVImport(result: .success([first])) }
+                            }
+                        }) {
+                            Label("Import Readwise", systemImage: "arrow.down.doc")
+                        }
+                        Button(action: triggerExport) {
+                            Label("Export Mind Palace", systemImage: "square.and.arrow.up")
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -204,6 +243,33 @@ struct GlobalZettelkastenHubView: View {
         }
     }
     
+    // MARK: - View Mode Pill (frosted capsule — matches app design language)
+    @ViewBuilder
+    private func viewModePill(_ mode: ZettelViewMode, label: String, icon: String) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) { viewMode = mode }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(viewMode == mode ? Color.white : Theme.textSecondary)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity)
+            .background(
+                viewMode == mode
+                    ? AnyShapeStyle(Color(hex: "#7B5EA7"))
+                    : AnyShapeStyle(.regularMaterial)
+            )
+        }
+        .buttonStyle(.plain)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+    }
+
     // MARK: - Filter Pill
     @ViewBuilder
     private func filterPill(_ mode: ZettelFilterMode, label: String, icon: String) -> some View {
@@ -213,10 +279,11 @@ struct GlobalZettelkastenHubView: View {
             Label(label, systemImage: icon)
                 .font(.system(size: 12, weight: .semibold))
                 .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(filterMode == mode ? Color(hex: "#7B5EA7") : Theme.surface)
+                .padding(.vertical, 7)
+                .background(filterMode == mode ? Color(hex: "#7B5EA7") : AnyShapeStyle(.regularMaterial))
                 .foregroundStyle(filterMode == mode ? Color.white : Theme.textSecondary)
                 .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.primary.opacity(filterMode == mode ? 0 : 0.08), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
     }
@@ -404,15 +471,21 @@ struct GlobalHighlightRow: View {
                     .padding(.top, 4)
                 }
 
-                // Tags row — user tags in orange, Readwise tags in blue
+                // Tags row — cap at 3 visible + overflow pill
                 let rwTags = annotation.readwiseTags ?? []
-                if !userTags.isEmpty || !rwTags.isEmpty {
+                let allTags = userTags.map { ($0, Color.orange) } + rwTags.map { ($0, Color.blue) }
+                if !allTags.isEmpty {
                     HStack(spacing: 6) {
-                        ForEach(userTags, id: \.self) { tag in
-                            TagPill(tag: tag, color: .orange)
+                        ForEach(Array(allTags.prefix(3)), id: \.0) { (tag, color) in
+                            TagPill(tag: tag, color: color)
                         }
-                        ForEach(rwTags, id: \.self) { tag in
-                            TagPill(tag: tag, color: .blue)
+                        if allTags.count > 3 {
+                            Text("+\(allTags.count - 3)")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Theme.textSecondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.primary.opacity(0.07), in: Capsule())
                         }
                     }
                     .padding(.top, 2)
@@ -425,11 +498,13 @@ struct GlobalHighlightRow: View {
                             .font(.caption2)
                             .foregroundStyle(.blue)
                     }
-                    Text(annotation.modifiedAt, style: .date)
+                    Text(annotation.modifiedAt, style: .relative)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text("ago")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                     Spacer()
-                    // Edit hint
                     Image(systemName: "pencil")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
