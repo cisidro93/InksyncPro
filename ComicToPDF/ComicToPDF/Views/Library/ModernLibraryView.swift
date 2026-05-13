@@ -379,152 +379,33 @@ struct ModernLibraryView: View {
                 filterState: $viewModel.filterState,
                 viewStyle: $viewStyle,
                 tapAction: $tapAction,
-                onSheetTrigger: { dest in 
-                    viewModel.activeSheet = dest 
-                },
+                onSheetTrigger: { dest in viewModel.activeSheet = dest },
                 isBatchMode: $isBatchMode,
                 multiSelection: $multiSelection,
                 batchMergeItems: $batchMergeItems,
                 showingBatchMergeReorder: $showingBatchMergeReorder,
-                showCognitiveBatchRenamer: .constant(false), // Handled by Router
+                showCognitiveBatchRenamer: .constant(false),
                 onVaultToggle: handleVaultToggle,
                 onSelectAll: handleSelectAll
             )
-            
-            // ✅ NEW: Warning for Disconnected USB Drives
-            let disconnectedDrives = settingsManager.linkedDrives.filter { !DriveMonitor.shared.isConnected(driveID: $0.id) }
-            if !disconnectedDrives.isEmpty {
-                VStack(spacing: 4) {
-                    HStack {
-                        Image(systemName: "externaldrive.fill.badge.xmark")
-                            .foregroundColor(.red)
-                        Text("External Drive Disconnected")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
-                        Spacer()
-                    }
-                    HStack {
-                        let driveName = disconnectedDrives.first?.displayName ?? "Drive"
-                        let message = "Please reconnect '\(driveName)' to read your linked comics."
-                        Text(message)
-                            .font(.system(size: 13))
-                            .foregroundColor(.white.opacity(0.8))
-                        Spacer()
-                    }
-                }
-                .padding()
-                .background(Theme.red.opacity(0.2))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.red.opacity(0.4), lineWidth: 1))
-                .cornerRadius(12)
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-            }
-            
-            // ✅ Background Conversion Jobs Banner
-            let pendingJobs = jobQueue.jobs.filter {
-                $0.status == .suspended || $0.status == .waitingForDownload ||
-                $0.status == .extracting || $0.status == .failed
-            }
-            if !pendingJobs.isEmpty {
-                VStack(spacing: 8) {
-                    ForEach(pendingJobs) { job in
-                        HStack {
-                            Image(systemName: jobBannerIcon(job))
-                                .foregroundColor(jobBannerColor(job))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(job.targetFileName)
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .lineLimit(1)
-                                Text(jobBannerMessage(job))
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.white.opacity(0.8))
-                            }
-                            Spacer()
 
-                            // Resume (suspended) / Retry (failed)
-                            if job.status == .suspended || job.status == .failed {
-                                Button(job.status == .failed ? "Retry" : "Resume") {
-                                    if job.status == .failed {
-                                        // Re-trigger the download for failed jobs
-                                        jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .waitingForDownload)
-                                        if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == job.pdfID }) {
-                                            Task { await CloudDownloadManager.shared.downloadCloudFile(pdf: pdf) }
-                                        }
-                                    } else {
-                                        jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .extracting)
-                                        Task {
-                                            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == job.pdfID }) {
-                                                if job.isMerge {
-                                                    await ConversionOrchestrator.shared.convertAndMerge(sourceFiles: [pdf], outputName: job.outputName ?? "", mangaMode: job.mangaMode ?? false, manager: conversionManager)
-                                                } else {
-                                                    await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: job.mangaMode, manager: conversionManager)
-                                                }
-                                                jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .completed)
-                                                jobQueue.removeJob(pdfID: job.pdfID)
-                                            }
-                                        }
-                                    }
-                                }
-                                .font(.caption.bold())
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(jobBannerColor(job))
-                                .clipShape(Capsule())
-                            }
+            disconnectedDrivesBanner
+            pendingJobsBanner
 
-                            Button {
-                                jobQueue.removeJob(pdfID: job.pdfID)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.white.opacity(0.5))
-                                    .font(.title3)
-                            }
-                        }
-                        .padding()
-                        .background(jobBannerColor(job).opacity(0.2))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(jobBannerColor(job).opacity(0.4), lineWidth: 1))
-                        .cornerRadius(12)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-            }
-            
             // MARK: - Up Next Binge Shelf
             UpNextBingeShelf(allPDFs: nativeVisiblePDFs) { pdf in
                 viewModel.activeFullScreen = .read(pdf)
             }
-            
+
             // MARK: - Recently Read Shelf
             RecentlyReadShelf(pdfs: nativeVisiblePDFs) { pdf in
                 viewModel.activeFullScreen = .read(pdf)
             }
 
             // MARK: - Breadcrumb Navigation for Nested Folders
-            if let folderID = viewModel.currentFolderID, let folder = conversionManager.collections.first(where: { $0.id == folderID }) {
-                HStack {
-                    Button {
-                        withAnimation { viewModel.currentFolderID = folder.parentId }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
-                        }
-                    }
-                    .font(.subheadline.bold())
-                    .foregroundColor(Theme.blue)
-                    
-                    Spacer()
-                    
-                    Text(folder.name)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial)
+            if let folderID = viewModel.currentFolderID,
+               let folder = conversionManager.collections.first(where: { $0.id == folderID }) {
+                breadcrumbRow(folder: folder)
             }
 
             // MARK: - Discrete Layout Layers
@@ -551,9 +432,6 @@ struct ModernLibraryView: View {
                     onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
                     onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
-                    // Rebuild immediately from live in-memory data so the grid updates the
-                    // instant a drop is confirmed — without waiting for the SwiftData
-                    // @Query async refresh cycle to propagate the changes.
                     onDropApplied: {
                         let livePDFs = settingsManager.isVaultUnlocked
                             ? conversionManager.convertedPDFs
@@ -567,6 +445,147 @@ struct ModernLibraryView: View {
                 )
             }
         }
+    }
+
+    // MARK: - Disconnected Drives Banner
+
+    @ViewBuilder
+    private var disconnectedDrivesBanner: some View {
+        let disconnectedDrives = settingsManager.linkedDrives.filter {
+            !DriveMonitor.shared.isConnected(driveID: $0.id)
+        }
+        if !disconnectedDrives.isEmpty {
+            let driveName = disconnectedDrives.first?.displayName ?? "Drive"
+            VStack(spacing: 4) {
+                HStack {
+                    Image(systemName: "externaldrive.fill.badge.xmark")
+                        .foregroundColor(.red)
+                    Text("External Drive Disconnected")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                }
+                HStack {
+                    Text("Please reconnect '\(driveName)' to read your linked comics.")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.8))
+                    Spacer()
+                }
+            }
+            .padding()
+            .background(Theme.red.opacity(0.2))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.red.opacity(0.4), lineWidth: 1))
+            .cornerRadius(12)
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+        }
+    }
+
+    // MARK: - Pending Jobs Banner
+
+    @ViewBuilder
+    private var pendingJobsBanner: some View {
+        let pendingJobs = jobQueue.jobs.filter {
+            $0.status == .suspended || $0.status == .waitingForDownload ||
+            $0.status == .extracting || $0.status == .failed
+        }
+        if !pendingJobs.isEmpty {
+            VStack(spacing: 8) {
+                ForEach(pendingJobs) { job in
+                    pendingJobRow(job: job)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+        }
+    }
+
+    @ViewBuilder
+    private func pendingJobRow(job: ConversionJob) -> some View {
+        HStack {
+            Image(systemName: jobBannerIcon(job))
+                .foregroundColor(jobBannerColor(job))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(job.targetFileName)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                Text(jobBannerMessage(job))
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            Spacer()
+            if job.status == .suspended || job.status == .failed {
+                Button(job.status == .failed ? "Retry" : "Resume") {
+                    retryOrResumeJob(job)
+                }
+                .font(.caption.bold())
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(jobBannerColor(job))
+                .clipShape(Capsule())
+            }
+            Button {
+                jobQueue.removeJob(pdfID: job.pdfID)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.white.opacity(0.5))
+                    .font(.title3)
+            }
+        }
+        .padding()
+        .background(jobBannerColor(job).opacity(0.2))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(jobBannerColor(job).opacity(0.4), lineWidth: 1))
+        .cornerRadius(12)
+    }
+
+    private func retryOrResumeJob(_ job: ConversionJob) {
+        if job.status == .failed {
+            jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .waitingForDownload)
+            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == job.pdfID }) {
+                Task { await CloudDownloadManager.shared.downloadAndStore(pdf: pdf, thenConvert: true, manager: conversionManager) }
+            }
+        } else {
+            jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .extracting)
+            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == job.pdfID }) {
+                Task {
+                    if job.isMerge {
+                        await ConversionOrchestrator.shared.convertAndMerge(
+                            sourceFiles: [pdf], outputName: job.outputName ?? "",
+                            mangaMode: job.mangaMode ?? false, manager: conversionManager
+                        )
+                    } else {
+                        await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: job.mangaMode, manager: conversionManager)
+                    }
+                    jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .completed)
+                    jobQueue.removeJob(pdfID: job.pdfID)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func breadcrumbRow(folder: PDFCollection) -> some View {
+        HStack {
+            Button {
+                withAnimation { viewModel.currentFolderID = folder.parentId }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                    Text("Back")
+                }
+            }
+            .font(.subheadline.bold())
+            .foregroundColor(Theme.blue)
+            Spacer()
+            Text(folder.name)
+                .font(.headline)
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
     }
 
     @ViewBuilder private var batchBottomToolbar: some View {
