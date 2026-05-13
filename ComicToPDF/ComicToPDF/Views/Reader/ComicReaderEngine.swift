@@ -470,7 +470,6 @@ struct ComicReaderEngine: View {
             }
             
             ReaderChrome(
-                pdf: pdf,
                 title: pdf.name,
                 pageText: "\(currentIndex + 1) / \(cache.pageCount)",
                 isVisible: $chromeVisible,
@@ -878,95 +877,143 @@ struct ComicGuidedPageView: View {
     }
 }
 
-// MARK: - Phase 4: Visual Scrubber Timeline
+// MARK: - Visual Scrubber (Premium redesign)
 struct VisualComicScrubber: View {
     @Binding var currentIndex: Int
     let totalPages: Int
     @ObservedObject var cache: ComicImageCache
     var isMangaMode: Bool
-    
+
     @State private var dragIndex: Int? = nil
-    
+    @State private var thumbXOffset: CGFloat = 0
+
+    private let trackHeight: CGFloat = 10
+    private let thumbSize: CGFloat = 26
+
     var body: some View {
-        VStack(spacing: 8) {
-            // Floating Visual Timeline
+        VStack(spacing: 0) {
+            // ── Thumbnail preview card (shown while scrubbing) ─────────────────
             if let activeIndex = dragIndex, activeIndex >= 0 && activeIndex < totalPages {
-                VStack(spacing: 4) {
-                    Group {
-                        if let previewImg = cache.getImage(at: activeIndex) {
-                            Image(uiImage: previewImg)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } else {
-                            ZStack {
-                                Color.gray.opacity(0.3)
-                                ProgressView()
-                            }
-                        }
-                    }
-                    .frame(width: 90, height: 130)
-                    .cornerRadius(8)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.8), radius: 15, y: 10)
-                    .id("scrubber_thumb_\(activeIndex)_\(cache.cacheUpdatedTick)")
-                    
-                    Text("Page \(activeIndex + 1)")
-                        .font(.system(size: 12, weight: .black))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.8))
-                        .clipShape(Capsule())
-                }
-                .transition(.opacity.combined(with: .scale))
+                thumbnailCard(for: activeIndex)
+                    .offset(x: clampedThumbOffset)
+                    .padding(.bottom, 8)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottom)))
+                    .animation(.spring(response: 0.25, dampingFraction: 0.7), value: dragIndex)
             }
-            
+
+            // ── Track ─────────────────────────────────────────────────────────
             GeometryReader { geo in
+                let trackWidth = geo.size.width - thumbSize
+                let displayIndex = dragIndex ?? currentIndex
+                let normalized = isMangaMode
+                    ? CGFloat(totalPages - 1 - displayIndex)
+                    : CGFloat(displayIndex)
+                let ratio = totalPages > 1 ? min(max(normalized / CGFloat(totalPages - 1), 0), 1) : 0
+                let thumbX = ratio * trackWidth
+
                 ZStack(alignment: .leading) {
+                    // Track background
                     Capsule()
-                        .fill(Color.white.opacity(0.2))
-                        .frame(height: 8)
-                    
-                    let displayIndex = dragIndex ?? currentIndex
-                    let normalized = isMangaMode ? CGFloat(totalPages - 1 - displayIndex) : CGFloat(displayIndex)
-                    let ratio = totalPages > 1 ? normalized / CGFloat(totalPages - 1) : 0
-                    let thumbWidth: CGFloat = 24
-                    let trackWidth = geo.size.width - thumbWidth
-                    
+                        .fill(Color.white.opacity(0.15))
+                        .frame(height: trackHeight)
+
+                    // Progress fill — white gradient
                     Capsule()
-                        .fill(Theme.blue)
-                        .frame(width: ratio * trackWidth + thumbWidth, height: 8)
-                    
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.9), Color.white.opacity(0.6)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: thumbX + thumbSize, height: trackHeight)
+
+                    // Thumb
                     Circle()
                         .fill(Color.white)
-                        .frame(width: thumbWidth, height: thumbWidth)
-                        .shadow(radius: 4)
-                        .offset(x: ratio * trackWidth)
+                        .frame(width: thumbSize, height: thumbSize)
+                        .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                                .scaleEffect(dragIndex != nil ? 1.25 : 1.0)
+                                .opacity(dragIndex != nil ? 0 : 0)
+                        )
+                        // Glow when dragging
+                        .shadow(
+                            color: dragIndex != nil ? Color.white.opacity(0.35) : .clear,
+                            radius: 10
+                        )
+                        .scaleEffect(dragIndex != nil ? 1.15 : 1.0)
+                        .animation(.spring(response: 0.2, dampingFraction: 0.65), value: dragIndex != nil)
+                        .offset(x: thumbX)
                         .gesture(
                             DragGesture(minimumDistance: 0)
                                 .onChanged { val in
                                     let percentage = min(max(val.location.x / geo.size.width, 0), 1)
                                     let rawIndex = Int(round(percentage * CGFloat(totalPages - 1)))
                                     let targeted = isMangaMode ? (totalPages - 1 - rawIndex) : rawIndex
-                                    
+                                    thumbXOffset = val.location.x - geo.size.width / 2
                                     if dragIndex != targeted {
-                                        let generator = UISelectionFeedbackGenerator()
-                                        generator.selectionChanged()
+                                        UISelectionFeedbackGenerator().selectionChanged()
                                         dragIndex = targeted
                                     }
                                 }
                                 .onEnded { _ in
                                     if let final = dragIndex {
-                                        Haptics.shared.playImpact(style: .medium)
+                                        HapticEngine.light()
                                         currentIndex = final
                                     }
                                     dragIndex = nil
                                 }
                         )
                 }
-                .frame(height: 24)
+                .frame(height: thumbSize)
             }
-            .frame(height: 24)
+            .frame(height: thumbSize)
+        }
+    }
+
+    // Clamp thumbnail card so it never goes off-screen edges
+    private var clampedThumbOffset: CGFloat {
+        max(-80, min(80, thumbXOffset))
+    }
+
+    @ViewBuilder
+    private func thumbnailCard(for index: Int) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                // Frosted background
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 72, height: 104)
+
+                if let img = cache.getImage(at: index) {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 72, height: 104)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .transition(.opacity)
+                } else {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
+
+            // Page number pill
+            Text("\(index + 1) / \(totalPages)")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
         }
     }
 }

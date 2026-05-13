@@ -1,199 +1,290 @@
 import SwiftUI
 
+// MARK: - ReaderChrome
+//
+// Redesigned after deep analysis of Panels, Comixology, Chunky, and Apple Books:
+//
+//  TOP BAR   — Single frosted-glass capsule bar. Back ← | Title | Actions →
+//              Slides in from the top with spring physics.
+//
+//  BOTTOM BAR — Single frosted-glass card. Scrubber on top, action row below.
+//               Slides up from the bottom with matching spring physics.
+//
+// Neither bar uses scattered floating circles. All controls live on one surface
+// per bar, consistent with how Panels and Apple Books handle the chrome.
+
 struct ReaderChrome: View {
-    let pdf: ConvertedPDF
     let title: String
     let pageText: String
     @Binding var isVisible: Bool
-    
+
     // Actions
     var onBack: () -> Void
     var onEInkSend: () -> Void
     var onBookmark: () -> Void
+    var onBookmarkActive: Bool = false
     var onAnnotationsToggle: () -> Void
     var onSettingsToggle: () -> Void
-    
+
     // Scrubber
     @Binding var currentProgress: Double
     let totalPages: Int
     var customScrubber: AnyView? = nil
-    // Optional TTS
+
+    // TTS
     var hasTTS: Bool = false
     var isSpeaking: Bool = false
     var onTTSToggle: (() -> Void)? = nil
-    
-    // Optional KOReader PDF Tools
+
+    // PDF tools
     var isPDF: Bool = false
     var isReflowActive: Bool = false
     var onCropToggle: (() -> Void)? = nil
     var onReflowToggle: (() -> Void)? = nil
-    
-    // Image Enhancement
+
+    // Enhancement
     var isEnhanced: Bool = false
     var onEnhanceToggle: (() -> Void)? = nil
 
-    // Settings state indicator
-    var isSettingsActive: Bool = false      // true when non-default mode/filter
-    var currentModeLabel: String? = nil    // short label shown on the button badge
+    // Mode indicator
+    var isSettingsActive: Bool = false
+    var currentModeLabel: String? = nil
+
+    // Ambient tint from current page (Panels-style)
+    var ambientColor: Color = .clear
+
+    // MARK: - Body
 
     var body: some View {
         VStack {
-            // Top Bar
-            HStack {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(.white)
-                        .padding(12)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                
-                Spacer()
-                
-                Text(title)
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                
-                Spacer()
-                    if isPDF {
-                        Button(action: { onReflowToggle?() }) {
-                            Image(systemName: "text.alignleft")
-                                .font(.body.weight(.semibold))
-                                .foregroundColor(isReflowActive ? .black : .white)
-                                .padding(12)
-                                .background(isReflowActive ? AnyShapeStyle(Color.white) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
-                        }
-                        
-                        Button(action: { onCropToggle?() }) {
-                            Image(systemName: "crop")
-                                .font(.body.weight(.semibold))
-                                .foregroundColor(.white)
-                                .padding(12)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                    }
-                    if onEnhanceToggle != nil {
-                        Button(action: { onEnhanceToggle?() }) {
-                            Image(systemName: "wand.and.stars")
-                                .font(.body.weight(.semibold))
-                                .foregroundColor(isEnhanced ? .black : .white)
-                                .padding(12)
-                                .background(isEnhanced ? AnyShapeStyle(Color.yellow) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
-                        }
-                    }
-                    Button(action: onAnnotationsToggle) {
-                        Image(systemName: "note.text")
-                            .font(.body.weight(.semibold))
-                            .foregroundColor(.white)
-                            .padding(12)
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
-                    Button(action: onSettingsToggle) {
-                        VStack(spacing: 2) {
-                            Image(systemName: isSettingsActive ? "slider.horizontal.3" : "ellipsis")
-                                .font(.body.weight(.semibold))
-                                .foregroundColor(isSettingsActive ? .black : .white)
-                            if let label = currentModeLabel, isSettingsActive {
-                                Text(label)
-                                    .font(.system(size: 8, weight: .bold))
-                                    .foregroundColor(.black)
-                                    .lineLimit(1)
-                            }
-                        }
-                        .padding(isSettingsActive ? 10 : 12)
-                        .background(
-                            isSettingsActive
-                                ? AnyShapeStyle(Color.white)
-                                : AnyShapeStyle(.ultraThinMaterial),
-                            in: Circle()
-                        )
-                    }
-                }
-            .padding(.horizontal)
-            .padding(.top, 8)
-            
+            topBar
+                .offset(y: isVisible ? 0 : -12)
+
             Spacer()
-            
-            // Bottom Bar
-            VStack(spacing: 12) {
-                // Scrubber Area
-                if let custom = customScrubber {
-                    // ✅ Phase 4: Visual Scrubber Timeline Injection
-                    custom
-                        .padding(.horizontal)
-                } else {
-                    HStack {
-                        Text("1")
-                            .font(.caption2)
-                            .foregroundColor(.white.opacity(0.7))
-                        
-                        Slider(value: $currentProgress, in: 0...1)
-                            .accentColor(.blue)
-                        
-                        Text("\(totalPages)")
-                            .font(.caption2)
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                    .padding(.horizontal)
-                }
-                
-                HStack {
-                    Button(action: {
-                        HapticEngine.success()  // ✅ QoL: bookmark save gets tactile confirmation
-                        onBookmark()
-                    }) {
-                        Image(systemName: "bookmark")
-                            .font(.body.weight(.semibold))
-                            .foregroundColor(.white)
-                            .padding(12)
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
-                    
-                    if hasTTS {
-                        Button(action: { onTTSToggle?() }) {
-                            Image(systemName: isSpeaking ? "stop.circle.fill" : "headphones")
-                                .font(.body.weight(.semibold))
-                                .foregroundColor(.white)
-                                .padding(12)
-                                .background(isSpeaking ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Text(pageText)
-                        .font(.subheadline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    
-                    Spacer()
-                    
-                    Button(action: onEInkSend) {
-                        Image(systemName: "arrow.up.forward.square")
-                            .font(.body.weight(.semibold))
-                            .foregroundColor(.white)
-                            .padding(12)
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
-                }
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 24)
-            .background(
-                VStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black.opacity(0.3)], startPoint: .top, endPoint: .bottom)
-                    Rectangle().fill(.ultraThinMaterial)
-                }
-                .edgesIgnoringSafeArea(.bottom)
-            )
+
+            bottomCard
+                .offset(y: isVisible ? 0 : 16)
         }
         .opacity(isVisible ? 1 : 0)
-        .animation(.easeInOut(duration: 0.2), value: isVisible)
+        .animation(.spring(response: 0.42, dampingFraction: 0.88), value: isVisible)
+    }
+
+    // MARK: - Top Bar
+
+    private var topBar: some View {
+        HStack(spacing: 0) {
+            // ── Back button ────────────────────────────────────────────────────
+            Button(action: onBack) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+
+            // ── Divider ────────────────────────────────────────────────────────
+            chromeDivider
+
+            // ── Title ──────────────────────────────────────────────────────────
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+
+            // ── Divider ────────────────────────────────────────────────────────
+            chromeDivider
+
+            // ── Action cluster ─────────────────────────────────────────────────
+            HStack(spacing: 0) {
+                if onEnhanceToggle != nil {
+                    chromeButton(
+                        icon: "wand.and.stars",
+                        active: isEnhanced,
+                        activeColor: .yellow,
+                        action: { onEnhanceToggle?() }
+                    )
+                }
+
+                if isPDF {
+                    chromeButton(icon: "text.alignleft", active: isReflowActive, activeColor: .white) {
+                        onReflowToggle?()
+                    }
+                    chromeButton(icon: "crop", active: false, activeColor: .white) {
+                        onCropToggle?()
+                    }
+                }
+
+                chromeButton(
+                    icon: isSettingsActive ? "slider.horizontal.3" : "ellipsis",
+                    active: isSettingsActive,
+                    activeColor: .white,
+                    badgeText: isSettingsActive ? currentModeLabel : nil,
+                    action: onSettingsToggle
+                )
+            }
+        }
+        .frame(height: 48)
+        .background(topBarBackground)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Bottom Card
+
+    private var bottomCard: some View {
+        VStack(spacing: 0) {
+            // ── Scrubber ───────────────────────────────────────────────────────
+            if let custom = customScrubber {
+                custom
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
+            } else {
+                HStack(spacing: 10) {
+                    Text("1")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+                        .frame(width: 20, alignment: .leading)
+
+                    Slider(value: $currentProgress, in: 0...1)
+                        .tint(Color.white)
+
+                    Text("\(totalPages)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+                        .frame(width: 20, alignment: .trailing)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+            }
+
+            // ── Thin divider ───────────────────────────────────────────────────
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(height: 0.5)
+                .padding(.horizontal, 16)
+
+            // ── Action row ─────────────────────────────────────────────────────
+            HStack {
+                // Left cluster
+                HStack(spacing: 4) {
+                    barButton(
+                        icon: onBookmarkActive ? "bookmark.fill" : "bookmark",
+                        tint: onBookmarkActive ? .yellow : .white
+                    ) {
+                        HapticEngine.success()
+                        onBookmark()
+                    }
+
+                    if hasTTS {
+                        barButton(
+                            icon: isSpeaking ? "waveform" : "headphones",
+                            tint: isSpeaking ? .orange : .white
+                        ) {
+                            onTTSToggle?()
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // Page counter — centred and prominent
+                Text(pageText)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.12), in: Capsule())
+
+                Spacer()
+
+                // Right cluster
+                HStack(spacing: 4) {
+                    barButton(icon: "arrow.up.forward.square", tint: .white, action: onEInkSend)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .background(bottomCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 18, y: -4)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
+    }
+
+    // MARK: - Shared Backgrounds
+
+    private var topBarBackground: some ShapeStyle {
+        AnyShapeStyle(.ultraThinMaterial)
+    }
+
+    private var bottomCardBackground: some View {
+        ZStack {
+            // Base: system material
+            Rectangle().fill(.ultraThinMaterial)
+            // Ambient tint overlay (Panels-style page colour)
+            if ambientColor != .clear {
+                Rectangle().fill(ambientColor.opacity(0.08))
+            }
+        }
+    }
+
+    // MARK: - Reusable Components
+
+    private var chromeDivider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.12))
+            .frame(width: 0.5, height: 22)
+    }
+
+    /// Icon button for the top bar action cluster
+    @ViewBuilder
+    private func chromeButton(
+        icon: String,
+        active: Bool,
+        activeColor: Color,
+        badgeText: String? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 1) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(active ? activeColor : .white.opacity(0.85))
+                if let badge = badgeText {
+                    Text(badge)
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundColor(activeColor)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .background(active ? activeColor.opacity(0.15) : Color.clear)
+            .contentShape(Rectangle())
+        }
+    }
+
+    /// Icon button for the bottom action row
+    @ViewBuilder
+    private func barButton(icon: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(tint)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
     }
 }
