@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import CryptoKit
+import PencilKit
 
 struct StudyNotebookView: View {
     let bookID: String       // the ConvertedPDF's UUID string
@@ -15,6 +16,18 @@ struct StudyNotebookView: View {
     
     @State private var localNotes: String = ""
     @State private var saveTask: Task<Void, Never>? = nil
+    
+    // ✅ Phase 2: PencilKit Integration
+    enum InputMode: String {
+        case markdown = "Text"
+        case handwriting = "Pencil"
+    }
+    @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
+    @State private var canvasView = PKCanvasView()
+    
+    // ✅ Phase 3: Highlights Drawer
+    @State private var showHighlightsDrawer = false
+    @State private var bookHighlights: [SDAnnotation] = []
     
     var body: some View {
         ZStack {
@@ -33,6 +46,30 @@ struct StudyNotebookView: View {
                         .foregroundColor(.primary)
                     
                     Spacer()
+                    
+                    // Input Mode Toggle
+                    Picker("Input", selection: $inputMode) {
+                        Image(systemName: "keyboard").tag(InputMode.markdown)
+                        Image(systemName: "applepencil").tag(InputMode.handwriting)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 120)
+                    
+                    Spacer()
+                    
+                    // Highlights Drawer Toggle
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showHighlightsDrawer.toggle()
+                        }
+                    } label: {
+                        Image(systemName: "highlighter")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(showHighlightsDrawer ? Theme.blue : .primary)
+                            .padding(8)
+                            .background(showHighlightsDrawer ? Theme.blue.opacity(0.1) : Color.primary.opacity(0.08))
+                            .clipShape(Circle())
+                    }
 
                     // Live word count (Bear-style)
                     let words = localNotes.split { $0.isWhitespace || $0.isNewline }.count
@@ -67,12 +104,22 @@ struct StudyNotebookView: View {
                 )
                 .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
                 
-                // MARK: Markdown Editor Surface
-                MarkdownTextEditor(text: $localNotes, isFocused: $isFocused)
-                    .padding(16)
-                    .onChange(of: localNotes) { _, newText in
-                        debounceSave(newText)
+                // MARK: Notebook Canvas
+                ZStack(alignment: .trailing) {
+                    if inputMode == .markdown {
+                        MarkdownTextEditor(text: $localNotes, isFocused: $isFocused)
+                            .padding(16)
+                            .onChange(of: localNotes) { _, _ in debounceSave() }
+                    } else {
+                        StudyCanvasView(canvasView: $canvasView, onSaved: debounceSave)
+                            .padding(.top, 8)
                     }
+                    
+                    // MARK: Highlights Drawer Overlay
+                    if showHighlightsDrawer {
+                        highlightsDrawer
+                    }
+                }
             }
         }
         .onAppear {
@@ -82,6 +129,7 @@ struct StudyNotebookView: View {
             // Final explicit sync flush layer
             saveTask?.cancel()
             activeNoteAnnotation?.noteText = localNotes
+            activeNoteAnnotation?.drawingData = canvasView.drawing.dataRepresentation()
             activeNoteAnnotation?.modifiedAt = Date()
             try? modelContext.save()
         }
@@ -114,6 +162,9 @@ struct StudyNotebookView: View {
            let existing = allNotes.first(where: { $0.pdfID == targetPDFID }) {
             self.activeNoteAnnotation = existing
             self.localNotes = existing.noteText ?? ""
+            if let dData = existing.drawingData, let drawing = try? PKDrawing(data: dData) {
+                self.canvasView.drawing = drawing
+            }
         } else {
             let newNote = SDAnnotation(
                 id: UUID(),
@@ -133,20 +184,94 @@ struct StudyNotebookView: View {
             self.activeNoteAnnotation = newNote
             self.localNotes = ""
         }
+        
+        // Fetch existing highlights for this book
+        let hDescriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.kindRaw == "highlight" && $0.pdfID == targetPDFID })
+        if let h = try? modelContext.fetch(hDescriptor) {
+            self.bookHighlights = h.sorted { $0.createdAt > $1.createdAt }
+        }
     }
     
-    private func debounceSave(_ text: String) {
+    private func debounceSave() {
         saveTask?.cancel()
         saveTask = Task {
-            try? await Task.sleep(nanoseconds: 400_000_000) // 400ms — fast enough to protect against quick dismiss
+            try? await Task.sleep(nanoseconds: 400_000_000)
             if !Task.isCancelled {
                 await MainActor.run {
-                    self.activeNoteAnnotation?.noteText = text
+                    self.activeNoteAnnotation?.noteText = self.localNotes
+                    self.activeNoteAnnotation?.drawingData = self.canvasView.drawing.dataRepresentation()
                     self.activeNoteAnnotation?.modifiedAt = Date()
                     try? self.modelContext.save()
                 }
             }
         }
+    }
+    
+    // MARK: - Highlights Drawer UI
+    @ViewBuilder
+    private var highlightsDrawer: some View {
+        HStack(spacing: 0) {
+            Divider()
+            VStack(spacing: 0) {
+                Text("Book Highlights")
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(Theme.surface)
+                
+                Divider()
+                
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        if bookHighlights.isEmpty {
+                            Text("No highlights yet.\nSelect text in the book to add highlights.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding()
+                        } else {
+                            ForEach(bookHighlights) { highlight in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(highlight.selectedText ?? "Empty Highlight")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(Theme.text)
+                                        .lineSpacing(4)
+                                    
+                                    HStack {
+                                        if let note = highlight.noteText, !note.isEmpty {
+                                            Image(systemName: "text.bubble.fill")
+                                                .font(.caption2)
+                                                .foregroundColor(Theme.blue)
+                                        }
+                                        Spacer()
+                                        Text(highlight.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(12)
+                                .background(Color(hex: highlight.colorHex ?? "#FFD60A").opacity(0.1))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .strokeBorder(Color(hex: highlight.colorHex ?? "#FFD60A").opacity(0.3), lineWidth: 1)
+                                )
+                                .cornerRadius(8)
+                                // Standard Drag and Drop for highlights into the text view
+                                .onDrag {
+                                    NSItemProvider(object: (highlight.selectedText ?? "") as NSString)
+                                }
+                            }
+                        }
+                    }
+                    .padding(12)
+                }
+                .background(Color(UIColor.secondarySystemBackground).opacity(0.95))
+            }
+            .frame(width: 250)
+            .background(.ultraThinMaterial)
+            .shadow(color: .black.opacity(0.1), radius: 10, x: -5, y: 0)
+        }
+        .transition(.move(edge: .trailing))
     }
 }
 

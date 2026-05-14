@@ -40,6 +40,9 @@ struct Annotation: Codable, Identifiable {
     var easeFactor: Double = 2.5
     var nextReviewDate: Date? = nil
 
+    // ✅ Phase 4: GoodNotes PencilKit Parity
+    var drawingData: Data? = nil
+
     enum AnnotationKind: String, Codable {
         case highlight
         case note           // text note attached to a location
@@ -90,6 +93,9 @@ struct Annotation: Codable, Identifiable {
     var easeFactor: Double = 2.5
     var nextReviewDate: Date? = nil
     
+    // ✅ Phase 4: GoodNotes PencilKit Parity
+    @Attribute(.externalStorage) var drawingData: Data? = nil
+    
     init(from dto: Annotation) {
         self.id = dto.id
         self.pdfID = dto.pdfID
@@ -111,6 +117,7 @@ struct Annotation: Codable, Identifiable {
         self.reviewCount = dto.reviewCount
         self.easeFactor = dto.easeFactor
         self.nextReviewDate = dto.nextReviewDate
+        self.drawingData = dto.drawingData
     }
     
     // ✅ Phase 31 Native Constructor for Readwise Importers
@@ -180,6 +187,7 @@ struct Annotation: Codable, Identifiable {
         dto.reviewCount = self.reviewCount
         dto.easeFactor = self.easeFactor
         dto.nextReviewDate = self.nextReviewDate
+        dto.drawingData = self.drawingData
         return dto
     }
     
@@ -200,6 +208,7 @@ struct Annotation: Codable, Identifiable {
         self.reviewCount = dto.reviewCount
         self.easeFactor = dto.easeFactor
         self.nextReviewDate = dto.nextReviewDate
+        self.drawingData = dto.drawingData
     }
 }
 
