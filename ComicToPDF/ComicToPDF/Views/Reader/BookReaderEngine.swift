@@ -420,7 +420,7 @@ struct EPUBWebView: UIViewRepresentable {
                     padding-right: \(settings.marginWidth)px !important;
                 }
                 img { max-width: 100% !important; max-height: 100% !important; border-radius: 4px; object-fit: contain; }
-                .inksync-highlight { background-color: #ffd700; color: #000; border-radius: 3px; }
+                .inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
             `;
             head.appendChild(style);
             

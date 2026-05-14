@@ -15,6 +15,10 @@ struct ManuscriptEditorWorkspace: View {
     // Focus / Distraction-Free Mode
     @State private var isFocusMode = false
 
+    // Write / Preview toggle
+    enum EditorMode: String, CaseIterable { case write = "Write"; case preview = "Preview" }
+    @State private var editorMode: EditorMode = .write
+
     // Export
     @State private var showExportMenu = false
     @State private var exportItems: [Any] = []
@@ -141,11 +145,15 @@ struct ManuscriptEditorWorkspace: View {
     @ViewBuilder
     private func editorWithInspector(document: SDManuscriptDocument) -> some View {
         HStack(spacing: 0) {
-            // Center: Editor
+            // Center: Editor or Preview
             VStack(spacing: 0) {
                 editorHeader(document: document)
                 Divider()
-                InkTextEditor(document: document, modelContext: modelContext)
+                if editorMode == .write {
+                    InkTextEditor(document: document, modelContext: modelContext)
+                } else {
+                    MarkdownPreviewPane(markdown: document.contentMarkdown)
+                }
             }
             .frame(maxWidth: .infinity)
 
@@ -161,11 +169,22 @@ struct ManuscriptEditorWorkspace: View {
     }
 
     private func editorHeader(document: SDManuscriptDocument) -> some View {
-        HStack {
+        HStack(spacing: 12) {
             Text(document.title)
                 .font(.title2.bold())
                 .foregroundStyle(Color.inkTextPrimary)
+
             Spacer()
+
+            // Write / Preview segmented control
+            Picker("Mode", selection: $editorMode) {
+                ForEach(EditorMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 160)
+            .onChange(of: document.id) { _, _ in editorMode = .write }
 
             // Word count chip
             Text("\(document.wordCount) Words")
@@ -184,7 +203,6 @@ struct ManuscriptEditorWorkspace: View {
                 Image(systemName: "sidebar.right")
                     .foregroundStyle(isInspectorVisible ? Color.inkAccentKnowledge : Color.inkTextTertiary)
             }
-            .padding(.leading, 4)
 
             // Focus mode toggle
             Button {
@@ -195,7 +213,6 @@ struct ManuscriptEditorWorkspace: View {
                 Image(systemName: "pencil.and.outline")
                     .foregroundStyle(Color.inkAccentKnowledge)
             }
-            .padding(.leading, 4)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -532,5 +549,59 @@ struct InspectorNoteCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .inkCard(radius: InkRadius.thumbnail)
+    }
+}
+
+// MARK: - Markdown Preview Pane
+// Renders contentMarkdown as native AttributedString — same visual quality as Ulysses Preview.
+struct MarkdownPreviewPane: View {
+    let markdown: String
+
+    var body: some View {
+        ScrollView {
+            if markdown.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "text.quote")
+                        .font(.system(size: 36))
+                        .foregroundStyle(Color.inkTextTertiary)
+                    Text("Nothing to preview yet.\nSwitch to Write to start your chapter.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.inkTextTertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.top, 80)
+            } else {
+                renderedContent
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .background(Color.inkBackground)
+    }
+
+    @ViewBuilder
+    private var renderedContent: some View {
+        if let attributed = try? AttributedString(
+            markdown: markdown,
+            options: AttributedString.MarkdownParsingOptions(
+                allowsExtendedAttributes: true,
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            )
+        ) {
+            Text(attributed)
+                .font(.system(size: 17, weight: .regular, design: .serif))
+                .foregroundStyle(Color.inkTextPrimary)
+                .lineSpacing(7)
+                .textSelection(.enabled)
+        } else {
+            // Fallback: plain text if markdown parsing fails
+            Text(markdown)
+                .font(.system(size: 17, weight: .regular, design: .serif))
+                .foregroundStyle(Color.inkTextPrimary)
+                .lineSpacing(7)
+                .textSelection(.enabled)
+        }
     }
 }
