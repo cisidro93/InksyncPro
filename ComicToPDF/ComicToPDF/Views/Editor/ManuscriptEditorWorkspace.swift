@@ -465,17 +465,17 @@ private struct WikilinkChip: View {
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .lineLimit(1)
             }
-            .foregroundStyle(isResolved ? Color.inkAccentKnowledge : Color.inkAccentRead)
+            .foregroundStyle(isResolved ? Color.inkAccentKnowledge : Color.inkRed)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                (isResolved ? Color.inkAccentKnowledge : Color.inkAccentRead).opacity(0.12),
+                (isResolved ? Color.inkAccentKnowledge : Color.inkRed).opacity(0.12),
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(
-                        (isResolved ? Color.inkAccentKnowledge : Color.inkAccentRead).opacity(0.3),
+                        (isResolved ? Color.inkAccentKnowledge : Color.inkRed).opacity(0.3),
                         lineWidth: 1
                     )
             )
