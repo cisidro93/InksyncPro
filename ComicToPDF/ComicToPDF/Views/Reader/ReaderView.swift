@@ -179,7 +179,7 @@ struct ReaderView: View {
                         if fileURL.pathExtension.lowercased() != "pdf" {
                             if !pages.isEmpty {
                                 let effectiveDoublePage = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
-                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, pdfID: pdf?.id, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage) {
+                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, pdfID: pdf?.id, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage, isDrawingMode: isDrawingMode) {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         isToolbarVisible.toggle()
                                     }
@@ -477,6 +477,17 @@ struct ReaderView: View {
                     .foregroundStyle(orientationLock.isLocked ? Color.orange : .white)
                     .frame(width: 34, height: 34)
                     .background(.ultraThinMaterial, in: Circle())
+            }
+            
+            // ✅ GoodNotes Parity: Markup Toggle
+            if fileURL.pathExtension.lowercased() != "epub" {
+                Button { withAnimation { isDrawingMode.toggle() } } label: {
+                    Image(systemName: isDrawingMode ? "pencil.and.outline" : "pencil")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(isDrawingMode ? Color.orange : .white)
+                        .frame(width: 34, height: 34)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
             }
 
             // Bookmark

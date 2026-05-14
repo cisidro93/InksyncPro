@@ -18,6 +18,7 @@ struct PPLReaderView: View {
     var pdfID: UUID?
     var isMangaMode: Bool
     var isDoublePageOverride: Bool = false
+    var isDrawingMode: Bool = false // ✅ Added for GoodNotes Parity
     var onCenterTap: () -> Void
 
     @ObservedObject private var bufferManager = PageBufferManager.shared
@@ -98,22 +99,28 @@ struct PPLReaderView: View {
             }
 
             // ── Front layer: current spread, sliding with finger ──────────────
-            currentContent(geo: geo, showingDual: showingDual)
-                .drawingGroup() // ✅ Metal-backed hardware acceleration
-                .offset(x: scale > 1.0 ? 0 : swipeDragX,
-                        y: 0)
-                .rotation3DEffect(
-                    flip3DAngle(geo: geo),
-                    axis: (x: 0, y: 1, z: 0),
-                    anchor: swipeDragX > 0 ? .leading : .trailing,
-                    perspective: 0.4
-                )
-                .scaleEffect(scale)
-                .offset(x: offset.width + dragOffset.width,
-                        y: offset.height + dragOffset.height)
+            ZStack {
+                currentContent(geo: geo, showingDual: showingDual)
+                    .drawingGroup() // ✅ Metal-backed hardware acceleration
+                
+                // ✅ Phase 4: In-Line Handwriting
+                PageCanvasOverlay(pdfID: pdfID, pageIndex: currentPageIndex, isMarkupEnabled: isDrawingMode)
+            }
+            .offset(x: scale > 1.0 ? 0 : swipeDragX,
+                    y: 0)
+            .rotation3DEffect(
+                flip3DAngle(geo: geo),
+                axis: (x: 0, y: 1, z: 0),
+                anchor: swipeDragX > 0 ? .leading : .trailing,
+                perspective: 0.4
+            )
+            .scaleEffect(scale)
+            .offset(x: offset.width + dragOffset.width,
+                    y: offset.height + dragOffset.height)
         }
-        .gesture(zoomGesture(geo: geo))
-        .simultaneousGesture(swipeAndPanGesture(geo: geo))
+        // If drawing mode is on, we let PKCanvasView handle gestures and disable reader zoom/pan
+        .gesture(isDrawingMode ? nil : zoomGesture(geo: geo))
+        .simultaneousGesture(isDrawingMode ? nil : swipeAndPanGesture(geo: geo))
         .onTapGesture(count: 2) { loc in handleDoubleTap(at: loc, geo: geo) }
         .onTapGesture              { loc in handleSingleTap(at: loc, geo: geo) }
     }
