@@ -77,48 +77,13 @@ struct ModernLibraryView: View {
     }
 
     var body: some View {
-        rootShell
-            .alert("Rename Series", isPresented: Binding(
-                get: { listRenameGroup != nil },
-                set: { if !$0 { listRenameGroup = nil } }
-            )) {
-                TextField("Series Name", text: $listRenamePendingName)
-                    .autocorrectionDisabled()
-                Button("Rename") {
-                    guard let group = listRenameGroup else { return }
-                    let newName = listRenamePendingName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !newName.isEmpty, newName != group.title else { listRenameGroup = nil; return }
-                    for pdf in group.issues {
-                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                            conversionManager.convertedPDFs[idx].metadata.series = newName
-                        }
-                    }
-                    conversionManager.saveLibrary()
-                    listRenameGroup = nil
-                }
-                Button("Cancel", role: .cancel) { listRenameGroup = nil }
-            } message: {
-                Text("This will rename all \(listRenameGroup?.count ?? 0) issues in this series.")
-            }
-            .alert("Rename File", isPresented: Binding(
-                get: { viewModel.pdfToRename != nil },
-                set: { if !$0 { viewModel.pdfToRename = nil } }
-            )) {
-                TextField("New Name", text: $viewModel.renameText)
-                Button("Cancel", role: .cancel) { }
-                Button("Rename") {
-                    if let pdf = viewModel.pdfToRename {
-                        conversionManager.renamePDF(pdf, to: viewModel.renameText)
-                    }
-                }
-            }
-            .alert(item: $conversionManager.appAlert) { alert in
-                Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
-            }
-            .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
-                loadFiles(from: providers)
-                return true
-            }
+        shellWithObservers
+    }
+
+    // MARK: - Observer Shell (onChange / onReceive / debug overlay)
+    @ViewBuilder
+    private var shellWithObservers: some View {
+        shellWithAlerts
             .onAppear {
                 conversionManager.backfillMissingThumbnails()
                 viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
@@ -169,6 +134,53 @@ struct ModernLibraryView: View {
                         viewModel: viewModel
                     )
                 }
+            }
+    }
+
+    // MARK: - Alert Shell (rootShell + alerts + onDrop)
+    @ViewBuilder
+    private var shellWithAlerts: some View {
+        rootShell
+            .alert("Rename Series", isPresented: Binding(
+                get: { listRenameGroup != nil },
+                set: { if !$0 { listRenameGroup = nil } }
+            )) {
+                TextField("Series Name", text: $listRenamePendingName)
+                    .autocorrectionDisabled()
+                Button("Rename") {
+                    guard let group = listRenameGroup else { return }
+                    let newName = listRenamePendingName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !newName.isEmpty, newName != group.title else { listRenameGroup = nil; return }
+                    for pdf in group.issues {
+                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                            conversionManager.convertedPDFs[idx].metadata.series = newName
+                        }
+                    }
+                    conversionManager.saveLibrary()
+                    listRenameGroup = nil
+                }
+                Button("Cancel", role: .cancel) { listRenameGroup = nil }
+            } message: {
+                Text("This will rename all \(listRenameGroup?.count ?? 0) issues in this series.")
+            }
+            .alert("Rename File", isPresented: Binding(
+                get: { viewModel.pdfToRename != nil },
+                set: { if !$0 { viewModel.pdfToRename = nil } }
+            )) {
+                TextField("New Name", text: $viewModel.renameText)
+                Button("Cancel", role: .cancel) { }
+                Button("Rename") {
+                    if let pdf = viewModel.pdfToRename {
+                        conversionManager.renamePDF(pdf, to: viewModel.renameText)
+                    }
+                }
+            }
+            .alert(item: $conversionManager.appAlert) { alert in
+                Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+            }
+            .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
+                loadFiles(from: providers)
+                return true
             }
     }
 
