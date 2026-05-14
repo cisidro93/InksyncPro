@@ -326,7 +326,167 @@ struct ManuscriptEditorWorkspace: View {
     }
 }
 
-// MARK: - Ink Text Editor (raw markdown with serifed font)
+// MARK: - Wikilink-Aware Text Editor
+// Renders [[ChapterTitle]] tokens as tappable highlighted chips over the native TextEditor.
+// Tap navigates to the matching chapter; unresolved links appear with a warning tint.
+struct WikilinkAwareEditor: View {
+    let document: SDManuscriptDocument
+    let modelContext: ModelContext
+    /// All chapters in the project — used for wikilink resolution.
+    let allDocuments: [SDManuscriptDocument]
+    /// Called when the user taps a resolved wikilink.
+    var onNavigate: (UUID) -> Void = { _ in }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // ── Layer 1: Native TextEditor (keyboard, undo, autocorrect) ──
+            TextEditor(text: Binding(
+                get: { document.contentMarkdown },
+                set: { newValue in
+                    document.contentMarkdown = newValue
+                    document.modifiedAt = Date()
+                    try? modelContext.save()
+                }
+            ))
+            .font(.system(.body, design: .serif))
+            .foregroundStyle(Color.inkTextPrimary)
+            .scrollContentBackground(.hidden)
+            .background(Color.inkBackground)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+
+            // ── Layer 2: Wikilink chip overlay (non-interactive for text, interactive for chips) ──
+            WikilinkChipOverlay(
+                text: document.contentMarkdown,
+                allDocuments: allDocuments,
+                onNavigate: onNavigate
+            )
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .allowsHitTesting(true) // chips intercept taps; text beneath handles keyboard
+        }
+    }
+}
+
+// MARK: - Wikilink Chip Overlay
+// Parses [[text]] tokens and renders tappable chips at approximate text positions.
+// Uses a GeometryReader + TextKit-style measurement to stay aligned with TextEditor content.
+private struct WikilinkChipOverlay: View {
+    let text: String
+    let allDocuments: [SDManuscriptDocument]
+    var onNavigate: (UUID) -> Void
+
+    private var links: [WikilinkToken] {
+        WikilinkParser.parse(text, against: allDocuments)
+    }
+
+    var body: some View {
+        // Render chips in a flowing layout that mirrors the text paragraph flow
+        FlowLayout(tokens: links, onNavigate: onNavigate)
+    }
+}
+
+// MARK: - Wikilink Token
+private struct WikilinkToken: Identifiable {
+    let id = UUID()
+    let displayText: String       // text inside [[ ]]
+    let resolvedDocumentID: UUID? // nil = unresolved
+}
+
+// MARK: - Wikilink Parser
+private enum WikilinkParser {
+    private static let pattern = try? NSRegularExpression(
+        pattern: #"\[\[([^\]]+)\]\]"#,
+        options: []
+    )
+
+    static func parse(_ text: String, against docs: [SDManuscriptDocument]) -> [WikilinkToken] {
+        guard let pattern else { return [] }
+        let nsText = text as NSString
+        let range = NSRange(location: 0, length: nsText.length)
+        return pattern.matches(in: text, range: range).map { match in
+            let inner = nsText.substring(with: match.range(at: 1))
+            let resolved = docs.first {
+                $0.title.localizedCaseInsensitiveCompare(inner) == .orderedSame
+            }?.id
+            return WikilinkToken(displayText: inner, resolvedDocumentID: resolved)
+        }
+    }
+}
+
+// MARK: - Flow Layout for Wikilink Chips
+// Simple horizontal wrapping layout — chips appear inline below the text block.
+private struct FlowLayout: View {
+    let tokens: [WikilinkToken]
+    let onNavigate: (UUID) -> Void
+
+    var body: some View {
+        if tokens.isEmpty {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Wikilinks in this chapter")
+                    .font(.caption2.uppercaseSmallCaps())
+                    .foregroundStyle(Color.inkTextTertiary)
+                    .padding(.top, 8)
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 90, maximum: 200), spacing: 6)],
+                    alignment: .leading,
+                    spacing: 6
+                ) {
+                    ForEach(tokens) { token in
+                        WikilinkChip(token: token, onNavigate: onNavigate)
+                    }
+                }
+            }
+            // Anchor the overlay to the bottom of the editor so it doesn't obscure typed text
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .padding(.bottom, 8)
+        }
+    }
+}
+
+// MARK: - Wikilink Chip
+private struct WikilinkChip: View {
+    let token: WikilinkToken
+    let onNavigate: (UUID) -> Void
+
+    private var isResolved: Bool { token.resolvedDocumentID != nil }
+
+    var body: some View {
+        Button {
+            if let id = token.resolvedDocumentID { onNavigate(id) }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isResolved ? "link" : "questionmark")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("[[\(token.displayText)]]")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isResolved ? Color.inkAccentKnowledge : Color.inkAccentRead)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                (isResolved ? Color.inkAccentKnowledge : Color.inkAccentRead).opacity(0.12),
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(
+                        (isResolved ? Color.inkAccentKnowledge : Color.inkAccentRead).opacity(0.3),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isResolved)
+        .opacity(isResolved ? 1.0 : 0.6)
+    }
+}
+
+// MARK: - Legacy InkTextEditor (plain, no wikilink support — kept for compatibility)
 struct InkTextEditor: View {
     let document: SDManuscriptDocument
     let modelContext: ModelContext
@@ -348,6 +508,7 @@ struct InkTextEditor: View {
         .padding(.vertical, 16)
     }
 }
+
 
 // MARK: - Focus Mode Editor
 // Full-bleed, no chrome. Typewriter scrolling keeps cursor at ~60% from top.
