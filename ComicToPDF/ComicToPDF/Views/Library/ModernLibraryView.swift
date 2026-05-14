@@ -380,7 +380,7 @@ struct ModernLibraryView: View {
                 filterState: $viewModel.filterState,
                 viewStyle: $viewStyle,
                 tapAction: $tapAction,
-                onSheetTrigger: { dest in AppRouter.shared.presentSheet(dest) },
+                onSheetTrigger: { (dest: LibrarySheetDestination) in AppRouter.shared.presentSheet(dest) },
                 isBatchMode: $isBatchMode,
                 multiSelection: $multiSelection,
                 batchMergeItems: $batchMergeItems,
@@ -418,7 +418,7 @@ struct ModernLibraryView: View {
                     useNavigationStack: useNavigationStack,
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
-                    onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
+                    onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
                     onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid }
                 )
@@ -430,7 +430,7 @@ struct ModernLibraryView: View {
                     useNavigationStack: useNavigationStack,
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
-                    onAction: { action, pdf in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
+                    onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
                     onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
                     onDropApplied: {
