@@ -22,7 +22,8 @@ class ConversionManager: ObservableObject {
     internal var thumbnailCache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         cache.countLimit = 150
-        cache.totalCostLimit = 1024 * 1024 * 300 // 300MB
+        // 80MB: ~160 × 360px covers @ ~500KB each — fits comfortably without memory pressure
+        cache.totalCostLimit = 1024 * 1024 * 80
         return cache
     }()
     

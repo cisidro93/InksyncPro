@@ -72,7 +72,12 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
     let damping: Double          = 0.82
     let centerGravity: Double    = 0.012
 
-    override init() { super.init() }
+    /// O(1) edge lookup: rebuilt in buildGraph and whenever nodes changes.
+    private var nodeIndex: [String: Int] = [:]
+
+    private func rebuildNodeIndex() {
+        nodeIndex = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($0.element.id, $0.offset) })
+    }
 
     // MARK: Build
 
@@ -80,6 +85,7 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
         var newNodes: [String: GraphNode] = [:]
         var newEdges: [GraphEdge] = []
         var connectionCounts: [String: Int] = [:]
+        var edgeIDSet: Set<String> = []  // O(1) edge deduplication
 
         let screenCenter = CGPoint(x: UIScreen.main.bounds.width / 2,
                                    y: UIScreen.main.bounds.height / 2)
@@ -91,15 +97,15 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
         // Limit to 250 most recent/relevant annotations to prevent Canvas death on large datasets
         let targetAnnotations = Array(annotations.prefix(250))
         
-        // Helper to safely add an edge
+        // Helper to safely add an edge — O(1) with Set instead of O(n) contains(where:)
         func addEdge(source: String, target: String) {
             let edgeID = "\(source)_\(target)"
             let revEdge = "\(target)_\(source)"
-            if !newEdges.contains(where: { $0.id == edgeID || $0.id == revEdge }) {
-                newEdges.append(GraphEdge(id: edgeID, sourceID: source, targetID: target))
-                connectionCounts[source, default: 0] += 1
-                connectionCounts[target, default: 0] += 1
-            }
+            guard !edgeIDSet.contains(edgeID), !edgeIDSet.contains(revEdge) else { return }
+            edgeIDSet.insert(edgeID)
+            newEdges.append(GraphEdge(id: edgeID, sourceID: source, targetID: target))
+            connectionCounts[source, default: 0] += 1
+            connectionCounts[target, default: 0] += 1
         }
         
         // Semantic Link processing
@@ -155,20 +161,29 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             }
         }
         
-        // 2. Semantic Linking (Bi-directional Edges between Notes sharing multiple tags)
-        let noteIDs = Array(noteTags.keys)
-        for i in 0..<noteIDs.count {
-            for j in (i + 1)..<noteIDs.count {
-                let id1 = noteIDs[i]
-                let id2 = noteIDs[j]
-                
-                // Don't semantically link notes from the exact same book (they are already linked via the book node)
-                if let b1 = newNodes[id1]?.bookTitle, let b2 = newNodes[id2]?.bookTitle, b1 != b2 {
-                    let shared = noteTags[id1]!.intersection(noteTags[id2]!)
-                    if shared.count >= 2 { // Semantic threshold: 2 shared tags
-                        addEdge(source: id1, target: id2)
-                    }
+        // 2. Semantic Linking — inverted tag index instead of O(n²) pairwise scan.
+        // Build: tag -> Set of noteIDs that have that tag
+        var tagToNotes: [String: [String]] = [:]
+        for (noteID, tags) in noteTags {
+            for tag in tags { tagToNotes[tag, default: []].append(noteID) }
+        }
+        // Count shared tags between each pair that co-appears under any tag
+        var sharedTagCount: [String: Int] = [:]
+        for notes in tagToNotes.values where notes.count > 1 {
+            for i in 0..<notes.count {
+                for j in (i + 1)..<notes.count {
+                    let pairKey = notes[i] < notes[j] ? "\(notes[i])|\(notes[j])" : "\(notes[j])|\(notes[i])"
+                    sharedTagCount[pairKey, default: 0] += 1
                 }
+            }
+        }
+        for (pairKey, count) in sharedTagCount where count >= 2 {
+            let parts = pairKey.split(separator: "|", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            let id1 = parts[0]; let id2 = parts[1]
+            // Don't semantically link notes from the same book (already linked via book node)
+            if let b1 = newNodes[id1]?.bookTitle, let b2 = newNodes[id2]?.bookTitle, b1 != b2 {
+                addEdge(source: id1, target: id2)
             }
         }
 
@@ -178,6 +193,7 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
 
         self.nodes = Array(newNodes.values)
         self.edges = newEdges
+        rebuildNodeIndex()  // Build O(1) lookup for physics tick
         startSimulation()
     }
 
@@ -220,10 +236,11 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             }
         }
 
-        // 2. Spring Attraction along edges
+        // 2. Spring Attraction along edges — O(1) lookup via nodeIndex
         for edge in edges {
-            guard let i1 = nodes.firstIndex(where: { $0.id == edge.sourceID }),
-                  let i2 = nodes.firstIndex(where: { $0.id == edge.targetID }) else { continue }
+            guard let i1 = nodeIndex[edge.sourceID],
+                  let i2 = nodeIndex[edge.targetID],
+                  i1 < nodes.count, i2 < nodes.count else { continue }
             let n1 = nodes[i1]; let n2 = nodes[i2]
             let dx = n2.position.x - n1.position.x
             let dy = n2.position.y - n1.position.y

@@ -39,18 +39,20 @@ class LibraryViewModel: ObservableObject {
     private var rebuilTask: Task<Void, Never>?
 
     func updateLibraryItemsCache(pdfs: [ConvertedPDF], collections: [PDFCollection], sortOption: ModernLibraryView.SortOption) {
-        // Cancel any in-flight rebuild so rapid SwiftData events (e.g. reading-progress
-        // writes) don't stack up and deliver results out of order.
+        // Cancel any in-flight rebuild so rapid SwiftData events don't stack up.
         rebuilTask?.cancel()
 
         let currentSearchText = debouncedSearchText
-        let sortedPDFs = sortPDFs(pdfs, sortOption: sortOption)
         let folderID = self.currentFolderID
         let filter = self.filterState
+        // pdfs, collections, sortOption are value types — safe to capture by copy.
 
-        rebuilTask = Task.detached(priority: .background) { [weak self] in
+        rebuilTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             guard !Task.isCancelled else { return }
+
+            // Sort off-main so large libraries don't block the render thread.
+            let sortedPDFs = await self.sortPDFs(pdfs, sortOption: sortOption)
 
             var groups: [String: SeriesGroup] = [:]
             var singles: [ConvertedPDF] = []
@@ -307,8 +309,7 @@ class LibraryViewModel: ObservableObject {
         }
     }
     
-    // Additional Logic Handlers...
-    func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
+    nonisolated func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
         switch sortOption {
         case .dateAdded: return pdfs.reversed() // Returns newest imported first, which places it natively at index 0 and top-left.
         case .name: return pdfs.sorted {

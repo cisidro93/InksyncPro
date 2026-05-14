@@ -310,11 +310,12 @@ struct ModernGridSeriesCell: View {
     let isSelected: Bool
     let isBatch: Bool
     @EnvironmentObject var conversionManager: ConversionManager
-    
-    // ✅ NEW: Isolated Image State
+
     @State private var localCover: UIImage? = nil
-    
-    // ✅ PHASE 7: Dynamic User Aesthetic Colors
+    // Cached progress — computed in .task, not in body to avoid per-render disk reads
+    @State private var cachedReadCount: Int = 0
+    @State private var cachedNewCount: Int = 0
+
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
     
@@ -418,23 +419,15 @@ struct ModernGridSeriesCell: View {
                 }
                 .frame(height: 38, alignment: .topLeading)
                 
-                // ✅ QoL: Reading progress badge — "3 / 12 read"
-                let readCount = group.issues.filter {
-                    (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) >= 0.95
-                }.count
-                if readCount > 0 {
-                    Text("\(readCount) / \(group.count) read")
+                // Reading progress badge — reads cached ints, not computed per-render
+                if cachedReadCount > 0 {
+                    Text("\(cachedReadCount) / \(group.count) read")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(readCount == group.count ? Theme.green : Theme.textSecondary)
-                } else {
-                    let newCount = group.issues.filter {
-                        ReaderProgressTracker.shared.progress(for: $0.id) == nil
-                    }.count
-                    if newCount > 0 {
-                        Text("\(newCount) new")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(Theme.blue)
-                    }
+                        .foregroundColor(cachedReadCount == group.count ? Theme.green : Theme.textSecondary)
+                } else if cachedNewCount > 0 {
+                    Text("\(cachedNewCount) new")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(Theme.blue)
                 }
             }
         }
@@ -445,6 +438,17 @@ struct ModernGridSeriesCell: View {
         .hoverEffect(.lift)
         // Throttled loader — gets the cover of the series' issue #1
         .task(id: group.id) {
+            // 1. Load progress counts off the hot path so body doesn't do disk reads
+            let readCount = group.issues.filter {
+                (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) >= 0.95
+            }.count
+            let newCount = group.issues.filter {
+                ReaderProgressTracker.shared.progress(for: $0.id) == nil
+            }.count
+            self.cachedReadCount = readCount
+            self.cachedNewCount = newCount
+
+            // 2. Load thumbnail
             guard let issueID = group.coverIssueID,
                   let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) else { return }
             let key = issueID.uuidString as NSString
