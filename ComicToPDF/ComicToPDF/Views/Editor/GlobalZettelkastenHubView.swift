@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 
-enum ZettelViewMode { case list, map }
+enum ZettelViewMode { case list, map, corkboard }
 enum ZettelFilterMode { case all, annotated, highlightsOnly }
 enum ZettelSortMode: String, CaseIterable {
     case dateModified = "Date Modified"
@@ -104,8 +104,9 @@ struct GlobalZettelkastenHubView: View {
                 VStack(spacing: 0) {
                     // ── View Mode Toggle: frosted capsule pills (matches app design language)
                     HStack(spacing: 0) {
-                        viewModePill(.list,  label: "List",     icon: "list.bullet")
-                        viewModePill(.map,   label: "Mind Map", icon: "point.3.connected.trianglepath.dotted")
+                        viewModePill(.list,      label: "List",      icon: "list.bullet")
+                        viewModePill(.corkboard, label: "Corkboard", icon: "square.grid.3x3")
+                        viewModePill(.map,       label: "Mind Map",  icon: "point.3.connected.trianglepath.dotted")
                     }
                     .padding(.horizontal)
                     .padding(.top, 8)
@@ -192,8 +193,10 @@ struct GlobalZettelkastenHubView: View {
                             }
                             .padding(.vertical)
                         }
-                    } else {
+                    } else if viewMode == .map {
                         ZettelkastenGraphView(annotations: activeAnnotations, pdfs: allPDFs)
+                    } else if viewMode == .corkboard {
+                        ZettelkastenCorkboardView(annotations: activeAnnotations, pdfs: allPDFs)
                     }
                 }
             }

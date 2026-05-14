@@ -42,6 +42,10 @@ struct Annotation: Codable, Identifiable {
 
     // ✅ Phase 4: GoodNotes PencilKit Parity
     var drawingData: Data? = nil
+    
+    // ✅ Phase 5: Scrivener Corkboard Parity
+    var corkboardX: Double? = nil
+    var corkboardY: Double? = nil
 
     enum AnnotationKind: String, Codable {
         case highlight
@@ -96,6 +100,10 @@ struct Annotation: Codable, Identifiable {
     // ✅ Phase 4: GoodNotes PencilKit Parity
     @Attribute(.externalStorage) var drawingData: Data? = nil
     
+    // ✅ Phase 5: Scrivener Corkboard Parity
+    var corkboardX: Double? = nil
+    var corkboardY: Double? = nil
+    
     init(from dto: Annotation) {
         self.id = dto.id
         self.pdfID = dto.pdfID
@@ -118,6 +126,8 @@ struct Annotation: Codable, Identifiable {
         self.easeFactor = dto.easeFactor
         self.nextReviewDate = dto.nextReviewDate
         self.drawingData = dto.drawingData
+        self.corkboardX = dto.corkboardX
+        self.corkboardY = dto.corkboardY
     }
     
     // ✅ Phase 31 Native Constructor for Readwise Importers
@@ -188,6 +198,8 @@ struct Annotation: Codable, Identifiable {
         dto.easeFactor = self.easeFactor
         dto.nextReviewDate = self.nextReviewDate
         dto.drawingData = self.drawingData
+        dto.corkboardX = self.corkboardX
+        dto.corkboardY = self.corkboardY
         return dto
     }
     
@@ -209,6 +221,8 @@ struct Annotation: Codable, Identifiable {
         self.easeFactor = dto.easeFactor
         self.nextReviewDate = dto.nextReviewDate
         self.drawingData = dto.drawingData
+        self.corkboardX = dto.corkboardX
+        self.corkboardY = dto.corkboardY
     }
 }
 
