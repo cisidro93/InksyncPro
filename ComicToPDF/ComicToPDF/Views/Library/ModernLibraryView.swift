@@ -77,23 +77,13 @@ struct ModernLibraryView: View {
     }
 
     var body: some View {
-        shellWithObservers
+        shellWithNotifications
     }
 
-    // MARK: - Observer Shell (onChange / onReceive / debug overlay)
+    // MARK: - Notification Shell (onReceive + debug overlay)
     @ViewBuilder
-    private var shellWithObservers: some View {
-        shellWithAlerts
-            .onAppear {
-                conversionManager.backfillMissingThumbnails()
-                viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
-            }
-            .onChange(of: swiftDataPDFs) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-            .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-            .onChange(of: swiftDataCollections) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-            .onChange(of: viewModel.debouncedSearchText) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-            .onChange(of: viewModel.filterState) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-            .onChange(of: viewModel.currentFolderID) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+    private var shellWithNotifications: some View {
+        shellWithChangeHandlers
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenMergedBook"))) { notification in
                 if let newBook = notification.object as? ConvertedPDF {
                     Task {
@@ -135,6 +125,22 @@ struct ModernLibraryView: View {
                     )
                 }
             }
+    }
+
+    // MARK: - Change Handler Shell (onAppear + onChange)
+    @ViewBuilder
+    private var shellWithChangeHandlers: some View {
+        shellWithAlerts
+            .onAppear {
+                conversionManager.backfillMissingThumbnails()
+                viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
+            }
+            .onChange(of: swiftDataPDFs) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: swiftDataCollections) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: viewModel.debouncedSearchText) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: viewModel.filterState) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: viewModel.currentFolderID) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
     }
 
     // MARK: - Alert Shell (rootShell + alerts + onDrop)

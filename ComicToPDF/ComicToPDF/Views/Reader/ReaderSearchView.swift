@@ -146,9 +146,10 @@ struct ReaderSearchView: View {
         currentResultIndex = 0
         fieldFocused = false
 
+        // Capture locally before Task to avoid Swift 6 actor-crossing warning
+        let searchQuery = query
         Task.detached(priority: .userInitiated) {
-            // PDFDocument.findString is synchronous but fast for most documents.
-            let found = document.findString(query, withOptions: [.caseInsensitive, .diacriticInsensitive])
+            let found = document.findString(searchQuery, withOptions: [.caseInsensitive, .diacriticInsensitive])
             await MainActor.run {
                 self.results = found
                 self.isSearching = false
