@@ -16,11 +16,9 @@ enum InkRadius {
 }
 
 enum InkShadow {
-    /// Subtle lift for list rows
-    static func card() -> some View {
-        Color.clear.shadow(.drop(color: .black.opacity(0.12), radius: 8, y: 3))
-    }
-    /// Stronger float for overlays and banners
+    static let cardRadius: CGFloat = 8
+    static let cardY: CGFloat = 3
+    static let cardOpacity: Double = 0.12
     static let overlayRadius: CGFloat = 16
     static let overlayY: CGFloat = 6
     static let overlayOpacity: Double = 0.20

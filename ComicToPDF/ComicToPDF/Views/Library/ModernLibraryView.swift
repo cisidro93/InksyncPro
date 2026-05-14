@@ -88,7 +88,7 @@ struct ModernLibraryView: View {
                 if let newBook = notification.object as? ConvertedPDF {
                     Task {
                         try? await Task.sleep(nanoseconds: 500_000_000)
-                        viewModel.activeFullScreen = .read(newBook)
+                        await MainActor.run { AppRouter.shared.presentFullScreen(.read(newBook)) }
                     }
                 }
             }
@@ -102,7 +102,7 @@ struct ModernLibraryView: View {
                         ReaderProgressTracker.shared.update(progress)
                         Task {
                             try? await Task.sleep(nanoseconds: 300_000_000)
-                            viewModel.activeFullScreen = .read(targetPDF)
+                            await MainActor.run { AppRouter.shared.presentFullScreen(.read(targetPDF)) }
                         }
                     }
                 }
