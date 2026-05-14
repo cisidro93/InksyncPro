@@ -1,5 +1,4 @@
 import Foundation
-import ZipFoundation   // NOTE: add via SPM if not present — fallback manual zip below
 
 // MARK: - ManuscriptExportService
 // Pure value-type service. No @MainActor dependency.
