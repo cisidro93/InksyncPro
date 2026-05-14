@@ -613,7 +613,7 @@ struct ModernLibraryView: View {
                 
                 Button {
                     let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    viewModel.activeSheet = .seriesAssignment(nil, isBatch: true, selection: items)
+                    AppRouter.shared.presentSheet(.seriesAssignment(nil, isBatch: true, selection: items))
                 } label: { VStack(spacing: 4) { Image(systemName: "rectangle.stack.badge.plus").font(.title3); Text("Group").font(.caption) } }
                 .disabled(multiSelection.isEmpty)
                 
@@ -624,7 +624,7 @@ struct ModernLibraryView: View {
                     for item in items { TransferQueueManager.shared.stageFile(item) }
                     isBatchMode = false
                     multiSelection.removeAll()
-                    viewModel.activeSheet = .wifi
+                    AppRouter.shared.presentSheet(.wifi)
                 } label: { VStack(spacing: 4) { Image(systemName: "wifi").font(.title3); Text("Transfer").font(.caption) } }
                 .disabled(multiSelection.isEmpty)
                 

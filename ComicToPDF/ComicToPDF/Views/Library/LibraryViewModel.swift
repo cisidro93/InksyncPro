@@ -297,9 +297,9 @@ class LibraryViewModel: ObservableObject {
             }
         case .sendToKindle:
             if pdf.url.pathExtension.lowercased() == "epub" {
-                self.activeSheet = .directShare(pdf)
+                AppRouter.shared.presentSheet(.directShare(pdf))
             } else {
-                self.activeSheet = .export(pdf)
+                AppRouter.shared.presentSheet(.export(pdf))
             }
         case .convert:
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()

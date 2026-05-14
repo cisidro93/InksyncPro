@@ -61,7 +61,7 @@ struct DailyReviewView: View {
                 dismiss()
             }
             .buttonStyle(.borderedProminent)
-            .tint(Theme.accent)
+            .tint(Color.accentColor)
             .padding(.top, 20)
         }
         .padding()
@@ -91,7 +91,7 @@ struct DailyReviewView: View {
                 if let bookTitle = annotation.readwiseBookTitle ?? annotation.chapterTitle {
                     Text(bookTitle)
                         .font(.caption.bold())
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(Color.accentColor)
                 }
                 
                 Text(annotation.selectedText ?? "No text")
