@@ -6,7 +6,7 @@ import SwiftData
 struct ModernLibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
-    @EnvironmentObject var router: AppRouter
+
     @StateObject private var viewModel = LibraryViewModel()
     @ObservedObject private var jobQueue = ConversionJobQueue.shared
     
