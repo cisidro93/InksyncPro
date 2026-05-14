@@ -6,6 +6,7 @@ import SwiftUI
 private let thumbnailSemaphore = AsyncSemaphore(limit: 4)
 
 /// Lightweight cooperative semaphore for Swift concurrency.
+/// Parks waiting tasks instead of spinning — safe to use from any actor.
 actor AsyncSemaphore {
     private let limit: Int
     private var count = 0
@@ -438,13 +439,15 @@ struct ModernGridSeriesCell: View {
         .hoverEffect(.lift)
         // Throttled loader — gets the cover of the series' issue #1
         .task(id: group.id) {
-            // 1. Load progress counts off the hot path so body doesn't do disk reads
-            let readCount = group.issues.filter {
-                (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) >= 0.95
-            }.count
-            let newCount = group.issues.filter {
-                ReaderProgressTracker.shared.progress(for: $0.id) == nil
-            }.count
+            // 1. Build progress map once — 1 read per issue instead of 2
+            let progressMap = Dictionary(
+                uniqueKeysWithValues: group.issues.map {
+                    ($0.id, ReaderProgressTracker.shared.progress(for: $0.id))
+                }
+            )
+            let readCount = progressMap.values.filter { ($0?.completionFraction ?? 0) >= 0.95 }.count
+            let newCount  = progressMap.values.filter { $0 == nil }.count
+
             self.cachedReadCount = readCount
             self.cachedNewCount = newCount
 

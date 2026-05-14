@@ -417,12 +417,16 @@ struct EBookReaderView: View {
         let parsed = await EBookParser.shared.parse(epub: resolvedURL)
         
         // Unzip for content serving (WKWebView needs local file access)
-        let tempID = UUID().uuidString
-        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("EBookReader_\(tempID)")
-        
+        // Deterministic cache key: filename + mtime → same book reopens instantly
+        let mtime = (try? resolvedURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+        let cacheKey = abs("\(resolvedURL.lastPathComponent)_\(Int(mtime.timeIntervalSince1970))".hashValue)
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("EBook_\(cacheKey)")
+
         do {
-            try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
-            try FileManager.default.unzipItem(at: resolvedURL, to: dest)
+            if !FileManager.default.fileExists(atPath: dest.path) {
+                try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+                try FileManager.default.unzipItem(at: resolvedURL, to: dest)
+            }
         } catch {
             accessedURL?.stopAccessingSecurityScopedResource()
             await MainActor.run {
@@ -462,14 +466,19 @@ struct EBookReaderView: View {
     }
     
     private func cleanup() {
-        if let dir = unzipDir {
+        // Retain the unzip cache for fast reopen — only evict if older than 24 hours.
+        guard let dir = unzipDir else { return }
+        let cutoff = Date().addingTimeInterval(-86400)
+        let mtime = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+        if mtime < cutoff {
             try? FileManager.default.removeItem(at: dir)
         }
     }
     
     private func trackEBookProgress() {
         // Find the PDF in the ConversionManager
-        guard let p = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
+        // Fix #1: prefer the already-resolved pdf reference before falling back to filename scan
+        guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
         var progress = ReaderProgressTracker.shared.progress(for: p.id) ?? ReadingProgress(pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
         progress.lastOpenedAt = Date()
         progress.currentPageIndex = currentIndex
@@ -513,7 +522,7 @@ struct EBookWebReader: UIViewRepresentable {
     
     func updateUIView(_ wv: WKWebView, context: Context) {
         guard let dir = unzipDir else { return }
-        
+
         var contentURL = dir.appendingPathComponent(spineItem.href)
         if !FileManager.default.fileExists(atPath: contentURL.path) {
             if let decoded = spineItem.href.removingPercentEncoding {
@@ -521,43 +530,67 @@ struct EBookWebReader: UIViewRepresentable {
             }
         }
         guard FileManager.default.fileExists(atPath: contentURL.path) else { return }
-        
-        // Only reload if the chapter changed
-                // Re-render trigger on ANY pref change
+
         let currentStateHash = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)"
-        
-        if context.coordinator.lastLoadedHref == spineItem.href && context.coordinator.lastTheme == currentStateHash { return }
+        if context.coordinator.lastLoadedHref == spineItem.href &&
+           context.coordinator.lastTheme == currentStateHash { return }
         context.coordinator.lastLoadedHref = spineItem.href
         context.coordinator.lastTheme = currentStateHash
-        
-        // Read HTML
-        var rawHTML: String?
-        var usedEncoding: String.Encoding = .utf8
-        if let html = try? String(contentsOf: contentURL, usedEncoding: &usedEncoding) {
-            rawHTML = html
-        } else if let data = try? Data(contentsOf: contentURL) {
-            if let latin = String(data: data, encoding: .isoLatin1) { rawHTML = latin }
-            else if let ascii = String(data: data, encoding: .ascii) { rawHTML = ascii }
-        }
-        
-        if var html = rawHTML {
-            // Strip any legacy charset declarations to prevent WKWebView from mangling our UTF-8 file
-            let pattern = "<meta[^>]*charset[^>]*>"
-            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                html = regex.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "")
+
+        // Capture value-type snapshots so the detached task never touches ObservableObject
+        let capturedURL  = contentURL
+        let capturedDir  = dir
+        let capturedPage = initialPage
+
+        // CSS is pure string computation — compute on main before the task
+        let cssToInject  = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: capturedPage)
+
+        // Cancel any in-flight load from a previous chapter swipe
+        context.coordinator.loadTask?.cancel()
+        context.coordinator.loadTask = Task {
+            guard !Task.isCancelled else { return }
+
+            // Heavy I/O + string ops on a background thread
+            let styledHTML: String? = await Task.detached(priority: .userInitiated) {
+                var rawHTML: String?
+                var enc: String.Encoding = .utf8
+                if let html = try? String(contentsOf: capturedURL, usedEncoding: &enc) {
+                    rawHTML = html
+                } else if let data = try? Data(contentsOf: capturedURL) {
+                    rawHTML = String(data: data, encoding: .isoLatin1)
+                           ?? String(data: data, encoding: .ascii)
+                }
+                guard var html = rawHTML else { return nil }
+
+                // Strip legacy charset tags
+                let pattern = "<meta[^>]*charset[^>]*>"
+                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                    html = regex.stringByReplacingMatches(
+                        in: html, range: NSRange(html.startIndex..., in: html), withTemplate: ""
+                    )
+                }
+
+                // Inject pre-computed CSS
+                if let range = html.range(of: "</head>", options: .caseInsensitive) {
+                    return html.replacingCharacters(in: range, with: cssToInject + "</head>")
+                }
+                return cssToInject + html
+            }.value
+
+            guard !Task.isCancelled, let html = styledHTML else { return }
+
+            // Back on main: write injected file + load
+            await MainActor.run {
+                let injectedURL = capturedURL.deletingPathExtension().appendingPathExtension("injected.html")
+                try? html.write(to: injectedURL, atomically: true, encoding: .utf8)
+                wv.loadFileURL(injectedURL, allowingReadAccessTo: capturedDir)
             }
-            
-                        let styledHTML = injectReaderCSS(into: html, prefs: prefs, colorScheme: colorScheme, initialPage: initialPage)
-            
-            // Write to a temporary file in the same directory to grant WKWebView `allowingReadAccessTo` privileges for images and CSS.
-            let injectedURL = contentURL.deletingPathExtension().appendingPathExtension("injected.html")
-            try? styledHTML.write(to: injectedURL, atomically: true, encoding: .utf8)
-            wv.loadFileURL(injectedURL, allowingReadAccessTo: dir)
-        } else {
-            wv.loadFileURL(contentURL, allowingReadAccessTo: dir)
         }
     }
-        private func injectReaderCSS(into html: String, prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int) -> String {
+
+    /// Builds the full CSS + JS block as a pure string on the main actor.
+    /// No disk I/O — safe to call synchronously before spawning a background task.
+    private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         let pagedCSS = isPaged ? """
             column-width: calc(100vw - \(prefs.textMargin * 2)px) !important;
@@ -681,23 +714,23 @@ struct EBookWebReader: UIViewRepresentable {
         });
         </script>
         """
-        
-        if let range = html.range(of: "</head>", options: .caseInsensitive) {
-            return html.replacingCharacters(in: range, with: css + "</head>")
-        }
-        return css + html
+
+        return css
     }
+
     
     func makeCoordinator() -> Coordinator { Coordinator(self) }
-    
+
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var parent: EBookWebReader
         var lastLoadedHref: String = ""
         var lastTheme: String = ""
         var lastFontSize: Double = 0
-        
+        /// Cancellable reference — cancelled on every new chapter load to prevent stale renders
+        var loadTask: Task<Void, Never>?
+
         init(_ parent: EBookWebReader) { self.parent = parent }
-        
+
         func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
             if message.name == "nav", let body = message.body as? String {
                 DispatchQueue.main.async {
