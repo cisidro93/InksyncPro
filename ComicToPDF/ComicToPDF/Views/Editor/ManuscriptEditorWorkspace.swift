@@ -192,7 +192,7 @@ struct ManuscriptEditorWorkspace: View {
                 .foregroundStyle(Color.inkTextSecondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-                .background(Color.inkSurfaceElevated, in: Capsule())
+                .background(Color.inkSurfaceRaised, in: Capsule())
 
             // Inspector toggle
             Button {
@@ -476,7 +476,7 @@ struct InspectorPane: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(Color.inkSurfaceElevated)
+            .background(Color.inkSurfaceRaised)
 
             Divider()
 

@@ -178,7 +178,7 @@ struct DailyReviewView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(16)
-                        .background(Color.inkSurfaceElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .background(Color.inkSurfaceRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .foregroundStyle(Color.inkTextPrimary)
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
