@@ -459,7 +459,8 @@ struct GlobalZettelkastenHubView: View {
 
 struct GlobalHighlightRow: View {
     let annotation: SDAnnotation
-
+    
+    @Environment(\.modelContext) private var modelContext
     @State private var showingEdit = false
     @Query private var manuscriptProjects: [SDManuscriptProject]
 
@@ -573,7 +574,7 @@ struct GlobalHighlightRow: View {
                                 Button(doc.title) {
                                     if !doc.attachedNoteIDs.contains(annotation.id.uuidString) {
                                         doc.attachedNoteIDs.append(annotation.id.uuidString)
-                                        try? doc.modelContext?.save()
+                                        try? modelContext.save()
                                         HapticEngine.success()
                                     }
                                 }

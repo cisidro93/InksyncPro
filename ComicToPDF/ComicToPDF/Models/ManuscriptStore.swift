@@ -23,8 +23,9 @@ import SwiftData
     
     var currentWordCount: Int {
         documents.reduce(0) { total, doc in
-            let text = doc.contentMarkdown
-            let words = text.split { $0.isWhitespace || $0.isPunctuation }
+            let words = doc.contentMarkdown
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }
             return total + words.count
         }
     }
@@ -59,7 +60,9 @@ import SwiftData
     }
     
     var wordCount: Int {
-        let words = contentMarkdown.split { $0.isWhitespace || $0.isPunctuation }
-        return words.count
+        contentMarkdown
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .count
     }
 }

@@ -112,7 +112,7 @@ struct ZettelkastenCorkboardView: View {
 }
 
 struct IndexCardView: View {
-    @ObservedObject var annotation: SDAnnotation
+    @Bindable var annotation: SDAnnotation
     let pdfs: [SDConvertedPDF]
     
     private var bookTitle: String {

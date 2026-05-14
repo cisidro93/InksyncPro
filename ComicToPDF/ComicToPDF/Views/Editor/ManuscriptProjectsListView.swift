@@ -57,7 +57,7 @@ struct ManuscriptProjectsListView: View {
     
     private var emptyState: some View {
         VStack(spacing: 20) {
-            Image(systemName: "quill")
+            Image(systemName: "note.text")
                 .font(.system(size: 60))
                 .foregroundColor(.orange)
             

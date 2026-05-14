@@ -27,17 +27,18 @@ struct ManuscriptEditorWorkspace: View {
             List(selection: $selectedDocumentID) {
                 Section("Chapters") {
                     ForEach(sortedDocuments) { doc in
-                        NavigationLink(value: doc.id) {
-                            HStack {
-                                Image(systemName: "doc.text")
-                                    .foregroundColor(.orange)
-                                Text(doc.title)
-                                Spacer()
-                                Text("\(doc.wordCount)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
+                        HStack {
+                            Image(systemName: "doc.text")
+                                .foregroundColor(.orange)
+                            Text(doc.title)
+                            Spacer()
+                            Text("\(doc.wordCount) wds")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                         }
+                        .tag(doc.id)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedDocumentID = doc.id }
                     }
                     .onMove(perform: moveDocuments)
                     .onDelete(perform: deleteDocuments)

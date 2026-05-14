@@ -45,7 +45,7 @@ struct InkTabBar: View {
         InkTabItem(tag: 4, label: "Work Area",  icon: "scissors",              activeIcon: "scissors.badge.ellipsis"),
         InkTabItem(tag: 5, label: "Highlights", icon: "text.badge.star",       activeIcon: "text.badge.star"),
         InkTabItem(tag: 6, label: "Settings",   icon: "gear",                  activeIcon: "gearshape.fill"),
-        InkTabItem(tag: 7, label: "Studio",     icon: "quill",                 activeIcon: "quill.fill"),
+        InkTabItem(tag: 7, label: "Studio",     icon: "note.text",             activeIcon: "note.text.badge.plus"),
     ]
 
     // Always show all 7 tabs on every device and orientation

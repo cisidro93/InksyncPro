@@ -378,7 +378,7 @@ struct ContentView: View {
                         Label("Highlights", systemImage: "text.badge.star")
                     }
                     NavigationLink(value: 7) {
-                        Label("Studio", systemImage: "quill")
+                        Label("Studio", systemImage: "note.text")
                     }
                 }
                 .navigationTitle("Inksync")
