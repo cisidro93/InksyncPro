@@ -708,11 +708,11 @@ struct ModernLibraryView: View {
                         showingBatchMergeReorder = true
                     } label: { Label("Convert & Merge", systemImage: "doc.on.doc.fill") }
                     
-                    Button { viewModel.activeSheet = .merge } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
+                    Button { AppRouter.shared.presentSheet(.merge) } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
                     Divider()
                     Button {
                         let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        viewModel.activeSheet = .batchMetadata(items)
+                        AppRouter.shared.presentSheet(.batchMetadata(items))
                     } label: { Label("Intelligent Metadata", systemImage: "sparkles") }
                 } label: {
                     VStack(spacing: 4) { Image(systemName: "ellipsis.circle.fill").font(.title3); Text("Actions").font(.caption) }
