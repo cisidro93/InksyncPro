@@ -16,51 +16,61 @@ struct EditorDashboardView: View {
     
     var body: some View {
         ZStack {
-            Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all)
-            
+            Color.inkBackground.ignoresSafeArea()
+
             if filteredPDFs.isEmpty {
                 VStack(spacing: 20) {
                     Image(systemName: "pencil.and.outline")
                         .font(.system(size: 60))
-                        .foregroundColor(.gray)
+                        .foregroundStyle(Color.inkTextSecondary)
                     Text("No Comics to Edit")
-                        .font(.title2)
-                        .bold()
+                        .font(.title2.bold())
+                        .foregroundStyle(Color.inkTextPrimary)
                     Text("Import comics in the Library tab to start editing.")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(Color.inkTextSecondary)
                 }
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 16) {
-                        // ✅ Phase 31 Zettelkasten Hub Anchor
+                    LazyVStack(spacing: InkSpacing.rowGap) {
+                        // Zettelkasten Hub anchor card
                         NavigationLink(destination: GlobalZettelkastenHubView()) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 14) {
+                                // Icon badge
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [Color.inkAccentKnowledge, Color.inkBlue],
+                                                startPoint: .topLeading, endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .frame(width: 48, height: 48)
+                                    Image(systemName: "sparkles.rectangle.stack.fill")
+                                        .font(.system(size: 20, weight: .medium))
+                                        .foregroundStyle(.white)
+                                }
+                                VStack(alignment: .leading, spacing: 3) {
                                     Text("Zettelkasten Hub")
-                                        .font(.headline)
-                                        .foregroundColor(.white)
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(Color.inkTextPrimary)
                                     Text("Global Reading Highlights & Notes")
                                         .font(.caption)
-                                        .foregroundColor(.white.opacity(0.8))
+                                        .foregroundStyle(Color.inkTextSecondary)
                                 }
                                 Spacer()
-                                Image(systemName: "sparkles.rectangle.stack.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.white)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(Color.inkTextTertiary)
                             }
-                            .padding()
-                            .background(
-                                LinearGradient(colors: [Color.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                            .cornerRadius(12)
-                            .shadow(color: Color.blue.opacity(0.3), radius: 5, x: 0, y: 3)
+                            .padding(InkSpacing.cardPadding)
+                            .inkCard()
                         }
-                        
+                        .buttonStyle(.plain)
+
                         // Book Instances
                         ForEach(filteredPDFs) { pdf in
                             EditorRowView(pdf: pdf) {
                                 if pdf.contentType == .book {
-                                    // Books skip image extraction and go straight to Metadata editing
                                     selectedBookForMetadata = pdf
                                 } else {
                                     selectedPDF = pdf
@@ -68,7 +78,7 @@ struct EditorDashboardView: View {
                             }
                         }
                     }
-                    .padding()
+                    .padding(InkSpacing.pagePadding)
                 }
             }
         }
@@ -95,67 +105,60 @@ struct EditorRowView: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                // Cover
-               ComicCoverLoader(pdf: pdf)
-                    .frame(width: 60, height: 90)
-                    .cornerRadius(8)
-                    .shadow(radius: 2)
-                
-                VStack(alignment: .leading, spacing: 4) {
+                ComicCoverLoader(pdf: pdf)
+                    .frame(width: 58, height: 88)
+                    .clipShape(RoundedRectangle(cornerRadius: InkRadius.thumbnail, style: .continuous))
+                    .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
+
+                VStack(alignment: .leading, spacing: 5) {
                     Text(pdf.name)
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.inkTextPrimary)
                         .lineLimit(2)
-                    
+
                     HStack(spacing: 6) {
-                        // Content Type Badge
                         HStack(spacing: 4) {
                             Image(systemName: pdf.contentType.icon)
                                 .font(.caption2)
                             Text(pdf.contentType.rawValue)
-                                .font(.caption2)
-                                .bold()
+                                .font(.caption2.bold())
                         }
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(pdf.contentType.badgeColor)
-                        .cornerRadius(4)
-                        
+                        .background(pdf.contentType.badgeColor, in: RoundedRectangle(cornerRadius: InkRadius.badge, style: .continuous))
+
                         Text("\(pdf.pageCount) Pages")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(Color.inkTextSecondary)
                     }
-                    
+
                     if editedPageCount > 0 {
                         HStack(spacing: 4) {
                             Image(systemName: "wand.and.stars")
                                 .font(.caption2)
                             Text("\(editedPageCount) pages with Guided View")
-                                .font(.caption2)
-                                .bold()
+                                .font(.caption2.bold())
                         }
-                        .foregroundColor(.purple)
+                        .foregroundStyle(Color.inkAccentKnowledge)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.purple.opacity(0.1))
-                        .cornerRadius(4)
+                        .background(Color.inkAccentKnowledge.opacity(0.12), in: RoundedRectangle(cornerRadius: InkRadius.badge, style: .continuous))
                     } else {
                         Text("No Guided View data")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(Color.inkTextTertiary)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Image(systemName: "chevron.right")
-                    .foregroundColor(.gray)
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.inkTextTertiary)
             }
-            .padding()
-            .background(Color(UIColor.secondarySystemGroupedBackground))
-            .cornerRadius(12)
-            .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+            .padding(InkSpacing.cardPadding)
+            .inkCard()
         }
     }
 }

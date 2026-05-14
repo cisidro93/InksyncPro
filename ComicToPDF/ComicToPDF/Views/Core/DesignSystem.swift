@@ -68,6 +68,12 @@ extension Color {
     static let inkGreen  = Color(hex: "#2dd4a0")
     static let inkRed    = Color(hex: "#ff4d6d")
 
+    // MARK: - Semantic Role Aliases
+    /// Navigation, progress bars, active tab indicator — the "engine running" colour
+    static let inkAccentNavigation  = inkAmber
+    /// Research, annotation, writing, Zettelkasten — the "mind" colour
+    static let inkAccentKnowledge   = inkViolet
+
     // MARK: - Hex Initializers
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)

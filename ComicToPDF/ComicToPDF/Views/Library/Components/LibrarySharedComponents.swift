@@ -5,18 +5,20 @@ enum LibraryRowAction {
 }
 
 // MARK: - Theme Colors
+// Thin compatibility shim — all values are routed to the canonical ink* design tokens
+// defined in DesignSystem.swift. Do not add new raw values here; add to DesignSystem.
 struct Theme {
-    static let bg = Color(UIColor.systemBackground)
-    static let surface = Color(UIColor.secondarySystemGroupedBackground)
-    static let surfaceElevated = Color(UIColor.tertiarySystemGroupedBackground)
-    static let orange = Color.orange
-    static let blue = Color.blue
-    static let purple = Color.purple
-    static let green = Color.green
-    static let red = Color.red
-    static let text = Color.primary
-    static let textSecondary = Color.secondary
-    static let textTertiary = Color(UIColor.tertiaryLabel)
+    static let bg             = Color.inkBackground
+    static let surface        = Color.inkSurface
+    static let surfaceElevated = Color.inkSurfaceRaised
+    static let orange         = Color.inkAmber
+    static let blue           = Color.inkBlue
+    static let purple         = Color.inkViolet
+    static let green          = Color.inkGreen
+    static let red            = Color.inkRed
+    static let text           = Color.inkTextPrimary
+    static let textSecondary  = Color.inkTextSecondary
+    static let textTertiary   = Color.inkTextTertiary
 }
 
 // MARK: - Action Pill Component
