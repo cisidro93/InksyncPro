@@ -77,174 +77,170 @@ struct ModernLibraryView: View {
     }
 
     var body: some View {
-        Group {
-            ZStack(alignment: .top) {
-                // Background Depth
-                Theme.bg.ignoresSafeArea()
-                
-                
-                libraryContent
-                .safeAreaInset(edge: .bottom) {
-                    if isBatchMode {
-                        batchBottomToolbar.transition(.move(edge: .bottom))
-                    }
-                }
-                .overlay(alignment: .top) {
-                    if isStorageTransferring {
-                        VStack(spacing: 10) {
-                            HStack(spacing: 10) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(Color(hex: "#7B5EA7"))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Storage Transfer")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(Theme.text)
-                                    Text(transferStatus)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Theme.textSecondary)
-                                }
-                                Spacer()
-                                Text("\(Int(transferProgress * 100))%")
-                                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                                    .foregroundStyle(Color(hex: "#7B5EA7"))
-                            }
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Theme.surface).frame(height: 3)
-                                    Capsule()
-                                        .fill(Color(hex: "#7B5EA7"))
-                                        .frame(width: geo.size.width * transferProgress, height: 3)
-                                        .animation(.easeInOut(duration: 0.3), value: transferProgress)
-                                }
-                            }
-                            .frame(height: 3)
+        rootShell
+            .alert("Rename Series", isPresented: Binding(
+                get: { listRenameGroup != nil },
+                set: { if !$0 { listRenameGroup = nil } }
+            )) {
+                TextField("Series Name", text: $listRenamePendingName)
+                    .autocorrectionDisabled()
+                Button("Rename") {
+                    guard let group = listRenameGroup else { return }
+                    let newName = listRenamePendingName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !newName.isEmpty, newName != group.title else { listRenameGroup = nil; return }
+                    for pdf in group.issues {
+                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                            conversionManager.convertedPDFs[idx].metadata.series = newName
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
-                        .padding(.top, 60)
-                        .padding(.horizontal, 40)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                    conversionManager.saveLibrary()
+                    listRenameGroup = nil
+                }
+                Button("Cancel", role: .cancel) { listRenameGroup = nil }
+            } message: {
+                Text("This will rename all \(listRenameGroup?.count ?? 0) issues in this series.")
+            }
+            .alert("Rename File", isPresented: Binding(
+                get: { viewModel.pdfToRename != nil },
+                set: { if !$0 { viewModel.pdfToRename = nil } }
+            )) {
+                TextField("New Name", text: $viewModel.renameText)
+                Button("Cancel", role: .cancel) { }
+                Button("Rename") {
+                    if let pdf = viewModel.pdfToRename {
+                        conversionManager.renamePDF(pdf, to: viewModel.renameText)
                     }
                 }
-                // Removed redundant background to let ZStack ambient glow show through
-                // ✅ MVVM Unified Navigation Router
-                .fullScreenCover(item: $router.activeFullScreen) { dest in
-                    switch dest {
-                    case .read(let pdf):
-                        if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) }
-                    case .advancedWorkspace(let pdf):
-                        AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
-                    }
-                }
-                .sheet(item: $router.activeSheet) { item in
-                    destinationSheet(for: item)
-                }
-            } // End Inner Group
-        } // End Outer Group
-        
-        .alert("Rename Series", isPresented: Binding(
-            get: { listRenameGroup != nil },
-            set: { if !$0 { listRenameGroup = nil } }
-        )) {
-            TextField("Series Name", text: $listRenamePendingName)
-                .autocorrectionDisabled()
-            Button("Rename") {
-                guard let group = listRenameGroup else { return }
-                let newName = listRenamePendingName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !newName.isEmpty, newName != group.title else { listRenameGroup = nil; return }
-                for pdf in group.issues {
-                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        conversionManager.convertedPDFs[idx].metadata.series = newName
-                    }
-                }
-                conversionManager.saveLibrary()
-                listRenameGroup = nil
             }
-            Button("Cancel", role: .cancel) { listRenameGroup = nil }
-        } message: {
-            Text("This will rename all \(listRenameGroup?.count ?? 0) issues in this series.")
-        }
-        .alert("Rename File", isPresented: Binding(
-            get: { viewModel.pdfToRename != nil },
-            set: { if !$0 { viewModel.pdfToRename = nil } }
-        )) {
-            TextField("New Name", text: $viewModel.renameText)
-            Button("Cancel", role: .cancel) { }
-            Button("Rename") {
-                if let pdf = viewModel.pdfToRename {
-                    conversionManager.renamePDF(pdf, to: viewModel.renameText)
-                }
+            .alert(item: $conversionManager.appAlert) { alert in
+                Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
             }
-        }
-        .alert(item: $conversionManager.appAlert) { alert in
-            Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
-        }
-        .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
-            loadFiles(from: providers)
-            return true
-        }
-
-        .onAppear {
-            conversionManager.backfillMissingThumbnails()
-            viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
-        }
-        .onChange(of: swiftDataPDFs) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-        .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-        .onChange(of: swiftDataCollections) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-        .onChange(of: viewModel.debouncedSearchText) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-        .onChange(of: viewModel.filterState) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-        .onChange(of: viewModel.currentFolderID) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenMergedBook"))) { notification in
-            if let newBook = notification.object as? ConvertedPDF {
-                // Brief yield lets the current sheet dismiss before the fullscreen cover appears.
-                Task {
-                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 s
-                    viewModel.activeFullScreen = .read(newBook)
-                }
+            .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
+                loadFiles(from: providers)
+                return true
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HandoffRequested"))) { notification in
-            // ✅ Phase 5: Apple Handoff (Reader State Sync)
-            if let userInfo = notification.userInfo,
-               let pdfID = userInfo["pdfID"] as? UUID,
-               let pageIndex = userInfo["pageIndex"] as? Int {
-                if let targetPDF = nativeVisiblePDFs.first(where: { $0.id == pdfID }) {
-                    var progress = ReaderProgressTracker.shared.progress(for: targetPDF.id) ?? ReadingProgress(pdfID: targetPDF.id, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
-                    progress.currentPageIndex = pageIndex
-                    ReaderProgressTracker.shared.update(progress)
-
+            .onAppear {
+                conversionManager.backfillMissingThumbnails()
+                viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
+            }
+            .onChange(of: swiftDataPDFs) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: swiftDataCollections) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: viewModel.debouncedSearchText) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: viewModel.filterState) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: viewModel.currentFolderID) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenMergedBook"))) { notification in
+                if let newBook = notification.object as? ConvertedPDF {
                     Task {
-                        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 s
-                        viewModel.activeFullScreen = .read(targetPDF)
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        viewModel.activeFullScreen = .read(newBook)
                     }
                 }
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InkTab_DoubleTap_0"))) { _ in
-            // Library tab double-tapped: scroll back to top
-            HapticEngine.selection()
-            NotificationCenter.default.post(name: Notification.Name("Library_ScrollToTop"), object: nil)
-        }
-        // List-mode series rename — LibraryListView posts this when the user
-        // taps Rename in its context menu so ModernLibraryView can present
-        // the shared rename alert without LibraryListView needing local @State.
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RequestSeriesRename"))) { notification in
-            guard let group = notification.object as? SeriesGroup else { return }
-            listRenameGroup = group
-            listRenamePendingName = group.title
-        }
-        // ✅ DEV OVERLAY: Library debug HUD — bottom-trailing floating pill
-        .overlay(alignment: .bottomTrailing) {
-            if settingsManager.conversionSettings.showEditorDebug {
-                LibraryDebugHUD(
-                    allItems: viewModel.cachedLibraryItems,
-                    conversionManager: conversionManager,
-                    viewModel: viewModel
-                )
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HandoffRequested"))) { notification in
+                if let userInfo = notification.userInfo,
+                   let pdfID = userInfo["pdfID"] as? UUID,
+                   let pageIndex = userInfo["pageIndex"] as? Int {
+                    if let targetPDF = nativeVisiblePDFs.first(where: { $0.id == pdfID }) {
+                        var progress = ReaderProgressTracker.shared.progress(for: targetPDF.id) ?? ReadingProgress(pdfID: targetPDF.id, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
+                        progress.currentPageIndex = pageIndex
+                        ReaderProgressTracker.shared.update(progress)
+                        Task {
+                            try? await Task.sleep(nanoseconds: 300_000_000)
+                            viewModel.activeFullScreen = .read(targetPDF)
+                        }
+                    }
+                }
             }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InkTab_DoubleTap_0"))) { _ in
+                HapticEngine.selection()
+                NotificationCenter.default.post(name: Notification.Name("Library_ScrollToTop"), object: nil)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RequestSeriesRename"))) { notification in
+                guard let group = notification.object as? SeriesGroup else { return }
+                listRenameGroup = group
+                listRenamePendingName = group.title
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if settingsManager.conversionSettings.showEditorDebug {
+                    LibraryDebugHUD(
+                        allItems: viewModel.cachedLibraryItems,
+                        conversionManager: conversionManager,
+                        viewModel: viewModel
+                    )
+                }
+            }
+    }
+
+    // MARK: - Root Shell (split out to avoid type-checker timeout)
+    @ViewBuilder
+    private var rootShell: some View {
+        ZStack(alignment: .top) {
+            Theme.bg.ignoresSafeArea()
+
+            libraryContent
+            .safeAreaInset(edge: .bottom) {
+                if isBatchMode {
+                    batchBottomToolbar.transition(.move(edge: .bottom))
+                }
+            }
+            .overlay(alignment: .top) {
+                storageTransferBanner
+            }
+            .fullScreenCover(item: $router.activeFullScreen) { dest in
+                switch dest {
+                case .read(let pdf):
+                    if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) }
+                case .advancedWorkspace(let pdf):
+                    AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
+                }
+            }
+            .sheet(item: $router.activeSheet) { item in
+                destinationSheet(for: item)
+            }
+        }
+    }
+
+    // MARK: - Storage Transfer Banner (extracted to reduce body complexity)
+    @ViewBuilder
+    private var storageTransferBanner: some View {
+        if isStorageTransferring {
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Color(hex: "#7B5EA7"))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Storage Transfer")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                        Text(transferStatus)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer()
+                    Text("\(Int(transferProgress * 100))%")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(hex: "#7B5EA7"))
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.surface).frame(height: 3)
+                        Capsule()
+                            .fill(Color(hex: "#7B5EA7"))
+                            .frame(width: geo.size.width * transferProgress, height: 3)
+                            .animation(.easeInOut(duration: 0.3), value: transferProgress)
+                    }
+                }
+                .frame(height: 3)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+            .padding(.top, 60)
+            .padding(.horizontal, 40)
+            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
     
