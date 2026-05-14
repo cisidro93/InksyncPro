@@ -461,6 +461,7 @@ struct GlobalHighlightRow: View {
     let annotation: SDAnnotation
 
     @State private var showingEdit = false
+    @Query private var manuscriptProjects: [SDManuscriptProject]
 
     // User-applied tags (excludes Readwise source tags already shown via readwiseTags)
     private var userTags: [String] {
@@ -561,6 +562,27 @@ struct GlobalHighlightRow: View {
             )
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Menu("Send to Manuscript...") {
+                if manuscriptProjects.isEmpty {
+                    Text("No Writing Projects Found")
+                } else {
+                    ForEach(manuscriptProjects) { project in
+                        Menu(project.title) {
+                            ForEach(project.documents) { doc in
+                                Button(doc.title) {
+                                    if !doc.attachedNoteIDs.contains(annotation.id.uuidString) {
+                                        doc.attachedNoteIDs.append(annotation.id.uuidString)
+                                        try? doc.modelContext?.save()
+                                        HapticEngine.success()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $showingEdit) {
             AnnotationEditSheet(annotation: annotation)
                 .presentationDetents([.medium, .large])

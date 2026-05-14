@@ -318,6 +318,10 @@ struct ContentView: View {
                 // Tab 6: Settings
                 NavigationStack { SettingsView() }
                     .tabVisible(selectedTab == 6)
+                    
+                // Tab 7: Studio
+                NavigationStack { ManuscriptProjectsListView() }
+                    .tabVisible(selectedTab == 7)
             }
             // Reserve space at the bottom so content scrolls above the pill.
             // Use a smaller inset in landscape where screen height is precious.
@@ -373,6 +377,9 @@ struct ContentView: View {
                     NavigationLink(value: 5) {
                         Label("Highlights", systemImage: "text.badge.star")
                     }
+                    NavigationLink(value: 7) {
+                        Label("Studio", systemImage: "quill")
+                    }
                 }
                 .navigationTitle("Inksync")
                 
@@ -426,6 +433,10 @@ struct ContentView: View {
                 } else if selectedTab == 5 {
                     NavigationStack {
                         GlobalZettelkastenHubView()
+                    }
+                } else if selectedTab == 7 {
+                    NavigationStack {
+                        ManuscriptProjectsListView()
                     }
                 }
             }

@@ -21,7 +21,9 @@ struct InksyncProApp: App {
             SDRegisteredDevice.self,
             SDAnnotation.self,
             SDPageModel.self,
-            SDSeriesMemory.self
+            SDSeriesMemory.self,
+            SDManuscriptProject.self,
+            SDManuscriptDocument.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none)
         
