@@ -439,14 +439,15 @@ struct ModernGridSeriesCell: View {
         .hoverEffect(.lift)
         // Throttled loader — gets the cover of the series' issue #1
         .task(id: group.id) {
-            // 1. Build progress map once — 1 read per issue instead of 2
+            // 1. Build progress map once — 1 read per issue instead of 2.
+            //    uniquingKeysWith: keeps first value, never crashes on duplicate IDs.
             let progressMap = Dictionary(
-                uniqueKeysWithValues: group.issues.map {
-                    ($0.id, ReaderProgressTracker.shared.progress(for: $0.id))
-                }
+                group.issues.map { ($0.id, ReaderProgressTracker.shared.progress(for: $0.id)) },
+                uniquingKeysWith: { first, _ in first }
             )
             let readCount = progressMap.values.filter { ($0?.completionFraction ?? 0) >= 0.95 }.count
             let newCount  = progressMap.values.filter { $0 == nil }.count
+
 
             self.cachedReadCount = readCount
             self.cachedNewCount = newCount
