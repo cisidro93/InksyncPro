@@ -31,6 +31,12 @@ struct GlobalZettelkastenHubView: View {
     
     @State private var exportDocument: ZettelArchiveDocument?
     @State private var showingExporterDialog = false
+    @State private var showingDailyReview = false
+    
+    private var dueCount: Int {
+        let now = Date()
+        return allAnnotations.filter { $0.kindRaw == "highlight" && ($0.nextReviewDate == nil || $0.nextReviewDate! <= now) }.count
+    }
     
     // Filtered + Sorted Annotations
     var activeAnnotations: [SDAnnotation] {
@@ -105,6 +111,32 @@ struct GlobalZettelkastenHubView: View {
                     .padding(.top, 8)
 
                     if viewMode == .list {
+                        if dueCount > 0 {
+                            Button {
+                                showingDailyReview = true
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Daily Review Due")
+                                            .font(.headline)
+                                        Text("\(dueCount) highlights waiting to be reviewed")
+                                            .font(.subheadline)
+                                            .foregroundStyle(Theme.textSecondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
+                                .padding()
+                                .background(Theme.surface)
+                                .cornerRadius(12)
+                                .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal)
+                            .padding(.top, 12)
+                        }
+
                         // ── Filter pill strip (user-friendly labels)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -240,6 +272,9 @@ struct GlobalZettelkastenHubView: View {
             Button("OK") { importMessage = nil }
         } message: {
             Text(importMessage ?? "")
+        }
+        .sheet(isPresented: $showingDailyReview) {
+            DailyReviewView()
         }
     }
     

@@ -99,6 +99,7 @@ struct PPLReaderView: View {
 
             // ── Front layer: current spread, sliding with finger ──────────────
             currentContent(geo: geo, showingDual: showingDual)
+                .drawingGroup() // ✅ Metal-backed hardware acceleration
                 .offset(x: scale > 1.0 ? 0 : swipeDragX,
                         y: 0)
                 .rotation3DEffect(

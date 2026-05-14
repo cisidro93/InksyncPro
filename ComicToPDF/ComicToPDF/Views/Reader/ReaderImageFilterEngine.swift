@@ -11,22 +11,29 @@ actor ReaderImageFilterEngine {
     // from retaining large intermediate textures between frames.
     private let context = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: false])
 
-    // LRU Cache — keeps the most recently used pages warm and evicts cold ones.
-    private let cacheLimit = 12
+    // LRU Cache — dynamically scaled based on device memory for iPad Pro optimization.
+    private let cacheLimit: Int = {
+        let mem = ProcessInfo.processInfo.physicalMemory
+        return mem > 6_000_000_000 ? 24 : 12 // 6GB+ gets 24 pages, standard gets 12
+    }()
+    
     private var cache: [URL: UIImage] = [:]
     private var lruOrder: [URL] = [] // tail = most recent
 
     func process(url: URL, image: UIImage, isSmartCrop: Bool, contrast: Double, saturation: Double, warmth: Double) -> UIImage {
-        // Fast path: no filters active — return original immediately without touching the GPU.
-        if !isSmartCrop && contrast == 1.0 && saturation == 1.0 && warmth == 0.0 {
-            return image
-        }
-
         // LRU cache hit — promote to most-recently-used position.
         if let cached = cache[url] {
             lruOrder.removeAll { $0 == url }
             lruOrder.append(url)
             return cached
+        }
+
+        // Fast path: no filters active. Force CGContext redraw to decompress the image
+        // off the main thread, guaranteeing zero stutter when SwiftUI renders the Image.
+        if !isSmartCrop && contrast == 1.0 && saturation == 1.0 && warmth == 0.0 {
+            let decompressed = forceDecompress(image)
+            addToCache(url: url, image: decompressed)
+            return decompressed
         }
 
         guard let cgImage = image.cgImage else { return image }
@@ -61,21 +68,43 @@ actor ReaderImageFilterEngine {
             }
         }
 
-        // Render flattened UIImage — hardware-accelerated via Metal backend.
         guard let cgRendered = context.createCGImage(ciImage, from: ciImage.extent) else {
             return image // graceful fallback — never crash
         }
         let finalImage = UIImage(cgImage: cgRendered)
 
-        // LRU insertion: evict the least-recently-used entry first.
+        addToCache(url: url, image: finalImage)
+        return finalImage
+    }
+    
+    private func addToCache(url: URL, image: UIImage) {
         if cache.count >= cacheLimit, let lru = lruOrder.first {
             cache.removeValue(forKey: lru)
             lruOrder.removeFirst()
         }
-        cache[url] = finalImage
+        cache[url] = image
         lruOrder.append(url)
-
-        return finalImage
+    }
+    
+    /// Forces CoreGraphics to immediately decompress the image into memory.
+    private func forceDecompress(_ image: UIImage) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        let width = cgImage.width
+        let height = cgImage.height
+        
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else { return image }
+        
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let drawnImage = context.makeImage() else { return image }
+        return UIImage(cgImage: drawnImage)
     }
 
     /// Purges the entire cache — call when a memory warning is received.

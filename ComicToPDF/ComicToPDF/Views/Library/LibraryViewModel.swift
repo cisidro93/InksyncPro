@@ -10,9 +10,9 @@ class LibraryViewModel: ObservableObject {
     @Published var debouncedSearchText: String = ""
     private var cancellables = Set<AnyCancellable>()
     
-    // Routing State
-    @Published var activeSheet: LibrarySheetDestination?
-    @Published var activeFullScreen: LibraryFullScreenDestination?
+    // Routing State (Migrated to global AppRouter.shared)
+    // @Published var activeSheet: LibrarySheetDestination?
+    // @Published var activeFullScreen: LibraryFullScreenDestination?
     
     // ✅ Phase 2: Nested Folders & Progress Filters
     @Published var currentFolderID: UUID? = nil
@@ -242,26 +242,26 @@ class LibraryViewModel: ObservableObject {
     func handleDetailAction(action: LibraryRowAction, for pdf: ConvertedPDF, conversionManager: ConversionManager) {
         switch action {
         case .read:
-            self.activeFullScreen = .read(pdf)
+            AppRouter.shared.presentFullScreen(.read(pdf))
         case .details:
-            self.activeSheet = .details(pdf)
+            AppRouter.shared.presentSheet(.details(pdf))
         case .covers:
-            self.activeFullScreen = .advancedWorkspace(pdf)
+            AppRouter.shared.presentFullScreen(.advancedWorkspace(pdf))
         case .fetchMetadata:
-            self.activeSheet = .searchMetadata(pdf)
+            AppRouter.shared.presentSheet(.searchMetadata(pdf))
         case .editMetadata:
-            self.activeSheet = .editMetadata(pdf)
+            AppRouter.shared.presentSheet(.editMetadata(pdf))
         case .export:
-            self.activeSheet = .export(pdf)
+            AppRouter.shared.presentSheet(.export(pdf))
         case .share:
-            self.activeSheet = .directShare(pdf)
+            AppRouter.shared.presentSheet(.directShare(pdf))
         case .sync:
-            self.activeSheet = .cloudSync(pdf)
+            AppRouter.shared.presentSheet(.cloudSync(pdf))
         case .rename:
             self.renameText = pdf.name
             self.pdfToRename = pdf
         case .addToSeries:
-            self.activeSheet = .seriesAssignment(pdf, isBatch: false, selection: [])
+            AppRouter.shared.presentSheet(.seriesAssignment(pdf, isBatch: false, selection: []))
         case .favorite:
             if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 withAnimation {

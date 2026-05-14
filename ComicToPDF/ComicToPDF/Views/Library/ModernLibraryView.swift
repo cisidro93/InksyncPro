@@ -6,6 +6,7 @@ import SwiftData
 struct ModernLibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
+    @EnvironmentObject var router: AppRouter
     @StateObject private var viewModel = LibraryViewModel()
     @ObservedObject private var jobQueue = ConversionJobQueue.shared
     
@@ -130,7 +131,7 @@ struct ModernLibraryView: View {
                 }
                 // Removed redundant background to let ZStack ambient glow show through
                 // ✅ MVVM Unified Navigation Router
-                .fullScreenCover(item: $viewModel.activeFullScreen) { dest in
+                .fullScreenCover(item: $router.activeFullScreen) { dest in
                     switch dest {
                     case .read(let pdf):
                         if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) }
@@ -138,7 +139,7 @@ struct ModernLibraryView: View {
                         AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
                     }
                 }
-                .sheet(item: $viewModel.activeSheet) { item in
+                .sheet(item: $router.activeSheet) { item in
                     destinationSheet(for: item)
                 }
             } // End Inner Group
@@ -379,7 +380,7 @@ struct ModernLibraryView: View {
                 filterState: $viewModel.filterState,
                 viewStyle: $viewStyle,
                 tapAction: $tapAction,
-                onSheetTrigger: { dest in viewModel.activeSheet = dest },
+                onSheetTrigger: { dest in AppRouter.shared.presentSheet(dest) },
                 isBatchMode: $isBatchMode,
                 multiSelection: $multiSelection,
                 batchMergeItems: $batchMergeItems,
@@ -394,12 +395,12 @@ struct ModernLibraryView: View {
 
             // MARK: - Up Next Binge Shelf
             UpNextBingeShelf(allPDFs: nativeVisiblePDFs) { pdf in
-                viewModel.activeFullScreen = .read(pdf)
+                AppRouter.shared.presentFullScreen(.read(pdf))
             }
 
             // MARK: - Recently Read Shelf
             RecentlyReadShelf(pdfs: nativeVisiblePDFs) { pdf in
-                viewModel.activeFullScreen = .read(pdf)
+                AppRouter.shared.presentFullScreen(.read(pdf))
             }
 
             // MARK: - Breadcrumb Navigation for Nested Folders

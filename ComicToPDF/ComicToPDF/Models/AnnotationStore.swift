@@ -35,6 +35,11 @@ struct Annotation: Codable, Identifiable {
     // SHA-256 thumbprint of the page at annotation time. nil for pre-Phase5 annotations.
     var contentHash: String? = nil
 
+    // ✅ Phase 3: Zettelkasten SRS (Readwise Parity)
+    var reviewCount: Int = 0
+    var easeFactor: Double = 2.5
+    var nextReviewDate: Date? = nil
+
     enum AnnotationKind: String, Codable {
         case highlight
         case note           // text note attached to a location
@@ -80,6 +85,11 @@ struct Annotation: Codable, Identifiable {
     var boundsH: Double?
     var contentHash: String? = nil
     
+    // ✅ Phase 3: Zettelkasten SRS (Readwise Parity)
+    var reviewCount: Int = 0
+    var easeFactor: Double = 2.5
+    var nextReviewDate: Date? = nil
+    
     init(from dto: Annotation) {
         self.id = dto.id
         self.pdfID = dto.pdfID
@@ -98,6 +108,9 @@ struct Annotation: Codable, Identifiable {
         self.boundsH = dto.bounds?.height
         
         self.isReadwiseImport = false
+        self.reviewCount = dto.reviewCount
+        self.easeFactor = dto.easeFactor
+        self.nextReviewDate = dto.nextReviewDate
     }
     
     // ✅ Phase 31 Native Constructor for Readwise Importers
@@ -163,7 +176,11 @@ struct Annotation: Codable, Identifiable {
         if let x = boundsX, let y = boundsY, let w = boundsW, let h = boundsH {
             bounds = CodableCGRect(x: x, y: y, width: w, height: h)
         }
-        return Annotation(id: id, pdfID: pdfID, pageIndex: pageIndex, chapterTitle: chapterTitle, kind: kind, createdAt: createdAt, modifiedAt: modifiedAt, colorHex: colorHex, selectedText: selectedText, noteText: noteText, tags: tags, bounds: bounds)
+        var dto = Annotation(id: id, pdfID: pdfID, pageIndex: pageIndex, chapterTitle: chapterTitle, kind: kind, createdAt: createdAt, modifiedAt: modifiedAt, colorHex: colorHex, selectedText: selectedText, noteText: noteText, tags: tags, bounds: bounds)
+        dto.reviewCount = self.reviewCount
+        dto.easeFactor = self.easeFactor
+        dto.nextReviewDate = self.nextReviewDate
+        return dto
     }
     
     func update(from dto: Annotation) {
@@ -179,6 +196,10 @@ struct Annotation: Codable, Identifiable {
         self.boundsY = dto.bounds?.y
         self.boundsW = dto.bounds?.width
         self.boundsH = dto.bounds?.height
+        
+        self.reviewCount = dto.reviewCount
+        self.easeFactor = dto.easeFactor
+        self.nextReviewDate = dto.nextReviewDate
     }
 }
 

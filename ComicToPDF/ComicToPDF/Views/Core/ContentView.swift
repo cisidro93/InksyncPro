@@ -9,6 +9,7 @@ struct ContentView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @StateObject private var conversionManager = ConversionManager()
     @StateObject private var settingsManager = AppSettingsManager.shared
+    @StateObject private var router = AppRouter.shared
     // Wi-Fi Server for Kindle Sync
     @StateObject private var wifiServer = WiFiServer()
 
@@ -445,6 +446,7 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .environmentObject(router)
     }
 }
 
