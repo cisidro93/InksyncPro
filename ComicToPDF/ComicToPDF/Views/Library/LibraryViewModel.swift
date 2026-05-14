@@ -10,9 +10,9 @@ class LibraryViewModel: ObservableObject {
     @Published var debouncedSearchText: String = ""
     private var cancellables = Set<AnyCancellable>()
     
-    // Routing State (Migrated to global AppRouter.shared)
-    // @Published var activeSheet: LibrarySheetDestination?
-    // @Published var activeFullScreen: LibraryFullScreenDestination?
+    // Routing State
+    @Published var activeSheet: LibrarySheetDestination?
+    @Published var activeFullScreen: LibraryFullScreenDestination?
     
     // ✅ Phase 2: Nested Folders & Progress Filters
     @Published var currentFolderID: UUID? = nil
@@ -39,20 +39,18 @@ class LibraryViewModel: ObservableObject {
     private var rebuilTask: Task<Void, Never>?
 
     func updateLibraryItemsCache(pdfs: [ConvertedPDF], collections: [PDFCollection], sortOption: ModernLibraryView.SortOption) {
-        // Cancel any in-flight rebuild so rapid SwiftData events don't stack up.
+        // Cancel any in-flight rebuild so rapid SwiftData events (e.g. reading-progress
+        // writes) don't stack up and deliver results out of order.
         rebuilTask?.cancel()
 
         let currentSearchText = debouncedSearchText
+        let sortedPDFs = sortPDFs(pdfs, sortOption: sortOption)
         let folderID = self.currentFolderID
         let filter = self.filterState
-        // pdfs, collections, sortOption are value types — safe to capture by copy.
 
-        rebuilTask = Task.detached(priority: .userInitiated) { [weak self] in
+        rebuilTask = Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
             guard !Task.isCancelled else { return }
-
-            // Sort off-main so large libraries don't block the render thread.
-            let sortedPDFs = await self.sortPDFs(pdfs, sortOption: sortOption)
 
             var groups: [String: SeriesGroup] = [:]
             var singles: [ConvertedPDF] = []
@@ -176,23 +174,24 @@ class LibraryViewModel: ObservableObject {
             for (key, var group) in groups {
                 // ✅ PHASE 4: Internal Sorting & Cover Assigner
                 // Ensure issues inside the folder always display in reading sequence
-                // Schwartzian transform: parse numbers once, sort by pre-computed value
-                let volKey  = group.issues.map { ($0, Double($0.metadata.volume ?? "") ?? Double.infinity) }
-                let hasVols = volKey.contains { $0.1 != Double.infinity }
-
-                group.issues = group.issues
-                    .map { pdf -> (ConvertedPDF, Double, Double) in
-                        let vol   = Double(pdf.metadata.volume ?? "")      ?? Double.infinity
-                        let issue = Double(pdf.metadata.issueNumber ?? "") ?? Double.infinity
-                        return (pdf, vol, issue)
+                group.issues.sort { a, b in
+                    let aNumStr = a.metadata.issueNumber ?? ""
+                    let bNumStr = b.metadata.issueNumber ?? ""
+                    
+                    // Check if these are from the same volume first to prevent cross-volume jumbling
+                    let aVolStr = a.metadata.volume ?? ""
+                    let bVolStr = b.metadata.volume ?? ""
+                    if !aVolStr.isEmpty && !bVolStr.isEmpty && aVolStr != bVolStr,
+                       let aVol = Double(aVolStr), let bVol = Double(bVolStr) {
+                        return aVol < bVol
                     }
-                    .sorted { a, b in
-                        if hasVols, a.1 != b.1 { return a.1 < b.1 }
-                        if a.2 != b.2 { return a.2 < b.2 }
-                        return a.0.name.localizedStandardCompare(b.0.name) == .orderedAscending
+                    
+                    if !aNumStr.isEmpty && !bNumStr.isEmpty, let aNum = Double(aNumStr), let bNum = Double(bNumStr) {
+                        return aNum < bNum
                     }
-                    .map { $0.0 }
-
+                    
+                    return a.name.localizedStandardCompare(b.name) == .orderedAscending
+                }
                 
                 if let cover = group.issues.first {
                     group.coverIssueID = cover.id
@@ -243,26 +242,26 @@ class LibraryViewModel: ObservableObject {
     func handleDetailAction(action: LibraryRowAction, for pdf: ConvertedPDF, conversionManager: ConversionManager) {
         switch action {
         case .read:
-            AppRouter.shared.presentFullScreen(.read(pdf))
+            self.activeFullScreen = .read(pdf)
         case .details:
-            AppRouter.shared.presentSheet(.details(pdf))
+            self.activeSheet = .details(pdf)
         case .covers:
-            AppRouter.shared.presentFullScreen(.advancedWorkspace(pdf))
+            self.activeFullScreen = .advancedWorkspace(pdf)
         case .fetchMetadata:
-            AppRouter.shared.presentSheet(.searchMetadata(pdf))
+            self.activeSheet = .searchMetadata(pdf)
         case .editMetadata:
-            AppRouter.shared.presentSheet(.editMetadata(pdf))
+            self.activeSheet = .editMetadata(pdf)
         case .export:
-            AppRouter.shared.presentSheet(.export(pdf))
+            self.activeSheet = .export(pdf)
         case .share:
-            AppRouter.shared.presentSheet(.directShare(pdf))
+            self.activeSheet = .directShare(pdf)
         case .sync:
-            AppRouter.shared.presentSheet(.cloudSync(pdf))
+            self.activeSheet = .cloudSync(pdf)
         case .rename:
             self.renameText = pdf.name
             self.pdfToRename = pdf
         case .addToSeries:
-            AppRouter.shared.presentSheet(.seriesAssignment(pdf, isBatch: false, selection: []))
+            self.activeSheet = .seriesAssignment(pdf, isBatch: false, selection: [])
         case .favorite:
             if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 withAnimation {
@@ -298,9 +297,9 @@ class LibraryViewModel: ObservableObject {
             }
         case .sendToKindle:
             if pdf.url.pathExtension.lowercased() == "epub" {
-                AppRouter.shared.presentSheet(.directShare(pdf))
+                self.activeSheet = .directShare(pdf)
             } else {
-                AppRouter.shared.presentSheet(.export(pdf))
+                self.activeSheet = .export(pdf)
             }
         case .convert:
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -308,7 +307,8 @@ class LibraryViewModel: ObservableObject {
         }
     }
     
-    nonisolated func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
+    // Additional Logic Handlers...
+    func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
         switch sortOption {
         case .dateAdded: return pdfs.reversed() // Returns newest imported first, which places it natively at index 0 and top-left.
         case .name: return pdfs.sorted {

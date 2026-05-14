@@ -19,8 +19,8 @@ actor CloudCoverExtractor {
     static let shared = CloudCoverExtractor()
 
     private var inFlight: Set<UUID> = []
-    // AsyncSemaphore replaces the busy-wait spin-loop — parks tasks efficiently
-    private let semaphore = AsyncSemaphore(limit: 2)
+    private let maxConcurrent = 2
+    private var activeTasks = 0
 
     private init() {}
 
@@ -38,12 +38,14 @@ actor CloudCoverExtractor {
         await withTaskGroup(of: Void.self) { group in
             for pdf in pdfs {
                 guard shouldExtract(pdf) else { continue }
+
+                while activeTasks >= maxConcurrent {
+                    await Task.yield()
+                }
+                activeTasks += 1
                 inFlight.insert(pdf.id)
 
                 group.addTask { [weak self] in
-                    // Parks until a slot is free — no spin-loop CPU burn
-                    await self?.semaphore.wait()
-                    defer { Task { await self?.semaphore.signal() } }
                     await self?.extractCover(for: pdf)
                 }
             }
@@ -62,7 +64,10 @@ actor CloudCoverExtractor {
     // MARK: - Single File Extraction (format-aware router)
 
     private func extractCover(for pdf: ConvertedPDF) async {
-        defer { inFlight.remove(pdf.id) }
+        defer {
+            inFlight.remove(pdf.id)
+            activeTasks -= 1
+        }
 
         guard case .cloud(let provider, let remoteID) = pdf.sourceMode,
               provider == "Dropbox" else { return }
