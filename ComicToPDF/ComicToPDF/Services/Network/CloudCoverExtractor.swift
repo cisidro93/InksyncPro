@@ -19,8 +19,8 @@ actor CloudCoverExtractor {
     static let shared = CloudCoverExtractor()
 
     private var inFlight: Set<UUID> = []
-    private let maxConcurrent = 2
-    private var activeTasks = 0
+    // Parking semaphore — replaces the Task.yield() spin-loop which burns CPU under contention.
+    private let semaphore = CCESemaphore(limit: 2)
 
     private init() {}
 
@@ -38,15 +38,13 @@ actor CloudCoverExtractor {
         await withTaskGroup(of: Void.self) { group in
             for pdf in pdfs {
                 guard shouldExtract(pdf) else { continue }
-
-                while activeTasks >= maxConcurrent {
-                    await Task.yield()
-                }
-                activeTasks += 1
                 inFlight.insert(pdf.id)
 
                 group.addTask { [weak self] in
-                    await self?.extractCover(for: pdf)
+                    guard let self else { return }
+                    await self.semaphore.wait()
+                    defer { Task { await self.semaphore.signal() } }
+                    await self.extractCover(for: pdf)
                 }
             }
         }
@@ -64,10 +62,7 @@ actor CloudCoverExtractor {
     // MARK: - Single File Extraction (format-aware router)
 
     private func extractCover(for pdf: ConvertedPDF) async {
-        defer {
-            inFlight.remove(pdf.id)
-            activeTasks -= 1
-        }
+        defer { inFlight.remove(pdf.id) }
 
         guard case .cloud(let provider, let remoteID) = pdf.sourceMode,
               provider == "Dropbox" else { return }
@@ -220,5 +215,29 @@ private func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escapin
         let result = try await group.next()!
         group.cancelAll()
         return result
+    }
+}
+
+// MARK: - Parking semaphore (CloudCoverExtractor-scoped, avoids cross-layer dependency)
+// Named CCESemaphore to prevent collision with the AsyncSemaphore in LibraryGridRows.
+private actor CCESemaphore {
+    private let limit: Int
+    private var count = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) { self.limit = limit }
+
+    func wait() async {
+        if count < limit { count += 1; return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func signal() {
+        if let next = waiters.first {
+            waiters.removeFirst()
+            next.resume()
+        } else {
+            count = max(0, count - 1)
+        }
     }
 }

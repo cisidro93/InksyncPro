@@ -174,24 +174,22 @@ class LibraryViewModel: ObservableObject {
             for (key, var group) in groups {
                 // ✅ PHASE 4: Internal Sorting & Cover Assigner
                 // Ensure issues inside the folder always display in reading sequence
-                group.issues.sort { a, b in
-                    let aNumStr = a.metadata.issueNumber ?? ""
-                    let bNumStr = b.metadata.issueNumber ?? ""
-                    
-                    // Check if these are from the same volume first to prevent cross-volume jumbling
-                    let aVolStr = a.metadata.volume ?? ""
-                    let bVolStr = b.metadata.volume ?? ""
-                    if !aVolStr.isEmpty && !bVolStr.isEmpty && aVolStr != bVolStr,
-                       let aVol = Double(aVolStr), let bVol = Double(bVolStr) {
-                        return aVol < bVol
+                // Schwartzian transform: parse issue/volume numbers once (O(n)) then sort (O(n log n)).
+                // Avoids calling Double() inside the comparator which fires O(n log n) times.
+                let hasVols = group.issues.contains { Double($0.metadata.volume ?? "") != nil }
+                group.issues = group.issues
+                    .map { pdf -> (ConvertedPDF, Double, Double) in
+                        (pdf,
+                         Double(pdf.metadata.volume ?? "")      ?? Double.infinity,
+                         Double(pdf.metadata.issueNumber ?? "") ?? Double.infinity)
                     }
-                    
-                    if !aNumStr.isEmpty && !bNumStr.isEmpty, let aNum = Double(aNumStr), let bNum = Double(bNumStr) {
-                        return aNum < bNum
+                    .sorted { a, b in
+                        if hasVols, a.1 != b.1 { return a.1 < b.1 }
+                        if a.2 != b.2 { return a.2 < b.2 }
+                        return a.0.name.localizedStandardCompare(b.0.name) == .orderedAscending
                     }
-                    
-                    return a.name.localizedStandardCompare(b.name) == .orderedAscending
-                }
+                    .map(\.0)
+
                 
                 if let cover = group.issues.first {
                     group.coverIssueID = cover.id
