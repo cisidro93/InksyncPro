@@ -573,6 +573,21 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var splitWebtoon: Bool = false // âœ… Added for Smart Slicing
     var splitSpreads: Bool = false // âœ… NEW: Landscape Double-Page Split for E-Ink
     var trimMargins: Bool = false
+
+    /// Returns `true` when the user has changed at least one meaningful conversion
+    /// setting away from its default value — used to decide whether to show
+    /// "Download" (no settings yet) vs "Download & Convert" (settings established).
+    var isConfigured: Bool {
+        outputFormat      != .epub          ||
+        compressionQuality != .balanced     ||
+        mangaMode                           ||
+        enablePanelSplit                    ||
+        splitWebtoon                        ||
+        splitSpreads                        ||
+        trimMargins                         ||
+        targetDeviceProfile != .original    ||
+        bindingMarginOffset  != 0
+    }
     var splitMode: FileSizeSplitMode = .none
     var enableBackgroundQueue: Bool = true
     var textSize: AppTextSize = .medium

@@ -603,7 +603,19 @@ struct SeriesDetailView: View {
                 case .editMetadata:  pdfToSearchMetadata = pdf
                 case .rename:        renameText = pdf.name; pdfToRename = pdf
                 case .delete:        pdfToDelete = pdf
-                case .convert:       Task { await conversionManager.convertComic(pdf) }
+                case .convert:
+                    let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
+                    if case .cloud = pdf.sourceMode {
+                        Task {
+                            await CloudDownloadManager.shared.downloadAndStore(
+                                pdf: pdf,
+                                thenConvert: settingsReady,
+                                manager: conversionManager
+                            )
+                        }
+                    } else {
+                        Task { await conversionManager.convertComic(pdf) }
+                    }
                 case .share, .sync, .sendToKindle:
                     // For share/kindle we dismiss and fire via UIActivityViewController
                     let url = pdf.url
@@ -977,11 +989,23 @@ struct SeriesDetailView: View {
             pdfToRead = pdf
         } label: { Label("Read / Preview", systemImage: "book.pages") }
 
-        // Cloud files: offer inline convert (downloads first, then converts)
+        // Cloud files: smart Download vs Download & Convert
         if case .cloud = pdf.sourceMode {
+            let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
             Button {
-                Task { await conversionManager.convertComic(pdf) }
-            } label: { Label("Download & Convert", systemImage: "arrow.down.circle.fill") }
+                Task {
+                    await CloudDownloadManager.shared.downloadAndStore(
+                        pdf: pdf,
+                        thenConvert: settingsReady,
+                        manager: conversionManager
+                    )
+                }
+            } label: {
+                Label(
+                    settingsReady ? "Download & Convert" : "Download",
+                    systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
+                )
+            }
             Divider()
         }
         

@@ -301,7 +301,20 @@ class LibraryViewModel: ObservableObject {
             }
         case .convert:
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            Task { await conversionManager.convertComic(pdf) }
+            let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
+            if case .cloud = pdf.sourceMode {
+                // Download-only when the user hasn't set conversion preferences yet.
+                // Download & Convert automatically when settings are established.
+                Task {
+                    await CloudDownloadManager.shared.downloadAndStore(
+                        pdf: pdf,
+                        thenConvert: settingsReady,
+                        manager: conversionManager
+                    )
+                }
+            } else {
+                Task { await conversionManager.convertComic(pdf) }
+            }
         }
     }
     

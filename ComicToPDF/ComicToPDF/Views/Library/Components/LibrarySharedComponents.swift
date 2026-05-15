@@ -56,28 +56,12 @@ struct ModernEmptyState: View {
     var onFolderImport: (() -> Void)?
     var onCloudImport: (() -> Void)?
 
-    @State private var glowPulse = false
-
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
 
-            // Illustrated icon with ambient glow ring
+            // Illustrated icon with ambient glow
             ZStack {
-                // Outer pulse ring
-                Circle()
-                    .stroke(
-                        LinearGradient(
-                            colors: [Theme.orange.opacity(0.25), Theme.purple.opacity(0.15)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.5
-                    )
-                    .frame(width: 140, height: 140)
-                    .scaleEffect(glowPulse ? 1.15 : 1.0)
-                    .opacity(glowPulse ? 0.0 : 1.0)
-                    .animation(.easeOut(duration: 2.2).repeatForever(autoreverses: false), value: glowPulse)
-
                 // Ambient glow blob
                 Circle()
                     .fill(
@@ -118,7 +102,6 @@ struct ModernEmptyState: View {
                     )
             }
             .padding(.bottom, 32)
-            .onAppear { glowPulse = true }
 
             // Headline
             Text("Your Library is Empty")

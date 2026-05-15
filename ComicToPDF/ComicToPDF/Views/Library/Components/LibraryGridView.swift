@@ -491,7 +491,13 @@ struct LibraryGridView: View {
 
         // Cloud files: offer inline convert so the user doesn't need to open the detail sheet
         if case .cloud = pdf.sourceMode {
-            Button { onAction(.convert, pdf) } label: { Label("Download & Convert", systemImage: "arrow.down.circle.fill") }
+            let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
+            Button { onAction(.convert, pdf) } label: {
+                Label(
+                    settingsReady ? "Download & Convert" : "Download",
+                    systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
+                )
+            }
             Divider()
         }
         Button { onAction(.covers, pdf) } label: { Label("Edit Workspace (Covers)", systemImage: "paintbrush.pointed") }

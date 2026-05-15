@@ -310,9 +310,15 @@ struct LibraryListView: View {
 
         // Cloud files: offer inline convert so the user doesn't need to open the detail sheet
         if case .cloud = pdf.sourceMode {
+            let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
             Button {
                 onAction(.convert, pdf)
-            } label: { Label("Download & Convert", systemImage: "arrow.down.circle.fill") }
+            } label: {
+                Label(
+                    settingsReady ? "Download & Convert" : "Download",
+                    systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
+                )
+            }
             Divider()
         }
         

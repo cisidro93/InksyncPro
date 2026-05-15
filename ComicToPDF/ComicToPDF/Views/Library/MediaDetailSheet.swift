@@ -116,15 +116,16 @@ struct MediaDetailSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .shadow(color: .blue.opacity(0.3), radius: 5, y: 3)
                     }
-                    // Cloud files: Download & Convert primary CTA
+                    // Cloud files: smart Download vs Download & Convert CTA
                     if case .cloud = pdf.sourceMode {
+                        let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
                         Button {
                             handle(.convert)
                         } label: {
                             HStack {
                                 Spacer()
-                                Image(systemName: "arrow.down.circle.fill")
-                                Text("DOWNLOAD & CONVERT")
+                                Image(systemName: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle")
+                                Text(settingsReady ? "DOWNLOAD & CONVERT" : "DOWNLOAD")
                                     .fontWeight(.bold)
                                 Spacer()
                             }
@@ -139,6 +140,13 @@ struct MediaDetailSheet: View {
                             )
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                             .shadow(color: Color.green.opacity(0.3), radius: 5, y: 3)
+                        }
+                        if !settingsReady {
+                            Text("Configure conversion settings first to enable auto-convert on download.")
+                                .font(.caption)
+                                .foregroundStyle(Color.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 8)
                         }
                     }
                     
