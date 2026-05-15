@@ -117,8 +117,8 @@ struct InksyncShortcutsProvider: AppShortcutsProvider {
         AppShortcut(
             intent: OpenSpecificBookIntent(),
             phrases: [
-                "Open \(\.$bookTitle) in \(.applicationName)",
-                "Read \(\.$bookTitle) in \(.applicationName)"
+                "Search comic in \(.applicationName)",
+                "Open a comic in \(.applicationName)"
             ],
             shortTitle: "Open Comic",
             systemImageName: "book.pages"
