@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Combine
 
 /// Manages the curated set of PDFs the user has explicitly sent to the Work Area.

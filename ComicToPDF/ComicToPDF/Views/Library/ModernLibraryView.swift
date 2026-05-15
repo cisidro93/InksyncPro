@@ -120,10 +120,6 @@ struct ModernLibraryView: View {
                 let readingModeStr = notification.userInfo?["readingMode"] as? String
                 if let mostRecent = ReaderProgressTracker.shared.recentSessions().first,
                    let pdf = nativeVisiblePDFs.first(where: { $0.id == mostRecent.pdfID }) {
-                    // Update reading mode globally if requested by intent
-                    if let mode = readingModeStr, let readingMode = ComicReadingMode(rawValue: mode) {
-                        AppSettingsManager.shared.readerSettings.defaultReadingMode = readingMode
-                    }
                     AppRouter.shared.presentFullScreen(.read(pdf))
                 }
             }

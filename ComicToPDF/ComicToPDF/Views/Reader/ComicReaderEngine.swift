@@ -37,15 +37,7 @@ enum ComicReadingMode: String, CaseIterable, Codable {
     case webtoonScroll    // Continuous vertical scroll
     case mangaRTL         // Single page, horizontal swipe, right-to-left
     
-    var hudDescription: String {
-        switch self {
-        case .pageHorizontal:  return "Swipe left to advance pages"
-        case .mangaRTL:        return "Swipe right to advance pages"
-        case .pageTwoUp:       return "Side-by-side spreads (landscape)"
-        case .panelNavigation: return "Zoom to each panel • Edit in Work Area"
-        case .webtoonScroll:   return "Continuous vertical strip"
-        }
-    }
+
 }
 
 class ComicImageCache: ObservableObject {
@@ -808,7 +800,7 @@ struct ComicGuidedPageView: View {
                                 Image(systemName: "viewfinder")
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.white.opacity(0.6))
-                                Text("No panels — tap \u203a to skip page")
+                                Text("No panels — tap \u{203A} to skip page")
                                     .font(.system(size: 11, weight: .medium, design: .rounded))
                                     .foregroundStyle(.white.opacity(0.6))
                             }

@@ -66,9 +66,7 @@ struct ZipUtilities {
 
                     } else {
                         // --- ZIP / CBZ PATH ---
-                        guard let archive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read) else {
-                            throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
-                        }
+                        let archive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
                         
                         // Iterate
                         for entry in archive {
@@ -125,9 +123,7 @@ struct ZipUtilities {
                     }
                     
                     // Creates a new archive at destinationURL
-                    guard let archive = Archive(url: destinationURL, accessMode: .create) else {
-                        throw NSError(domain: "ZipError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create archive at \(destinationURL.path)"])
-                    }
+                    let archive = try Archive(url: destinationURL, accessMode: .create)
                     
                     // Get all files in source directory
                     let fileURLs = try fileManager.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: nil)
