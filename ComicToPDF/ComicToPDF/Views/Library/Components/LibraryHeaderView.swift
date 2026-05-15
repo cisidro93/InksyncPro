@@ -245,6 +245,33 @@ struct LibraryHeaderView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
             } // end hSizeClass branches
+            
+            // ── Smart Collections Strip ─────────
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(SmartCollectionRule.allCases) { rule in
+                        Button(action: {
+                            AppRouter.shared.presentFullScreen(.smartCollection(rule))
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: rule.iconName)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(rule.tintColor.gradient)
+                                Text(rule.rawValue)
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Theme.text)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(Theme.text.opacity(0.1), lineWidth: 1))
+                        }
+                    }
+                }
+                .padding(.horizontal, hSizeClass == .compact ? 16 : 20)
+                .padding(.top, 16)
+            }
 
             // ── Row A: Fixed Primary Actions (Apollo/Reeder pattern) ─────────
             // Always visible — the 3 actions 95% of users actually need.

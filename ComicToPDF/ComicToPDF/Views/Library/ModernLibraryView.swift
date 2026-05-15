@@ -234,6 +234,8 @@ struct ModernLibraryView: View {
                     if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) }
                 case .advancedWorkspace(let pdf):
                     AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
+                case .smartCollection(let rule):
+                    SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
                 }
             }
             .sheet(item: $router.activeSheet) { item in
