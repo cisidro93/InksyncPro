@@ -52,8 +52,22 @@ class ReaderProgressTracker: ObservableObject {
         return dir
     }
     
+    /// Key prefix used in NSUbiquitousKeyValueStore so our keys never collide with other apps.
+    private let iCloudPrefix = "InksyncPro.progress."
+    private let iCloudStore  = NSUbiquitousKeyValueStore.default
+
     private init() {
         loadAll()
+        mergeFromiCloud()          // pull remote progress on cold launch
+        // Listen for iCloud push updates while the app is foregrounded
+        NotificationCenter.default.addObserver(
+            forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+            object: iCloudStore,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.mergeFromiCloud() }
+        }
+        iCloudStore.synchronize()
     }
     
     func progress(for pdfID: UUID) -> ReadingProgress? {
@@ -76,6 +90,7 @@ class ReaderProgressTracker: ObservableObject {
 
         progressMap[updated.pdfID] = updated
         save(pdfID: updated.pdfID)
+        syncToiCloud(pdfID: updated.pdfID, progress: updated)
     }
 
     /// Record pages turned and time spent during a session turn.
@@ -119,6 +134,8 @@ class ReaderProgressTracker: ObservableObject {
         queue.async {
             try? FileManager.default.removeItem(at: fileURL)
         }
+        iCloudStore.removeObject(forKey: iCloudPrefix + pdfID.uuidString)
+        iCloudStore.synchronize()
     }
     
     // MARK: - Stats
@@ -229,6 +246,33 @@ class ReaderProgressTracker: ObservableObject {
         }
     }
     
+    // MARK: - iCloud Sync
+
+    /// Encode one progress record into iCloud KV store (~2 KB per book, well within the 1 MB limit).
+    private func syncToiCloud(pdfID: UUID, progress: ReadingProgress) {
+        guard let data = try? JSONEncoder().encode(progress) else { return }
+        iCloudStore.set(data, forKey: iCloudPrefix + pdfID.uuidString)
+        iCloudStore.synchronize()
+    }
+
+    /// Pull all remote records and merge: keep whichever device has the newer `lastOpenedAt`.
+    private func mergeFromiCloud() {
+        let allKeys = iCloudStore.dictionaryRepresentation.keys.filter { $0.hasPrefix(iCloudPrefix) }
+        var changed = false
+        for key in allKeys {
+            guard let data = iCloudStore.data(forKey: key),
+                  let remote = try? JSONDecoder().decode(ReadingProgress.self, from: data) else { continue }
+            let local = progressMap[remote.pdfID]
+            // Accept remote if we have no local copy OR remote was opened more recently
+            if local == nil || remote.lastOpenedAt > (local!.lastOpenedAt) {
+                progressMap[remote.pdfID] = remote
+                save(pdfID: remote.pdfID)
+                changed = true
+            }
+        }
+        if changed { objectWillChange.send() }
+    }
+
     private func save(pdfID: UUID) {
         saveTasks[pdfID]?.cancel()
         

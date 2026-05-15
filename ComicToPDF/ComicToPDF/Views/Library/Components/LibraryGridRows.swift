@@ -402,6 +402,24 @@ struct ModernGridSeriesCell: View {
                         Spacer()
                     }
                 }
+
+                // ✅ Series Completion Badge — shown when every issue is read
+                if !isBatch && cachedReadCount > 0 && cachedReadCount >= group.count {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(6)
+                                .background(Color.inkGreen, in: Circle())
+                                .overlay(Circle().stroke(.white.opacity(0.4), lineWidth: 1))
+                                .shadow(color: Color.inkGreen.opacity(0.6), radius: 6, y: 2)
+                                .padding(6)
+                        }
+                        Spacer()
+                    }
+                }
             }
             .frame(maxWidth: .infinity)
             

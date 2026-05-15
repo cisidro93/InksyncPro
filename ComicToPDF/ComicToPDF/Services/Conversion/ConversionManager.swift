@@ -169,6 +169,8 @@ class ConversionManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return }
             LibraryPersistenceManager.shared.save(manager: self)
+            // Keep Spotlight index in sync with the library
+            SpotlightIndexer.shared.indexLibrary(pdfs: self.convertedPDFs)
         }
     }
     
@@ -283,6 +285,7 @@ class ConversionManager: ObservableObject {
     }
     
     func deletePDF(_ pdf: ConvertedPDF) {
+        SpotlightIndexer.shared.deindexBook(pdf.id)
         PhysicalFileSystemRouter.shared.deletePDF(pdf, manager: self)
     }
     

@@ -32,6 +32,8 @@ struct GlobalZettelkastenHubView: View {
     @State private var exportDocument: ZettelArchiveDocument?
     @State private var showingExporterDialog = false
     @State private var showingDailyReview = false
+    @State private var showingMarkdownExporter = false
+    @State private var markdownExportURL: URL? = nil
     
     private var dueCount: Int {
         let now = Date()
@@ -241,6 +243,9 @@ struct GlobalZettelkastenHubView: View {
                         Button(action: triggerExport) {
                             Label("Export Mind Palace", systemImage: "square.and.arrow.up")
                         }
+                        Button(action: exportAsMarkdown) {
+                            Label("Export Highlights as Markdown", systemImage: "doc.plaintext")
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -425,6 +430,66 @@ struct GlobalZettelkastenHubView: View {
                     self.importMessage = "Export failed: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+
+    /// Renders all highlights grouped by book as a Markdown document and presents
+    /// a share sheet so the user can send it to Obsidian, Bear, Notion, Mail, etc.
+    private func exportAsMarkdown() {
+        let dateFormatter: DateFormatter = {
+            let df = DateFormatter()
+            df.dateStyle = .medium
+            df.timeStyle = .none
+            return df
+        }()
+
+        var md = "# InksyncPro — Highlights & Notes\n"
+        md += "_Exported \(dateFormatter.string(from: Date()))_\n\n---\n\n"
+
+        for group in groupedAnnotations {
+            md += "## \(group.key)\n\n"
+            for ann in group.value {
+                // Highlight text
+                if let text = ann.selectedText, !text.isEmpty {
+                    md += "> \(text)\n"
+                }
+                // Attached note
+                if let note = ann.noteText, !note.isEmpty {
+                    md += "\n**Note:** \(note)\n"
+                }
+                // Tags
+                if let tags = ann.tags, !tags.isEmpty {
+                    md += "\n" + tags.map { "#\($0)" }.joined(separator: " ") + "\n"
+                }
+                // Page reference
+                if let page = ann.pageIndex {
+                    md += "\n_p. \(page + 1)_\n"
+                }
+                md += "\n---\n\n"
+            }
+        }
+
+        // Write to temp file
+        let filename = "InksyncPro_Highlights_\(Int(Date().timeIntervalSince1970)).md"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        guard let data = md.data(using: .utf8),
+              (try? data.write(to: tempURL)) != nil else {
+            importMessage = "Markdown export failed — could not write file."
+            return
+        }
+
+        // Share sheet
+        let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController {
+            var topVC = rootVC
+            while let presented = topVC.presentedViewController { topVC = presented }
+            if let popover = activityVC.popoverPresentationController {
+                popover.sourceView = topVC.view
+                popover.sourceRect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            topVC.present(activityVC, animated: true)
         }
     }
     

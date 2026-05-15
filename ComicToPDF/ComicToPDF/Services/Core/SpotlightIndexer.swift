@@ -1,0 +1,134 @@
+import Foundation
+import CoreSpotlight
+import MobileCoreServices
+
+/// Indexes InksyncPro library items and annotations into iOS Spotlight so users
+/// can find books and highlights without opening the app.
+///
+/// Usage:
+///   SpotlightIndexer.shared.indexLibrary(pdfs: conversionManager.convertedPDFs)
+///   SpotlightIndexer.shared.indexAnnotation(annotation)
+@MainActor
+final class SpotlightIndexer {
+    static let shared = SpotlightIndexer()
+
+    // Activity type used for deep-linking from Spotlight results
+    static let openBookActivityType = "com.inksyncpro.openBook"
+    static let openAnnotationActivityType = "com.inksyncpro.openAnnotation"
+
+    private let index = CSSearchableIndex.default()
+
+    private init() {}
+
+    // MARK: - Library Indexing
+
+    /// Index the entire library — call after import or metadata changes.
+    /// Runs on a detached task to keep the main thread free.
+    func indexLibrary(pdfs: [ConvertedPDF]) {
+        let items = pdfs.map { makeBookItem($0) }
+        Task.detached(priority: .background) { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.index.indexSearchableItems(items)
+            } catch {
+                Logger.shared.log("Spotlight: failed to index library — \(error)", category: "Spotlight", type: .error)
+            }
+        }
+    }
+
+    /// Index (or re-index) a single book — call after metadata edit.
+    func indexBook(_ pdf: ConvertedPDF) {
+        let item = makeBookItem(pdf)
+        Task.detached(priority: .background) { [weak self] in
+            guard let self else { return }
+            try? await self.index.indexSearchableItems([item])
+        }
+    }
+
+    /// Remove a single book from the index — call on delete.
+    func deindexBook(_ pdfID: UUID) {
+        Task.detached(priority: .background) { [weak self] in
+            guard let self else { return }
+            try? await self.index.deleteSearchableItems(withIdentifiers: ["book-\(pdfID.uuidString)"])
+        }
+    }
+
+    // MARK: - Annotation Indexing
+
+    func indexAnnotation(_ annotation: SDAnnotation) {
+        guard let text = annotation.selectedText, !text.isEmpty else { return }
+        let item = makeAnnotationItem(annotation)
+        Task.detached(priority: .background) { [weak self] in
+            guard let self else { return }
+            try? await self.index.indexSearchableItems([item])
+        }
+    }
+
+    func deindexAnnotation(_ annotationID: UUID) {
+        Task.detached(priority: .background) { [weak self] in
+            guard let self else { return }
+            try? await self.index.deleteSearchableItems(withIdentifiers: ["ann-\(annotationID.uuidString)"])
+        }
+    }
+
+    /// Nuke the entire index — useful for settings reset.
+    func clearAll() {
+        Task.detached(priority: .background) { [weak self] in
+            guard let self else { return }
+            try? await self.index.deleteAllSearchableItems()
+        }
+    }
+
+    // MARK: - Item Builders
+
+    private func makeBookItem(_ pdf: ConvertedPDF) -> CSSearchableItem {
+        let attrs = CSSearchableItemAttributeSet(contentType: .content)
+        attrs.title = pdf.name
+        attrs.contentDescription = [
+            pdf.metadata.series,
+            pdf.metadata.publisher,
+            pdf.metadata.issueNumber.map { "Issue #\($0)" }
+        ].compactMap { $0 }.joined(separator: " · ")
+        attrs.keywords = [
+            pdf.contentType.rawValue,
+            pdf.metadata.series,
+            pdf.metadata.publisher,
+            pdf.metadata.isManga == true ? "manga" : nil
+        ].compactMap { $0 }
+        attrs.identifier = pdf.id.uuidString
+        // Thumbnail from cover file if available
+        if let coverURL = pdf.coverImageURL,
+           let data = try? Data(contentsOf: coverURL),
+           let img = UIImage(data: data) {
+            attrs.thumbnailData = img.jpegData(compressionQuality: 0.6)
+        }
+        // NSUserActivity for deep-linking
+        let activity = NSUserActivity(activityType: SpotlightIndexer.openBookActivityType)
+        activity.title = pdf.name
+        activity.userInfo = ["pdfID": pdf.id.uuidString]
+        activity.isEligibleForSearch = true
+        activity.isEligibleForHandoff = false
+        attrs.relatedUniqueIdentifier = pdf.id.uuidString
+
+        return CSSearchableItem(
+            uniqueIdentifier: "book-\(pdf.id.uuidString)",
+            domainIdentifier: "com.inksyncpro.library",
+            attributeSet: attrs
+        )
+    }
+
+    private func makeAnnotationItem(_ ann: SDAnnotation) -> CSSearchableItem {
+        let attrs = CSSearchableItemAttributeSet(contentType: .text)
+        attrs.title = String((ann.selectedText ?? "").prefix(80))
+        attrs.contentDescription = ann.noteText ?? "Highlight"
+        attrs.keywords = ann.tags ?? []
+        let activity = NSUserActivity(activityType: SpotlightIndexer.openAnnotationActivityType)
+        activity.userInfo = ["annotationID": ann.id.uuidString]
+        attrs.relatedUniqueIdentifier = "ann-\(ann.id.uuidString)"
+        return CSSearchableItem(
+            uniqueIdentifier: "ann-\(ann.id.uuidString)",
+            domainIdentifier: "com.inksyncpro.annotations",
+            attributeSet: attrs
+        )
+    }
+}
