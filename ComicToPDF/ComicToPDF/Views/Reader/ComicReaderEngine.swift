@@ -484,12 +484,10 @@ struct ComicReaderEngine: View {
                     ))
                     onDismiss()
                 },
-                onEInkSend: {},
                 onBookmark: {
                     let bookmark = Annotation(pdfID: pdf.id, pageIndex: currentIndex, kind: .bookmark, createdAt: Date(), modifiedAt: Date())
                     AnnotationStore.shared.add(bookmark)
                 },
-                onAnnotationsToggle: {},
                 onSettingsToggle: {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         showingSettingsHUD.toggle()
@@ -609,21 +607,12 @@ struct ComicReaderEngine: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
                 ForEach(0..<cache.pageCount, id: \.self) { index in
-                    if let image = cache.getImage(at: index) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .applyFilterPreset(activeFilterPreset)
-                            .aspectRatio(contentMode: .fill)
-                            .padding(.bottom, 2)
-                            .onAppear { currentIndex = index }
-                            .id("webtoon_img_\(index)_\(cache.cacheUpdatedTick)") // Async trigger
-                    } else {
-                        ZStack {
-                            Color.black.frame(height: 500)
-                            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
-                        }
-                        .id("webtoon_place_\(index)_\(cache.cacheUpdatedTick)") // Async trigger
-                    }
+                    WebtoonImageCell(
+                        index: index,
+                        cache: cache,
+                        activeFilterPreset: activeFilterPreset,
+                        onAppearAction: { currentIndex = index }
+                    )
                 }
             }
         }
@@ -665,6 +654,33 @@ struct ComicReaderEngine: View {
                 }
             }
             // .faceUp / .faceDown / .unknown → leave mode unchanged
+        }
+    }
+}
+
+struct WebtoonImageCell: View {
+    let index: Int
+    @ObservedObject var cache: ComicImageCache
+    let activeFilterPreset: ReadingFilterPreset
+    let onAppearAction: () -> Void
+
+    var body: some View {
+        if let image = cache.getImage(at: index) {
+            Image(uiImage: image)
+                .resizable()
+                .applyFilterPreset(activeFilterPreset)
+                .aspectRatio(contentMode: .fill)
+                .padding(.bottom, 2)
+                .onAppear { onAppearAction() }
+        } else {
+            ZStack {
+                Color.black.frame(height: 500)
+                ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+            }
+            .onAppear {
+                _ = cache.getImage(at: index) // Force trigger fetch
+                onAppearAction()
+            }
         }
     }
 }

@@ -2,15 +2,18 @@ import SwiftUI
 
 struct EditorDashboardView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @ObservedObject private var focusManager = WorkspaceFocusManager.shared
     @State private var searchText = ""
     @State private var selectedPDF: ConvertedPDF?
     @State private var selectedBookForMetadata: ConvertedPDF?
     
     var filteredPDFs: [ConvertedPDF] {
+        let pinnedPDFs = conversionManager.convertedPDFs.filter { focusManager.pinnedIDs.contains($0.id) }
+        
         if searchText.isEmpty {
-            return conversionManager.convertedPDFs
+            return pinnedPDFs
         } else {
-            return conversionManager.convertedPDFs.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+            return pinnedPDFs.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
         }
     }
     
@@ -23,11 +26,13 @@ struct EditorDashboardView: View {
                     Image(systemName: "pencil.and.outline")
                         .font(.system(size: 60))
                         .foregroundStyle(Color.inkTextSecondary)
-                    Text("No Comics to Edit")
+                    Text("No Files in Work Area")
                         .font(.title2.bold())
                         .foregroundStyle(Color.inkTextPrimary)
-                    Text("Import comics in the Library tab to start editing.")
+                    Text("Long-press a file in the Library tab and tap \"Send to Work Area\" to start editing.")
                         .foregroundStyle(Color.inkTextSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
                 }
             } else {
                 ScrollView {

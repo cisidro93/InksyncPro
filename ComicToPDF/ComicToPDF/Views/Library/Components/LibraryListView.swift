@@ -98,6 +98,22 @@ struct LibraryListView: View {
                                     } label: { Label("Read Next Issue", systemImage: "play.fill") }
 
                                     Divider()
+                                    
+                                    let allPinned = group.issues.allSatisfy { WorkspaceFocusManager.shared.isPinned($0) }
+                                    Button {
+                                        if allPinned {
+                                            for issue in group.issues { WorkspaceFocusManager.shared.unpin(issue) }
+                                        } else {
+                                            for issue in group.issues { WorkspaceFocusManager.shared.pin(issue) }
+                                        }
+                                    } label: {
+                                        Label(
+                                            allPinned ? "Remove from Work Area" : "Send Series to Work Area",
+                                            systemImage: allPinned ? "pin.slash" : "pin"
+                                        )
+                                    }
+
+                                    Divider()
 
                                     Button {
                                         NotificationCenter.default.post(name: Notification.Name("RequestSeriesRename"), object: group)

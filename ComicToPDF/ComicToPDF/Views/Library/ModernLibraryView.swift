@@ -424,7 +424,6 @@ struct ModernLibraryView: View {
                 multiSelection: $multiSelection,
                 batchMergeItems: $batchMergeItems,
                 showingBatchMergeReorder: $showingBatchMergeReorder,
-                showCognitiveBatchRenamer: .constant(false),
                 onVaultToggle: handleVaultToggle,
                 onSelectAll: handleSelectAll
             )

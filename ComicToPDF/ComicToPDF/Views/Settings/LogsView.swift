@@ -293,11 +293,7 @@ struct LogsView: View {
             Task.detached(priority: .userInitiated) {
                 defer { if accessing { rawURL.stopAccessingSecurityScopedResource() } }
                 
-                var parsedData: Data?
-                var coordError: NSError?
-                NSFileCoordinator().coordinate(readingItemAt: rawURL, options: .withoutChanges, error: &coordError) { safeURL in
-                    parsedData = try? Data(contentsOf: safeURL)
-                }
+                let parsedData = try? Data(contentsOf: rawURL)
                 
                 // Allow UI to dismiss without dropping frames
                 try? await Task.sleep(nanoseconds: 500_000_000)

@@ -228,7 +228,18 @@ class LibraryViewModel: ObservableObject {
             // Publish results back to main thread
             Task { @MainActor in
                 guard !Task.isCancelled else { return }
-                self.cachedLibraryItems = finalItems
+                
+                let chunkLimit = 50
+                if finalItems.count > chunkLimit {
+                    self.cachedLibraryItems = Array(finalItems.prefix(chunkLimit))
+                    // Push the remaining items on the next run-loop to prevent dropped frames
+                    Task { @MainActor in
+                        guard !Task.isCancelled else { return }
+                        self.cachedLibraryItems = finalItems
+                    }
+                } else {
+                    self.cachedLibraryItems = finalItems
+                }
                 
                 // ✅ Phase 2 Logging Integration
                 Logger.shared.log("Library Cache Rebuilt: \(finalItems.count) total UI groups rendered (Filter: \(filter.rawValue), Depth: \(folderID?.uuidString ?? "Root"))", category: "Library")

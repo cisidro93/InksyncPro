@@ -23,13 +23,13 @@ struct InkTabBar: View {
 
     private var isAnyTaskActive: Bool { isConverting || isImporting }
     private var combinedProgress: Double {
-        if isConverting { return convertingProgress }
         if isImporting  { return importProgress }
+        if isConverting { return convertingProgress }
         return 0
     }
     private var activeMessage: String {
-        if isConverting { return convertingMessage.isEmpty ? "Converting…" : convertingMessage }
         if isImporting  { return importMessage.isEmpty ? "Importing…" : importMessage }
+        if isConverting { return convertingMessage.isEmpty ? "Converting…" : convertingMessage }
         return ""
     }
 

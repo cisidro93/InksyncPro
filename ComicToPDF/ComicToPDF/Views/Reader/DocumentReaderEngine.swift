@@ -57,15 +57,12 @@ struct DocumentReaderEngine: View {
                     ))
                     onDismiss()
                 },
-                onEInkSend: {},
                 onBookmark: {
                     let bookmark = Annotation(pdfID: pdf.id, pageIndex: currentPageIndex, kind: .bookmark, createdAt: Date(), modifiedAt: Date())
                     AnnotationStore.shared.add(bookmark)
                 },
-                onAnnotationsToggle: {
-                    isPencilMode.toggle()
-                },
                 onSettingsToggle: {},
+                onAnnotationsToggle: { isPencilMode.toggle() },
                 currentProgress: Binding(
                     get: { Double(currentPageIndex) / Double(max(1, pdf.pageCount - 1)) },
                     set: {

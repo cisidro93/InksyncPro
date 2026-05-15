@@ -20,11 +20,11 @@ struct ReaderChrome: View {
 
     // Actions
     var onBack: () -> Void
-    var onEInkSend: () -> Void
     var onBookmark: () -> Void
     var onBookmarkActive: Bool = false
-    var onAnnotationsToggle: () -> Void
     var onSettingsToggle: () -> Void
+    var onTOCToggle: (() -> Void)? = nil
+    var onAnnotationsToggle: (() -> Void)? = nil
 
     // Scrubber
     @Binding var currentProgress: Double
@@ -207,7 +207,12 @@ struct ReaderChrome: View {
 
                 // Right cluster
                 HStack(spacing: 4) {
-                    barButton(icon: "arrow.up.forward.square", tint: .white, action: onEInkSend)
+                    if let onTOC = onTOCToggle {
+                        barButton(icon: "list.bullet", tint: .white, action: onTOC)
+                    }
+                    if let onAnnotations = onAnnotationsToggle {
+                        barButton(icon: "pencil.and.outline", tint: .white, action: onAnnotations)
+                    }
                 }
             }
             .padding(.horizontal, 12)

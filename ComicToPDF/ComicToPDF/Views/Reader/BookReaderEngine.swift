@@ -637,19 +637,15 @@ struct BookReaderEngine: View {
                 pageText: vm.tocItems.indices.contains(vm.currentChapterIndex) ? vm.tocItems[vm.currentChapterIndex].label : "Ch. \(vm.currentChapterIndex + 1) / \(max(1, vm.chapterHtmlFiles.count))",
                 isVisible: $chromeVisible,
                 onBack: onDismiss,
-                onEInkSend: {
-                    showTOC = true // Piggyback on unused button for TOC for now
-                },
                 onBookmark: {
                     let bookmark = Annotation(pdfID: pdf.id, pageIndex: vm.currentChapterIndex, chapterTitle: "Chapter \(vm.currentChapterIndex + 1)", kind: .bookmark, createdAt: Date(), modifiedAt: Date())
                     AnnotationStore.shared.add(bookmark)
                 },
-                onAnnotationsToggle: {
-                    showAnnotations = true
-                },
                 onSettingsToggle: {
                     withAnimation { showTypographyHUD = true }
                 },
+                onTOCToggle: { showTOC = true },
+                onAnnotationsToggle: { showAnnotations = true },
                 currentProgress: Binding(
                     get: { Double(vm.currentChapterIndex) / Double(max(1, vm.chapterHtmlFiles.count - 1)) },
                     set: { vm.currentChapterIndex = Int($0 * Double(max(1, vm.chapterHtmlFiles.count - 1))) }

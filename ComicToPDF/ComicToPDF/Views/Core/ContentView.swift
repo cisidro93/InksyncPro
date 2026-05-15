@@ -192,20 +192,20 @@ struct ContentView: View {
         let isActive      = isConverting || isImporting
 
         let progress: Double = {
-            if isConverting { return conversionManager.conversionProgress }
             if isImporting  { return ImportMonitorManager.shared.progress }
+            if isConverting { return conversionManager.conversionProgress }
             return 0
         }()
 
         let label: String = {
-            if isConverting {
-                let msg = conversionManager.processingStatus
-                return msg.isEmpty ? "Converting…" : msg
-            }
             if isImporting {
                 let done  = ImportMonitorManager.shared.filesProcessed
                 let total = ImportMonitorManager.shared.totalFilesToProcess
                 return "Importing \(done) / \(total)"
+            }
+            if isConverting {
+                let msg = conversionManager.processingStatus
+                return msg.isEmpty ? "Converting…" : msg
             }
             return ""
         }()

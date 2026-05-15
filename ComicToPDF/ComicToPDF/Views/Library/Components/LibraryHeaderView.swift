@@ -15,7 +15,6 @@ struct LibraryHeaderView: View {
     @Binding var multiSelection: Set<UUID>
     @Binding var batchMergeItems: [ConvertedPDF]
     @Binding var showingBatchMergeReorder: Bool
-    @Binding var showCognitiveBatchRenamer: Bool
     
     // Vault unlock callback
     var onVaultToggle: () -> Void
@@ -438,7 +437,10 @@ struct LibraryHeaderView: View {
 
                     // Batch tools
                     ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {
-                        if multiSelection.count >= 1 { showCognitiveBatchRenamer = true }
+                        if multiSelection.count >= 1 {
+                            let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                            onSheetTrigger(.cognitiveBatchRenamer(items))
+                        }
                         else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.") }
                     })
                     ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.purple) { onSheetTrigger(.merge) }
