@@ -39,32 +39,18 @@ struct ZettelkastenCorkboardView: View {
                     .ignoresSafeArea()
 
                 // ── Infinite canvas ─────────────────────────────────────────
-                infiniteCanvas
+                infiniteCanvas(panGesture: canvasPanGesture)
                     .scaleEffect(canvasScale * livePinchScale)
                     .offset(
                         x: canvasOffset.width + livePanDelta.width,
                         y: canvasOffset.height + livePanDelta.height
                     )
-                    // Canvas pan — only fires when no card is being dragged
-                    .gesture(
-                        DragGesture(minimumDistance: 8)
-                            .onChanged { v in
-                                guard liftedCardID == nil else { return }
-                                livePanDelta = v.translation
-                            }
-                            .onEnded { v in
-                                guard liftedCardID == nil else { return }
-                                canvasOffset.width  += v.translation.width
-                                canvasOffset.height += v.translation.height
-                                livePanDelta = .zero
-                            }
-                    )
+                    // Pinch lives at ZStack level so two-finger gestures work
+                    // anywhere on screen, not just over empty canvas space.
                     .simultaneousGesture(
                         MagnificationGesture()
-                            .onChanged { mag in
-                                livePinchScale = mag
-                            }
-                            .onEnded { mag in
+                            .onChanged { mag in livePinchScale = mag }
+                            .onEnded   { mag in
                                 canvasScale = clampedScale(canvasScale * mag)
                                 livePinchScale = 1.0
                             }
@@ -79,13 +65,33 @@ struct ZettelkastenCorkboardView: View {
         }
     }
 
+    // The pan gesture is defined here so we can attach it directly to the
+    // background hit-area inside infiniteCanvas, NOT to the parent ZStack.
+    // SwiftUI resolves gestures child-before-parent, so attaching pan only
+    // to the background means card drags always win when a card is touched,
+    // and panning fires reliably on any empty space — no conflicts.
+    private var canvasPanGesture: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { v in
+                livePanDelta = v.translation
+            }
+            .onEnded { v in
+                canvasOffset.width  += v.translation.width
+                canvasOffset.height += v.translation.height
+                livePanDelta = .zero
+            }
+    }
+
     // MARK: - Infinite Canvas
 
-    private var infiniteCanvas: some View {
+    private func infiniteCanvas(panGesture: some Gesture) -> some View {
         ZStack {
-            // Invisible oversized hit area so gestures register on empty space
+            // Pan gesture lives ONLY on this background slab.
+            // Touches on cards fall through to the card's own DragGesture.
             Color.clear
                 .frame(width: 6000, height: 6000)
+                .contentShape(Rectangle())   // make clear fully hittable
+                .gesture(panGesture)
 
             ForEach(annotations) { ann in
                 let liveOffset = cardDragOffsets[ann.id] ?? .zero
