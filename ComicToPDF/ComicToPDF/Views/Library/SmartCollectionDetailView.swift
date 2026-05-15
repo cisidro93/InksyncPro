@@ -12,6 +12,7 @@ struct SmartCollectionDetailView: View {
     // Dummy bindings required by shared components
     @State private var mockBatchMode = false
     @State private var mockMultiSelection: Set<UUID> = []
+    @State private var mockSelectedPDF: ConvertedPDF? = nil
     
     // Force view updates when tracker changes
     @ObservedObject private var tracker = ReaderProgressTracker.shared
@@ -22,7 +23,7 @@ struct SmartCollectionDetailView: View {
         
         switch rule {
         case .recentlyAdded:
-            results = allPDFs.sorted(by: { $0.dateAdded > $1.dateAdded })
+            results = allPDFs.sorted(by: { $0.lastModified > $1.lastModified })
             if results.count > 50 {
                 results = Array(results.prefix(50))
             }
@@ -44,7 +45,7 @@ struct SmartCollectionDetailView: View {
                 let read = pdf.metadata.lastReadPage ?? 0
                 return read == 0
             }
-            results.sort(by: { $0.dateAdded > $1.dateAdded })
+            results.sort(by: { $0.lastModified > $1.lastModified })
             
         case .completed:
             results = allPDFs.filter { pdf in
@@ -131,18 +132,28 @@ struct SmartCollectionDetailView: View {
                         if viewStyle == .grid {
                             LibraryGridView(
                                 items: filteredPDFs.map { .single($0) },
-                                tapAction: .constant(.read),
                                 isBatchMode: $mockBatchMode,
                                 multiSelection: $mockMultiSelection,
-                                onSelectAll: {}
+                                useNavigationStack: false,
+                                tapAction: .constant(.read),
+                                selectedPDF: $mockSelectedPDF,
+                                onAction: { _, _ in },
+                                onImport: {},
+                                onFolderTap: { _ in },
+                                onDropApplied: {}
                             )
                             .padding(.top, 16)
                         } else {
                             LibraryListView(
                                 items: filteredPDFs.map { .single($0) },
-                                tapAction: .constant(.read),
                                 isBatchMode: $mockBatchMode,
-                                multiSelection: $mockMultiSelection
+                                multiSelection: $mockMultiSelection,
+                                useNavigationStack: false,
+                                tapAction: .constant(.read),
+                                selectedPDF: $mockSelectedPDF,
+                                onAction: { _, _ in },
+                                onImport: {},
+                                onFolderTap: { _ in }
                             )
                             .padding(.top, 16)
                         }
