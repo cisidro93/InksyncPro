@@ -116,6 +116,33 @@ struct ModernLibraryView: View {
                 listRenameGroup = group
                 listRenamePendingName = group.title
             }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InksyncResumeLastRead"))) { notification in
+                let readingModeStr = notification.userInfo?["readingMode"] as? String
+                if let mostRecent = ReaderProgressTracker.shared.recentSessions().first,
+                   let pdf = nativeVisiblePDFs.first(where: { $0.id == mostRecent.pdfID }) {
+                    // Update reading mode globally if requested by intent
+                    if let mode = readingModeStr, let readingMode = ComicReadingMode(rawValue: mode) {
+                        AppSettingsManager.shared.readerSettings.defaultReadingMode = readingMode
+                    }
+                    AppRouter.shared.presentFullScreen(.read(pdf))
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InksyncOpenShelf"))) { _ in
+                // Close any open sheets or full screen covers to reveal the library shelf
+                router.activeSheet = nil
+                router.activeFullScreen = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InksyncOpenBook"))) { notification in
+                if let searchTitle = notification.userInfo?["searchTitle"] as? String {
+                    // Find the first book containing the title (case-insensitive)
+                    if let pdf = nativeVisiblePDFs.first(where: { $0.name.localizedCaseInsensitiveContains(searchTitle) || $0.metadata.title.localizedCaseInsensitiveContains(searchTitle) }) {
+                        AppRouter.shared.presentFullScreen(.read(pdf))
+                    } else {
+                        // Just set the search text if not explicitly found, so user can see partial matches
+                        viewModel.searchText = searchTitle
+                    }
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if settingsManager.conversionSettings.showEditorDebug {
                     LibraryDebugHUD(

@@ -462,9 +462,8 @@ struct GlobalZettelkastenHubView: View {
                     md += "\n" + tags.map { "#\($0)" }.joined(separator: " ") + "\n"
                 }
                 // Page reference
-                if let page = ann.pageIndex {
-                    md += "\n_p. \(page + 1)_\n"
-                }
+                let page = ann.pageIndex
+                md += "\n_p. \(page + 1)_\n"
                 md += "\n---\n\n"
             }
         }

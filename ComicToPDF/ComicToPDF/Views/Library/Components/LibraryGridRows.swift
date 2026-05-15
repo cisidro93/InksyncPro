@@ -162,6 +162,23 @@ struct ModernGridFileCell: View {
                         Spacer()
                     }
                 }
+
+                // 📌 Work Area pin badge — top-right (only when not in batch mode)
+                if !isBatch && WorkspaceFocusManager.shared.isPinned(pdf) {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(5)
+                                .background(Color.inkAccentKnowledge, in: Circle())
+                                .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+                                .padding(6)
+                        }
+                        Spacer()
+                    }
+                }
             }
             .frame(maxWidth: .infinity)
             .aspectRatio(0.66, contentMode: .fit)

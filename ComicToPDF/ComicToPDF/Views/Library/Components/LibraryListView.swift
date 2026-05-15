@@ -324,8 +324,23 @@ struct LibraryListView: View {
         
         Button {
             onAction(.covers, pdf)
-        } label: { Label("Edit Workspace (Covers)", systemImage: "paintbrush.pointed") }
-        
+        } label: { Label("Edit in Work Area", systemImage: "paintbrush.pointed") }
+
+        // ── Work Area focus pin ─────────────────────────────────────────────
+        let isPinned = WorkspaceFocusManager.shared.isPinned(pdf)
+        Button {
+            if isPinned {
+                WorkspaceFocusManager.shared.unpin(pdf)
+            } else {
+                WorkspaceFocusManager.shared.pin(pdf)
+            }
+        } label: {
+            Label(
+                isPinned ? "Remove from Work Area" : "Send to Work Area",
+                systemImage: isPinned ? "pin.slash" : "pin"
+            )
+        }
+
         Button {
             onAction(.favorite, pdf)
         } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star") }

@@ -36,6 +36,16 @@ enum ComicReadingMode: String, CaseIterable, Codable {
     case panelNavigation  // Panel-by-panel using pageModels Vision data
     case webtoonScroll    // Continuous vertical scroll
     case mangaRTL         // Single page, horizontal swipe, right-to-left
+    
+    var hudDescription: String {
+        switch self {
+        case .pageHorizontal:  return "Swipe left to advance pages"
+        case .mangaRTL:        return "Swipe right to advance pages"
+        case .pageTwoUp:       return "Side-by-side spreads (landscape)"
+        case .panelNavigation: return "Zoom to each panel • Edit in Work Area"
+        case .webtoonScroll:   return "Continuous vertical strip"
+        }
+    }
 }
 
 class ComicImageCache: ObservableObject {
@@ -765,35 +775,86 @@ struct ComicGuidedPageView: View {
     
     var body: some View {
         GeometryReader { geo in
-            if let img = image {
-                let metrics = calculateMetrics(for: geo.size, image: img)
-                
-                Image(uiImage: img)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .scaleEffect(metrics.scale)
-                    .offset(x: metrics.offsetX, y: metrics.offsetY)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: currentPanelIndex)
-                    .onTapGesture { loc in
-                        let third = geo.size.width / 3
-                        if loc.x < third {
-                            rewind()
-                        } else if loc.x > geo.size.width - third {
-                            advance()
-                        } else {
-                            onTapChrome()
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                if let img = image {
+                    let metrics = calculateMetrics(for: geo.size, image: img)
+
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .scaleEffect(metrics.scale)
+                        .offset(x: metrics.offsetX, y: metrics.offsetY)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: currentPanelIndex)
+                        .onTapGesture { loc in
+                            let third = geo.size.width / 3
+                            if loc.x < third {
+                                rewind()
+                            } else if loc.x > geo.size.width - third {
+                                advance()
+                            } else {
+                                onTapChrome()
+                            }
+                        }
+
+                    // ── Panel Navigation HUD ──────────────────────────
+                    VStack {
+                        Spacer()
+                        if panels.isEmpty {
+                            // Zero panels: show a hint to open Work Area
+                            HStack(spacing: 8) {
+                                Image(systemName: "viewfinder")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.6))
+                                Text("No panels — tap \u203a to skip page")
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(.bottom, 90)
+                        } else if currentPanelIndex >= 0 {
+                            // Active panel indicator
+                            VStack(spacing: 6) {
+                                // Segmented progress dots
+                                HStack(spacing: 4) {
+                                    ForEach(0..<panels.count, id: \.self) { i in
+                                        Capsule()
+                                            .fill(i <= currentPanelIndex ? Color.white : Color.white.opacity(0.3))
+                                            .frame(width: i == currentPanelIndex ? 18 : 6, height: 4)
+                                            .animation(.spring(response: 0.25), value: currentPanelIndex)
+                                    }
+                                }
+                                Text("Panel \(currentPanelIndex + 1) of \(panels.count)")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(.bottom, 90)
                         }
                     }
-            } else {
-                ZStack {
-                    Color.black
-                    ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                } else {
+                    ZStack {
+                        Color.black
+                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                    }
                 }
             }
         }
         .onAppear {
             currentPanelIndex = -1 // Start zoomed out
+            // Auto-advance pages with no panels when in guided mode
+            if panels.isEmpty && masterIndex < totalPages - 1 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    // Only auto-skip if there are genuinely no panels for this page
+                    // (don't skip if panels haven't loaded yet)
+                }
+            }
         }
     }
     

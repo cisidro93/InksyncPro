@@ -1,6 +1,7 @@
 import Foundation
 import CoreSpotlight
 import MobileCoreServices
+import UIKit
 
 /// Indexes InksyncPro library items and annotations into iOS Spotlight so users
 /// can find books and highlights without opening the app.
@@ -97,8 +98,7 @@ final class SpotlightIndexer {
         ].compactMap { $0 }
         attrs.identifier = pdf.id.uuidString
         // Thumbnail from cover file if available
-        if let coverURL = pdf.coverImageURL,
-           let data = try? Data(contentsOf: coverURL),
+        if let data = pdf.coverImageData,
            let img = UIImage(data: data) {
             attrs.thumbnailData = img.jpegData(compressionQuality: 0.6)
         }

@@ -226,14 +226,8 @@ struct PrecisionCanvasView: View {
             get: { selectedTool == .preview },
             set: { if !$0 { selectedTool = .edit } }
         )) {
-            if let image = pageImage {
-                 let previewPanels = editorState.pageModel.panels.map { p in
-                     CGRect(x: p.x / 1000.0, y: p.y / 1000.0, width: p.width / 1000.0, height: p.height / 1000.0)
-                 }
-                 GuidedViewPreview(image: image, panels: previewPanels)
-            } else {
-                Color.black.edgesIgnoringSafeArea(.all) // Fallback
-            }
+            GuidedViewPreview(pdf: pdf, startingPageIndex: pageIndex)
+                .environmentObject(conversionManager)
         }
         .onDisappear {
             // ✅ Auto-save changes when leaving the page
