@@ -20,54 +20,59 @@ struct SmartCollectionDetailView: View {
     var filteredPDFs: [ConvertedPDF] {
         let allPDFs = conversionManager.convertedPDFs
         var results: [ConvertedPDF] = []
-        
+
         switch rule {
         case .recentlyAdded:
             results = allPDFs.sorted(by: { $0.lastModified > $1.lastModified })
             if results.count > 50 {
                 results = Array(results.prefix(50))
             }
-            
+
         case .readingNow:
+            // A book is "Reading Now" if it has been opened (fraction > 0) but not finished (< 1.0).
             results = allPDFs.filter { pdf in
-                let maxPages = max(pdf.pageCount, 1)
-                let read = pdf.metadata.lastReadPage ?? 0
-                return read > 0 && read < (maxPages - 1)
+                guard let progress = tracker.progress(for: pdf.id) else { return false }
+                return progress.completionFraction > 0.0 && progress.completionFraction < 1.0
             }
             results.sort(by: { pdf1, pdf2 in
                 let d1 = tracker.progress(for: pdf1.id)?.lastOpenedAt ?? Date.distantPast
                 let d2 = tracker.progress(for: pdf2.id)?.lastOpenedAt ?? Date.distantPast
                 return d1 > d2
             })
-            
+
         case .allUnread:
+            // A book is "Unread" if there is no progress record for it at all,
+            // OR its completionFraction is exactly 0 (opened but immediately closed).
             results = allPDFs.filter { pdf in
-                let read = pdf.metadata.lastReadPage ?? 0
-                return read == 0
+                let fraction = tracker.progress(for: pdf.id)?.completionFraction ?? 0.0
+                return fraction == 0.0
             }
             results.sort(by: { $0.lastModified > $1.lastModified })
-            
+
         case .completed:
+            // A book is "Completed" only when the reader has written completionFraction == 1.0,
+            // or when markComplete() has been called explicitly.
             results = allPDFs.filter { pdf in
-                let maxPages = max(pdf.pageCount, 1)
-                let read = pdf.metadata.lastReadPage ?? 0
-                return read >= (maxPages - 1)
+                let fraction = tracker.progress(for: pdf.id)?.completionFraction ?? 0.0
+                return fraction >= 1.0
             }
             results.sort(by: { pdf1, pdf2 in
                 let d1 = tracker.progress(for: pdf1.id)?.lastOpenedAt ?? Date.distantPast
                 let d2 = tracker.progress(for: pdf2.id)?.lastOpenedAt ?? Date.distantPast
                 return d1 > d2
             })
-            
+
         case .manga:
+            // Shows every book the user has personally read in manga (right-to-left) mode.
             results = allPDFs.filter { pdf in
                 return tracker.progress(for: pdf.id)?.prefersMangaMode == true
             }
             results.sort(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
         }
-        
+
         return results
     }
+
     
     var body: some View {
         ZStack {
