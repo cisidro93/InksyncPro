@@ -226,6 +226,12 @@ actor ImportOrchestrator {
                     let idx = loopIndex
                     await MainActor.run { manager.processingStatus = "Importing \(idx) of \(urls.count)…" }
                 }
+                
+                if await ImportMonitorManager.shared.isCancelled {
+                    Logger.shared.log("Import cancelled by user mid-flight.", category: "Import", type: .warning)
+                    break
+                }
+                
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
@@ -555,6 +561,11 @@ actor ImportOrchestrator {
                             let currentCount = fileCount
                             await MainActor.run { manager.processingStatus = "Scanning \(folder.name) (\(currentCount) items)..." }
                             await Task.yield()
+                        }
+                        
+                        if await ImportMonitorManager.shared.isCancelled {
+                            Logger.shared.log("Sync cancelled by user mid-flight.", category: "Import", type: .warning)
+                            break
                         }
                         
                         guard let resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)),

@@ -98,6 +98,7 @@ struct EditorDashboardView: View {
                     }
                     .padding(InkSpacing.pagePadding)
                 }
+                .inkTabBarScrollDetect()
             }
         }
         .navigationTitle("Work Area")

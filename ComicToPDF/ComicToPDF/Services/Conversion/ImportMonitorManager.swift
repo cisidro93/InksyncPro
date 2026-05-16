@@ -13,6 +13,7 @@ final class ImportMonitorManager: ObservableObject {
     @Published private(set) var totalFilesToProcess: Int = 0
     @Published private(set) var filesProcessed: Int = 0
     @Published private(set) var filesFailed: Int = 0
+    @Published private(set) var isCancelled: Bool = false
 
     // Survival token — keeps the import alive when the app is backgrounded.
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
@@ -30,6 +31,7 @@ final class ImportMonitorManager: ObservableObject {
         totalFilesToProcess = totalCount
         filesProcessed = 0
         filesFailed = 0
+        isCancelled = false
 
         if backgroundTask == .invalid {
             backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ImportMonitor") { [weak self] in
@@ -65,6 +67,11 @@ final class ImportMonitorManager: ObservableObject {
             UIApplication.shared.endBackgroundTask(backgroundTask)
             backgroundTask = .invalid
         }
+    }
+    
+    func cancelImport() {
+        isCancelled = true
+        Logger.shared.log("Import cancelled by user.", category: "Import", type: .warning)
     }
 
     // MARK: - Derived State

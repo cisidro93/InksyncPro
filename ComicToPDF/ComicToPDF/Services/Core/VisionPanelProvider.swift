@@ -85,7 +85,14 @@ class VisionPanelProvider: PanelProvider {
                 if let texts = textRequest.results {
                     for obs in texts {
                         // Intelligent Text Anchors: If we find a block of text, it *must* be inside a panel.
-                        if obs.boundingBox.width > 0.02 && obs.boundingBox.height > 0.01 {
+                        let isWideEnough = obs.boundingBox.width >= CGFloat(currentMinSize)
+                        let isTallEnough = obs.boundingBox.height >= CGFloat(currentMinSize)
+                        
+                        // Aspect ratio check to reject tall, skinny gutters with text noise
+                        let ratio = obs.boundingBox.width / obs.boundingBox.height
+                        let isValidAspect = ratio > 0.2 && ratio < 5.0
+                        
+                        if isWideEnough && isTallEnough && isValidAspect {
                             // First, add it as a standard anchor for the Ensemble to check
                             candidates.append(PanelCandidate(
                                 boundingBox: obs.boundingBox,
@@ -93,6 +100,8 @@ class VisionPanelProvider: PanelProvider {
                                 method: .textAnchor,
                                 containsText: true
                             ))
+                        } else {
+                            Logger.shared.log("AI Vision [Drop]: Text anchor rejected (w: \(String(format: "%.2f", obs.boundingBox.width)), h: \(String(format: "%.2f", obs.boundingBox.height)), ratio: \(String(format: "%.2f", ratio))).", category: "AI_Verbose")
                         }
                     }
                 }

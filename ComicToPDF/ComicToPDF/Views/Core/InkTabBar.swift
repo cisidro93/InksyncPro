@@ -207,6 +207,17 @@ struct InkTabBar: View {
                     .foregroundStyle(Color.orange)
                     .contentTransition(.numericText())
                     .animation(.easeInOut(duration: 0.2), value: combinedProgress)
+                    
+                if isImporting {
+                    Button {
+                        ImportMonitorManager.shared.cancelImport()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color.secondary.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -245,10 +256,9 @@ struct InkScrollOffsetKey: PreferenceKey {
     }
 }
 
-/// Drop this on any ScrollView to auto-hide the InkTabBar on scroll down
 struct InkTabBarScrollDetector: ViewModifier {
-    let onScrollDown: () -> Void
-    let onScrollUp: () -> Void
+    let onScrollDown: (() -> Void)?
+    let onScrollUp: (() -> Void)?
 
     @State private var lastOffset: CGFloat = 0
 
@@ -263,15 +273,21 @@ struct InkTabBarScrollDetector: ViewModifier {
         )
         .onPreferenceChange(InkScrollOffsetKey.self) { offset in
             let delta = offset - lastOffset
-            if delta < -12 { onScrollDown() }
-            else if delta > 12 { onScrollUp() }
+            if delta < -12 { 
+                if let onScrollDown = onScrollDown { onScrollDown() }
+                else { NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_Hide"), object: nil) }
+            }
+            else if delta > 12 { 
+                if let onScrollUp = onScrollUp { onScrollUp() }
+                else { NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_Show"), object: nil) }
+            }
             lastOffset = offset
         }
     }
 }
 
 extension View {
-    func inkTabBarScrollDetect(onDown: @escaping () -> Void, onUp: @escaping () -> Void) -> some View {
+    func inkTabBarScrollDetect(onDown: (() -> Void)? = nil, onUp: (() -> Void)? = nil) -> some View {
         self.modifier(InkTabBarScrollDetector(onScrollDown: onDown, onScrollUp: onUp))
     }
 

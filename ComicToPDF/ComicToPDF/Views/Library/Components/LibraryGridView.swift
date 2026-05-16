@@ -100,6 +100,7 @@ struct LibraryGridView: View {
                         .padding(.top, 16)
                         .padding(.bottom, 100)
                     }
+                    .inkTabBarScrollDetect()
                     .background(Theme.bg)
                     .overlay(alignment: .trailing) {
                         ComicZealScrubber { letter in
