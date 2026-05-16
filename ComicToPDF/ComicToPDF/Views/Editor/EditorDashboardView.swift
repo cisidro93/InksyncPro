@@ -180,7 +180,7 @@ struct EditorRowView: View {
         }
         .contextMenu {
             Button(role: .destructive) {
-                WorkspaceFocusManager.shared.unpin(pdf.id)
+                WorkspaceFocusManager.shared.unpin(pdf)
             } label: {
                 Label("Remove from Work Area", systemImage: "pin.slash")
             }
