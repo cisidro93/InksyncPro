@@ -32,7 +32,7 @@ struct ModernLibraryView: View {
         case grid = "Grid"
     }
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
-    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details
+    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
     @State private var scrollToTopTrigger = false
 

@@ -7,7 +7,7 @@ struct SeriesDetailView: View {
     @Binding var selectedPDF: ConvertedPDF?
     var useNavigationStack: Bool
     
-    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .details
+    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     @AppStorage("defaultSeriesSort") private var sortOption: SeriesSortOption = .issueNumber
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     @AppStorage("manualOmnibusBuildsCount") private var manualOmnibusBuildsCount = 0

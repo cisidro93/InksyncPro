@@ -23,7 +23,7 @@ final class AmbientBrightnessManager: ObservableObject {
     // MARK: - Settings (persisted via UserDefaults)
     // Note: @AppStorage is a View-only property wrapper; use UserDefaults directly in ObservableObject classes.
     var autoNightMode: Bool {
-        get { UserDefaults.standard.object(forKey: "reader_autoNightMode") as? Bool ?? true }
+        get { UserDefaults.standard.object(forKey: "reader_autoNightMode") as? Bool ?? false }
         set { UserDefaults.standard.set(newValue, forKey: "reader_autoNightMode") }
     }
     var nightStartHour: Double {
