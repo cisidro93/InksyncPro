@@ -47,8 +47,11 @@ class ComicImageCache: ObservableObject {
     private let maxCacheSize = 7 // Can hold about ~15MB of images in memory depending on screen size
     private let prefetchLimit: Int // Configurable read-ahead page buffer
     
-    // For CBZ extraction (local file path)
-    private var cbzArchive: Archive?
+    // For CBZ extraction — store URL, NOT a shared Archive.
+    // ZIPFoundation Archive is NOT thread-safe: concurrent Task.detached extractions
+    // on the same Archive instance corrupt each other's reads, causing wrong pages
+    // to appear in the reader. Each extraction opens its own fresh file handle.
+    private var cbzURL: URL?
     private var entries: [Entry] = []
     
     // ✅ OPDS-style cloud page streaming
@@ -149,7 +152,7 @@ class ComicImageCache: ObservableObject {
                 }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
                 
                 await MainActor.run { [weak self] in
-                    self?.cbzArchive = archive
+                    self?.cbzURL = resolvedURL   // URL for per-extraction Archive instances
                     self?.entries = sortedEntries
                     self?.pageCount = sortedEntries.count
                     self?.isLoading = false
@@ -266,7 +269,11 @@ class ComicImageCache: ObservableObject {
             UIGraphicsEndImageContext()
             return image
         } else {
-            guard let archive = cbzArchive, index < entries.count else { return nil }
+            // Open a fresh Archive for every extraction.
+            // A single shared Archive is NOT thread-safe — concurrent Task.detached calls
+            // corrupt each other's file-pointer state, producing wrong image data per index.
+            guard let url = cbzURL, index < entries.count else { return nil }
+            guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return nil }
             let entry = entries[index]
             var data = Data()
             do {
