@@ -17,8 +17,8 @@ struct ZipEntry {
         let ext = (name as NSString).pathExtension.lowercased()
         return ["jpg", "jpeg", "png", "webp", "heic"].contains(ext)
             && !name.contains("__MACOSX")
-            && !name.hasPrefix(".")
-            && !name.lowercased().contains("thumbnail")
+            && !name.hasPrefix("._")
+            && name != ".DS_Store"
     }
 }
 

@@ -14,8 +14,8 @@ struct RAREntry {
     var isPageImage: Bool {
         let ext = (name as NSString).pathExtension.lowercased()
         return ["jpg", "jpeg", "png", "webp"].contains(ext)
-            && !name.hasPrefix(".")
-            && !name.lowercased().contains("thumbnail")
+            && !name.hasPrefix("._")
+            && name != ".DS_Store"
     }
 }
 

@@ -840,14 +840,8 @@ struct ReaderView: View {
                     while let file = enumerator.nextObject() as? URL {
                         if file.lastPathComponent.hasPrefix("._") || file.lastPathComponent == ".DS_Store" { continue }
                         
-                        // ✅ RENOVATED: Extract Raw Images for Metal PPL Engine (Bypassing slow HTML WKWebViews)
                         if ["jpg", "jpeg", "png", "webp", "heic"].contains(file.pathExtension.lowercased()) {
-                            // Filter out standard EPUB structural assets (like cover thumbnails or tiny icons)
-                            if !file.lastPathComponent.lowercased().contains("thumbnail") && !file.lastPathComponent.lowercased().contains("cover") {
-                                foundPages.append(file)
-                            } else if file.lastPathComponent.lowercased() == "cover.jpg" {
-                                foundPages.insert(file, at: 0) // Ensure explicit cover is page 0
-                            }
+                            foundPages.append(file)
                         }
                     }
                     foundPages.sort { $0.lastPathComponent < $1.lastPathComponent }
