@@ -60,6 +60,9 @@ class PageBufferManager: ObservableObject {
     // MARK: - Internal
     private var pageURLs: [URL] = []
     private var renderTask: Task<Void, Never>?
+    /// Incremented every time setup() is called. Any decode that finishes after a new
+    /// setup() has started is stale — it must not write to any @Published property.
+    private var generation: Int = 0
 
     // ✅ Phase 1: Smart Margin Cropping
     var isAutoCropEnabled: Bool {
@@ -69,6 +72,12 @@ class PageBufferManager: ObservableObject {
     // MARK: - Setup
 
     func setup(pages: [URL]) {
+        // Cancel any in-flight decode from the previous file BEFORE overwriting pageURLs.
+        // Without this, a Task.detached started for the old file can finish AFTER setup()
+        // and overwrite currentImage with a stale page from the wrong file.
+        renderTask?.cancel()
+        renderTask = nil
+        generation &+= 1      // wrapping add — safe at Int.max
         pageURLs = pages
         lockedRect = .full
         currentImage = nil
@@ -87,6 +96,7 @@ class PageBufferManager: ObservableObject {
 
     func render(pageIndex: Int, bounds: CGSize) {
         renderTask?.cancel()
+        let gen = generation          // capture — guards against stale writes
         renderTask = Task {
             self.isLoading = true
 
@@ -95,7 +105,8 @@ class PageBufferManager: ObservableObject {
             async let prev    = renderPage(at: pageIndex - 1)
 
             let (cImage, nImage, pImage) = await (current, next, prev)
-            guard !Task.isCancelled else { return }
+            // Discard results if cancelled OR if a newer setup() has since started
+            guard !Task.isCancelled, self.generation == gen else { return }
 
             self.currentImage = cImage
             self.nextImage    = nImage
@@ -112,6 +123,7 @@ class PageBufferManager: ObservableObject {
     /// `isMangaMode` controls which physical page index maps to left vs right.
     func renderDual(leadIndex: Int, pages allPages: [URL], isMangaMode: Bool) {
         renderTask?.cancel()
+        let gen = generation          // capture — guards against stale writes
         renderTask = Task {
             self.isLoading = true
             self.decodeProgress = 0.0
@@ -133,7 +145,8 @@ class PageBufferManager: ObservableObject {
             let cL = await curL;  self.decodeProgress = 1/6
             let cR = await curR;  self.decodeProgress = 2/6
             // Publish partial state so first spread appears before prev/next finish
-            if !Task.isCancelled {
+            // Guard generation before every write — a new setup() may have arrived.
+            if !Task.isCancelled, self.generation == gen {
                 self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
                 self.currentImage  = cL ?? cR
                 self.isLoading     = false  // UI unlocks here
@@ -142,7 +155,7 @@ class PageBufferManager: ObservableObject {
             let pR = await prevR; self.decodeProgress = 4/6
             let nL = await nextL; self.decodeProgress = 5/6
             let nR = await nextR; self.decodeProgress = 6/6
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, self.generation == gen else { return }
 
             self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
             self.prevSpread    = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
