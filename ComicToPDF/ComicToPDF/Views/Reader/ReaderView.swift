@@ -524,7 +524,16 @@ struct ReaderView: View {
             // Settings + all tools
             Menu {
                 Section("Reading Mode") {
-                    Toggle("Manga (Right-to-Left)", isOn: $isMangaMode)
+                    Toggle("Manga (Right-to-Left)", isOn: Binding(
+                        get: { isMangaMode },
+                        set: { val in
+                            isMangaMode = val
+                            if let p = pdf, let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == p.id }) {
+                                conversionManager.convertedPDFs[idx].metadata.isManga = val
+                                conversionManager.saveLibrary()
+                            }
+                        }
+                    ))
                     Toggle("Vertical Webtoon Scroll", isOn: $isVerticalScroll)
                 }
                 Section("Layout") {

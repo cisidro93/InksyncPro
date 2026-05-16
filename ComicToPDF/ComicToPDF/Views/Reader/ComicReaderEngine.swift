@@ -380,6 +380,8 @@ struct ComicReaderEngine: View {
     let pdf: ConvertedPDF
     var onDismiss: () -> Void
     
+    @EnvironmentObject var conversionManager: ConversionManager
+    
     @StateObject private var cache: ComicImageCache
     @State private var chromeVisible = false
     @State private var currentIndex: Int = 0
@@ -597,6 +599,13 @@ struct ComicReaderEngine: View {
             ])
             // Also notify local Watch/Mac companion apps if built in the future
             activity.becomeCurrent()
+        }
+        .onChange(of: readingMode) { _, newMode in
+            let isManga = (newMode == .mangaRTL)
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].metadata.isManga = isManga
+                conversionManager.saveLibrary()
+            }
         }
     }
     

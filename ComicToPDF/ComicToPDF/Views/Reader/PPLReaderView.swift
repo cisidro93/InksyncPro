@@ -307,6 +307,11 @@ struct PPLReaderView: View {
             }
         } else {
             // Snap back
+            let atStart = triggerPrev && currentPageIndex == 0
+            let atEnd = triggerNext && currentPageIndex == pages.count - 1
+            if atStart || atEnd {
+                Haptics.shared.playImpact(style: .rigid)
+            }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { swipeDragX = 0 }
             isCommittingSwipe = false
         }
@@ -446,6 +451,7 @@ struct PPLReaderView: View {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = pages.count - 1
         } else {
+            Haptics.shared.playImpact(style: .rigid)
             NotificationCenter.default.post(name: NSNotification.Name("Reader_EndOfBookReached"), object: nil)
         }
     }
@@ -462,7 +468,10 @@ struct PPLReaderView: View {
         // Use synchronous canonical lead — never depends on async buffer state
         let lead    = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
         let isCover = lead == 0
-        guard currentPageIndex > 0 else { return }
+        guard currentPageIndex > 0 else {
+            Haptics.shared.playImpact(style: .rigid)
+            return 
+        }
 
         let hop: Int = (showingDual && !isSpread && !prevIsSpread && !isCover) ? 2 : 1
         Haptics.shared.playImpact(style: .light)

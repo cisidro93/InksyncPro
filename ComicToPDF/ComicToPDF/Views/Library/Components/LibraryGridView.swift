@@ -521,6 +521,26 @@ struct LibraryGridView: View {
     private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
         Button { onAction(.read, pdf) } label: { Label("Read / Preview", systemImage: "book.pages") }
 
+        Divider()
+        
+        Button {
+            ReaderProgressTracker.shared.updateProgress(for: pdf.id, page: max(1, pdf.pageCount), total: max(1, pdf.pageCount))
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].metadata.lastReadPage = pdf.pageCount
+                conversionManager.saveLibrary()
+            }
+        } label: { Label("Mark as Read", systemImage: "checkmark.circle") }
+        
+        Button {
+            ReaderProgressTracker.shared.updateProgress(for: pdf.id, page: 0, total: max(1, pdf.pageCount))
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].metadata.lastReadPage = 0
+                conversionManager.saveLibrary()
+            }
+        } label: { Label("Mark as Unread", systemImage: "circle") }
+        
+        Divider()
+
         // Cloud files: offer inline convert so the user doesn't need to open the detail sheet
         if case .cloud = pdf.sourceMode {
             let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
