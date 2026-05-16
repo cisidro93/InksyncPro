@@ -221,19 +221,35 @@ class PageBufferManager: ObservableObject {
         let url = pageURLs[index]
 
         return await Task.detached(priority: .userInitiated) {
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                  let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-                await MainActor.run {
-                    Logger.shared.log("PageBufferManager: Failed to decode page \(index)", category: "Engine", type: .error)
-                }
-                return nil
+            // Strategy 1: CGImageSource (fastest, best memory usage)
+            if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+                let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
+                return cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
             }
 
-            let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
-            if cropEnabled {
-                return Self.autoCropMargins(from: cgImage)
+            // Strategy 2: UIImage fallback (different OS codec path — handles some edge cases
+            // where CGImageSource returns nil for valid JPEGs on certain iOS versions)
+            if let uiImage = UIImage(contentsOfFile: url.path), let cgImage = uiImage.cgImage {
+                await MainActor.run {
+                    Logger.shared.log(
+                        "PageBufferManager: CGImageSource failed but UIImage succeeded for page \(index) — \(url.lastPathComponent)",
+                        category: "Engine", type: .warning
+                    )
+                }
+                let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
+                return cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
             }
-            return cgImage
+
+            // Both strategies failed — log diagnostic info
+            let exists = FileManager.default.fileExists(atPath: url.path)
+            await MainActor.run {
+                Logger.shared.log(
+                    "PageBufferManager: DECODE FAILED page \(index) | exists=\(exists) | path=\(url.path)",
+                    category: "Engine", type: .error
+                )
+            }
+            return nil
         }.value
     }
 

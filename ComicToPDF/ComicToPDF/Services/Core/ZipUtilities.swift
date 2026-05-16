@@ -71,33 +71,38 @@ struct ZipUtilities {
 
                     } else {
                         // --- ZIP / CBZ PATH ---
-                        let archive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
-                        var entryIndex = 0
+                        // Restore stable-build approach: failable initializer + full internal entry path.
+                        // ZIPFoundation.extract(entry:to:) creates parent directories automatically (v0.9.9+).
+                        // We add an explicit createDirectory before each extract as belt-and-suspenders.
+                        guard let archive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read) else {
+                            throw NSError(domain: "ZipError", code: 1,
+                                          userInfo: [NSLocalizedDescriptionKey: "Could not open CBZ archive at \(sourceURL.lastPathComponent)"])
+                        }
 
                         for entry in archive {
                             try autoreleasepool {
                                 let path = entry.path
-                                let name = (path as NSString).lastPathComponent
+                                let filename = URL(fileURLWithPath: path).lastPathComponent
 
                                 // Skip macOS hidden files and directories
-                                if path.contains("__MACOSX") || name.hasPrefix("._") || name == ".DS_Store" || path.hasSuffix("/") { return }
+                                if path.contains("__MACOSX") || filename.hasPrefix("._") || filename == ".DS_Store" || path.hasSuffix("/") { return }
 
-                                let fileExt = (name as NSString).pathExtension.lowercased()
-                                guard ["jpg", "jpeg", "png", "webp", "gif", "heic"].contains(fileExt) else { return }
+                                let destinationURL = tempDir.appendingPathComponent(path)
 
-                                // Flatten to a zero-padded name so lexicographic sort == archive order.
-                                // This avoids the subdirectory creation problem entirely — no nested paths,
-                                // so CGImageSourceCreateWithURL always finds the file at exactly the URL we stored.
-                                let flatName = String(format: "%06d_\(name)", entryIndex)
-                                let destinationURL = tempDir.appendingPathComponent(flatName)
-
-                                // Ensure parent exists (it's flat so this is just tempDir, but defensive)
-                                try fileManager.createDirectory(at: destinationURL.deletingLastPathComponent(),
-                                                                withIntermediateDirectories: true)
+                                // ✅ Defensive: ensure parent directory exists before extracting.
+                                // ZIPFoundation does this internally, but we do it explicitly for safety.
+                                let parentDir = destinationURL.deletingLastPathComponent()
+                                if !fileManager.fileExists(atPath: parentDir.path) {
+                                    try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
+                                }
 
                                 _ = try archive.extract(entry, to: destinationURL)
-                                extractedFiles.append(destinationURL)
-                                entryIndex += 1
+
+                                // Validate it is a supported image format
+                                let fileExt = destinationURL.pathExtension.lowercased()
+                                if ["jpg", "jpeg", "png", "webp", "gif", "heic"].contains(fileExt) {
+                                    extractedFiles.append(destinationURL)
+                                }
                             }
                         }
                     }
