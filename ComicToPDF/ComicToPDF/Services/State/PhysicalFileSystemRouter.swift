@@ -439,30 +439,40 @@ class PhysicalFileSystemRouter {
                     }
                 }
 
+                // Keywords that identify piracy-disclaimer/watermark pages embedded
+                // by scanners or distributors as the first image in an archive.
+                // Purely filename-based — no image analysis overhead.
+                let disclaimerKeywords = ["piracy", "illegal", "warning", "notice", "legal",
+                                          "copyright", "watermark", "contraband", "scan",
+                                          "disclaimer", "rights"]
+
                 var firstSpreadImage: UIImage? = nil
                 var attempts = 0
-                
+
                 for entry in sortedEntries {
-                    if Task.isCancelled { return nil } // ✅ Abort heavy Zip iteration if SwiftUI view was cancelled
-                    // Skip directories explicit check
+                    if Task.isCancelled { return nil }
                     if entry.type == .directory { continue }
-                    
+
                     let entryExt = (entry.path as NSString).pathExtension.lowercased()
                     if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
                         if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
-                        
+
+                        // Skip known disclaimer/piracy-warning pages by filename
+                        let lowerPath = entry.path.lowercased()
+                        if disclaimerKeywords.contains(where: { lowerPath.contains($0) }) { continue }
+
                         var data = Data()
                         do {
                             _ = try archive.extract(entry) { data.append($0) }
                             if let image = UIImage(data: data) {
                                 attempts += 1
-                                
+
                                 // Skip if it's the first page and appears to be a 2-page spread
                                 if attempts == 1 && image.size.width > image.size.height {
                                     firstSpreadImage = image
                                     continue
                                 }
-                                
+
                                 return image
                             }
                         } catch {
@@ -497,9 +507,16 @@ class PhysicalFileSystemRouter {
                     }
                     .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
 
+                let disclaimerKeywords: Set<String> = ["piracy", "illegal", "warning", "notice",
+                                                         "legal", "copyright", "watermark",
+                                                         "contraband", "scan", "disclaimer", "rights"]
                 var firstSpread: UIImage? = nil
                 var attempts = 0
                 for entry in sorted.prefix(5) {
+                    // Skip known disclaimer/piracy-warning pages by filename
+                    let lowerName = entry.fileName.lowercased()
+                    if disclaimerKeywords.contains(where: { lowerName.contains($0) }) { continue }
+
                     let data = try archive.extract(entry)
                     guard let image = UIImage(data: data) else { continue }
                     attempts += 1
