@@ -448,7 +448,7 @@ class PhysicalFileSystemRouter {
 
                     let entryExt = (entry.path as NSString).pathExtension.lowercased()
                     if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
-                        if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
+                        if entry.path.contains("__MACOSX") || entry.path.hasPrefix("._") || entry.path.hasSuffix(".DS_Store") { continue }
 
                         var data = Data()
                         do {
@@ -491,7 +491,7 @@ class PhysicalFileSystemRouter {
                     .filter { entry in
                         guard !entry.directory,
                               !entry.fileName.contains("__MACOSX"),
-                              !(entry.fileName as NSString).lastPathComponent.hasPrefix(".") else { return false }
+                              !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
                         return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
                     }
                     .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
@@ -540,7 +540,7 @@ class PhysicalFileSystemRouter {
                 if entry.type == .directory { continue }
                 let entryExt = (entry.path as NSString).pathExtension.lowercased()
                 if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
-                    if entry.path.contains("__MACOSX") || entry.path.hasPrefix(".") { continue }
+                    if entry.path.contains("__MACOSX") || entry.path.hasPrefix("._") || entry.path.hasSuffix(".DS_Store") { continue }
                     count += 1
                 }
             }
@@ -559,7 +559,7 @@ class PhysicalFileSystemRouter {
                 return entries.filter { entry in
                     guard !entry.directory,
                           !entry.fileName.contains("__MACOSX"),
-                          !(entry.fileName as NSString).lastPathComponent.hasPrefix(".") else { return false }
+                          !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
                     return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
                 }.count
             } catch {

@@ -76,7 +76,8 @@ struct CBRExtractor {
                         // Skip directories and macOS metadata artefacts
                         guard !entry.directory,
                               !entry.fileName.contains("__MACOSX"),
-                              !flatName.hasPrefix(".") else { continue }
+                              !flatName.hasPrefix("._"),
+                              flatName != ".DS_Store" else { continue }
 
                         let ext = (flatName as NSString).pathExtension.lowercased()
                         guard imageExtensions.contains(ext) else { continue }

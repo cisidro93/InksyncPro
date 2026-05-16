@@ -75,7 +75,7 @@ struct ZipUtilities {
                                 let path = entry.path
                                 let filename = URL(fileURLWithPath: path).lastPathComponent
                                 // Skip macOS hidden files and folders
-                                if path.contains("__MACOSX") || filename.hasPrefix(".") || path.hasSuffix("/") { return }
+                                if path.contains("__MACOSX") || filename.hasPrefix("._") || filename == ".DS_Store" || path.hasSuffix("/") { return }
                                 
                                 let destinationURL = tempDir.appendingPathComponent(path)
                                 
@@ -131,7 +131,7 @@ struct ZipUtilities {
                     for fileURL in fileURLs {
                         let fileName = fileURL.lastPathComponent
                         // Skip hidden system files
-                        if fileName.hasPrefix(".") || fileName == "__MACOSX" { continue }
+                        if fileName.hasPrefix("._") || fileName == ".DS_Store" || fileName == "__MACOSX" { continue }
                         
                         try archive.addEntry(with: fileName, relativeTo: sourceURL)
                     }
