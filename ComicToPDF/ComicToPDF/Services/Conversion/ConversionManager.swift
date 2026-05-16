@@ -79,7 +79,7 @@ class ConversionManager: ObservableObject {
         performStartupOptimization()
         Task { await MainActor.run { self.migrateCoversToDisk() } }
         
-        NotificationCenter.default.addObserver(forName: NSNotification.Name("LibraryNeedsRescan"), object: nil, queue: .main) { [weak self] notification in
+        NotificationCenter.default.addObserver(forName: .libraryNeedsRescan, object: nil, queue: .main) { [weak self] notification in
             let modeRaw = notification.userInfo?["mode"] as? String
             let mode: AppUIMode = (modeRaw == AppUIMode.go.rawValue) ? .go : .pro
             Task { @MainActor [weak self] in
@@ -87,7 +87,7 @@ class ConversionManager: ObservableObject {
             }
         }
         
-        NotificationCenter.default.addObserver(forName: NSNotification.Name("LibraryNeedsSave"), object: nil, queue: .main) { [weak self] _ in
+        NotificationCenter.default.addObserver(forName: .libraryNeedsSave, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.saveLibrary()
             }

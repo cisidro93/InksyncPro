@@ -6,6 +6,8 @@ import SwiftUI
 
 /// A lightweight, privacy-focused metric engine that learns from how a user corrects the AI.
 /// It dynamically shifts the Ensemble Confidence & Size thresholds based on historic corrections.
+/// Isolated to `@MainActor` so all `@AppStorage` mutations are thread-safe.
+@MainActor
 class AdaptiveLearningManager: ObservableObject {
     static let shared = AdaptiveLearningManager()
     
@@ -20,24 +22,18 @@ class AdaptiveLearningManager: ObservableObject {
     // MARK: - Event Hooks
     
     func recordUserDeletedPanel(size: CGSize) {
-        DispatchQueue.main.async {
-            self.deletedPanelsCount += 1
-            self.evaluateHeuristics()
-        }
+        deletedPanelsCount += 1
+        evaluateHeuristics()
     }
     
     func recordUserAddedPanel(size: CGSize) {
-        DispatchQueue.main.async {
-            self.addedPanelsCount += 1
-            self.evaluateHeuristics()
-        }
+        addedPanelsCount += 1
+        evaluateHeuristics()
     }
     
     func recordUserResizedPanel() {
-        DispatchQueue.main.async {
-            self.resizedPanelsCount += 1
-            // Resizing is common; we only shift heuristics if adding/deleting is completely out of balance.
-        }
+        resizedPanelsCount += 1
+        // Resizing is common; only shift heuristics if adding/deleting is out of balance.
     }
     
     // MARK: - The AI Brain
@@ -66,12 +62,10 @@ class AdaptiveLearningManager: ObservableObject {
     }
     
     func resetToFactorySettings() {
-        DispatchQueue.main.async {
-            self.currentBaseConfidence = 0.6
-            self.currentMinimumSize = 0.1
-            self.resetEpoch()
-            Logger.shared.log("AI: Factory reset — confidence 0.60, minSize 10%", category: "AI", type: .warning)
-        }
+        currentBaseConfidence = 0.6
+        currentMinimumSize = 0.1
+        resetEpoch()
+        Logger.shared.log("AI: Factory reset — confidence 0.60, minSize 10%", category: "AI", type: .warning)
     }
     
     private func resetEpoch() {
@@ -126,15 +120,13 @@ class AdaptiveLearningManager: ObservableObject {
                           state.resizedPanels == self.resizedPanelsCount
                           
         if isIdentical { return .identical }
-        
-        DispatchQueue.main.async {
-            self.currentBaseConfidence = state.baseConfidence
-            self.currentMinimumSize = state.minimumSize
-            self.deletedPanelsCount = state.deletedPanels
-            self.addedPanelsCount = state.addedPanels
-            self.resizedPanelsCount = state.resizedPanels
-            Logger.shared.log("AI: Successfully imported Engine State. Conf:\(state.baseConfidence), MinSize:\(state.minimumSize)", category: "AI", type: .success)
-        }
+
+        currentBaseConfidence = state.baseConfidence
+        currentMinimumSize = state.minimumSize
+        deletedPanelsCount = state.deletedPanels
+        addedPanelsCount = state.addedPanels
+        resizedPanelsCount = state.resizedPanels
+        Logger.shared.log("AI: Successfully imported Engine State. Conf:\(state.baseConfidence), MinSize:\(state.minimumSize)", category: "AI", type: .success)
         return .success
     }
 }

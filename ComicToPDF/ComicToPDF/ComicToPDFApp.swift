@@ -137,10 +137,8 @@ struct InksyncProApp: App {
                 // ✅ SwiftData Engine Attachment (Injected globally)
                 .modelContainer(InksyncProApp.sharedModelContainer)
                 .onAppear {
-                    Task { @MainActor in
-                        // Context is automatically available in views, but we can't easily grab it inside WindowGroup without a local view wrapper. 
-                        // MigrationService call will be placed inside ContentView's onAppear to guarantee environment context.
-                    }
+                    // MigrationService is invoked inside ContentView.onAppear
+                    // where the SwiftData model context is available via @Environment.
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
@@ -161,7 +159,7 @@ struct InksyncProApp: App {
                         // We fire a Notification so the ModernLibraryView/Router can intercept it
                         // and throw up the specific PDF automatically.
                         NotificationCenter.default.post(
-                            name: NSNotification.Name("HandoffRequested"),
+                            name: .handoffRequested,
                             object: nil,
                             userInfo: ["pdfID": pdfID, "pageIndex": pageIndex]
                         )

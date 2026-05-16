@@ -84,7 +84,7 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private var shellWithNotifications: some View {
         shellWithChangeHandlers
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenMergedBook"))) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .openMergedBook)) { notification in
                 if let newBook = notification.object as? ConvertedPDF {
                     Task {
                         try? await Task.sleep(nanoseconds: 500_000_000)
@@ -92,7 +92,7 @@ struct ModernLibraryView: View {
                     }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HandoffRequested"))) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .handoffRequested)) { notification in
                 if let userInfo = notification.userInfo,
                    let pdfID = userInfo["pdfID"] as? UUID,
                    let pageIndex = userInfo["pageIndex"] as? Int {
@@ -107,28 +107,28 @@ struct ModernLibraryView: View {
                     }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InkTab_DoubleTap_0"))) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .inkTabDoubleTapLibrary)) { _ in
                 HapticEngine.selection()
                 NotificationCenter.default.post(name: Notification.Name("Library_ScrollToTop"), object: nil)
             }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RequestSeriesRename"))) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .requestSeriesRename)) { notification in
                 guard let group = notification.object as? SeriesGroup else { return }
                 listRenameGroup = group
                 listRenamePendingName = group.title
             }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InksyncResumeLastRead"))) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead)) { notification in
                 let readingModeStr = notification.userInfo?["readingMode"] as? String
                 if let mostRecent = ReaderProgressTracker.shared.recentSessions().first,
                    let pdf = nativeVisiblePDFs.first(where: { $0.id == mostRecent.pdfID }) {
                     AppRouter.shared.presentFullScreen(.read(pdf))
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InksyncOpenShelf"))) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenShelf)) { _ in
                 // Close any open sheets or full screen covers to reveal the library shelf
                 router.activeSheet = nil
                 router.activeFullScreen = nil
             }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InksyncOpenBook"))) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenBook)) { notification in
                 if let searchTitle = notification.userInfo?["searchTitle"] as? String {
                     // Find the first book containing the title (case-insensitive)
                     if let pdf = nativeVisiblePDFs.first(where: { $0.name.localizedCaseInsensitiveContains(searchTitle) || $0.metadata.title.localizedCaseInsensitiveContains(searchTitle) }) {

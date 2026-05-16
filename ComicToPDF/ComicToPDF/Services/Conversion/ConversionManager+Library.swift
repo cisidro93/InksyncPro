@@ -241,11 +241,8 @@ extension ConversionManager {
                 )
                 convertedPDFs[idx] = updatedPDF
 
-                // ✅ PERF: Migrate the thumbnail cache entry to the new UUID key (UUID is immutable, URL is not)
-                if let image = thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
-                    thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
-                    // Old URL-path entry (if any) can stay — NSCache will evict under pressure
-                }
+                // UUID is immutable — the thumbnail cache key is unaffected by a rename.
+                // No cache migration is needed.
 
                 saveLibrary()
                 objectWillChange.send()
@@ -257,9 +254,25 @@ extension ConversionManager {
 
     
     // Helpers
-    func autoOrganize() {}
-    func findDuplicates() async -> [DuplicateGroup] { return [] }
-    func calculateStorageInfo() -> StorageInfo { let total = convertedPDFs.reduce(0) { $0 + $1.fileSize }; return StorageInfo(used: total, totalSize: 10_000_000_000, appUsage: total) }
+    // `autoOrganize` and `findDuplicates` are planned features — not yet implemented.
+    func autoOrganize() {
+        #if DEBUG
+        assertionFailure("autoOrganize() is not yet implemented. Remove from any UI until complete.")
+        #endif
+    }
+    func findDuplicates() async -> [DuplicateGroup] {
+        #if DEBUG
+        assertionFailure("findDuplicates() is not yet implemented. Remove from any UI until complete.")
+        #endif
+        return []
+    }
+    func calculateStorageInfo() -> StorageInfo {
+        let used = convertedPDFs.reduce(0) { $0 + $1.fileSize }
+        // Query the real available disk space instead of hardcoding 10 GB.
+        let totalSize = (try? FileManager.default
+            .attributesOfFileSystem(forPath: NSHomeDirectory())[.systemSize] as? Int64) ?? 0
+        return StorageInfo(used: used, totalSize: totalSize, appUsage: used)
+    }
     func createBackupData() -> BackupData { return BackupData(version: "1.0", date: Date(), settings: AppSettingsManager.shared.conversionSettings, collections: collections, presets: AppSettingsManager.shared.conversionPresets) }
     func restoreFromBackup(_ backup: BackupData) { AppSettingsManager.shared.conversionSettings = backup.settings; self.collections = backup.collections; AppSettingsManager.shared.conversionPresets = backup.presets; saveLibrary(); AppSettingsManager.shared.save() }
     func updatePDFMetadata(_ pdf: ConvertedPDF, metadata: PDFMetadata) { if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].metadata = metadata; saveLibrary() } }

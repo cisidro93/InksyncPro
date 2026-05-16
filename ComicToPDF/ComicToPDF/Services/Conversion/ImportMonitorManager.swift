@@ -3,66 +3,75 @@ import SwiftUI
 import Combine
 
 /// Tracks the progress and results of background `ConversionManager.importFilesAsSeries` jobs.
-/// This prevents the UI from locking up during massive Multi-Folder imports.
-class ImportMonitorManager: ObservableObject {
+/// Isolated to `@MainActor` so all `@Published` mutations are thread-safe without
+/// requiring individual `@MainActor` annotations on each method.
+@MainActor
+final class ImportMonitorManager: ObservableObject {
     static let shared = ImportMonitorManager()
-    
+
     @Published private(set) var isImporting: Bool = false
     @Published private(set) var totalFilesToProcess: Int = 0
     @Published private(set) var filesProcessed: Int = 0
     @Published private(set) var filesFailed: Int = 0
-    
-    // Unrestricted Background Processing Survival Token
+
+    // Survival token — keeps the import alive when the app is backgrounded.
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
-    // Publisher fires with the batch UUID when all jobs in a queue reach terminal state.
+    // Fires with a batch UUID when an import run reaches terminal state.
+    // Subscribers can use this to trigger post-import housekeeping.
     let batchCompletionPublisher = PassthroughSubject<UUID, Never>()
 
-    
     private init() {}
-    
-    @MainActor
+
+    // MARK: - Lifecycle
+
     func startImport(totalCount: Int) {
-        self.isImporting = true
-        self.totalFilesToProcess = totalCount
-        self.filesProcessed = 0
-        self.filesFailed = 0
-        
-        // Grab a survival token from iOS Springboard to prevent the watchdog from killing the thread when minimized
-        if self.backgroundTask == .invalid {
-            self.backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ImportMonitor") {
+        isImporting = true
+        totalFilesToProcess = totalCount
+        filesProcessed = 0
+        filesFailed = 0
+
+        if backgroundTask == .invalid {
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ImportMonitor") { [weak self] in
+                guard let self else { return }
                 UIApplication.shared.endBackgroundTask(self.backgroundTask)
                 self.backgroundTask = .invalid
             }
         }
     }
-    
-    @MainActor
+
     func incrementSuccess() {
-        self.filesProcessed += 1
+        filesProcessed += 1
     }
-    
-    @MainActor
+
     func incrementFailure() {
-        self.filesProcessed += 1
-        self.filesFailed += 1
+        filesProcessed += 1
+        filesFailed += 1
     }
-    
-    @MainActor
-    func completeImport() {
-        self.isImporting = false
-        
-        let _ = totalFilesToProcess - filesFailed
-        
-        // Release the survival token back to iOS to allow natural sleeping
-        if self.backgroundTask != .invalid {
-            UIApplication.shared.endBackgroundTask(self.backgroundTask)
-            self.backgroundTask = .invalid
+
+    func completeImport(batchID: UUID = UUID()) {
+        isImporting = false
+        let successCount = totalFilesToProcess - filesFailed
+        Logger.shared.log(
+            "Import complete — \(successCount) succeeded, \(filesFailed) failed.",
+            category: "Import",
+            type: successCount > 0 ? .success : .warning
+        )
+
+        // Fire the batch completion publisher so any waiting subscribers are notified.
+        batchCompletionPublisher.send(batchID)
+
+        if backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
         }
     }
-    
+
+    // MARK: - Derived State
+
     var progress: Double {
         guard totalFilesToProcess > 0 else { return 0 }
         return Double(filesProcessed) / Double(totalFilesToProcess)
     }
 }
+

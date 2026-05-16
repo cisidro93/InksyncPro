@@ -340,6 +340,9 @@ actor ImportOrchestrator {
                     if pdf.contentKind == .document {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                     }
+                    // When the vault is unlocked the user has opted-in to their privacy vault;
+                    // any files imported in that state are automatically added to it.
+                    // When the vault is locked, files are imported as regular (public) library items.
                     pdf.isPrivate = isVaultUnlocked
                     pdf.contentHash = nil // Deferred to prevent UI freeze
 
