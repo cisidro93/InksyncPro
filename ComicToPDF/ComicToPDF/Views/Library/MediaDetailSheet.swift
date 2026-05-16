@@ -9,9 +9,6 @@ struct MediaDetailSheet: View {
     @State private var coverImage: UIImage?
     @Environment(\.dismiss) var dismiss
     
-    // Background gradient logic derived from cover image colors?
-    // We can use a simple blurred backdrop for now.
-    
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -96,7 +93,7 @@ struct MediaDetailSheet: View {
                 // MARK: - Action Grid
                 
                 VStack(spacing: 12) {
-                    // Primary
+                    // Primary — Read
                     Button {
                         handle(.read)
                     } label: {
@@ -116,6 +113,7 @@ struct MediaDetailSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .shadow(color: .blue.opacity(0.3), radius: 5, y: 3)
                     }
+
                     // Cloud files: smart Download vs Download & Convert CTA
                     if case .cloud = pdf.sourceMode {
                         let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
@@ -149,7 +147,36 @@ struct MediaDetailSheet: View {
                                 .padding(.horizontal, 8)
                         }
                     }
-                    
+
+                    // Local files: Convert to EPUB for any non-EPUB format.
+                    // The handleDetailAction .convert case routes local files directly
+                    // to ConversionOrchestrator.convertComic() — the button was simply missing.
+                    let localExt = pdf.url.pathExtension.lowercased()
+                    if case .local = pdf.sourceMode, localExt != "epub" {
+                        Button {
+                            handle(.convert)
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                                Text("CONVERT TO EPUB")
+                                    .fontWeight(.bold)
+                                Spacer()
+                            }
+                            .font(.system(size: 16))
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(red: 0.3, green: 0.7, blue: 0.3), Color(red: 0.1, green: 0.55, blue: 0.3)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .shadow(color: Color.green.opacity(0.3), radius: 5, y: 3)
+                        }
+                    }
+
                     // Send to Kindle — prominent dedicated button
                     Button {
                         handle(.sendToKindle)
