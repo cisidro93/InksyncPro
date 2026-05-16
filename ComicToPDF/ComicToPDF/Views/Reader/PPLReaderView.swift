@@ -101,7 +101,6 @@ struct PPLReaderView: View {
             // ── Front layer: current spread, sliding with finger ──────────────
             ZStack {
                 currentContent(geo: geo, showingDual: showingDual)
-                    .drawingGroup() // ✅ Metal-backed hardware acceleration
                 
                 // ✅ Phase 4: In-Line Handwriting
                 PageCanvasOverlay(pdfID: pdfID, pageIndex: currentPageIndex, isMarkupEnabled: isDrawingMode)
