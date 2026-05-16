@@ -542,8 +542,9 @@ struct BookReaderEngine: View {
                 ProgressView("Unpacking EPUB...")
                     .foregroundColor(Color(hex: settings.textHex))
             } else {
-                if let url = vm.chapterHtmlFiles.isEmpty ? nil : vm.chapterHtmlFiles[0] {
-                    EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(url), settings: settings, onHighlightCreated: { selectedText, _ in
+                if !vm.chapterHtmlFiles.isEmpty {
+                    let currentChapterURL = vm.chapterHtmlFiles[vm.currentChapterIndex]
+                    EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(currentChapterURL), settings: settings, onHighlightCreated: { selectedText, _ in
                         
                         let highlight = Annotation(
                             pdfID: pdf.id,
