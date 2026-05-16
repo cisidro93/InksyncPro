@@ -14,6 +14,11 @@ struct ZipUtilities {
             return try await CBRExtractor.extract(from: sourceURL)
         }
 
+        // Delegate CBT (Comic Book TAR) to the dedicated extractor
+        if ["cbt", "tar"].contains(ext) {
+            return try await CBTExtractor.extract(from: sourceURL)
+        }
+
         return try await withCheckedThrowingContinuation { continuation in
             // Use a raw background queue to guarantee isolation from the UI
             DispatchQueue.global(qos: .userInitiated).async {

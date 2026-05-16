@@ -387,7 +387,7 @@ struct GoConvertView: View {
         defer { if isAccessing { folderURL.stopAccessingSecurityScopedResource() } }
         
         var foundURLs: [URL] = []
-        let validExts = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+        let validExts = ["cbz", "cbr", "cb7", "cbt", "epub", "zip", "pdf"]
         
         if let enumerator = FileManager.default.enumerator(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
             for case let fileURL as URL in enumerator {

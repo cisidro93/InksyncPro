@@ -61,7 +61,8 @@ struct ModernLibraryView: View {
             .folder, .pdf, .zip, .epub,
             UTType(filenameExtension: "cbz"),
             UTType(filenameExtension: "cbr"),
-            UTType(filenameExtension: "cb7")
+            UTType(filenameExtension: "cb7"),
+            UTType(filenameExtension: "cbt")
         ].compactMap { $0 }
     }
     

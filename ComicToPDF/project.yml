@@ -75,3 +75,8 @@ targets:
             UTTypeConformsTo: [public.archive]
             UTTypeTagSpecification:
               public.filename-extension: [cbr]
+          - UTTypeIdentifier: com.antigravity.cbt-archive
+            UTTypeDescription: Comic Book TAR Archive
+            UTTypeConformsTo: [public.tar-archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [cbt]
