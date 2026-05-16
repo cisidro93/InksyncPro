@@ -110,6 +110,10 @@ struct ReaderView: View {
     @State private var isWebtoonAutoScrolling = false
     @State private var webtoonScrollSpeed: Double = 60.0
 
+    // Typography Settings
+    @State private var showTypographyHUD = false
+    @ObservedObject private var prefs = EBookPreferences.shared
+
     // Ambient brightness (time-of-day night mode)
     @ObservedObject private var ambientBrightness = AmbientBrightnessManager.shared
     @State private var userHasManuallyAdjustedWarmth = false
@@ -144,6 +148,11 @@ struct ReaderView: View {
                     bingeModeOverlay(nextVol: nextVol)
                 }
             }
+        }
+        .sheet(isPresented: $showTypographyHUD) {
+            TypographySettingsHUD(prefs: prefs, webView: nil, isFixedLayout: true)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
     
@@ -496,6 +505,17 @@ struct ReaderView: View {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(isBookmarked ? Theme.orange : .white)
+                        .frame(width: 34, height: 34)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+            }
+            
+            // Display Settings (PDF)
+            if fileURL.pathExtension.lowercased() == "pdf" {
+                Button { showTypographyHUD = true } label: {
+                    Image(systemName: "textformat.size")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
                         .frame(width: 34, height: 34)
                         .background(.ultraThinMaterial, in: Circle())
                 }
