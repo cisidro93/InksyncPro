@@ -83,8 +83,9 @@ struct ZipUtilities {
                                 _ = try archive.extract(entry, to: destinationURL)
                                 
                                 // Validate it is an image
+                                // Keep in sync with ZipCentralDirectory.isPageImage and CBRExtractor.imageExtensions
                                 let fileExt = destinationURL.pathExtension.lowercased()
-                                if ["jpg", "jpeg", "png", "webp", "gif"].contains(fileExt) {
+                                if ["jpg", "jpeg", "png", "webp", "gif", "heic"].contains(fileExt) {
                                     extractedFiles.append(destinationURL)
                                 }
                             }
