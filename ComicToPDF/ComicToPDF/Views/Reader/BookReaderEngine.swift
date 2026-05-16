@@ -361,10 +361,10 @@ struct EPUBWebView: UIViewRepresentable {
     }
     
     func makeUIView(context: Context) -> WKWebView {
-        let prefs = WKWebpagePreferences()
-        prefs.allowsContentJavaScript = true
+        let webpagePrefs = WKWebpagePreferences()
+        webpagePrefs.allowsContentJavaScript = true
         let config = WKWebViewConfiguration()
-        config.defaultWebpagePreferences = prefs
+        config.defaultWebpagePreferences = webpagePrefs
         
         // Add JS Bridge Listener
         config.userContentController.add(context.coordinator, name: "highlightHandler")
@@ -475,7 +475,7 @@ struct EPUBWebView: UIViewRepresentable {
         let webView = HighlightableWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(prefs.activeTheme.background(colorScheme: .light))
+        webView.backgroundColor = UIColor(prefs.activeTheme.background(colorScheme: SwiftUI.ColorScheme.light))
         webView.scrollView.backgroundColor = webView.backgroundColor
         
         // Native Scrolling Mode Toggle
@@ -534,7 +534,7 @@ struct BookReaderEngine: View {
     
     var body: some View {
         ZStack {
-            Color(hex: settings.themeHex).edgesIgnoringSafeArea(.all)
+            Color(prefs.activeTheme.background(colorScheme: SwiftUI.ColorScheme.light)).edgesIgnoringSafeArea(.all)
             
             if vm.isLoading {
                 ProgressView("Unpacking EPUB...")
