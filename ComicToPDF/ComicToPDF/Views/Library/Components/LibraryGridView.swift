@@ -524,7 +524,7 @@ struct LibraryGridView: View {
         Divider()
         
         Button {
-            ReaderProgressTracker.shared.updateProgress(for: pdf.id, page: max(1, pdf.pageCount), total: max(1, pdf.pageCount))
+            ReaderProgressTracker.shared.markComplete(pdfID: pdf.id)
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 conversionManager.convertedPDFs[idx].metadata.lastReadPage = pdf.pageCount
                 conversionManager.saveLibrary()
@@ -532,7 +532,11 @@ struct LibraryGridView: View {
         } label: { Label("Mark as Read", systemImage: "checkmark.circle") }
         
         Button {
-            ReaderProgressTracker.shared.updateProgress(for: pdf.id, page: 0, total: max(1, pdf.pageCount))
+            var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: 0, totalPagesRead: 0, completionFraction: 0.0, readingSessionDates: [])
+            progress.currentPageIndex = 0
+            progress.completionFraction = 0.0
+            ReaderProgressTracker.shared.update(progress)
+            
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 conversionManager.convertedPDFs[idx].metadata.lastReadPage = 0
                 conversionManager.saveLibrary()

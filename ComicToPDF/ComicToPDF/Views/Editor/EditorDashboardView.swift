@@ -33,6 +33,19 @@ struct EditorDashboardView: View {
                         .foregroundStyle(Color.inkTextSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
+                        
+                    Button(action: {
+                        NotificationCenter.default.post(name: NSNotification.Name("SwitchToLibraryTab"), object: nil)
+                    }) {
+                        Text("Go to Library")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(Color.inkAccentKnowledge)
+                            .cornerRadius(8)
+                    }
+                    .padding(.top, 10)
                 }
             } else {
                 ScrollView {
@@ -164,6 +177,13 @@ struct EditorRowView: View {
             }
             .padding(InkSpacing.cardPadding)
             .inkCard()
+        }
+        .contextMenu {
+            Button(role: .destructive) {
+                WorkspaceFocusManager.shared.unpin(pdf.id)
+            } label: {
+                Label("Remove from Work Area", systemImage: "pin.slash")
+            }
         }
     }
 }

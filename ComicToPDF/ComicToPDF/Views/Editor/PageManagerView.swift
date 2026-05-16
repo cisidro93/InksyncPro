@@ -254,9 +254,7 @@ struct PageManagerView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button("Done") {
                     Task {
-                        if !selectedPages.isEmpty && !isSelectionMode {
-                            await saveReorder()
-                        }
+                        await saveReorder()
                         viewModel.cleanup()
                         dismiss()
                     }

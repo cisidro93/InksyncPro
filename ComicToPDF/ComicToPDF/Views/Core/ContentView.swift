@@ -150,6 +150,9 @@ struct ContentView: View {
             Task { await ReaderImageFilterEngine.shared.purgeCache() }
             Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache.", category: "Memory", type: .warning)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToLibraryTab"))) { _ in
+            selectedTab = 0
+        }
         // Hardware Shortcuts
         .modifier(iPadKeyboardShortcuts(
             selectedTab: $selectedTab,

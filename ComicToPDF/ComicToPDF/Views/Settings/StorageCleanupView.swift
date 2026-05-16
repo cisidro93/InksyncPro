@@ -142,15 +142,21 @@ struct StorageCleanupView: View {
 
                                     // Select All / Deselect All
                                     let allSelected = items.allSatisfy { selectedItems.contains($0.id) }
-                                    Button(allSelected ? "Deselect All" : "Select All") {
+                                    Button(action: {
                                         if allSelected {
                                             for item in items { selectedItems.remove(item.id) }
                                         } else {
                                             for item in items { selectedItems.insert(item.id) }
                                         }
+                                    }) {
+                                        Text(allSelected ? "Deselect All" : "Select All")
+                                            .font(.caption.bold())
+                                            .foregroundColor(allSelected ? .secondary : .white)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 4)
+                                            .background(allSelected ? Color.secondary.opacity(0.2) : Color.blue)
+                                            .clipShape(Capsule())
                                     }
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
                                 }
                                 Text(category.description)
                                     .font(.caption2)
