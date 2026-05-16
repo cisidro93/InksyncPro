@@ -87,13 +87,15 @@ class EnsemblePanelDetector {
         // 4. Final Cleanup
         // Filter out raw Text Anchors that served their purpose or are explicitly covered now
         let structuralPanelsFinal = candidates.filter { $0.method != .textAnchor }
-        
+
         // Phase 1: Aggressive Consolidation
         let finalPanels = consolidateOverlappingPanels(structuralPanelsFinal)
-        
-        // Adaptive Logging (Debugging)
-        Logger.shared.log("AI Ensemble: \(finalPanels.count) composite panels detected using aggressive NMS consolidation. \(AdaptiveLearningManager.shared.diagnosticString)", category: "AI")
-        
+
+        // Adaptive Logging — snapshot the diagnostic string on MainActor before logging
+        // since AdaptiveLearningManager is @MainActor-isolated.
+        let diagnosticSnapshot = await MainActor.run { AdaptiveLearningManager.shared.diagnosticString }
+        Logger.shared.log("AI Ensemble: \(finalPanels.count) composite panels detected using aggressive NMS consolidation. \(diagnosticSnapshot)", category: "AI")
+
         return finalPanels
     }
     

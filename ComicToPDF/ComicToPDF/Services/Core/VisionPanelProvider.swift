@@ -5,11 +5,17 @@ class VisionPanelProvider: PanelProvider {
     
     func detectPanels(in image: UIImage, context: CIContext) async -> [PanelCandidate] {
         guard let cgImage = image.cgImage else { return [] }
-        
+
+        // Snapshot @MainActor-isolated adaptive thresholds before entering the
+        // non-isolated continuation block. This satisfies strict concurrency checking
+        // and avoids a cross-actor hop mid-Vision request.
+        let currentConfidence = await MainActor.run { AdaptiveLearningManager.shared.currentBaseConfidence }
+        let currentMinSize    = await MainActor.run { AdaptiveLearningManager.shared.currentMinimumSize }
+
         return await withCheckedContinuation { continuation in
             autoreleasepool {
                 var requests: [VNRequest] = []
-                
+
                 // 1. Rectangle Request (Baseline)
                 let rectRequest = VNDetectRectanglesRequest()
             rectRequest.minimumConfidence = 0.6
@@ -43,9 +49,7 @@ class VisionPanelProvider: PanelProvider {
                 
                 var candidates: [PanelCandidate] = []
                 
-                // Adaptive Thresholds
-                let currentConfidence = AdaptiveLearningManager.shared.currentBaseConfidence
-                let currentMinSize = AdaptiveLearningManager.shared.currentMinimumSize
+                // Use the pre-snapshotted adaptive thresholds (captured before this continuation).
                 
                 // Process Rects
                 if let rects = rectRequest.results {

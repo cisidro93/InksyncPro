@@ -15,8 +15,8 @@ extension Notification.Name {
     static let libraryNeedsSave       = Notification.Name("LibraryNeedsSave")
     /// Fired after a merge completes, carrying the newly created `ConvertedPDF`.
     static let openMergedBook         = Notification.Name("OpenMergedBook")
-    /// Fired when a cloud cover extraction finishes successfully.
-    static let cloudCoverReady        = Notification.Name("CloudCoverReady")
+    // NOTE: .cloudCoverReady is declared in BookmarkResolver.swift alongside the
+    // other cloud-cover notification infrastructure. Do not redeclare it here.
 
     // MARK: Reader & Handoff
     /// Fired by the Handoff continuation to deep-link into a specific book + page.
