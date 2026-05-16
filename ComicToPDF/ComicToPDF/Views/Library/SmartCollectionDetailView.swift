@@ -4,102 +4,128 @@ struct SmartCollectionDetailView: View {
     let rule: SmartCollectionRule
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
-    
+
     // UI Layout state mapped from main library to ensure consistency
     @State private var viewStyle: ModernLibraryView.LibraryViewStyle = .grid
     @State private var sortOption: ModernLibraryView.SortOption = .dateAdded
-    
+
     // Dummy bindings required by shared components
     @State private var mockBatchMode = false
     @State private var mockMultiSelection: Set<UUID> = []
     @State private var mockSelectedPDF: ConvertedPDF? = nil
-    
+
+    // Cached result — computed once and updated only when source data changes.
+    @State private var filteredPDFs: [ConvertedPDF] = []
+    @State private var isTruncated: Bool = false
+
     // Force view updates when tracker changes
     @ObservedObject private var tracker = ReaderProgressTracker.shared
-    
-    var filteredPDFs: [ConvertedPDF] {
+
+    // MARK: - Async Filter
+
+    /// Runs the filter on a background Task so it never blocks the main thread.
+    /// Pre-snapshots the progress dictionary once to eliminate O(n log n) repeated lookups.
+    private func recomputeFilter() {
         let allPDFs = conversionManager.convertedPDFs
-        var results: [ConvertedPDF] = []
+        let rule = self.rule
 
-        switch rule {
-        case .recentlyAdded:
-            results = allPDFs.sorted(by: { $0.lastModified > $1.lastModified })
-            if results.count > 50 {
-                results = Array(results.prefix(50))
+        Task.detached(priority: .userInitiated) {
+            // Snapshot the progress map once — avoids repeated main-actor hops inside the sort comparator.
+            let progressSnapshot: [UUID: ReadingProgress] = await MainActor.run {
+                var map: [UUID: ReadingProgress] = [:]
+                for pdf in allPDFs {
+                    if let prog = ReaderProgressTracker.shared.progress(for: pdf.id) {
+                        map[pdf.id] = prog
+                    }
+                }
+                return map
             }
 
-        case .readingNow:
-            // A book is "Reading Now" if it has been opened (fraction > 0) but not finished (< 1.0).
-            results = allPDFs.filter { pdf in
-                guard let progress = tracker.progress(for: pdf.id) else { return false }
-                return progress.completionFraction > 0.0 && progress.completionFraction < 1.0
-            }
-            results.sort(by: { pdf1, pdf2 in
-                let d1 = tracker.progress(for: pdf1.id)?.lastOpenedAt ?? Date.distantPast
-                let d2 = tracker.progress(for: pdf2.id)?.lastOpenedAt ?? Date.distantPast
-                return d1 > d2
-            })
+            var results: [ConvertedPDF]
+            var truncated = false
+            let cap = 200   // Maximum items rendered in a single smart collection
 
-        case .allUnread:
-            // A book is "Unread" if there is no progress record for it at all,
-            // OR its completionFraction is exactly 0 (opened but immediately closed).
-            results = allPDFs.filter { pdf in
-                let fraction = tracker.progress(for: pdf.id)?.completionFraction ?? 0.0
-                return fraction == 0.0
-            }
-            results.sort(by: { $0.lastModified > $1.lastModified })
+            switch rule {
+            case .recentlyAdded:
+                results = allPDFs.sorted { $0.lastModified > $1.lastModified }
+                if results.count > 50 { results = Array(results.prefix(50)) }
 
-        case .completed:
-            // A book is "Completed" only when the reader has written completionFraction == 1.0,
-            // or when markComplete() has been called explicitly.
-            results = allPDFs.filter { pdf in
-                let fraction = tracker.progress(for: pdf.id)?.completionFraction ?? 0.0
-                return fraction >= 1.0
-            }
-            results.sort(by: { pdf1, pdf2 in
-                let d1 = tracker.progress(for: pdf1.id)?.lastOpenedAt ?? Date.distantPast
-                let d2 = tracker.progress(for: pdf2.id)?.lastOpenedAt ?? Date.distantPast
-                return d1 > d2
-            })
+            case .readingNow:
+                results = allPDFs.filter { pdf in
+                    guard let p = progressSnapshot[pdf.id] else { return false }
+                    return p.completionFraction > 0.0 && p.completionFraction < 1.0
+                }
+                results.sort { a, b in
+                    let d1 = progressSnapshot[a.id]?.lastOpenedAt ?? .distantPast
+                    let d2 = progressSnapshot[b.id]?.lastOpenedAt ?? .distantPast
+                    return d1 > d2
+                }
 
-        case .manga:
-            // Shows every book the user has personally read in manga (right-to-left) mode.
-            results = allPDFs.filter { pdf in
-                return tracker.progress(for: pdf.id)?.prefersMangaMode == true
+            case .allUnread:
+                results = allPDFs.filter { pdf in
+                    (progressSnapshot[pdf.id]?.completionFraction ?? 0.0) == 0.0
+                }
+                results.sort { $0.lastModified > $1.lastModified }
+                if results.count > cap {
+                    results = Array(results.prefix(cap))
+                    truncated = true
+                }
+
+            case .completed:
+                results = allPDFs.filter { pdf in
+                    (progressSnapshot[pdf.id]?.completionFraction ?? 0.0) >= 1.0
+                }
+                results.sort { a, b in
+                    let d1 = progressSnapshot[a.id]?.lastOpenedAt ?? .distantPast
+                    let d2 = progressSnapshot[b.id]?.lastOpenedAt ?? .distantPast
+                    return d1 > d2
+                }
+
+            case .manga:
+                results = allPDFs.filter { progressSnapshot[$0.id]?.prefersMangaMode == true }
+                results.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             }
-            results.sort(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
+
+            await MainActor.run {
+                filteredPDFs = results
+                isTruncated = truncated
+            }
         }
-
-        return results
     }
 
-    
     var body: some View {
         ZStack {
             Theme.bg.edgesIgnoringSafeArea(.all)
-            
+
             VStack(spacing: 0) {
                 // Header
                 HStack(spacing: 12) {
                     Image(systemName: rule.iconName)
                         .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(rule.tintColor.gradient)
-                    
+
                     Text(rule.rawValue)
                         .font(.system(size: 28, weight: .bold))
                         .foregroundColor(Theme.text)
-                    
+
                     Spacer()
-                    
-                    Text("\(filteredPDFs.count) ITEMS")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(Theme.textSecondary)
-                        .tracking(1.0)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Theme.surface)
-                        .clipShape(Capsule())
-                    
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(filteredPDFs.count) ITEMS")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(Theme.textSecondary)
+                            .tracking(1.0)
+                        if isTruncated {
+                            Text("Showing first 200")
+                                .font(.system(size: 9, weight: .medium, design: .rounded))
+                                .foregroundColor(Theme.textSecondary.opacity(0.6))
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Theme.surface)
+                    .clipShape(Capsule())
+
                     Button {
                         withAnimation { viewStyle = viewStyle == .grid ? .list : .grid }
                     } label: {
@@ -110,7 +136,7 @@ struct SmartCollectionDetailView: View {
                             .background(.ultraThinMaterial)
                             .clipShape(Circle())
                     }
-                    
+
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title2)
@@ -119,9 +145,9 @@ struct SmartCollectionDetailView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
-                
+
                 Divider().background(Theme.text.opacity(0.1))
-                
+
                 if filteredPDFs.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "tray.fill")
@@ -167,5 +193,12 @@ struct SmartCollectionDetailView: View {
             }
         }
         .navigationBarHidden(true)
+        // Compute once on appear
+        .task { recomputeFilter() }
+        // Recompute if the library changes (import, delete, rename)
+        .onChange(of: conversionManager.convertedPDFs.count) { recomputeFilter() }
+        // Recompute if any reading progress changes (page turn, markComplete)
+        .onReceive(tracker.objectWillChange) { recomputeFilter() }
     }
 }
+
