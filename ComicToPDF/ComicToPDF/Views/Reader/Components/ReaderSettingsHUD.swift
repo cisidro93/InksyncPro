@@ -9,6 +9,8 @@ struct ReaderSettingsHUD: View {
     @Binding var readingMode: ComicReadingMode
     @Binding var activeFilterPreset: ReadingFilterPreset
     var onDismiss: () -> Void
+    
+    @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,6 +39,20 @@ struct ReaderSettingsHUD: View {
                 ForEach(ReadingFilterPreset.allCases, id: \.self) { preset in
                     filterRow(preset)
                 }
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 20)
+            
+            // ── Page Options ────────────────────────────────────────────────────
+            sectionHeader("Page Options")
+            
+            VStack(spacing: 3) {
+                toggleRow(
+                    title: "Smart Margin Crop",
+                    description: "Auto-removes white borders from scanned pages",
+                    icon: "crop",
+                    isOn: $isAutoCropEnabled
+                )
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 36)
@@ -159,7 +175,93 @@ struct ReaderSettingsHUD: View {
             )
             .contentShape(Rectangle())
         }
+    }
+
+    // MARK: - Toggle Row
+    
+    @ViewBuilder
+    private func toggleRow(title: String, description: String, icon: String, isOn: Binding<Bool>) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isOn.wrappedValue.toggle()
+            }
+            HapticEngine.light()
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(isOn.wrappedValue ? Color.orange : Color.white.opacity(0.1))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(isOn.wrappedValue ? .white : .white)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 15, weight: isOn.wrappedValue ? .semibold : .regular))
+                        .foregroundColor(.white)
+                    Text(description)
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+
+                Spacer()
+
+                if isOn.wrappedValue {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white, Color.orange)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(isOn.wrappedValue ? Color.white.opacity(0.15) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
         .buttonStyle(.plain)
+    }
+    
+    // MARK: - Segment Row
+    
+    @ViewBuilder
+    private func segmentRow(title: String, icon: String, options: [(String, String)], selection: Binding<String>) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.1))
+                    .frame(width: 36, height: 36)
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white)
+            }
+            
+            Text(title)
+                .font(.system(size: 15, weight: .regular))
+                .foregroundColor(.white)
+            
+            Spacer()
+            
+            Picker("", selection: selection) {
+                ForEach(options, id: \.1) { option in
+                    Text(option.0).tag(option.1)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 160)
+            // Tinting the segmented control for the dark theme
+            .onAppear {
+                let attr = [NSAttributedString.Key.foregroundColor: UIColor.white]
+                UISegmentedControl.appearance().setTitleTextAttributes(attr, for: .normal)
+                UISegmentedControl.appearance().selectedSegmentTintColor = UIColor.orange
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 }
 

@@ -39,6 +39,7 @@ struct PPLReaderView: View {
     @AppStorage("tapZoneStyle")           private var tapZoneStyleRaw     = TapZoneStyle.classic.rawValue
     @AppStorage("pageTurnStyle")          private var pageTurnStyleRaw    = PageTurnStyle.slide.rawValue
     @AppStorage("showSpreadSeam")         private var showSpreadSeam      = true
+    @AppStorage("isAutoCropEnabled")      private var isAutoCropEnabled   = false
 
     private var tapZoneStyle:  TapZoneStyle  { TapZoneStyle(rawValue: tapZoneStyleRaw)   ?? .classic }
     private var pageTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .slide   }
@@ -74,6 +75,7 @@ struct PPLReaderView: View {
             .onChange(of: currentPageIndex) { _, newIndex in advanceBuffer(to: newIndex, geo: geo, dual: showingDual) }
             .onChange(of: geo.size)         { _, size   in resetOnResize(to: size, dual: effectiveDoublePage && size.width > size.height) }
             .onChange(of: isDoublePageStored) { _, _ in setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height) }
+            .onChange(of: isAutoCropEnabled) { _, _ in setupBuffer(geo: geo, dual: showingDual) }
         }
     }
 
