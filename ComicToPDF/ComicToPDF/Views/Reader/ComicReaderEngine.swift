@@ -134,9 +134,18 @@ class ComicImageCache: ObservableObject {
                     return
                 }
                 
+                let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
                 let sortedEntries = archive.filter { entry in
-                    let name = entry.path.lowercased()
-                    return name.hasSuffix(".jpg") || name.hasSuffix(".jpeg") || name.hasSuffix(".png") || name.hasSuffix(".webp")
+                    let path = entry.path
+                    let name = (path as NSString).lastPathComponent
+                    // Skip macOS system artefacts
+                    guard !path.contains("__MACOSX"),
+                          !name.hasPrefix("._"),
+                          name != ".DS_Store",
+                          !path.hasSuffix("/") else { return false }
+                    // Allow all recognised image extensions
+                    let ext = (name as NSString).pathExtension.lowercased()
+                    return imageExtensions.contains(ext)
                 }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
                 
                 await MainActor.run { [weak self] in
