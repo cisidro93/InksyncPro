@@ -306,39 +306,50 @@ struct ZettelkastenCorkboardView: View {
         let hSpace = cardW + gridGap
         let vSpace = cardH + gridGap
 
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.72)) {
-            if corkboardGroupByTag {
-                var yOffset: CGFloat = gridGap
-                var dict: [String: [SDAnnotation]] = [:]
-                for ann in annotations {
-                    let tags = (ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? [])
-                    let primaryTag = tags.first?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "Untagged"
-                    dict[primaryTag, default: []].append(ann)
-                }
-                
-                let sortedKeys = dict.keys.sorted {
-                    if $0 == "Untagged" { return false }
-                    if $1 == "Untagged" { return true }
-                    return $0 < $1
-                }
-                
-                for key in sortedKeys {
-                    let groupAnns = dict[key] ?? []
-                    for (i, ann) in groupAnns.enumerated() {
-                        let col = i % cols
-                        let row = i / cols
-                        ann.corkboardX = Double(CGFloat(col) * hSpace + cardW / 2 + gridGap)
-                        ann.corkboardY = Double(yOffset + CGFloat(row) * vSpace + cardH / 2 + gridGap + 60) // 60 for lane header
-                    }
-                    let rowsNeeded = CGFloat((groupAnns.count + cols - 1) / cols)
-                    yOffset += rowsNeeded * vSpace + 120
-                }
-            } else {
-                for (i, ann) in annotations.enumerated() {
+        var targetPositions: [UUID: (x: Double, y: Double)] = [:]
+
+        if corkboardGroupByTag {
+            var yOffset: CGFloat = gridGap
+            var dict: [String: [SDAnnotation]] = [:]
+            for ann in annotations {
+                let tags = (ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? [])
+                let primaryTag = tags.first?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "Untagged"
+                dict[primaryTag, default: []].append(ann)
+            }
+            
+            let sortedKeys = dict.keys.sorted {
+                if $0 == "Untagged" { return false }
+                if $1 == "Untagged" { return true }
+                return $0 < $1
+            }
+            
+            for key in sortedKeys {
+                let groupAnns = dict[key] ?? []
+                for (i, ann) in groupAnns.enumerated() {
                     let col = i % cols
                     let row = i / cols
-                    ann.corkboardX = Double(CGFloat(col) * hSpace + cardW / 2 + gridGap)
-                    ann.corkboardY = Double(CGFloat(row) * vSpace + cardH / 2 + gridGap)
+                    let targetX = Double(CGFloat(col) * hSpace + cardW / 2 + gridGap)
+                    let targetY = Double(yOffset + CGFloat(row) * vSpace + cardH / 2 + gridGap + 60) // 60 for lane header
+                    targetPositions[ann.id] = (x: targetX, y: targetY)
+                }
+                let rowsNeeded = CGFloat((groupAnns.count + cols - 1) / cols)
+                yOffset += rowsNeeded * vSpace + 120
+            }
+        } else {
+            for (i, ann) in annotations.enumerated() {
+                let col = i % cols
+                let row = i / cols
+                let targetX = Double(CGFloat(col) * hSpace + cardW / 2 + gridGap)
+                let targetY = Double(CGFloat(row) * vSpace + cardH / 2 + gridGap)
+                targetPositions[ann.id] = (x: targetX, y: targetY)
+            }
+        }
+
+        withAnimation(.spring(response: 0.55, dampingFraction: 0.72)) {
+            for ann in annotations {
+                if let pos = targetPositions[ann.id] {
+                    ann.corkboardX = pos.x
+                    ann.corkboardY = pos.y
                 }
             }
             // Reset view to show arranged cards
@@ -403,7 +414,7 @@ struct SwimLaneBackgrounds: View {
     let cardH: CGFloat
     let gridGap: CGFloat
     
-    var body: some View {
+    private func calculateRects() -> [(key: String, count: Int, y: CGFloat)] {
         let cols = max(1, Int(sqrt(Double(annotations.count) * 1.4)))
         let vSpace = cardH + gridGap
         
@@ -430,6 +441,11 @@ struct SwimLaneBackgrounds: View {
             currentY += rowsNeeded * vSpace + 120
         }
         
+        return rects
+    }
+
+    var body: some View {
+        let rects = calculateRects()
         return ZStack(alignment: .topLeading) {
             ForEach(rects, id: \.key) { rect in
                 VStack(alignment: .leading) {
