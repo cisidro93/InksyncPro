@@ -301,7 +301,7 @@ struct BlurView: UIViewRepresentable {
 // MARK: - Splash Screen
 struct SplashScreenView: View {
     // Track if user has completed onboarding (default: false = not seen yet)
-    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var isActive = false
     @State private var logoScale: CGFloat = 0.8
     @State private var logoOpacity: Double = 0
@@ -350,7 +350,7 @@ struct SplashScreenView: View {
                     
                     Task { @MainActor in
                         try? await Task.sleep(for: .seconds(1.5))
-                        if !hasSeenOnboarding {
+                        if !hasCompletedOnboarding {
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 showOnboarding = true
                             }
@@ -363,7 +363,7 @@ struct SplashScreenView: View {
                 }
             }
         }
-        .onChange(of: hasSeenOnboarding) { _, completed in
+        .onChange(of: hasCompletedOnboarding) { _, completed in
             // When onboarding is completed, go straight to main app
             if completed {
                 withAnimation(.easeInOut(duration: 0.3)) {

@@ -24,6 +24,23 @@ struct ZettelkastenCorkboardView: View {
     // ── Layout & UI ─────────────────────────────────────────────────────────
     @State private var hasInitialized = false
     @State private var isAutoArranging = false
+    
+    // ── Organization ────────────────────────────────────────────────────────
+    @State private var corkboardGroupByTag: Bool = false
+    @State private var activeCorkboardTags: Set<String> = []
+    
+    private var allAvailableTags: [String] {
+        let all = annotations.compactMap { $0.tags }.flatMap { $0 } + 
+                  annotations.compactMap { $0.readwiseTags }.flatMap { $0 } +
+                  annotations.compactMap { $0.readwiseDocumentTags }.flatMap { $0 }
+        return Array(Set(all)).sorted()
+    }
+    
+    private func matchesActiveTags(_ ann: SDAnnotation) -> Bool {
+        if activeCorkboardTags.isEmpty { return true }
+        let annTags = Set((ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? []))
+        return !activeCorkboardTags.isDisjoint(with: annTags)
+    }
 
     private let minScale: CGFloat = 0.25
     private let maxScale: CGFloat = 2.5
@@ -55,6 +72,12 @@ struct ZettelkastenCorkboardView: View {
                                 livePinchScale = 1.0
                             }
                     )
+
+                // ── Filter HUD ──────────────────────────────────────────────
+                if !allAvailableTags.isEmpty {
+                    tagFilterHUD()
+                        .padding(.bottom, 80)
+                }
 
                 // ── Bottom toolbar ──────────────────────────────────────────
                 bottomToolbar(geo: geo)
@@ -93,6 +116,10 @@ struct ZettelkastenCorkboardView: View {
                 .contentShape(Rectangle())   // make clear fully hittable
                 .gesture(panGesture)
 
+            if corkboardGroupByTag {
+                SwimLaneBackgrounds(annotations: annotations, cardW: cardW, cardH: cardH, gridGap: gridGap)
+            }
+
             ForEach(annotations) { ann in
                 let liveOffset = cardDragOffsets[ann.id] ?? .zero
                 let baseX = CGFloat(ann.corkboardX ?? 0)
@@ -105,6 +132,7 @@ struct ZettelkastenCorkboardView: View {
                     isLifted: isLifted,
                     onDelete: { removeFromCorkboard(ann) }
                 )
+                .opacity(matchesActiveTags(ann) ? 1.0 : 0.25)
                 .position(
                     x: baseX + liveOffset.width,
                     y: baseY + liveOffset.height
@@ -129,6 +157,47 @@ struct ZettelkastenCorkboardView: View {
                         }
                 )
             }
+        }
+    }
+    
+    // MARK: - Tag Filter HUD
+    private func tagFilterHUD() -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if !activeCorkboardTags.isEmpty {
+                    Button("Clear") {
+                        withAnimation(.spring()) { activeCorkboardTags.removeAll() }
+                    }
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.red, in: Capsule())
+                }
+                
+                ForEach(allAvailableTags, id: \.self) { tag in
+                    let isActive = activeCorkboardTags.contains(tag)
+                    Button {
+                        withAnimation(.spring()) {
+                            if isActive {
+                                activeCorkboardTags.remove(tag)
+                            } else {
+                                activeCorkboardTags.insert(tag)
+                            }
+                        }
+                    } label: {
+                        Text("#\(tag)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(isActive ? .white : Theme.textSecondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(isActive ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.ultraThinMaterial), in: Capsule())
+                            .overlay(Capsule().stroke(Color.primary.opacity(0.1), lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
         }
     }
 
@@ -171,6 +240,19 @@ struct ZettelkastenCorkboardView: View {
                     livePanDelta  = .zero
                 }
             }
+
+            Divider()
+                .frame(height: 20)
+                .padding(.horizontal, 8)
+                
+            // Group By Tag
+            toolbarButton(icon: corkboardGroupByTag ? "tag.fill" : "tag", label: "By Tag") {
+                withAnimation(.spring()) {
+                    corkboardGroupByTag.toggle()
+                }
+                autoArrange(in: geo.size)
+            }
+            .foregroundColor(corkboardGroupByTag ? .orange : .primary)
 
             // Auto-arrange
             toolbarButton(icon: "rectangle.grid.3x2", label: "Arrange") {
@@ -225,11 +307,39 @@ struct ZettelkastenCorkboardView: View {
         let vSpace = cardH + gridGap
 
         withAnimation(.spring(response: 0.55, dampingFraction: 0.72)) {
-            for (i, ann) in annotations.enumerated() {
-                let col = i % cols
-                let row = i / cols
-                ann.corkboardX = Double(CGFloat(col) * hSpace + cardW / 2 + gridGap)
-                ann.corkboardY = Double(CGFloat(row) * vSpace + cardH / 2 + gridGap)
+            if corkboardGroupByTag {
+                var yOffset: CGFloat = gridGap
+                var dict: [String: [SDAnnotation]] = [:]
+                for ann in annotations {
+                    let tags = (ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? [])
+                    let primaryTag = tags.first?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "Untagged"
+                    dict[primaryTag, default: []].append(ann)
+                }
+                
+                let sortedKeys = dict.keys.sorted {
+                    if $0 == "Untagged" { return false }
+                    if $1 == "Untagged" { return true }
+                    return $0 < $1
+                }
+                
+                for key in sortedKeys {
+                    let groupAnns = dict[key] ?? []
+                    for (i, ann) in groupAnns.enumerated() {
+                        let col = i % cols
+                        let row = i / cols
+                        ann.corkboardX = Double(CGFloat(col) * hSpace + cardW / 2 + gridGap)
+                        ann.corkboardY = Double(yOffset + CGFloat(row) * vSpace + cardH / 2 + gridGap + 60) // 60 for lane header
+                    }
+                    let rowsNeeded = CGFloat((groupAnns.count + cols - 1) / cols)
+                    yOffset += rowsNeeded * vSpace + 120
+                }
+            } else {
+                for (i, ann) in annotations.enumerated() {
+                    let col = i % cols
+                    let row = i / cols
+                    ann.corkboardX = Double(CGFloat(col) * hSpace + cardW / 2 + gridGap)
+                    ann.corkboardY = Double(CGFloat(row) * vSpace + cardH / 2 + gridGap)
+                }
             }
             // Reset view to show arranged cards
             canvasOffset = .zero
@@ -282,6 +392,64 @@ struct ZettelkastenCorkboardView: View {
 
         if didChange {
             try? modelContext.save()
+        }
+    }
+}
+
+// MARK: - Swim Lane Backgrounds
+struct SwimLaneBackgrounds: View {
+    let annotations: [SDAnnotation]
+    let cardW: CGFloat
+    let cardH: CGFloat
+    let gridGap: CGFloat
+    
+    var body: some View {
+        let cols = max(1, Int(sqrt(Double(annotations.count) * 1.4)))
+        let vSpace = cardH + gridGap
+        
+        var dict: [String: [SDAnnotation]] = [:]
+        for ann in annotations {
+            let tags = (ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? [])
+            let primaryTag = tags.first?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "Untagged"
+            dict[primaryTag, default: []].append(ann)
+        }
+        
+        let sortedKeys = dict.keys.sorted {
+            if $0 == "Untagged" { return false }
+            if $1 == "Untagged" { return true }
+            return $0 < $1
+        }
+        
+        var currentY: CGFloat = gridGap
+        var rects: [(key: String, count: Int, y: CGFloat)] = []
+        
+        for key in sortedKeys {
+            let groupAnns = dict[key] ?? []
+            rects.append((key: key, count: groupAnns.count, y: currentY))
+            let rowsNeeded = CGFloat((groupAnns.count + cols - 1) / cols)
+            currentY += rowsNeeded * vSpace + 120
+        }
+        
+        return ZStack(alignment: .topLeading) {
+            ForEach(rects, id: \.key) { rect in
+                VStack(alignment: .leading) {
+                    HStack {
+                        Text(rect.key == "Untagged" ? "Untagged" : "#\(rect.key)")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundColor(Theme.textSecondary)
+                        Text("\(rect.count)")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.primary.opacity(0.2), in: Capsule())
+                    }
+                    .padding(.horizontal, 40)
+                    .padding(.vertical, 16)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .position(x: 400, y: rect.y + 30) // Positioned near the top left of the lane
+            }
         }
     }
 }

@@ -306,7 +306,7 @@ class AnnotationStore: ObservableObject {
     }
     
     /// Executes Apple's deep lexical and entity extraction algorithms to surface contextual tags (Nonisolated to execute safely off-actor)
-    nonisolated private func extractNLPKeywords(from text: String) async -> [String] {
+    nonisolated func extractNLPKeywords(from text: String) async -> [String] {
         let tagger = NLTagger(tagSchemes: [.lexicalClass, .nameType])
         tagger.string = text
         

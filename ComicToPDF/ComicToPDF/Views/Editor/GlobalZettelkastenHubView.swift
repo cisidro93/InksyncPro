@@ -9,6 +9,7 @@ enum ZettelSortMode: String, CaseIterable {
     case dateAdded    = "Date Added"
     case bookName     = "Book Name"
     case tagCount     = "Most Tagged"
+    case byTopic      = "By Topic"
 }
 
 struct GlobalZettelkastenHubView: View {
@@ -23,6 +24,7 @@ struct GlobalZettelkastenHubView: View {
     @State private var viewMode: ZettelViewMode = .list
     @State private var filterMode: ZettelFilterMode = .all
     @State private var sortMode: ZettelSortMode = .dateModified
+    @State private var collapsedSections: Set<String> = []
     
 
     @State private var isImporting = false
@@ -69,6 +71,7 @@ struct GlobalZettelkastenHubView: View {
         case .dateAdded:    filtered.sort { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
         case .bookName:     filtered.sort { bookTitle(for: $0, cache: cache) < bookTitle(for: $1, cache: cache) }
         case .tagCount:     filtered.sort { ($0.tags?.count ?? 0) > ($1.tags?.count ?? 0) }
+        case .byTopic:      break // Sorting is handled in grouping
         }
 
         return filtered
@@ -88,6 +91,34 @@ struct GlobalZettelkastenHubView: View {
             return bookTitle(for: ann, cache: cache)
         }
         return dict.sorted { $0.key < $1.key }
+    }
+
+    var topicGroupedAnnotations: [(key: String, value: [SDAnnotation])] {
+        var dict: [String: [SDAnnotation]] = [:]
+        for ann in activeAnnotations {
+            let userTags = ann.tags ?? []
+            let rwTags = ann.readwiseTags ?? []
+            let docTags = ann.readwiseDocumentTags ?? []
+            let allTags = Set(userTags + rwTags + docTags)
+            
+            if allTags.isEmpty {
+                dict["Untagged", default: []].append(ann)
+            } else {
+                for tag in allTags {
+                    let formattedTag = tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    dict[formattedTag, default: []].append(ann)
+                }
+            }
+        }
+        return dict.sorted {
+            if $0.key == "Untagged" { return false }
+            if $1.key == "Untagged" { return true }
+            return $0.key < $1.key
+        }
+    }
+
+    private var activeGroupedAnnotations: [(key: String, value: [SDAnnotation])] {
+        return sortMode == .byTopic ? topicGroupedAnnotations : groupedAnnotations
     }
 
     // Total unique book count across ALL annotations (not just filtered)
@@ -152,48 +183,88 @@ struct GlobalZettelkastenHubView: View {
                         .padding(.top, 10)
                         .padding(.bottom, 4)
 
-                        ScrollView {
-                            LazyVStack(spacing: 20, pinnedViews: []) {
-                                ForEach(groupedAnnotations, id: \.key) { group in
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        // ── Lightweight section header (Readwise-style)
-                                        HStack(spacing: 8) {
-                                            Rectangle()
-                                                .fill(Color.primary.opacity(0.08))
-                                                .frame(height: 1)
-                                            HStack(spacing: 5) {
-                                                Image(systemName: group.value.first?.isReadwiseImport == true
-                                                      ? "bird.fill" : "book.closed.fill")
-                                                    .font(.system(size: 9, weight: .bold))
-                                                    .foregroundColor(group.value.first?.isReadwiseImport == true
-                                                                     ? .blue : Theme.textSecondary)
-                                                Text(group.key)
-                                                    .font(.system(size: 11, weight: .semibold))
-                                                    .foregroundColor(Theme.textSecondary)
-                                                    .lineLimit(1)
-                                                Text("\(group.value.count)")
-                                                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                                                    .foregroundColor(.white)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
-                                                    .background(Color.primary.opacity(0.2), in: Capsule())
-                                            }
-                                            .fixedSize()
-                                        }
-                                        .padding(.horizontal)
-                                        .padding(.top, 8)
+                        ScrollViewReader { proxy in
+                            ZStack(alignment: .trailing) {
+                                ScrollView {
+                                    LazyVStack(spacing: 20, pinnedViews: []) {
+                                        ForEach(activeGroupedAnnotations, id: \.key) { group in
+                                            VStack(alignment: .leading, spacing: 10) {
+                                                // ── Lightweight section header (Readwise-style)
+                                                Button {
+                                                    withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                                                        if collapsedSections.contains(group.key) {
+                                                            collapsedSections.remove(group.key)
+                                                        } else {
+                                                            collapsedSections.insert(group.key)
+                                                        }
+                                                    }
+                                                } label: {
+                                                    HStack(spacing: 8) {
+                                                        Rectangle()
+                                                            .fill(Color.primary.opacity(0.08))
+                                                            .frame(height: 1)
+                                                        HStack(spacing: 5) {
+                                                            Image(systemName: sortMode == .byTopic ? "tag.fill" : (group.value.first?.isReadwiseImport == true ? "bird.fill" : "book.closed.fill"))
+                                                                .font(.system(size: 9, weight: .bold))
+                                                                .foregroundColor(sortMode == .byTopic ? .orange : (group.value.first?.isReadwiseImport == true ? .blue : Theme.textSecondary))
+                                                            Text(sortMode == .byTopic ? "#\(group.key)" : group.key)
+                                                                .font(.system(size: 11, weight: .semibold))
+                                                                .foregroundColor(Theme.textSecondary)
+                                                                .lineLimit(1)
+                                                            Text("\(group.value.count)")
+                                                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                                                .foregroundColor(.white)
+                                                                .padding(.horizontal, 6)
+                                                                .padding(.vertical, 2)
+                                                                .background(Color.primary.opacity(0.2), in: Capsule())
+                                                            Image(systemName: collapsedSections.contains(group.key) ? "chevron.down" : "chevron.up")
+                                                                .font(.system(size: 9, weight: .bold))
+                                                                .foregroundColor(Theme.textSecondary)
+                                                        }
+                                                        .fixedSize()
+                                                    }
+                                                    .padding(.horizontal)
+                                                    .padding(.top, 8)
+                                                }
+                                                .buttonStyle(.plain)
+                                                .id(String(group.key.prefix(1)).uppercased())
 
-                                        // Group Items
-                                        VStack(spacing: 10) {
-                                            ForEach(group.value) { item in
-                                                GlobalHighlightRow(annotation: item)
+                                                // Group Items
+                                                if !collapsedSections.contains(group.key) {
+                                                    VStack(spacing: 10) {
+                                                        ForEach(group.value) { item in
+                                                            GlobalHighlightRow(annotation: item)
+                                                        }
+                                                    }
+                                                    .padding(.horizontal)
+                                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                                }
                                             }
                                         }
-                                        .padding(.horizontal)
                                     }
+                                    .padding(.vertical)
+                                }
+                                
+                                // Index Bar
+                                if activeGroupedAnnotations.count > 10 {
+                                    VStack(spacing: 2) {
+                                        let letters = Array(Set(activeGroupedAnnotations.map { String($0.key.prefix(1)).uppercased() })).sorted()
+                                        ForEach(letters, id: \.self) { letter in
+                                            Text(letter)
+                                                .font(.system(size: 11, weight: .bold))
+                                                .foregroundColor(Theme.blue)
+                                                .frame(width: 22, height: 22)
+                                                .contentShape(Rectangle())
+                                                .onTapGesture {
+                                                    withAnimation { proxy.scrollTo(letter, anchor: .top) }
+                                                }
+                                        }
+                                    }
+                                    .padding(.vertical, 8)
+                                    .background(.ultraThinMaterial, in: Capsule())
+                                    .padding(.trailing, 4)
                                 }
                             }
-                            .padding(.vertical)
                         }
                     } else if viewMode == .map {
                         ZettelkastenGraphView(annotations: activeAnnotations, pdfs: allPDFs)
@@ -229,6 +300,11 @@ struct GlobalZettelkastenHubView: View {
                             ForEach(ZettelSortMode.allCases, id: \.self) { mode in
                                 Text(mode.rawValue).tag(mode)
                             }
+                        }
+                    }
+                    Section("Organize") {
+                        Button(action: { sortMode = .byTopic }) {
+                            Label("Group by Topic", systemImage: "tag.fill")
                         }
                     }
                     // Data actions

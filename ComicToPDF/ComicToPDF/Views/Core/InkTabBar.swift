@@ -14,6 +14,7 @@ struct InkTabItem {
 struct InkTabBar: View {
     @Binding var selectedTab: Int
     @Binding var isHidden: Bool
+    var annotationCount: Int = 0
     var convertingProgress: Double = 0
     var isConverting: Bool = false
     var convertingMessage: String = ""
@@ -174,6 +175,19 @@ struct InkTabBar: View {
                         )
                         .scaleEffect(isActive ? 1.08 : 1.0)
                         .animation(.spring(response: 0.25, dampingFraction: 0.60), value: isActive)
+                    
+                    // Badge for Highlights Tab (tag 5)
+                    if tab.tag == 5 && annotationCount > 0 {
+                        Text("\(annotationCount)")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.orange, in: Capsule())
+                            .overlay(Capsule().stroke(Color.inkSurface, lineWidth: 1.5))
+                            .offset(x: 14, y: -10)
+                            .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
+                    }
                 }
                 .frame(width: 44, height: iconFrameHeight)
 

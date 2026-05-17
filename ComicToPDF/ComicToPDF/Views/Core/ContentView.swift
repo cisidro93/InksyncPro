@@ -17,6 +17,8 @@ struct ContentView: View {
     @State private var tabBarHidden = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var selectedPDF: ConvertedPDF?
+    
+    @Query private var allAnnotations: [SDAnnotation]
 
     // Global Sheets
     @State private var pdfToShare: ConvertedPDF?
@@ -35,7 +37,7 @@ struct ContentView: View {
     @State private var webExportPDF: ConvertedPDF?
 
     // Onboarding State
-    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
 
     // UI Mode
@@ -80,7 +82,7 @@ struct ContentView: View {
             OnboardingView()
         }
         .onAppear {
-            if !hasSeenOnboarding {
+            if !hasCompletedOnboarding {
                 showOnboarding = true
             }
             // Wire LinkedLibraryScanner to this live ConversionManager instance.
@@ -91,6 +93,7 @@ struct ContentView: View {
             
             Task { @MainActor in
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
+                MigrationService.shared.runZettelkastenNLPBackfill(context: modelContext)
                 let genCount = MigrationService.shared.performSmartGrouping(context: modelContext)
                 
                 // SILENT CACHE SYNC: We MUST reload SwiftData into RAM so that any new natively-generated
@@ -336,6 +339,7 @@ struct ContentView: View {
             InkTabBar(
                 selectedTab: $selectedTab,
                 isHidden: $tabBarHidden,
+                annotationCount: allAnnotations.count,
                 convertingProgress: conversionManager.conversionProgress,
                 isConverting: conversionManager.isConverting,
                 convertingMessage: conversionManager.processingStatus,
@@ -378,7 +382,18 @@ struct ContentView: View {
                         Label("Work Area", systemImage: "scissors")
                     }
                     NavigationLink(value: 5) {
-                        Label("Highlights", systemImage: "text.badge.star")
+                        HStack {
+                            Label("Highlights", systemImage: "text.badge.star")
+                            Spacer()
+                            if allAnnotations.count > 0 {
+                                Text("\(allAnnotations.count)")
+                                    .font(.caption2.bold())
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange, in: Capsule())
+                            }
+                        }
                     }
                     NavigationLink(value: 7) {
                         Label("Studio", systemImage: "note.text")
