@@ -485,7 +485,7 @@ struct LibraryGridView: View {
                 } label: { Label("Sync Drive", systemImage: "arrow.triangle.2.circlepath") }
             }
             Button {
-                AppRouter.shared.presentSheet(.linkedLibrary)
+                AppRouter.shared.presentSheet(.cloudBrowser)
             } label: { Label("Manage in Settings", systemImage: "gear") }
         }
     }

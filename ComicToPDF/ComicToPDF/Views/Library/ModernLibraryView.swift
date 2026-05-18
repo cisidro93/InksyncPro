@@ -339,6 +339,7 @@ struct ModernLibraryView: View {
             switch item {
             case .single: return count + 1
             case .series(let grp): return count + grp.issues.count
+            case .driveFolder: return count   // drive cards are not batch-selectable
             }
         }
         let isAllSelected = totalVisibleItems > 0 && multiSelection.count >= totalVisibleItems
@@ -349,6 +350,7 @@ struct ModernLibraryView: View {
                 switch item {
                 case .single(let pdf): return [pdf.id]
                 case .series(let group): return group.issues.map { $0.id }
+                case .driveFolder: return []
                 }
             }
             allIds.forEach { multiSelection.insert($0) }

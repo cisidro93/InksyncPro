@@ -392,10 +392,12 @@ class LibraryViewModel: ObservableObject {
 }
 
 enum LibraryFilterState: String, CaseIterable, Identifiable {
-    case all = "All"
-    case unread = "Unread"
-    case reading = "Reading"
-    case completed = "Completed"
-    
+    case all          = "All"
+    case unread       = "Unread"
+    case reading      = "Reading"
+    case completed    = "Completed"
+    case onDrive      = "On Drive"
+    case cloudLibrary = "Cloud"
+
     var id: String { rawValue }
 }
