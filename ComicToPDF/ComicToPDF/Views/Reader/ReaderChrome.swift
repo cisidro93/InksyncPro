@@ -66,6 +66,7 @@ struct ReaderChrome: View {
                 .offset(y: isVisible ? 0 : 16)
         }
         .opacity(isVisible ? 1 : 0)
+        .allowsHitTesting(isVisible)
         .animation(.spring(response: 0.42, dampingFraction: 0.88), value: isVisible)
     }
 

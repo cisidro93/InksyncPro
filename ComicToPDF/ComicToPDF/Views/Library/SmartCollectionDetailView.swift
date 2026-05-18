@@ -9,10 +9,10 @@ struct SmartCollectionDetailView: View {
     @State private var viewStyle: ModernLibraryView.LibraryViewStyle = .grid
     @State private var sortOption: ModernLibraryView.SortOption = .dateAdded
 
-    // Dummy bindings required by shared components
+    // Bindings required by shared grid/list components
     @State private var mockBatchMode = false
     @State private var mockMultiSelection: Set<UUID> = []
-    @State private var mockSelectedPDF: ConvertedPDF? = nil
+    @State private var selectedPDF: ConvertedPDF? = nil
 
     // Cached result — computed once and updated only when source data changes.
     @State private var filteredPDFs: [ConvertedPDF] = []
@@ -167,7 +167,7 @@ struct SmartCollectionDetailView: View {
                                 multiSelection: $mockMultiSelection,
                                 useNavigationStack: false,
                                 tapAction: .constant(.read),
-                                selectedPDF: $mockSelectedPDF,
+                                selectedPDF: $selectedPDF,
                                 onAction: { _, _ in },
                                 onImport: {},
                                 onFolderTap: { _ in },
@@ -181,7 +181,7 @@ struct SmartCollectionDetailView: View {
                                 multiSelection: $mockMultiSelection,
                                 useNavigationStack: false,
                                 tapAction: .constant(.read),
-                                selectedPDF: $mockSelectedPDF,
+                                selectedPDF: $selectedPDF,
                                 onAction: { _, _ in },
                                 onImport: {},
                                 onFolderTap: { _ in }
@@ -193,6 +193,14 @@ struct SmartCollectionDetailView: View {
             }
         }
         .navigationBarHidden(true)
+        // Tap-to-read: opens correct reader for the selected PDF
+        .fullScreenCover(item: $selectedPDF) { pdf in
+            if pdf.contentType == .book {
+                SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
+            } else {
+                ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
+            }
+        }
         // Compute once on appear
         .task { recomputeFilter() }
         // Recompute if the library changes (import, delete, rename)
