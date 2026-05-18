@@ -5,7 +5,7 @@ InksyncPro is the premier, state-of-the-art iOS/iPadOS comic and manga reading p
 
 ## Core Pillars
 1. **Uncompromising Aesthetics:** A modern, premium, frosted-glass UI with rich micro-animations that rivals or exceeds any first-party Apple application or top-tier competitor (e.g., Panels, Comic Zeal).
-2. **Robust Data Integrity:** Cloud-first, non-destructive architecture. External drives and cloud sources are strictly managed without in-place mutations to guarantee user data safety.
+2. **Robust Data Integrity:** Cloud-first, non-destructive architecture with strict lifecycle management. Features an `InstallGuardService` to securely manage onboarding states and prevent accidental data-loss during app updates. External drives and cloud sources are strictly managed without in-place mutations.
 3. **High-Performance Architecture:** Swift 6 concurrency compliance, background threaded extraction, and robust memory management preventing OOM crashes, even on 1000+ page archives.
 4. **Professional Workflows:** Deep Zettelkasten integration, annotation markdown export, and precision extraction tools that elevate comic reading to professional study and research.
 
@@ -39,7 +39,9 @@ InksyncPro is the premier, state-of-the-art iOS/iPadOS comic and manga reading p
 * **Wi-Fi Server:** A secure, rate-limited local server for wireless, high-speed comic importing via a web browser.
 
 ### 5. Research & Zettelkasten
-* **Zettelkasten Hub:** A frosted-glass knowledge graph displaying relationships between annotations, characters, and series.
+* **Zettelkasten Hub:** A frosted-glass knowledge graph displaying relationships between annotations, characters, and series. Features Multi-Indexed "By Topic" sorting, allowing cross-referenced highlights to appear under multiple themes, with collapsible headers and an alphabetical index bar for rapid navigation.
+* **Intelligent Auto-Tagging:** Background NLP (Natural Language Processing) automatically analyzes untagged highlights and extracts lexical entities and contextual keywords to passively organize user research.
+* **Zettelkasten Corkboard:** An infinite canvas for visually arranging index cards. Features a horizontal Tag Filter HUD for dimming irrelevant cards, and dynamic vertical "Swim Lanes" that auto-arrange cards by their primary topic.
 * **Annotation Export:** Seamless export of highlights, notes, and clipped panels to Markdown (optimized for Obsidian integration).
 
 ### 6. Apple Ecosystem Integration
