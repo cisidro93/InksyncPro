@@ -4,14 +4,28 @@ enum DockPosition: String, CaseIterable, Codable {
     case left, right, top, bottom
 }
 
+/// Which content is shown in the split notebook panel.
+enum NotebookPanelMode: String, CaseIterable {
+    case notebook = "Notes"       // Classic per-book study notes (StudyNotebookView)
+    case studio   = "Studio"      // Full Research + Writing Studio (InkStudioView)
+
+    var icon: String {
+        switch self {
+        case .notebook: return "note.text"
+        case .studio:   return "pencil.and.list.clipboard"
+        }
+    }
+}
+
 struct SplitStudyWorkspace: View {
     let fileURL: URL
     let contentType: ContentType
     let pdf: ConvertedPDF?
     
-    @AppStorage("study_split_fraction") private var splitFraction: Double = 0.65
-    @AppStorage("study_dock_position") private var dockPosition: DockPosition = .right
-    
+    @AppStorage("study_split_fraction")   private var splitFraction: Double = 0.65
+    @AppStorage("study_dock_position")    private var dockPosition: DockPosition = .right
+    @AppStorage("study_panel_mode")       private var panelMode: NotebookPanelMode = .notebook
+
     @Environment(\.horizontalSizeClass) var hSizeClass
     @Environment(\.dismiss) var dismiss
     @State private var showNotebook = false
@@ -22,20 +36,17 @@ struct SplitStudyWorkspace: View {
             let isCompact = hSizeClass == .compact || geo.size.width < 700
             
             if isCompact {
-                // Compact device fallback
+                // Compact device fallback — panel always shown as a sheet
                 ZStack {
                     ReaderView(fileURL: fileURL, contentType: contentType, pdf: pdf, onExit: { dismiss() })
                         .sheet(isPresented: $showNotebook) {
-                            StudyNotebookView(
-                                bookID: pdf?.id.uuidString ?? fileURL.lastPathComponent,
-                                bookTitle: pdf?.name ?? fileURL.deletingPathExtension().lastPathComponent
-                            )
+                            sheetPanelContent
                         }
                     
                     compactNotebookToggle
                 }
             } else {
-                // Pro iPad / Mac Workspace
+                // Pro iPad / Mac Workspace — inline split panel
                 ZStack {
                     if dockPosition == .right {
                         HStack(spacing: 0) {
@@ -88,8 +99,34 @@ struct SplitStudyWorkspace: View {
                 Button("") { dockPosition = .top }.keyboardShortcut("4", modifiers: [.command])
                 Button("") { showCheatSheet.toggle() }.keyboardShortcut("/", modifiers: [.command])
                 Button("") { showNotebook.toggle() }.keyboardShortcut("b", modifiers: [.command])
+                Button("") { panelMode = .notebook }.keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("") { panelMode = .studio }.keyboardShortcut("s", modifiers: [.command, .shift])
             }.opacity(0)
         )
+    }
+    
+    // MARK: - Panel Content Router
+
+    /// Content shown in the split panel — either the classic Study Notebook or the full Ink Studio.
+    @ViewBuilder
+    private var panelContent: some View {
+        switch panelMode {
+        case .notebook:
+            StudyNotebookView(
+                bookID: pdf?.id.uuidString ?? fileURL.lastPathComponent,
+                bookTitle: pdf?.name ?? fileURL.deletingPathExtension().lastPathComponent
+            )
+        case .studio:
+            InkStudioView()
+        }
+    }
+
+    /// Sheet variant for compact (iPhone) devices.
+    @ViewBuilder
+    private var sheetPanelContent: some View {
+        NavigationStack { panelContent }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
     }
     
     // MARK: - Builders
@@ -105,10 +142,7 @@ struct SplitStudyWorkspace: View {
     
     @ViewBuilder
     private func notebookPane(geo: GeometryProxy, fraction: Double, axis: Axis) -> some View {
-        StudyNotebookView(
-            bookID: pdf?.id.uuidString ?? fileURL.lastPathComponent,
-            bookTitle: pdf?.name ?? fileURL.deletingPathExtension().lastPathComponent
-        )
+        panelContent
             .frame(
                 width: axis == .horizontal ? geo.size.width * fraction - 8 : geo.size.width,
                 height: axis == .vertical ? geo.size.height * fraction - 8 : geo.size.height
@@ -157,11 +191,11 @@ struct SplitStudyWorkspace: View {
                 Button {
                     showNotebook.toggle()
                 } label: {
-                    Image(systemName: "note.text")
+                    Image(systemName: panelMode.icon)
                         .font(.system(size: 20))
                         .foregroundColor(.white)
                         .padding(16)
-                        .background(Color.blue)
+                        .background(panelMode == .studio ? Color(hex: "#7B5EA7") : Color.blue)
                         .clipShape(Circle())
                         .shadow(radius: 5)
                 }
@@ -188,7 +222,31 @@ struct SplitStudyWorkspace: View {
                     }
                     
                     Divider().frame(height: 20)
-                    
+
+                    // Panel Mode Toggle (Notes ↔ Studio)
+                    // Only shown when the panel is open — no point switching mode while hidden
+                    if showNotebook {
+                        ForEach(NotebookPanelMode.allCases, id: \.self) { mode in
+                            Button {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                                    panelMode = mode
+                                }
+                            } label: {
+                                Image(systemName: mode.icon)
+                                    .font(.system(size: 14, weight: panelMode == mode ? .bold : .regular))
+                                    .foregroundColor(
+                                        panelMode == mode
+                                            ? (mode == .studio ? Color(hex: "#7B5EA7") : Theme.blue)
+                                            : .primary.opacity(0.5)
+                                    )
+                                    .padding(12)
+                                    .contentShape(Rectangle())
+                            }
+                        }
+
+                        Divider().frame(height: 20)
+                    }
+
                     // Cheat Sheet Toggle
                     Button {
                         showCheatSheet.toggle()
@@ -208,7 +266,7 @@ struct SplitStudyWorkspace: View {
                             showNotebook.toggle()
                         }
                     } label: {
-                        Image(systemName: showNotebook ? "sidebar.right" : "sidebar.right")
+                        Image(systemName: "sidebar.right")
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(showNotebook ? Theme.blue : .primary)
                             .padding(12)
@@ -241,6 +299,7 @@ struct SplitStudyWorkspace: View {
     }
 }
 
+
 // MARK: - Phase 3: Pro Feature Cheat Sheet
 struct ProFeatureCheatSheet: View {
     @Environment(\.dismiss) var dismiss
@@ -249,13 +308,15 @@ struct ProFeatureCheatSheet: View {
         NavigationStack {
             List {
                 Section(header: Text("Magic Keyboard Shortcuts")) {
-                    shortcutRow(cmd: "CMD + B", desc: "Toggle Notebook Overlay")
-                    shortcutRow(cmd: "CMD + E", desc: "Extract Selection to Notebook")
-                    shortcutRow(cmd: "CMD + 1", desc: "Dock Notebook Left")
-                    shortcutRow(cmd: "CMD + 2", desc: "Dock Notebook Bottom")
-                    shortcutRow(cmd: "CMD + 3", desc: "Dock Notebook Right")
-                    shortcutRow(cmd: "CMD + 4", desc: "Dock Notebook Top")
-                    shortcutRow(cmd: "CMD + /", desc: "Show this Cheat Sheet")
+                    shortcutRow(cmd: "CMD + B",         desc: "Toggle Side Panel")
+                    shortcutRow(cmd: "CMD + SHIFT + N", desc: "Switch Panel to Notes")
+                    shortcutRow(cmd: "CMD + SHIFT + S", desc: "Switch Panel to Studio")
+                    shortcutRow(cmd: "CMD + E",         desc: "Extract Selection to Notebook")
+                    shortcutRow(cmd: "CMD + 1",         desc: "Dock Panel Left")
+                    shortcutRow(cmd: "CMD + 2",         desc: "Dock Panel Bottom")
+                    shortcutRow(cmd: "CMD + 3",         desc: "Dock Panel Right")
+                    shortcutRow(cmd: "CMD + 4",         desc: "Dock Panel Top")
+                    shortcutRow(cmd: "CMD + /",         desc: "Show this Cheat Sheet")
                 }
                 
                 Section(header: Text("Apple Pencil Gestures")) {

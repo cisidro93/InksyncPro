@@ -317,16 +317,12 @@ struct ContentView: View {
                 NavigationStack { EditorDashboardView() }
                     .tabVisible(selectedTab == 4)
 
-                // Tab 5: Highlights
-                NavigationStack { GlobalZettelkastenHubView() }
-                    .tabVisible(selectedTab == 5)
-
                 // Tab 6: Settings
                 NavigationStack { SettingsView() }
                     .tabVisible(selectedTab == 6)
-                    
-                // Tab 7: Studio
-                NavigationStack { ManuscriptProjectsListView() }
+
+                // Tab 7: Ink Studio (Research + Writing unified)
+                NavigationStack { InkStudioView() }
                     .tabVisible(selectedTab == 7)
             }
             // Reserve space at the bottom so content scrolls above the pill.
@@ -381,9 +377,9 @@ struct ContentView: View {
                     NavigationLink(value: 4) {
                         Label("Work Area", systemImage: "scissors")
                     }
-                    NavigationLink(value: 5) {
+                    NavigationLink(value: 7) {
                         HStack {
-                            Label("Highlights", systemImage: "text.badge.star")
+                            Label("Studio", systemImage: "pencil.and.list.clipboard")
                             Spacer()
                             if allAnnotations.count > 0 {
                                 Text("\(allAnnotations.count)")
@@ -391,12 +387,9 @@ struct ContentView: View {
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(Color.orange, in: Capsule())
+                                    .background(Color(hex: "#7B5EA7"), in: Capsule())
                             }
                         }
-                    }
-                    NavigationLink(value: 7) {
-                        Label("Studio", systemImage: "note.text")
                     }
                 }
                 .navigationTitle("Inksync")
@@ -448,13 +441,9 @@ struct ContentView: View {
                     DevicesView()
                 } else if selectedTab == 4 {
                     EditorDashboardView()
-                } else if selectedTab == 5 {
-                    NavigationStack {
-                        GlobalZettelkastenHubView()
-                    }
                 } else if selectedTab == 7 {
                     NavigationStack {
-                        ManuscriptProjectsListView()
+                        InkStudioView()
                     }
                 }
             }

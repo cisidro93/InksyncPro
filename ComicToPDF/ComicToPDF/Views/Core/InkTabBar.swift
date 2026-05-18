@@ -39,14 +39,13 @@ struct InkTabBar: View {
     @Environment(\.verticalSizeClass) private var vSizeClass
 
     private let allTabs: [InkTabItem] = [
-        InkTabItem(tag: 0, label: "Library",    icon: "books.vertical",        activeIcon: "books.vertical.fill"),
-        InkTabItem(tag: 1, label: "Reader",     icon: "book",                  activeIcon: "book.fill"),
-        InkTabItem(tag: 2, label: "Inbox",      icon: "tray",                  activeIcon: "tray.full.fill"),
-        InkTabItem(tag: 3, label: "Devices",    icon: "ipad.and.iphone",       activeIcon: "ipad.and.iphone.fill"),
-        InkTabItem(tag: 4, label: "Work Area",  icon: "scissors",              activeIcon: "scissors.badge.ellipsis"),
-        InkTabItem(tag: 5, label: "Highlights", icon: "text.badge.star",       activeIcon: "text.badge.star"),
-        InkTabItem(tag: 6, label: "Settings",   icon: "gear",                  activeIcon: "gearshape.fill"),
-        InkTabItem(tag: 7, label: "Studio",     icon: "note.text",             activeIcon: "note.text.badge.plus"),
+        InkTabItem(tag: 0, label: "Library",    icon: "books.vertical",             activeIcon: "books.vertical.fill"),
+        InkTabItem(tag: 1, label: "Reader",     icon: "book",                       activeIcon: "book.fill"),
+        InkTabItem(tag: 2, label: "Inbox",      icon: "tray",                       activeIcon: "tray.full.fill"),
+        InkTabItem(tag: 3, label: "Devices",    icon: "ipad.and.iphone",            activeIcon: "ipad.and.iphone.fill"),
+        InkTabItem(tag: 4, label: "Work Area",  icon: "scissors",                  activeIcon: "scissors.badge.ellipsis"),
+        InkTabItem(tag: 6, label: "Settings",   icon: "gear",                      activeIcon: "gearshape.fill"),
+        InkTabItem(tag: 7, label: "Studio",     icon: "pencil.and.list.clipboard",  activeIcon: "pencil.and.list.clipboard"),
     ]
 
     // Always show all 7 tabs on every device and orientation
@@ -176,14 +175,14 @@ struct InkTabBar: View {
                         .scaleEffect(isActive ? 1.08 : 1.0)
                         .animation(.spring(response: 0.25, dampingFraction: 0.60), value: isActive)
                     
-                    // Badge for Highlights Tab (tag 5)
-                    if tab.tag == 5 && annotationCount > 0 {
+                    // Badge for Studio Tab (tag 7) — shows annotation count from Research segment
+                    if tab.tag == 7 && annotationCount > 0 {
                         Text("\(annotationCount)")
                             .font(.system(size: 9, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 2)
-                            .background(Color.orange, in: Capsule())
+                            .background(Color(hex: "#7B5EA7"), in: Capsule())
                             .overlay(Capsule().stroke(Color.inkSurface, lineWidth: 1.5))
                             .offset(x: 14, y: -10)
                             .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
