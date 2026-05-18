@@ -82,16 +82,36 @@ struct ZipCentralDirectory {
     ///                 Pass `nil` for Dropbox temporary links which are already pre-authenticated.
     static func fetch(from url: URL, authHeader: String? = nil) async throws -> ZipManifest {
 
-        // ── Step 1: Get total file size via HEAD ─────────────────────────────────
-        var headRequest = URLRequest(url: url)
-        headRequest.httpMethod = "HEAD"
-        if let auth = authHeader { headRequest.setValue(auth, forHTTPHeaderField: "Authorization") }
+        // ── Step 1: Get total file size via Range bytes=0-0 GET ──────────────────
+        // We use a single-byte Range request instead of HEAD because Dropbox CDN
+        // edge nodes frequently reject HEAD on pre-signed download URLs with a
+        // connection-reset ("network connection was lost"). A bytes=0-0 GET is
+        // universally supported and the Content-Range response header gives us the
+        // total file size: "bytes 0-0/<total>".
+        var sizeRequest = URLRequest(url: url)
+        if let auth = authHeader { sizeRequest.setValue(auth, forHTTPHeaderField: "Authorization") }
+        sizeRequest.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        sizeRequest.timeoutInterval = 15
 
-        let (_, headResponse) = try await URLSession.shared.data(for: headRequest)
-        guard let http = headResponse as? HTTPURLResponse,
-              (200...299).contains(http.statusCode),
-              let lengthStr = http.value(forHTTPHeaderField: "Content-Length"),
-              let totalSize = UInt64(lengthStr), totalSize > 22 else {
+        let (_, sizeResponse) = try await URLSession.shared.data(for: sizeRequest)
+        guard let http = sizeResponse as? HTTPURLResponse,
+              http.statusCode == 206 || http.statusCode == 200 else {
+            throw ZipCentralDirectoryError.fileTooSmall
+        }
+
+        // Content-Range format: "bytes 0-0/<total>" (206) or fall back to Content-Length (200).
+        let totalSize: UInt64
+        if let rangeHeader = http.value(forHTTPHeaderField: "Content-Range"),
+           let slashIdx = rangeHeader.lastIndex(of: "/") {
+            let sizeStr = String(rangeHeader[rangeHeader.index(after: slashIdx)...])
+            guard let parsed = UInt64(sizeStr), parsed > 22 else {
+                throw ZipCentralDirectoryError.fileTooSmall
+            }
+            totalSize = parsed
+        } else if let lengthStr = http.value(forHTTPHeaderField: "Content-Length"),
+                  let parsed = UInt64(lengthStr), parsed > 22 {
+            totalSize = parsed
+        } else {
             throw ZipCentralDirectoryError.fileTooSmall
         }
 

@@ -155,7 +155,12 @@ struct RARHeaderParser {
 
                 let finalPacked   = (highPacked   << 32) | packed
                 let finalUnpacked = (highUnpacked << 32) | unpacked
-                let dataOffset    = baseOffset + UInt64(nameStart + nameLen)
+                // dataOffset = absolute byte position in the archive where this
+                // file's data begins (immediately after the variable-length name).
+                // nameStart is already relative to the start of `bytes` which begins
+                // at baseOffset=0 for a local fetch, so the absolute offset is
+                // baseOffset + nameStart + nameLen.
+                let dataOffset = baseOffset + UInt64(nameStart + nameLen)
 
                 let entry = RAREntry(
                     name: name,
@@ -170,7 +175,9 @@ struct RARHeaderParser {
                     return entry
                 }
 
-                // Advance past this block: header + data
+                // Advance past this block: header bytes + packed data bytes.
+                // blockSize covers only the header (up to and including the name),
+                // so the packed data is additive.
                 offset += blockSize + Int(finalPacked)
             } else {
                 // Skip non-file block
@@ -240,15 +247,21 @@ struct RARHeaderParser {
                 let compMethod = UInt8(compressionInfo & 0x3F)
                 let isStored = (compMethod == 0)
 
-                // DataSize is in the main block right after the header area (if HFLAG_DATA_AREA set)
-                // headerFlags bit 1 = has data area
+                // DataSize vint immediately follows the block header (if HFLAG_DATA_AREA set).
+                // headerFlags bit 1 = has data area. We must consume the correct number of
+                // vint bytes — discarding the count and always adding 1 misaligns the stream.
                 var dataSize: UInt64 = 0
+                var dataSizeVintLen = 0
                 if headerFlags & 0x0002 != 0 {
-                    var dpos = blockEnd
-                    if let (ds, _) = readVInt(bytes, at: dpos) { dataSize = ds; dpos += 1 }
+                    if let (ds, dsLen) = readVInt(bytes, at: blockEnd) {
+                        dataSize = ds
+                        dataSizeVintLen = dsLen
+                    }
                 }
 
-                let dataOffset = baseOffset + UInt64(blockEnd)
+                // dataOffset points to the first byte of the file's payload.
+                // In RAR5 the DataSize vint precedes the data when a data area is present.
+                let dataOffset = baseOffset + UInt64(blockEnd) + UInt64(dataSizeVintLen)
 
                 let entry = RAREntry(
                     name: name,
@@ -264,11 +277,13 @@ struct RARHeaderParser {
                 }
             }
 
-            // Advance to next block
+            // Advance to next block: move to blockEnd, then skip the data area if present.
+            // Use the correctly-consumed vint byte count so we don't misalign.
             offset = blockEnd
-            // If data area follows (headerFlags bit 1), skip it
-            if headerFlags & 0x0002 != 0, offset + 8 < bytes.count {
-                if let (ds, _) = readVInt(bytes, at: offset) { offset += Int(ds) + 1 }
+            if headerFlags & 0x0002 != 0 {
+                if let (ds, dsLen) = readVInt(bytes, at: offset) {
+                    offset += dsLen + Int(ds)   // skip vint itself + data bytes
+                }
             }
         }
 
