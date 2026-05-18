@@ -579,8 +579,63 @@ struct ReaderView: View {
     // MARK: - Archive Preparation
     private func prepareArchive() async {
         var activeFileURL = fileURL
-        
-        // ✅ CLOUD STREAMING: Route through CloudStreamCoordinator
+
+        // ── LINKED EXTERNAL DRIVE ─────────────────────────────────────────────
+        // Security-scoped bookmarks expire between app launches and after drive
+        // reconnect. We must resolve fresh from bookmark data and acquire scope
+        // before any file I/O, or every read silently fails with EPERM / ENOENT.
+        if let pdfItem = pdf, case .linked(let bookmarkData) = pdfItem.sourceMode {
+            await MainActor.run {
+                self.isLoading = true
+                self.errorMessage = nil
+            }
+            do {
+                let resolvedURL = try BookmarkResolver.shared.resolve(bookmarkData)
+                let didAccess = resolvedURL.startAccessingSecurityScopedResource()
+
+                // Validate the drive is actually readable right now
+                var coordError: NSError?
+                var isAccessible = false
+                let coordinator = NSFileCoordinator()
+                coordinator.coordinate(
+                    readingItemAt: resolvedURL,
+                    options: .immediatelyAvailableMetadataOnly,
+                    error: &coordError
+                ) { safeURL in
+                    isAccessible = FileManager.default.fileExists(atPath: safeURL.path)
+                }
+
+                guard coordError == nil, isAccessible else {
+                    if didAccess { resolvedURL.stopAccessingSecurityScopedResource() }
+                    await MainActor.run {
+                        self.errorMessage = "External drive is not connected or the file is no longer accessible. Please reconnect the drive and try again."
+                        self.isLoading = false
+                    }
+                    return
+                }
+
+                // Hand off to the shared extraction pipeline using the live, scoped URL.
+                // Keep the security scope alive until extraction is complete by
+                // stopping it only after the pipeline finishes.
+                await MainActor.run { self.fileURL = resolvedURL }
+                activeFileURL = resolvedURL
+
+                // Run extraction (see shared pipeline below), then release scope.
+                defer { if didAccess { resolvedURL.stopAccessingSecurityScopedResource() } }
+                await extractAndOpen(activeFileURL: resolvedURL)
+                return
+
+            } catch {
+                await MainActor.run {
+                    Logger.shared.log("ReaderView: Linked drive bookmark resolution failed: \(error.localizedDescription)", category: "ReaderView", type: .error)
+                    self.errorMessage = "Could not access external drive file: \(error.localizedDescription)"
+                    self.isLoading = false
+                }
+                return
+            }
+        }
+
+        // ── CLOUD STREAMING ───────────────────────────────────────────────────
         if let pdf = pdf, case .cloud = pdf.sourceMode {
             await MainActor.run {
                 self.isLoading = true
@@ -591,16 +646,10 @@ struct ReaderView: View {
                 switch readyState {
 
                 case .pageStream(let source):
-                    // ✅ BYTE-RANGE STREAMING: Fetch all pages into a temp dir via range requests.
-                    // All pages are fetched concurrently. The reader opens once all pages are
-                    // ready — same pattern as .extractedPages for consistency.
                     let tempDir = FileManager.default.temporaryDirectory
                         .appendingPathComponent("stream_\(pdf.id.uuidString.prefix(8))")
                     try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-                    // Accumulate results without pre-allocating placeholder URLs.
-                    // Pre-allocating with tempDir (a directory) causes PageBufferManager
-                    // to attempt to decode a directory as an image — always nil.
                     var fetchedPages: [URL?] = Array(repeating: nil, count: source.pageCount)
 
                     await withTaskGroup(of: (Int, URL?).self) { group in
@@ -630,7 +679,6 @@ struct ReaderView: View {
                         }
                     }
 
-                    // Compact to only successfully fetched pages and open the reader.
                     let resolvedPages = fetchedPages.compactMap { $0 }
                     await MainActor.run {
                         self.unzippedDir = tempDir
@@ -641,7 +689,6 @@ struct ReaderView: View {
                         }
                     }
 
-                    // Generate cover from page 0 (already on disk — no network hit)
                     if let firstPage = resolvedPages.first,
                        let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
                         Task(priority: .background) {
@@ -651,11 +698,7 @@ struct ReaderView: View {
                     }
                     return
 
-
                 case .extractedPages(let workingDir, let pages):
-                    // ✅ CBR BEST PRACTICE: Pages already extracted to temp dir by CBRExtractor.
-                    // Reader experience is now IDENTICAL to opening a local CBZ.
-                    // No further extraction needed — set pages directly and open immediately.
                     await MainActor.run {
                         self.unzippedDir = workingDir
                         self.pages = pages
@@ -663,7 +706,6 @@ struct ReaderView: View {
                         if pages.isEmpty { self.errorMessage = "No images found in archive." }
                     }
 
-                    // Generate cover from first extracted page (already local — instant)
                     if let firstPage = pages.first,
                        let convManager = await MainActor.run(body: { [weak conversionManager] in conversionManager }) {
                         Task(priority: .background) {
@@ -674,7 +716,6 @@ struct ReaderView: View {
                     return
 
                 case .localTemp(let url):
-                    // ⚠️ GENERIC FALLBACK: CB7, CBT or malformed ZIP — archive downloaded, extract below
                     await MainActor.run { self.fileURL = url }
                     activeFileURL = url
 
@@ -694,36 +735,40 @@ struct ReaderView: View {
                 return
             }
         }
-        
+
+        await extractAndOpen(activeFileURL: activeFileURL)
+    }
+
+    /// Shared extraction pipeline — used by both the local and linked drive paths.
+    private func extractAndOpen(activeFileURL: URL) async {
         let ext = activeFileURL.pathExtension.lowercased()
-        
+
         // PDFs are handled directly by PDFKitView without extraction
         if ext == "pdf" {
             await MainActor.run { self.isLoading = false }
             return
         }
-        
+
         do {
             if ext == "epub" {
                 let fileManager = FileManager.default
                 let tempID = UUID().uuidString
                 let dest = fileManager.temporaryDirectory.appendingPathComponent("Reader_\(tempID)")
-                
+
                 try fileManager.createDirectory(at: dest, withIntermediateDirectories: true)
                 try fileManager.unzipItem(at: activeFileURL, to: dest)
                 await MainActor.run { self.unzippedDir = dest }
-                
+
                 if let enumerator = fileManager.enumerator(at: dest, includingPropertiesForKeys: nil) {
                     var foundPages: [URL] = []
                     while let file = enumerator.nextObject() as? URL {
                         if file.lastPathComponent.hasPrefix("._") || file.lastPathComponent == ".DS_Store" { continue }
-                        
                         if ["jpg", "jpeg", "png", "webp", "heic"].contains(file.pathExtension.lowercased()) {
                             foundPages.append(file)
                         }
                     }
                     foundPages.sort { $0.lastPathComponent < $1.lastPathComponent }
-                    
+
                     await MainActor.run {
                         self.pages = foundPages
                         self.isLoading = false
@@ -748,7 +793,7 @@ struct ReaderView: View {
             }
         }
     }
-    
+
     // MARK: - Navigation
     // These are used by volume hardware buttons, keyboard, and the Binge Mode bridge.
     // PPLReaderView handles its own gesture-driven navigation internally.
