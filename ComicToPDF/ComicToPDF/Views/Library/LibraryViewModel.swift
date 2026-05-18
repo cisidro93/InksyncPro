@@ -17,6 +17,7 @@ class LibraryViewModel: ObservableObject {
     // ✅ Phase 2: Nested Folders & Progress Filters
     @Published var currentFolderID: UUID? = nil
     @Published var filterState: LibraryFilterState = .all
+    @Published var contentShelf: ContentShelf = .all
     
     // Single-view specific state that isn't cleanly enum-mappable due to alerts
     @Published var pdfToRename: ConvertedPDF?
@@ -47,6 +48,7 @@ class LibraryViewModel: ObservableObject {
         let sortedPDFs = sortPDFs(pdfs, sortOption: sortOption)
         let folderID = self.currentFolderID
         let filter = self.filterState
+        let shelf = self.contentShelf
         // Snapshot linked drives so the background task doesn't capture @MainActor state.
         let linkedDrives = AppSettingsManager.shared.linkedDrives
 
@@ -76,6 +78,20 @@ class LibraryViewModel: ObservableObject {
             }
             
             for (index, pdf) in sortedPDFs.enumerated() {
+                // ── Shelf pre-filter (content type) ─────────────────────────
+                switch shelf {
+                case .all: break
+                case .comics:
+                    guard pdf.contentType == .comic,
+                          !(pdf.metadata.isManga ?? false) else { continue }
+                case .manga:
+                    guard (pdf.metadata.isManga ?? false) || pdf.contentType == .comic else { continue }
+                    // Only manga-flagged comics
+                    if pdf.contentType == .comic && !(pdf.metadata.isManga ?? false) { continue }
+                case .books:
+                    guard pdf.contentType == .book else { continue }
+                }
+
                 // Apply Reading Progress Filters
                 if filter == .unread {
                     if let read = pdf.metadata.lastReadPage, read > 0 { continue }
@@ -402,4 +418,33 @@ enum LibraryFilterState: String, CaseIterable, Identifiable {
     case cloudLibrary = "Cloud"
 
     var id: String { rawValue }
+}
+
+// MARK: - Content Shelf
+
+enum ContentShelf: String, CaseIterable, Identifiable {
+    case all    = "All"
+    case comics = "Comics"
+    case manga  = "Manga"
+    case books  = "Books"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .all:    return "square.grid.2x2.fill"
+        case .comics: return "books.vertical.fill"
+        case .manga:  return "text.book.closed.fill"
+        case .books:  return "book.fill"
+        }
+    }
+
+    var accentColor: Color {
+        switch self {
+        case .all:    return Theme.text
+        case .comics: return Color(red: 0.25, green: 0.55, blue: 1.0)   // blue
+        case .manga:  return Color(red: 1.0, green: 0.35, blue: 0.25)   // red-orange
+        case .books:  return Color(red: 0.15, green: 0.75, blue: 0.65)  // teal
+        }
+    }
 }

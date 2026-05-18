@@ -8,6 +8,7 @@ struct LibraryHeaderView: View {
     @Binding var searchText: String
     @Binding var sortOption: ModernLibraryView.SortOption
     @Binding var filterState: LibraryFilterState
+    @Binding var contentShelf: ContentShelf
     @Binding var viewStyle: ModernLibraryView.LibraryViewStyle
     @Binding var tapAction: LibraryTapAction
     var onSheetTrigger: (LibrarySheetDestination) -> Void
@@ -282,7 +283,20 @@ struct LibraryHeaderView: View {
                 .padding(.top, 16)
             }
 
-            // ── Row A: Fixed Primary Actions (Apollo/Reeder pattern) ─────────
+            // ── Content Shelf Selector ─────────────────────────────────────────
+            ContentShelfSelector(
+                selected: $contentShelf,
+                counts: [
+                    .all:    conversionManager.convertedPDFs.count,
+                    .comics: conversionManager.convertedPDFs.filter { ($0.contentType == .comic) && !($0.metadata.isManga ?? false) }.count,
+                    .manga:  conversionManager.convertedPDFs.filter { $0.metadata.isManga ?? false }.count,
+                    .books:  conversionManager.convertedPDFs.filter { $0.contentType == .book }.count
+                ]
+            )
+            .padding(.top, 6)
+            .padding(.bottom, 2)
+
+            // ── Row A: Fixed Primary Actions ──────────────────────────────────
             // Always visible — the 3 actions 95% of users actually need.
             HStack(spacing: 10) {
                 // Import — gradient fill matching empty-state CTA

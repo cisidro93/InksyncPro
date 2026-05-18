@@ -164,6 +164,7 @@ struct ModernLibraryView: View {
             .onChange(of: swiftDataCollections) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
             .onChange(of: viewModel.debouncedSearchText) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
             .onChange(of: viewModel.filterState) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: viewModel.contentShelf) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
             .onChange(of: viewModel.currentFolderID) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
     }
 
@@ -420,6 +421,7 @@ struct ModernLibraryView: View {
                 searchText: $viewModel.searchText,
                 sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(nativeVisiblePDFs, sortOption: $0) }),
                 filterState: $viewModel.filterState,
+                contentShelf: $viewModel.contentShelf,
                 viewStyle: $viewStyle,
                 tapAction: $tapAction,
                 onSheetTrigger: { (dest: LibrarySheetDestination) in AppRouter.shared.presentSheet(dest) },
