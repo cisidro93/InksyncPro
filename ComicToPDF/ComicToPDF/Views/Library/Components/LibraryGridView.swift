@@ -85,22 +85,55 @@ struct LibraryGridView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        let minWidth: CGFloat = hSizeClass == .regular ? 160 : 100
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: minWidth, maximum: 280), spacing: 16)], spacing: 20) {
-                            ForEach(items) { item in
-                                switch item {
-                                case .series(let group):
-                                    seriesCell(group: group)
-                                case .single(let pdf):
-                                    singleCell(pdf: pdf)
-                                case .driveFolder(let entry):
-                                    driveFolderCell(entry: entry)
+                        LazyVStack(spacing: 0, pinnedViews: []) {
+                            // ── Continue Reading shelf ─────────────────────
+                            let inProgress: [ConvertedPDF] = items.compactMap {
+                                if case .single(let pdf) = $0 {
+                                    let prog = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
+                                    return (prog > 0.01 && prog < 0.98) ? pdf : nil
+                                }
+                                return nil
+                            }
+                            if !inProgress.isEmpty {
+                                ContinueReadingShelf(inProgress: Array(inProgress.prefix(10))) { pdf in
+                                    selectedPDF = pdf
+                                }
+                                .environmentObject(conversionManager)
+                                Divider().background(Theme.text.opacity(0.06)).padding(.horizontal, 16)
+                            }
+
+                            // ── Recently Added banner ──────────────────────
+                            let allPDFs: [ConvertedPDF] = items.compactMap {
+                                if case .single(let pdf) = $0 { return pdf }
+                                return nil
+                            }
+                            let recentPDFs = Array(allPDFs.sorted { $0.lastModified > $1.lastModified }.prefix(5))
+                            if allPDFs.count >= 5 && inProgress.isEmpty {
+                                RecentlyAddedBanner(recent: recentPDFs) { pdf in
+                                    selectedPDF = pdf
+                                }
+                                .environmentObject(conversionManager)
+                                Divider().background(Theme.text.opacity(0.06)).padding(.horizontal, 16)
+                            }
+
+                            // ── Main grid ─────────────────────────────────
+                            let minWidth: CGFloat = hSizeClass == .regular ? 160 : 100
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: minWidth, maximum: 280), spacing: 16)], spacing: 20) {
+                                ForEach(items) { item in
+                                    switch item {
+                                    case .series(let group):
+                                        seriesCell(group: group)
+                                    case .single(let pdf):
+                                        singleCell(pdf: pdf)
+                                    case .driveFolder(let entry):
+                                        driveFolderCell(entry: entry)
+                                    }
                                 }
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                            .padding(.bottom, 100)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 100)
                     }
                     .inkTabBarScrollDetect()
                     .background(Theme.bg)

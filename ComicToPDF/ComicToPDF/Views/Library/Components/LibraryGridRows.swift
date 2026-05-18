@@ -36,6 +36,7 @@ struct ModernGridFileCell: View {
     @EnvironmentObject var conversionManager: ConversionManager
 
     @State private var localCover: UIImage? = nil
+    @State private var shimmerPhase: CGFloat = -1
     @GestureState private var isPressed = false
 
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
@@ -47,6 +48,10 @@ struct ModernGridFileCell: View {
     private var isFullyRead: Bool { readingProgress >= 0.98 && pdf.pageCount > 0 }
     private var isInProgress: Bool { readingProgress > 0.01 && !isFullyRead }
     private var isNew: Bool { (pdf.metadata.lastReadPage ?? 0) == 0 }
+    private var isCloudPending: Bool {
+        if case .cloud = pdf.sourceMode { return localCover == nil && conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) == nil }
+        return false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -59,10 +64,64 @@ struct ModernGridFileCell: View {
                         Image(uiImage: img)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
+
+                        // Book spine overlay — left-edge depth cue
+                        HStack(spacing: 0) {
+                            LinearGradient(
+                                colors: [.black.opacity(0.28), .black.opacity(0.06), .clear],
+                                startPoint: .leading, endPoint: .trailing
+                            )
+                            .frame(width: 20)
+                            Spacer()
+                        }
+                    } else if isCloudPending {
+                        // Animated cloud-fetch pulse — cover is being extracted in background
+                        ZStack {
+                            LinearGradient(
+                                colors: [Color(red: 0.1, green: 0.35, blue: 0.55),
+                                         Color(red: 0.05, green: 0.2, blue: 0.4)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            )
+                            Image(systemName: "icloud.and.arrow.down")
+                                .font(.system(size: 26))
+                                .foregroundColor(.white.opacity(0.7))
+                                .symbolEffect(.pulse, isActive: true)
+                        }
                     } else if case .cloud = pdf.sourceMode {
                         cloudPlaceholder
                     } else {
-                        formatPlaceholder
+                        // Shimmer loading placeholder
+                        GeometryReader { geo in
+                            let w = geo.size.width
+                            ZStack {
+                                let ext = pdf.fileExtensionString.uppercased()
+                                let (c1, c2): (Color, Color) = {
+                                    switch ext {
+                                    case "CBZ","CBR": return (Color(red:0.15,green:0.25,blue:0.6), Color(red:0.1,green:0.15,blue:0.4))
+                                    case "PDF":       return (Color(red:0.6,green:0.15,blue:0.15), Color(red:0.4,green:0.1,blue:0.1))
+                                    case "EPUB":      return (Color(red:0.15,green:0.5,blue:0.3),  Color(red:0.1,green:0.35,blue:0.2))
+                                    default:          return (Color(red:0.25,green:0.25,blue:0.3), Color(red:0.15,green:0.15,blue:0.2))
+                                    }
+                                }()
+                                LinearGradient(colors: [c1, c2], startPoint: .topLeading, endPoint: .bottomTrailing)
+
+                                // Shimmer sweep
+                                LinearGradient(colors: [.clear, .white.opacity(0.07), .clear], startPoint: .leading, endPoint: .trailing)
+                                    .frame(width: w * 0.5)
+                                    .offset(x: shimmerPhase * w)
+                                    .onAppear {
+                                        withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
+                                            shimmerPhase = 1.8
+                                        }
+                                    }
+                                    .blendMode(.screen)
+
+                                VStack(spacing: 8) {
+                                    Image(systemName: "doc.text.fill").font(.system(size: 26)).foregroundColor(.white.opacity(0.4))
+                                    Text(ext).font(.system(size: 10, weight: .black, design: .rounded)).foregroundColor(.white.opacity(0.35)).tracking(1.5)
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -181,7 +240,7 @@ struct ModernGridFileCell: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .aspectRatio(0.66, contentMode: .fit)
+            .aspectRatio(0.63, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -376,7 +435,7 @@ struct ModernGridSeriesCell: View {
                             .foregroundColor(Theme.textSecondary)
                     }
                 }
-                .aspectRatio(0.66, contentMode: .fit) // Standard comic aspect ratio
+                .aspectRatio(0.63, contentMode: .fit) // Standard comic aspect ratio
                 .cornerRadius(12)
                 .clipped()
                 .overlay(
@@ -455,11 +514,13 @@ struct ModernGridSeriesCell: View {
                 }
                 .frame(height: 38, alignment: .topLeading)
                 
-                // Reading progress badge — reads cached ints, not computed per-render
-                if cachedReadCount > 0 {
-                    Text("\(cachedReadCount) / \(group.count) read")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(cachedReadCount == group.count ? Theme.green : Theme.textSecondary)
+                // Reading progress: segmented arc ring
+                if cachedReadCount > 0 || group.count > 0 {
+                    SeriesProgressRing(
+                        readCount: cachedReadCount,
+                        totalCount: group.count
+                    )
+                    .frame(width: 36, height: 36)
                 } else if cachedNewCount > 0 {
                     Text("\(cachedNewCount) new")
                         .font(.system(size: 11, weight: .bold))
@@ -549,5 +610,50 @@ struct CoverPreviewCard: View {
         }
         .frame(width: 180, height: 260)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+// MARK: - Series Progress Ring
+// Segmented arc ring: one segment per issue, filled = read, partial = in-progress.
+// Capped at 20 segments for visual clarity on large runs (500+ issue series).
+struct SeriesProgressRing: View {
+    let readCount: Int
+    let totalCount: Int
+
+    private var displayCount: Int { min(totalCount, 20) }
+    private var displayRead: Int { totalCount > 20 ? Int((Double(readCount) / Double(max(totalCount, 1))) * 20) : readCount }
+    private var allRead: Bool { readCount >= totalCount && totalCount > 0 }
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<displayCount, id: \.self) { i in
+                let segmentFraction = 1.0 / Double(displayCount)
+                let gap = min(0.04, segmentFraction * 0.3)
+                let start = segmentFraction * Double(i) + gap / 2
+                let end   = segmentFraction * Double(i + 1) - gap / 2
+
+                // Filled (read) vs unfilled
+                Circle()
+                    .trim(from: start, to: end)
+                    .stroke(
+                        i < displayRead
+                            ? (allRead ? Color.green : Theme.orange)
+                            : Color.white.opacity(0.15),
+                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+            }
+
+            // Centre: read count or checkmark
+            if allRead {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 8, weight: .black))
+                    .foregroundColor(.green)
+            } else if readCount > 0 {
+                Text("\(readCount)")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundColor(Theme.textSecondary)
+            }
+        }
     }
 }

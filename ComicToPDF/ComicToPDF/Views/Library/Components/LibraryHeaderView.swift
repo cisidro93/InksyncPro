@@ -247,24 +247,34 @@ struct LibraryHeaderView: View {
             
             // ── Smart Collections Strip ─────────
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     ForEach(SmartCollectionRule.allCases) { rule in
                         Button(action: {
                             AppRouter.shared.presentFullScreen(.smartCollection(rule))
                         }) {
                             HStack(spacing: 6) {
                                 Image(systemName: rule.iconName)
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.system(size: 13, weight: .semibold))
                                     .foregroundStyle(rule.tintColor.gradient)
                                 Text(rule.rawValue)
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(.system(size: 13, weight: .bold))
                                     .foregroundColor(Theme.text)
+                                // Live count badge
+                                let count = smartCollectionCount(rule)
+                                if count > 0 {
+                                    Text("\(count)")
+                                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                                        .foregroundColor(rule.tintColor)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(rule.tintColor.opacity(0.15), in: Capsule())
+                                }
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
                             .background(.ultraThinMaterial)
                             .clipShape(Capsule())
-                            .overlay(Capsule().stroke(Theme.text.opacity(0.1), lineWidth: 1))
+                            .overlay(Capsule().stroke(rule.tintColor.opacity(0.2), lineWidth: 0.5))
                         }
                     }
                 }
@@ -479,6 +489,36 @@ struct LibraryHeaderView: View {
         )
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowImportQueue"))) { _ in
             showImportQueue = true
+        }
+    }
+    // MARK: - Smart Collection Count
+    /// Fast single-pass count for pill badges — no async, no full filter rebuild.
+    private func smartCollectionCount(_ rule: SmartCollectionRule) -> Int {
+        let pdfs = conversionManager.convertedPDFs
+        switch rule {
+        case .recentlyAdded:
+            return min(pdfs.count, 50)
+        case .readingNow:
+            return pdfs.filter {
+                let f = ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0
+                return f > 0 && f < 1
+            }.count
+        case .allUnread:
+            return pdfs.filter {
+                (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) == 0
+            }.count
+        case .completed:
+            return pdfs.filter {
+                (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) >= 1
+            }.count
+        case .manga:
+            return pdfs.filter {
+                ReaderProgressTracker.shared.progress(for: $0.id)?.prefersMangaMode == true
+            }.count
+        case .onDrive:
+            return pdfs.filter { if case .linked = $0.sourceMode { return true }; return false }.count
+        case .cloudLibrary:
+            return pdfs.filter { if case .cloud = $0.sourceMode { return true }; return false }.count
         }
     }
 }
