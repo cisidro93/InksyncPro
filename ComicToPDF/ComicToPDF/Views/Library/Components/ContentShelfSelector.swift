@@ -13,6 +13,8 @@ struct ContentShelfSelector: View {
     @Binding var selected: ContentShelf
     let counts: [ContentShelf: Int]
 
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -28,7 +30,7 @@ struct ContentShelfSelector: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, hSizeClass == .regular ? 20 : 16)
             .padding(.vertical, 4)
         }
     }

@@ -17,6 +17,7 @@ struct ReaderChrome: View {
     let title: String
     let pageText: String
     @Binding var isVisible: Bool
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     // Actions
     var onBack: () -> Void
@@ -132,7 +133,8 @@ struct ReaderChrome: View {
         .clipShape(Capsule())
         .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
-        .padding(.horizontal, 16)
+        .frame(maxWidth: hSizeClass == .regular ? 680 : .infinity)  // constrain on iPad
+        .padding(.horizontal, hSizeClass == .regular ? 32 : 16)
         .padding(.top, 8)
     }
 
@@ -226,7 +228,8 @@ struct ReaderChrome: View {
                 .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.3), radius: 18, y: -4)
-        .padding(.horizontal, 12)
+        .frame(maxWidth: hSizeClass == .regular ? 680 : .infinity)  // constrain on iPad
+        .padding(.horizontal, hSizeClass == .regular ? 32 : 12)
         .padding(.bottom, 12)
     }
 

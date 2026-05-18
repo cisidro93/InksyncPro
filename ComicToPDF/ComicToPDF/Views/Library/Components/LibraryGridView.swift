@@ -117,8 +117,14 @@ struct LibraryGridView: View {
                             }
 
                             // ── Main grid ─────────────────────────────────
-                            let minWidth: CGFloat = hSizeClass == .regular ? 160 : 100
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: minWidth, maximum: 280), spacing: 16)], spacing: 20) {
+                            let hPad: CGFloat = hSizeClass == .regular ? 20 : 16
+                            let minW: CGFloat  = hSizeClass == .regular ? 180 : 100
+                            let maxW: CGFloat  = hSizeClass == .regular ? 320 : 280
+                            let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 16
+                            LazyVGrid(
+                                columns: [GridItem(.adaptive(minimum: minW, maximum: maxW), spacing: colSpacing)],
+                                spacing: hSizeClass == .regular ? 24 : 20
+                            ) {
                                 ForEach(items) { item in
                                     switch item {
                                     case .series(let group):
@@ -130,9 +136,9 @@ struct LibraryGridView: View {
                                     }
                                 }
                             }
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, hPad)
                             .padding(.top, 12)
-                            .padding(.bottom, 100)
+                            .padding(.bottom, 120)   // overshoots tab bar + home indicator
                         }
                     }
                     .inkTabBarScrollDetect()

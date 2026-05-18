@@ -245,8 +245,10 @@ struct SmartCollectionDetailView: View {
     // MARK: - Grid
 
     private var gridContent: some View {
-        let minWidth: CGFloat = 100
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: minWidth, maximum: 280), spacing: 16)], spacing: 20) {
+        let hPad: CGFloat = hSizeClass == .regular ? 20 : 16
+        let minW: CGFloat  = hSizeClass == .regular ? 180 : 100
+        let maxW: CGFloat  = hSizeClass == .regular ? 320 : 280
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: minW, maximum: maxW), spacing: hSizeClass == .regular ? 20 : 16)], spacing: hSizeClass == .regular ? 24 : 20) {
             ForEach(filteredItems) { item in
                 switch item {
                 case .single(let pdf):
@@ -258,7 +260,7 @@ struct SmartCollectionDetailView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(hPad)
     }
 
     // MARK: - List
@@ -416,7 +418,7 @@ struct SmartCollectionDetailView: View {
                 }
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
+        .padding(.horizontal, hSizeClass == .regular ? 20 : 16).padding(.vertical, 10)
         .background(Theme.bg)
         .contentShape(Rectangle())
         .onTapGesture { handleSingleTap(pdf) }
@@ -477,7 +479,7 @@ struct SmartCollectionDetailView: View {
 
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(.horizontal, hSizeClass == .regular ? 20 : 16).padding(.vertical, 10)
         }
         .buttonStyle(PlainButtonStyle())
         .contextMenu { seriesContextMenu(group) }
