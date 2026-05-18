@@ -227,12 +227,14 @@ class LibraryViewModel: ObservableObject {
             if !currentSearchText.isEmpty {
                 items = items.filter { tuple in
                     switch tuple.1 {
-                    case .single(let pdf): 
+                    case .single(let pdf):
                         return pdf.name.localizedCaseInsensitiveContains(currentSearchText) ||
                                pdf.metadata.title.localizedCaseInsensitiveContains(currentSearchText) ||
                                (pdf.metadata.series?.localizedCaseInsensitiveContains(currentSearchText) == true)
-                    case .series(let group): 
+                    case .series(let group):
                         return group.title.localizedCaseInsensitiveContains(currentSearchText)
+                    case .driveFolder(let entry):
+                        return entry.displayName.localizedCaseInsensitiveContains(currentSearchText)
                     }
                 }
             }
