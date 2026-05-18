@@ -388,8 +388,11 @@ struct ComicReaderEngine: View {
     @State private var readingMode: ComicReadingMode = .pageHorizontal
     @State private var activeFilterPreset: ReadingFilterPreset = .original
     @State private var showingFilterHUD = false
-    @State private var showingSettingsHUD = false    // ← new: replaces cycling tap
+    @State private var showingSettingsHUD = false
     @State private var lastBrightnessDragValue: CGFloat = 0
+    /// Debounce task — prevents rapid mode flips when the notification fires
+    /// multiple times during the iPhone rotation animation (portrait→landscape).
+    @State private var orientationTask: Task<Void, Never>? = nil
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void) {
         self.pdf = pdf
@@ -401,6 +404,7 @@ struct ComicReaderEngine: View {
     }
     
     var body: some View {
+        GeometryReader { geo in
         ZStack {
             Color.black.ignoresSafeArea()
 
@@ -582,8 +586,16 @@ struct ComicReaderEngine: View {
         // Auto two-up: rotate device → automatically flip reading mode so the
         // user doesn't need to discover the mode-toggle button in the chrome.
         // Webtoon and panel-navigation are intentional choices; never override them.
+        // Debounced orientation sync — the notification fires 2-3× per rotation
+        // on iPhone. Without debounce, readingMode flips rapidly which destroys
+        // and recreates TwoUpBookPager while BookFlipGesture Tasks are in flight.
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            syncReadingModeToOrientation()
+            orientationTask?.cancel()
+            orientationTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000) // 300 ms — lets rotation settle
+                guard !Task.isCancelled else { return }
+                syncReadingModeToOrientation()
+            }
         }
         .onChange(of: currentIndex) { _, _ in
             GamificationManager.shared.logPageRead()
@@ -607,7 +619,9 @@ struct ComicReaderEngine: View {
                 conversionManager.saveLibrary()
             }
         }
-    }
+    } // end GeometryReader body
+}
+
     
     var guidedView: some View {
         TabView(selection: $currentIndex) {

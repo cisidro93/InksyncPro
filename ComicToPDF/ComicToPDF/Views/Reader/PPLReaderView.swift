@@ -533,6 +533,11 @@ struct PPLReaderView: View {
 
     private func resetOnResize(to size: CGSize, dual: Bool) {
         guard size.width > 0, size.height > 0 else { return }
+        // Cancel any in-flight momentum or swipe-commit task so stale geometry
+        // can't mutate state after the screen has already rotated.
+        momentumTask?.cancel()
+        momentumTask = nil
+        isCommittingSwipe = false
         withAnimation(.easeOut(duration: 0.15)) {
             scale = 1.0; offset = .zero; dragOffset = .zero; swipeDragX = 0
         }

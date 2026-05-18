@@ -14,6 +14,7 @@ struct SmartCollectionDetailView: View {
     let rule: SmartCollectionRule
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     @State private var viewStyle: ModernLibraryView.LibraryViewStyle = .grid
     @State private var filteredItems: [LibraryListItem] = []
