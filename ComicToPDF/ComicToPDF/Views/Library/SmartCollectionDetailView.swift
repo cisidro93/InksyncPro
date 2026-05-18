@@ -71,8 +71,12 @@ struct SmartCollectionDetailView: View {
                     }
 
             case .manga:
-                results = allPDFs.filter { progressSnapshot[$0.id]?.prefersMangaMode == true }
-                    .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                // True "My Manga" shelf: isManga from ComicInfo.xml OR previously read RTL
+                results = allPDFs.filter { pdf in
+                    (pdf.metadata.isManga ?? false) ||
+                    progressSnapshot[pdf.id]?.prefersMangaMode == true
+                }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 
             case .onDrive:
                 results = allPDFs.filter { if case .linked = $0.sourceMode { return true }; return false }

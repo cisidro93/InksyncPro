@@ -513,6 +513,7 @@ struct LibraryHeaderView: View {
             }.count
         case .manga:
             return pdfs.filter {
+                ($0.metadata.isManga ?? false) ||
                 ReaderProgressTracker.shared.progress(for: $0.id)?.prefersMangaMode == true
             }.count
         case .onDrive:
