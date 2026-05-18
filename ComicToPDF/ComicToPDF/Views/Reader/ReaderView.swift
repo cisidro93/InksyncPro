@@ -348,8 +348,12 @@ struct ReaderView: View {
                         currentProgress: Binding(
                             get: { pages.isEmpty ? 0 : Double(currentPageIndex) / Double(max(1, pages.count - 1)) },
                             set: { val in
-                                let target = Int((val * Double(max(1, pages.count - 1))).rounded())
-                                currentPageIndex = max(0, min(target, pages.count - 1))
+                                let raw = Int((val * Double(max(1, pages.count - 1))).rounded())
+                                let isDual = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
+                                let snapped = isDual
+                                    ? PageBufferManager.canonicalLeadIndex(for: raw, isMangaMode: isMangaMode)
+                                    : raw
+                                currentPageIndex = max(0, min(snapped, pages.count - 1))
                             }
                         ),
                         totalPages: pages.count,

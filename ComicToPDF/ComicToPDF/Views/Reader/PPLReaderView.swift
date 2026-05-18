@@ -464,16 +464,21 @@ struct PPLReaderView: View {
             if splitHalf == 0 { splitHalf = 1; return } else { splitHalf = 0 }
         }
 
-        // Use synchronous canonical lead — never depends on async buffer state
+        // Always base hop arithmetic on the canonical lead so we never sit on a
+        // right-slot index and stall for a tap. This gives the natural
+        // "every tap = one spread forward" feel the user expects.
         let lead    = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
         let isCover = lead == 0
+
+        // In dual-page mode hop by 2 (one full spread) unless the current or next
+        // page is a wide physical spread — those always occupy a solo slot.
         let hop: Int = (showingDual && !isSpread && !nextIsSpread && !isCover) ? 2 : 1
-        let next = currentPageIndex + hop
+        let next = lead + hop
 
         if next < pages.count {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = next
-        } else if currentPageIndex < pages.count - 1 {
+        } else if lead < pages.count - 1 {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = pages.count - 1
         } else {
@@ -491,17 +496,18 @@ struct PPLReaderView: View {
             if splitHalf == 1 { splitHalf = 0; return } else { splitHalf = 1 }
         }
 
-        // Use synchronous canonical lead — never depends on async buffer state
+        // Always base hop arithmetic on the canonical lead — same reasoning as nextPage.
         let lead    = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
         let isCover = lead == 0
-        guard currentPageIndex > 0 else {
+        guard lead > 0 else {
             Haptics.shared.playImpact(style: .rigid)
-            return 
+            return
         }
 
+        // In dual-page mode hop back by 2 (one full spread), respecting wide pages.
         let hop: Int = (showingDual && !isSpread && !prevIsSpread && !isCover) ? 2 : 1
         Haptics.shared.playImpact(style: .light)
-        currentPageIndex = max(0, currentPageIndex - hop)
+        currentPageIndex = max(0, lead - hop)
     }
 
     // MARK: - Buffer Setup
