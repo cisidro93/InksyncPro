@@ -71,14 +71,6 @@ struct SmartCollectionDetailView: View {
                         (progressSnapshot[$1.id]?.lastOpenedAt ?? .distantPast)
                     }
 
-            case .manga:
-                // True "My Manga" shelf: isManga from ComicInfo.xml OR previously read RTL
-                results = allPDFs.filter { pdf in
-                    (pdf.metadata.isManga ?? false) ||
-                    progressSnapshot[pdf.id]?.prefersMangaMode == true
-                }
-                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-
             case .onDrive:
                 results = allPDFs.filter { if case .linked = $0.sourceMode { return true }; return false }
                     .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -144,20 +136,25 @@ struct SmartCollectionDetailView: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
-            Theme.bg.ignoresSafeArea()
-            VStack(spacing: 0) {
-                headerBar
-                Divider().background(Theme.text.opacity(0.1))
+        // NavigationStack is required — the grid/list cells contain NavigationLinks
+        // to SeriesDetailView. On iOS 16+ a NavigationLink without a NavigationStack
+        // ancestor crashes immediately.
+        NavigationStack {
+            ZStack {
+                Theme.bg.ignoresSafeArea()
+                VStack(spacing: 0) {
+                    headerBar
+                    Divider().background(Theme.text.opacity(0.1))
 
-                if filteredItems.isEmpty {
-                    emptyState
-                } else {
-                    contentArea
+                    if filteredItems.isEmpty {
+                        emptyState
+                    } else {
+                        contentArea
+                    }
                 }
             }
+            .navigationBarHidden(true)
         }
-        .navigationBarHidden(true)
         .fullScreenCover(item: $selectedPDF) { pdf in
             if pdf.contentType == .book {
                 SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)

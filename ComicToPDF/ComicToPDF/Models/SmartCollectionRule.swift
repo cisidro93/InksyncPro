@@ -4,7 +4,6 @@ enum SmartCollectionRule: String, CaseIterable, Identifiable {
     case recentlyAdded = "Recently Added"
     case readingNow    = "Reading Now"
     case allUnread     = "All Unread"
-    case manga         = "Manga Mode"
     case completed     = "Completed"
     case onDrive       = "On Drive"
     case cloudLibrary  = "Cloud Library"
@@ -16,7 +15,6 @@ enum SmartCollectionRule: String, CaseIterable, Identifiable {
         case .recentlyAdded: return "clock.fill"
         case .readingNow:    return "book.fill"
         case .allUnread:     return "book.closed.fill"
-        case .manga:         return "text.book.closed.fill"
         case .completed:     return "checkmark.seal.fill"
         case .onDrive:       return "externaldrive.fill"
         case .cloudLibrary:  return "cloud.fill"
@@ -28,10 +26,10 @@ enum SmartCollectionRule: String, CaseIterable, Identifiable {
         case .recentlyAdded: return .blue
         case .readingNow:    return .orange
         case .allUnread:     return .red
-        case .manga:         return .purple
         case .completed:     return .green
         case .onDrive:       return Color(hex: "#6AB0F5")  // steel-blue
         case .cloudLibrary:  return Color(hex: "#A78BFA")  // violet
         }
     }
 }
+

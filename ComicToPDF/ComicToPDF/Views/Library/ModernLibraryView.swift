@@ -237,7 +237,8 @@ struct ModernLibraryView: View {
                 case .advancedWorkspace(let pdf):
                     AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
                 case .smartCollection(let rule):
-                    SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
+                    SmartCollectionDetailView(rule: rule)
+                        .environmentObject(conversionManager)
                 }
             }
             .sheet(item: $router.activeSheet) { item in

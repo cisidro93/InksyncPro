@@ -9,6 +9,7 @@ struct ManuscriptProjectsListView: View {
     @State private var newProjectTitle = ""
     @State private var newProjectGoal = ""
     @State private var glowPulse = false
+    @State private var projectToDelete: SDManuscriptProject? = nil
 
     var body: some View {
         ZStack {
@@ -24,6 +25,13 @@ struct ManuscriptProjectsListView: View {
                                 ProjectRowView(project: project)
                             }
                             .buttonStyle(.plain)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    projectToDelete = project
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                     .padding(InkSpacing.pagePadding)
@@ -40,6 +48,23 @@ struct ManuscriptProjectsListView: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(Color.inkAccentKnowledge)
                 }
+            }
+        }
+        .alert("Delete Project?", isPresented: Binding(
+            get: { projectToDelete != nil },
+            set: { if !$0 { projectToDelete = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let project = projectToDelete {
+                    modelContext.delete(project)
+                    try? modelContext.save()
+                }
+                projectToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { projectToDelete = nil }
+        } message: {
+            if let project = projectToDelete {
+                Text("\"\(project.title)\" and all its chapters will be permanently deleted. This cannot be undone.")
             }
         }
         .alert("New Manuscript", isPresented: $showingNewProjectDialog) {

@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 import WebKit
 import ZIPFoundation
 
@@ -635,54 +635,68 @@ struct EBookWebReader: UIViewRepresentable {
     /// No disk I/O — safe to call synchronously before spawning a background task.
     private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+
+        // Extract all preference values into local constants so they can be used
+        // inside the multi-line string literal with normal \(...) interpolation.
+        // The previous code used \\(...) which writes literal \(xxx) into the HTML
+        // instead of the actual value — this caused font/size/spacing to have no effect.
+        let bgColor    = prefs.activeTheme.cssBackground(colorScheme: colorScheme)
+        let textColor  = prefs.activeTheme.cssText(colorScheme: colorScheme)
+        let linkColor  = prefs.activeTheme.cssLink(colorScheme: colorScheme)
+        let fontFamily = prefs.fontFamily
+        let fontSize   = Int(prefs.fontSize)
+        let lineHeight = String(format: "%.1f", prefs.lineHeight)
+        let textAlign  = prefs.textAlign
+        let margin     = prefs.textMargin
+        let paraSpace  = prefs.paragraphSpacing
+        let paraIndent = prefs.paragraphIndent
+
+        let overflowCSS = isPaged
+            ? "overflow: hidden !important;"
+            : "overflow-x: hidden !important; overflow-y: auto !important;"
+        let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
         let pagedCSS = isPaged ? """
-            column-width: calc(100vw - \(prefs.textMargin * 2)px) !important;
-            column-gap: \(prefs.textMargin * 2)px !important;
+            column-width: calc(100vw - \(margin * 2)px) !important;
+            column-gap: \(margin * 2)px !important;
             column-fill: auto !important;
         """ : ""
 
-        let css = """
-                <meta charset="utf-8">
+        return """
+        <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
         <style id="__inksync_reader__">
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-                html {
-            margin: 0 !important;
-            padding: 0 !important;
-            height: 100vh !important;
-            width: 100vw !important;
-            \\(isPaged ? "overflow: hidden !important;" : "overflow-x: hidden !important; overflow-y: auto !important;")
-            background-color: \\(prefs.activeTheme.cssBackground(colorScheme: colorScheme)) !important;
+        html {
+            margin: 0 !important; padding: 0 !important;
+            height: 100vh !important; width: 100vw !important;
+            \(overflowCSS)
+            background-color: \(bgColor) !important;
         }
         body {
-            color: \\(prefs.activeTheme.cssText(colorScheme: colorScheme)) !important;
-            font-family: \\(prefs.fontFamily);
-            font-size: \\(Int(prefs.fontSize))px;
-            line-height: \\(String(format: "%.1f", prefs.lineHeight));
-            text-align: \\(prefs.textAlign) !important;
-            
-            \\(pagedCSS)
-            
+            color: \(textColor) !important;
+            font-family: \(fontFamily);
+            font-size: \(fontSize)px;
+            line-height: \(lineHeight);
+            text-align: \(textAlign) !important;
+            \(pagedCSS)
             margin: 0 !important;
             height: 100vh !important;
-            \\(isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;")
+            \(widthCSS)
             padding-top: 60px !important;
             padding-bottom: 60px !important;
-            padding-left: \\(prefs.textMargin)px !important;
-            padding-right: \\(prefs.textMargin)px !important;
+            padding-left: \(margin)px !important;
+            padding-right: \(margin)px !important;
             box-sizing: border-box !important;
             word-wrap: break-word;
             -webkit-text-size-adjust: none;
-            
-            /* Premium Typography */
             -webkit-hyphens: auto !important;
             hyphens: auto !important;
         }
-        p { margin-bottom: \\(prefs.paragraphSpacing)em !important; text-indent: \\(prefs.paragraphIndent)em !important; }
-        p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \\(prefs.activeTheme.cssText(colorScheme: colorScheme)) !important; line-height: 1.3; }
+        p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
+        p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
         img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
-        a { color: \\(prefs.activeTheme.cssLink(colorScheme: colorScheme)) !important; }
-        blockquote { border-left: 3px solid \\(prefs.activeTheme.cssLink(colorScheme: colorScheme)); margin-left: 0; padding-left: 16px; opacity: 0.85; }
+        a { color: \(linkColor) !important; }
+        blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
         </style>
         <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -691,12 +705,11 @@ struct EBookWebReader: UIViewRepresentable {
                 el.style.removeProperty('color');
             });
         });
-        
-                var _currentPage = \(initialPage);
+
+        var _currentPage = \(initialPage);
         var _totalPages = 1;
 
         function updateMetrics() {
-            // Document element scrollWidth reliably accounts for WebKit column flows
             _totalPages = Math.max(1, Math.ceil(document.documentElement.scrollWidth / window.innerWidth));
             window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
         }
@@ -708,34 +721,28 @@ struct EBookWebReader: UIViewRepresentable {
         }
 
         window.onload = function() { setTimeout(updateMetrics, 100); };
-        window.addEventListener('resize', function() {
-            updateMetrics();
-            goToPage(_currentPage);
-        });
+        window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage); });
 
-        // Swipe & Tap engine
         var _sx = 0;
         document.addEventListener('touchstart', function(e) { _sx = e.changedTouches[0].clientX; }, {passive:true});
         document.addEventListener('touchend', function(e) {
             var dx = e.changedTouches[0].clientX - _sx;
-            if (dx < -40) { // Swipe Left (Next)
+            if (dx < -40) {
                 if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
                 else window.webkit.messageHandlers.nav.postMessage('next');
-            } else if (dx > 40) { // Swipe Right (Prev)
+            } else if (dx > 40) {
                 if (_currentPage > 0) goToPage(_currentPage - 1);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
             }
         }, {passive:true});
 
         document.addEventListener('click', function(e) {
-            // Ignore clicks on links
             if (e.target.tagName.toLowerCase() === 'a') return;
-            var x = e.clientX;
-            var w = window.innerWidth;
-            if (x < w * 0.35) { // Left 35%
+            var x = e.clientX; var w = window.innerWidth;
+            if (x < w * 0.35) {
                 if (_currentPage > 0) goToPage(_currentPage - 1);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
-            } else if (x > w * 0.65) { // Right 35%
+            } else if (x > w * 0.65) {
                 if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
                 else window.webkit.messageHandlers.nav.postMessage('next');
             } else {
@@ -743,7 +750,6 @@ struct EBookWebReader: UIViewRepresentable {
             }
         });
 
-        // Keyboard Navigation (Bluetooth, Smart Keyboard, etc)
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowRight' || e.key === 'Space') {
                 if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
@@ -757,8 +763,6 @@ struct EBookWebReader: UIViewRepresentable {
         });
         </script>
         """
-
-        return css
     }
 
     
