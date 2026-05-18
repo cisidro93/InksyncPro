@@ -93,6 +93,8 @@ struct LibraryGridView: View {
                                     seriesCell(group: group)
                                 case .single(let pdf):
                                     singleCell(pdf: pdf)
+                                case .driveFolder(let entry):
+                                    driveFolderCell(entry: entry)
                                 }
                             }
                         }
@@ -418,6 +420,76 @@ struct LibraryGridView: View {
         )
     }
 
+    // MARK: - Drive Folder Cell
+
+    @ViewBuilder
+    private func driveFolderCell(entry: AppSettingsManager.LinkedDriveEntry) -> some View {
+        let isConnected = DriveMonitor.shared.isConnected(driveID: entry.id)
+        NavigationLink(destination: LinkedDriveBrowserView(driveEntry: entry)) {
+            ZStack(alignment: .bottomLeading) {
+                // Card background
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: [
+                            Color(hex: isConnected ? "#1C2E4A" : "#2A2A2A"),
+                            Color(hex: isConnected ? "#0F1B2E" : "#1A1A1A")
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                    .aspectRatio(2/3, contentMode: .fit)
+
+                // Drive icon watermark
+                Image(systemName: "externaldrive.fill")
+                    .font(.system(size: 52, weight: .thin))
+                    .foregroundStyle(.white.opacity(0.06))
+                    .offset(x: -8, y: 8)
+
+                // Info overlay
+                VStack(alignment: .leading, spacing: 4) {
+                    // Connection pill
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(isConnected ? Color.green : Color.orange)
+                            .frame(width: 6, height: 6)
+                        Text(isConnected ? "Connected" : "Disconnected")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(isConnected ? Color.green : Color.orange)
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.ultraThinMaterial, in: Capsule())
+
+                    Spacer()
+
+                    // Name + count
+                    Text(entry.displayName)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+
+                    Text("\(entry.fileCount) files · Browse")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .padding(12)
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
+        .disabled(!isConnected)
+        .opacity(isConnected ? 1.0 : 0.55)
+        .contextMenu {
+            if isConnected {
+                Button {
+                    Task { await LinkedLibraryScanner.shared.syncDrive(entry) }
+                } label: { Label("Sync Drive", systemImage: "arrow.triangle.2.circlepath") }
+            }
+            Button {
+                AppRouter.shared.presentSheet(.linkedLibrary)
+            } label: { Label("Manage in Settings", systemImage: "gear") }
+        }
+    }
+
     // MARK: - Helpers
 
     /// Next unread issue in a series — lowest-numbered issue below 95% completion.
@@ -498,8 +570,9 @@ struct LibraryGridView: View {
             return items.first { item in
                 let title: String
                 switch item {
-                case .series(let group): title = group.title
-                case .single(let pdf): title = pdf.name
+                case .series(let group):      title = group.title
+                case .single(let pdf):        title = pdf.name
+                case .driveFolder(let entry): title = entry.displayName
                 }
                 guard let firstChar = title.first else { return false }
                 return firstChar.isNumber || !firstChar.isLetter
@@ -509,8 +582,9 @@ struct LibraryGridView: View {
         return items.first { item in
             let title: String
             switch item {
-            case .series(let group): title = group.title
-            case .single(let pdf): title = pdf.name
+            case .series(let group):      title = group.title
+            case .single(let pdf):        title = pdf.name
+            case .driveFolder(let entry): title = entry.displayName
             }
             return title.uppercased().hasPrefix(letter)
         }?.id

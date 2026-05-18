@@ -1,31 +1,36 @@
 import Foundation
 import SwiftUI
 
-// ✅ NEW: Unified Library Item
-// Fast Diffing
+// ✅ Unified Library Item — supports single files, publisher series, and drive folder cards
 enum LibraryListItem: Identifiable, Hashable {
     case single(ConvertedPDF)
     case series(SeriesGroup)
-    
+    /// A linked external drive that has too many files to list individually.
+    /// Tapping drills into LinkedDriveBrowserView rather than the flat library.
+    case driveFolder(AppSettingsManager.LinkedDriveEntry)
+
     var id: String {
         switch self {
-        case .single(let pdf): return "single_\(pdf.id)"
-        case .series(let group): return "series_\(group.id)"
+        case .single(let pdf):        return "single_\(pdf.id)"
+        case .series(let group):      return "series_\(group.id)"
+        case .driveFolder(let entry): return "drive_\(entry.id)"
         }
     }
-    
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
         switch self {
-        case .single(let pdf): hasher.combine(pdf.hashValue)
-        case .series(let group): hasher.combine(group.hashValue)
+        case .single(let pdf):        hasher.combine(pdf.hashValue)
+        case .series(let group):      hasher.combine(group.hashValue)
+        case .driveFolder(let entry): hasher.combine(entry.id)
         }
     }
-    
+
     static func == (lhs: LibraryListItem, rhs: LibraryListItem) -> Bool {
         switch (lhs, rhs) {
-        case (.single(let l), .single(let r)): return l == r
-        case (.series(let l), .series(let r)): return l == r
+        case (.single(let l), .single(let r)):               return l == r
+        case (.series(let l), .series(let r)):               return l == r
+        case (.driveFolder(let l), .driveFolder(let r)):     return l.id == r.id && l.fileCount == r.fileCount
         default: return false
         }
     }

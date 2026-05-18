@@ -247,6 +247,42 @@ struct LibraryListView: View {
                                 }
                             }
                         }
+                    case .driveFolder(let entry):
+                        let isConnected = DriveMonitor.shared.isConnected(driveID: entry.id)
+                        NavigationLink(destination:
+                            LinkedDriveBrowserView(driveEntry: entry)
+                                .environmentObject(conversionManager)
+                        ) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "externaldrive.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(isConnected ? Color(hex: "#6AB0F5") : .secondary)
+                                    .frame(width: 32)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.displayName)
+                                        .font(.headline)
+                                        .foregroundStyle(Theme.text)
+                                    Text("\(entry.fileCount) files · \(isConnected ? "Connected" : "Disconnected")")
+                                        .font(.caption)
+                                        .foregroundStyle(isConnected ? .green : .secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .disabled(!isConnected)
+                        .listRowBackground(Theme.bg)
+                        .listRowSeparatorTint(Color(UIColor.separator))
+                        .contextMenu {
+                            if isConnected {
+                                Button {
+                                    Task { await LinkedLibraryScanner.shared.syncDrive(entry) }
+                                } label: { Label("Sync Drive", systemImage: "arrow.triangle.2.circlepath") }
+                            }
+                        }
                     }
                 }
             } // end List
@@ -274,7 +310,8 @@ struct LibraryListView: View {
                 let title: String
                 switch item {
                 case .series(let group): title = group.title
-                case .single(let pdf): title = pdf.name
+                case .single(let pdf):  title = pdf.name
+                case .driveFolder(let e): title = e.displayName
                 }
                 guard let firstChar = title.first else { return false }
                 return firstChar.isNumber || !firstChar.isLetter
@@ -285,7 +322,8 @@ struct LibraryListView: View {
             let title: String
             switch item {
             case .series(let group): title = group.title
-            case .single(let pdf): title = pdf.name
+            case .single(let pdf):  title = pdf.name
+            case .driveFolder(let e): title = e.displayName
             }
             return title.uppercased().hasPrefix(letter)
         }?.id

@@ -47,6 +47,8 @@ class LibraryViewModel: ObservableObject {
         let sortedPDFs = sortPDFs(pdfs, sortOption: sortOption)
         let folderID = self.currentFolderID
         let filter = self.filterState
+        // Snapshot linked drives so the background task doesn't capture @MainActor state.
+        let linkedDrives = AppSettingsManager.shared.linkedDrives
 
         rebuilTask = Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
@@ -55,7 +57,18 @@ class LibraryViewModel: ObservableObject {
             var groups: [String: SeriesGroup] = [:]
             var singles: [ConvertedPDF] = []
             var firstAppearanceIndex: [String: Int] = [:]
-            
+
+            // ── LARGE DRIVE CARDS ───────────────────────────────────────────────
+            // Drives above the file-count threshold surface as a single DriveFolder
+            // card rather than flooding the grid. They always appear at position 0
+            // so they are visible regardless of sort order.
+            var driveFolderItems: [LibraryListItem] = []
+            if folderID == nil && currentSearchText.isEmpty {
+                for drive in linkedDrives where drive.fileCount > LinkedLibraryScanner.largeDriveThreshold {
+                    driveFolderItems.append(.driveFolder(drive))
+                }
+            }
+
             // ✅ PHASE 2: Ensure all child collections of the current folder exist, even if empty
             for collection in collections where collection.parentId == folderID {
                 let colKey = "col_\(collection.id.uuidString)"
@@ -74,8 +87,14 @@ class LibraryViewModel: ObservableObject {
                     let maxPages = max(pdf.pageCount, 1)
                     let read = pdf.metadata.lastReadPage ?? 0
                     if read < maxPages - 1 { continue }
+                } else if filter == .onDrive {
+                    // Show only files sourced from a linked external drive
+                    guard case .linked = pdf.sourceMode else { continue }
+                } else if filter == .cloudLibrary {
+                    // Show only files sourced from cloud providers
+                    guard case .cloud = pdf.sourceMode else { continue }
                 }
-                
+
                 var inAnyGroup = false
                 
                 // 1. Process standard Publisher Series (Only at Root)
@@ -223,7 +242,8 @@ class LibraryViewModel: ObservableObject {
             // Cancellation guard: don't publish a stale result if a newer rebuild
             // has already been queued by the time we finish computing.
             guard !Task.isCancelled else { return }
-            let finalItems = items.map { $0.1 }
+            // Prepend large drive cards (always pinned to top of library grid)
+            let finalItems = driveFolderItems + items.map { $0.1 }
 
             // Publish results back to main thread
             Task { @MainActor in

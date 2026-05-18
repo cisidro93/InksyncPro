@@ -84,6 +84,30 @@ struct SmartCollectionDetailView: View {
             case .manga:
                 results = allPDFs.filter { progressSnapshot[$0.id]?.prefersMangaMode == true }
                 results.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+
+            case .onDrive:
+                // Files sourced from a linked external drive (USB, Dropbox folder, etc.)
+                results = allPDFs.filter { pdf in
+                    if case .linked = pdf.sourceMode { return true }
+                    return false
+                }
+                results.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                if results.count > cap {
+                    results = Array(results.prefix(cap))
+                    truncated = true
+                }
+
+            case .cloudLibrary:
+                // Files sourced from a cloud provider (Dropbox, Google Drive, iCloud)
+                results = allPDFs.filter { pdf in
+                    if case .cloud = pdf.sourceMode { return true }
+                    return false
+                }
+                results.sort { $0.lastModified > $1.lastModified }
+                if results.count > cap {
+                    results = Array(results.prefix(cap))
+                    truncated = true
+                }
             }
 
             await MainActor.run {

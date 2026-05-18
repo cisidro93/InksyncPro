@@ -44,6 +44,12 @@ final class LinkedLibraryScanner: ObservableObject {
     // Supported comic/book file extensions
     private let supportedExtensions = ["cbz", "cbr", "cb7", "cbt", "epub", "pdf"]
 
+    /// Drives with more files than this threshold are treated as "large drives".
+    /// Large drives are registered as a single DriveFolder card in the library
+    /// rather than dumping every file flat into convertedPDFs, which would freeze
+    /// SwiftUI diffing and produce multi-second JSON serializations.
+    static let largeDriveThreshold = 500
+
     // MARK: - Link Drive
 
     /// Register a folder on an external drive or cloud provider.
@@ -99,14 +105,27 @@ final class LinkedLibraryScanner: ObservableObject {
             isReadOnly: isReadOnly
         )
 
-        await registerFiles(files, driveEntry: entry, rootURL: folderURL)
+        // ── SCALE GUARD ───────────────────────────────────────────────────────
+        // Drives with >500 files are too large to flatten into convertedPDFs.
+        // Register only the drive entry; files surface via LinkedDriveBrowserView.
+        // Drives with ≤500 files register each file individually (original behavior).
+        let isLargeDrive = files.count > Self.largeDriveThreshold
+        if !isLargeDrive {
+            await registerFiles(files, driveEntry: entry, rootURL: folderURL)
+        } else {
+            Logger.shared.log(
+                "LinkedLibraryScanner: Large drive detected (\(files.count) files > \(Self.largeDriveThreshold) threshold). Registering as DriveFolder card — browse via LinkedDriveBrowserView.",
+                category: "Drive"
+            )
+        }
 
         AppSettingsManager.shared.addLinkedDrive(entry)
         Logger.shared.log("LinkedLibraryScanner: Linked drive '\(entry.displayName)' with \(files.count) files", category: "Drive")
 
         DriveMonitor.shared.startMonitoring(drives: AppSettingsManager.shared.linkedDrives)
 
-        if let manager = conversionManager {
+        // Only crawl thumbnails for small drives — large drives surface files on demand.
+        if !isLargeDrive, let manager = conversionManager {
             Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
         }
 
