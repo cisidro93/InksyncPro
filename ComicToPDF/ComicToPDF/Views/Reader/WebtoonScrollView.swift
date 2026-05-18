@@ -19,6 +19,7 @@ struct WebtoonScrollView: UIViewRepresentable {
     var isAutoScrolling: Bool
     var scrollSpeed: Double         // points per second
     var onCenterTap: () -> Void
+    var onEndReached: (() -> Void)? = nil
 
     // MARK: - Position Persistence Key
 
@@ -93,6 +94,7 @@ struct WebtoonScrollView: UIViewRepresentable {
         private var displayLink: CADisplayLink?
         private var imageViews: [UIImageView] = []
         private var loadTasks: [Int: Task<Void, Never>] = [:]
+        private var hasReportedEnd = false
 
         init(_ parent: WebtoonScrollView) { self.parentView = parent }
 
@@ -217,6 +219,16 @@ struct WebtoonScrollView: UIViewRepresentable {
                 sv.contentOffset.y,
                 forKey: parentView.savedOffsetKey
             )
+            
+            // End-of-strip detection: fire once when user scrolls to within 80pt of bottom
+            let nearBottom = sv.contentOffset.y >= sv.contentSize.height - sv.bounds.height - 80
+            if nearBottom && !hasReportedEnd && sv.contentSize.height > sv.bounds.height {
+                hasReportedEnd = true
+                DispatchQueue.main.async { self.parentView.onEndReached?() }
+            } else if !nearBottom && hasReportedEnd {
+                // Reset so it can fire again if user scrolls back up and then back down
+                hasReportedEnd = false
+            }
         }
 
         // MARK: - Auto-Scroll (CADisplayLink)

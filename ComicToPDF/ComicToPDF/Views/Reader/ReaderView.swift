@@ -61,6 +61,16 @@ struct ReaderView: View {
     // Color Filter
     @State private var colorFilter: ReaderColorFilter = .none
 
+    // Settings sheet
+    @State private var showReaderSettings = false
+
+    // Bookmark toast
+    @State private var showBookmarkToast = false
+    @State private var bookmarkToastMessage = ""
+
+    // Ambient page color (wired to ReaderChrome)
+    @State private var ambientPageColor: Color = .clear
+
     // Jump to Page
     @State private var showJumpToPage = false
     @State private var jumpToPageText = ""
@@ -179,6 +189,12 @@ struct ReaderView: View {
                                 scrollSpeed: webtoonScrollSpeed,
                                 onCenterTap: {
                                     withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
+                                },
+                                onEndReached: {
+                                    if let nextVol = getNextVolume() {
+                                        self.nextVolumeToRead = nextVol
+                                        withAnimation(.spring()) { self.showBingePrompt = true }
+                                    }
                                 }
                             )
                             WebtoonControlBar(isAutoScrolling: $isWebtoonAutoScrolling, scrollSpeed: $webtoonScrollSpeed)
@@ -303,6 +319,22 @@ struct ReaderView: View {
             }
             .navigationBarHidden(true)
             .statusBarHidden(!isToolbarVisible)
+            // ── Bookmark toast HUD ──────────────────────────────────────────
+            .overlay(alignment: .bottom) {
+                if showBookmarkToast {
+                    Text(bookmarkToastMessage)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+                        .padding(.bottom, 110)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            // ── Unified chrome (ReaderChrome) ───────────────────────────────
             .overlay(alignment: .top) {
                 if isToolbarVisible && !isLoading && errorMessage == nil {
                     topBar
@@ -425,6 +457,27 @@ struct ReaderView: View {
                         .presentationDetents([.medium, .large])
                 }
             }
+            .sheet(isPresented: $showReaderSettings) {
+                ReaderSettingsSheet(
+                    isMangaMode: $isMangaMode,
+                    isVerticalScroll: $isVerticalScroll,
+                    isDoublePageMode: $isDoublePageMode,
+                    autoLandscapeDualPage: $autoLandscapeDualPage,
+                    autoContrastLevel: $autoContrastLevel,
+                    smartSharpen: $smartSharpen,
+                    isAutoCropEnabled: $isAutoCropEnabled,
+                    colorFilter: $colorFilter,
+                    ambientBrightness: ambientBrightness,
+                    isWebtoonAutoScrolling: $isWebtoonAutoScrolling,
+                    onJumpToPage: { jumpToPageText = ""; showJumpToPage = true },
+                    onTOC: { showTOC = true },
+                    onSleepTimer: { showSleepTimerPicker = true },
+                    onSharePage: { shareCurrentPage() },
+                    onDone: {}
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
     }
     
     // MARK: - Top Bar (Minimal Glass HUD)
@@ -501,7 +554,7 @@ struct ReaderView: View {
 
             // Bookmark
             if pdf != nil {
-                Button(action: toggleBookmark) {
+                Button(action: toggleBookmarkWithToast) {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(isBookmarked ? Theme.orange : .white)
@@ -521,7 +574,16 @@ struct ReaderView: View {
                 }
             }
 
-            // Settings + all tools
+            // Settings — now opens the dedicated ReaderSettingsSheet
+            Button { showReaderSettings = true } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+
+            // Legacy overflow menu — kept for PDF-only tools not yet in the sheet
             Menu {
                 Section("Reading Mode") {
                     Toggle("Manga (Right-to-Left)", isOn: Binding(
@@ -1120,6 +1182,21 @@ struct ReaderView: View {
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
+    }
+
+    private func toggleBookmarkWithToast() {
+        let wasBookmarked = isBookmarked
+        toggleBookmark()
+        bookmarkToastMessage = wasBookmarked
+            ? "Bookmark removed"
+            : "Page \(currentPageIndex + 1) bookmarked"
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showBookmarkToast = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation(.easeOut(duration: 0.3)) { showBookmarkToast = false }
+        }
     }
 
     // MARK: - Color Filter Overlay

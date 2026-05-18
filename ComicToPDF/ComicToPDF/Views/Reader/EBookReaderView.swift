@@ -222,35 +222,78 @@ struct EBookReaderView: View {
     
     // MARK: - Bottom Bar (Glass HUD)
     @ViewBuilder private var bottomBar: some View {
-        HStack(spacing: 24) {
-            Button { prevChapter() } label: {
-                Image(systemName: "chevron.left.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(currentIndex == 0 ? .white.opacity(0.2) : .white.opacity(0.9))
-            }
-            .disabled(currentIndex == 0)
-            
-            VStack(spacing: 2) {
-                Text("Page \(chapterPage + 1) of \(chapterTotalPages)")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                if totalChapters > 1 {
-                    Text("Chapter \(currentIndex + 1) / \(totalChapters)")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.6))
+        VStack(spacing: 0) {
+            // ── Progress Scrubber ─────────────────────────────────────────
+            if totalChapters > 1 {
+                HStack(spacing: 10) {
+                    Text("1")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .frame(width: 16, alignment: .leading)
+                    Slider(
+                        value: Binding(
+                            get: { progressFraction },
+                            set: { newVal in
+                                let target = Int((newVal * Double(totalChapters - 1)).rounded())
+                                withAnimation(.easeInOut(duration: 0.18)) { currentIndex = target }
+                                saveProgress()
+                            }
+                        ),
+                        in: 0...1
+                    )
+                    .tint(Color(hex: "#B39DDB"))
+                    Text("\(totalChapters)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .frame(width: 16, alignment: .trailing)
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 4)
+                
+                Rectangle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(height: 0.5)
+                    .padding(.horizontal, 16)
             }
-            .frame(minWidth: 100)
-            
-            Button { nextChapter() } label: {
-                Image(systemName: "chevron.right.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(currentIndex >= totalChapters - 1 ? .white.opacity(0.2) : .white.opacity(0.9))
+
+            // ── Navigation row ─────────────────────────────────────────
+            HStack(spacing: 24) {
+                Button { prevChapter() } label: {
+                    Image(systemName: "chevron.left.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(currentIndex == 0 ? .white.opacity(0.2) : .white.opacity(0.9))
+                }
+                .disabled(currentIndex == 0)
+                
+                VStack(spacing: 2) {
+                    Text("Page \(chapterPage + 1) of \(chapterTotalPages)")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                    if totalChapters > 1 {
+                        Text("Chapter \(currentIndex + 1) / \(totalChapters)")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    // Time remaining estimate
+                    if let mins = ReaderProgressTracker.shared.progress(for: pdf?.id ?? UUID())?.estimatedMinutesRemaining, mins > 0 {
+                        Text("~\(mins)m left")
+                            .font(.system(size: 10, weight: .regular, design: .rounded))
+                            .foregroundStyle(Color(hex: "#B39DDB").opacity(0.8))
+                    }
+                }
+                .frame(minWidth: 100)
+                
+                Button { nextChapter() } label: {
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(currentIndex >= totalChapters - 1 ? .white.opacity(0.2) : .white.opacity(0.9))
+                }
+                .disabled(currentIndex >= totalChapters - 1)
             }
-            .disabled(currentIndex >= totalChapters - 1)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 24)
         }
-        .padding(.vertical, 16)
-        .padding(.horizontal, 24)
         .background(
             LinearGradient(
                 colors: [Color.clear, Color.black.opacity(0.65)],

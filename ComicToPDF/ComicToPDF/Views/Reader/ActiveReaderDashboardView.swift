@@ -101,16 +101,8 @@ struct ActiveReaderDashboardView: View {
             // Cover
             ZStack {
                 Color.secondary.opacity(0.1)
-                if let coverURL = conversionManager.getCoverURL(for: pdf),
-                   let uiImage = UIImage(contentsOfFile: coverURL.path) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    Image(systemName: "book.fill")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                }
+                ComicCoverLoader(pdf: pdf)
+                    .scaledToFill()
             }
             .frame(width: 120, height: 160)
             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -182,16 +174,8 @@ struct ActiveReaderDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 Color.secondary.opacity(0.1)
-                if let coverURL = conversionManager.getCoverURL(for: pdf),
-                   let uiImage = UIImage(contentsOfFile: coverURL.path) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    Image(systemName: "book.fill")
-                        .font(.title)
-                        .foregroundColor(.secondary)
-                }
+                ComicCoverLoader(pdf: pdf)
+                    .scaledToFill()
             }
             .frame(width: 90, height: 135)
             .clipShape(RoundedRectangle(cornerRadius: 8))

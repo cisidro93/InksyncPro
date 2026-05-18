@@ -124,6 +124,30 @@ struct PPLReaderView: View {
         .simultaneousGesture(isDrawingMode ? nil : swipeAndPanGesture(geo: geo))
         .onTapGesture(count: 2) { loc in handleDoubleTap(at: loc, geo: geo) }
         .onTapGesture              { loc in handleSingleTap(at: loc, geo: geo) }
+        .overlay(alignment: .bottom) {
+            // Guided Reading panel progress indicator
+            if isGuidedReadingActive && !guidedPanels.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "viewfinder")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.orange)
+                    Text("Panel \(guidedPanelIndex + 1) / \(guidedPanels.count)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("· Double-tap to exit")
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+                .padding(.bottom, 100)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: guidedPanelIndex)
+            }
+        }
     }
 
     // MARK: - Current Content
