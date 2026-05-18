@@ -266,40 +266,28 @@ struct ReaderView: View {
                 })
                 .frame(width: 0, height: 0)
                 
-                // ✅ Immersive UI OSD
-                if !isVerticalScroll && !pages.isEmpty && !isLoading {
+                // ✅ Immersive UI OSD — bottom micro-pill while toolbar is hidden
+                if !isVerticalScroll && !pages.isEmpty && !isLoading && !isToolbarVisible {
                     VStack {
                         Spacer()
-                        if isToolbarVisible {
-                            ReaderScrubber(
-                                currentPageIndex: $currentPageIndex,
-                                totalPages: pages.count,
-                                isMangaMode: isMangaMode,
-                                pages: pages
-                            )
-                            .padding(.bottom, 20)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                        } else {
-                            // Micro-pill — shows dual page pair when applicable
-                            let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
-                            let pillText: String = {
-                                if isDual && currentPageIndex > 0 {
-                                    let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-                                    let right = min(lead + 1, pages.count - 1)
-                                    return "\(lead + 1)–\(right + 1) / \(pages.count)"
-                                }
-                                return "\(currentPageIndex + 1) / \(pages.count)"
-                            }()
-                            Text(pillText)
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(Capsule())
-                                .padding(.bottom, 10)
-                                .opacity(0.3)
-                        }
+                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                        let pillText: String = {
+                            if isDual && currentPageIndex > 0 {
+                                let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
+                                let right = min(lead + 1, pages.count - 1)
+                                return "\(lead + 1)–\(right + 1) / \(pages.count)"
+                            }
+                            return "\(currentPageIndex + 1) / \(pages.count)"
+                        }()
+                        Text(pillText)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Capsule())
+                            .padding(.bottom, 10)
+                            .opacity(0.3)
                     }
                 }
             }
@@ -334,11 +322,59 @@ struct ReaderView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            // ── Unified chrome (ReaderChrome) ───────────────────────────────
-            .overlay(alignment: .top) {
-                if isToolbarVisible && !isLoading && errorMessage == nil {
-                    topBar
-                        .transition(.move(edge: .top).combined(with: .opacity))
+            // ── ReaderChrome (unified top + bottom chrome) ─────────────────
+            .overlay {
+                if !isLoading && errorMessage == nil {
+                    let pageText: String = {
+                        if pages.isEmpty { return "" }
+                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                        if isDual && currentPageIndex > 0 {
+                            let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
+                            let right = min(lead + 1, pages.count - 1)
+                            return "\(lead + 1)–\(right + 1) / \(pages.count)"
+                        }
+                        return "\(currentPageIndex + 1) / \(pages.count)"
+                    }()
+
+                    ReaderChrome(
+                        title: fileURL.deletingPathExtension().lastPathComponent,
+                        pageText: pageText,
+                        isVisible: $isToolbarVisible,
+                        onBack: { if let onExit = onExit { onExit() } else { dismiss() } },
+                        onBookmark: toggleBookmarkWithToast,
+                        onBookmarkActive: isBookmarked,
+                        onSettingsToggle: { showReaderSettings = true },
+                        onTOCToggle: toc.chapters.count > 1 ? { showTOC = true } : nil,
+                        currentProgress: Binding(
+                            get: { pages.isEmpty ? 0 : Double(currentPageIndex) / Double(max(1, pages.count - 1)) },
+                            set: { val in
+                                let target = Int((val * Double(max(1, pages.count - 1))).rounded())
+                                currentPageIndex = max(0, min(target, pages.count - 1))
+                            }
+                        ),
+                        totalPages: pages.count,
+                        customScrubber: pages.isEmpty || isVerticalScroll ? nil : AnyView(
+                            ReaderScrubber(
+                                currentPageIndex: $currentPageIndex,
+                                totalPages: pages.count,
+                                isMangaMode: isMangaMode,
+                                pages: pages
+                            )
+                        ),
+                        isPDF: fileURL.pathExtension.lowercased() == "pdf",
+                        isEnhanced: autoContrastLevel > 1.0 || smartSharpen,
+                        onEnhanceToggle: {
+                            if autoContrastLevel > 1.0 || smartSharpen {
+                                autoContrastLevel = 1.0; smartSharpen = false
+                            } else {
+                                autoContrastLevel = 1.5; smartSharpen = true
+                            }
+                            PageBufferManager.shared.render(pageIndex: currentPageIndex, bounds: .zero)
+                        },
+                        isSettingsActive: showReaderSettings,
+                        currentModeLabel: isMangaMode ? "MANGA" : (isVerticalScroll ? "WEBTOON" : nil),
+                        ambientColor: ambientPageColor
+                    )
                 }
             }
             .task {
@@ -480,241 +516,8 @@ struct ReaderView: View {
             }
     }
     
-    // MARK: - Top Bar (Minimal Glass HUD)
-    @ViewBuilder private var topBar: some View {
-        HStack(spacing: 10) {
-            // Back
-            Button { if let onExit = onExit { onExit() } else { dismiss() } } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-
-            Text(fileURL.deletingPathExtension().lastPathComponent)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .shadow(color: .black.opacity(0.6), radius: 3)
-
-            Spacer()
-
-            // Page + reading time pill
-            if !pages.isEmpty {
-                VStack(spacing: 1) {
-                    Text("\(currentPageIndex + 1) / \(pages.count)")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.9))
-                    if let mins = ReaderProgressTracker.shared.progress(for: pdf?.id ?? UUID())?.estimatedMinutesRemaining, mins > 0 {
-                        Text("\(mins)m left")
-                            .font(.system(size: 9, weight: .regular, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.6))
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(.ultraThinMaterial, in: Capsule())
-            }
-
-            Spacer()
-
-            // Sleep timer badge
-            if sleepTimer.isActive {
-                Button { showSleepTimerPicker = true } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "moon.zzz.fill").font(.system(size: 10))
-                        Text(sleepTimer.formattedRemaining).font(.system(size: 11, weight: .bold, design: .rounded))
-                    }
-                    .foregroundStyle(Color.orange)
-                    .padding(.horizontal, 8).padding(.vertical, 5)
-                    .background(.ultraThinMaterial, in: Capsule())
-                }
-            }
-
-            // Orientation lock
-            Button { orientationLock.toggleLock(current: deviceOrientation) } label: {
-                Image(systemName: orientationLock.isLocked ? "lock.rotation" : "lock.rotation.open")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(orientationLock.isLocked ? Color.orange : .white)
-                    .frame(width: 34, height: 34)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-            
-            // ✅ GoodNotes Parity: Markup Toggle
-            if fileURL.pathExtension.lowercased() != "epub" {
-                Button { withAnimation { isDrawingMode.toggle() } } label: {
-                    Image(systemName: isDrawingMode ? "pencil.and.outline" : "pencil")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(isDrawingMode ? Color.orange : .white)
-                        .frame(width: 34, height: 34)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-            }
-
-            // Bookmark
-            if pdf != nil {
-                Button(action: toggleBookmarkWithToast) {
-                    Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(isBookmarked ? Theme.orange : .white)
-                        .frame(width: 34, height: 34)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-            }
-            
-            // Display Settings (PDF)
-            if fileURL.pathExtension.lowercased() == "pdf" {
-                Button { showTypographyHUD = true } label: {
-                    Image(systemName: "textformat.size")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-            }
-
-            // Settings — now opens the dedicated ReaderSettingsSheet
-            Button { showReaderSettings = true } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-
-            // Legacy overflow menu — kept for PDF-only tools not yet in the sheet
-            Menu {
-                Section("Reading Mode") {
-                    Toggle("Manga (Right-to-Left)", isOn: Binding(
-                        get: { isMangaMode },
-                        set: { val in
-                            isMangaMode = val
-                            if let p = pdf, let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == p.id }) {
-                                conversionManager.convertedPDFs[idx].metadata.isManga = val
-                                conversionManager.saveLibrary()
-                            }
-                        }
-                    ))
-                    Toggle("Vertical Webtoon Scroll", isOn: $isVerticalScroll)
-                }
-                Section("Layout") {
-                    Toggle("Dual Page (Manual)", isOn: $isDoublePageMode)
-                    Toggle("Auto Dual Page in Landscape", isOn: $autoLandscapeDualPage)
-                }
-                Section("Page Turn Style") {
-                    ForEach(PageTurnStyle.allCases, id: \.self) { style in
-                        Button {
-                            UserDefaults.standard.set(style.rawValue, forKey: "pageTurnStyle")
-                        } label: {
-                            Label(style.label, systemImage: style.icon)
-                        }
-                    }
-                }
-                Section("Tap Zones") {
-                    ForEach(TapZoneStyle.allCases, id: \.self) { zone in
-                        Button {
-                            UserDefaults.standard.set(zone.rawValue, forKey: "tapZoneStyle")
-                        } label: {
-                            Label(zone.label, systemImage: zone.icon)
-                        }
-                    }
-                }
-                Section("Image Enhancements") {
-                    Toggle("Smart Margin Crop", isOn: Binding(
-                        get: { isAutoCropEnabled },
-                        set: { val in 
-                            isAutoCropEnabled = val 
-                            PageBufferManager.shared.render(pageIndex: currentPageIndex, bounds: .zero)
-                        }
-                    ))
-                    Toggle("Auto Contrast", isOn: Binding(
-                        get: { autoContrastLevel > 1.0 },
-                        set: { val in
-                            autoContrastLevel = val ? 1.5 : 1.0
-                            PageBufferManager.shared.render(pageIndex: currentPageIndex, bounds: .zero)
-                        }
-                    ))
-                    Toggle("Smart Sharpening", isOn: Binding(
-                        get: { smartSharpen },
-                        set: { val in
-                            smartSharpen = val
-                            PageBufferManager.shared.render(pageIndex: currentPageIndex, bounds: .zero)
-                        }
-                    ))
-                }
-                Section("Color Filter") {
-                    ForEach(ReaderColorFilter.allCases, id: \.self) { filter in
-                        Button { withAnimation { colorFilter = filter } } label: {
-                            Label(filter.label, systemImage: filter.icon)
-                        }
-                        .foregroundStyle(colorFilter == filter ? Color.orange : Color.primary)
-                    }
-                }
-                Section("Navigate") {
-                    Button { jumpToPageText = ""; showJumpToPage = true } label: {
-                        Label("Jump to Page…", systemImage: "arrow.right.circle")
-                    }
-                    .disabled(pages.isEmpty)
-                    Button { showTOC = true } label: {
-                        Label("Table of Contents", systemImage: "list.bullet.rectangle")
-                    }
-                    .disabled(toc.chapters.count <= 1)
-                    // PDF Search (only for PDFs with a loaded document)
-                    if loadedPDFDocument != nil {
-                        Button { showSearch = true } label: {
-                            Label("Search in Document", systemImage: "magnifyingglass")
-                        }
-                    }
-                }
-                Section("Ambient Lighting") {
-                    Toggle("Night Mode (Auto)", isOn: Binding(
-                        get: { ambientBrightness.autoNightMode },
-                        set: { val in
-                            ambientBrightness.autoNightMode = val
-                            ambientBrightness.evaluate()
-                        }
-                    ))
-                    Text("Night window: \(ambientBrightness.nightWindowDescription)")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if isVerticalScroll {
-                    Section("Webtoon") {
-                        Toggle("Auto-Scroll", isOn: $isWebtoonAutoScrolling)
-                    }
-                }
-                Section("Tools") {
-                    Button { shareCurrentPage() } label: {
-                        Label("Share This Page", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(pages.isEmpty)
-                    Button { showSleepTimerPicker = true } label: {
-                        Label(
-                            sleepTimer.isActive ? "Sleep Timer (\(sleepTimer.formattedRemaining))" : "Sleep Timer…",
-                            systemImage: "moon.zzz"
-                        )
-                    }
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 52)
-        .padding(.bottom, 10)
-        .background(
-            LinearGradient(
-                colors: [Color.black.opacity(0.55), Color.clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .top)
-        )
-    }
+    // MARK: - Top Bar removed — now rendered by ReaderChrome overlay above
+    // All chrome logic lives in ReaderChrome.swift (top capsule + bottom card).
 
     // MARK: - Share Current Page (format-aware)
     private func shareCurrentPage() {
