@@ -189,7 +189,12 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         self.contentType = contentType
         self.chapters = chapters
         self.addedByMode = addedByMode
-        self.contentKind = .comic
+        // Derive contentKind from contentType so library icons and EPUB routing are correct.
+        switch contentType {
+        case .book:            self.contentKind = .book
+        case .comic, .manga:   self.contentKind = .comic
+        case .hybrid:          self.contentKind = .document
+        }
         self.documentSubtype = .unknown
         self.isOnDevice = false
         self.lastTransferFailed = false

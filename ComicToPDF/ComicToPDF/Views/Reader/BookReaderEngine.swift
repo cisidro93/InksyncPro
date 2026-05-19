@@ -388,8 +388,10 @@ struct EPUBWebView: UIViewRepresentable {
                     font-family: '\(prefs.fontFamily)' !important;
                     font-size: \(prefs.fontSize)px !important;
                     line-height: \(prefs.lineHeight) !important;
-                    background-color: \(prefs.activeTheme.cssBackground(colorScheme: .light)) !important;
-                    color: \(prefs.activeTheme.cssText(colorScheme: .light)) !important;
+                    background-color: \(prefs.activeTheme.cssBackground) !important;
+                    color: \(prefs.activeTheme.cssText) !important;
+                    letter-spacing: \(String(format: "%.4f", prefs.letterSpacing))em !important;
+                    word-spacing: \(String(format: "%.4f", prefs.wordSpacing))em !important;
                     
                     /* Layout */
                     height: \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "auto" : "calc(100vh - 100px)") !important;
@@ -404,8 +406,8 @@ struct EPUBWebView: UIViewRepresentable {
                     
                     /* Typography enhancements */
                     text-align: \(prefs.textAlign) !important;
-                    -webkit-hyphens: auto !important;
-                    hyphens: auto !important;
+                    -webkit-hyphens: \(prefs.hyphenation ? "auto" : "manual") !important;
+                    hyphens: \(prefs.hyphenation ? "auto" : "manual") !important;
                 }
                 @media (prefers-color-scheme: dark) {
                     body {
@@ -475,7 +477,7 @@ struct EPUBWebView: UIViewRepresentable {
         let webView = HighlightableWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(prefs.activeTheme.background(colorScheme: SwiftUI.ColorScheme.light))
+        webView.backgroundColor = UIColor(prefs.activeTheme.background)
         webView.scrollView.backgroundColor = webView.backgroundColor
         
         // Native Scrolling Mode Toggle
@@ -502,7 +504,7 @@ struct EPUBWebView: UIViewRepresentable {
         }
         
         // Dynamically update UI appearance properties
-        webView.backgroundColor = UIColor(prefs.activeTheme.background(colorScheme: .light))
+        webView.backgroundColor = UIColor(prefs.activeTheme.background)
         webView.scrollView.backgroundColor = webView.backgroundColor
         webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
@@ -534,7 +536,7 @@ struct BookReaderEngine: View {
     
     var body: some View {
         ZStack {
-            Color(prefs.activeTheme.background(colorScheme: SwiftUI.ColorScheme.light)).edgesIgnoringSafeArea(.all)
+            Color(prefs.activeTheme.background).edgesIgnoringSafeArea(.all)
             
             if vm.isLoading {
                 ProgressView("Unpacking EPUB...")
@@ -669,6 +671,9 @@ struct BookReaderEngine: View {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id), let ch = saved.currentChapterIndex {
                 vm.currentChapterIndex = ch
             }
+            // Apply per-book theme + typography profiles
+            prefs.applyBookTheme(bookID: pdf.id.uuidString)
+            prefs.applyBookTypography(bookID: pdf.id.uuidString)
         }
         .onDisappear {
             tts.stop()
@@ -688,7 +693,7 @@ struct BookReaderEngine: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showTypographyHUD) {
-            TypographySettingsHUD(prefs: prefs, webView: webViewReference, isFixedLayout: false)
+            EBookSettingsPanel(bookID: pdf.id.uuidString)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -791,101 +796,15 @@ struct BookNavigationSheet: View {
 }
 
 // MARK: - Typography Settings HUD
+// Legacy entry point kept for ReaderView compatibility.
+// Presentation is now handled by EBookSettingsPanel.
 struct TypographySettingsHUD: View {
     @ObservedObject var prefs: EBookPreferences
     var webView: WKWebView?
     var isFixedLayout: Bool = false
-    @Environment(\.colorScheme) var colorScheme
-    
+
     var body: some View {
-        NavigationView {
-            Form {
-                Section(header: Text("Theme")) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 20) {
-                            ThemeButton(title: "Auto", bgHex: "#888888", textHex: "#FFFFFF", currentBg: prefs.themeRaw == "Auto" ? "#888888" : "") {
-                                prefs.themeRaw = EBookTheme.auto.rawValue; refreshWebView()
-                            }
-                            ThemeButton(title: "Light", bgHex: "#FAFAFA", textHex: "#1A1A1A", currentBg: prefs.themeRaw == "Day" ? "#FAFAFA" : "") {
-                                prefs.themeRaw = EBookTheme.light.rawValue; refreshWebView()
-                            }
-                            ThemeButton(title: "Sepia", bgHex: "#F5EDD6", textHex: "#3B2D1F", currentBg: prefs.themeRaw == "Sepia" ? "#F5EDD6" : "") {
-                                prefs.themeRaw = EBookTheme.sepia.rawValue; refreshWebView()
-                            }
-                            ThemeButton(title: "Dark", bgHex: "#1C1C1E", textHex: "#E8E0D5", currentBg: prefs.themeRaw == "Night" ? "#1C1C1E" : "") {
-                                prefs.themeRaw = EBookTheme.dark.rawValue; refreshWebView()
-                            }
-                            ThemeButton(title: "OLED", bgHex: "#000000", textHex: "#CCCCCC", currentBg: prefs.themeRaw == "Obsidian" ? "#000000" : "") {
-                                prefs.themeRaw = EBookTheme.obsidian.rawValue; refreshWebView()
-                            }
-                        }
-                        .padding(.vertical, 8)
-                    }
-                }
-                
-                Section(header: Text("Layout")) {
-                    Picker("Pagination Mode", selection: $prefs.paginationMode) {
-                        ForEach(EBookPaginationMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode.rawValue)
-                        }
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
-                    .onChange(of: prefs.paginationMode) { _, _ in refreshWebView() }
-                }
-                
-                if !isFixedLayout {
-                    Section(header: Text("Font Style")) {
-                        Picker("Font Family", selection: $prefs.fontFamily) {
-                            ForEach(EBookFontFamily.allCases) { font in
-                                Text(font.displayName).tag(font.rawValue)
-                            }
-                        }
-                        .onChange(of: prefs.fontFamily) { _, _ in refreshWebView() }
-                    }
-                    
-                    Section(header: Text("Font Size")) {
-                        Slider(value: $prefs.fontSize, in: 12...32, step: 1) {
-                            Text("Font Size")
-                        } minimumValueLabel: {
-                            Text("A").font(.system(size: 12))
-                        } maximumValueLabel: {
-                            Text("A").font(.system(size: 24))
-                        }
-                        .onChange(of: prefs.fontSize) { _, _ in refreshWebView() }
-                    }
-                    
-                    Section(header: Text("Line Spacing")) {
-                        Slider(value: $prefs.lineHeight, in: 1.0...2.5, step: 0.1) {
-                            Text("Line Spacing")
-                        } minimumValueLabel: {
-                            Image(systemName: "line.3.horizontal")
-                        } maximumValueLabel: {
-                            Image(systemName: "arrow.up.and.down.text.horizontal")
-                        }
-                        .onChange(of: prefs.lineHeight) { _, _ in refreshWebView() }
-                    }
-                    
-                    Section(header: Text("Margins")) {
-                        Slider(value: $prefs.textMargin, in: 0...100, step: 5) {
-                            Text("Margins")
-                        } minimumValueLabel: {
-                            Image(systemName: "arrow.left.and.line.vertical.and.arrow.right")
-                        } maximumValueLabel: {
-                            Image(systemName: "arrow.left.and.right")
-                        }
-                        .onChange(of: prefs.textMargin) { _, _ in refreshWebView() }
-                    }
-                }
-            }
-            .navigationTitle(isFixedLayout ? "Display Settings" : "Typography")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-    
-    private func refreshWebView() {
-        // Force an immediate reload of the HTML with the new settings
-        // Ideally we would inject CSS dynamically, but reloadHTMLString is very fast for local chapters.
-        webView?.reload()
+        EBookSettingsPanel(bookID: nil)
     }
 }
 

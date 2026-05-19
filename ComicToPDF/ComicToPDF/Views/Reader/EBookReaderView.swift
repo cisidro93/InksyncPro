@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 import WebKit
 import ZIPFoundation
 
@@ -118,7 +118,7 @@ struct EBookReaderView: View {
         }
         // Settings sheet lives here only — NOT duplicated inside chapterDrawer
         .sheet(isPresented: $showingSettingsPanel) {
-            EBookSettingsPanel()
+            EBookSettingsPanel(bookID: pdf?.id.uuidString)
                 .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showSleepTimerPicker) {
@@ -129,6 +129,7 @@ struct EBookReaderView: View {
         }
         .task { await loadBook() }
         .onDisappear { cleanup(); saveProgress() }
+        .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
         .onChange(of: sleepTimer.didFire) { _, fired in
             if fired { if let onExit = onExit { onExit() } else { dismiss() } }
         }
@@ -489,11 +490,16 @@ struct EBookReaderView: View {
                 self.metadata = parsed
                 // Restore saved chapter (clamp to valid range)
                 let total = parsed.spineItems.count
-                                self.currentIndex = min(saved, max(0, total - 1))
+                self.currentIndex = min(saved, max(0, total - 1))
                 if saved == self.currentIndex {
                     self.chapterPage = savedPage
                 } else {
                     self.chapterPage = 0
+                }
+                // Apply per-book theme + typography profiles if saved
+                if let bookID = pdf?.id.uuidString {
+                    prefs.applyBookTheme(bookID: bookID)
+                    prefs.applyBookTypography(bookID: bookID)
                 }
             } else {
                 self.errorMessage = "This EPUB file seems to be corrupted or missing a valid reading spine."
@@ -574,7 +580,7 @@ struct EBookWebReader: UIViewRepresentable {
         }
         guard FileManager.default.fileExists(atPath: contentURL.path) else { return }
 
-        let currentStateHash = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)"
+        let currentStateHash = "\(prefs.themeRaw)_\(prefs.customThemeBg)_\(prefs.customThemeText)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.hyphenation)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)"
         if context.coordinator.lastLoadedHref == spineItem.href &&
            context.coordinator.lastTheme == currentStateHash { return }
         context.coordinator.lastLoadedHref = spineItem.href
@@ -640,16 +646,19 @@ struct EBookWebReader: UIViewRepresentable {
         // inside the multi-line string literal with normal \(...) interpolation.
         // The previous code used \\(...) which writes literal \(xxx) into the HTML
         // instead of the actual value — this caused font/size/spacing to have no effect.
-        let bgColor    = prefs.activeTheme.cssBackground(colorScheme: colorScheme)
-        let textColor  = prefs.activeTheme.cssText(colorScheme: colorScheme)
-        let linkColor  = prefs.activeTheme.cssLink(colorScheme: colorScheme)
-        let fontFamily = prefs.fontFamily
-        let fontSize   = Int(prefs.fontSize)
-        let lineHeight = String(format: "%.1f", prefs.lineHeight)
-        let textAlign  = prefs.textAlign
-        let margin     = prefs.textMargin
-        let paraSpace  = prefs.paragraphSpacing
-        let paraIndent = prefs.paragraphIndent
+        let bgColor       = prefs.activeTheme.cssBackground
+        let textColor     = prefs.activeTheme.cssText
+        let linkColor     = prefs.activeTheme.cssLink
+        let fontFamily    = prefs.fontFamily
+        let fontSize      = Int(prefs.fontSize)
+        let lineHeight    = String(format: "%.2f", prefs.lineHeight)
+        let letterSpacing = String(format: "%.4fem", prefs.letterSpacing)
+        let wordSpacing   = String(format: "%.4fem", prefs.wordSpacing)
+        let hyphenCSS     = prefs.hyphenation ? "auto" : "manual"
+        let textAlign     = prefs.textAlign
+        let margin        = prefs.textMargin
+        let paraSpace     = prefs.paragraphSpacing
+        let paraIndent    = prefs.paragraphIndent
 
         let overflowCSS = isPaged
             ? "overflow: hidden !important;"
@@ -689,8 +698,10 @@ struct EBookWebReader: UIViewRepresentable {
             box-sizing: border-box !important;
             word-wrap: break-word;
             -webkit-text-size-adjust: none;
-            -webkit-hyphens: auto !important;
-            hyphens: auto !important;
+            letter-spacing: \(letterSpacing) !important;
+            word-spacing: \(wordSpacing) !important;
+            -webkit-hyphens: \(hyphenCSS) !important;
+            hyphens: \(hyphenCSS) !important;
         }
         p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
         p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
