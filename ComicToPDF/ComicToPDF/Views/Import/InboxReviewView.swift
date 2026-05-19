@@ -18,26 +18,69 @@ struct InboxReviewView: View {
             Color.inkBackground.ignoresSafeArea()
             
             if reviewItems.isEmpty {
-                VStack(spacing: 20) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 64))
-                        .foregroundStyle(Theme.green.gradient)
-                    Text("Inbox is clear")
-                        .font(.title2.bold())
-                        .foregroundColor(.primary)
+                VStack(spacing: 0) {
+                    Spacer()
+                    ZStack {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    gradient: Gradient(colors: [Theme.green.opacity(0.35), Theme.blue.opacity(0.15), .clear]),
+                                    center: .center,
+                                    startRadius: 20,
+                                    endRadius: 72
+                                )
+                            )
+                            .frame(width: 144, height: 144)
+                            .blur(radius: 24)
+
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 96, height: 96)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [Color.white.opacity(0.35), Color.white.opacity(0.05)],
+                                            startPoint: .topLeading, endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                            )
+                            .shadow(color: Theme.green.opacity(0.2), radius: 20, y: 8)
+
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 42, weight: .medium))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Theme.green, Theme.blue],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    .padding(.bottom, 24)
+                    
+                    Text("Inbox is Clear")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(Theme.text)
+                        .padding(.bottom, 8)
+                        
                     Text("All comics in your library have complete metadata.")
-                        .font(.subheadline)
+                        .font(.system(size: 15))
                         .foregroundColor(Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        
+                    Spacer()
                 }
             } else {
                 VStack(spacing: 0) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Metadata Review")
-                                .font(.largeTitle.bold())
-                                .foregroundColor(.primary)
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundColor(Theme.text)
                             Text("\(reviewItems.count) items need metadata matching.")
-                                .font(.subheadline)
+                                .font(.system(size: 14))
                                 .foregroundColor(Theme.textSecondary)
                         }
                         Spacer()
@@ -47,16 +90,27 @@ struct InboxReviewView: View {
                                 await BackgroundMetadataEngine.shared.startEngine(manager: manager)
                             }
                         } label: {
-                            Label("Auto-Match All", systemImage: "wand.and.stars.inverse")
-                                .font(.subheadline.bold())
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Theme.orange)
-                                .clipShape(Capsule())
+                            HStack(spacing: 6) {
+                                Image(systemName: "wand.and.stars.inverse")
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("Auto-Match")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                LinearGradient(
+                                    colors: [Theme.orange, Theme.orange.opacity(0.8)],
+                                    startPoint: .leading, endPoint: .trailing
+                                ),
+                                in: Capsule()
+                            )
+                            .shadow(color: Theme.orange.opacity(0.3), radius: 6, y: 3)
                         }
                     }
-                    .padding()
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
                     
                     List {
                         ForEach(reviewItems) { item in
@@ -66,41 +120,51 @@ struct InboxReviewView: View {
                                     Image(uiImage: uiImage)
                                         .resizable()
                                         .scaledToFill()
-                                        .frame(width: 50, height: 75)
+                                        .frame(width: 44, height: 66)
                                         .cornerRadius(6)
                                         .clipped()
                                 } else {
                                     RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.gray.opacity(0.3))
-                                        .frame(width: 50, height: 75)
-                                        .overlay(Image(systemName: "photo").foregroundColor(.gray))
+                                        .fill(Theme.surfaceElevated)
+                                        .frame(width: 44, height: 66)
+                                        .overlay(Image(systemName: "photo").foregroundColor(Theme.textTertiary))
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.metadata.title.isEmpty ? item.name : item.metadata.title)
-                                        .font(.headline)
-                                        .foregroundColor(.primary)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(Theme.text)
                                         .lineLimit(1)
                                     
-                                    Text("Missing: \(missingTags(for: item))")
-                                        .font(.caption)
-                                        .foregroundColor(.red)
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "exclamationmark.circle.fill")
+                                            .font(.system(size: 10))
+                                        Text("Missing: \(missingTags(for: item))")
+                                            .font(.system(size: 12, weight: .medium))
+                                    }
+                                    .foregroundColor(Theme.orange)
                                 }
                                 
                                 Spacer()
                                 
                                 NavigationLink(destination: AdvancedMetadataEditorView(pdf: item)) {
                                     Text("Edit")
-                                        .font(.caption.bold())
+                                        .font(.system(size: 12, weight: .bold))
                                         .foregroundColor(Theme.orange)
-                                        .padding(.horizontal, 12)
+                                        .padding(.horizontal, 14)
                                         .padding(.vertical, 6)
                                         .background(Theme.orange.opacity(0.1))
                                         .clipShape(Capsule())
                                 }
                             }
+                            .padding(.vertical, 10).padding(.horizontal, 14)
+                            .background(Theme.surface)
+                            .cornerRadius(12)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.inkBorderSubtle, lineWidth: 0.5))
                             .listRowBackground(Color.clear)
-                            .listRowSeparatorTint(Color.inkBorderVisible)
+                            .listRowSeparator(.hidden)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
                         }
                     }
                     .listStyle(.plain)

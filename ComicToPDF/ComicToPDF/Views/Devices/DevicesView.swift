@@ -97,45 +97,86 @@ struct DevicesView: View {
             List(selection: $selectedDeviceID) {
                 Section {
                     if savedDevices.isEmpty {
-                        VStack(spacing: 20) {
+                        VStack(spacing: 0) {
+                            // Glowing Orb Empty State
                             ZStack {
                                 Circle()
-                                    .fill(Color.inkBlue.opacity(0.1))
-                                    .frame(width: 80, height: 80)
+                                    .fill(
+                                        RadialGradient(
+                                            gradient: Gradient(colors: [Color.inkBlue.opacity(0.35), Color.inkViolet.opacity(0.15), .clear]),
+                                            center: .center,
+                                            startRadius: 20,
+                                            endRadius: 72
+                                        )
+                                    )
+                                    .frame(width: 144, height: 144)
+                                    .blur(radius: 24)
+
+                                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 96, height: 96)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                            .stroke(
+                                                LinearGradient(
+                                                    colors: [Color.white.opacity(0.35), Color.white.opacity(0.05)],
+                                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                                ),
+                                                lineWidth: 1
+                                            )
+                                    )
+                                    .shadow(color: Color.inkBlue.opacity(0.2), radius: 20, y: 8)
+
                                 Image(systemName: "ipad.and.iphone")
-                                    .font(.system(size: 34, weight: .light))
+                                    .font(.system(size: 38, weight: .light))
                                     .foregroundStyle(
                                         LinearGradient(
-                                            colors: [Color.inkBlue, Color.inkBlue.opacity(0.6)],
-                                            startPoint: .topLeading, endPoint: .bottomTrailing
+                                            colors: [Color.inkBlue, Color.inkViolet],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
                                         )
                                     )
                             }
-                            VStack(spacing: 6) {
+                            .padding(.bottom, 24)
+                            
+                            VStack(spacing: 8) {
                                 Text("No Reading Devices")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.system(size: 20, weight: .bold))
                                     .foregroundStyle(Color.inkTextPrimary)
-                                Text("Add your Kindle, Kobo, or iPad to send converted files directly.")
-                                    .font(.system(size: 13))
+                                Text("Add your Kindle, Kobo, or iPad to send converted files directly over the air.")
+                                    .font(.system(size: 14))
                                     .foregroundStyle(Color.inkTextSecondary)
                                     .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 24)
+                                    .lineSpacing(4)
+                                    .padding(.horizontal, 40)
                             }
+                            .padding(.bottom, 28)
+                            
                             Button {
                                 showAddDevice = true
                             } label: {
-                                Label("Add a Device", systemImage: "plus")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 10)
-                                    .background(Color.inkBlue)
-                                    .clipShape(Capsule())
+                                HStack(spacing: 8) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 16, weight: .semibold))
+                                    Text("Add Device")
+                                        .font(.system(size: 16, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: 240)
+                                .padding(.vertical, 14)
+                                .background(
+                                    LinearGradient(
+                                        colors: [Color.inkBlue, Color.inkViolet.opacity(0.8)],
+                                        startPoint: .leading, endPoint: .trailing
+                                    ),
+                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                )
+                                .shadow(color: Color.inkBlue.opacity(0.4), radius: 12, y: 6)
                             }
                             .buttonStyle(.plain)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 28)
+                        .padding(.vertical, 40)
                         .listRowBackground(Color.inkSurface)
                     } else {
                         ForEach(savedDevices) { device in
@@ -267,6 +308,7 @@ struct DeviceRow: View {
                     .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
     }
 }

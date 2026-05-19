@@ -142,97 +142,173 @@ struct GoConvertView: View {
                     ImportCoordinator.present(type: .unified) { urls in processPickedFiles(urls) }
                 } label: {
                     ZStack {
+                        // Ambient glow blob behind the card
+                        Circle()
+                            .fill(Theme.blue.opacity(0.15))
+                            .frame(width: 150, height: 150)
+                            .blur(radius: 40)
+                            
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .strokeBorder(Color.blue.opacity(0.5), style: StrokeStyle(lineWidth: 3, dash: [10]))
-                            .background(Color.blue.opacity(0.05).cornerRadius(24))
-                        VStack(spacing: 12) {
-                            Image(systemName: "plus.square.dashed").font(.system(size: 60)).foregroundStyle(.blue)
+                            .fill(.ultraThinMaterial)
+                            .background(Color.inkSurfaceRaised.opacity(0.5).cornerRadius(24))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [Theme.blue.opacity(0.4), Theme.blue.opacity(0.1)],
+                                            startPoint: .topLeading, endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                            )
+                            .shadow(color: Theme.blue.opacity(0.15), radius: 20, y: 10)
+                            
+                        VStack(spacing: 16) {
+                            ZStack {
+                                Circle().fill(Theme.blue.opacity(0.1)).frame(width: 64, height: 64)
+                                Image(systemName: "square.and.arrow.down.on.square.fill")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(Theme.blue.gradient)
+                            }
+                            
                             if selectedFiles.isEmpty {
-                                Text("Tap to Select Files").font(.title3).bold().foregroundStyle(.primary)
-                                Text("or Drag & Drop CBZ/PDF here").font(.subheadline).foregroundStyle(.secondary)
-                            } else {
-                                Text("\(selectedFiles.count) File(s) Selected")
-                                    .font(.title3).bold().foregroundStyle(.blue)
-                                // ✅ Show actual filenames, not just a count
-                                ForEach(selectedFiles.prefix(3), id: \.self) { url in
-                                    Text(url.lastPathComponent)
-                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                VStack(spacing: 4) {
+                                    Text("Tap to Select Files")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundStyle(Theme.text)
+                                    Text("or Drag & Drop CBZ/PDF here")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(Theme.textSecondary)
                                 }
-                                if selectedFiles.count > 3 {
-                                    Text("+ \(selectedFiles.count - 3) more…")
-                                        .font(.caption2).foregroundStyle(.secondary)
+                            } else {
+                                VStack(spacing: 6) {
+                                    Text("\(selectedFiles.count) File(s) Selected")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundStyle(Theme.blue)
+                                    
+                                    VStack(spacing: 4) {
+                                        ForEach(selectedFiles.prefix(3), id: \.self) { url in
+                                            Text(url.lastPathComponent)
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundStyle(Theme.textSecondary)
+                                                .lineLimit(1)
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 4)
+                                                .background(Theme.blue.opacity(0.1))
+                                                .clipShape(Capsule())
+                                        }
+                                    }
+                                    
+                                    if selectedFiles.count > 3 {
+                                        Text("+ \(selectedFiles.count - 3) more…")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(Theme.textTertiary)
+                                    }
                                 }
                             }
                         }
+                        .padding(.vertical, 32)
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: 200)
-                .padding(.horizontal, 32)
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, minHeight: 220)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
                 
                 // MARK: Settings
+                // MARK: Settings
                 VStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Content Type").font(.headline)
-                        Picker("Content Type", selection: $isTargetingManga) {
-                            Text("Manga (Right-to-Left)").tag(true)
-                            Text("Western Comic (L-to-R)").tag(false)
-                        }.pickerStyle(.segmented)
-                    }.padding(.horizontal, 32)
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Target Device").font(.headline)
-                        Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
-                            ForEach(TargetDeviceProfile.allCases) { profile in Text(profile.rawValue).tag(profile) }
+                    InkCard(header: "Layout & Device") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Content Type")
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.inkTextSecondary)
+                            Picker("Content Type", selection: $isTargetingManga) {
+                                Text("Manga (Right-to-Left)").tag(true)
+                                Text("Western Comic (L-to-R)").tag(false)
+                            }.pickerStyle(.segmented)
                         }
-                        .pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
-                        .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
-                    }.padding(.horizontal, 32)
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Image Quality").font(.headline)
-                        Picker("Image Quality", selection: $compressionQuality) {
-                            ForEach(CompressionPreset.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
-                        .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
-                    }.padding(.horizontal, 32)
-                    
-                    Toggle(isOn: $useLiquidEInk) {
-                        VStack(alignment: .leading) {
-                            Text("✨ Liquid E-Ink Optimization").font(.headline)
-                            Text("Auto-levels, unsharp masking & gamma for perfect E-Ink contrast.")
-                                .font(.caption).foregroundStyle(.secondary)
+                        
+                        Divider().overlay(Color.inkBorderSubtle).padding(.vertical, 4)
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Target Device")
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.inkTextSecondary)
+                            Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
+                                ForEach(TargetDeviceProfile.allCases) { profile in Text(profile.rawValue).tag(profile) }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(.inkBlue)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(Color.inkSurfaceRaised)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
-                    .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
-                    .padding(.horizontal, 32)
+                    
+                    InkCard(header: "Output Quality") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Image Compression")
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.inkTextSecondary)
+                            Picker("Image Quality", selection: $compressionQuality) {
+                                ForEach(CompressionPreset.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                        
+                        Divider().overlay(Color.inkBorderSubtle).padding(.vertical, 4)
+                        
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Liquid E-Ink Filter")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.inkTextPrimary)
+                                Text("Auto-levels, sharpening & gamma for perfect contrast.")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.inkTextSecondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $useLiquidEInk)
+                                .labelsHidden()
+                                .tint(.inkBlue)
+                        }
+                    }
                 }
+                .padding(.horizontal, 16)
                 
                 // MARK: Queue Hub / Convert Button
                 Group {
                     if queueManager.isProcessing || queueManager.activeItem != nil {
-                        // The UI is now handled by the Immersive Overlay on top, 
-                        // but we leave this block here so the view structure is maintained and buttons are disabled.
                         VStack(spacing: 12) {
                             Text("Queue Processing...")
-                                .font(.headline).foregroundStyle(.secondary)
+                                .font(.headline).foregroundStyle(.inkTextSecondary)
                             
                             Button(role: .destructive) { queueManager.cancelAll() } label: {
                                 Text("Cancel Queue").bold()
-                                    .frame(maxWidth: 200).padding(.vertical, 8)
-                                    .background(Color.red.opacity(0.15)).foregroundColor(.red).cornerRadius(10)
+                                    .frame(maxWidth: 200).padding(.vertical, 10)
+                                    .background(Color.inkRed.opacity(0.15)).foregroundColor(.inkRed).cornerRadius(10)
                             }
                         }
-                        .padding(.horizontal, 32)
+                        .padding(.horizontal, 16)
                     } else {
                         Button { startGoConversion() } label: {
-                            Text("Add to Conversion Queue")
-                                .font(.title2).bold()
-                                .frame(maxWidth: 400).padding()
-                                .background(selectedFiles.isEmpty ? Color.blue.opacity(0.5) : Color.blue)
-                                .foregroundColor(.white).cornerRadius(16)
+                            HStack(spacing: 10) {
+                                Image(systemName: "bolt.fill")
+                                Text("Add to Conversion Queue")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(selectedFiles.isEmpty ? Color.inkTextTertiary : Color.inkBlue)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .shadow(color: selectedFiles.isEmpty ? .clear : Color.inkBlue.opacity(0.3), radius: 10, y: 4)
+                            .animation(.easeInOut(duration: 0.2), value: selectedFiles.isEmpty)
                         }
                         .disabled(selectedFiles.isEmpty)
+                        .padding(.horizontal, 16)
                     }
                 }
                 
@@ -240,41 +316,44 @@ struct GoConvertView: View {
                 if !goConvertedFiles.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Label("Ready to Send", systemImage: "checkmark.circle.fill")
-                                .font(.headline).foregroundColor(.green)
+                            Text("READY TO SEND")
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.inkTextSecondary)
                             Spacer()
                             Text("\(goConvertedFiles.count) file\(goConvertedFiles.count == 1 ? "" : "s")")
-                                .font(.caption).foregroundColor(.secondary)
+                                .font(.caption).foregroundColor(.inkTextTertiary)
                         }
-                        .padding(.horizontal, 32)
+                        .padding(.horizontal, 20)
                         
                         ForEach(goConvertedFiles) { pdf in
                             HStack(spacing: 12) {
-                                Image(systemName: "doc.fill").font(.title2).foregroundStyle(.blue).frame(width: 40)
+                                Image(systemName: "doc.fill").font(.title2).foregroundStyle(Theme.blue).frame(width: 32)
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(pdf.name).font(.subheadline).fontWeight(.medium).lineLimit(1)
-                                    Text(pdf.formattedSize).font(.caption).foregroundStyle(.secondary)
+                                    Text(pdf.name).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                                        .foregroundColor(Theme.text)
+                                    Text(pdf.formattedSize).font(.caption).foregroundStyle(Theme.textSecondary)
                                 }
                                 Spacer()
                                 Button {
                                     pdfToRename = pdf
                                     renameText = pdf.url.deletingPathExtension().lastPathComponent
                                 } label: {
-                                    Image(systemName: "pencil").foregroundColor(.secondary)
-                                        .padding(8).background(Color(.tertiarySystemBackground)).cornerRadius(8)
+                                    Image(systemName: "pencil").foregroundColor(Theme.textSecondary)
+                                        .padding(8).background(Theme.surfaceElevated).cornerRadius(8)
                                 }
                                 .buttonStyle(.plain)
                                 ShareLink(item: pdf.url) {
                                     Label("Send", systemImage: "paperplane.fill")
                                         .font(.caption).fontWeight(.semibold)
-                                        .padding(.horizontal, 12).padding(.vertical, 6)
-                                        .background(Color.blue).foregroundColor(.white).cornerRadius(20)
+                                        .padding(.horizontal, 12).padding(.vertical, 8)
+                                        .background(Theme.blue).foregroundColor(.white).cornerRadius(20)
                                 }
                                 .buttonStyle(.plain)
                             }
-                            .padding(.vertical, 10).padding(.horizontal, 16)
-                            .background(Color(.secondarySystemBackground)).cornerRadius(12)
-                            .padding(.horizontal, 32)
+                            .padding(.vertical, 12).padding(.horizontal, 16)
+                            .background(Theme.surface).cornerRadius(12)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                            .padding(.horizontal, 16)
                         }
                         
                         if goConvertedFiles.count > 1 {
@@ -282,17 +361,18 @@ struct GoConvertView: View {
                                 ShareLink(items: goConvertedFiles.map { $0.url }) {
                                     Label("Share All \(goConvertedFiles.count) Files", systemImage: "square.and.arrow.up")
                                         .font(.subheadline).fontWeight(.semibold)
-                                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                        .background(Color.blue.opacity(0.12)).foregroundColor(.blue).cornerRadius(12)
+                                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                                        .background(Theme.blue.opacity(0.12)).foregroundColor(Theme.blue).cornerRadius(12)
                                 }
                                 Button { showingMergeSheet = true } label: {
                                     Label("Merge & Send to Kindle", systemImage: "arrow.triangle.merge")
                                         .font(.subheadline).fontWeight(.semibold)
-                                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                        .background(Color.green).foregroundColor(.white).cornerRadius(12)
+                                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                                        .background(Theme.green).foregroundColor(.white).cornerRadius(12)
                                 }
                             }
-                            .padding(.horizontal, 32)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 4)
                         }
                     }
                     .padding(.vertical, 8)
