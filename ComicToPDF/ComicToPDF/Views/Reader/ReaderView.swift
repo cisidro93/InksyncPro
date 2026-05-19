@@ -1279,7 +1279,7 @@ struct PDFKitView: UIViewRepresentable {
 
 extension View {
     @ViewBuilder func colorInvertIfDark(theme: EBookTheme) -> some View {
-        if theme == .dark || theme == .obsidian {
+        if theme.isDark {
             self.colorInvert().hueRotation(.degrees(180))
         } else { self }
     }
