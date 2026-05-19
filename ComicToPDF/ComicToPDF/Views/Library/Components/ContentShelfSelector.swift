@@ -84,7 +84,6 @@ private struct ShelfTab: View {
                         .overlay(Capsule().stroke(shelf.accentColor.opacity(0.2), lineWidth: 0.5))
                 }
             }
-            }
         }
         .buttonStyle(ShelfTabButtonStyle(isSelected: isSelected))
     }

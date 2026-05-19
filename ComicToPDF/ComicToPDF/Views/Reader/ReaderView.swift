@@ -168,6 +168,27 @@ struct ReaderView: View {
     
     // MARK: - Comic / Manga Reader
     private func comicReaderBody(in geo: GeometryProxy) -> some View {
+        comicReaderContent(in: geo)
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(.leftArrow) {
+                if isMangaMode { nextPage() } else { prevPage() }
+                return .handled
+            }
+            .onKeyPress(.rightArrow) {
+                if isMangaMode { prevPage() } else { nextPage() }
+                return .handled
+            }
+            .onKeyPress(.space) {
+                nextPage()
+                return .handled
+            }
+            .navigationBarHidden(true)
+            .statusBarHidden(!isToolbarVisible)
+    }
+
+    @ViewBuilder
+    private func comicReaderContent(in geo: GeometryProxy) -> some View {
         ZStack {
             if isLoading {
                 CloudAwareLoadingView(pdf: pdf)
@@ -291,22 +312,6 @@ struct ReaderView: View {
                     }
                 }
             }
-            .focusable()
-            .focusEffectDisabled()
-            .onKeyPress(.leftArrow) {
-                if isMangaMode { nextPage() } else { prevPage() }
-                return .handled
-            }
-            .onKeyPress(.rightArrow) {
-                if isMangaMode { prevPage() } else { nextPage() }
-                return .handled
-            }
-            .onKeyPress(.space) {
-                nextPage()
-                return .handled
-            }
-            .navigationBarHidden(true)
-            .statusBarHidden(!isToolbarVisible)
             // ── Bookmark toast HUD ──────────────────────────────────────────
             .overlay(alignment: .bottom) {
                 if showBookmarkToast {

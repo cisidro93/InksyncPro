@@ -1005,7 +1005,6 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
 
     
     // Unified Reader Properties
-    var contentType: ContentType
     var documentSubtype: DocumentSubtype
     var isOnDevice: Bool
     var lastTransferFailed: Bool

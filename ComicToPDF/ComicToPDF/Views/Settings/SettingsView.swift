@@ -155,8 +155,6 @@ struct SettingsView: View {
                     showingAIFeedbackAlert = true
                 }
             }
-                }
-            }
         }
         .confirmationDialog(
             "Purge Zettelkasten Database?",

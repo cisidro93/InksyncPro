@@ -191,7 +191,7 @@ class MigrationService {
     // O(n) in library size. Do NOT call this in a tight per-file loop.
     func syncToSwiftData(pdfs: [ConvertedPDF], collections: [PDFCollection]) {
         let container = InksyncProApp.sharedModelContainer
-        Task.detached(priority: .background) {
+        Task.detached(priority: .background) { () async -> Void in
             do {
                 let context = ModelContext(container)
 
