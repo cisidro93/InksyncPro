@@ -54,17 +54,12 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            if appUIMode == .go {
-                GoConvertView()
+            if sizeClass == .compact || !useSidebar {
+                liquidGlassLayout
                     .transition(.opacity)
             } else {
-                if sizeClass == .compact || !useSidebar {
-                    liquidGlassLayout
-                        .transition(.opacity)
-                } else {
-                    iPadLayout
-                        .transition(.opacity)
-                }
+                iPadLayout
+                    .transition(.opacity)
             }
         }
         .animation(.easeInOut, value: appUIMode)
@@ -317,6 +312,10 @@ struct ContentView: View {
                 NavigationStack { EditorDashboardView() }
                     .tabVisible(selectedTab == 4)
 
+                // Tab 5: Convert (GoConvertView — promoted from Go Mode to permanent tab)
+                GoConvertView()
+                    .tabVisible(selectedTab == 5)
+
                 // Tab 6: Settings
                 NavigationStack { SettingsView() }
                     .tabVisible(selectedTab == 6)
@@ -324,6 +323,7 @@ struct ContentView: View {
                 // Tab 7: Ink Studio (Research + Writing unified)
                 NavigationStack { InkStudioView() }
                     .tabVisible(selectedTab == 7)
+
             }
             // Reserve space at the bottom so content scrolls above the pill.
             // Use a smaller inset in landscape where screen height is precious.
@@ -376,6 +376,9 @@ struct ContentView: View {
                     }
                     NavigationLink(value: 4) {
                         Label("Work Area", systemImage: "scissors")
+                    }
+                    NavigationLink(value: 5) {
+                        Label("Convert", systemImage: "arrow.triangle.2.circlepath")
                     }
                     NavigationLink(value: 7) {
                         HStack {
@@ -441,6 +444,8 @@ struct ContentView: View {
                     DevicesView()
                 } else if selectedTab == 4 {
                     EditorDashboardView()
+                } else if selectedTab == 5 {
+                    GoConvertView()
                 } else if selectedTab == 7 {
                     NavigationStack {
                         InkStudioView()

@@ -437,14 +437,18 @@ struct ModernLibraryView: View {
             disconnectedDrivesBanner
             pendingJobsBanner
 
-            // MARK: - Up Next Binge Shelf
-            UpNextBingeShelf(allPDFs: nativeVisiblePDFs) { pdf in
-                AppRouter.shared.presentFullScreen(.read(pdf))
-            }
 
-            // MARK: - Recently Read Shelf
-            RecentlyReadShelf(pdfs: nativeVisiblePDFs) { pdf in
-                AppRouter.shared.presentFullScreen(.read(pdf))
+            // MARK: - Recently Added compact strip (root, no-filter only)
+            let recentForBanner = Array(nativeVisiblePDFs.suffix(8).reversed())
+            if !recentForBanner.isEmpty
+                && viewModel.currentFolderID == nil
+                && viewModel.debouncedSearchText.isEmpty
+                && viewModel.filterState == .all
+                && viewModel.contentShelf == .all {
+                RecentlyAddedBanner(recent: recentForBanner) { pdf in
+                    AppRouter.shared.presentFullScreen(.read(pdf))
+                }
+                .environmentObject(conversionManager)
             }
 
             // MARK: - Breadcrumb Navigation for Nested Folders

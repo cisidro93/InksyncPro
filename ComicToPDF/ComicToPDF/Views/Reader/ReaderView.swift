@@ -382,6 +382,10 @@ struct ReaderView: View {
                 }
             }
             .task {
+                // Lock orientation to portrait on iPhone to prevent fullScreenCover teardown on rotation
+                if UIDevice.current.userInterfaceIdiom == .phone {
+                    orientationLock.lock(to: .portrait)
+                }
                 await prepareArchive()
                 restorePerBookPreferences()
                 trackProgress(isPageTurn: false)

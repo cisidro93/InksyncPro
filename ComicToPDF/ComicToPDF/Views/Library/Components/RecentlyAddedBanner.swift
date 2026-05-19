@@ -1,10 +1,12 @@
 import SwiftUI
 
 // ============================================================================
-// RecentlyAddedBanner
+// RecentlyAddedBanner  (Compact Strip Edition)
 // ============================================================================
-// Chunky/Panels-style banner showing the last 3-5 additions as large
-// horizontal cards. Card sizes scale for iPhone vs iPad.
+// Was: large 130×195 cover cards — felt like a second full shelf stacked above
+// the grid and dominated the screen on iPhone.
+// Now: slim 88×130 spine-style cards that let the user skim without scrolling,
+// with a tight section header that doesn't compete with the main shelf filter.
 // ============================================================================
 
 struct RecentlyAddedBanner: View {
@@ -12,125 +14,135 @@ struct RecentlyAddedBanner: View {
     let onTap: (ConvertedPDF) -> Void
 
     @Environment(\.horizontalSizeClass) private var hSizeClass
-    private var h: CGFloat { hSizeClass == .regular ? 20 : 16 }
+
+    // Compact dimensions — roughly paperback-spine proportions
+    private var cardW: CGFloat { hSizeClass == .regular ? 100 : 82 }
+    private var cardH: CGFloat { hSizeClass == .regular ? 148 : 122 }
+    private var hPad:  CGFloat { hSizeClass == .regular ? 20  : 16  }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color.purple.gradient)
-                Text("Recently Added")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(Theme.text)
+        VStack(alignment: .leading, spacing: 8) {
+
+            // ── Header ──────────────────────────────────────────────────────
+            HStack(spacing: 6) {
+                Text("RECENTLY ADDED")
+                    .font(.system(size: 11, weight: .black, design: .rounded))
+                    .foregroundColor(Theme.textSecondary)
+                    .tracking(1.1)
                 Spacer()
             }
-            .padding(.horizontal, h)
+            .padding(.horizontal, hPad)
 
+            // ── Compact card strip ───────────────────────────────────────────
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     ForEach(recent) { pdf in
-                        RecentAddedCard(pdf: pdf)
+                        RecentAddedCompactCard(pdf: pdf, cardW: cardW, cardH: cardH)
                             .onTapGesture { onTap(pdf) }
                     }
                 }
-                .padding(.horizontal, h)
-                .padding(.bottom, 4)
+                .padding(.horizontal, hPad)
+                .padding(.bottom, 2)
             }
         }
-        .padding(.top, 4)
-        .padding(.bottom, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
     }
 }
 
-// MARK: - Card
+// MARK: - Compact Card
 
-private struct RecentAddedCard: View {
+private struct RecentAddedCompactCard: View {
     let pdf: ConvertedPDF
-    @EnvironmentObject var conversionManager: ConversionManager
-    @Environment(\.horizontalSizeClass) private var hSizeClass
-    @State private var cover: UIImage? = nil
-    @State private var shimmer = false
+    let cardW: CGFloat
+    let cardH: CGFloat
 
-    private var cardW: CGFloat { hSizeClass == .regular ? 182 : 130 }
-    private var cardH: CGFloat { hSizeClass == .regular ? 273 : 195 }
+    @EnvironmentObject var conversionManager: ConversionManager
+    @State private var cover: UIImage? = nil
+    @GestureState private var isPressed = false
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            ZStack {
-                if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) ?? cover {
+        ZStack(alignment: .bottom) {
+            // ── Cover ──────────────────────────────────────────────────────
+            Group {
+                if let img = conversionManager.thumbnailCache.object(
+                    forKey: pdf.id.uuidString as NSString) ?? cover
+                {
                     Image(uiImage: img)
                         .resizable()
                         .scaledToFill()
                         .clipped()
                 } else {
-                    // Shimmer placeholder
-                    LinearGradient(
-                        colors: shimmer
-                            ? [Theme.surface, Theme.surfaceElevated, Theme.surface]
-                            : [Theme.surfaceElevated, Theme.surface, Theme.surfaceElevated],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    )
-                    .onAppear {
-                        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { shimmer = true }
-                    }
-                }
-
-                // Spine
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [.black.opacity(0.3), .clear], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: 18)
-                    Spacer()
-                }
-
-                // Bottom scrim
-                VStack(spacing: 0) {
-                    Spacer()
-                    LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 80)
+                    compactPlaceholder
                 }
             }
             .frame(width: cardW, height: cardH)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: .black.opacity(0.3), radius: 8, y: 5)
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.1), lineWidth: 0.5))
 
-            // NEW badge + title
-            VStack(alignment: .leading, spacing: 4) {
-                Text("NEW")
-                    .font(.system(size: 8, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
-                    .tracking(0.8)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.purple, in: Capsule())
+            // ── Bottom title scrim ──────────────────────────────────────────
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.75)],
+                startPoint: .center, endPoint: .bottom
+            )
+            .frame(height: cardH * 0.45)
 
-                Text(pdf.name)
-                    .font(.system(size: hSizeClass == .regular ? 13 : 11, weight: .bold))
-                    .foregroundColor(.white)
-                    .lineLimit(2)
-                    .shadow(radius: 3)
-            }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 10)
+            // ── Title ──────────────────────────────────────────────────────
+            Text(pdf.name)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.white)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 5)
+                .padding(.bottom, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(width: cardW, height: cardH)
-        .task(id: pdf.id) {
-            let key = pdf.id.uuidString as NSString
-            if let cached = conversionManager.thumbnailCache.object(forKey: key) { cover = cached; return }
-            guard let url = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: url.path) else { return }
-            let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let opts = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let src = CGImageSourceCreateWithURL(url as CFURL, opts) else { return nil }
-                let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceShouldCacheImmediately: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: 420] as CFDictionary
-                guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
-                return UIImage(cgImage: cg)
-            }.value
-            if let img { conversionManager.thumbnailCache.setObject(img, forKey: key); cover = img }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.22), radius: 4, y: 2)
+        .scaleEffect(isPressed ? 0.95 : 1.0)
+        .animation(.spring(response: 0.22, dampingFraction: 0.7), value: isPressed)
+        .gesture(DragGesture(minimumDistance: 0).updating($isPressed) { _, s, _ in s = true })
+        .task(id: pdf.id) { await loadCover() }
+    }
+
+    @ViewBuilder
+    private var compactPlaceholder: some View {
+        let ext = pdf.fileExtensionString.uppercased()
+        let (c1, c2): (Color, Color) = {
+            switch ext {
+            case "CBZ", "CBR": return (.init(red: 0.15, green: 0.25, blue: 0.6), .init(red: 0.1, green: 0.15, blue: 0.4))
+            case "PDF":        return (.init(red: 0.55, green: 0.13, blue: 0.13), .init(red: 0.4, green: 0.1, blue: 0.1))
+            case "EPUB":       return (.init(red: 0.12, green: 0.45, blue: 0.28), .init(red: 0.08, green: 0.3, blue: 0.18))
+            default:           return (.init(red: 0.22, green: 0.22, blue: 0.28), .init(red: 0.14, green: 0.14, blue: 0.18))
+            }
+        }()
+        LinearGradient(colors: [c1, c2], startPoint: .topLeading, endPoint: .bottomTrailing)
+        Image(systemName: "doc.text.fill")
+            .font(.system(size: 18))
+            .foregroundColor(.white.opacity(0.35))
+    }
+
+    private func loadCover() async {
+        let key = pdf.id.uuidString as NSString
+        if conversionManager.thumbnailCache.object(forKey: key) != nil { return }
+        guard let url = conversionManager.getCoverURL(for: pdf),
+              FileManager.default.fileExists(atPath: url.path) else { return }
+        let img = await Task.detached(priority: .utility) { () -> UIImage? in
+            let opts = [kCGImageSourceShouldCache: false] as CFDictionary
+            guard let src = CGImageSourceCreateWithURL(url as CFURL, opts) else { return nil }
+            let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceShouldCacheImmediately: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 300] as CFDictionary
+            guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
+            return UIImage(cgImage: cg)
+        }.value
+        if let img {
+            conversionManager.thumbnailCache.setObject(img, forKey: key)
+            cover = img
         }
     }
 }

@@ -38,15 +38,18 @@ struct InkTabBar: View {
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @Environment(\.verticalSizeClass) private var vSizeClass
 
+
     private let allTabs: [InkTabItem] = [
         InkTabItem(tag: 0, label: "Library",    icon: "books.vertical",             activeIcon: "books.vertical.fill"),
         InkTabItem(tag: 1, label: "Reader",     icon: "book",                       activeIcon: "book.fill"),
         InkTabItem(tag: 2, label: "Inbox",      icon: "tray",                       activeIcon: "tray.full.fill"),
         InkTabItem(tag: 3, label: "Devices",    icon: "ipad.and.iphone",            activeIcon: "ipad.and.iphone.fill"),
-        InkTabItem(tag: 4, label: "Work Area",  icon: "scissors",                  activeIcon: "scissors.badge.ellipsis"),
-        InkTabItem(tag: 6, label: "Settings",   icon: "gear",                      activeIcon: "gearshape.fill"),
+        InkTabItem(tag: 4, label: "Work Area",  icon: "scissors",                   activeIcon: "scissors.badge.ellipsis"),
+        InkTabItem(tag: 5, label: "Convert",    icon: "arrow.triangle.2.circlepath",activeIcon: "arrow.triangle.2.circlepath.circle.fill"),
+        InkTabItem(tag: 6, label: "Settings",   icon: "gear",                       activeIcon: "gearshape.fill"),
         InkTabItem(tag: 7, label: "Studio",     icon: "pencil.and.list.clipboard",  activeIcon: "pencil.and.list.clipboard"),
     ]
+
 
     // Always show all 7 tabs on every device and orientation
     private var visibleTabs: [InkTabItem] { allTabs }
