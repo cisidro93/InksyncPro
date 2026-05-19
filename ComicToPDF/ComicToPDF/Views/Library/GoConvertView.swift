@@ -324,7 +324,7 @@ struct GoConvertView: View {
             if queueManager.isProcessing || queueManager.activeItem != nil {
                 VStack(spacing: 12) {
                     Text("Queue Processing...")
-                        .font(.headline).foregroundStyle(.inkTextSecondary)
+                        .font(.headline).foregroundColor(Color.inkTextSecondary)
                     Button(role: .destructive) { queueManager.cancelAll() } label: {
                         Text("Cancel Queue").bold()
                             .frame(maxWidth: 200).padding(.vertical, 10)

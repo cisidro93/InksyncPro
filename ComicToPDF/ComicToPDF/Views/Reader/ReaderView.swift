@@ -166,7 +166,6 @@ struct ReaderView: View {
         }
     }
     
-    // MARK: - Comic / Manga Reader
     private func comicReaderBody(in geo: GeometryProxy) -> some View {
         comicReaderContent(in: geo)
             .focusable()
@@ -185,8 +184,204 @@ struct ReaderView: View {
             }
             .navigationBarHidden(true)
             .statusBarHidden(!isToolbarVisible)
+            .overlay(alignment: .bottom) {
+                if showBookmarkToast {
+                    Text(bookmarkToastMessage)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+                        .padding(.bottom, 110)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .overlay { readerChromeOverlay(in: geo) }
+            .task {
+                if UIDevice.current.userInterfaceIdiom == .phone {
+                    orientationLock.lock(to: .portrait)
+                }
+                await prepareArchive()
+                restorePerBookPreferences()
+                trackProgress(isPageTurn: false)
+                let extracted = pages
+                toc = CBZTableOfContents.build(from: extracted)
+            }
+            .onChange(of: pages) {
+                if fileURL.pathExtension.lowercased() != "pdf" {
+                    toc = CBZTableOfContents.build(from: pages)
+                }
+            }
+            .onChange(of: loadedPDFDocument) {
+                if let doc = loadedPDFDocument { toc = buildPDFTOC(from: doc) }
+            }
+            .onChange(of: currentPageIndex) { _, _ in
+                trackProgress(isPageTurn: true)
+                pagesReadThisSession += 1
+                if pagesReadThisSession % 10 == 0, let id = pdf?.id {
+                    let elapsed = Date().timeIntervalSince(sessionStartTime)
+                    ReaderProgressTracker.shared.logPageTurn(pdfID: id, pages: 10, seconds: elapsed)
+                    sessionStartTime = Date()
+                    pagesReadThisSession = 0
+                }
+            }
+            .onChange(of: isMangaMode) { savePerBookPreferences() }
+            .onChange(of: colorFilter) { savePerBookPreferences() }
+            .onChange(of: sleepTimer.didFire) { _, fired in
+                if fired { if let onExit = onExit { onExit() } else { dismiss() } }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_EndOfBookReached"))) { _ in nextPage() }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_BookmarkCurrentPage"))) { note in
+                if let idx = note.userInfo?["pageIndex"] as? Int {
+                    NotificationCenter.default.post(name: NSNotification.Name("BookmarkAdded"),
+                                                    object: nil,
+                                                    userInfo: ["pdfID": pdf?.id as Any, "pageIndex": idx])
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_ShareCurrentPage"))) { note in
+                if let idx = note.userInfo?["pageIndex"] as? Int, idx < pages.count {
+                    Task.detached(priority: .userInitiated) {
+                        if let data = try? Data(contentsOf: pages[idx]),
+                           let img  = UIImage(data: data) {
+                            await MainActor.run { shareImage = img; showShareSheet = true }
+                        }
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                let newOrientation = UIDevice.current.orientation
+                guard newOrientation.isValidInterfaceOrientation else { return }
+                rotationDebounceTask?.cancel()
+                rotationDebounceTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    guard !Task.isCancelled else { return }
+                    withAnimation { deviceOrientation = newOrientation }
+                }
+            }
+            .onDisappear {
+                if let id = pdf?.id, pagesReadThisSession > 0 {
+                    let elapsed = Date().timeIntervalSince(sessionStartTime)
+                    ReaderProgressTracker.shared.logPageTurn(pdfID: id, pages: pagesReadThisSession, seconds: elapsed)
+                }
+                if let dir = unzippedDir { try? FileManager.default.removeItem(at: dir) }
+                orientationLock.unlock()
+                sleepTimer.stop()
+            }
+            .alert("Jump to Page", isPresented: $showJumpToPage) {
+                TextField("Page number (1–\(pages.count))", text: $jumpToPageText).keyboardType(.numberPad)
+                Button("Go") {
+                    if let n = Int(jumpToPageText), n >= 1, n <= pages.count {
+                        let rawIndex = n - 1
+                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                        currentPageIndex = isDual
+                            ? PageBufferManager.canonicalLeadIndex(for: rawIndex, isMangaMode: isMangaMode)
+                            : rawIndex
+                    }
+                    jumpToPageText = ""
+                }
+                Button("Cancel", role: .cancel) { jumpToPageText = "" }
+            } message: { Text("Enter a page number between 1 and \(pages.count).") }
+            .sheet(isPresented: $showTOC) { ReaderTOCSheet(toc: toc, currentPageIndex: $currentPageIndex) }
+            .sheet(isPresented: $showShareSheet) {
+                if let img = shareImage { ShareSheet(activityItems: [img]) }
+            }
+            .sheet(isPresented: $showSleepTimerPicker) { SleepTimerPickerSheet() }
+            .sheet(isPresented: $showSearch) {
+                if let doc = loadedPDFDocument, let pdfV = pdfViewRef {
+                    ReaderSearchView(document: doc, pdfView: pdfV)
+                        .presentationDetents([.medium, .large])
+                }
+            }
+            .sheet(isPresented: $showReaderSettings) {
+                ReaderSettingsSheet(
+                    isMangaMode: $isMangaMode,
+                    isVerticalScroll: $isVerticalScroll,
+                    isDoublePageMode: $isDoublePageMode,
+                    autoLandscapeDualPage: $autoLandscapeDualPage,
+                    autoContrastLevel: $autoContrastLevel,
+                    smartSharpen: $smartSharpen,
+                    isAutoCropEnabled: $isAutoCropEnabled,
+                    colorFilter: $colorFilter,
+                    ambientBrightness: ambientBrightness,
+                    isWebtoonAutoScrolling: $isWebtoonAutoScrolling,
+                    onJumpToPage: { jumpToPageText = ""; showJumpToPage = true },
+                    onTOC: { showTOC = true },
+                    onSleepTimer: { showSleepTimerPicker = true },
+                    onSharePage: { shareCurrentPage() },
+                    onDone: {}
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
     }
 
+    // MARK: - ReaderChrome overlay (extracted to reduce type-check surface)
+    @ViewBuilder
+    private func readerChromeOverlay(in geo: GeometryProxy) -> some View {
+        if !isLoading && errorMessage == nil {
+            let pageText: String = {
+                if pages.isEmpty { return "" }
+                let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                if isDual && currentPageIndex > 0 {
+                    let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
+                    let right = min(lead + 1, pages.count - 1)
+                    return "\(lead + 1)–\(right + 1) / \(pages.count)"
+                }
+                return "\(currentPageIndex + 1) / \(pages.count)"
+            }()
+            let mins = ReaderProgressTracker.shared.progress(for: pdf?.id ?? UUID())?.estimatedMinutesRemaining ?? 0
+            let trText: String? = mins > 0 ? "~\(mins)m left" : nil
+            ReaderChrome(
+                title: fileURL.deletingPathExtension().lastPathComponent,
+                pageText: pageText,
+                timeRemainingText: prefs.progressMode == 2 ? trText : (prefs.progressMode == 1 ? "Chapter \(currentPageIndex + 1)" : nil),
+                onProgressModeToggle: { prefs.progressMode = (prefs.progressMode + 1) % 3 },
+                isVisible: $isToolbarVisible,
+                onBack: { if let onExit = onExit { onExit() } else { dismiss() } },
+                onBookmark: toggleBookmarkWithToast,
+                onBookmarkActive: isBookmarked,
+                onSettingsToggle: { showReaderSettings = true },
+                onTOCToggle: toc.chapters.count > 1 ? { showTOC = true } : nil,
+                currentProgress: Binding(
+                    get: { pages.isEmpty ? 0 : Double(currentPageIndex) / Double(max(1, pages.count - 1)) },
+                    set: { val in
+                        let raw = Int((val * Double(max(1, pages.count - 1))).rounded())
+                        let isDual = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
+                        let snapped = isDual
+                            ? PageBufferManager.canonicalLeadIndex(for: raw, isMangaMode: isMangaMode)
+                            : raw
+                        currentPageIndex = max(0, min(snapped, pages.count - 1))
+                    }
+                ),
+                totalPages: pages.count,
+                customScrubber: pages.isEmpty || isVerticalScroll ? nil : AnyView(
+                    ReaderScrubber(
+                        currentPageIndex: $currentPageIndex,
+                        totalPages: pages.count,
+                        isMangaMode: isMangaMode,
+                        pages: pages
+                    )
+                ),
+                isPDF: fileURL.pathExtension.lowercased() == "pdf",
+                isEnhanced: autoContrastLevel > 1.0 || smartSharpen,
+                onEnhanceToggle: {
+                    if autoContrastLevel > 1.0 || smartSharpen {
+                        autoContrastLevel = 1.0; smartSharpen = false
+                    } else {
+                        autoContrastLevel = 1.5; smartSharpen = true
+                    }
+                    PageBufferManager.shared.render(pageIndex: currentPageIndex, bounds: .zero)
+                },
+                isSettingsActive: showReaderSettings,
+                currentModeLabel: isMangaMode ? "MANGA" : (isVerticalScroll ? "WEBTOON" : nil),
+                ambientColor: ambientPageColor
+            )
+        }
+    }
+
+    // MARK: - Comic / Manga Reader Content
     @ViewBuilder
     private func comicReaderContent(in geo: GeometryProxy) -> some View {
         ZStack {
@@ -312,228 +507,9 @@ struct ReaderView: View {
                     }
                 }
             }
-            // ── Bookmark toast HUD ──────────────────────────────────────────
-            .overlay(alignment: .bottom) {
-                if showBookmarkToast {
-                    Text(bookmarkToastMessage)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
-                        .padding(.bottom, 110)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-            // ── ReaderChrome (unified top + bottom chrome) ─────────────────
-            .overlay {
-                if !isLoading && errorMessage == nil {
-                    let pageText: String = {
-                        if pages.isEmpty { return "" }
-                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
-                        if isDual && currentPageIndex > 0 {
-                            let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-                            let right = min(lead + 1, pages.count - 1)
-                            return "\(lead + 1)–\(right + 1) / \(pages.count)"
-                        }
-                        return "\(currentPageIndex + 1) / \(pages.count)"
-                    }()
-
-                    let mins = ReaderProgressTracker.shared.progress(for: pdf?.id ?? UUID())?.estimatedMinutesRemaining ?? 0
-                    let trText = mins > 0 ? "~\(mins)m left" : nil
-
-                    ReaderChrome(
-                        title: fileURL.deletingPathExtension().lastPathComponent,
-                        pageText: pageText,
-                        timeRemainingText: prefs.progressMode == 2 ? trText : (prefs.progressMode == 1 ? "Chapter \(currentPageIndex + 1)" : nil),
-                        onProgressModeToggle: { prefs.progressMode = (prefs.progressMode + 1) % 3 },
-                        isVisible: $isToolbarVisible,
-                        onBack: { if let onExit = onExit { onExit() } else { dismiss() } },
-                        onBookmark: toggleBookmarkWithToast,
-                        onBookmarkActive: isBookmarked,
-                        onSettingsToggle: { showReaderSettings = true },
-                        onTOCToggle: toc.chapters.count > 1 ? { showTOC = true } : nil,
-                        currentProgress: Binding(
-                            get: { pages.isEmpty ? 0 : Double(currentPageIndex) / Double(max(1, pages.count - 1)) },
-                            set: { val in
-                                let raw = Int((val * Double(max(1, pages.count - 1))).rounded())
-                                let isDual = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
-                                let snapped = isDual
-                                    ? PageBufferManager.canonicalLeadIndex(for: raw, isMangaMode: isMangaMode)
-                                    : raw
-                                currentPageIndex = max(0, min(snapped, pages.count - 1))
-                            }
-                        ),
-                        totalPages: pages.count,
-                        customScrubber: pages.isEmpty || isVerticalScroll ? nil : AnyView(
-                            ReaderScrubber(
-                                currentPageIndex: $currentPageIndex,
-                                totalPages: pages.count,
-                                isMangaMode: isMangaMode,
-                                pages: pages
-                            )
-                        ),
-                        isPDF: fileURL.pathExtension.lowercased() == "pdf",
-                        isEnhanced: autoContrastLevel > 1.0 || smartSharpen,
-                        onEnhanceToggle: {
-                            if autoContrastLevel > 1.0 || smartSharpen {
-                                autoContrastLevel = 1.0; smartSharpen = false
-                            } else {
-                                autoContrastLevel = 1.5; smartSharpen = true
-                            }
-                            PageBufferManager.shared.render(pageIndex: currentPageIndex, bounds: .zero)
-                        },
-                        isSettingsActive: showReaderSettings,
-                        currentModeLabel: isMangaMode ? "MANGA" : (isVerticalScroll ? "WEBTOON" : nil),
-                        ambientColor: ambientPageColor
-                    )
-                }
-            }
-            .task {
-                // Lock orientation to portrait on iPhone to prevent fullScreenCover teardown on rotation
-                if UIDevice.current.userInterfaceIdiom == .phone {
-                    orientationLock.lock(to: .portrait)
-                }
-                await prepareArchive()
-                restorePerBookPreferences()
-                trackProgress(isPageTurn: false)
-                // Build TOC from extracted pages
-                let extracted = pages
-                toc = CBZTableOfContents.build(from: extracted)
-            }
-            .onChange(of: pages) {
-                // If we're a PDF and we have a loaded document, don't overwrite TOC with the empty file URLs
-                if fileURL.pathExtension.lowercased() != "pdf" {
-                    toc = CBZTableOfContents.build(from: pages)
-                }
-            }
-            .onChange(of: loadedPDFDocument) {
-                if let doc = loadedPDFDocument {
-                    toc = buildPDFTOC(from: doc)
-                }
-            }
-            .onChange(of: currentPageIndex) { _, _ in
-                trackProgress(isPageTurn: true)
-                pagesReadThisSession += 1
-                // Periodic velocity flush every 10 page turns
-                if pagesReadThisSession % 10 == 0, let id = pdf?.id {
-                    let elapsed = Date().timeIntervalSince(sessionStartTime)
-                    ReaderProgressTracker.shared.logPageTurn(pdfID: id, pages: 10, seconds: elapsed)
-                    sessionStartTime = Date()
-                    pagesReadThisSession = 0
-                }
-            }
-            .onChange(of: isMangaMode) { savePerBookPreferences() }
-            .onChange(of: colorFilter) { savePerBookPreferences() }
-            .onChange(of: sleepTimer.didFire) { _, fired in
-                if fired { if let onExit = onExit { onExit() } else { dismiss() } }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_EndOfBookReached"))) { _ in
-                nextPage()
-            }
-            // Context menu bridge from PPLReaderView
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_BookmarkCurrentPage"))) { note in
-                if let idx = note.userInfo?["pageIndex"] as? Int {
-                    Logger.shared.log("Bookmarking page \(idx + 1)", category: "ReaderView")
-                    // Delegate to the bookmark engine
-                    NotificationCenter.default.post(name: NSNotification.Name("BookmarkAdded"),
-                                                    object: nil,
-                                                    userInfo: ["pdfID": pdf?.id as Any, "pageIndex": idx])
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_ShareCurrentPage"))) { note in
-                if let idx = note.userInfo?["pageIndex"] as? Int, idx < pages.count {
-                    Task.detached(priority: .userInitiated) {
-                        if let data = try? Data(contentsOf: pages[idx]),
-                           let img  = UIImage(data: data) {
-                            await MainActor.run { shareImage = img; showShareSheet = true }
-                        }
-                    }
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-                let newOrientation = UIDevice.current.orientation
-                guard newOrientation.isValidInterfaceOrientation else { return }
-                
-                rotationDebounceTask?.cancel()
-                rotationDebounceTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 200_000_000) // 200ms debounce
-                    guard !Task.isCancelled else { return }
-                    withAnimation {
-                        deviceOrientation = newOrientation
-                    }
-                }
-            }
-            .onDisappear {
-                // Flush final velocity event
-                if let id = pdf?.id, pagesReadThisSession > 0 {
-                    let elapsed = Date().timeIntervalSince(sessionStartTime)
-                    ReaderProgressTracker.shared.logPageTurn(pdfID: id, pages: pagesReadThisSession, seconds: elapsed)
-                }
-                if let dir = unzippedDir {
-                    try? FileManager.default.removeItem(at: dir)
-                }
-                orientationLock.unlock()
-                sleepTimer.stop()
-            }
-            .alert("Jump to Page", isPresented: $showJumpToPage) {
-                TextField("Page number (1–\(pages.count))", text: $jumpToPageText)
-                    .keyboardType(.numberPad)
-                Button("Go") {
-                    if let n = Int(jumpToPageText), n >= 1, n <= pages.count {
-                        let rawIndex = n - 1
-                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
-                        // Snap to canonical spread lead so parity is maintained
-                        currentPageIndex = isDual
-                            ? PageBufferManager.canonicalLeadIndex(for: rawIndex, isMangaMode: isMangaMode)
-                            : rawIndex
-                    }
-                    jumpToPageText = ""
-                }
-                Button("Cancel", role: .cancel) { jumpToPageText = "" }
-            } message: {
-                Text("Enter a page number between 1 and \(pages.count).")
-            }
-            .sheet(isPresented: $showTOC) {
-                ReaderTOCSheet(toc: toc, currentPageIndex: $currentPageIndex)
-            }
-            .sheet(isPresented: $showShareSheet) {
-                if let img = shareImage {
-                    ShareSheet(activityItems: [img])
-                }
-            }
-            .sheet(isPresented: $showSleepTimerPicker) { SleepTimerPickerSheet() }
-            .sheet(isPresented: $showSearch) {
-                if let doc = loadedPDFDocument, let pdfV = pdfViewRef {
-                    ReaderSearchView(document: doc, pdfView: pdfV)
-                        .presentationDetents([.medium, .large])
-                }
-            }
-            .sheet(isPresented: $showReaderSettings) {
-                ReaderSettingsSheet(
-                    isMangaMode: $isMangaMode,
-                    isVerticalScroll: $isVerticalScroll,
-                    isDoublePageMode: $isDoublePageMode,
-                    autoLandscapeDualPage: $autoLandscapeDualPage,
-                    autoContrastLevel: $autoContrastLevel,
-                    smartSharpen: $smartSharpen,
-                    isAutoCropEnabled: $isAutoCropEnabled,
-                    colorFilter: $colorFilter,
-                    ambientBrightness: ambientBrightness,
-                    isWebtoonAutoScrolling: $isWebtoonAutoScrolling,
-                    onJumpToPage: { jumpToPageText = ""; showJumpToPage = true },
-                    onTOC: { showTOC = true },
-                    onSleepTimer: { showSleepTimerPicker = true },
-                    onSharePage: { shareCurrentPage() },
-                    onDone: {}
-                )
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-            }
+        }
     }
-    
+
     // MARK: - Top Bar removed — now rendered by ReaderChrome overlay above
     // All chrome logic lives in ReaderChrome.swift (top capsule + bottom card).
 
