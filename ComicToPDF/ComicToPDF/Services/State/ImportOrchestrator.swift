@@ -7,31 +7,7 @@ actor ImportOrchestrator {
     static let shared = ImportOrchestrator()
     private init() {}
     
-    // âœ… NEW: Unified Reader Format Heuristics
-    private func hasComicIndicators(url: URL) -> Bool {
-        let name = url.lastPathComponent.lowercased()
-        let comicKeywords = ["vol", "issue", "chapter", "ch", "#", "manga", "tankobon"]
-        for keyword in comicKeywords {
-            if name.contains(keyword) { return true }
-        }
-        return false
-    }
-    
-    private func detectContentKind(url: URL) -> ContentKind {
-        let ext = url.pathExtension.lowercased()
-        switch ext {
-        case "epub", "mobi":
-            return .book
-        case "pdf":
-            if hasComicIndicators(url: url) { return .comic }
-            return .document
-        case "cbz", "cbr", "cb7", "cbt":
-            return .comic
-        default:
-            return .document
-        }
-    }
-    
+
     private func detectDocumentSubtype(url: URL, fileSize: Int64) -> DocumentSubtype {
         let name = url.lastPathComponent.lowercased()
         let isLargeFile = fileSize > 10 * 1024 * 1024
@@ -166,8 +142,7 @@ actor ImportOrchestrator {
                         metadata: smartMetadata,
                         contentType: cType
                     )
-                    pdf.contentKind = await self.detectContentKind(url: destURL)
-                    if pdf.contentKind == .document {
+                    if pdf.contentType == .hybrid || pdf.contentType == .book {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                     }
                     batchFileNames.insert(fileName)
@@ -342,8 +317,7 @@ actor ImportOrchestrator {
                         metadata: smartMetadata,
                         contentType: cType
                     )
-                    pdf.contentKind = await self.detectContentKind(url: destURL)
-                    if pdf.contentKind == .document {
+                    if pdf.contentType == .hybrid || pdf.contentType == .book {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                     }
                     // When the vault is unlocked the user has opted-in to their privacy vault;
@@ -626,8 +600,7 @@ actor ImportOrchestrator {
                                 metadata: metadata,
                                 contentType: cType
                             )
-                            pdf.contentKind = await self.detectContentKind(url: destURL)
-                            if pdf.contentKind == .document {
+                            if pdf.contentType == .hybrid || pdf.contentType == .book {
                                 pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                             }
                             newlyImported.append(pdf)
@@ -825,8 +798,7 @@ actor ImportOrchestrator {
                 pageCount: extractedCount, fileSize: fileSize,
                 metadata: PDFMetadata(title: fileName), contentType: contentType
             )
-            newPDF.contentKind = self.detectContentKind(url: cbzURL)
-            if newPDF.contentKind == .document {
+            if newPDF.contentType == .hybrid || newPDF.contentType == .book {
                 newPDF.documentSubtype = self.detectDocumentSubtype(url: cbzURL, fileSize: fileSize)
             }
             

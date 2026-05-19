@@ -664,8 +664,13 @@ struct EBookWebReader: UIViewRepresentable {
             ? "overflow: hidden !important;"
             : "overflow-x: hidden !important; overflow-y: auto !important;"
         let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
+        
+        let deviceIsPad = UIDevice.current.userInterfaceIdiom == .pad
+        let defaultColumns = deviceIsPad ? 2 : 1
+        let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+        
         let pagedCSS = isPaged ? """
-            column-width: calc(100vw - \(margin * 2)px) !important;
+            column-count: \(cols) !important;
             column-gap: \(margin * 2)px !important;
             column-fill: auto !important;
         """ : ""

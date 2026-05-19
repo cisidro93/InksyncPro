@@ -8,12 +8,12 @@ struct UnifiedReaderView: View {
         ZStack {
             Color(hex: "#0a0a0f").edgesIgnoringSafeArea(.all)
             
-            switch pdf.contentKind {
-            case .comic:
+            switch pdf.contentType {
+            case .comic, .manga:
                 ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() })
             case .book:
                 BookReaderEngine(pdf: pdf, onDismiss: { dismiss() })
-            case .document:
+            case .hybrid:
                 DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
             }
         }

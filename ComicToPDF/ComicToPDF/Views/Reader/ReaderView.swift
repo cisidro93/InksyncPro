@@ -336,9 +336,14 @@ struct ReaderView: View {
                         return "\(currentPageIndex + 1) / \(pages.count)"
                     }()
 
+                    let mins = ReaderProgressTracker.shared.progress(for: pdf?.id ?? UUID())?.estimatedMinutesRemaining ?? 0
+                    let trText = mins > 0 ? "~\(mins)m left" : nil
+
                     ReaderChrome(
                         title: fileURL.deletingPathExtension().lastPathComponent,
                         pageText: pageText,
+                        timeRemainingText: prefs.progressMode == 2 ? trText : (prefs.progressMode == 1 ? "Chapter \(currentPageIndex + 1)" : nil),
+                        onProgressModeToggle: { prefs.progressMode = (prefs.progressMode + 1) % 3 },
                         isVisible: $isToolbarVisible,
                         onBack: { if let onExit = onExit { onExit() } else { dismiss() } },
                         onBookmark: toggleBookmarkWithToast,

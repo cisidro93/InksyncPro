@@ -68,19 +68,34 @@ struct MediaDetailSheet: View {
                         HStack(spacing: 8) {
                             Text(pdf.contentType.rawValue.uppercased())
                                 .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 4)
-                                .background(pdf.contentType.badgeColor.opacity(0.2))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(.ultraThinMaterial)
                                 .foregroundColor(pdf.contentType.badgeColor)
                                 .clipShape(Capsule())
                                 
                             Text(pdf.formattedSize)
                                 .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 4)
-                                .background(Color.white.opacity(0.1))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(.ultraThinMaterial)
                                 .foregroundColor(.white)
                                 .clipShape(Capsule())
+                                
+                            // Add Time Left Pill here if there's progress!
+                            if let prog = ReaderProgressTracker.shared.progress(for: pdf.id), let mins = prog.estimatedMinutesRemaining, mins > 0 {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "timer")
+                                        .font(.system(size: 9, weight: .bold))
+                                    Text("\(mins)m")
+                                        .font(.system(size: 10, weight: .bold))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(.ultraThinMaterial)
+                                .foregroundColor(Color.orange)
+                                .clipShape(Capsule())
+                            }
                         }
                     }
                     .padding(.top, 4)
@@ -241,7 +256,28 @@ struct MediaDetailSheet: View {
             }
             .padding(.bottom, 40)
         }
-        .background(Color(red: 20/255, green: 20/255, blue: 22/255).ignoresSafeArea())
+        .background(
+            ZStack {
+                Color(red: 20/255, green: 20/255, blue: 22/255).ignoresSafeArea()
+                if let img = self.coverImage ?? conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
+                    GeometryReader { geo in
+                        Image(uiImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geo.size.width, height: geo.size.height * 0.45)
+                            .blur(radius: 40)
+                            .opacity(0.6)
+                            .clipped()
+                            .overlay(
+                                LinearGradient(
+                                    colors: [Color.clear, Color(red: 20/255, green: 20/255, blue: 22/255)],
+                                    startPoint: .top, endPoint: .bottom
+                                )
+                            )
+                    }.ignoresSafeArea(edges: .top)
+                }
+            }
+        )
     }
     
     // MARK: - Components

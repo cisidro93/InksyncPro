@@ -18,12 +18,12 @@ struct ActiveReaderDashboardView: View {
     }
     
     var activeHero: (progress: ReadingProgress, pdf: ConvertedPDF)? {
-        recentPDFs.first
+        recentPDFs.first(where: { $0.progress.completionFraction < 0.98 })
     }
     
     var shelfItems: [(progress: ReadingProgress, pdf: ConvertedPDF)] {
-        guard recentPDFs.count > 1 else { return [] }
-        return Array(recentPDFs.dropFirst().prefix(10))
+        let heroID = activeHero?.pdf.id
+        return recentPDFs.filter { $0.pdf.id != heroID }.prefix(10).map { $0 }
     }
     
     var body: some View {
@@ -129,14 +129,14 @@ struct ActiveReaderDashboardView: View {
                 
                 // Progress Bar
                 VStack(alignment: .leading, spacing: 4) {
-                    let pct = progress.completionFraction
+                    let pct = max(0.0, min(1.0, progress.completionFraction))
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color.primary.opacity(0.1)).frame(height: 6)
                             Capsule().fill(
                                 LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .leading, endPoint: .trailing)
                             )
-                            .frame(width: geo.size.width * CGFloat(pct), height: 6)
+                            .frame(width: max(0, geo.size.width * CGFloat(pct)), height: 6)
                         }
                     }
                     .frame(height: 6)

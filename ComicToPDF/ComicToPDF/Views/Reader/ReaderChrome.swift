@@ -31,6 +31,10 @@ struct ReaderChrome: View {
     @Binding var currentProgress: Double
     let totalPages: Int
     var customScrubber: AnyView? = nil
+    
+    // Progress Intelligence
+    var timeRemainingText: String? = nil
+    var onProgressModeToggle: (() -> Void)? = nil
 
     // TTS
     var hasTTS: Bool = false
@@ -198,13 +202,26 @@ struct ReaderChrome: View {
 
                 Spacer()
 
-                // Page counter — centred and prominent
-                Text(pageText)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white)
+                // Page counter / Time Left — centred and prominent
+                Button {
+                    onProgressModeToggle?()
+                    HapticEngine.light()
+                } label: {
+                    VStack(spacing: 2) {
+                        Text(pageText)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
+                        if let tr = timeRemainingText {
+                            Text(tr)
+                                .font(.system(size: 9, weight: .medium, design: .rounded))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                    }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
                     .background(Color.white.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
 
                 Spacer()
 

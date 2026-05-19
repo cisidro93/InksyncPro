@@ -58,16 +58,12 @@ struct InkStudioView: View {
             // ── Content — both views stay alive ──────────────────────────
             ZStack {
                 // Research segment (Zettelkasten Hub)
-                NavigationStack {
-                    GlobalZettelkastenHubView()
-                }
-                .studioVisible(mode == .research)
+                GlobalZettelkastenHubView()
+                    .studioVisible(mode == .research)
 
                 // Writing segment (Manuscript Projects)
-                NavigationStack {
-                    ManuscriptProjectsListView()
-                }
-                .studioVisible(mode == .writing)
+                ManuscriptProjectsListView()
+                    .studioVisible(mode == .writing)
             }
         }
         .background(Color.inkBackground.ignoresSafeArea())

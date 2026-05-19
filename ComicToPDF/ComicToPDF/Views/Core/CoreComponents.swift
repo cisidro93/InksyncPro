@@ -335,7 +335,7 @@ struct SplashScreenView: View {
                             .scaleEffect(logoScale)
                             .opacity(logoOpacity)
                         
-                        Text("InkSync Pro")
+                        Text("InksyncPro")
                             .font(.title)
                             .fontWeight(.bold)
                             .foregroundColor(.white)

@@ -28,7 +28,7 @@ struct LibraryGridItem: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        if pdf.contentKind == .book {
+                        if pdf.contentType == .book {
                             Image(systemName: "book.fill")
                                 .font(.system(size: 14))
                                 .foregroundColor(.white)
@@ -36,7 +36,7 @@ struct LibraryGridItem: View {
                                 .background(Color.black.opacity(0.7))
                                 .clipShape(Circle())
                                 .padding(6)
-                        } else if pdf.contentKind == .document {
+                        } else if pdf.contentType == .hybrid {
                             Image(systemName: "doc.fill")
                                 .font(.system(size: 14))
                                 .foregroundColor(.white)
@@ -116,7 +116,7 @@ struct LibraryPDFRowWithCover: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        if pdf.contentKind == .book {
+                        if pdf.contentType == .book {
                             Image(systemName: "book.fill")
                                 .font(.system(size: 10))
                                 .foregroundColor(.white)
@@ -124,7 +124,7 @@ struct LibraryPDFRowWithCover: View {
                                 .background(Color.black.opacity(0.7))
                                 .clipShape(Circle())
                                 .padding(2)
-                        } else if pdf.contentKind == .document {
+                        } else if pdf.contentType == .hybrid {
                             Image(systemName: "doc.fill")
                                 .font(.system(size: 10))
                                 .foregroundColor(.white)

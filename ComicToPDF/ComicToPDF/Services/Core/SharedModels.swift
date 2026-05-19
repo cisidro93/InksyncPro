@@ -54,12 +54,6 @@ enum ContentType: String, Codable, CaseIterable {
     }
 }
 
-// âœ… NEW: Unified Reader Content Kinds
-enum ContentKind: String, Codable {
-    case comic       // CBZ, CBR, CB7, CBT
-    case book        // EPUB, MOBI
-    case document    // PDF
-}
 
 enum DocumentSubtype: String, Codable {
     case researchPaper
@@ -143,7 +137,6 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     var addedByMode: AppUIMode = .pro // âœ… NEW: Track source UI mode
     
     // âœ… NEW: Unified Reader Properties
-    var contentKind: ContentKind = .comic
     var documentSubtype: DocumentSubtype = .unknown
     var isOnDevice: Bool = false
     var lastTransferFailed: Bool = false
@@ -189,12 +182,6 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         self.contentType = contentType
         self.chapters = chapters
         self.addedByMode = addedByMode
-        // Derive contentKind from contentType so library icons and EPUB routing are correct.
-        switch contentType {
-        case .book:            self.contentKind = .book
-        case .comic, .manga:   self.contentKind = .comic
-        case .hybrid:          self.contentKind = .document
-        }
         self.documentSubtype = .unknown
         self.isOnDevice = false
         self.lastTransferFailed = false
@@ -1018,7 +1005,7 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
 
     
     // Unified Reader Properties
-    var contentKind: ContentKind
+    var contentType: ContentType
     var documentSubtype: DocumentSubtype
     var isOnDevice: Bool
     var lastTransferFailed: Bool
@@ -1051,7 +1038,7 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         self.addedByMode = addedByMode
         
         self.lastModified = Date()
-        self.contentKind = .comic
+        self.contentType = .comic
         self.documentSubtype = .unknown
         self.isOnDevice = false
         self.lastTransferFailed = false
@@ -1066,7 +1053,7 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         pdf.contentType = self.contentType
         pdf.chapters = self.chapters
         pdf.addedByMode = self.addedByMode
-        pdf.contentKind = self.contentKind
+        pdf.contentType = self.contentType
         pdf.documentSubtype = self.documentSubtype
         pdf.isOnDevice = self.isOnDevice
         pdf.lastTransferFailed = self.lastTransferFailed

@@ -44,8 +44,6 @@ private struct ShelfTab: View {
     let isSelected: Bool
     let onTap: () -> Void
 
-    @State private var isPressed = false
-
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 7) {
@@ -86,15 +84,19 @@ private struct ShelfTab: View {
                         .overlay(Capsule().stroke(shelf.accentColor.opacity(0.2), lineWidth: 0.5))
                 }
             }
-            .scaleEffect(isPressed ? 0.96 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
-            .animation(.spring(response: 0.32, dampingFraction: 0.75), value: isSelected)
+            }
         }
-        .buttonStyle(PlainButtonStyle())
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in isPressed = false }
-        )
+        .buttonStyle(ShelfTabButtonStyle(isSelected: isSelected))
+    }
+}
+
+private struct ShelfTabButtonStyle: ButtonStyle {
+    let isSelected: Bool
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
+            .animation(.spring(response: 0.32, dampingFraction: 0.75), value: isSelected)
     }
 }

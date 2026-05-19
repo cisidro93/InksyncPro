@@ -96,7 +96,11 @@ struct LibraryGridView: View {
                             }
                             if !inProgress.isEmpty {
                                 ContinueReadingShelf(inProgress: Array(inProgress.prefix(10))) { pdf in
-                                    selectedPDF = pdf
+                                    if tapAction == .read {
+                                        onAction(.read, pdf)
+                                    } else {
+                                        onAction(.details, pdf)
+                                    }
                                 }
                                 .environmentObject(conversionManager)
                                 Divider().background(Theme.text.opacity(0.06)).padding(.horizontal, 16)
@@ -110,7 +114,11 @@ struct LibraryGridView: View {
                             let recentPDFs = Array(allPDFs.sorted { $0.lastModified > $1.lastModified }.prefix(5))
                             if allPDFs.count >= 5 && inProgress.isEmpty {
                                 RecentlyAddedBanner(recent: recentPDFs) { pdf in
-                                    selectedPDF = pdf
+                                    if tapAction == .read {
+                                        onAction(.read, pdf)
+                                    } else {
+                                        onAction(.details, pdf)
+                                    }
                                 }
                                 .environmentObject(conversionManager)
                                 Divider().background(Theme.text.opacity(0.06)).padding(.horizontal, 16)

@@ -401,8 +401,7 @@ struct EPUBWebView: UIViewRepresentable {
                     padding-right: 0 !important;
                     margin: 0 !important;
                     
-                    \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "" : "column-width: 100vw !important;")
-                    \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "" : "column-gap: 0 !important;")
+                    \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "" : (prefs.columnCount == 2 ? "column-width: calc(50vw - 30px) !important; column-gap: 60px !important;" : (prefs.columnCount == 1 ? "column-width: 100vw !important; column-gap: 0 !important;" : "column-width: 100vw !important; column-gap: 0 !important;")))
                     
                     /* Typography enhancements */
                     text-align: \(prefs.textAlign) !important;
@@ -415,6 +414,14 @@ struct EPUBWebView: UIViewRepresentable {
                         color: \(prefs.activeTheme.cssText(colorScheme: .dark)) !important;
                     }
                 }
+                \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue || prefs.columnCount != 0 ? "" : """
+                @media (min-width: 768px) and (orientation: landscape) {
+                    body {
+                        column-width: calc(50vw - 30px) !important;
+                        column-gap: 60px !important;
+                    }
+                }
+                """)
                 .content-container {
                     padding-left: \(prefs.textMargin)px !important;
                     padding-right: \(prefs.textMargin)px !important;

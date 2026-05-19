@@ -498,6 +498,41 @@ struct EBookSettingsPanel: View {
                     displayFormat: { String(format: "%.1fem", $0) }
                 )
             }
+            
+            // Columns
+            ReaderSettingsSection(title: "Columns", icon: "columns") {
+                HStack(spacing: 10) {
+                    ForEach([0, 1, 2], id: \.self) { cols in
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                prefs.columnCount = cols
+                            }
+                        } label: {
+                            VStack(spacing: 6) {
+                                Image(systemName: cols == 0 ? "wand.and.stars" : (cols == 1 ? "rectangle.portrait" : "rectangle.split.2x1"))
+                                    .font(.system(size: 18, weight: .medium))
+                                Text(cols == 0 ? "Auto" : (cols == 1 ? "Single" : "Double"))
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .foregroundStyle(prefs.columnCount == cols ? Color.orange : Color.inkTextSecondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(prefs.columnCount == cols ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(prefs.columnCount == cols ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .animation(.spring(response: 0.25, dampingFraction: 0.75), value: prefs.columnCount)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
 
             // Pagination
             ReaderSettingsSection(title: "Pagination", icon: "book.pages") {

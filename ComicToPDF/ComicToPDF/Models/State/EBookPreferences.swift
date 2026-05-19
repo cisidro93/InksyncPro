@@ -41,6 +41,7 @@ class EBookPreferences: ObservableObject {
 
     // MARK: - Reading Mode
     @AppStorage("ebook_pagination")     var paginationMode: String = EBookPaginationMode.paged.rawValue
+    @AppStorage("ebook_columns")        var columnCount: Int       = 0 // 0 = Auto, 1 = Single, 2 = Double
 
     // MARK: - Reader Features
     @AppStorage("ebook_readingRuler")   var showReadingRuler: Bool  = false
@@ -80,6 +81,7 @@ class EBookPreferences: ObservableObject {
         textMargin      = profile.textMargin
         paragraphIndent = profile.paragraphIndent
         paragraphSpacing = profile.paragraphSpacing
+        columnCount     = profile.columnCount ?? 0
     }
 
     /// Save all current typography settings for a specific book.
@@ -95,7 +97,8 @@ class EBookPreferences: ObservableObject {
             hyphenation:      hyphenation,
             textMargin:       textMargin,
             paragraphIndent:  paragraphIndent,
-            paragraphSpacing: paragraphSpacing
+            paragraphSpacing: paragraphSpacing,
+            columnCount:      columnCount
         )
         bookTypographyProfiles = profiles
     }
@@ -123,6 +126,7 @@ struct BookTypographyProfile: Codable {
     var textMargin: Double
     var paragraphIndent: Double
     var paragraphSpacing: Double
+    var columnCount: Int?
 }
 
 // MARK: - Theme Engine

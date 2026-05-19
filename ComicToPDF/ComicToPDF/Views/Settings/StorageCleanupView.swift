@@ -93,7 +93,7 @@ struct StorageCleanupView: View {
                 .foregroundColor(.green)
             Text("Sandbox is Clean")
                 .font(.title3.bold())
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
             Text("No reclaimable files found.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
@@ -110,7 +110,7 @@ struct StorageCleanupView: View {
                         .foregroundColor(.secondary)
                     Text(cleanupManager.formattedSize(cleanupManager.totalReclaimableBytes))
                         .font(.title3.bold())
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                 }
                 Spacer()
                 if !selectedItems.isEmpty {
@@ -121,7 +121,7 @@ struct StorageCleanupView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color(white: 0.07))
+            .background(Color(.secondarySystemBackground))
 
             List {
                 ForEach(CleanupCategory.allCases, id: \.self) { category in
@@ -151,10 +151,10 @@ struct StorageCleanupView: View {
                                     }) {
                                         Text(allSelected ? "Deselect All" : "Select All")
                                             .font(.caption.bold())
-                                            .foregroundColor(allSelected ? .secondary : .white)
+                                            .foregroundColor(allSelected ? .secondary : .primary)
                                             .padding(.horizontal, 10)
                                             .padding(.vertical, 4)
-                                            .background(allSelected ? Color.secondary.opacity(0.2) : Color.blue)
+                                            .background(allSelected ? Color.secondary.opacity(0.2) : Color.blue.opacity(0.2))
                                             .clipShape(Capsule())
                                     }
                                 }
@@ -176,18 +176,11 @@ struct StorageCleanupView: View {
             Image(systemName: selectedItems.contains(item.id) ? "checkmark.circle.fill" : "circle")
                 .foregroundColor(selectedItems.contains(item.id) ? .blue : .secondary)
                 .frame(width: 24)
-                .onTapGesture {
-                    if selectedItems.contains(item.id) {
-                        selectedItems.remove(item.id)
-                    } else {
-                        selectedItems.insert(item.id)
-                    }
-                }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.displayName)
                     .font(.subheadline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .lineLimit(1)
                 Text(cleanupManager.formattedSize(item.fileSizeBytes))
                     .font(.caption2)
@@ -195,7 +188,7 @@ struct StorageCleanupView: View {
             }
             Spacer()
         }
-        .listRowBackground(Color(white: 0.1))
+        .listRowBackground(Color(.systemBackground))
         .contentShape(Rectangle())
         .onTapGesture {
             if selectedItems.contains(item.id) {

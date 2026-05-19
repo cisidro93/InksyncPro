@@ -142,12 +142,14 @@ struct SplitStudyWorkspace: View {
     
     @ViewBuilder
     private func notebookPane(geo: GeometryProxy, fraction: Double, axis: Axis) -> some View {
-        panelContent
-            .frame(
-                width: axis == .horizontal ? geo.size.width * fraction - 8 : geo.size.width,
-                height: axis == .vertical ? geo.size.height * fraction - 8 : geo.size.height
-            )
-            .transition(.opacity)
+        NavigationStack {
+            panelContent
+        }
+        .frame(
+            width: axis == .horizontal ? geo.size.width * fraction - 8 : geo.size.width,
+            height: axis == .vertical ? geo.size.height * fraction - 8 : geo.size.height
+        )
+        .transition(.opacity)
     }
     
     @ViewBuilder
@@ -206,6 +208,7 @@ struct SplitStudyWorkspace: View {
     
     private var floatingProToolbar: some View {
         VStack {
+            Spacer()
             HStack {
                 Spacer()
                 
@@ -280,10 +283,9 @@ struct SplitStudyWorkspace: View {
                     Capsule()
                         .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
                 )
-                .padding(.top, 110)
-                .padding(.trailing, 20)
+                .padding(.bottom, 24)
+                .padding(.trailing, 24)
             }
-            Spacer()
         }
     }
     

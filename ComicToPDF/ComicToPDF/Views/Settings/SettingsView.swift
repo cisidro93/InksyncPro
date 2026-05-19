@@ -40,6 +40,9 @@ struct SettingsView: View {
     @State private var showingAIFeedbackAlert = false
     @State private var aiFeedbackTitle = ""
     @State private var aiFeedbackMessage = ""
+    
+    // Danger Zone state
+    @State private var showingZettelkastenPurgeConfirm = false
 
     // ComicVine API key verification state
     @State private var isVerifying = false
@@ -115,6 +118,7 @@ struct SettingsView: View {
             integrationsSection
             systemSection
             legalSection
+            dangerZoneSection
         }
         .navigationTitle("Preferences")
         .toolbar {
@@ -151,8 +155,29 @@ struct SettingsView: View {
                     showingAIFeedbackAlert = true
                 }
             }
+                }
+            }
         }
-
+        .confirmationDialog(
+            "Purge Zettelkasten Database?",
+            isPresented: $showingZettelkastenPurgeConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Purge Everything", role: .destructive) {
+                if let context = try? InksyncProApp.sharedModelContainer.mainContext {
+                    let descriptor = FetchDescriptor<SDAnnotation>()
+                    if let annotations = try? context.fetch(descriptor) {
+                        for ann in annotations {
+                            context.delete(ann)
+                        }
+                        try? context.save()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete all highlights, notes, and Readwise imports. This action cannot be undone.")
+        }
     }
     
     // MARK: - Extracted Sections
@@ -701,23 +726,6 @@ struct SettingsView: View {
                 }
             }
             
-            Button(action: {
-                if let context = try? InksyncProApp.sharedModelContainer.mainContext {
-                    let descriptor = FetchDescriptor<SDAnnotation>()
-                    if let annotations = try? context.fetch(descriptor) {
-                        for ann in annotations {
-                            context.delete(ann)
-                        }
-                        try? context.save()
-                    }
-                }
-            }) {
-                HStack {
-                    settingsIcon("flame.fill", color: .red)
-                    Text("Purge Zettelkasten Database").foregroundColor(.red)
-                }
-            }
-            
             NavigationLink(destination: HelpCenterView()) {
                 HStack {
                     settingsIcon("questionmark.circle.fill", color: .blue)
@@ -773,6 +781,25 @@ struct SettingsView: View {
                 }
             }
         } header: { Text("Legal") }
+    }
+    
+    @ViewBuilder
+    private var dangerZoneSection: some View {
+        Section {
+            Button(action: {
+                showingZettelkastenPurgeConfirm = true
+            }) {
+                HStack {
+                    settingsIcon("flame.fill", color: .red)
+                    Text("Purge Zettelkasten Database")
+                        .foregroundColor(.red)
+                        .fontWeight(.semibold)
+                }
+            }
+        } header: {
+            Text("Danger Zone")
+                .foregroundColor(.red)
+        }
     }
 
     private func importAIProfile(_ url: URL) {
