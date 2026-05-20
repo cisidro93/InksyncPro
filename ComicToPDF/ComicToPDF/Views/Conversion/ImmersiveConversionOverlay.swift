@@ -42,14 +42,9 @@ public struct ImmersiveConversionOverlay: View {
             Color.black.opacity(0.85)
                 .ignoresSafeArea()
             
-            // Pulsing background glow
-            Circle()
-                .fill(LinearGradient(colors: [Theme.blue.opacity(0.4), Color.purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 300, height: 300)
-                .blur(radius: 80)
-                .scaleEffect(pulseIntensity)
-                .animation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true), value: pulseIntensity)
-                .onAppear { pulseIntensity = 1.2 }
+            // Pulsing neural background glow
+            NeuralExpressiveBackground()
+                .opacity(0.55)
             
             VStack(spacing: 40) {
                 // Animated rings
@@ -100,6 +95,10 @@ public struct ImmersiveConversionOverlay: View {
                         .font(.title3.monospacedDigit())
                         .foregroundColor(.white.opacity(0.8))
                         .padding(.top, 8)
+
+                    NeuralWaveformView(speed: 1.6, primaryColor: Color.inkBlue, secondaryColor: Color.inkViolet)
+                        .frame(height: 32)
+                        .padding(.horizontal, 40)
                 }
                 
                 // Detailed sub-status if available

@@ -294,6 +294,20 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private func destinationSheet(for item: LibrarySheetDestination) -> some View {
         switch item {
+        case .inbox:
+            NavigationStack {
+                InboxReviewView()
+                    .environmentObject(conversionManager)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                AppRouter.shared.dismissSheet()
+                            }
+                            .foregroundColor(.inkBlue)
+                        }
+                    }
+            }
+            
         case .stats: ReadingStatsView()
 
         case .smartListImporter: SmartListImporterView().environmentObject(conversionManager)
@@ -450,6 +464,13 @@ struct ModernLibraryView: View {
             disconnectedDrivesBanner
             pendingJobsBanner
 
+            if viewModel.currentFolderID == nil
+                && viewModel.debouncedSearchText.isEmpty
+                && viewModel.filterState == .all
+                && viewModel.contentShelf == .all {
+                dailyBriefCard
+            }
+
 
             // MARK: - Recently Added compact strip (root, no-filter only)
             let recentForBanner = Array(nativeVisiblePDFs.suffix(8).reversed())
@@ -509,6 +530,171 @@ struct ModernLibraryView: View {
         }
     }
 
+    private var reviewCount: Int {
+        conversionManager.convertedPDFs.filter { (pdf: ConvertedPDF) -> Bool in
+            let seriesEmpty = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+            let authorEmpty = pdf.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+            let titleEmpty = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return seriesEmpty || authorEmpty || titleEmpty
+        }.count
+    }
+
+    @ViewBuilder
+    private var dailyBriefCard: some View {
+        let greetingText: String = {
+            let hour = Calendar.current.component(.hour, from: Date())
+            if hour < 12 { return "Good morning" }
+            else if hour < 17 { return "Good afternoon" }
+            else { return "Good evening" }
+        }()
+
+        VStack(alignment: .leading, spacing: 14) {
+            // Header with Greeting and Neural Glow indicator
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(greetingText.uppercased())
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.inkBlue, Color.inkViolet],
+                                startPoint: .leading, endPoint: .trailing
+                            )
+                        )
+                        .tracking(1.5)
+                    
+                    Text("Your Library Brief")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(Color.inkTextPrimary)
+                }
+                Spacer()
+                
+                // Active status pulse
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(jobQueue.jobs.isEmpty ? Color.inkGreen : Color.inkBlue)
+                        .frame(width: 8, height: 8)
+                    Text(jobQueue.jobs.isEmpty ? "Engine Idle" : "Converting")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(Color.inkTextSecondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.inkBackground.opacity(0.4))
+                .clipShape(Capsule())
+            }
+
+            // Summary Stats Cards (2 Columns)
+            HStack(spacing: 12) {
+                // Col 1: Total Books
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Total Books")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color.inkTextSecondary)
+                    Text("\(conversionManager.convertedPDFs.count)")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundColor(Color.inkTextPrimary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color.inkBackground.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                // Col 2: Metadata Review
+                let reviewNum = reviewCount
+                Button {
+                    AppRouter.shared.presentSheet(.inbox)
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Metadata Tasks")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Color.inkTextSecondary)
+                        HStack(spacing: 4) {
+                            Text("\(reviewNum)")
+                                .font(.system(size: 22, weight: .bold, design: .rounded))
+                                .foregroundColor(reviewNum > 0 ? Color.inkAmber : Color.inkTextPrimary)
+                            if reviewNum > 0 {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(Color.inkAmber)
+                            }
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color.inkBackground.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            // Active conversions preview / smart hint
+            if !jobQueue.jobs.isEmpty {
+                HStack(spacing: 10) {
+                    NeuralWaveformView(speed: 1.6, primaryColor: Color.inkBlue, secondaryColor: Color.inkViolet)
+                        .frame(width: 64, height: 28)
+                    Text("Processing \(jobQueue.jobs.count) file\(jobQueue.jobs.count > 1 ? "s" : "")...")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color.inkTextSecondary)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.inkBlue.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else if reviewCount > 0 {
+                Button {
+                    AppRouter.shared.presentSheet(.inbox)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                        Text("Review & Auto-Match Metadata")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.inkBlue, Color.inkViolet],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(18)
+        .background(
+            ZStack {
+                // Breathing background aura leaked behind glass
+                NeuralExpressiveBackground()
+                    .opacity(0.12)
+                Color.inkSurface.opacity(0.65)
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.15), Color.white.opacity(0.05)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 16, y: 8)
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
+    }
+
     // MARK: - Disconnected Drives Banner
 
     @ViewBuilder
@@ -564,42 +750,53 @@ struct ModernLibraryView: View {
 
     @ViewBuilder
     private func pendingJobRow(job: ConversionJob) -> some View {
-        HStack {
-            Image(systemName: jobBannerIcon(job))
-                .foregroundColor(jobBannerColor(job))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(job.targetFileName)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                Text(jobBannerMessage(job))
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.8))
-            }
-            Spacer()
-            if job.status == .suspended || job.status == .failed {
-                Button(job.status == .failed ? "Retry" : "Resume") {
-                    retryOrResumeJob(job)
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: jobBannerIcon(job))
+                    .foregroundColor(jobBannerColor(job))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(job.targetFileName)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(Color.inkTextPrimary)
+                        .lineLimit(1)
+                    Text(jobBannerMessage(job))
+                        .font(.system(size: 12))
+                        .foregroundColor(Color.inkTextSecondary)
                 }
-                .font(.caption.bold())
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(jobBannerColor(job))
-                .clipShape(Capsule())
+                Spacer()
+                if job.status == .suspended || job.status == .failed {
+                    Button(job.status == .failed ? "Retry" : "Resume") {
+                        retryOrResumeJob(job)
+                    }
+                    .font(.caption.bold())
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(jobBannerColor(job))
+                    .clipShape(Capsule())
+                }
+                Button {
+                    jobQueue.removeJob(pdfID: job.pdfID)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(Color.inkTextTertiary)
+                        .font(.title3)
+                }
             }
-            Button {
-                jobQueue.removeJob(pdfID: job.pdfID)
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.white.opacity(0.5))
-                    .font(.title3)
+
+            if job.status == .extracting || job.status == .merging || job.status == .waitingForDownload {
+                NeuralWaveformView(speed: 1.5, primaryColor: Color.inkBlue, secondaryColor: Color.inkViolet)
+                    .frame(height: 24)
+                    .padding(.top, 4)
             }
         }
         .padding()
-        .background(jobBannerColor(job).opacity(0.2))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(jobBannerColor(job).opacity(0.4), lineWidth: 1))
-        .cornerRadius(12)
+        .background(Color.inkSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(job.status == .failed ? Color.inkRed.opacity(0.3) : Color.inkBorderSubtle, lineWidth: 1)
+        )
     }
 
     private func retryOrResumeJob(_ job: ConversionJob) {

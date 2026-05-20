@@ -62,18 +62,10 @@ struct ModernEmptyState: View {
 
             // Illustrated icon with ambient glow
             ZStack {
-                // Ambient glow blob
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            gradient: Gradient(colors: [Theme.orange.opacity(0.35), Theme.purple.opacity(0.15), .clear]),
-                            center: .center,
-                            startRadius: 20,
-                            endRadius: 72
-                        )
-                    )
+                // Ambient neural glow blob
+                NeuralExpressiveBackground()
                     .frame(width: 144, height: 144)
-                    .blur(radius: 24)
+                    .clipShape(Circle())
 
                 // Icon card
                 RoundedRectangle(cornerRadius: 28, style: .continuous)

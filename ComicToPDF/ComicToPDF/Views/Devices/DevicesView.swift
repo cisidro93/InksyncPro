@@ -155,17 +155,10 @@ struct DevicesView: View {
         VStack(spacing: 0) {
             // Glowing Orb Empty State
             ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            gradient: Gradient(colors: [Color.inkBlue.opacity(0.35), Color.inkViolet.opacity(0.15), .clear]),
-                            center: .center,
-                            startRadius: 20,
-                            endRadius: 72
-                        )
-                    )
+                // Ambient neural glow blob
+                NeuralExpressiveBackground()
                     .frame(width: 144, height: 144)
-                    .blur(radius: 24)
+                    .clipShape(Circle())
 
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .fill(.ultraThinMaterial)

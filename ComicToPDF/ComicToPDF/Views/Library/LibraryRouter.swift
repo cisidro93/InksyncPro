@@ -17,6 +17,7 @@ enum LibrarySheetDestination: Identifiable {
     case seriesAssignment(ConvertedPDF?, isBatch: Bool, selection: [ConvertedPDF])
     case stats
     case convert(ConvertedPDF)
+    case inbox
     
     var id: String {
         switch self {
@@ -36,6 +37,7 @@ enum LibrarySheetDestination: Identifiable {
         case .seriesAssignment(let p, let batch, _): return "series_\(p?.id.uuidString ?? "batch_\(batch)")"
         case .stats: return "stats"
         case .convert(let p): return "convert_\(p.id)"
+        case .inbox: return "inbox"
         }
     }
 }
