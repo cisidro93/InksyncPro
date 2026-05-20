@@ -69,7 +69,7 @@ struct CloudFileBrowserView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 8)
             }
-            .background(Color.inkSurface)
+            .background(Color.inkSurface.opacity(0.4))
 
             Divider()
 
@@ -87,6 +87,9 @@ struct CloudFileBrowserView: View {
                     fileRow(file)
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
+                .listRowBackground(Color.inkSurface.opacity(0.4))
             }
         }
     }
@@ -549,6 +552,9 @@ struct CloudBrowserPickerView: View {
                         provider: .googleDrive
                     )
                 }
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
+                .listRowBackground(Color.inkSurface.opacity(0.4))
                 .navigationTitle("Select Cloud Account")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

@@ -78,9 +78,7 @@ struct ActiveReaderDashboardView: View {
                 }
             }
         }
-        .background(Color.inkBackground.ignoresSafeArea())
-        .navigationTitle("Reading")
-        .navigationBarTitleDisplayMode(.inline)
+        .background(Color.clear)
         .fullScreenCover(item: $pdfToRead) { pdf in
              if pdf.contentType == .book {
                  SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)

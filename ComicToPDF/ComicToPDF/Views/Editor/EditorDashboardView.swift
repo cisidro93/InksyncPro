@@ -19,7 +19,7 @@ struct EditorDashboardView: View {
     
     var body: some View {
         ZStack {
-            Color.inkBackground.ignoresSafeArea()
+            Color.clear.ignoresSafeArea()
 
             if filteredPDFs.isEmpty {
                 VStack(spacing: 20) {

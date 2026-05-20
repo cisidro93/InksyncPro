@@ -24,7 +24,7 @@ struct StorageCleanupView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(UIColor.systemBackground).ignoresSafeArea()
+                Color.clear.ignoresSafeArea()
 
                 if cleanupManager.isScanning {
                     scanningView
@@ -167,6 +167,8 @@ struct StorageCleanupView: View {
                 }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
         }
     }
 
@@ -188,7 +190,7 @@ struct StorageCleanupView: View {
             }
             Spacer()
         }
-        .listRowBackground(Color(.systemBackground))
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .contentShape(Rectangle())
         .onTapGesture {
             if selectedItems.contains(item.id) {

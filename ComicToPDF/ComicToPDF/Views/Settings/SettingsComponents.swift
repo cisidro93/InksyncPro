@@ -16,6 +16,9 @@ struct AdvancedOptionsView: View {
                 Text("Panel Processing")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Advanced Options")
     }
 }
@@ -41,6 +44,9 @@ struct ConversionPresetsView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Presets")
         .toolbar {
             Button { showingAddPreset = true } label: { Image(systemName: "plus") }
@@ -66,6 +72,9 @@ struct StorageManagerView: View {
                 Text("Loading...")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .onAppear {
             storageInfo = conversionManager.calculateStorageInfo()
         }
@@ -136,6 +145,9 @@ struct SendHistoryView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Send History")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

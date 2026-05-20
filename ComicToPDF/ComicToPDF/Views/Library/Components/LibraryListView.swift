@@ -35,7 +35,7 @@ struct LibraryListView: View {
                             } label: {
                                 ModernSeriesRow(group: group, isSelected: group.issues.allSatisfy { multiSelection.contains($0.id) }, isBatch: true)
                             }
-                            .listRowBackground(Theme.bg)
+                            .listRowBackground(Color.inkSurface.opacity(0.4))
                             .listRowSeparatorTint(Color(UIColor.separator))
                         } else {
                             if let folderUUID = UUID(uuidString: group.id) {
@@ -46,7 +46,7 @@ struct LibraryListView: View {
                                 } label: {
                                     ModernSeriesRow(group: group, isSelected: false, isBatch: false)
                                 }
-                                .listRowBackground(Theme.bg)
+                                .listRowBackground(Color.inkSurface.opacity(0.4))
                                 .listRowSeparatorTint(Color(UIColor.separator))
                                 .contextMenu {
                                     Button {
@@ -87,7 +87,7 @@ struct LibraryListView: View {
                                 NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
                                     ModernSeriesRow(group: group, isSelected: false, isBatch: false)
                                 }
-                                .listRowBackground(Theme.bg)
+                                .listRowBackground(Color.inkSurface.opacity(0.4))
                                 .listRowSeparatorTint(Color(UIColor.separator))
                                 .contextMenu {
                                     Button {
@@ -160,7 +160,7 @@ struct LibraryListView: View {
                              } label: {
                                  ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
                              }
-                             .listRowBackground(Theme.bg)
+                             .listRowBackground(Color.inkSurface.opacity(0.4))
                              .listRowSeparatorTint(Color(UIColor.separator))
                         } else {
                             // ── Cloud files: always open the detail sheet.
@@ -172,7 +172,7 @@ struct LibraryListView: View {
                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                                 }
                                 .tag(pdf)
-                                .listRowBackground(Theme.bg)
+                                .listRowBackground(Color.inkSurface.opacity(0.4))
                                 .listRowSeparatorTint(Color(UIColor.separator))
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button {
@@ -200,7 +200,7 @@ struct LibraryListView: View {
                                 } label: {
                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                                 }
-                                .listRowBackground(Theme.bg)
+                                .listRowBackground(Color.inkSurface.opacity(0.4))
                                 .listRowSeparatorTint(Color(UIColor.separator))
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button {
@@ -227,7 +227,7 @@ struct LibraryListView: View {
                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                                 }
                                 .tag(pdf)
-                                .listRowBackground(Theme.bg)
+                                .listRowBackground(Color.inkSurface.opacity(0.4))
                                 .listRowSeparatorTint(Color(UIColor.separator))
                                 // ✅ Comic Zeal Swipe Selection Action (Swipe Left)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -274,7 +274,7 @@ struct LibraryListView: View {
                             .padding(.vertical, 2)
                         }
                         .disabled(!isConnected)
-                        .listRowBackground(Theme.bg)
+                        .listRowBackground(Color.inkSurface.opacity(0.4))
                         .listRowSeparatorTint(Color(UIColor.separator))
                         .contextMenu {
                             if isConnected {
@@ -287,7 +287,8 @@ struct LibraryListView: View {
                 }
             } // end List
             .listStyle(.plain)
-            .background(Theme.bg)
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
             .overlay(alignment: .trailing) {
                 // ✅ PHASE 10: Comic Zeal Feature Restored
                 ComicZealScrubber { letter in

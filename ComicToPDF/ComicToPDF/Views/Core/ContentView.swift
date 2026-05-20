@@ -175,7 +175,7 @@ struct ContentView: View {
                             }
                             
                             await MainActor.run {
-                                self.selectedTab = 2 // Switch to Inbox Tab
+                                self.selectedTab = 1 // Switch to Workspace Tab
                             }
                         }
                     }
@@ -268,6 +268,8 @@ struct ContentView: View {
     // ✅ iOS + iPad Layout — Pure Custom Tab Router (NO TabView = NO native tab bar)
     var liquidGlassLayout: some View {
         ZStack(alignment: .bottom) {
+            // Neural Backdrop
+            NeuralExpressiveBackground()
 
             // ── Content Layer ──────────────────────────────────────────────────
             // Each child stays alive (preserves scroll position / nav stack) but
@@ -296,34 +298,17 @@ struct ContentView: View {
                 }
                 .tabVisible(selectedTab == 0)
 
-                // Tab 1: Reader Dashboard
-                NavigationStack { ActiveReaderDashboardView() }
+                // Tab 1: Workspace (Inbox, Convert, Focus Editor)
+                WorkspaceView()
                     .tabVisible(selectedTab == 1)
 
-                // Tab 2: Inbox
-                NavigationStack { InboxReviewView() }
+                // Tab 2: Studio (Reader, Writing Research)
+                InkStudioView()
                     .tabVisible(selectedTab == 2)
 
-                // Tab 3: Devices
+                // Tab 3: Devices & Settings
                 DevicesView()
                     .tabVisible(selectedTab == 3)
-
-                // Tab 4: Work Area
-                NavigationStack { EditorDashboardView() }
-                    .tabVisible(selectedTab == 4)
-
-                // Tab 5: Convert (GoConvertView — promoted from Go Mode to permanent tab)
-                GoConvertView()
-                    .tabVisible(selectedTab == 5)
-
-                // Tab 6: Settings
-                NavigationStack { SettingsView() }
-                    .tabVisible(selectedTab == 6)
-
-                // Tab 7: Ink Studio (Research + Writing unified)
-                NavigationStack { InkStudioView() }
-                    .tabVisible(selectedTab == 7)
-
             }
             // Reserve space at the bottom so content scrolls above the pill.
             // Use a smaller inset in landscape where screen height is precious.
@@ -366,21 +351,9 @@ struct ContentView: View {
                         Label("Library", systemImage: "books.vertical.fill")
                     }
                     NavigationLink(value: 1) {
-                        Label("Reader", systemImage: "book.fill")
+                        Label("Workspace", systemImage: "briefcase.fill")
                     }
                     NavigationLink(value: 2) {
-                        Label("Inbox", systemImage: "tray.full.fill")
-                    }
-                    NavigationLink(value: 3) {
-                        Label("Devices", systemImage: "ipad.and.iphone")
-                    }
-                    NavigationLink(value: 4) {
-                        Label("Work Area", systemImage: "scissors")
-                    }
-                    NavigationLink(value: 5) {
-                        Label("Convert", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    NavigationLink(value: 7) {
                         HStack {
                             Label("Studio", systemImage: "pencil.and.list.clipboard")
                             Spacer()
@@ -393,6 +366,9 @@ struct ContentView: View {
                                     .background(Color(hex: "#7B5EA7"), in: Capsule())
                             }
                         }
+                    }
+                    NavigationLink(value: 3) {
+                        Label("Devices", systemImage: "ipad.and.iphone")
                     }
                 }
                 .navigationTitle("Inksync")
@@ -437,19 +413,11 @@ struct ContentView: View {
                         if let pdf = selectedPDF { ConvertView(pdf: pdf) }
                     }
                 } else if selectedTab == 1 {
-                    ActiveReaderDashboardView()
+                    WorkspaceView()
                 } else if selectedTab == 2 {
-                    InboxReviewView()
+                    InkStudioView()
                 } else if selectedTab == 3 {
                     DevicesView()
-                } else if selectedTab == 4 {
-                    EditorDashboardView()
-                } else if selectedTab == 5 {
-                    GoConvertView()
-                } else if selectedTab == 7 {
-                    NavigationStack {
-                        InkStudioView()
-                    }
                 }
             }
             // ✅ iPad Settings Inspector

@@ -15,7 +15,7 @@ struct InboxReviewView: View {
     
     var body: some View {
         ZStack {
-            Color.inkBackground.ignoresSafeArea()
+            Color.clear.ignoresSafeArea()
             
             if reviewItems.isEmpty {
                 VStack(spacing: 0) {

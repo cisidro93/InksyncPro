@@ -269,6 +269,9 @@ struct WiFiView: View {
                 progressSection
                 alternativeTransferSection
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
+            .listRowBackground(Color.inkSurface.opacity(0.4))
             .navigationTitle("Transfer Files")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {

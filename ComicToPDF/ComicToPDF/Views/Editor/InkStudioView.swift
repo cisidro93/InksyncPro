@@ -4,17 +4,20 @@ import SwiftData
 // MARK: - Studio Mode
 
 enum StudioMode: String, CaseIterable {
+    case reading  = "Reading"
     case research = "Research"
     case writing  = "Writing"
 
     var icon: String {
         switch self {
+        case .reading:  return "book"
         case .research: return "text.badge.star"
         case .writing:  return "note.text"
         }
     }
     var activeIcon: String {
         switch self {
+        case .reading:  return "book.fill"
         case .research: return "text.badge.star"
         case .writing:  return "note.text.badge.plus"
         }
@@ -22,6 +25,7 @@ enum StudioMode: String, CaseIterable {
     // Accent colour matching each section's existing design language
     var tint: Color {
         switch self {
+        case .reading:  return Color.inkAmber
         case .research: return Color(hex: "#7B5EA7")  // Zettelkasten violet
         case .writing:  return Color.inkAccentKnowledge
         }
@@ -30,17 +34,16 @@ enum StudioMode: String, CaseIterable {
 
 // MARK: - Ink Studio View
 
-/// Unified creative-work hub that merges the Research (Zettelkasten / Highlights)
+/// Unified creative-work hub that merges the Reading (Active Reader), Research (Zettelkasten / Highlights)
 /// and Writing (Manuscript Studio) experiences into one cohesive tab.
 ///
 /// Architecture:
 ///  - A thin shell with a frosted segmented picker at the top.
 ///  - Both child views are kept **live in the hierarchy** using `.studioVisible()`
 ///    so no scroll position or navigation state is lost on segment switch.
-///  - Zero changes to the underlying GlobalZettelkastenHubView or
-///    ManuscriptProjectsListView — they are inserted as-is.
+///  - Zero changes to the underlying views — they are inserted as-is.
 struct InkStudioView: View {
-    @State private var mode: StudioMode = .writing
+    @State private var mode: StudioMode = .reading
     @Query private var allAnnotations: [SDAnnotation]
 
     var body: some View {
@@ -55,8 +58,12 @@ struct InkStudioView: View {
             Divider()
                 .background(Color.inkBorderVisible)
 
-            // ── Content — both views stay alive ──────────────────────────
+            // ── Content — all views stay alive ──────────────────────────
             ZStack {
+                // Reading segment (Active Reader Dashboard)
+                ActiveReaderDashboardView()
+                    .studioVisible(mode == .reading)
+
                 // Research segment (Zettelkasten Hub)
                 GlobalZettelkastenHubView()
                     .studioVisible(mode == .research)
@@ -66,7 +73,7 @@ struct InkStudioView: View {
                     .studioVisible(mode == .writing)
             }
         }
-        .background(Color.inkBackground.ignoresSafeArea())
+        .background(Color.clear)
     }
 
     // MARK: - Segment Picker

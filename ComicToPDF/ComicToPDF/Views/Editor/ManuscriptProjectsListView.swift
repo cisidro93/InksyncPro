@@ -13,7 +13,7 @@ struct ManuscriptProjectsListView: View {
 
     var body: some View {
         ZStack {
-            Color.inkBackground.ignoresSafeArea()
+            Color.clear.ignoresSafeArea()
 
             if projects.isEmpty {
                 emptyState

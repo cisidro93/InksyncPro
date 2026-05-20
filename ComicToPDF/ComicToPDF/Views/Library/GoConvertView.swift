@@ -154,20 +154,16 @@ struct GoConvertView: View {
     }
     
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    dropZone
-                    settingsCards
-                    convertButton
-                    if !goConvertedFiles.isEmpty { readyToSendPanel }
-                    Spacer(minLength: 40)
-                }
+        ScrollView {
+            VStack(spacing: 24) {
+                dropZone
+                settingsCards
+                convertButton
+                if !goConvertedFiles.isEmpty { readyToSendPanel }
+                Spacer(minLength: 40)
             }
-            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 80) }
-            .navigationTitle("Go Convert")
-            .navigationBarTitleDisplayMode(.large)
         }
+        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 80) }
         .overlay {
             if queueManager.isProcessing, let activeItem = queueManager.activeItem {
                 ImmersiveConversionOverlay(

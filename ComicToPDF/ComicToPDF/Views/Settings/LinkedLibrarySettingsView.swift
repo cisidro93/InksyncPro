@@ -127,6 +127,9 @@ struct LinkedLibrarySettingsView: View {
                 .padding(.vertical, 4)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Linked Library")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

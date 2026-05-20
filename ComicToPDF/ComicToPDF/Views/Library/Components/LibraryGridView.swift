@@ -33,7 +33,7 @@ struct LibraryDragPayload: Codable, Transferable {
 
     /// Init for dragging an entire series group.
     init(seriesGroup: SeriesGroup) {
-        self.pdfID = seriesGroup.coverIssueID ?? seriesGroup.issues.first!.id
+        self.pdfID = seriesGroup.coverIssueID ?? seriesGroup.issues.first?.id ?? UUID()
         self.currentSeriesName = seriesGroup.title
         self.seriesGroupTitle = seriesGroup.title
         self.issueIDs = seriesGroup.issues.map(\.id)
@@ -106,23 +106,7 @@ struct LibraryGridView: View {
                                 Divider().background(Theme.text.opacity(0.06)).padding(.horizontal, 16)
                             }
 
-                            // ── Recently Added banner ──────────────────────
-                            let allPDFs: [ConvertedPDF] = items.compactMap {
-                                if case .single(let pdf) = $0 { return pdf }
-                                return nil
-                            }
-                            let recentPDFs = Array(allPDFs.sorted { $0.lastModified > $1.lastModified }.prefix(5))
-                            if allPDFs.count >= 5 && inProgress.isEmpty {
-                                RecentlyAddedBanner(recent: recentPDFs) { pdf in
-                                    if tapAction == .read {
-                                        onAction(.read, pdf)
-                                    } else {
-                                        onAction(.details, pdf)
-                                    }
-                                }
-                                .environmentObject(conversionManager)
-                                Divider().background(Theme.text.opacity(0.06)).padding(.horizontal, 16)
-                            }
+                            // Recently Added banner removed to declutter workspace
 
                             // ── Main grid ─────────────────────────────────
                             let hPad: CGFloat = hSizeClass == .regular ? 20 : 16
@@ -150,7 +134,7 @@ struct LibraryGridView: View {
                         }
                     }
                     .inkTabBarScrollDetect()
-                    .background(Theme.bg)
+                    .background(Color.clear)
                     .overlay(alignment: .trailing) {
                         ComicZealScrubber { letter in
                             if let targetID = firstItemId(for: letter) {

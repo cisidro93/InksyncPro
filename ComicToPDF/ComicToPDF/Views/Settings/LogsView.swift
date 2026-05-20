@@ -116,7 +116,7 @@ struct LogsView: View {
                     .font(.caption)
             }
             .padding()
-            .background(Color.inkSurface)
+            .background(Color.inkSurface.opacity(0.4))
             
             Divider()
             
@@ -178,9 +178,11 @@ struct LogsView: View {
                         }
                     }
                 }
-                .listRowBackground(entry.type == .error ? Color.red.opacity(0.05) : nil)
+                .listRowBackground(entry.type == .error ? Color.red.opacity(0.15) : Color.inkSurface.opacity(0.4))
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
         }
     }
     

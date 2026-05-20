@@ -1,6 +1,30 @@
 import SwiftUI
 import SwiftData
 
+enum DevicesMode: String, CaseIterable {
+    case sync = "Devices"
+    case settings = "Settings"
+
+    var icon: String {
+        switch self {
+        case .sync: return "ipad.and.iphone"
+        case .settings: return "gearshape"
+        }
+    }
+    var activeIcon: String {
+        switch self {
+        case .sync: return "ipad.and.iphone.fill"
+        case .settings: return "gearshape.fill"
+        }
+    }
+    var tint: Color {
+        switch self {
+        case .sync: return Color.inkBlue
+        case .settings: return Color(hex: "#7B5EA7")
+        }
+    }
+}
+
 struct DevicesView: View {
     @EnvironmentObject var manager: ConversionManager
     @EnvironmentObject var peerManager: PeerManager
@@ -11,105 +35,177 @@ struct DevicesView: View {
     @State private var selectedDeviceID: UUID?
     
     @Query(sort: \SDRegisteredDevice.name) private var savedDevices: [SDRegisteredDevice]
+    
+    @State private var mode: DevicesMode = .sync
 
     var body: some View {
-        if hSizeClass == .regular {
-            iPadDevicesLayout
-        } else {
-            iPhoneDevicesLayout
-        }
-    }
-
-    private var iPhoneDevicesLayout: some View {
-        NavigationStack {
-            deviceContent
-                .navigationTitle("Devices")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            showAddDevice = true
-                        } label: {
-                            Image(systemName: "plus")
+        VStack(spacing: 0) {
+            // ── Segmented Control ──────────────────────────────
+            devicesSegmentPicker
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+            
+            Divider()
+                .background(Color.inkBorderVisible)
+            
+            ZStack {
+                if mode == .sync {
+                    if hSizeClass == .regular {
+                        NavigationSplitView {
+                            deviceContent
+                                .navigationTitle("Devices")
+                                .toolbar {
+                                    ToolbarItem(placement: .navigationBarTrailing) {
+                                        Button {
+                                            showAddDevice = true
+                                        } label: {
+                                            Image(systemName: "plus")
+                                        }
+                                        .foregroundColor(.inkBlue)
+                                    }
+                                }
+                        } detail: {
+                            deviceDetailPanel
                         }
-                        .foregroundColor(.inkBlue)
-                    }
-                }
-                .sheet(isPresented: $showAddDevice) {
-                    AddDeviceSheet()
-                        .environmentObject(manager)
-                }
-                .onAppear(perform: handleAppear)
-        }
-    }
-
-    private var iPadDevicesLayout: some View {
-        NavigationSplitView {
-            deviceContent
-                .navigationTitle("Devices")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            showAddDevice = true
-                        } label: {
-                            Image(systemName: "plus")
+                    } else {
+                        NavigationStack {
+                            deviceContent
+                                .navigationTitle("Devices")
+                                .toolbar {
+                                    ToolbarItem(placement: .navigationBarTrailing) {
+                                        Button {
+                                            showAddDevice = true
+                                        } label: {
+                                            Image(systemName: "plus")
+                                        }
+                                        .foregroundColor(.inkBlue)
+                                    }
+                                }
                         }
-                        .foregroundColor(.inkBlue)
+                    }
+                } else {
+                    NavigationStack {
+                        SettingsView()
                     }
                 }
-                .sheet(isPresented: $showAddDevice) {
-                    AddDeviceSheet()
-                        .environmentObject(manager)
-                }
-                .onAppear(perform: handleAppear)
-        } detail: {
-            if let selectedDeviceID, let device = savedDevices.first(where: { $0.id == selectedDeviceID }) {
-                DeviceDetailView(device: device)
-            } else {
-                VStack(spacing: 16) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.inkBlue.opacity(0.08))
-                            .frame(width: 64, height: 64)
-                        Image(systemName: "ipad.and.iphone")
-                            .font(.system(size: 28, weight: .light))
-                            .foregroundStyle(Color.inkBlue.opacity(0.5))
-                    }
-                    Text("Select a Device")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Color.inkTextSecondary)
-                    Text("Choose a device from the list to view its details and send files.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.inkTextTertiary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.inkBackground)
             }
+        }
+        .background(Color.clear)
+        .sheet(isPresented: $showAddDevice) {
+            AddDeviceSheet()
+                .environmentObject(manager)
+        }
+        .onAppear(perform: handleAppear)
+    }
+
+    private var devicesSegmentPicker: some View {
+        HStack(spacing: 6) {
+            ForEach(DevicesMode.allCases, id: \.self) { segment in
+                segmentPill(segment)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func segmentPill(_ segment: DevicesMode) -> some View {
+        let isActive = mode == segment
+
+        Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                mode = segment
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: isActive ? segment.activeIcon : segment.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(segment.rawValue)
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundStyle(isActive ? .white : Color.inkTextSecondary)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(
+                isActive
+                    ? AnyShapeStyle(
+                        LinearGradient(
+                            colors: [segment.tint, segment.tint.opacity(0.75)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                      )
+                    : AnyShapeStyle(.regularMaterial),
+                in: Capsule()
+            )
+            .overlay(
+                Capsule().stroke(
+                    isActive
+                        ? Color.clear
+                        : Color.inkBorderVisible.opacity(0.5),
+                    lineWidth: 0.75
+                )
+            )
+            .shadow(
+                color: isActive ? segment.tint.opacity(0.35) : .clear,
+                radius: 8, y: 3
+            )
+        }
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: mode)
+    }
+
+    @ViewBuilder
+    private var deviceDetailPanel: some View {
+        if let selectedDeviceID, let device = savedDevices.first(where: { $0.id == selectedDeviceID }) {
+            DeviceDetailView(device: device)
+        } else {
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(Color.inkBlue.opacity(0.08))
+                        .frame(width: 64, height: 64)
+                    Image(systemName: "ipad.and.iphone")
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(Color.inkBlue.opacity(0.5))
+                }
+                Text("Select a Device")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(Color.inkTextSecondary)
+                Text("Choose a device from the list to view its details and send files.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.inkTextTertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.clear)
         }
     }
 
     @ViewBuilder
     private var deviceContent: some View {
         ZStack {
-            Color.inkBackground.ignoresSafeArea()
+            Color.clear.ignoresSafeArea()
 
-            List(selection: $selectedDeviceID) {
-                Section {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    devicesHeader
+                    
                     if savedDevices.isEmpty {
                         emptyDevicesView
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+                            .padding(.top, 40)
                     } else {
-                        deviceList
+                        VStack(spacing: 12) {
+                            ForEach(savedDevices) { device in
+                                deviceRowContainer(for: device)
+                            }
+                        }
+                        .padding(.horizontal, 16)
                     }
-                } header: {
-                    devicesHeader
                 }
-                .listRowBackground(Color.clear)
+                .padding(.bottom, 24)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
         }
     }
 
@@ -118,55 +214,61 @@ struct DevicesView: View {
             .font(.system(size: 11, weight: .bold, design: .monospaced))
             .foregroundStyle(Color.inkTextSecondary)
             .tracking(1.2)
-            .padding(.leading, 16)
+            .padding(.leading, 24)
             .padding(.top, 16)
             .padding(.bottom, 8)
-    }
-
-    @ViewBuilder
-    private var deviceList: some View {
-        ForEach(savedDevices) { device in
-            deviceRowContainer(for: device)
-        }
-        .onDelete(perform: deleteDevices)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
     }
 
     @ViewBuilder
     private func deviceRowContainer(for device: SDRegisteredDevice) -> some View {
         let isPrimary = device.id == registry.primaryDeviceID
         let isOnline = peerManager.isReachable(deviceName: device.name)
+        let isSelected = selectedDeviceID == device.id
         
-        if hSizeClass == .regular {
-            NavigationLink(value: device.id) {
-                DeviceRow(
-                    device: device,
-                    isPrimary: isPrimary,
-                    isOnline: isOnline
-                ) {
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                selectedDeviceID = device.id
+            }
+        } label: {
+            DeviceRow(
+                device: device,
+                isPrimary: isPrimary,
+                isOnline: isOnline,
+                isSelected: isSelected
+            ) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     registry.primaryDeviceID = device.id
                     manager.saveLibrary()
                 }
             }
-            .listRowBackground(selectedDeviceID == device.id ? Color.inkBlue.opacity(0.15) : Color.clear)
-        } else {
-            DeviceRow(
-                device: device,
-                isPrimary: isPrimary,
-                isOnline: isOnline
-            ) {
-                registry.primaryDeviceID = device.id
-                manager.saveLibrary()
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.lift)
+        .contextMenu {
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    registry.primaryDeviceID = device.id
+                    manager.saveLibrary()
+                }
+            }) {
+                Label("Set as Primary", systemImage: "star.fill")
             }
-            .listRowBackground(Color.clear)
+            
+            Button(role: .destructive, action: {
+                withAnimation(.spring) {
+                    deleteDevice(device)
+                }
+            }) {
+                Label("Delete Device", systemImage: "trash")
+            }
         }
     }
 
-    private func deleteDevices(at indexSet: IndexSet) {
-        for index in indexSet {
-            modelContext.delete(savedDevices[index])
+    private func deleteDevice(_ device: SDRegisteredDevice) {
+        if selectedDeviceID == device.id {
+            selectedDeviceID = nil
         }
+        modelContext.delete(device)
         try? modelContext.save()
     }
 
@@ -270,7 +372,10 @@ struct DeviceRow: View {
     let device: SDRegisteredDevice
     let isPrimary: Bool
     let isOnline: Bool
+    let isSelected: Bool
     let onSetPrimary: () -> Void
+
+    @State private var isPulsing = false
 
     private var transferIcon: String {
         switch device.transferMethod {
@@ -286,10 +391,10 @@ struct DeviceRow: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.inkBlue.opacity(0.12))
+                    .fill(isSelected ? Color.inkBlue.opacity(0.2) : Color.inkBlue.opacity(0.12))
                     .frame(width: 44, height: 44)
                 Image(systemName: device.deviceType.sfSymbol)
-                    .foregroundColor(.inkBlue)
+                    .foregroundColor(isSelected ? Color.white : Color.inkBlue)
                     .font(.system(size: 20))
             }
 
@@ -312,9 +417,13 @@ struct DeviceRow: View {
                     Circle()
                         .fill(isOnline ? Color.inkGreen : Color.inkTextTertiary)
                         .frame(width: 6, height: 6)
+                        .shadow(color: isOnline ? Color.inkGreen.opacity(0.6) : .clear, radius: 4)
+                        .scaleEffect(isOnline && isPulsing ? 1.25 : 1.0)
+                    
                     Image(systemName: transferIcon)
                         .font(.system(size: 10))
                         .foregroundColor(.inkTextTertiary)
+                    
                     Text(isOnline ? "Online" : device.transferMethod.rawValue)
                         .font(.system(size: 12))
                         .foregroundColor(.inkTextSecondary)
@@ -327,10 +436,10 @@ struct DeviceRow: View {
                 Button(action: onSetPrimary) {
                     Text("Set Primary")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundColor(.inkBlue)
+                        .foregroundColor(isSelected ? .white : .inkBlue)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(Color.inkBlue.opacity(0.08))
+                        .background(isSelected ? Color.white.opacity(0.2) : Color.inkBlue.opacity(0.08))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -338,11 +447,18 @@ struct DeviceRow: View {
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 14)
-        .background(Color.inkSurface)
+        .background(isSelected ? Color.inkBlue.opacity(0.18) : Color.inkSurface.opacity(0.4))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(isPrimary ? Color.inkBlue.opacity(0.35) : Color.inkBorderSubtle, lineWidth: isPrimary ? 1.5 : 1)
+                .stroke(isPrimary ? Color.inkBlue.opacity(0.7) : (isSelected ? Color.inkBlue.opacity(0.4) : Color.inkBorderSubtle.opacity(0.6)), lineWidth: isPrimary ? 1.5 : 1)
         )
+        .onAppear {
+            if isOnline {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    isPulsing = true
+                }
+            }
+        }
     }
 }

@@ -39,6 +39,9 @@ struct BackupRestoreView: View {
             
             Section(footer: Text("Backups include your library index, collections, and settings. PDF files are not included in the backup file.")) {}
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Backup & Restore")
         .fileExporter(isPresented: $showingExporter, document: backupDocument, contentType: .json, defaultFilename: "InksyncPro_Backup.json") { result in
             Task { @MainActor in

@@ -219,7 +219,7 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private var rootShell: some View {
         ZStack(alignment: .top) {
-            Theme.bg.ignoresSafeArea()
+            Color.clear.ignoresSafeArea()
 
             libraryContent
             .safeAreaInset(edge: .bottom) {
@@ -464,26 +464,7 @@ struct ModernLibraryView: View {
             disconnectedDrivesBanner
             pendingJobsBanner
 
-            if viewModel.currentFolderID == nil
-                && viewModel.debouncedSearchText.isEmpty
-                && viewModel.filterState == .all
-                && viewModel.contentShelf == .all {
-                dailyBriefCard
-            }
-
-
-            // MARK: - Recently Added compact strip (root, no-filter only)
-            let recentForBanner = Array(nativeVisiblePDFs.suffix(8).reversed())
-            if !recentForBanner.isEmpty
-                && viewModel.currentFolderID == nil
-                && viewModel.debouncedSearchText.isEmpty
-                && viewModel.filterState == .all
-                && viewModel.contentShelf == .all {
-                RecentlyAddedBanner(recent: recentForBanner) { pdf in
-                    AppRouter.shared.presentFullScreen(.read(pdf))
-                }
-                .environmentObject(conversionManager)
-            }
+            // Daily Brief and Recently Added sections removed for an uncluttered bookshelf view.
 
             // MARK: - Breadcrumb Navigation for Nested Folders
             if let folderID = viewModel.currentFolderID,

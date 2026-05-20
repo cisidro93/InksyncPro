@@ -150,6 +150,9 @@ struct CloudConnectionSettingsView: View {
                 howItWorksRow(icon: "4.circle", text: "Open a cloud comic to stream it page-by-page, or tap 'Download to Device' to save it for offline use.")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Cloud Storage")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showDropboxBrowser) {

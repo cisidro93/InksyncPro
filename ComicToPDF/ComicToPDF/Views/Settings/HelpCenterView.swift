@@ -141,6 +141,9 @@ struct HelpCenterView: View {
                 Text("About")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Help Center")
         .fullScreenCover(isPresented: $showingOnboarding) {
             OnboardingView()
@@ -272,7 +275,7 @@ struct StepCard: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .background(Color.inkSurface.opacity(0.4))
         .cornerRadius(12)
     }
 }
@@ -371,7 +374,7 @@ struct FeatureContent: View {
             }
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(UIColor.secondarySystemGroupedBackground))
+            .background(Color.inkSurface.opacity(0.4))
             .cornerRadius(12)
         }
     }
@@ -411,6 +414,9 @@ struct FAQView: View {
                 answer: "The Panel Editor lets you preview and customize how panels are detected before conversion. Useful when automatic detection doesn't match your preferences."
             )
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("FAQ")
         .navigationBarTitleDisplayMode(.large)
     }
@@ -489,6 +495,9 @@ struct TroubleshootingView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Troubleshooting")
         .navigationBarTitleDisplayMode(.large)
     }

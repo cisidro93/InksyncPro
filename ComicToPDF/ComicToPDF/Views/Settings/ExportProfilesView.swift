@@ -52,6 +52,9 @@ struct ExportProfilesView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Export Profiles")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -83,6 +86,9 @@ struct ExportProfilesView: View {
                         }
                     }
                 }
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
+                .listRowBackground(Color.inkSurface.opacity(0.4))
                 .navigationTitle("New Profile")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

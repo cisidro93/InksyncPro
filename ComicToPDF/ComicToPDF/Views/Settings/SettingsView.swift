@@ -120,6 +120,9 @@ struct SettingsView: View {
             legalSection
             dangerZoneSection
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Preferences")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

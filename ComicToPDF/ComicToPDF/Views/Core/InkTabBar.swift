@@ -41,17 +41,13 @@ struct InkTabBar: View {
 
     private let allTabs: [InkTabItem] = [
         InkTabItem(tag: 0, label: "Library",    icon: "books.vertical",             activeIcon: "books.vertical.fill"),
-        InkTabItem(tag: 1, label: "Reader",     icon: "book",                       activeIcon: "book.fill"),
-        InkTabItem(tag: 2, label: "Inbox",      icon: "tray",                       activeIcon: "tray.full.fill"),
+        InkTabItem(tag: 1, label: "Workspace",  icon: "briefcase",                  activeIcon: "briefcase.fill"),
+        InkTabItem(tag: 2, label: "Studio",     icon: "pencil.and.list.clipboard",  activeIcon: "pencil.and.list.clipboard"),
         InkTabItem(tag: 3, label: "Devices",    icon: "ipad.and.iphone",            activeIcon: "ipad.and.iphone.fill"),
-        InkTabItem(tag: 4, label: "Work Area",  icon: "scissors",                   activeIcon: "scissors.badge.ellipsis"),
-        InkTabItem(tag: 5, label: "Convert",    icon: "arrow.triangle.2.circlepath",activeIcon: "arrow.triangle.2.circlepath.circle.fill"),
-        InkTabItem(tag: 6, label: "Settings",   icon: "gear",                       activeIcon: "gearshape.fill"),
-        InkTabItem(tag: 7, label: "Studio",     icon: "pencil.and.list.clipboard",  activeIcon: "pencil.and.list.clipboard"),
     ]
 
 
-    // Always show all 7 tabs on every device and orientation
+    // Always show all 4 tabs on every device and orientation
     private var visibleTabs: [InkTabItem] { allTabs }
 
     // iPhone landscape = compact height + compact width
@@ -178,8 +174,8 @@ struct InkTabBar: View {
                         .scaleEffect(isActive ? 1.08 : 1.0)
                         .animation(.spring(response: 0.25, dampingFraction: 0.60), value: isActive)
                     
-                    // Badge for Studio Tab (tag 7) — shows annotation count from Research segment
-                    if tab.tag == 7 && annotationCount > 0 {
+                    // Badge for Studio Tab (tag 2) — shows annotation count from Research segment
+                    if tab.tag == 2 && annotationCount > 0 {
                         Text("\(annotationCount)")
                             .font(.system(size: 9, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
