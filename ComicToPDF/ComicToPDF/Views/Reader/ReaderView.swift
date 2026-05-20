@@ -336,8 +336,6 @@ struct ReaderView: View {
             ReaderChrome(
                 title: fileURL.deletingPathExtension().lastPathComponent,
                 pageText: pageText,
-                timeRemainingText: prefs.progressMode == 2 ? trText : (prefs.progressMode == 1 ? "Chapter \(currentPageIndex + 1)" : nil),
-                onProgressModeToggle: { prefs.progressMode = (prefs.progressMode + 1) % 3 },
                 isVisible: $isToolbarVisible,
                 onBack: { if let onExit = onExit { onExit() } else { dismiss() } },
                 onBookmark: toggleBookmarkWithToast,
@@ -364,6 +362,8 @@ struct ReaderView: View {
                         pages: pages
                     )
                 ),
+                timeRemainingText: prefs.progressMode == 2 ? trText : (prefs.progressMode == 1 ? "Chapter \(currentPageIndex + 1)" : nil),
+                onProgressModeToggle: { prefs.progressMode = (prefs.progressMode + 1) % 3 },
                 isPDF: fileURL.pathExtension.lowercased() == "pdf",
                 isEnhanced: autoContrastLevel > 1.0 || smartSharpen,
                 onEnhanceToggle: {
@@ -518,26 +518,26 @@ struct ReaderView: View {
         if fileURL.pathExtension.lowercased() == "pdf" {
             let pageIdx = currentPageIndex
             let docURL = fileURL
-            Task.detached(priority: .userInitiated) {
-                if let doc = PDFDocument(url: docURL),
-                   let page = doc.page(at: pageIdx) {
+            Task { @MainActor in
+                let doc = await Task.detached(priority: .userInitiated) {
+                    PDFDocument(url: docURL)
+                }.value
+                if let doc, let page = doc.page(at: pageIdx) {
                     let size = CGSize(width: 1024, height: 1408)
-                    let thumb = page.thumbnail(of: size, for: .mediaBox)
-                    await MainActor.run {
-                        self.shareImage = thumb
-                        self.showShareSheet = true
-                    }
+                    self.shareImage = page.thumbnail(of: size, for: .mediaBox)
+                    self.showShareSheet = true
                 }
             }
         } else {
             guard currentPageIndex < pages.count else { return }
             let url = pages[currentPageIndex]
-            Task.detached(priority: .userInitiated) {
-                if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
-                    await MainActor.run {
-                        self.shareImage = image
-                        self.showShareSheet = true
-                    }
+            Task { @MainActor in
+                let image = await Task.detached(priority: .userInitiated) {
+                    (try? Data(contentsOf: url)).flatMap { UIImage(data: $0) }
+                }.value
+                if let image {
+                    self.shareImage = image
+                    self.showShareSheet = true
                 }
             }
         }
