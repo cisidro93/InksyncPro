@@ -211,7 +211,7 @@ struct ConvertView: View {
             .padding(.horizontal, 16)
             .padding(.top, 8)
         }
-        .background(Color.inkBackground.ignoresSafeArea())
+        .background(Color.clear.ignoresSafeArea())
         // ✅ #7: Show the actual filename, not a generic title
         .navigationTitle(pdf.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -272,7 +272,7 @@ struct InkCard<Content: View>: View {
             content()
         }
         .padding(16)
-        .background(Color.inkSurface)
+        .background(Color.inkSurface.opacity(0.4))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -407,6 +407,7 @@ struct CalibreGuideView: View {
                 }
                 .padding()
             }
+            .background(Color.clear)
             .navigationTitle("Kindle Delivery Guide")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -436,7 +437,7 @@ struct CalibreGuideView: View {
             }
         }
         .padding()
-        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .background(Color.inkSurface.opacity(0.4))
         .cornerRadius(12)
     }
 }

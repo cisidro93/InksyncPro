@@ -11,7 +11,7 @@ struct ConversionLedgerView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.inkBackground.ignoresSafeArea()
+                Color.clear.ignoresSafeArea()
 
                 if jobs.isEmpty {
                     emptyState
@@ -112,7 +112,7 @@ struct ConversionLedgerView: View {
             }
         }
         .padding()
-        .background(Color.inkSurface)
+        .background(Color.inkSurface.opacity(0.4))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 

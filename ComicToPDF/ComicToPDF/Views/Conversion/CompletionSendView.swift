@@ -37,7 +37,7 @@ struct CompletionSendView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.inkBackground.ignoresSafeArea()
+                Color.clear.ignoresSafeArea()
 
                 if hSizeClass == .regular {
                     iPadCompletionLayout
@@ -272,7 +272,7 @@ struct DeviceSelectCard: View {
                     .lineLimit(1)
             }
             .frame(width: 100, height: 80)
-            .background(isSelected ? Color.inkBlue.opacity(0.12) : Color.inkSurfaceRaised)
+            .background(isSelected ? Color.inkBlue.opacity(0.12) : Color.inkSurface.opacity(0.4))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
