@@ -310,7 +310,7 @@ try? self.modelContext.save()
         let prompt = """
         
         ### 💡 Smart Highlights Summary
-        *Generated on \(Date().formatted(date: .abbreviated, time: .short))*
+        *Generated on \(Date().formatted(date: .abbreviated, time: .shortened))*
         
         **Key Takeaways:**
         - This document discusses several core themes. Based on your \(bookHighlights.count) highlights, the primary focal points relate to:
@@ -325,7 +325,7 @@ try? self.modelContext.save()
             localNotes += prompt
             debounceSave()
         }
-        UIImpactFeedbackGenerator(style: .success).impactOccurred()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
     enum ExportType {
