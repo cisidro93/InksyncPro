@@ -350,17 +350,21 @@ class LibraryViewModel: ObservableObject {
             }
         case .convert:
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
             if case .cloud = pdf.sourceMode {
                 Task {
                     await CloudDownloadManager.shared.downloadAndStore(
                         pdf: pdf,
-                        thenConvert: settingsReady,
+                        thenConvert: false,
                         manager: conversionManager
                     )
+                    await MainActor.run {
+                        if case .local = pdf.sourceMode {
+                            AppRouter.shared.presentSheet(.convert(pdf))
+                        }
+                    }
                 }
             } else {
-                Task { await conversionManager.convertComic(pdf) }
+                AppRouter.shared.presentSheet(.convert(pdf))
             }
         }
     }

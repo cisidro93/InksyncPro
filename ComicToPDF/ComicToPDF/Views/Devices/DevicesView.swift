@@ -177,7 +177,8 @@ struct DevicesView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
-                        .listRowBackground(Color.inkSurface)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                     } else {
                         ForEach(savedDevices) { device in
                             if hSizeClass == .regular {
@@ -191,7 +192,7 @@ struct DevicesView: View {
                                         manager.saveLibrary()
                                     }
                                 }
-                                .listRowBackground(selectedDeviceID == device.id ? Color.inkBlue.opacity(0.15) : Color.inkSurface)
+                                .listRowBackground(selectedDeviceID == device.id ? Color.inkBlue.opacity(0.15) : Color.clear)
                             } else {
                                 DeviceRow(
                                     device: device,
@@ -201,9 +202,11 @@ struct DevicesView: View {
                                     registry.primaryDeviceID = device.id
                                     manager.saveLibrary()
                                 }
-                                .listRowBackground(Color.inkSurface)
+                                .listRowBackground(Color.clear)
                             }
                         }
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         .onDelete { indexSet in
                             for index in indexSet {
                                 modelContext.delete(savedDevices[index])
@@ -216,10 +219,13 @@ struct DevicesView: View {
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Color.inkTextSecondary)
                         .tracking(1.2)
+                        .padding(.leading, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 8)
                 }
-                .listRowBackground(Color.inkSurface)
+                .listRowBackground(Color.clear)
             }
-            .listStyle(.insetGrouped)
+            .listStyle(.plain)
             .scrollContentBackground(.hidden)
         }
     }
@@ -263,26 +269,26 @@ struct DeviceRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color.inkBlue.opacity(0.12))
-                    .frame(width: 42, height: 42)
+                    .frame(width: 44, height: 44)
                 Image(systemName: device.deviceType.sfSymbol)
                     .foregroundColor(.inkBlue)
-                    .font(.system(size: 19))
+                    .font(.system(size: 20))
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(device.name)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.inkTextPrimary)
                     if isPrimary {
                         Text("PRIMARY")
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundColor(.inkBlue)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.inkBlue.opacity(0.12))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2.5)
+                            .background(Color.inkBlue)
                             .clipShape(Capsule())
                     }
                 }
@@ -302,13 +308,25 @@ struct DeviceRow: View {
             Spacer()
 
             if !isPrimary {
-                Button("Set primary") { onSetPrimary() }
-                    .font(.system(size: 12))
-                    .foregroundColor(.inkTextSecondary)
-                    .buttonStyle(.plain)
+                Button(action: onSetPrimary) {
+                    Text("Set Primary")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(.inkBlue)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.inkBlue.opacity(0.08))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .background(Color.inkSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(isPrimary ? Color.inkBlue.opacity(0.35) : Color.inkBorderSubtle, lineWidth: isPrimary ? 1.5 : 1)
+        )
     }
 }

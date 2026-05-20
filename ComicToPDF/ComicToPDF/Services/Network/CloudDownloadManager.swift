@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os
 
 /// Manages background downloading of cloud files directly into the local InksyncVault.
 /// Supports both Dropbox (unauthenticated temporary links) and Google Drive (Bearer token required).
@@ -12,7 +13,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
 
     // MARK: - Temp-File Cache (avoid re-download within 1 hour)
     private struct CacheEntry { let url: URL; let expires: Date }
-    private var tempFileCache: [String: CacheEntry] = [:]    // remoteID → CacheEntry
+    private let tempFileCache = OSAllocatedUnfairLock<[String: CacheEntry]>(initialState: [:])
     private let cacheHoursLimit: Double = 1.0
 
     // Dedicated foreground URLSession for streaming (progress-observable)
@@ -33,15 +34,14 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
     }()
 
     // Maps each active task → (fileID, fileName)
-    private var downloadTaskMeta: [URLSessionDownloadTask: (fileID: String, fileName: String)] = [:]
+    private let downloadTaskMeta = OSAllocatedUnfairLock<[URLSessionDownloadTask: (fileID: String, fileName: String)]>(initialState: [:])
 
     private override init() { super.init() }
 
     // MARK: - In-Flight Stream Deduplication
     // If two concurrent readers try to open the same cloud file, only one network
     // fetch is made. Both callers await the same Task and receive the same local URL.
-    private var activeStreams: [String: Task<URL, Error>] = [:]  // remoteID → Task
-    private let streamsLock = NSLock()
+    private let activeStreams = OSAllocatedUnfairLock<[String: Task<URL, Error>]>(initialState: [:])
 
     // MARK: - Download-to-Vault (Permanent Storage)
 
@@ -70,7 +70,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         let knownExts: Set<String> = ["cbz", "cbr", "zip", "epub", "pdf", "cb7", "cbt"]
         let safeFileName = knownExts.contains(ext) ? pdf.name : (pdf.name + ".cbz")
 
-        await MainActor.run {
+        _ = await MainActor.run {
             manager?.processingStatus = "Downloading \(pdf.name)…"
             manager?.statusMessage = "Downloading…"
         }
@@ -94,7 +94,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
 
             // Step 3: Flip sourceMode in the library record → .local
             let finalURL = destination
-            await MainActor.run {
+            _ = await MainActor.run {
                 if let mgr = manager ?? LinkedLibraryScanner.shared.conversionManager,
                    let idx = mgr.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                     mgr.convertedPDFs[idx].url = finalURL
@@ -118,7 +118,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
                 "CloudDownloadManager: Download failed for '\(pdf.name)': \(error.localizedDescription)",
                 category: "Cloud", type: .error
             )
-            await MainActor.run {
+            _ = await MainActor.run {
                 manager?.processingStatus = ""
                 manager?.statusMessage = "Download failed: \(error.localizedDescription)"
             }
@@ -152,22 +152,21 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         }
 
         // ── Deduplication: reuse an existing in-flight task for the same remote ID ──
-        streamsLock.lock()
-        if let existing = activeStreams[remoteID] {
-            streamsLock.unlock()
-            return try await existing.value
+        let task: Task<URL, Error> = activeStreams.withLock { streams in
+            if let existing = streams[remoteID] {
+                return existing
+            }
+            let newTask = Task {
+                try await self._performStream(provider: provider, remoteID: remoteID, pdf: pdf)
+            }
+            streams[remoteID] = newTask
+            return newTask
         }
-
-        let task: Task<URL, Error> = Task {
-            try await self._performStream(provider: provider, remoteID: remoteID, pdf: pdf)
-        }
-        activeStreams[remoteID] = task
-        streamsLock.unlock()
 
         defer {
-            streamsLock.lock()
-            activeStreams.removeValue(forKey: remoteID)
-            streamsLock.unlock()
+            activeStreams.withLock { streams in
+                streams.removeValue(forKey: remoteID)
+            }
         }
 
         return try await task.value
@@ -176,7 +175,9 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
     /// Removes a remoteID from the temp-file cache.
     /// Call this after manually deleting the cached file to prevent stale path returns.
     func evictCache(for remoteID: String) {
-        tempFileCache.removeValue(forKey: remoteID)
+        tempFileCache.withLock { cache in
+            cache.removeValue(forKey: remoteID)
+        }
         Logger.shared.log("CloudDownloadManager: Cache evicted for \(remoteID.prefix(8))…", category: "Cloud")
     }
 
@@ -216,7 +217,10 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
 
     private func _performStream(provider: String, remoteID: String, pdf: ConvertedPDF) async throws -> URL {
         // ── Step 0: Temp-file cache — skip network if recently streamed ──────────
-        if let cached = tempFileCache[remoteID],
+        let cachedEntry = tempFileCache.withLock { cache in
+            cache[remoteID]
+        }
+        if let cached = cachedEntry,
            cached.expires > Date(),
            FileManager.default.fileExists(atPath: cached.url.path) {
             Logger.shared.log("CloudStream: Cache hit for '\(pdf.name)' — skipping re-download", category: "Cloud")
@@ -243,7 +247,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         // ── Step 2: Download with Task-cancellation support and live progress ────
         try Task.checkCancellation()
 
-        await MainActor.run { self.streamProgress[remoteID] = 0.0 }
+        _ = await MainActor.run { self.streamProgress[remoteID] = 0.0 }
 
         // Use the dedicated streamSession with an observation task for progress
         let (tempURL, response) = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, URLResponse), Error>) in
@@ -279,7 +283,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
             let status = httpResponse.statusCode
             guard (200...299).contains(status) else {
                 try? FileManager.default.removeItem(at: tempURL)
-                await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
+                _ = await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
                 throw CloudStreamError.httpError(statusCode: status, provider: provider)
             }
         }
@@ -296,14 +300,16 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
             }
         } catch {
             try? FileManager.default.removeItem(at: tempURL)
-            await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
+            _ = await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
             throw CloudStreamError.localFileMoveFailure(error)
         }
 
         // ── Step 5: Store in cache and clean up progress ──────────────────────────
         let expiry = Date().addingTimeInterval(cacheHoursLimit * 3600)
-        tempFileCache[remoteID] = CacheEntry(url: finalTemp, expires: expiry)
-        await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
+        tempFileCache.withLock { cache in
+            cache[remoteID] = CacheEntry(url: finalTemp, expires: expiry)
+        }
+        _ = await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
 
         Logger.shared.log(
             "CloudStream: '\(pdf.name)' ready at temp [\(uniqueID)] — cached until \(expiry)",
@@ -338,24 +344,30 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        guard let meta = downloadTaskMeta[downloadTask], totalBytesExpectedToWrite > 0 else { return }
+        let meta = downloadTaskMeta.withLock { $0[downloadTask] }
+        guard let meta, totalBytesExpectedToWrite > 0 else { return }
         let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-        DispatchQueue.main.async { self.activeDownloads[meta.fileID] = progress }
+        Task { @MainActor in
+            self.activeDownloads[meta.fileID] = progress
+        }
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         // No-op: download-to-vault is now handled by downloadAndStore()
-        downloadTaskMeta.removeValue(forKey: downloadTask)
+        downloadTaskMeta.withLock { _ = $0.removeValue(forKey: downloadTask) }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error = error,
-              let downloadTask = task as? URLSessionDownloadTask,
-              let meta = downloadTaskMeta[downloadTask] else { return }
+              let downloadTask = task as? URLSessionDownloadTask else { return }
+              
+        let meta = downloadTaskMeta.withLock { $0.removeValue(forKey: downloadTask) }
+        guard let meta else { return }
 
         Logger.shared.log("CloudDownloadManager: URLSession task error for '\(meta.fileName)': \(error.localizedDescription)", category: "Cloud", type: .error)
-        DispatchQueue.main.async { self.activeDownloads.removeValue(forKey: meta.fileID) }
-        downloadTaskMeta.removeValue(forKey: downloadTask)
+        Task { @MainActor in
+            self.activeDownloads.removeValue(forKey: meta.fileID)
+        }
     }
 }
 

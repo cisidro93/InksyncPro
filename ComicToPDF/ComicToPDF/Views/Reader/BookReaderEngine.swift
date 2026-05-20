@@ -77,7 +77,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             guard let self else { return }
             let fm = FileManager.default
             let tempDir = await self.tempDir
-            let sourcePDF = await self.pdf
+            let sourcePDF = self.pdf
 
             // Linked Library: resolve security-scoped URL for linked files.
             // We only need the scope open during the unpack step — chapters are read
@@ -85,7 +85,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             let pdfURL: URL
             var accessedURL: URL? = nil
             if case .linked(let bm) = sourcePDF.sourceMode,
-               let url = try? await BookmarkResolver.shared.resolve(bm) {
+               let url = try? BookmarkResolver.shared.resolve(bm) {
                 let didAccess = url.startAccessingSecurityScopedResource()
                 pdfURL = url
                 if didAccess { accessedURL = url }
@@ -178,8 +178,9 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
                 try? data.write(to: indexURL)
             }
             
+            guard let strongSelf = self else { return }
             await MainActor.run {
-                self?.searchIndex = newIndex
+                strongSelf.searchIndex = newIndex
             }
         }
     }

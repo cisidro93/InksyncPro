@@ -332,6 +332,19 @@ struct ModernLibraryView: View {
                     }
                 }
             }
+        case .convert(let pdf):
+            NavigationStack {
+                ConvertView(pdf: pdf)
+                    .environmentObject(conversionManager)
+                    .environmentObject(settingsManager)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Close") {
+                                AppRouter.shared.dismissSheet()
+                            }
+                        }
+                    }
+            }
         }
     }
     

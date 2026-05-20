@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - ConvertView (Go Mode per-file conversion settings)
 
 struct ConvertView: View {
+    @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
     @StateObject private var viewModel = ConversionViewModel()
@@ -242,6 +243,15 @@ struct ConvertView: View {
         }
         .sheet(isPresented: $viewModel.showingCalibreGuide) {
             CalibreGuideView()
+        }
+        .onChange(of: conversionManager.isConverting) { oldValue, newValue in
+            if oldValue == true && newValue == false {
+                if let status = conversionManager.statusMessage, status.contains("Error") {
+                    // Stay on screen to show error
+                } else {
+                    dismiss()
+                }
+            }
         }
     }
 }

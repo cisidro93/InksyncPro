@@ -508,7 +508,6 @@ struct ReaderView: View {
                 }
             }
         }
-    }
 
     // MARK: - Top Bar removed — now rendered by ReaderChrome overlay above
     // All chrome logic lives in ReaderChrome.swift (top capsule + bottom card).

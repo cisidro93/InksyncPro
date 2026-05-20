@@ -16,6 +16,7 @@ enum LibrarySheetDestination: Identifiable {
     case cognitiveBatchRenamer([ConvertedPDF])
     case seriesAssignment(ConvertedPDF?, isBatch: Bool, selection: [ConvertedPDF])
     case stats
+    case convert(ConvertedPDF)
     
     var id: String {
         switch self {
@@ -34,6 +35,7 @@ enum LibrarySheetDestination: Identifiable {
         case .cognitiveBatchRenamer: return "batchRenamer"
         case .seriesAssignment(let p, let batch, _): return "series_\(p?.id.uuidString ?? "batch_\(batch)")"
         case .stats: return "stats"
+        case .convert(let p): return "convert_\(p.id)"
         }
     }
 }

@@ -107,9 +107,7 @@ struct GoConvertView: View {
     @ObservedObject private var queueManager = ConversionQueueManager.shared
     
     @State private var selectedFiles: [URL] = []
-    @State private var isTargetingManga = true
-    @State private var useLiquidEInk = true
-    @State private var compressionQuality: CompressionPreset = .high
+    @StateObject private var viewModel = ConversionViewModel()
     @State private var showingActionSheet = false
     @State private var shareItems: [URL] = []
     @State private var showingShareSheet = false
@@ -117,6 +115,29 @@ struct GoConvertView: View {
     @State private var renameText: String = ""
     @State private var renameError: String? = nil
     @State private var showingMergeSheet = false
+
+    private var previewPDF: ConvertedPDF? {
+        guard let url = selectedFiles.first else { return nil }
+        return ConvertedPDF(
+            id: UUID(),
+            name: url.lastPathComponent,
+            url: url,
+            pageCount: 10,
+            fileSize: 0,
+            metadata: PDFMetadata(title: url.deletingPathExtension().lastPathComponent)
+        )
+    }
+
+    private var dummyPDF: ConvertedPDF {
+        ConvertedPDF(
+            id: UUID(),
+            name: "Dummy.pdf",
+            url: URL(fileURLWithPath: ""),
+            pageCount: 1,
+            fileSize: 0,
+            metadata: PDFMetadata(title: "Dummy")
+        )
+    }
     
     // ✅ RELIABLE: Match completed Go conversions by source file stem against library
     // This bypasses the addedByMode race condition entirely.
@@ -162,12 +183,20 @@ struct GoConvertView: View {
             GoQuickMergeSheet(
                 mergeOrder: Array(goConvertedFiles),
                 outputName: "Go Merge \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .none))",
-                mangaMode: isTargetingManga
+                mangaMode: viewModel.isMangaMode
             ) { mergedURLs in
                 shareItems = mergedURLs
                 showingShareSheet = true
             }
             .environmentObject(conversionManager)
+        }
+        .sheet(isPresented: $viewModel.showingPreview) {
+            if let pdf = previewPDF {
+                PrecisionCanvasView(pdf: pdf, pageIndex: .constant(3), totalCount: pdf.pageCount, conversionManager: conversionManager)
+            }
+        }
+        .sheet(isPresented: $viewModel.showingCalibreGuide) {
+            CalibreGuideView()
         }
         .alert("Rename File", isPresented: Binding<Bool>(
             get: { pdfToRename != nil },
@@ -183,6 +212,20 @@ struct GoConvertView: View {
         )) {
             Button("OK", role: .cancel) { renameError = nil }
         } message: { Text(renameError ?? "An unknown error occurred.") }
+        .onAppear {
+            viewModel.isMangaMode = settingsManager.conversionSettings.mangaMode
+            viewModel.selectedPipeline = settingsManager.conversionSettings.outputPipeline
+        }
+        .onChange(of: selectedFiles) { _, files in
+            if let first = files.first {
+                let lowerName = first.lastPathComponent.lowercased()
+                if lowerName.contains("manga") || lowerName.contains("chapter") || lowerName.contains("ch.") || lowerName.contains("raw") {
+                    viewModel.isMangaMode = true
+                } else if lowerName.contains("issue") || lowerName.contains("comic") || lowerName.contains("marvel") || lowerName.contains("dc") {
+                    viewModel.isMangaMode = false
+                }
+            }
+        }
     }
 
     // MARK: - Drop Zone
@@ -263,23 +306,62 @@ struct GoConvertView: View {
     @ViewBuilder
     private var settingsCards: some View {
         VStack(spacing: 16) {
-            InkCard(header: "Layout & Device") {
+            // Source details
+            InkCard(header: "Source Details") {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Content Type")
+                    Text("Auto-Split")
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(.inkTextSecondary)
-                    Picker("Content Type", selection: $isTargetingManga) {
-                        Text("Manga (Right-to-Left)").tag(true)
-                        Text("Western Comic (L-to-R)").tag(false)
-                    }.pickerStyle(.segmented)
+                    Picker("", selection: $settingsManager.conversionSettings.splitMode) {
+                        ForEach(FileSizeSplitMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
-                Divider().overlay(Color.inkBorderSubtle).padding(.vertical, 4)
+            }
+
+            // Output Format
+            InkCard(header: "Output Format") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Target Format")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.inkTextSecondary)
+                    Picker("", selection: $settingsManager.conversionSettings.outputFormat) {
+                        ForEach(OutputFormat.allCases) { format in
+                            Label(format.rawValue, systemImage: format.icon).tag(format)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: settingsManager.conversionSettings.outputFormat) { _, newFormat in
+                        if newFormat != .epub {
+                            viewModel.selectedPipeline = .standard
+                            viewModel.applyPipeline(.standard, to: &settingsManager.conversionSettings)
+                        }
+                    }
+                }
+                Divider().overlay(Color.inkBorderSubtle)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Image Quality")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.inkTextSecondary)
+                    Picker("", selection: $settingsManager.conversionSettings.compressionQuality) {
+                        ForEach(CompressionPreset.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            // Hardware Optimisation
+            InkCard(header: "Hardware Optimisation") {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Target Device")
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(.inkTextSecondary)
-                    Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
-                        ForEach(TargetDeviceProfile.allCases) { profile in Text(profile.rawValue).tag(profile) }
+                    Picker("", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
+                        ForEach(TargetDeviceProfile.allCases) { device in
+                            Text(device.rawValue).tag(device)
+                        }
                     }
                     .pickerStyle(.menu)
                     .tint(.inkBlue)
@@ -288,29 +370,92 @@ struct GoConvertView: View {
                     .background(Color.inkSurfaceRaised)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-            }
-            InkCard(header: "Output Quality") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Image Compression")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.inkTextSecondary)
-                    Picker("Image Quality", selection: $compressionQuality) {
-                        ForEach(CompressionPreset.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                Divider().overlay(Color.inkBorderSubtle).padding(.vertical, 4)
+                Divider().overlay(Color.inkBorderSubtle)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Liquid E-Ink Filter")
+                        Text("E-Ink High Contrast Filter")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.inkTextPrimary)
-                        Text("Auto-levels, sharpening & gamma for perfect contrast.")
+                        Text("Maximises readability on greyscale e-ink displays")
                             .font(.system(size: 12))
                             .foregroundColor(.inkTextSecondary)
                     }
                     Spacer()
-                    Toggle("", isOn: $useLiquidEInk).labelsHidden().tint(.inkBlue)
+                    Toggle("", isOn: $settingsManager.conversionSettings.optimizeForDevice)
+                        .labelsHidden()
+                        .tint(.inkBlue)
+                }
+            }
+
+            // Export Pipeline (EPUB only)
+            if settingsManager.conversionSettings.outputFormat == .epub {
+                InkCard(header: "EPUB Export Mode") {
+                    VStack(spacing: 10) {
+                        ForEach(OutputPipeline.allCases) { pipeline in
+                            let pdf = previewPDF ?? dummyPDF
+                            let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: settingsManager.conversionSettings.outputFormat)
+                            Button(action: {
+                                if !isDisabled {
+                                    viewModel.selectedPipeline = pipeline
+                                    viewModel.applyPipeline(pipeline, to: &settingsManager.conversionSettings)
+                                }
+                            }) {
+                                PipelineCardView(
+                                    pipeline: pipeline,
+                                    isDisabled: isDisabled,
+                                    isSelected: viewModel.selectedPipeline == pipeline,
+                                    viewModel: viewModel,
+                                    currentFormat: settingsManager.conversionSettings.outputFormat
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(queueManager.isProcessing || isDisabled)
+                            .opacity(isDisabled || queueManager.isProcessing ? 0.55 : 1.0)
+                        }
+
+                        if viewModel.selectedPipeline == .proPanel {
+                            VStack(spacing: 8) {
+                                if let pdf = previewPDF {
+                                    Button(action: { viewModel.showingPreview = true }) {
+                                        Label("Preview Panel Detection (Page 4)", systemImage: "eye")
+                                            .font(.system(size: 14))
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 10)
+                                            .background(Color.inkSurfaceRaised)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            .foregroundColor(.inkTextPrimary)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
+                                Button(action: { viewModel.showingCalibreGuide = true }) {
+                                    Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
+                                        .font(.caption)
+                                        .foregroundColor(.inkBlue)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                            .padding(.top, 4)
+                        }
+                    }
+                }
+            }
+
+            // Layout
+            InkCard(header: "Layout") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Reading Direction")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.inkTextPrimary)
+                        Text(viewModel.isMangaMode ? "Right to Left (Manga)" : "Left to Right (Western)")
+                            .font(.system(size: 12))
+                            .foregroundColor(.inkTextSecondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $viewModel.isMangaMode)
+                        .labelsHidden()
+                        .tint(.inkBlue)
+                        .disabled(queueManager.isProcessing)
                 }
             }
         }
@@ -476,19 +621,8 @@ struct GoConvertView: View {
     private func startGoConversion() {
         guard !selectedFiles.isEmpty else { return }
         var settingsForGo = settingsManager.conversionSettings
-        settingsForGo.mangaMode = isTargetingManga
-        settingsForGo.optimizeForDevice = true
-        settingsForGo.compressionQuality = compressionQuality
-        settingsForGo.outputFormat = .epub
-        settingsForGo.outputPipeline = .standard
-        settingsForGo.splitMode = .web
-        if useLiquidEInk {
-            settingsForGo.imageEnhancement.autoContrast = true
-            settingsForGo.imageEnhancement.sharpness = 0.5
-            settingsForGo.imageEnhancement.gamma = 0.8
-        } else {
-            settingsForGo.imageEnhancement = .init()
-        }
+        settingsForGo.mangaMode = viewModel.isMangaMode
+        viewModel.applyPipeline(viewModel.selectedPipeline, to: &settingsForGo)
         Logger.shared.log("Go conversion queued: \(selectedFiles.count) file(s)", category: "GoUI")
         for file in selectedFiles { queueManager.enqueue(url: file, settings: settingsForGo, mode: .go) }
         selectedFiles.removeAll()

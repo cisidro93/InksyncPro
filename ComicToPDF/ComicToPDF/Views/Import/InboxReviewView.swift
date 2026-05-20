@@ -58,7 +58,7 @@ struct InboxReviewView: View {
                                 )
                             )
                     }
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 32)
                     
                     Text("Inbox is Clear")
                         .font(.system(size: 24, weight: .bold))
@@ -69,6 +69,8 @@ struct InboxReviewView: View {
                         .font(.system(size: 15))
                         .foregroundColor(Theme.textSecondary)
                         .multilineTextAlignment(.center)
+                        .lineSpacing(4)
+                        .padding(.horizontal, 40)
                         
                     Spacer()
                 }
@@ -85,28 +87,10 @@ struct InboxReviewView: View {
                         }
                         Spacer()
                         
-                        Button {
+                        ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) {
                             Task {
                                 await BackgroundMetadataEngine.shared.startEngine(manager: manager)
                             }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "wand.and.stars.inverse")
-                                    .font(.system(size: 13, weight: .bold))
-                                Text("Auto-Match")
-                                    .font(.system(size: 13, weight: .semibold))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                LinearGradient(
-                                    colors: [Theme.orange, Theme.orange.opacity(0.8)],
-                                    startPoint: .leading, endPoint: .trailing
-                                ),
-                                in: Capsule()
-                            )
-                            .shadow(color: Theme.orange.opacity(0.3), radius: 6, y: 3)
                         }
                     }
                     .padding(.horizontal, 20)
@@ -121,10 +105,10 @@ struct InboxReviewView: View {
                                         .resizable()
                                         .scaledToFill()
                                         .frame(width: 44, height: 66)
-                                        .cornerRadius(6)
+                                        .cornerRadius(8)
                                         .clipped()
                                 } else {
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: 8)
                                         .fill(Theme.surfaceElevated)
                                         .frame(width: 44, height: 66)
                                         .overlay(Image(systemName: "photo").foregroundColor(Theme.textTertiary))
@@ -157,17 +141,18 @@ struct InboxReviewView: View {
                                         .clipShape(Capsule())
                                 }
                             }
-                            .padding(.vertical, 10).padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 14)
                             .background(Theme.surface)
-                            .cornerRadius(12)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.inkBorderSubtle, lineWidth: 1))
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 2)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         }
                     }
                     .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                     .refreshable {
                         // Force re-evaluate which items are missing metadata
                         await BackgroundMetadataEngine.shared.startEngine(manager: manager)
