@@ -101,54 +101,73 @@ struct DevicesView: View {
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                     } else {
-                        ForEach(savedDevices) { device in
-                            if hSizeClass == .regular {
-                                NavigationLink(value: device.id) {
-                                    DeviceRow(
-                                        device: device,
-                                        isPrimary: device.id == registry.primaryDeviceID,
-                                        isOnline: peerManager.isReachable(deviceName: device.name)
-                                    ) {
-                                        registry.primaryDeviceID = device.id
-                                        manager.saveLibrary()
-                                    }
-                                }
-                                .listRowBackground(selectedDeviceID == device.id ? Color.inkBlue.opacity(0.15) : Color.clear)
-                            } else {
-                                DeviceRow(
-                                    device: device,
-                                    isPrimary: device.id == registry.primaryDeviceID,
-                                    isOnline: peerManager.isReachable(deviceName: device.name)
-                                ) {
-                                    registry.primaryDeviceID = device.id
-                                    manager.saveLibrary()
-                                }
-                                .listRowBackground(Color.clear)
-                            }
-                        }
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        .onDelete { indexSet in
-                            for index in indexSet {
-                                modelContext.delete(savedDevices[index])
-                            }
-                            try? modelContext.save()
-                        }
+                        deviceList
                     }
                 } header: {
-                    Text("MY DEVICES")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.inkTextSecondary)
-                        .tracking(1.2)
-                        .padding(.leading, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 8)
+                    devicesHeader
                 }
                 .listRowBackground(Color.clear)
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
         }
+    }
+
+    private var devicesHeader: some View {
+        Text("MY DEVICES")
+            .font(.system(size: 11, weight: .bold, design: .monospaced))
+            .foregroundStyle(Color.inkTextSecondary)
+            .tracking(1.2)
+            .padding(.leading, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private var deviceList: some View {
+        ForEach(savedDevices) { device in
+            deviceRowContainer(for: device)
+        }
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        .onDelete(perform: deleteDevices)
+    }
+
+    @ViewBuilder
+    private func deviceRowContainer(for device: SDRegisteredDevice) -> some View {
+        let isPrimary = device.id == registry.primaryDeviceID
+        let isOnline = peerManager.isReachable(deviceName: device.name)
+        
+        if hSizeClass == .regular {
+            NavigationLink(value: device.id) {
+                DeviceRow(
+                    device: device,
+                    isPrimary: isPrimary,
+                    isOnline: isOnline
+                ) {
+                    registry.primaryDeviceID = device.id
+                    manager.saveLibrary()
+                }
+            }
+            .listRowBackground(selectedDeviceID == device.id ? Color.inkBlue.opacity(0.15) : Color.clear)
+        } else {
+            DeviceRow(
+                device: device,
+                isPrimary: isPrimary,
+                isOnline: isOnline
+            ) {
+                registry.primaryDeviceID = device.id
+                manager.saveLibrary()
+            }
+            .listRowBackground(Color.clear)
+        }
+    }
+
+    private func deleteDevices(at indexSet: IndexSet) {
+        for index in indexSet {
+            modelContext.delete(savedDevices[index])
+        }
+        try? modelContext.save()
     }
 
     private var emptyDevicesView: some View {
