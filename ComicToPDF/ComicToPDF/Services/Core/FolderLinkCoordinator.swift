@@ -20,20 +20,19 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         FolderLinkCoordinator.live = coordinator
 
         guard let rootVC = topViewController() else {
+            Logger.shared.log("FolderLinkCoordinator: no root view controller found — cannot present picker", category: "FolderLink", type: .error)
             completion([])
             FolderLinkCoordinator.live = nil
             return
         }
 
-        // asCopy: false is CRITICAL — prevents iOS from silently downloading and copying
-        // the entire cloud folder (Dropbox, iCloud, etc.) into the app sandbox.
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
         picker.delegate = coordinator
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
-        // Full-screen prevents iPadOS from swallowing events when presented over a form sheet.
         picker.modalPresentationStyle = .fullScreen
 
+        Logger.shared.log("FolderLinkCoordinator: presenting folder picker", category: "FolderLink", type: .info)
         rootVC.present(picker, animated: true)
     }
 
@@ -49,21 +48,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             finish(with: [])
             return
         }
-
-        // ✅ SECURITY SCOPE DESIGN:
-        // We intentionally do NOT call startAccessingSecurityScopedResource() here.
-        //
-        // The UIDocumentPickerDelegate grants the sandbox access right to the picked
-        // URL objects themselves. The security-scoped bookmark is created INSIDE
-        // linkDrive() which immediately calls startAccessingSecurityScopedResource()
-        // before any file I/O. That single, deferred acquisition with a matching
-        // defer-stop is the correct owner of the access lifetime.
-        //
-        // Pre-emptively acquiring access here and releasing it asynchronously would
-        // create a TOCTOU window where both tokens briefly lapse simultaneously on
-        // slow main-thread scheduling — eliminated by this design.
-        // We pre-emptively dismiss the controller to avoid animation locks,
-        // then dispatch the callback onto a background queue exactly like ImportCoordinator.
+        Logger.shared.log("FolderLinkCoordinator: user picked \(urls.count) folder(s): \(urls.map { $0.lastPathComponent }.joined(separator: ", "))", category: "FolderLink", type: .success)
         controller.dismiss(animated: true)
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -74,6 +59,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        Logger.shared.log("FolderLinkCoordinator: user cancelled folder picker", category: "FolderLink", type: .info)
         finish(with: [])
     }
 

@@ -163,7 +163,24 @@ struct ReadingStatsHUDView: View {
                     .foregroundColor(Theme.blue)
                 }
             }
+            .onAppear {
+                let streak = tracker.readingStreak()
+                let velocity = pdfID != nil ? tracker.rollingVelocity(for: pdfID!) : 0
+                let pct = totalPages > 0 ? Int(Double(currentPageIndex + 1) / Double(totalPages) * 100) : 0
+                Logger.shared.log(
+                    "ReadingStatsHUD opened for '\(bookTitle)': streak=\(streak)d, speed=\(String(format: "%.1f", velocity))ppm, progress=\(pct)%, goal=\(dailyGoal)p/day",
+                    category: "Reader",
+                    type: .info
+                )
+            }
         }
+    }
+}
+
+// Daily goal change logger (in parent body for Menu buttons)
+extension ReadingStatsHUDView {
+    func logGoalChange(to newGoal: Int) {
+        Logger.shared.log("Daily reading goal updated to \(newGoal) pages/day for '\(bookTitle)'", category: "Reader", type: .info)
     }
 }
 

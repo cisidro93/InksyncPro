@@ -195,15 +195,22 @@ struct StudyNotebookView: View {
             }
         }
         .onAppear {
+            Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
             initializeSDAnnotation()
         }
         .onDisappear {
             // Final explicit sync flush layer
+            Logger.shared.log("StudyNotebook disappearing — flushing note to SwiftData for '\(bookTitle)'", category: "Notebook", type: .info)
             saveTask?.cancel()
             activeNoteAnnotation?.noteText = localNotes
             activeNoteAnnotation?.drawingData = canvasView.drawing.dataRepresentation()
             activeNoteAnnotation?.modifiedAt = Date()
-            try? modelContext.save()
+            do {
+                try modelContext.save()
+                Logger.shared.log("Flush save succeeded for '\(bookTitle)'", category: "Notebook", type: .success)
+            } catch {
+                Logger.shared.log("Flush save FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+            }
         }
     }
     
@@ -234,10 +241,14 @@ struct StudyNotebookView: View {
            let existing = allNotes.first(where: { $0.pdfID == targetPDFID }) {
             self.activeNoteAnnotation = existing
             self.localNotes = existing.noteText ?? ""
+            let wordCount = (existing.noteText ?? "").split { $0.isWhitespace }.count
+            Logger.shared.log("Loaded existing note for '\(bookTitle)' (\(wordCount) words)", category: "Notebook", type: .success)
             if let dData = existing.drawingData, let drawing = try? PKDrawing(data: dData) {
                 self.canvasView.drawing = drawing
+                Logger.shared.log("Restored PencilKit drawing for '\(bookTitle)'", category: "Notebook", type: .info)
             }
         } else {
+            Logger.shared.log("No existing note found for '\(bookTitle)' — creating new SDAnnotation", category: "Notebook", type: .info)
             let newNote = SDAnnotation(
                 id: UUID(),
                 pdfID: targetPDFID.uuidString,
@@ -255,12 +266,16 @@ struct StudyNotebookView: View {
             modelContext.insert(newNote)
             self.activeNoteAnnotation = newNote
             self.localNotes = ""
+            Logger.shared.log("New note created and inserted for '\(bookTitle)'", category: "Notebook", type: .success)
         }
         
         // Fetch existing highlights for this book
         let hDescriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.kindRaw == "highlight" && $0.pdfID == targetPDFID })
         if let h = try? modelContext.fetch(hDescriptor) {
             self.bookHighlights = h.sorted { $0.createdAt > $1.createdAt }
+            Logger.shared.log("Fetched \(h.count) highlight(s) for '\(bookTitle)'", category: "Notebook", type: .info)
+        } else {
+            Logger.shared.log("Highlights fetch failed for '\(bookTitle)'", category: "Notebook", type: .warning)
         }
     }
     
@@ -273,7 +288,12 @@ struct StudyNotebookView: View {
                     self.activeNoteAnnotation?.noteText = self.localNotes
                     self.activeNoteAnnotation?.drawingData = self.canvasView.drawing.dataRepresentation()
                     self.activeNoteAnnotation?.modifiedAt = Date()
-try? self.modelContext.save()
+                    do {
+                        try self.modelContext.save()
+                        Logger.shared.log("Debounce save succeeded for '\(self.bookTitle)'", category: "Notebook", type: .success)
+                    } catch {
+                        Logger.shared.log("Debounce save FAILED for '\(self.bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+                    }
                 }
             }
         }
@@ -292,17 +312,23 @@ try? self.modelContext.save()
     }
 
     private func insertHighlightIntoNote(_ highlight: SDAnnotation) {
-        guard let text = highlight.selectedText else { return }
+        guard let text = highlight.selectedText else {
+            Logger.shared.log("insertHighlightIntoNote: skipped — highlight has no selectedText (id: \(highlight.id))", category: "Notebook", type: .warning)
+            return
+        }
         let quote = "\n\n> \(text) (p. \(highlight.pageIndex + 1))\n\n"
         withAnimation {
             localNotes += quote
             debounceSave()
         }
+        Logger.shared.log("Inserted highlight citation (p. \(highlight.pageIndex + 1)) into note for '\(bookTitle)'", category: "Notebook", type: .info)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     private func generateAISummary() {
+        Logger.shared.log("generateAISummary called for '\(bookTitle)' (\(bookHighlights.count) highlights available)", category: "Notebook", type: .info)
         if bookHighlights.isEmpty {
+            Logger.shared.log("generateAISummary: no highlights found — inserting placeholder for '\(bookTitle)'", category: "Notebook", type: .warning)
             localNotes += "\n\n### 💡 Smart Summary\nNo highlights available to summarize. Add some highlights in the reader first!"
             return
         }
@@ -325,6 +351,7 @@ try? self.modelContext.save()
             localNotes += prompt
             debounceSave()
         }
+        Logger.shared.log("Smart summary generated for '\(bookTitle)' using \(bookHighlights.count) highlight(s)", category: "Notebook", type: .success)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
@@ -335,36 +362,48 @@ try? self.modelContext.save()
     private func exportNotes(as type: ExportType) {
         let content: String
         let filename: String
+        let formatLabel: String
         
         switch type {
         case .markdown:
             content = localNotes
             filename = "\(bookTitle.isEmpty ? "StudyNotes" : bookTitle.replacingOccurrences(of: " ", with: "_"))_Notes.md"
+            formatLabel = "Markdown"
         case .plainText:
             content = localNotes
             filename = "\(bookTitle.isEmpty ? "StudyNotes" : bookTitle.replacingOccurrences(of: " ", with: "_"))_Notes.txt"
+            formatLabel = "Plain Text"
         }
+        
+        Logger.shared.log("exportNotes(\(formatLabel)) called for '\(bookTitle)' — \(content.count) chars to \(filename)", category: "Notebook", type: .info)
         
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent(filename)
         
         do {
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            Logger.shared.log("Note export file written: \(filename)", category: "Notebook", type: .success)
             let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                let rootVC = windowScene.windows.first?.rootViewController {
                 rootVC.present(activityVC, animated: true)
+            } else {
+                Logger.shared.log("exportNotes: could not find root view controller to present share sheet", category: "Notebook", type: .warning)
             }
         } catch {
-            Logger.shared.log("Failed to export notes: \(error.localizedDescription)", category: "Notebook")
+            Logger.shared.log("exportNotes(\(formatLabel)) FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
         }
     }
     
     private func shareNotes() {
+        Logger.shared.log("shareNotes called for '\(bookTitle)' — \(localNotes.count) chars", category: "Notebook", type: .info)
         let activityVC = UIActivityViewController(activityItems: [localNotes], applicationActivities: nil)
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let rootVC = windowScene.windows.first?.rootViewController {
             rootVC.present(activityVC, animated: true)
+            Logger.shared.log("Share sheet presented for '\(bookTitle)'", category: "Notebook", type: .success)
+        } else {
+            Logger.shared.log("shareNotes: could not find root view controller to present share sheet", category: "Notebook", type: .warning)
         }
     }
 

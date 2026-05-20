@@ -32,6 +32,7 @@ class GamificationManager: ObservableObject {
 
         if lastReadingDateRaw == 0 {
             lastReadingDate = today
+            Logger.shared.log("GamificationManager: first launch, streak initialized", category: "Gamification", type: .info)
             return
         }
 
@@ -41,6 +42,7 @@ class GamificationManager: ObservableObject {
 
         // It's a new day — reset the daily counter.
         pagesReadToday = 0
+        Logger.shared.log("Gamification: new day detected, daily page counter reset", category: "Gamification", type: .info)
 
         if calendar.isDateInYesterday(lastReadingDate) {
             lastReadingDate = today
@@ -54,9 +56,12 @@ class GamificationManager: ObservableObject {
         if missedDays > 0 {
             if streakCharges >= missedDays {
                 streakCharges -= missedDays
+                Logger.shared.log("Gamification: \(missedDays) missed day(s) covered by streak charges (\(streakCharges) remaining)", category: "Gamification", type: .warning)
             } else {
+                let lostStreak = currentStreak
                 streakCharges = 0
                 currentStreak = 0
+                Logger.shared.log("Gamification: streak BROKEN after \(missedDays) missed day(s). Lost \(lostStreak)-day streak.", category: "Gamification", type: .warning)
             }
         }
 
@@ -77,6 +82,7 @@ class GamificationManager: ObservableObject {
         if !previouslyMetGoal && currentlyMetGoal {
             currentStreak += 1
             streakCharges += 1
+            Logger.shared.log("Gamification: daily goal met! streak=\(currentStreak) day(s), charges=\(streakCharges)", category: "Gamification", type: .success)
         }
     }
 }

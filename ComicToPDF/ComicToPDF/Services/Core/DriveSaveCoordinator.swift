@@ -21,21 +21,19 @@ final class DriveSaveCoordinator: NSObject, UIDocumentPickerDelegate {
         DriveSaveCoordinator.live = coordinator
 
         guard let rootVC = topViewController() else {
+            Logger.shared.log("DriveSaveCoordinator: no root view controller found — cannot present picker", category: "DriveSave", type: .error)
             completion(nil)
             DriveSaveCoordinator.live = nil
             return
         }
 
-        // forOpeningContentTypes: [.folder] with asCopy: false gives the user
-        // a live, security-scoped reference to the chosen folder.
-        // The native picker automatically shows a "New Folder" button so users
-        // can create new folders on the drive without leaving the app.
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
         picker.delegate = coordinator
         picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
         picker.modalPresentationStyle = .fullScreen
 
+        Logger.shared.log("DriveSaveCoordinator: presenting save destination picker", category: "DriveSave", type: .info)
         rootVC.present(picker, animated: true)
     }
 
@@ -50,7 +48,7 @@ final class DriveSaveCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        // Start security scope here so it's live during the dismiss animation
+        Logger.shared.log("DriveSaveCoordinator: user selected save destination: \(selectedURL.lastPathComponent)", category: "DriveSave", type: .success)
         let accessing = selectedURL.startAccessingSecurityScopedResource()
 
         controller.dismiss(animated: true)
@@ -62,13 +60,13 @@ final class DriveSaveCoordinator: NSObject, UIDocumentPickerDelegate {
             }
             DispatchQueue.main.async {
                 self.finish(with: selectedURL)
-                // saveFilesToDrive starts its own scope inside; safe to relinquish ours
                 if accessing { selectedURL.stopAccessingSecurityScopedResource() }
             }
         }
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        Logger.shared.log("DriveSaveCoordinator: user cancelled save destination picker", category: "DriveSave", type: .info)
         finish(with: nil)
     }
 

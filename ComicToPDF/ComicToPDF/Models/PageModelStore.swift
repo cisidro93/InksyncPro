@@ -81,6 +81,9 @@ class PageModelStore: ObservableObject {
             for sdModel in results {
                 activeCache[sdModel.pageIndex] = sdModel.toDTO()
             }
+            Logger.shared.log("PageModelStore: loaded \(results.count) page model(s) for pdfID=\(pdfID)", category: "PageModel", type: .info)
+        } else {
+            Logger.shared.log("PageModelStore: fetch failed for pdfID=\(pdfID)", category: "PageModel", type: .warning)
         }
     }
     
@@ -125,14 +128,24 @@ class PageModelStore: ObservableObject {
         if let existing = try? context.fetch(descriptor), let target = existing.first {
             // Update
             target.update(from: modelToSave)
+            do {
+                try context.save()
+                Logger.shared.log("PageModelStore: updated page \(modelToSave.pageIndex) for pdfID=\(pdfID)", category: "PageModel", type: .info)
+            } catch {
+                Logger.shared.log("PageModelStore: update save FAILED for page \(modelToSave.pageIndex): \(error.localizedDescription)", category: "PageModel", type: .error)
+            }
         } else {
             // Insert new
             let sdModel = SDPageModel(pdfID: pdfID, pageIndex: modelToSave.pageIndex, coordinateSystemRaw: modelToSave.coordinateSystem.rawValue)
             sdModel.update(from: modelToSave)
             context.insert(sdModel)
+            do {
+                try context.save()
+                Logger.shared.log("PageModelStore: inserted page \(modelToSave.pageIndex) for pdfID=\(pdfID)", category: "PageModel", type: .success)
+            } catch {
+                Logger.shared.log("PageModelStore: insert save FAILED for page \(modelToSave.pageIndex): \(error.localizedDescription)", category: "PageModel", type: .error)
+            }
         }
-        
-        try? context.save()
     }
     
     /// Legacy hook compatibility for Export injections
@@ -163,8 +176,13 @@ class PageModelStore: ObservableObject {
     func deletePageModels(for pdfID: UUID) {
         if activePDFID == pdfID { activeCache.removeAll() }
         guard let context = modelContext else { return }
-        try? context.delete(model: SDPageModel.self, where: #Predicate { $0.pdfID == pdfID })
-        try? context.save()
+        do {
+            try context.delete(model: SDPageModel.self, where: #Predicate { $0.pdfID == pdfID })
+            try context.save()
+            Logger.shared.log("PageModelStore: deleted all page models for pdfID=\(pdfID)", category: "PageModel", type: .info)
+        } catch {
+            Logger.shared.log("PageModelStore: deletePageModels FAILED for pdfID=\(pdfID): \(error.localizedDescription)", category: "PageModel", type: .error)
+        }
     }
     
     func saveLegacyVisionPanels(_ panels: [PanelExtractor.Panel], for pdfID: UUID, pageIndex: Int) {

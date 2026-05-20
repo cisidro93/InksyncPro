@@ -244,8 +244,8 @@ class AnnotationStore: ObservableObject {
     
     func initialize(with context: ModelContext) {
         self.modelContext = context
+        Logger.shared.log("AnnotationStore initialized with ModelContext", category: "Annotations", type: .info)
         loadAll()
-
     }
     
     func annotations(for pdfID: UUID) -> [Annotation] {
@@ -299,7 +299,12 @@ class AnnotationStore: ObservableObject {
                 if let context = self.modelContext {
                     let sdModel = SDAnnotation(from: finalAnnotation)
                     context.insert(sdModel)
-                    try? context.save()
+                    do {
+                        try context.save()
+                        Logger.shared.log("Annotation saved (kind=\(finalAnnotation.kind.rawValue), page=\(finalAnnotation.pageIndex), tags=\(finalAnnotation.tags?.count ?? 0))", category: "Annotations", type: .success)
+                    } catch {
+                        Logger.shared.log("Annotation save FAILED: \(error.localizedDescription)", category: "Annotations", type: .error)
+                    }
                 }
             }
         }
@@ -337,32 +342,43 @@ class AnnotationStore: ObservableObject {
     }
     
     func update(_ annotation: Annotation) {
-        guard let index = store[annotation.pdfID]?.firstIndex(where: { $0.id == annotation.id }) else { return }
+        guard let index = store[annotation.pdfID]?.firstIndex(where: { $0.id == annotation.id }) else {
+            Logger.shared.log("update: annotation \(annotation.id) not found in store", category: "Annotations", type: .warning)
+            return
+        }
         var updated = annotation
         updated.modifiedAt = Date()
         store[annotation.pdfID]?[index] = updated
         
         if let context = modelContext {
-            // Fetch the specific SDAnnotation
             let fetchDescriptor = FetchDescriptor<SDAnnotation>()
-            // Simplest way to find specific ID since UUID predicate in SwiftData has quirks
             if let allAnnotations = try? context.fetch(fetchDescriptor),
                let target = allAnnotations.first(where: { $0.id == annotation.id }) {
                 target.update(from: updated)
-                try? context.save()
+                do {
+                    try context.save()
+                    Logger.shared.log("Annotation updated (id=\(annotation.id), page=\(annotation.pageIndex))", category: "Annotations", type: .info)
+                } catch {
+                    Logger.shared.log("Annotation update save FAILED: \(error.localizedDescription)", category: "Annotations", type: .error)
+                }
             }
         }
     }
     
     func delete(id: UUID, pdfID: UUID) {
         store[pdfID]?.removeAll(where: { $0.id == id })
+        Logger.shared.log("Annotation deleted (id=\(id), pdfID=\(pdfID))", category: "Annotations", type: .info)
         
         if let context = modelContext {
             let fetchDescriptor = FetchDescriptor<SDAnnotation>()
             if let allAnnotations = try? context.fetch(fetchDescriptor),
                let target = allAnnotations.first(where: { $0.id == id }) {
                 context.delete(target)
-                try? context.save()
+                do {
+                    try context.save()
+                } catch {
+                    Logger.shared.log("Annotation delete save FAILED: \(error.localizedDescription)", category: "Annotations", type: .error)
+                }
             }
         }
     }
@@ -382,8 +398,11 @@ class AnnotationStore: ObservableObject {
             }
             
             self.store = loadedStore
+            let totalBooks = loadedStore.keys.count
+            let totalAnnotations = loadedStore.values.reduce(0) { $0 + $1.count }
+            Logger.shared.log("AnnotationStore loaded: \(totalAnnotations) annotation(s) across \(totalBooks) book(s)", category: "Annotations", type: .success)
         } catch {
-            print("Failed to load SDAnnotations: \(error)")
+            Logger.shared.log("AnnotationStore loadAll FAILED: \(error.localizedDescription)", category: "Annotations", type: .error)
         }
     }
     
@@ -462,9 +481,10 @@ class AnnotationStore: ObservableObject {
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(documentTitle) Annotations.\(ext)")
         do {
             try content.write(to: tempURL, atomically: true, encoding: .utf8)
+            Logger.shared.log("AnnotationStore exported \(items.count) annotation(s) for '\(documentTitle)' as .\(ext)", category: "Annotations", type: .success)
             return tempURL
         } catch {
-            print("Failed to write export file: \(error)")
+            Logger.shared.log("AnnotationStore export FAILED for '\(documentTitle)': \(error.localizedDescription)", category: "Annotations", type: .error)
             return nil
         }
     }

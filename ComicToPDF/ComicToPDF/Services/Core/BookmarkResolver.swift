@@ -53,8 +53,6 @@ actor BookmarkResolver {
     nonisolated func resolve(_ bookmarkData: Data) throws -> URL {
         var isStale = false
         do {
-            // ✅ iOS CORRECT: options: .withoutUI — prevents system UI dialogs.
-            // Do NOT use .withSecurityScope — that is macOS App Sandbox only.
             let url = try URL(
                 resolvingBookmarkData: bookmarkData,
                 options: .withoutUI,
@@ -62,12 +60,14 @@ actor BookmarkResolver {
                 bookmarkDataIsStale: &isStale
             )
             if isStale {
+                Logger.shared.log("BookmarkResolver: bookmark is STALE for \(url.lastPathComponent) — posting notification", category: "BookmarkResolver", type: .warning)
                 Task { @MainActor in
                     NotificationCenter.default.post(name: .bookmarkBecameStale, object: bookmarkData)
                 }
             }
             return url
         } catch {
+            Logger.shared.log("BookmarkResolver: resolve FAILED: \(error.localizedDescription)", category: "BookmarkResolver", type: .error)
             throw BookmarkError.resolutionFailed(underlying: error)
         }
     }
@@ -121,6 +121,7 @@ actor BookmarkResolver {
             return result
         } catch is CancellationError {
             watchdog.cancel()
+            Logger.shared.log("BookmarkResolver.withAccess: operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
             throw BookmarkError.timedOut
         } catch {
             watchdog.cancel()
@@ -163,6 +164,7 @@ actor BookmarkResolver {
             return result
         } catch is CancellationError {
             watchdog.cancel()
+            Logger.shared.log("BookmarkResolver.withWriteAccess: write operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
             throw BookmarkError.timedOut
         } catch {
             watchdog.cancel()
@@ -201,10 +203,17 @@ actor BookmarkResolver {
 
     /// Check if a drive URL allows writing.
     func checkWritable(_ bookmarkData: Data) async -> Bool {
-        guard let url = try? resolve(bookmarkData) else { return false }
+        guard let url = try? resolve(bookmarkData) else {
+            Logger.shared.log("BookmarkResolver.checkWritable: could not resolve bookmark", category: "BookmarkResolver", type: .warning)
+            return false
+        }
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        return FileManager.default.isWritableFile(atPath: url.path)
+        let writable = FileManager.default.isWritableFile(atPath: url.path)
+        if !writable {
+            Logger.shared.log("BookmarkResolver.checkWritable: drive is READ-ONLY at \(url.lastPathComponent)", category: "BookmarkResolver", type: .warning)
+        }
+        return writable
     }
 }
 

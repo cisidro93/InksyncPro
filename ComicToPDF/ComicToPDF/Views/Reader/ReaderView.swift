@@ -262,11 +262,16 @@ struct ReaderView: View {
                 }
             }
             .onDisappear {
+                Logger.shared.log("ReaderView disappearing — flushing session for '\(fileURL.lastPathComponent)' at page \(currentPageIndex + 1)/\(pages.count)", category: "ReaderView", type: .info)
                 if let id = pdf?.id, pagesReadThisSession > 0 {
                     let elapsed = Date().timeIntervalSince(sessionStartTime)
                     ReaderProgressTracker.shared.logPageTurn(pdfID: id, pages: pagesReadThisSession, seconds: elapsed)
+                    Logger.shared.log("Session end: logged \(pagesReadThisSession) page(s) in \(String(format: "%.1f", elapsed))s for \(fileURL.lastPathComponent)", category: "ReaderView", type: .success)
                 }
-                if let dir = unzippedDir { try? FileManager.default.removeItem(at: dir) }
+                if let dir = unzippedDir {
+                    try? FileManager.default.removeItem(at: dir)
+                    Logger.shared.log("Cleaned up temp unzip dir: \(dir.lastPathComponent)", category: "ReaderView", type: .info)
+                }
                 orientationLock.unlock()
                 sleepTimer.stop()
             }
@@ -525,6 +530,7 @@ struct ReaderView: View {
 
     // MARK: - Share Current Page (format-aware)
     private func shareCurrentPage() {
+        Logger.shared.log("shareCurrentPage called: page \(currentPageIndex + 1) of '\(fileURL.lastPathComponent)'", category: "ReaderView", type: .info)
         if fileURL.pathExtension.lowercased() == "pdf" {
             let pageIdx = currentPageIndex
             let docURL = fileURL
@@ -536,10 +542,16 @@ struct ReaderView: View {
                     let size = CGSize(width: 1024, height: 1408)
                     self.shareImage = page.thumbnail(of: size, for: .mediaBox)
                     self.showShareSheet = true
+                    Logger.shared.log("PDF page \(pageIdx + 1) rendered for share", category: "ReaderView", type: .success)
+                } else {
+                    Logger.shared.log("shareCurrentPage: PDF page render failed for page \(pageIdx + 1)", category: "ReaderView", type: .error)
                 }
             }
         } else {
-            guard currentPageIndex < pages.count else { return }
+            guard currentPageIndex < pages.count else {
+                Logger.shared.log("shareCurrentPage: page index out of bounds (\(currentPageIndex) >= \(pages.count))", category: "ReaderView", type: .error)
+                return
+            }
             let url = pages[currentPageIndex]
             Task { @MainActor in
                 let image = await Task.detached(priority: .userInitiated) {
@@ -548,6 +560,9 @@ struct ReaderView: View {
                 if let image {
                     self.shareImage = image
                     self.showShareSheet = true
+                    Logger.shared.log("Image page \(self.currentPageIndex + 1) loaded for share", category: "ReaderView", type: .success)
+                } else {
+                    Logger.shared.log("shareCurrentPage: failed to load image at \(url.lastPathComponent)", category: "ReaderView", type: .error)
                 }
             }
         }
@@ -772,7 +787,12 @@ struct ReaderView: View {
                     await MainActor.run {
                         self.pages = foundPages
                         self.isLoading = false
-                        if foundPages.isEmpty { self.errorMessage = "No pages found in EPUB." }
+                        if foundPages.isEmpty {
+                            self.errorMessage = "No pages found in EPUB."
+                            Logger.shared.log("extractAndOpen: EPUB had no image pages at \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .warning)
+                        } else {
+                            Logger.shared.log("extractAndOpen: EPUB extracted \(foundPages.count) page(s) from \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .success)
+                        }
                     }
                 }
             } else {
@@ -782,7 +802,12 @@ struct ReaderView: View {
                     self.unzippedDir = result.workingDir
                     self.pages = result.imageURLs
                     self.isLoading = false
-                    if result.imageURLs.isEmpty { self.errorMessage = "No images found in comic archive." }
+                    if result.imageURLs.isEmpty {
+                        self.errorMessage = "No images found in comic archive."
+                        Logger.shared.log("extractAndOpen: CBZ/ZIP had no images at \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .warning)
+                    } else {
+                        Logger.shared.log("extractAndOpen: CBZ/ZIP extracted \(result.imageURLs.count) page(s) from \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .success)
+                    }
                 }
             }
         } catch {
@@ -914,6 +939,7 @@ struct ReaderView: View {
     }
     
     private func launchBingeJump(to nextPDF: ConvertedPDF) {
+        Logger.shared.log("BingeMode: launching '\(nextPDF.name)' after finishing '\(fileURL.lastPathComponent)'", category: "ReaderView", type: .info)
         withAnimation { showBingePrompt = false }
         dismiss()
         // Wait for the modal dismissal animation to complete before triggering the router
@@ -1019,13 +1045,18 @@ struct ReaderView: View {
     }
     
     private func toggleBookmark() {
-        guard let p = pdf, let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == p.id }) else { return }
+        guard let p = pdf, let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == p.id }) else {
+            Logger.shared.log("toggleBookmark: could not find pdf in conversionManager", category: "ReaderView", type: .warning)
+            return
+        }
         
         var updated = conversionManager.convertedPDFs[idx]
         if isBookmarked {
             updated.metadata.bookmarkedPages.removeAll(where: { $0 == currentPageIndex })
+            Logger.shared.log("Bookmark removed: page \(currentPageIndex + 1) of '\(p.name)'", category: "ReaderView", type: .info)
         } else {
             updated.metadata.bookmarkedPages.append(currentPageIndex)
+            Logger.shared.log("Bookmark added: page \(currentPageIndex + 1) of '\(p.name)'", category: "ReaderView", type: .success)
         }
         
         conversionManager.convertedPDFs[idx] = updated
@@ -1081,9 +1112,13 @@ struct ReaderView: View {
     // MARK: - Per-Book Preference Persistence
     private func restorePerBookPreferences() {
         guard let p = pdf,
-              let saved = ReaderProgressTracker.shared.progress(for: p.id) else { return }
+              let saved = ReaderProgressTracker.shared.progress(for: p.id) else {
+            Logger.shared.log("restorePerBookPreferences: no saved progress for '\(fileURL.lastPathComponent)'", category: "ReaderView", type: .info)
+            return
+        }
         
         self.currentPageIndex = saved.currentPageIndex
+        Logger.shared.log("Restored progress for '\(p.name)': page \(saved.currentPageIndex + 1), manga=\(saved.prefersMangaMode ?? false), filter=\(saved.colorFilter ?? "none")", category: "ReaderView", type: .success)
         
         if let mangaMode = saved.prefersMangaMode {
             isMangaMode = mangaMode
