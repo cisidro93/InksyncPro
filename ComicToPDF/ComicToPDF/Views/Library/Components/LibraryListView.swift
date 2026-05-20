@@ -14,6 +14,8 @@ struct LibraryListView: View {
     let onAction: (LibraryRowAction, ConvertedPDF) -> Void
     let onImport: () -> Void
     let onFolderTap: (UUID?) -> Void
+    /// Scroll offset reporting — called as the user scrolls.
+    var onScroll: ((CGFloat) -> Void)? = nil
     
     var body: some View {
         if conversionManager.visiblePDFs.isEmpty {
@@ -21,6 +23,18 @@ struct LibraryListView: View {
         } else {
             ScrollViewReader { proxy in
                 List(selection: useNavigationStack ? nil : $selectedPDF) {
+                    // ── Scroll offset anchor (zero-height row) ──────────────
+                    GeometryReader { geo in
+                        Color.clear
+                            .preference(
+                                key: LibraryScrollOffsetKey.self,
+                                value: -geo.frame(in: .named("libraryListScroll")).minY
+                            )
+                    }
+                    .frame(height: 0)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets())
+
                     ForEach(items) { item in
                     switch item {
                     case .series(let group):
@@ -250,6 +264,10 @@ struct LibraryListView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.clear)
+            .coordinateSpace(name: "libraryListScroll")
+            .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
+                onScroll?(max(0, offset))
+            }
             .overlay(alignment: .trailing) {
                 // ✅ PHASE 10: Comic Zeal Feature Restored
                 ComicZealScrubber { letter in

@@ -1,5 +1,24 @@
 import SwiftUI
 
+// MARK: - Scroll Offset Preference Key
+// Used by LibraryGridView and LibraryListView to report their scroll position
+// up through the view hierarchy so LibraryHeaderView can auto-collapse.
+struct LibraryScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+// MARK: - Header Pin Mode
+// Controls whether the header auto-collapses on scroll (auto), is locked open
+// (pinnedExpanded), or locked collapsed (pinnedCollapsed).
+enum HeaderPinMode: String {
+    case auto             = "auto"
+    case pinnedExpanded   = "expanded"
+    case pinnedCollapsed  = "collapsed"
+}
+
 enum LibraryRowAction {
     case read, covers, fetchMetadata, editMetadata, export, share, sync, rename, addToSeries, delete, favorite, details, toggleVault, saveToDrive, sendToKindle, convert
 }

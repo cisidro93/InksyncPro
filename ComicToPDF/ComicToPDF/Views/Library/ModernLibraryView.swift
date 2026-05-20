@@ -34,7 +34,22 @@ struct ModernLibraryView: View {
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
     @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
+    @AppStorage("libraryHeaderPinMode") private var headerPinModeRaw: String = HeaderPinMode.auto.rawValue
     @State private var scrollToTopTrigger = false
+    @State private var scrollOffset: CGFloat = 0
+
+    /// Derived header collapse state from scroll + user pin override.
+    private var isHeaderCollapsed: Bool {
+        switch HeaderPinMode(rawValue: headerPinModeRaw) ?? .auto {
+        case .auto:            return scrollOffset > 44
+        case .pinnedExpanded:  return false
+        case .pinnedCollapsed: return true
+        }
+    }
+
+    private var headerPinMode: HeaderPinMode {
+        HeaderPinMode(rawValue: headerPinModeRaw) ?? .auto
+    }
 
     // Storage Transfer State
     @State private var isStorageTransferring = false
@@ -158,8 +173,26 @@ struct ModernLibraryView: View {
             .onAppear {
                 conversionManager.backfillMissingThumbnails()
                 viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
+
+                // Wire the debounced SwiftData publisher: page-turn progress writes
+                // fire swiftDataPDFs onChange many times per reading session. Instead of
+                // rebuilding on every write, we send a signal and let a 250ms debounce
+                // absorb the burst before triggering a single rebuild.
+                viewModel.swiftDataCancellable = viewModel.swiftDataDidChange
+                    .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+                    .sink { [weak viewModel] in
+                        guard let vm = viewModel else { return }
+                        // Capture current values at sink time (main thread, safe)
+                        let pdfs = self.nativeVisiblePDFs
+                        let cols  = self.nativeCollections
+                        let sort  = self.sortOption
+                        vm.updateLibraryItemsCache(pdfs: pdfs, collections: cols, sortOption: sort)
+                    }
             }
-            .onChange(of: swiftDataPDFs) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            // Raw SwiftData row changes: send through the debounced publisher
+            // instead of calling updateLibraryItemsCache directly.
+            .onChange(of: swiftDataPDFs) { viewModel.notifySwiftDataChanged() }
+            // All other triggers are low-frequency and user-initiated — rebuild immediately.
             .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
             .onChange(of: swiftDataCollections) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
             .onChange(of: viewModel.debouncedSearchText) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
@@ -458,7 +491,21 @@ struct ModernLibraryView: View {
                 batchMergeItems: $batchMergeItems,
                 showingBatchMergeReorder: $showingBatchMergeReorder,
                 onVaultToggle: handleVaultToggle,
-                onSelectAll: handleSelectAll
+                onSelectAll: handleSelectAll,
+                isCollapsed: isHeaderCollapsed,
+                pinMode: headerPinMode,
+                onPinToggle: {
+                    let next: HeaderPinMode
+                    switch headerPinMode {
+                    case .auto:            next = .pinnedExpanded
+                    case .pinnedExpanded:  next = .pinnedCollapsed
+                    case .pinnedCollapsed: next = .auto
+                    }
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        headerPinModeRaw = next.rawValue
+                    }
+                    HapticEngine.selection()
+                }
             )
 
             disconnectedDrivesBanner
@@ -483,7 +530,12 @@ struct ModernLibraryView: View {
                     selectedPDF: $selectedPDF,
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
                     onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
-                    onFolderTap: { uuid in viewModel.currentFolderID = uuid }
+                    onFolderTap: { uuid in viewModel.currentFolderID = uuid },
+                    onScroll: { offset in
+                        withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.85)) {
+                            scrollOffset = offset
+                        }
+                    }
                 )
             } else {
                 LibraryGridView(
@@ -505,6 +557,11 @@ struct ModernLibraryView: View {
                             collections: conversionManager.collections,
                             sortOption: sortOption
                         )
+                    },
+                    onScroll: { offset in
+                        withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.85)) {
+                            scrollOffset = offset
+                        }
                     }
                 )
             }

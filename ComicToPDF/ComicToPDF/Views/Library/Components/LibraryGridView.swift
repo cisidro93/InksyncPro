@@ -66,6 +66,9 @@ struct LibraryGridView: View {
     /// can force-rebuild the cache from live in-memory data without waiting
     /// for the SwiftData @Query async refresh cycle.
     let onDropApplied: () -> Void
+    /// Scroll offset reporting — called as the user scrolls so the parent can
+    /// drive header collapse. Positive values = scrolled down.
+    var onScroll: ((CGFloat) -> Void)? = nil
 
     // Rename series alert state
     @State private var renamingGroup: SeriesGroup? = nil
@@ -86,6 +89,19 @@ struct LibraryGridView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0, pinnedViews: []) {
+                            // ── Scroll offset anchor ─────────────────────────
+                            // A zero-height GeometryReader pinned at the very top of
+                            // the scroll content. Its minY in the named coordinate
+                            // space equals how far the user has scrolled down (positive).
+                            GeometryReader { geo in
+                                Color.clear
+                                    .preference(
+                                        key: LibraryScrollOffsetKey.self,
+                                        value: -geo.frame(in: .named("libraryScroll")).minY
+                                    )
+                            }
+                            .frame(height: 0)
+
                             // ── Continue Reading shelf ─────────────────────
                             let inProgress: [ConvertedPDF] = items.compactMap {
                                 if case .single(let pdf) = $0 {
@@ -132,6 +148,10 @@ struct LibraryGridView: View {
                             .padding(.top, 12)
                             .padding(.bottom, 120)   // overshoots tab bar + home indicator
                         }
+                    }
+                    .coordinateSpace(name: "libraryScroll")
+                    .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
+                        onScroll?(max(0, offset))
                     }
                     .inkTabBarScrollDetect()
                     .background(Color.clear)

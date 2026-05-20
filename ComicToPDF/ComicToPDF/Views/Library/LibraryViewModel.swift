@@ -5,9 +5,17 @@ import Combine
 class LibraryViewModel: ObservableObject {
     @Published var cachedLibraryItems: [LibraryListItem] = []
     @Published var searchText: String = ""
-    
+
     // Search Debouncing
     @Published var debouncedSearchText: String = ""
+
+    // Throttle publisher for high-frequency SwiftData onChange events (page-turn writes).
+    // Only the grid-data triggers (sortOption, shelf, filter, search) fire immediately;
+    // raw SwiftData row changes are absorbed by this 250ms debounce so reading never
+    // causes a full cache rebuild on every page flip.
+    let swiftDataDidChange = PassthroughSubject<Void, Never>()
+    private var swiftDataCancellable: AnyCancellable?
+
     private var cancellables = Set<AnyCancellable>()
     
     // Routing State
@@ -31,6 +39,12 @@ class LibraryViewModel: ObservableObject {
                 self?.debouncedSearchText = text
             }
             .store(in: &cancellables)
+    }
+
+    // Called by ModernLibraryView's onChange(of: swiftDataPDFs) to absorb
+    // high-frequency progress writes without queueing a full rebuild per page.
+    func notifySwiftDataChanged() {
+        swiftDataDidChange.send()
     }
 
     // MARK: - Core Cache System
@@ -202,12 +216,18 @@ class LibraryViewModel: ObservableObject {
             }
             
             var items: [(Int, LibraryListItem)] = []
-            
+
             for (key, var group) in groups {
+                // ── SHELF FILTER: Drop series that have zero visible issues ─────
+                // When a content shelf (Comics / Manga / Books) is active, the
+                // per-PDF shelf guard above already skipped non-matching PDFs.
+                // However collection placeholder groups are pre-inserted with 0 issues,
+                // and series that had ALL issues filtered out still end up here with an
+                // empty issues array. We drop them so the grid never shows "0 Issues" cards.
+                if shelf != .all && group.issues.isEmpty { continue }
+
                 // ✅ PHASE 4: Internal Sorting & Cover Assigner
-                // Ensure issues inside the folder always display in reading sequence
                 // Schwartzian transform: parse issue/volume numbers once (O(n)) then sort (O(n log n)).
-                // Avoids calling Double() inside the comparator which fires O(n log n) times.
                 let hasVols = group.issues.contains { Double($0.metadata.volume ?? "") != nil }
                 group.issues = group.issues
                     .map { pdf -> (ConvertedPDF, Double, Double) in
@@ -222,20 +242,17 @@ class LibraryViewModel: ObservableObject {
                     }
                     .map(\.0)
 
-                
                 if let cover = group.issues.first {
                     group.coverIssueID = cover.id
                 }
-                
-                let item = LibraryListItem.series(group)
-                items.append((firstAppearanceIndex[key] ?? 0, item))
+
+                items.append((firstAppearanceIndex[key] ?? 0, LibraryListItem.series(group)))
             }
-            
+
             for single in singles {
-                let item = LibraryListItem.single(single)
-                items.append((firstAppearanceIndex["single_\(single.id)"] ?? 0, item))
+                items.append((firstAppearanceIndex["single_\(single.id)"] ?? 0, LibraryListItem.single(single)))
             }
-            
+
             // Search Filtering
             if !currentSearchText.isEmpty {
                 items = items.filter { tuple in
@@ -251,33 +268,35 @@ class LibraryViewModel: ObservableObject {
                     }
                 }
             }
-            
+
             items.sort { $0.0 < $1.0 }
 
             // Cancellation guard: don't publish a stale result if a newer rebuild
             // has already been queued by the time we finish computing.
             guard !Task.isCancelled else { return }
+
             // Prepend large drive cards (always pinned to top of library grid)
             let finalItems = driveFolderItems + items.map { $0.1 }
 
-            // Publish results back to main thread
+            // Publish results back to main thread.
+            // Single atomic publish — no two-phase chunked delivery, which caused a
+            // visible flash where items disappeared then reappeared on every shelf switch.
+            // The background Task already isolates CPU work; the main-thread publish is O(1).
             Task { @MainActor in
                 guard !Task.isCancelled else { return }
-                
-                let chunkLimit = 50
-                if finalItems.count > chunkLimit {
-                    self.cachedLibraryItems = Array(finalItems.prefix(chunkLimit))
-                    // Push the remaining items on the next run-loop to prevent dropped frames
-                    Task { @MainActor in
-                        guard !Task.isCancelled else { return }
-                        self.cachedLibraryItems = finalItems
-                    }
-                } else {
+
+                // ID-equality guard: skip the SwiftUI diff entirely when nothing changed.
+                // This absorbs spurious SwiftData onChange events (e.g. reading-progress
+                // writes) that don't actually change what's visible in the library grid.
+                let newIDs = finalItems.map(\.id)
+                let oldIDs = self.cachedLibraryItems.map(\.id)
+                guard newIDs != oldIDs else { return }
+
+                withAnimation(.easeOut(duration: 0.18)) {
                     self.cachedLibraryItems = finalItems
                 }
-                
-                // ✅ Phase 2 Logging Integration
-                Logger.shared.log("Library Cache Rebuilt: \(finalItems.count) total UI groups rendered (Filter: \(filter.rawValue), Depth: \(folderID?.uuidString ?? "Root"))", category: "Library")
+
+                Logger.shared.log("Library Cache Rebuilt: \(finalItems.count) total UI groups rendered (Filter: \(filter.rawValue), Shelf: \(shelf.rawValue), Depth: \(folderID?.uuidString ?? "Root"))", category: "Library")
             }
         }
     }

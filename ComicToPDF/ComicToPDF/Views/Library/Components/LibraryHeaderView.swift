@@ -21,6 +21,11 @@ struct LibraryHeaderView: View {
     var onVaultToggle: () -> Void
     var onSelectAll: (() -> Void)? = nil
 
+    // Collapse + Pin state (driven by ModernLibraryView)
+    var isCollapsed: Bool = false
+    var pinMode: HeaderPinMode = .auto
+    var onPinToggle: (() -> Void)? = nil
+
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var showImportQueue = false
 
@@ -246,41 +251,45 @@ struct LibraryHeaderView: View {
                 .padding(.top, 20)
             } // end hSizeClass branches
             
-            // ── Smart Collections Strip ─────────
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(SmartCollectionRule.allCases) { rule in
-                        Button(action: {
-                            AppRouter.shared.presentFullScreen(.smartCollection(rule))
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: rule.iconName)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(rule.tintColor.gradient)
-                                Text(rule.rawValue)
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundColor(Theme.text)
-                                // Live count badge
-                                let count = smartCollectionCount(rule)
-                                if count > 0 {
-                                    Text("\(count)")
-                                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                                        .foregroundColor(rule.tintColor)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(rule.tintColor.opacity(0.15), in: Capsule())
+            // ── Smart Collections Strip ──────────────────────────────────
+            // Hidden when scrolled / pinned collapsed — saves ~44pt
+            if !isCollapsed {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(SmartCollectionRule.allCases) { rule in
+                            Button(action: {
+                                AppRouter.shared.presentFullScreen(.smartCollection(rule))
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: rule.iconName)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(rule.tintColor.gradient)
+                                    Text(rule.rawValue)
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(Theme.text)
+                                    // Live count badge
+                                    let count = smartCollectionCount(rule)
+                                    if count > 0 {
+                                        Text("\(count)")
+                                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                                            .foregroundColor(rule.tintColor)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(rule.tintColor.opacity(0.15), in: Capsule())
+                                    }
                                 }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 9)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
+                                .overlay(Capsule().stroke(rule.tintColor.opacity(0.2), lineWidth: 0.5))
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(rule.tintColor.opacity(0.2), lineWidth: 0.5))
                         }
                     }
+                    .padding(.horizontal, hSizeClass == .compact ? 16 : 20)
+                    .padding(.top, 16)
                 }
-                .padding(.horizontal, hSizeClass == .compact ? 16 : 20)
-                .padding(.top, 16)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
 
             // ── Content Shelf Selector ─────────────────────────────────────────
@@ -391,110 +400,148 @@ struct LibraryHeaderView: View {
             .padding(.top, 10)
             .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isBatchMode)
 
-            // ── Row B: Power-User Overflow Tools (slim scrollable strip) ──────
-            // Format picker, tap action, Wi-Fi, tools, metadata engine, vault.
-            // Inspired by Reeder's compact toolbar — power tools tucked away but reachable.
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    // Target format
-                    Menu {
-                        Section("Standard Formats") {
-                            Picker("Target Format", selection: $settingsManager.conversionSettings.outputFormat) {
-                                ForEach(OutputFormat.allCases) { format in
-                                    Label(format.rawValue, systemImage: format.icon).tag(format)
-                                }
-                            }
-                        }
-                        if !settingsManager.conversionPresets.isEmpty {
-                            Section("Custom Profiles") {
-                                ForEach(settingsManager.conversionPresets) { preset in
-                                    Button {
-                                        settingsManager.conversionSettings = preset.settings
-                                    } label: {
-                                        Label(preset.name, systemImage: "list.clipboard.fill")
+            // ── Row B: Power-User Overflow Tools ───────────────────────────
+            // Hidden when collapsed — saves ~44pt. Format picker, tap action, tools.
+            if !isCollapsed {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        // Target format
+                        Menu {
+                            Section("Standard Formats") {
+                                Picker("Target Format", selection: $settingsManager.conversionSettings.outputFormat) {
+                                    ForEach(OutputFormat.allCases) { format in
+                                        Label(format.rawValue, systemImage: format.icon).tag(format)
                                     }
                                 }
                             }
+                            if !settingsManager.conversionPresets.isEmpty {
+                                Section("Custom Profiles") {
+                                    ForEach(settingsManager.conversionPresets) { preset in
+                                        Button {
+                                            settingsManager.conversionSettings = preset.settings
+                                        } label: {
+                                            Label(preset.name, systemImage: "list.clipboard.fill")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(Theme.orange)
+                                Text(settingsManager.conversionSettings.outputFormat.rawValue)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(Theme.text)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                            .overflowPill()
                         }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(Theme.orange)
-                            Text(settingsManager.conversionSettings.outputFormat.rawValue)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(Theme.text)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(Theme.textSecondary)
-                        }
-                        .overflowPill()
-                    }
 
-                    // Tap action
-                    Menu {
-                        Picker("Tap Action", selection: $tapAction) {
-                            ForEach(LibraryTapAction.allCases, id: \.self) { action in
-                                Text(action.rawValue).tag(action)
+                        // Tap action
+                        Menu {
+                            Picker("Tap Action", selection: $tapAction) {
+                                ForEach(LibraryTapAction.allCases, id: \.self) { action in
+                                    Text(action.rawValue).tag(action)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "hand.tap.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(Theme.blue)
+                                Text(tapAction.rawValue)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(Theme.text)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                            .overflowPill()
+                        }
+
+                        // Wi-Fi
+                        ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
+
+                        // Smart List
+                        ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
+
+                        // Batch tools
+                        ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {
+                            if multiSelection.count >= 1 {
+                                let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                                onSheetTrigger(.cognitiveBatchRenamer(items))
+                            }
+                            else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.") }
+                        })
+                        ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.purple) { onSheetTrigger(.merge) }
+                        ActionPill(title: "Convert & Merge", icon: "doc.on.doc.fill", color: Theme.purple, action: {
+                            if multiSelection.count >= 2 { batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }; showingBatchMergeReorder = true }
+                            else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.") }
+                        })
+
+                        // Metadata + stats
+                        ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) {
+                            Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
+                        }
+                        if !conversionManager.failedMetadataPDFs.isEmpty {
+                            ActionPill(title: "Review Missing", icon: "exclamationmark.triangle.fill", color: Theme.red) {
+                                onSheetTrigger(.reviewMetadata)
                             }
                         }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "hand.tap.fill")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(Theme.blue)
-                            Text(tapAction.rawValue)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(Theme.text)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(Theme.textSecondary)
-                        }
-                        .overflowPill()
+                        ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }
+
+                        // Vault
+                        ActionPill(
+                            title: settingsManager.isVaultUnlocked ? "Vault Open" : "Vault",
+                            icon: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill",
+                            color: settingsManager.isVaultUnlocked ? Theme.red : Theme.textSecondary
+                        ) { onVaultToggle() }
                     }
-
-                    // Wi-Fi
-                    ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
-
-                    // Smart List
-                    ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
-
-                    // Batch tools
-                    ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {
-                        if multiSelection.count >= 1 {
-                            let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                            onSheetTrigger(.cognitiveBatchRenamer(items))
-                        }
-                        else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.") }
-                    })
-                    ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.purple) { onSheetTrigger(.merge) }
-                    ActionPill(title: "Convert & Merge", icon: "doc.on.doc.fill", color: Theme.purple, action: {
-                        if multiSelection.count >= 2 { batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }; showingBatchMergeReorder = true }
-                        else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.") }
-                    })
-
-                    // Metadata + stats
-                    ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) {
-                        Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
-                    }
-                    if !conversionManager.failedMetadataPDFs.isEmpty {
-                        ActionPill(title: "Review Missing", icon: "exclamationmark.triangle.fill", color: Theme.red) {
-                            onSheetTrigger(.reviewMetadata)
-                        }
-                    }
-                    ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }
-
-                    // Vault
-                    ActionPill(
-                        title: settingsManager.isVaultUnlocked ? "Vault Open" : "Vault",
-                        icon: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill",
-                        color: settingsManager.isVaultUnlocked ? Theme.red : Theme.textSecondary
-                    ) { onVaultToggle() }
+                    .padding(.horizontal, 16)
                 }
-                .padding(.horizontal, 16)
+                .padding(.top, 6)
+                .padding(.bottom, 10)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            .padding(.top, 6)
-            .padding(.bottom, 14)
+
+            // ── Collapse indicator + Pin toggle ────────────────────────────
+            // Always visible at the bottom of the header. Chevron = collapse direction;
+            // pin button cycles: auto (no lock) → pin expanded → pin collapsed.
+            HStack(spacing: 0) {
+                Spacer()
+
+                Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(Theme.textSecondary.opacity(0.5))
+
+                Spacer()
+
+                Button(action: { onPinToggle?() }) {
+                    let (icon, color): (String, Color) = {
+                        switch pinMode {
+                        case .auto:            return ("pin.slash", Theme.textSecondary.opacity(0.4))
+                        case .pinnedExpanded:  return ("pin.fill",  Theme.orange)
+                        case .pinnedCollapsed: return ("pin",       Theme.blue)
+                        }
+                    }()
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(color)
+                        .padding(6)
+                        .background(
+                            pinMode != .auto ? AnyShapeStyle(color.opacity(0.12)) : AnyShapeStyle(Color.clear),
+                            in: Circle()
+                        )
+                        .overlay(Circle().stroke(pinMode != .auto ? color.opacity(0.25) : Color.clear, lineWidth: 0.5))
+                }
+                .padding(.trailing, 12)
+                .animation(.spring(response: 0.3, dampingFraction: 0.75), value: pinMode)
+            }
+            .frame(height: 18)
+            .padding(.bottom, 4)
         }
         .background(.ultraThinMaterial)
         .overlay(
