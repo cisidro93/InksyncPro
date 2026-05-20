@@ -128,9 +128,9 @@ struct DevicesView: View {
         ForEach(savedDevices) { device in
             deviceRowContainer(for: device)
         }
+        .onDelete(perform: deleteDevices)
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-        .onDelete(perform: deleteDevices)
     }
 
     @ViewBuilder
