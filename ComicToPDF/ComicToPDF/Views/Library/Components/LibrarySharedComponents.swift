@@ -178,52 +178,101 @@ struct ModernEmptyState: View {
     }
 }
 
-// MARK: - Comic Zeal Scrubber
-struct ComicZealScrubber: View {
+// MARK: - Library Index Scrubber (on-demand, Contacts-style)
+// At rest: a subtle 3pt handle on the right edge.
+// On touch/drag: springs open to the full letter list with selection haptics.
+// Auto-hides 1.5 seconds after the user lifts their finger.
+struct LibraryIndexScrubber: View {
     let onScrub: (String) -> Void
-    let letters = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ#")
+    let letters: [String] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#".map { String($0) }
+
+    @State private var isExpanded: Bool = false
     @State private var activeLetter: String? = nil
-    
+    @State private var hideTask: Task<Void, Never>? = nil
+
     var body: some View {
         GeometryReader { geo in
             let itemHeight = geo.size.height / CGFloat(letters.count)
-            
-            VStack(spacing: 0) {
-                ForEach(letters, id: \.self) { char in
-                    Text(String(char))
-                        .font(.system(size: 10, weight: .heavy))
-                        .foregroundColor(activeLetter == String(char) ? Theme.blue : Theme.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: itemHeight)
+
+            ZStack(alignment: .trailing) {
+                // ── Invisible wide hit area so touch begins anywhere on the right edge ──
+                Color.clear
+                    .frame(width: isExpanded ? 36 : 22)
+
+                // ── Expanded letter list ──────────────────────────────────────────────
+                if isExpanded {
+                    VStack(spacing: 0) {
+                        ForEach(letters, id: \.self) { char in
+                            Text(char)
+                                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                                .foregroundColor(
+                                    activeLetter == char
+                                        ? Theme.blue
+                                        : Theme.textSecondary.opacity(0.75)
+                                )
+                                .frame(maxWidth: .infinity)
+                                .frame(height: itemHeight)
+                                .scaleEffect(activeLetter == char ? 1.25 : 1.0)
+                        }
+                    }
+                    .frame(width: 28)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(Theme.text.opacity(0.08), lineWidth: 0.5)
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
+                }
+
+                // ── Collapsed handle (subtle 3pt pill) ───────────────────────────────
+                if !isExpanded {
+                    Capsule()
+                        .fill(Theme.textSecondary.opacity(0.22))
+                        .frame(width: 3, height: 48)
+                        .transition(.opacity)
                 }
             }
-            .background(
-                Capsule()
-                    .fill(.ultraThinMaterial)
-            )
+            .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        handleDrag(value: value, itemHeight: itemHeight)
+                        // Cancel any pending hide on new touch
+                        hideTask?.cancel()
+
+                        // Expand on first touch
+                        if !isExpanded {
+                            withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
+                                isExpanded = true
+                            }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        }
+
+                        // Letter tracking
+                        let idx = max(0, min(letters.count - 1, Int(value.location.y / itemHeight)))
+                        let letter = letters[idx]
+                        if activeLetter != letter {
+                            activeLetter = letter
+                            onScrub(letter)
+                            UISelectionFeedbackGenerator().selectionChanged()
+                        }
                     }
                     .onEnded { _ in
                         activeLetter = nil
+                        // Auto-collapse after 1.5 seconds of inactivity
+                        hideTask = Task {
+                            try? await Task.sleep(nanoseconds: 1_500_000_000)
+                            guard !Task.isCancelled else { return }
+                            await MainActor.run {
+                                withAnimation(.easeOut(duration: 0.2)) { isExpanded = false }
+                            }
+                        }
                     }
             )
         }
-        .frame(width: 24)
-    }
-    
-    private func handleDrag(value: DragGesture.Value, itemHeight: CGFloat) {
-        let index = Int(value.location.y / itemHeight)
-        if index >= 0 && index < letters.count {
-            let letter = String(letters[index])
-            if activeLetter != letter {
-                activeLetter = letter
-                onScrub(letter)
-                let generator = UISelectionFeedbackGenerator()
-                generator.selectionChanged()
-            }
-        }
+        .frame(width: 28)
     }
 }

@@ -14,8 +14,8 @@ struct LibraryListView: View {
     let onAction: (LibraryRowAction, ConvertedPDF) -> Void
     let onImport: () -> Void
     let onFolderTap: (UUID?) -> Void
-    /// Scroll offset reporting — called as the user scrolls.
-    var onScroll: ((CGFloat) -> Void)? = nil
+    /// Direct binding to parent's scrollOffset for reliable collapse tracking.
+    @Binding var scrollOffset: CGFloat
     
     var body: some View {
         if conversionManager.visiblePDFs.isEmpty {
@@ -266,11 +266,11 @@ struct LibraryListView: View {
             .background(Color.clear)
             .coordinateSpace(name: "libraryListScroll")
             .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
-                onScroll?(max(0, offset))
+                scrollOffset = max(0, offset)
             }
             .overlay(alignment: .trailing) {
                 // ✅ PHASE 10: Comic Zeal Feature Restored
-                ComicZealScrubber { letter in
+                LibraryIndexScrubber { letter in
                     if let targetID = firstItemId(for: letter) {
                         withAnimation { proxy.scrollTo(targetID, anchor: .top) }
                     }

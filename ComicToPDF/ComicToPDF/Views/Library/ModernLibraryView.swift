@@ -37,9 +37,16 @@ struct ModernLibraryView: View {
     @AppStorage("libraryHeaderPinMode") private var headerPinModeRaw: String = HeaderPinMode.auto.rawValue
     @State private var scrollToTopTrigger = false
     @State private var scrollOffset: CGFloat = 0
+    /// Detected via UIDevice orientation notification — landscape forces the header
+    /// into compact mode regardless of pin/scroll state.
+    @State private var isLandscape: Bool = false
+    @Environment(\.verticalSizeClass) private var vSizeClass
 
-    /// Derived header collapse state from scroll + user pin override.
+    /// Derived header collapse state.
+    /// Priority: landscape (always collapsed) → pin lock → scroll threshold.
     private var isHeaderCollapsed: Bool {
+        // iPhone landscape uses vSizeClass == .compact; iPad landscape is detected via isLandscape
+        if vSizeClass == .compact || isLandscape { return true }
         switch HeaderPinMode(rawValue: headerPinModeRaw) ?? .auto {
         case .auto:            return scrollOffset > 44
         case .pinnedExpanded:  return false
@@ -174,6 +181,10 @@ struct ModernLibraryView: View {
                 conversionManager.backfillMissingThumbnails()
                 viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
 
+                // Seed landscape state immediately (handles cold-launch in landscape)
+                let size = UIScreen.main.bounds.size
+                isLandscape = size.width > size.height
+
                 // Wire the debounced SwiftData publisher: page-turn progress writes
                 // fire swiftDataPDFs onChange many times per reading session. Instead of
                 // rebuilding on every write, we send a signal and let a 250ms debounce
@@ -188,6 +199,12 @@ struct ModernLibraryView: View {
                         let sort  = self.sortOption
                         vm.updateLibraryItemsCache(pdfs: pdfs, collections: cols, sortOption: sort)
                     }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                let size = UIScreen.main.bounds.size
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    isLandscape = size.width > size.height
+                }
             }
             // Raw SwiftData row changes: send through the debounced publisher
             // instead of calling updateLibraryItemsCache directly.
@@ -531,11 +548,7 @@ struct ModernLibraryView: View {
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
                     onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
-                    onScroll: { offset in
-                        withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.85)) {
-                            scrollOffset = offset
-                        }
-                    }
+                    scrollOffset: $scrollOffset
                 )
             } else {
                 LibraryGridView(
@@ -558,11 +571,7 @@ struct ModernLibraryView: View {
                             sortOption: sortOption
                         )
                     },
-                    onScroll: { offset in
-                        withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.85)) {
-                            scrollOffset = offset
-                        }
-                    }
+                    scrollOffset: $scrollOffset
                 )
             }
         }
