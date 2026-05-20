@@ -99,7 +99,7 @@ struct LibraryGridView: View {
                                     if tapAction == .read {
                                         onAction(.read, pdf)
                                     } else {
-                                        onAction(.details, pdf)
+                                        onAction(.convert, pdf)
                                     }
                                 }
                                 .environmentObject(conversionManager)
@@ -356,7 +356,11 @@ struct LibraryGridView: View {
                 // Cloud-sourced files cannot be read locally — they need Download & Convert first.
                 if case .cloud = pdf.sourceMode {
                     Button {
-                        onAction(.details, pdf)
+                        if tapAction == .convert {
+                            onAction(.convert, pdf)
+                        } else {
+                            onAction(.details, pdf)
+                        }
                     } label: {
                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
                     }
@@ -386,6 +390,8 @@ struct LibraryGridView: View {
                     Button {
                         if tapAction == .read {
                             onAction(.read, pdf)
+                        } else if tapAction == .convert {
+                            onAction(.convert, pdf)
                         } else {
                             onAction(.details, pdf)
                         }

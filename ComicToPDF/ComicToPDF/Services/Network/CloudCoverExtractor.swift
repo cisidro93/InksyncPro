@@ -64,15 +64,27 @@ actor CloudCoverExtractor {
     private func extractCover(for pdf: ConvertedPDF) async {
         defer { inFlight.remove(pdf.id) }
 
-        guard case .cloud(let provider, let remoteID) = pdf.sourceMode,
-              provider == "Dropbox" else { return }
+        guard case .cloud(let provider, let remoteID) = pdf.sourceMode else { return }
 
         let ext = (pdf.name as NSString).pathExtension.lowercased()
 
         do {
-            // ── Step 1: Get a fresh temporary link (valid for 4 hours) ─────────
-            let downloadURL = try await withTimeout(seconds: 15) {
-                try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
+            // ── Step 1: Get a fresh temporary link and potential auth header ──
+            let downloadURL: URL
+            let authHeader: String?
+
+            if provider == "Dropbox" {
+                downloadURL = try await withTimeout(seconds: 15) {
+                    try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
+                }
+                authHeader = nil
+            } else if provider == "Google Drive" || provider == "GoogleDrive" {
+                downloadURL = try await withTimeout(seconds: 15) {
+                    try await GoogleDriveProvider.shared.getDownloadURL(fileID: remoteID)
+                }
+                authHeader = try await GoogleDriveProvider.shared.currentAuthHeader()
+            } else {
+                return
             }
 
             // ── Step 2: Extract cover image based on archive format ────────────
@@ -80,10 +92,10 @@ actor CloudCoverExtractor {
 
             switch ext {
             case "cbz", "zip":
-                imageData = try await extractFromZip(url: downloadURL, pdfName: pdf.name)
+                imageData = try await extractFromZip(url: downloadURL, authHeader: authHeader, pdfName: pdf.name)
 
             case "cbr":
-                imageData = try await extractFromRar(url: downloadURL, pdfName: pdf.name, pdf: pdf)
+                imageData = try await extractFromRar(url: downloadURL, authHeader: authHeader, pdfName: pdf.name, pdf: pdf)
 
             default:
                 Logger.shared.log(
@@ -143,9 +155,9 @@ actor CloudCoverExtractor {
     // MARK: - Format Extractors
 
     /// CBZ / ZIP: parse the Central Directory from the file's tail (no full download).
-    private func extractFromZip(url: URL, pdfName: String) async throws -> Data {
+    private func extractFromZip(url: URL, authHeader: String?, pdfName: String) async throws -> Data {
         let manifest = try await withTimeout(seconds: 15) {
-            try await ZipCentralDirectory.fetch(from: url, authHeader: nil)
+            try await ZipCentralDirectory.fetch(from: url, authHeader: authHeader)
         }
         guard let coverEntry = manifest.pageEntries.first else {
             throw NSError(domain: "CloudCoverExtractor", code: 1,
@@ -159,15 +171,15 @@ actor CloudCoverExtractor {
     /// CBR / RAR: parse sequential block headers from the file's head.
     /// Stored (method 0x30) entries are fetched byte-range directly.
     /// Compressed entries fall back to a full-file stream + local extraction.
-    private func extractFromRar(url: URL, pdfName: String, pdf: ConvertedPDF) async throws -> Data {
+    private func extractFromRar(url: URL, authHeader: String?, pdfName: String, pdf: ConvertedPDF) async throws -> Data {
         let entry = try await withTimeout(seconds: 15) {
-            try await RARHeaderParser.fetchFirstEntry(from: url, authHeader: nil)
+            try await RARHeaderParser.fetchFirstEntry(from: url, authHeader: authHeader)
         }
 
         if entry.isStored {
             // Fast path: byte-range fetch for uncompressed images
             return try await withTimeout(seconds: 15) {
-                try await RARHeaderParser.fetchEntryData(entry: entry, from: url, authHeader: nil)
+                try await RARHeaderParser.fetchEntryData(entry: entry, from: url, authHeader: authHeader)
             }
         } else {
             // Slow path: full download → local UnrarKit extraction.
@@ -192,7 +204,7 @@ actor CloudCoverExtractor {
 
     private func shouldExtract(_ pdf: ConvertedPDF) -> Bool {
         guard !inFlight.contains(pdf.id) else { return false }
-        guard case .cloud(let provider, _) = pdf.sourceMode, provider == "Dropbox" else { return false }
+        guard case .cloud(let provider, _) = pdf.sourceMode, ["Dropbox", "GoogleDrive", "Google Drive"].contains(provider) else { return false }
 
         let ext = (pdf.name as NSString).pathExtension.lowercased()
         guard ["cbz", "zip", "cbr"].contains(ext) else { return false }

@@ -163,88 +163,49 @@ struct LibraryListView: View {
                              .listRowBackground(Color.inkSurface.opacity(0.4))
                              .listRowSeparatorTint(Color(UIColor.separator))
                         } else {
-                            // ── Cloud files: always open the detail sheet.
-                            // Cloud-sourced files cannot be read locally — they need Download & Convert first.
-                            if case .cloud = pdf.sourceMode {
+                            Button {
+                                if case .cloud = pdf.sourceMode {
+                                    if tapAction == .convert {
+                                        onAction(.convert, pdf)
+                                    } else {
+                                        onAction(.details, pdf)
+                                    }
+                                } else {
+                                    if tapAction == .read {
+                                        onAction(.read, pdf)
+                                    } else if tapAction == .convert {
+                                        onAction(.convert, pdf)
+                                    } else {
+                                        onAction(.details, pdf)
+                                    }
+                                }
+                            } label: {
+                                ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
+                            }
+                            .tag(pdf)
+                            .listRowBackground(Color.inkSurface.opacity(0.4))
+                            .listRowSeparatorTint(Color(UIColor.separator))
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button {
-                                    onAction(.details, pdf)
-                                } label: {
-                                    ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
-                                }
-                                .tag(pdf)
-                                .listRowBackground(Color.inkSurface.opacity(0.4))
-                                .listRowSeparatorTint(Color(UIColor.separator))
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button {
-                                        isBatchMode = true
-                                        multiSelection.insert(pdf.id)
-                                    } label: { Label("Select", systemImage: "checkmark.circle.fill") }
-                                    .tint(.green)
-                                    swipeActionsTrailing(pdf)
-                                }
-                                .swipeActions(edge: .leading) {
-                                    // Leading swipe for cloud = open details (not read)
+                                    isBatchMode = true
+                                    multiSelection.insert(pdf.id)
+                                } label: { Label("Select", systemImage: "checkmark.circle.fill") }
+                                .tint(.green)
+                                
+                                swipeActionsTrailing(pdf)
+                            }
+                            .swipeActions(edge: .leading) {
+                                if case .cloud = pdf.sourceMode {
                                     Button {
                                         onAction(.details, pdf)
                                     } label: { Label("Details", systemImage: "info.circle.fill") }
                                     .tint(Theme.orange)
-                                }
-                                .contextMenu {
-                                    contextMenuContent(pdf)
-                                }
-                            } else if useNavigationStack && tapAction == .details {
-                                // ── Route through onAction \u2014 NavigationLink(value:) removed.
-                                // It previously pushed ConvertView, bypassing onAction entirely.
-                                Button {
-                                    onAction(.details, pdf)
-                                } label: {
-                                    ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
-                                }
-                                .listRowBackground(Color.inkSurface.opacity(0.4))
-                                .listRowSeparatorTint(Color(UIColor.separator))
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button {
-                                        isBatchMode = true
-                                        multiSelection.insert(pdf.id)
-                                    } label: { Label("Select", systemImage: "checkmark.circle.fill") }
-                                    .tint(.green)
-                                    swipeActionsTrailing(pdf)
-                                }
-                                .swipeActions(edge: .leading) {
+                                } else {
                                     swipeActionsLeading(pdf)
                                 }
-                                .contextMenu {
-                                    contextMenuContent(pdf)
-                                }
-                            } else {
-                                Button {
-                                    if tapAction == .read {
-                                        onAction(.read, pdf)
-                                    } else {
-                                        onAction(.details, pdf) // using details here to trigger MediaDetailSheet
-                                    }
-                                } label: {
-                                    ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
-                                }
-                                .tag(pdf)
-                                .listRowBackground(Color.inkSurface.opacity(0.4))
-                                .listRowSeparatorTint(Color(UIColor.separator))
-                                // ✅ Comic Zeal Swipe Selection Action (Swipe Left)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button {
-                                        isBatchMode = true
-                                        multiSelection.insert(pdf.id)
-                                    } label: { Label("Select", systemImage: "checkmark.circle.fill") }
-                                    .tint(.green)
-                                    
-                                    swipeActionsTrailing(pdf)
-                                }
-                                .swipeActions(edge: .leading) {
-                                    swipeActionsLeading(pdf)
-                                }
-                                .contextMenu {
-                                    contextMenuContent(pdf)
-                                }
+                            }
+                            .contextMenu {
+                                contextMenuContent(pdf)
                             }
                         }
                     case .driveFolder(let entry):

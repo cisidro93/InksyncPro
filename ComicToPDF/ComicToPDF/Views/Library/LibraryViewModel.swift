@@ -82,12 +82,9 @@ class LibraryViewModel: ObservableObject {
                 switch shelf {
                 case .all: break
                 case .comics:
-                    guard pdf.contentType == .comic,
-                          !(pdf.metadata.isManga ?? false) else { continue }
+                    guard pdf.contentType == .comic && !(pdf.metadata.isManga ?? false) else { continue }
                 case .manga:
-                    guard (pdf.metadata.isManga ?? false) || pdf.contentType == .comic else { continue }
-                    // Only manga-flagged comics
-                    if pdf.contentType == .comic && !(pdf.metadata.isManga ?? false) { continue }
+                    guard pdf.contentType == .manga || (pdf.metadata.isManga ?? false) else { continue }
                 case .books:
                     guard pdf.contentType == .book else { continue }
                 }
@@ -358,8 +355,10 @@ class LibraryViewModel: ObservableObject {
                         manager: conversionManager
                     )
                     await MainActor.run {
-                        if case .local = pdf.sourceMode {
-                            AppRouter.shared.presentSheet(.convert(pdf))
+                        if let updated = conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) {
+                            DispatchQueue.main.async {
+                                AppRouter.shared.presentSheet(.convert(updated))
+                            }
                         }
                     }
                 }

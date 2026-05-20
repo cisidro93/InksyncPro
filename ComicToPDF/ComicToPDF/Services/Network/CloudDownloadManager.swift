@@ -235,7 +235,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
             downloadURL = try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
             request = URLRequest(url: downloadURL)
             // Dropbox temporary links are pre-authenticated — no Authorization header needed
-        } else if provider == "Google Drive" {
+        } else if provider == "Google Drive" || provider == "GoogleDrive" {
             downloadURL = try await GoogleDriveProvider.shared.getDownloadURL(fileID: remoteID)
             request = URLRequest(url: downloadURL)
             let authHeader = try await GoogleDriveProvider.shared.currentAuthHeader()

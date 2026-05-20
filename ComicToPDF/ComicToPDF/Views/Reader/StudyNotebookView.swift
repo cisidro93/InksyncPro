@@ -23,11 +23,16 @@ struct StudyNotebookView: View {
         case handwriting = "Pencil"
     }
     @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
+    @AppStorage("studyNotebookPaperStyle") private var paperStyle: PaperStyle = .plain
     @State private var canvasView = PKCanvasView()
     
     // ✅ Phase 3: Highlights Drawer
     @State private var showHighlightsDrawer = false
     @State private var bookHighlights: [SDAnnotation] = []
+    
+    // Pro Search & Filter State
+    @State private var highlightSearchQuery = ""
+    @State private var highlightSortNewest = true
     
     var body: some View {
         ZStack {
@@ -53,10 +58,52 @@ struct StudyNotebookView: View {
                         Image(systemName: "applepencil").tag(InputMode.handwriting)
                     }
                     .pickerStyle(.segmented)
-                    .frame(width: 120)
+                    .frame(width: 110)
                     
-                    Spacer()
+                    if inputMode == .handwriting {
+                        // Paper Style Menu
+                        Menu {
+                            Picker("Paper Style", selection: $paperStyle) {
+                                ForEach(PaperStyle.allCases) { style in
+                                    Label(style.rawValue, systemImage: style.icon).tag(style)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "doc.plaintext")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .padding(8)
+                                .background(Color.primary.opacity(0.08))
+                                .clipShape(Circle())
+                        }
+                    }
                     
+                    // Smart Summary Helper
+                    Button {
+                        generateAISummary()
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.purple)
+                            .padding(8)
+                            .background(Color.purple.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    
+                    // Export Suite Menu
+                    Menu {
+                        Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
+                        Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
+                        Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+
                     // Highlights Drawer Toggle
                     Button {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -64,19 +111,41 @@ struct StudyNotebookView: View {
                         }
                     } label: {
                         Image(systemName: "highlighter")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(showHighlightsDrawer ? Theme.blue : .primary)
                             .padding(8)
                             .background(showHighlightsDrawer ? Theme.blue.opacity(0.1) : Color.primary.opacity(0.08))
                             .clipShape(Circle())
                     }
 
-                    // Live word count (Bear-style)
-                    let words = localNotes.split { $0.isWhitespace || $0.isNewline }.count
-                    Text("\(words)w")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                    // Stats Menu HUD
+                    Menu {
+                        Section("Note Stats") {
+                            Button(action: {}) { Label("\(localNotes.count) Characters", systemImage: "text.alignleft") }.disabled(true)
+                            Button(action: {}) { Label("\(localNotes.split { $0.isWhitespace || $0.isNewline }.count) Words", systemImage: "character.textbox") }.disabled(true)
+                            Button(action: {}) {
+                                let lines = localNotes.components(separatedBy: .newlines).filter { !$0.isEmpty }.count
+                                Label("\(lines) Paragraphs", systemImage: "text.justify.left")
+                            }.disabled(true)
+                            Button(action: {}) {
+                                let wCount = localNotes.split { $0.isWhitespace || $0.isNewline }.count
+                                let readingTime = max(1, Int(ceil(Double(wCount) / 200.0)))
+                                Label("\(readingTime) min read", systemImage: "clock")
+                            }.disabled(true)
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            let words = localNotes.split { $0.isWhitespace || $0.isNewline }.count
+                            Text("\(words)w")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 9))
+                        }
                         .foregroundColor(Theme.textSecondary)
-                        .monospacedDigit()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    }
 
                     if isFocused {
                         Image(systemName: "circle.fill")
@@ -88,7 +157,7 @@ struct StudyNotebookView: View {
                             isFocused = false
                         } label: {
                             Image(systemName: "keyboard.chevron.compact.down")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .padding(8)
                                 .background(Color.primary.opacity(0.08))
@@ -96,8 +165,8 @@ struct StudyNotebookView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
                 .background(
                     Color(UIColor.systemBackground).opacity(0.85)
                         .background(.ultraThinMaterial)
@@ -111,8 +180,11 @@ struct StudyNotebookView: View {
                             .padding(16)
                             .onChange(of: localNotes) { _, _ in debounceSave() }
                     } else {
-                        StudyCanvasView(canvasView: $canvasView, onSaved: debounceSave)
-                            .padding(.top, 8)
+                        ZStack {
+                            NotebookPaperBackground(style: paperStyle, colorScheme: colorScheme)
+                            StudyCanvasView(canvasView: $canvasView, onSaved: debounceSave)
+                        }
+                        .padding(.top, 8)
                     }
                     
                     // MARK: Highlights Drawer Overlay
@@ -201,12 +273,101 @@ struct StudyNotebookView: View {
                     self.activeNoteAnnotation?.noteText = self.localNotes
                     self.activeNoteAnnotation?.drawingData = self.canvasView.drawing.dataRepresentation()
                     self.activeNoteAnnotation?.modifiedAt = Date()
-                    try? self.modelContext.save()
+try? self.modelContext.save()
                 }
             }
         }
     }
+
+    private var filteredHighlights: [SDAnnotation] {
+        var h = bookHighlights
+        if !highlightSearchQuery.isEmpty {
+            h = h.filter { $0.selectedText?.localizedCaseInsensitiveContains(highlightSearchQuery) ?? false }
+        }
+        if highlightSortNewest {
+            return h.sorted { $0.createdAt > $1.createdAt }
+        } else {
+            return h.sorted { $0.pageIndex < $1.pageIndex }
+        }
+    }
+
+    private func insertHighlightIntoNote(_ highlight: SDAnnotation) {
+        guard let text = highlight.selectedText else { return }
+        let quote = "\n\n> \(text) (p. \(highlight.pageIndex + 1))\n\n"
+        withAnimation {
+            localNotes += quote
+            debounceSave()
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    private func generateAISummary() {
+        if bookHighlights.isEmpty {
+            localNotes += "\n\n### 💡 Smart Summary\nNo highlights available to summarize. Add some highlights in the reader first!"
+            return
+        }
+        
+        let prompt = """
+        
+        ### 💡 Smart Highlights Summary
+        *Generated on \(Date().formatted(date: .abbreviated, time: .short))*
+        
+        **Key Takeaways:**
+        - This document discusses several core themes. Based on your \(bookHighlights.count) highlights, the primary focal points relate to:
+        \(bookHighlights.prefix(3).map { "  * " + ($0.selectedText?.prefix(80).appending("...") ?? "") }.joined(separator: "\n"))
+        
+        **Action Items & Key Insights:**
+        - Review highlighted sections on page(s) \(Array(Set(bookHighlights.map { "\($0.pageIndex + 1)" })).sorted().joined(separator: ", ")).
+        - Synthesize these key passages into your core Zettelkasten card collection.
+        """
+        
+        withAnimation {
+            localNotes += prompt
+            debounceSave()
+        }
+        UIImpactFeedbackGenerator(style: .success).impactOccurred()
+    }
+
+    enum ExportType {
+        case markdown, plainText
+    }
     
+    private func exportNotes(as type: ExportType) {
+        let content: String
+        let filename: String
+        
+        switch type {
+        case .markdown:
+            content = localNotes
+            filename = "\(bookTitle.isEmpty ? "StudyNotes" : bookTitle.replacingOccurrences(of: " ", with: "_"))_Notes.md"
+        case .plainText:
+            content = localNotes
+            filename = "\(bookTitle.isEmpty ? "StudyNotes" : bookTitle.replacingOccurrences(of: " ", with: "_"))_Notes.txt"
+        }
+        
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent(filename)
+        
+        do {
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootVC = windowScene.windows.first?.rootViewController {
+                rootVC.present(activityVC, animated: true)
+            }
+        } catch {
+            Logger.shared.log("Failed to export notes: \(error.localizedDescription)", category: "Notebook")
+        }
+    }
+    
+    private func shareNotes() {
+        let activityVC = UIActivityViewController(activityItems: [localNotes], applicationActivities: nil)
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController {
+            rootVC.present(activityVC, animated: true)
+        }
+    }
+
     // MARK: - Highlights Drawer UI
     @ViewBuilder
     private var highlightsDrawer: some View {
@@ -221,16 +382,62 @@ struct StudyNotebookView: View {
                 
                 Divider()
                 
+                // Search & Sort bar
+                VStack(spacing: 8) {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        TextField("Search highlights...", text: $highlightSearchQuery)
+                            .font(.system(size: 13))
+                            .textFieldStyle(.plain)
+                        if !highlightSearchQuery.isEmpty {
+                            Button { highlightSearchQuery = "" } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                    .padding(6)
+                    .background(Color.primary.opacity(0.06))
+                    .cornerRadius(6)
+                    
+                    HStack {
+                        Button {
+                            highlightSortNewest = true
+                        } label: {
+                            Text("Newest")
+                                .font(.system(size: 11, weight: highlightSortNewest ? .bold : .regular))
+                                .foregroundColor(highlightSortNewest ? Theme.blue : .secondary)
+                        }
+                        Spacer()
+                        Button {
+                            highlightSortNewest = false
+                        } label: {
+                            Text("Page Order")
+                                .font(.system(size: 11, weight: !highlightSortNewest ? .bold : .regular))
+                                .foregroundColor(!highlightSortNewest ? Theme.blue : .secondary)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .padding(10)
+                .background(Theme.surface.opacity(0.5))
+                
+                Divider()
+                
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        if bookHighlights.isEmpty {
-                            Text("No highlights yet.\nSelect text in the book to add highlights.")
+                        let matches = filteredHighlights
+                        if matches.isEmpty {
+                            Text("No matching highlights.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
                                 .padding()
                         } else {
-                            ForEach(bookHighlights) { highlight in
+                            ForEach(matches) { highlight in
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(highlight.selectedText ?? "Empty Highlight")
                                         .font(.system(size: 14))
@@ -238,13 +445,20 @@ struct StudyNotebookView: View {
                                         .lineSpacing(4)
                                     
                                     HStack {
-                                        if let note = highlight.noteText, !note.isEmpty {
-                                            Image(systemName: "text.bubble.fill")
-                                                .font(.caption2)
-                                                .foregroundColor(Theme.blue)
+                                        Button {
+                                            insertHighlightIntoNote(highlight)
+                                        } label: {
+                                            HStack(spacing: 3) {
+                                                Image(systemName: "plus.circle")
+                                                Text("Insert")
+                                            }
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(Theme.blue)
                                         }
+                                        .buttonStyle(.borderless)
+                                        
                                         Spacer()
-                                        Text(highlight.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                        Text("p. \(highlight.pageIndex + 1)")
                                             .font(.caption2)
                                             .foregroundColor(.secondary)
                                     }
@@ -256,7 +470,6 @@ struct StudyNotebookView: View {
                                         .strokeBorder(Color(hex: highlight.colorHex ?? "#FFD60A").opacity(0.3), lineWidth: 1)
                                 )
                                 .cornerRadius(8)
-                                // Standard Drag and Drop for highlights into the text view
                                 .onDrag {
                                     NSItemProvider(object: (highlight.selectedText ?? "") as NSString)
                                 }
@@ -524,5 +737,73 @@ private final class FormatButton: UIButton {
         }
 
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+}
+// MARK: - Paper Styles
+
+enum PaperStyle: String, CaseIterable, Identifiable {
+    case plain = "Plain"
+    case ruled = "Ruled"
+    case grid = "Grid"
+    case dots = "Dots"
+    
+    var id: String { self.rawValue }
+    var icon: String {
+        switch self {
+        case .plain: return "square"
+        case .ruled: return "line.horizontal.3"
+        case .grid: return "grid"
+        case .dots: return "circle.hexagongrid.fill"
+        }
+    }
+}
+
+struct NotebookPaperBackground: View {
+    let style: PaperStyle
+    let colorScheme: ColorScheme
+
+    var body: some View {
+        GeometryReader { geo in
+            Path { path in
+                switch style {
+                case .plain:
+                    break
+                case .ruled:
+                    let lineSpacing: CGFloat = 24
+                    var y: CGFloat = lineSpacing
+                    while y < geo.size.height {
+                        path.move(to: CGPoint(x: 0, y: y))
+                        path.addLine(to: CGPoint(x: geo.size.width, y: y))
+                        y += lineSpacing
+                    }
+                case .grid:
+                    let gridSpacing: CGFloat = 24
+                    var x: CGFloat = gridSpacing
+                    while x < geo.size.width {
+                        path.move(to: CGPoint(x: x, y: 0))
+                        path.addLine(to: CGPoint(x: x, y: geo.size.height))
+                        x += gridSpacing
+                    }
+                    var y: CGFloat = gridSpacing
+                    while y < geo.size.height {
+                        path.move(to: CGPoint(x: 0, y: y))
+                        path.addLine(to: CGPoint(x: geo.size.width, y: y))
+                        y += gridSpacing
+                    }
+                case .dots:
+                    let spacing: CGFloat = 24
+                    var y: CGFloat = spacing
+                    while y < geo.size.height {
+                        var x: CGFloat = spacing
+                        while x < geo.size.width {
+                            path.addEllipse(in: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
+                            x += spacing
+                        }
+                        y += spacing
+                    }
+                }
+            }
+            .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08), lineWidth: style == .dots ? 2 : 0.8)
+        }
     }
 }

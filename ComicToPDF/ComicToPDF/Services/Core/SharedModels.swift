@@ -8,19 +8,19 @@ import UniformTypeIdentifiers
 
 // MARK: - Core Data Models
 
-// âœ… NEW: Unified App UI Mode
+// ✅ NEW: Unified App UI Mode
 enum AppUIMode: String, Codable, CaseIterable {
     case go = "Go"
     case pro = "Pro"
 }
 
-// âœ… NEW: Global Library Tap Action
+// ✅ NEW: Global Library Tap Action
 enum LibraryTapAction: String, CaseIterable {
-    case details = "Tap for Details"
     case read = "Tap to Read"
+    case convert = "Tap to Convert"
 }
 
-// âœ… NEW: Content Type Classification
+// ✅ NEW: Content Type Classification
 enum ContentType: String, Codable, CaseIterable {
     case comic = "Comic"
     case manga = "Manga"

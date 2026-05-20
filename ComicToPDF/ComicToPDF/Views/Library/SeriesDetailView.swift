@@ -774,21 +774,29 @@ struct SeriesDetailView: View {
             .buttonStyle(PlainButtonStyle())
             .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Theme.bg)
             
-        } else if useNavigationStack && tapAction == .details {
-            NavigationLink(value: pdf) {
-                LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
-            }
-            .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
-            .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
-            .contextMenu { contextMenuContent(pdf) }
         } else {
             Button {
                 if tapAction == .read {
                     pdfToRead = pdf
-                } else {
-                    // ✅ Fixed: was setting selectedPDF (only highlights row, no sheet).
-                    // Now opens MediaDetailSheet via pdfToDetails.
-                    pdfToDetails = pdf
+                } else { // tapAction == .convert
+                    if case .cloud = pdf.sourceMode {
+                        Task {
+                            await CloudDownloadManager.shared.downloadAndStore(
+                                pdf: pdf,
+                                thenConvert: false,
+                                manager: conversionManager
+                            )
+                            await MainActor.run {
+                                if let updated = conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) {
+                                    DispatchQueue.main.async {
+                                        AppRouter.shared.presentSheet(.convert(updated))
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        AppRouter.shared.presentSheet(.convert(pdf))
+                    }
                 }
             } label: {
                 LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)

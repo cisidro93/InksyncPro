@@ -24,9 +24,7 @@ struct ContentShelfSelector: View {
                         count: counts[shelf] ?? 0,
                         isSelected: selected == shelf
                     ) {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.75)) {
-                            selected = shelf
-                        }
+                        selected = shelf
                     }
                 }
             }
@@ -68,7 +66,6 @@ private struct ShelfTab: View {
                                 : shelf.accentColor.opacity(0.85),
                             in: Capsule()
                         )
-                        .contentTransition(.numericText())
                 }
             }
             .padding(.horizontal, 16)

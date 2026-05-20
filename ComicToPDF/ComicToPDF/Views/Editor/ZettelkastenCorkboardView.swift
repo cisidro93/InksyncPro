@@ -18,7 +18,6 @@ struct ZettelkastenCorkboardView: View {
     @State private var livePinchScale: CGFloat = 1.0
 
     // ── Card lift state (in-memory only, persisted on gesture end) ──────────
-    @State private var cardDragOffsets: [UUID: CGSize] = [:]
     @State private var liftedCardID: UUID? = nil
 
     // ── Layout & UI ─────────────────────────────────────────────────────────
@@ -82,6 +81,7 @@ struct ZettelkastenCorkboardView: View {
                 // ── Bottom toolbar ──────────────────────────────────────────
                 bottomToolbar(geo: geo)
             }
+            .clipped()
             .task {
                 await initializePositionsIfNeeded(in: geo.size)
             }
@@ -121,40 +121,15 @@ struct ZettelkastenCorkboardView: View {
             }
 
             ForEach(annotations) { ann in
-                let liveOffset = cardDragOffsets[ann.id] ?? .zero
-                let baseX = CGFloat(ann.corkboardX ?? 0)
-                let baseY = CGFloat(ann.corkboardY ?? 0)
-                let isLifted = liftedCardID == ann.id
-
-                IndexCardView(
+                IndexCardCanvasWrapperView(
                     annotation: ann,
                     pdfs: pdfs,
-                    isLifted: isLifted,
-                    onDelete: { removeFromCorkboard(ann) }
-                )
-                .opacity(matchesActiveTags(ann) ? 1.0 : 0.25)
-                .position(
-                    x: baseX + liveOffset.width,
-                    y: baseY + liveOffset.height
-                )
-                .zIndex(isLifted ? 100 : 0)
-                .gesture(
-                    DragGesture(minimumDistance: 4)
-                        .onChanged { v in
-                            if liftedCardID != ann.id {
-                                liftedCardID = ann.id
-                                HapticEngine.selection()
-                            }
-                            cardDragOffsets[ann.id] = v.translation
-                        }
-                        .onEnded { v in
-                            // Merge live offset into persisted position
-                            ann.corkboardX = Double(baseX + v.translation.width)
-                            ann.corkboardY = Double(baseY + v.translation.height)
-                            cardDragOffsets.removeValue(forKey: ann.id)
-                            liftedCardID = nil
-                            try? modelContext.save()
-                        }
+                    liftedCardID: $liftedCardID,
+                    matchesActiveTags: matchesActiveTags(ann),
+                    cardW: cardW,
+                    cardH: cardH,
+                    onDelete: { removeFromCorkboard(ann) },
+                    onSave: { try? modelContext.save() }
                 )
             }
         }
@@ -731,5 +706,59 @@ struct CorkboardToolbarButtonStyle: ButtonStyle {
             )
             .scaleEffect(configuration.isPressed ? 0.88 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Card Canvas Drag Optimization Wrapper
+
+struct IndexCardCanvasWrapperView: View {
+    @Bindable var annotation: SDAnnotation
+    let pdfs: [SDConvertedPDF]
+    @Binding var liftedCardID: UUID?
+    var matchesActiveTags: Bool
+    let cardW: CGFloat
+    let cardH: CGFloat
+    var onDelete: () -> Void
+    var onSave: () -> Void
+
+    @State private var dragOffset: CGSize = .zero
+    @State private var isDragging = false
+
+    var body: some View {
+        let baseX = CGFloat(annotation.corkboardX ?? 0)
+        let baseY = CGFloat(annotation.corkboardY ?? 0)
+        let isLifted = liftedCardID == annotation.id
+
+        IndexCardView(
+            annotation: annotation,
+            pdfs: pdfs,
+            isLifted: isLifted,
+            onDelete: onDelete
+        )
+        .opacity(matchesActiveTags ? 1.0 : 0.25)
+        .position(
+            x: baseX + dragOffset.width,
+            y: baseY + dragOffset.height
+        )
+        .zIndex(isLifted ? 100 : 0)
+        .gesture(
+            DragGesture(minimumDistance: 4)
+                .onChanged { v in
+                    if liftedCardID != annotation.id {
+                        liftedCardID = annotation.id
+                        HapticEngine.selection()
+                    }
+                    dragOffset = v.translation
+                    isDragging = true
+                }
+                .onEnded { v in
+                    annotation.corkboardX = Double(baseX + v.translation.width)
+                    annotation.corkboardY = Double(baseY + v.translation.height)
+                    dragOffset = .zero
+                    isDragging = false
+                    liftedCardID = nil
+                    onSave()
+                }
+        )
     }
 }

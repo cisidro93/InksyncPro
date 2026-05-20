@@ -62,7 +62,7 @@ final class CloudStreamCoordinator: ObservableObject {
 
         if provider == "Dropbox" {
             downloadURL = try await DropboxProvider.shared.getDownloadURL(fileID: archiveRemoteID(pdf))
-        } else if provider == "Google Drive" {
+        } else if provider == "Google Drive" || provider == "GoogleDrive" {
             downloadURL = try await GoogleDriveProvider.shared.getDownloadURL(fileID: archiveRemoteID(pdf))
             authHeader  = try await GoogleDriveProvider.shared.currentAuthHeader()
         } else {

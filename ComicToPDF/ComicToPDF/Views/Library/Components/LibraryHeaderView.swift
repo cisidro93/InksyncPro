@@ -289,7 +289,7 @@ struct LibraryHeaderView: View {
                 counts: [
                     .all:    conversionManager.convertedPDFs.count,
                     .comics: conversionManager.convertedPDFs.filter { ($0.contentType == .comic) && !($0.metadata.isManga ?? false) }.count,
-                    .manga:  conversionManager.convertedPDFs.filter { $0.metadata.isManga ?? false }.count,
+                    .manga:  conversionManager.convertedPDFs.filter { $0.contentType == .manga || ($0.metadata.isManga ?? false) }.count,
                     .books:  conversionManager.convertedPDFs.filter { $0.contentType == .book }.count
                 ]
             )

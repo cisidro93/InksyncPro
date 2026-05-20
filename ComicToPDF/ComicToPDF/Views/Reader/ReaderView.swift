@@ -63,6 +63,7 @@ struct ReaderView: View {
 
     // Settings sheet
     @State private var showReaderSettings = false
+    @State private var showReadingStatsHUD = false
 
     // Bookmark toast
     @State private var showBookmarkToast = false
@@ -315,6 +316,16 @@ struct ReaderView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
+            .sheet(isPresented: $showReadingStatsHUD) {
+                ReadingStatsHUDView(
+                    pdfID: pdf?.id,
+                    bookTitle: fileURL.deletingPathExtension().lastPathComponent,
+                    totalPages: pages.count,
+                    currentPageIndex: currentPageIndex
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
     }
 
     // MARK: - ReaderChrome overlay (extracted to reduce type-check surface)
@@ -363,7 +374,7 @@ struct ReaderView: View {
                     )
                 ),
                 timeRemainingText: prefs.progressMode == 2 ? trText : (prefs.progressMode == 1 ? "Chapter \(currentPageIndex + 1)" : nil),
-                onProgressModeToggle: { prefs.progressMode = (prefs.progressMode + 1) % 3 },
+                onProgressModeToggle: { showReadingStatsHUD = true },
                 isPDF: fileURL.pathExtension.lowercased() == "pdf",
                 isEnhanced: autoContrastLevel > 1.0 || smartSharpen,
                 onEnhanceToggle: {
