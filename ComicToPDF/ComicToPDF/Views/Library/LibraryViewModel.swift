@@ -14,7 +14,7 @@ class LibraryViewModel: ObservableObject {
     // raw SwiftData row changes are absorbed by this 250ms debounce so reading never
     // causes a full cache rebuild on every page flip.
     let swiftDataDidChange = PassthroughSubject<Void, Never>()
-    private var swiftDataCancellable: AnyCancellable?
+    var swiftDataCancellable: AnyCancellable?
 
     private var cancellables = Set<AnyCancellable>()
     
