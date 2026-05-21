@@ -3,7 +3,10 @@ import SwiftUI
 // MARK: - OPDS Book Grid
 
 /// Displays acquisition entries (actual books) from an OPDS feed.
-/// Default action is PSE streaming (opens OPDSPSEReader); Download is a secondary option.
+/// Primary action routes to the correct reader:
+///   • Divina / WebPub (entry.divinaPageURLs != nil) → OPDSDivinaReader
+///   • PSE stream (entry.streamURL != nil)           → OPDSPSEReader
+///   • Download-only (Calibre)                       → progressive download
 struct OPDSBookGrid: View {
     let server: SDOPDSServer
     let entries: [OPDSEntry]
@@ -37,18 +40,24 @@ struct OPDSBookGrid: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .fullScreenCover(item: $streamingEntry) { entry in
-            OPDSPSEReader(server: server, entry: entry)
+            // Phase 3: route to Divina reader for OPDS 2.0 entries with readingOrder
+            if entry.divinaPageURLs != nil {
+                OPDSDivinaReader(server: server, entry: entry)
+            } else {
+                OPDSPSEReader(server: server, entry: entry)
+            }
         }
     }
 
     // MARK: - Actions
 
     private func streamEntry(_ entry: OPDSEntry) {
-        if entry.streamURL != nil || server.serverType == .kavita || server.serverType == .komga {
-            // PSE streaming available
+        // Divina (OPDS 2.0 readingOrder) or PSE stream available
+        if entry.divinaPageURLs != nil || entry.streamURL != nil ||
+           server.serverType == .kavita || server.serverType == .komga {
             streamingEntry = entry
         } else {
-            // Calibre: fall through to progressive download-then-read
+            // Calibre: no stream protocol — progressive download then read
             Task { await download(entry, thenRead: true) }
         }
         Logger.shared.log("OPDSBookGrid: streaming '\(entry.title)'", category: "OPDS")
@@ -99,7 +108,16 @@ struct OPDSBookCard: View {
     @State private var coverPhase: AsyncImagePhase = .empty
 
     private var canStream: Bool {
-        entry.streamURL != nil || server.serverType == .kavita || server.serverType == .komga
+        entry.divinaPageURLs != nil || entry.streamURL != nil ||
+        server.serverType == .kavita || server.serverType == .komga
+    }
+
+    private var streamBadgeLabel: String {
+        entry.divinaPageURLs != nil ? "DIVINA" : "STREAM"
+    }
+
+    private var streamBadgeIcon: String {
+        entry.divinaPageURLs != nil ? "books.vertical.fill" : "play.fill"
     }
 
     var body: some View {
@@ -194,12 +212,12 @@ struct OPDSBookCard: View {
                 .transition(.scale.combined(with: .opacity))
             }
 
-            // Stream badge (top-right) for PSE-capable entries
+            // Stream badge (top-right)
             if canStream && downloadProgress == nil {
                 HStack(spacing: 3) {
-                    Image(systemName: "play.fill")
+                    Image(systemName: streamBadgeIcon)
                         .font(.system(size: 8, weight: .bold))
-                    Text("STREAM")
+                    Text(streamBadgeLabel)
                         .font(.system(size: 8, weight: .bold))
                 }
                 .foregroundColor(.white)

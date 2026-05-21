@@ -38,6 +38,11 @@ struct OPDSEntry: Identifiable {
 
     // PSE — pse:lastRead attribute on the <link pse:stream> element
     let pseLastRead: Int?       // 0-based page index of last read position
+
+    // Phase 3: Divina / Readium WebPub readingOrder page URLs (Komga OPDS 2.0)
+    // Pre-resolved absolute URLs for each page image, in reading order.
+    // nil for all PSE/download-only entries.
+    let divinaPageURLs: [URL]?  // count == totalPages when non-nil
 }
 
 struct OPDSFeed {
@@ -292,7 +297,8 @@ final class OPDSFeedParser: NSObject, XMLParserDelegate {
                 kavitaSeriesId:   entryKavitaSeriesId,
                 kavitaLibraryId:  entryKavitaLibraryId,
                 komgaBookId:      entryKomgaBookId,
-                pseLastRead:      entryPseLastRead
+                pseLastRead:      entryPseLastRead,
+                divinaPageURLs:   nil   // Atom XML feeds never have Divina readingOrder
             ))
         }
     }
@@ -318,8 +324,9 @@ actor OPDSClient {
 
     // MARK: - Fetch Feed
 
-    /// Fetches and parses an OPDS feed at the given `path` on `server`.
-    /// `path` is relative to `server.baseURL` (pass "" or "/" for the root).
+    /// Fetches and parses an OPDS feed at the given URL on `server`.
+    /// Auto-detects OPDS 2.0 (application/opds+json) vs Atom XML and
+    /// routes to the correct parser. The output model is always OPDSFeed.
     func fetchFeed(server: SDOPDSServer, url: URL? = nil) async throws -> OPDSFeed {
         let credential = OPDSKeychainStore.load(for: server.id)
 
@@ -333,11 +340,12 @@ actor OPDSClient {
             throw OPDSError.invalidURL
         }
 
-        let data = try await fetchData(url: targetURL, credential: credential, server: server)
-        guard let feed = OPDSFeedParser().parse(data: data) else {
-            throw OPDSError.parseFailure
-        }
-        Logger.shared.log("OPDSClient: fetched feed '\(feed.title)' (\(feed.entries.count) entries, \(feed.navLinks.count) nav)", category: "OPDS")
+        let (data, response) = try await fetchDataWithResponse(url: targetURL, credential: credential, server: server)
+        let feed = try parseFeed(data: data, response: response, baseURL: targetURL)
+        Logger.shared.log(
+            "OPDSClient: fetched feed '\(feed.title)' (\(feed.entries.count) entries, \(feed.navLinks.count) nav) [\(contentTypeLabel(response))]",
+            category: "OPDS"
+        )
         return feed
     }
 
@@ -358,10 +366,45 @@ actor OPDSClient {
         }
         guard let url = URL(string: urlString) else { throw OPDSError.invalidURL }
 
-        let data = try await fetchData(url: url, credential: credential, server: server)
-        guard let feed = OPDSFeedParser().parse(data: data) else { throw OPDSError.parseFailure }
-        return feed
+        let (data, response) = try await fetchDataWithResponse(url: url, credential: credential, server: server)
+        return try parseFeed(data: data, response: response, baseURL: url)
     }
+
+    // MARK: - Feed Parsing (Format Auto-Detection)
+
+    /// Routes to OPDSFeedParser (Atom XML) or OPDS20FeedParser (JSON)
+    /// based on the HTTP response Content-Type header.
+    private func parseFeed(data: Data, response: URLResponse, baseURL: URL) throws -> OPDSFeed {
+        let contentType = (response as? HTTPURLResponse)?
+            .value(forHTTPHeaderField: "Content-Type") ?? ""
+
+        if contentType.contains("application/opds+json") ||
+           contentType.contains("application/opds-publication+json") ||
+           contentType.contains("application/webpub+json") ||
+           contentType.contains("application/divina+json") {
+            // OPDS 2.0 / Readium WebPub / Divina — JSON feed
+            guard let feed = OPDS20FeedParser().parse(data: data, baseURL: baseURL) else {
+                throw OPDSError.parseFailure
+            }
+            return feed
+        }
+
+        // Fallback: Atom XML (OPDS 1.x — Kavita, Komga v1, Calibre-web)
+        // Also handles servers that return the wrong Content-Type for JSON
+        if let feed = OPDSFeedParser().parse(data: data) { return feed }
+
+        // Last resort: try JSON if XML failed
+        if let feed = OPDS20FeedParser().parse(data: data, baseURL: baseURL) { return feed }
+
+        throw OPDSError.parseFailure
+    }
+
+    private func contentTypeLabel(_ response: URLResponse) -> String {
+        (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")
+            .flatMap { $0.components(separatedBy: ";").first?.trimmingCharacters(in: .whitespaces) }
+            ?? "unknown"
+    }
+
 
     // MARK: - Download Entry
 
@@ -485,7 +528,8 @@ actor OPDSClient {
 
     // MARK: - Private
 
-    private func fetchData(url: URL, credential: OPDSCredential?, server: SDOPDSServer) async throws -> Data {
+    /// Returns both the response data and the URLResponse for Content-Type inspection.
+    private func fetchDataWithResponse(url: URL, credential: OPDSCredential?, server: SDOPDSServer) async throws -> (Data, URLResponse) {
         var request = buildRequest(url: url, credential: credential, server: server)
         var (data, response) = try await URLSession.shared.data(for: request)
 
@@ -503,12 +547,25 @@ actor OPDSClient {
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw OPDSError.httpError((response as? HTTPURLResponse)?.statusCode ?? 0)
         }
+        return (data, response)
+    }
+
+    /// Convenience wrapper that discards the response (legacy internal callers).
+    private func fetchData(url: URL, credential: OPDSCredential?, server: SDOPDSServer) async throws -> Data {
+        let (data, _) = try await fetchDataWithResponse(url: url, credential: credential, server: server)
         return data
     }
 
     private func buildRequest(url: URL, credential: OPDSCredential?, server: SDOPDSServer) -> URLRequest {
         var request = URLRequest(url: url)
-        request.setValue("application/atom+xml, application/xml, */*", forHTTPHeaderField: "Accept")
+        // Accept both OPDS 1.x Atom XML and OPDS 2.0 / Readium JSON formats.
+        // Komga v2 will return application/opds+json when this is in the Accept header.
+        request.setValue(
+            "application/opds+json, application/opds-publication+json, " +
+            "application/webpub+json, application/divina+json, " +
+            "application/atom+xml, application/xml, */*",
+            forHTTPHeaderField: "Accept"
+        )
         request.timeoutInterval = 30
 
         if server.serverType == .kavita {
