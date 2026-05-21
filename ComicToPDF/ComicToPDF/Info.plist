@@ -51,6 +51,14 @@
     <string>Authentication required to access the Private Vault.</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Inksync Pro uses your local Wi-Fi network to transfer comic and book files directly between your iPhone and iPad at full speed, without using iCloud or the internet.</string>
+    <!-- OPDS: Allow HTTP connections to local network servers (Kavita, Komga, Calibre).
+         NSAllowsLocalNetworking only relaxes ATS for .local hostnames and LAN IPs.
+         Internet traffic still requires HTTPS. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>NSBonjourServices</key>
     <array>
         <string>_inksync._tcp</string>

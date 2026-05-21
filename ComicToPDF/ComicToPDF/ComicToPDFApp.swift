@@ -23,7 +23,8 @@ struct InksyncProApp: App {
             SDPageModel.self,
             SDSeriesMemory.self,
             SDManuscriptProject.self,
-            SDManuscriptDocument.self
+            SDManuscriptDocument.self,
+            SDOPDSServer.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none)
         
