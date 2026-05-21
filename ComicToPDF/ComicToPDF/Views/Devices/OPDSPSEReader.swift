@@ -209,7 +209,7 @@ struct OPDSPSEReader: View {
             ProgressView()
                 .scaleEffect(1.3)
                 .tint(server.serverType.tint)
-            Text("Opening "\(entry.title)"…")
+            Text("Opening \"\(entry.title)\"…")
                 .font(.system(size: 14))
                 .foregroundStyle(.white.opacity(0.6))
         }

@@ -61,7 +61,7 @@ struct OPDSBrowserView: View {
 
                 // ── Empty Search Results ────────────────────────────────────
                 if !searchText.isEmpty && displayFeed.navLinks.isEmpty && displayFeed.entries.isEmpty {
-                    Text("No results for "\(searchText)"")
+                    Text("No results for \"\(searchText)\"")
                         .font(.system(size: 15))
                         .foregroundStyle(Color.inkTextSecondary)
                         .padding(.top, 60)

@@ -255,7 +255,7 @@ struct AddOPDSServerSheet: View {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Color.inkGreen)
-                    Text("Connected to "\(testResultTitle)"")
+                    Text("Connected to \"\(testResultTitle)\"")
                         .font(.system(size: 13))
                         .foregroundStyle(Color.inkGreen)
                 }
