@@ -706,9 +706,7 @@ struct GlobalHighlightRow: View {
         .buttonStyle(.plain)
         .contextMenu {
             // ─── Item 7: Jump-to-source ───────────────────────────────
-            if let pdfIDStr = annotation.pdfID,
-               let pdfUUID = UUID(uuidString: pdfIDStr),
-               let matchedPDF = conversionManager.convertedPDFs.first(where: { $0.id == pdfUUID }) {
+            if let matchedPDF = conversionManager.convertedPDFs.first(where: { $0.id == annotation.pdfID }) {
                 Button {
                     // Open in reader at the annotated page
                     AppRouter.shared.presentFullScreen(.read(matchedPDF))

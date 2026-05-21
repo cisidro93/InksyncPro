@@ -89,7 +89,7 @@ struct OPDSBookGrid: View {
                 // Item 5: prefer the full ReaderView if the book is now in the library
                 let baseName = fileURL.deletingPathExtension().lastPathComponent
                 if let matched = conversionManager.convertedPDFs.first(where: {
-                    $0.name == baseName || $0.fileURL?.lastPathComponent == fileURL.lastPathComponent
+                    $0.name == baseName || $0.url.lastPathComponent == fileURL.lastPathComponent
                 }) {
                     await MainActor.run {
                         AppRouter.shared.presentFullScreen(.read(matched))

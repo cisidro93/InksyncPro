@@ -140,7 +140,7 @@ struct ReaderView: View {
 
     // MARK: Item 4 — Reading mode quick picker (swipe-up HUD)
     @State private var showModeQuickPicker = false
-    private var hasRestoredProgress = false   // prevent double-restore
+    @State private var hasRestoredProgress = false   // prevent double-restore
     
     var body: some View {
         GeometryReader { geo in
@@ -513,34 +513,8 @@ struct ReaderView: View {
                                     canvasView: $canvasView,
                                     isDrawingMode: isDrawingMode,
                                     onDrawingSaved: { drawing in
-                                        // Item 8 — Persist ink stroke as SDAnnotation in SwiftData
-                                        guard !drawing.bounds.isEmpty, let pdfID = pdf?.id else { return }
-                                        let drawingData = drawing.dataRepresentation()
-                                        let targetID = pdfID.uuidString
-                                        let pIndex = currentPageIndex
-                                        let descriptor = FetchDescriptor<SDAnnotation>(
-                                            predicate: #Predicate { $0.pdfID == targetID && $0.pageIndex == pIndex && $0.kindRaw == "ink" }
-                                        )
-                                        if let existing = try? modelContext.fetch(descriptor).first {
-                                            existing.drawingData = drawingData
-                                            existing.modifiedAt = Date()
-                                        } else {
-                                            let newInk = SDAnnotation(
-                                                id: UUID(),
-                                                pdfID: targetID,
-                                                pageIndex: pIndex,
-                                                text: nil,
-                                                note: nil,
-                                                isReadwiseImport: false,
-                                                readwiseBookTitle: nil,
-                                                readwiseAuthor: nil,
-                                                createdAt: Date()
-                                            )
-                                            newInk.kindRaw = "ink"
-                                            newInk.drawingData = drawingData
-                                            modelContext.insert(newInk)
-                                        }
-                                        try? modelContext.save()
+                                        // Item 8 — delegated to helper to keep comicReaderContent type-checkable
+                                        saveInkAnnotation(drawing)
                                     }
                                 )
                                 // Allows native PDF panning with 2 fingers while drawing with Pencil/1 finger
@@ -1211,6 +1185,32 @@ struct ReaderView: View {
         progress.prefersMangaMode = isMangaMode
         progress.colorFilter = colorFilter.rawValue
         ReaderProgressTracker.shared.update(progress)
+    }
+
+    // MARK: - Item 8: Ink Annotation Save (extracted for compiler type-check)
+    private func saveInkAnnotation(_ drawing: PKDrawing) {
+        guard !drawing.bounds.isEmpty, let pdfUUID = pdf?.id else { return }
+        let drawingData = drawing.dataRepresentation()
+        let pIndex = currentPageIndex
+        let descriptor = FetchDescriptor<SDAnnotation>(
+            predicate: #Predicate { $0.pdfID == pdfUUID && $0.pageIndex == pIndex && $0.kindRaw == "ink" }
+        )
+        if let existing = try? modelContext.fetch(descriptor).first {
+            existing.drawingData = drawingData
+            existing.modifiedAt = Date()
+        } else {
+            let newInk = SDAnnotation(from: Annotation(
+                id: UUID(),
+                pdfID: pdfUUID,
+                pageIndex: pIndex,
+                kind: .ink,
+                createdAt: Date(),
+                modifiedAt: Date()
+            ))
+            newInk.drawingData = drawingData
+            modelContext.insert(newInk)
+        }
+        try? modelContext.save()
     }
 
     // MARK: - Progress Tracking Integration
