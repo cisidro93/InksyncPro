@@ -16,6 +16,7 @@ struct OPDSBookGrid: View {
     @State private var activeErrors: [String: String] = [:]
     @State private var streamingEntry: OPDSEntry?
 
+    @EnvironmentObject private var conversionManager: ConversionManager  // Item 5: smart routing
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
     private var columns: [GridItem] {
@@ -81,8 +82,22 @@ struct OPDSBookGrid: View {
             }
             Logger.shared.log("OPDSBookGrid: downloaded '\(entry.title)' → \(fileURL.lastPathComponent)", category: "OPDS")
 
+            // Import into library
+            await conversionManager.processImportedFiles(urls: [fileURL])
+
             if thenRead {
-                streamingEntry = entry
+                // Item 5: prefer the full ReaderView if the book is now in the library
+                let baseName = fileURL.deletingPathExtension().lastPathComponent
+                if let matched = conversionManager.convertedPDFs.first(where: {
+                    $0.name == baseName || $0.fileURL?.lastPathComponent == fileURL.lastPathComponent
+                }) {
+                    await MainActor.run {
+                        AppRouter.shared.presentFullScreen(.read(matched))
+                    }
+                } else {
+                    // Fallback: open in PSE reader (stream path)
+                    streamingEntry = entry
+                }
             }
         } catch {
             withAnimation {

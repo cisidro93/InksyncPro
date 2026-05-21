@@ -162,6 +162,12 @@ struct ModernLibraryView: View {
                     }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OPDSDownloadCompleted"))) { note in
+                // Item 9 — Background OPDS download completed; import into library
+                if let fileURL = note.userInfo?["fileURL"] as? URL {
+                    Task { await conversionManager.processImportedFiles(urls: [fileURL]) }
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if settingsManager.conversionSettings.showEditorDebug {
                     LibraryDebugHUD(

@@ -601,6 +601,7 @@ struct GlobalHighlightRow: View {
     let annotation: SDAnnotation
     
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var conversionManager: ConversionManager   // Item 7: jump-to-source
     @State private var showingEdit = false
     @Query private var manuscriptProjects: [SDManuscriptProject]
 
@@ -704,6 +705,26 @@ struct GlobalHighlightRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            // ─── Item 7: Jump-to-source ───────────────────────────────
+            if let pdfIDStr = annotation.pdfID,
+               let pdfUUID = UUID(uuidString: pdfIDStr),
+               let matchedPDF = conversionManager.convertedPDFs.first(where: { $0.id == pdfUUID }) {
+                Button {
+                    // Open in reader at the annotated page
+                    AppRouter.shared.presentFullScreen(.read(matchedPDF))
+                    // After reader opens, post a notification to jump to the page
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("Reader_JumpToPage"),
+                            object: nil,
+                            userInfo: ["pageIndex": annotation.pageIndex]
+                        )
+                    }
+                } label: {
+                    Label("Open in Reader", systemImage: "book.fill")
+                }
+            }
+            // ─────────────────────────────────────────────────────────
             Menu("Send to Manuscript...") {
                 if manuscriptProjects.isEmpty {
                     Text("No Writing Projects Found")

@@ -31,6 +31,8 @@ struct LibraryHeaderView: View {
     @Environment(\.verticalSizeClass) private var vSizeClass
     @State private var showImportQueue = false
     @State private var dragAccumulated: CGFloat = 0
+    @State private var showPillCustomize = false
+    @ObservedObject private var pillConfig = LibraryPillConfig.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -463,6 +465,7 @@ struct LibraryHeaderView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         // Target format
+                        if pillConfig.isEnabled(.targetFormat) {
                         Menu {
                             Section("Standard Formats") {
                                 Picker("Target Format", selection: $settingsManager.conversionSettings.outputFormat) {
@@ -496,8 +499,10 @@ struct LibraryHeaderView: View {
                             }
                             .overflowPill()
                         }
+                        } // targetFormat
 
                         // Tap action
+                        if pillConfig.isEnabled(.tapAction) {
                         Menu {
                             Picker("Tap Action", selection: $tapAction) {
                                 ForEach(LibraryTapAction.allCases, id: \.self) { action in
@@ -518,50 +523,75 @@ struct LibraryHeaderView: View {
                             }
                             .overflowPill()
                         }
+                        } // tapAction
 
                         // Wi-Fi
-                        ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
+                        if pillConfig.isEnabled(.wifi) {
+                            ActionPill(title: "Wi-Fi", icon: "wifi", color: Theme.blue) { onSheetTrigger(.wifi) }
+                        }
 
                         // Smart List
-                        ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
+                        if pillConfig.isEnabled(.smartList) {
+                            ActionPill(title: "Smart List", icon: "list.star", color: Theme.green) { onSheetTrigger(.smartListImporter) }
+                        }
 
                         // Batch tools
-                        ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {
-                            if multiSelection.count >= 1 {
-                                let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                                onSheetTrigger(.cognitiveBatchRenamer(items))
-                            }
-                            else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.") }
-                        })
-                        ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.purple) { onSheetTrigger(.merge) }
-                        ActionPill(title: "Convert & Merge", icon: "doc.on.doc.fill", color: Theme.purple, action: {
-                            if multiSelection.count >= 2 { batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }; showingBatchMergeReorder = true }
-                            else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.") }
-                        })
+                        if pillConfig.isEnabled(.aiRename) {
+                            ActionPill(title: "AI Rename", icon: "sparkles.tv", color: Theme.purple, action: {
+                                if multiSelection.count >= 1 {
+                                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                                    onSheetTrigger(.cognitiveBatchRenamer(items))
+                                } else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.") }
+                            })
+                        }
+                        if pillConfig.isEnabled(.merge) {
+                            ActionPill(title: "Merge", icon: "arrow.triangle.merge", color: Theme.purple) { onSheetTrigger(.merge) }
+                        }
+                        if pillConfig.isEnabled(.convertMerge) {
+                            ActionPill(title: "Convert & Merge", icon: "doc.on.doc.fill", color: Theme.purple, action: {
+                                if multiSelection.count >= 2 { batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }; showingBatchMergeReorder = true }
+                                else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.") }
+                            })
+                        }
 
                         // Metadata + stats
-                        ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) {
-                            Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
+                        if pillConfig.isEnabled(.autoMatch) {
+                            ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) {
+                                Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
+                            }
                         }
-                        if !conversionManager.failedMetadataPDFs.isEmpty {
+                        if pillConfig.isEnabled(.reviewMissing) && !conversionManager.failedMetadataPDFs.isEmpty {
                             ActionPill(title: "Review Missing", icon: "exclamationmark.triangle.fill", color: Theme.red) {
                                 onSheetTrigger(.reviewMetadata)
                             }
                         }
-                        ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }
+                        if pillConfig.isEnabled(.stats) {
+                            ActionPill(title: "Stats", icon: "flame.fill", color: Theme.orange) { onSheetTrigger(.stats) }
+                        }
 
                         // Vault
-                        ActionPill(
-                            title: settingsManager.isVaultUnlocked ? "Vault Open" : "Vault",
-                            icon: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill",
-                            color: settingsManager.isVaultUnlocked ? Theme.red : Theme.textSecondary
-                        ) { onVaultToggle() }
+                        if pillConfig.isEnabled(.vault) {
+                            ActionPill(
+                                title: settingsManager.isVaultUnlocked ? "Vault Open" : "Vault",
+                                icon: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill",
+                                color: settingsManager.isVaultUnlocked ? Theme.red : Theme.textSecondary
+                            ) { onVaultToggle() }
+                        }
                     }
                     .padding(.horizontal, 16)
                 }
                 .padding(.top, 6)
                 .padding(.bottom, 10)
                 .transition(.move(edge: .top).combined(with: .opacity))
+                .onLongPressGesture(minimumDuration: 0.5) {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showPillCustomize = true
+                }
+                .sheet(isPresented: $showPillCustomize) {
+                    LibraryPillCustomizeSheet()
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.visible)
+                }
             }
 
             // ── Collapse indicator + Pin toggle ────────────────────────────

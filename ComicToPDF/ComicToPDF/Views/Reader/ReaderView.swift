@@ -4,6 +4,7 @@ import WebKit
 import PDFKit
 import ZIPFoundation
 import PencilKit
+import SwiftData
 
 // MARK: - Reader Color Filter
 enum ReaderColorFilter: String, CaseIterable, Codable {
@@ -38,6 +39,7 @@ struct ReaderView: View {
     
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.modelContext) private var modelContext
     
     @AppStorage("isMangaMode") private var isMangaMode = false
     @State private var isPanelViewEnabled = true
@@ -135,6 +137,10 @@ struct ReaderView: View {
     // Reading velocity tracking
     @State private var sessionStartTime: Date = Date()
     @State private var pagesReadThisSession: Int = 0
+
+    // MARK: Item 4 — Reading mode quick picker (swipe-up HUD)
+    @State private var showModeQuickPicker = false
+    private var hasRestoredProgress = false   // prevent double-restore
     
     var body: some View {
         GeometryReader { geo in
@@ -198,21 +204,56 @@ struct ReaderView: View {
                         .padding(.bottom, 110)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+                // ─── Item 4: Reading Mode Quick Picker HUD ───
+                if showModeQuickPicker {
+                    ReadingModeQuickPicker(
+                        isMangaMode: $isMangaMode,
+                        isVerticalScroll: $isVerticalScroll,
+                        onDismiss: { withAnimation { showModeQuickPicker = false } },
+                        onSave: savePerBookPreferences
+                    )
+                }
             }
+            // Swipe-up from bottom (>= 40pt) when chrome is hidden reveals the quick picker
+            .gesture(
+                DragGesture(minimumDistance: 40)
+                    .onEnded { value in
+                        guard !isToolbarVisible else { return }   // only when chrome hidden
+                        if value.translation.height < -40 {       // swipe up
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                showModeQuickPicker = true
+                            }
+                            // Auto-dismiss after 3s if user doesn't select
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                                withAnimation { showModeQuickPicker = false }
+                            }
+                        }
+                    }
+            )
             .overlay { readerChromeOverlay(in: geo) }
             .task {
                 if UIDevice.current.userInterfaceIdiom == .phone {
                     orientationLock.lock(to: .portrait)
                 }
                 await prepareArchive()
-                restorePerBookPreferences()
+                // Note: restorePerBookPreferences() is now called in .onChange(of: pages)
+                // after pages are populated to avoid a race where pages.count is still 0.
                 trackProgress(isPageTurn: false)
                 let extracted = pages
                 toc = CBZTableOfContents.build(from: extracted)
             }
-            .onChange(of: pages) {
+            // ─── Item 6: Restore AFTER pages are populated ───
+            // prepareArchive() fills `pages` async; restoring page index before
+            // pages.count is known would silently clamp to 0.
+            .onChange(of: pages) { _, newPages in
+                guard !newPages.isEmpty else { return }
                 if fileURL.pathExtension.lowercased() != "pdf" {
-                    toc = CBZTableOfContents.build(from: pages)
+                    toc = CBZTableOfContents.build(from: newPages)
+                }
+                // One-shot restore: only on first non-empty population
+                if currentPageIndex == 0 {
+                    restorePerBookPreferences()
                 }
             }
             .onChange(of: loadedPDFDocument) {
@@ -234,6 +275,12 @@ struct ReaderView: View {
                 if fired { if let onExit = onExit { onExit() } else { dismiss() } }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_EndOfBookReached"))) { _ in nextPage() }
+            // Item 7 — Jump-to-source from Zettelkasten hub
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { note in
+                if let idx = note.userInfo?["pageIndex"] as? Int, idx >= 0, idx < pages.count {
+                    withAnimation { currentPageIndex = idx }
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_BookmarkCurrentPage"))) { note in
                 if let idx = note.userInfo?["pageIndex"] as? Int {
                     NotificationCenter.default.post(name: NSNotification.Name("BookmarkAdded"),
@@ -466,7 +513,34 @@ struct ReaderView: View {
                                     canvasView: $canvasView,
                                     isDrawingMode: isDrawingMode,
                                     onDrawingSaved: { drawing in
-                                        // Cache flattened representation here to disk/memory
+                                        // Item 8 — Persist ink stroke as SDAnnotation in SwiftData
+                                        guard !drawing.bounds.isEmpty, let pdfID = pdf?.id else { return }
+                                        let drawingData = drawing.dataRepresentation()
+                                        let targetID = pdfID.uuidString
+                                        let pIndex = currentPageIndex
+                                        let descriptor = FetchDescriptor<SDAnnotation>(
+                                            predicate: #Predicate { $0.pdfID == targetID && $0.pageIndex == pIndex && $0.kindRaw == "ink" }
+                                        )
+                                        if let existing = try? modelContext.fetch(descriptor).first {
+                                            existing.drawingData = drawingData
+                                            existing.modifiedAt = Date()
+                                        } else {
+                                            let newInk = SDAnnotation(
+                                                id: UUID(),
+                                                pdfID: targetID,
+                                                pageIndex: pIndex,
+                                                text: nil,
+                                                note: nil,
+                                                isReadwiseImport: false,
+                                                readwiseBookTitle: nil,
+                                                readwiseAuthor: nil,
+                                                createdAt: Date()
+                                            )
+                                            newInk.kindRaw = "ink"
+                                            newInk.drawingData = drawingData
+                                            modelContext.insert(newInk)
+                                        }
+                                        try? modelContext.save()
                                     }
                                 )
                                 // Allows native PDF panning with 2 fingers while drawing with Pencil/1 finger
