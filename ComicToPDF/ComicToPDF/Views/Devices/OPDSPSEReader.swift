@@ -10,12 +10,17 @@ struct OPDSPSEReader: View {
     let entry: OPDSEntry
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var currentPage: Int = 0
     @State private var pageImages: [Int: UIImage] = [:]
     @State private var pageErrors: [Int: Bool] = [:]
     @State private var showUI = true
     @State private var isLoadingInitial = true
     @State private var hideUITask: Task<Void, Never>?
+
+    // Phase 2: Progress sync
+    @State private var pagesSinceLastSync: Int = 0
+    private static let syncInterval = 5   // save every N page turns
 
     private let cache = NSCache<NSNumber, UIImage>()
     private static let prefetchRadius = 2
@@ -53,12 +58,27 @@ struct OPDSPSEReader: View {
         .statusBarHidden(!showUI)
         .persistentSystemOverlays(showUI ? .automatic : .hidden)
         .task {
-            // Resume from pse:lastRead if the server provided it
-            if let resumePage = parseLastRead(), resumePage > 0 {
-                currentPage = resumePage
+            // Phase 2: load resume position from server (REST API or pse:lastRead)
+            let resumePage = await OPDSProgressSyncService.shared.loadProgress(server: server, entry: entry)
+            if let page = resumePage, page > 0 {
+                currentPage = page
             }
             await prefetchPages(around: currentPage)
             withAnimation { isLoadingInitial = false }
+        }
+        .onChange(of: currentPage) { _, newPage in
+            Task { await prefetchPages(around: newPage) }
+            syncProgressIfNeeded(page: newPage)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                // App going to background — flush final position immediately
+                Task {
+                    await OPDSProgressSyncService.shared.saveProgress(
+                        server: server, entry: entry, page: currentPage
+                    )
+                }
+            }
         }
     }
 
@@ -72,9 +92,7 @@ struct OPDSPSEReader: View {
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .onChange(of: currentPage) { _, newPage in
-            Task { await prefetchPages(around: newPage) }
-        }
+        // onChange is handled at the parent ZStack level (above)
         .onTapGesture { toggleUI() }
     }
 
@@ -134,7 +152,18 @@ struct OPDSPSEReader: View {
         VStack {
             // Top bar
             HStack {
-                Button { dismiss() } label: {
+                Button { 
+                    // Save final position before dismissing
+                    let page = currentPage
+                    let isLast = totalPages > 0 && page >= totalPages - 1
+                    Task {
+                        await OPDSProgressSyncService.shared.saveProgress(
+                            server: server, entry: entry,
+                            page: page, completed: isLast
+                        )
+                    }
+                    dismiss()
+                } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 22))
                         .foregroundStyle(.white.opacity(0.8))
@@ -286,11 +315,28 @@ struct OPDSPSEReader: View {
         return URL(string: resolved)
     }
 
+    // MARK: - Phase 2: Progress Sync
+
+    /// Increments the page counter and saves progress every `syncInterval` turns.
+    /// Fire-and-forget — never blocks the UI.
+    private func syncProgressIfNeeded(page: Int) {
+        pagesSinceLastSync += 1
+        guard pagesSinceLastSync >= Self.syncInterval else { return }
+        pagesSinceLastSync = 0
+        let isLast = totalPages > 0 && page >= totalPages - 1
+        Task {
+            await OPDSProgressSyncService.shared.saveProgress(
+                server: server, entry: entry,
+                page: page, completed: isLast
+            )
+        }
+    }
+
     private func parseLastRead() -> Int? {
-        // pse:lastRead is an XML attribute on the <link> element.
-        // The parser stores it... for now we don't have a direct field on OPDSEntry.
-        // Phase 2: extend OPDSEntry to carry lastRead from the parser.
-        nil
+        // pse:lastRead is now populated by the OPDS XML parser (Phase 2).
+        // OPDSProgressSyncService.loadProgress() reads this first before
+        // making a REST API call, so this stub is no longer called directly.
+        return entry.pseLastRead
     }
 
     // MARK: - UI Toggle

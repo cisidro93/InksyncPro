@@ -25,6 +25,19 @@ struct OPDSEntry: Identifiable {
     let streamURL: URL?   // OPDS-PSE (Page Streaming Extension) — Kavita / Komga
     let pageCount: Int?   // nil = not reported by server
     let kind: OPDSEntryKind
+
+    // Phase 2: Server-native IDs for REST progress sync
+    // Kavita — extracted from OPDS link href path: /series/{s}/volume/{v}/chapter/{c}
+    let kavitaChapterId: Int?
+    let kavitaVolumeId: Int?
+    let kavitaSeriesId: Int?
+    let kavitaLibraryId: Int?   // parsed from library-level nav feed href
+
+    // Komga — extracted from href: /books/{bookId}/...
+    let komgaBookId: String?    // alphanumeric string e.g. "03KMX9PBZTVMP"
+
+    // PSE — pse:lastRead attribute on the <link pse:stream> element
+    let pseLastRead: Int?       // 0-based page index of last read position
 }
 
 struct OPDSFeed {
@@ -62,6 +75,14 @@ final class OPDSFeedParser: NSObject, XMLParserDelegate {
     private var entryIsNavigation = false
     private var entryNavFeedURL: URL?
 
+    // Phase 2: ID extraction state
+    private var entryKavitaChapterId: Int?
+    private var entryKavitaVolumeId: Int?
+    private var entryKavitaSeriesId: Int?
+    private var entryKavitaLibraryId: Int?
+    private var entryKomgaBookId: String?
+    private var entryPseLastRead: Int?
+
     // Character accumulation
     private var currentElement = ""
     private var charBuf = ""
@@ -94,16 +115,22 @@ final class OPDSFeedParser: NSObject, XMLParserDelegate {
 
         switch localName {
         case "entry":
-            insideEntry     = true
-            entryID         = ""
-            entryTitle      = ""
-            entryAuthor     = ""
-            entryCoverURL   = nil
-            entryDownloadURL = nil
-            entryStreamURL  = nil
-            entryPageCount  = nil
-            entryIsNavigation = false
-            entryNavFeedURL = nil
+            insideEntry          = true
+            entryID              = ""
+            entryTitle           = ""
+            entryAuthor          = ""
+            entryCoverURL        = nil
+            entryDownloadURL     = nil
+            entryStreamURL       = nil
+            entryPageCount       = nil
+            entryIsNavigation    = false
+            entryNavFeedURL      = nil
+            entryKavitaChapterId = nil
+            entryKavitaVolumeId  = nil
+            entryKavitaSeriesId  = nil
+            entryKavitaLibraryId = nil
+            entryKomgaBookId     = nil
+            entryPseLastRead     = nil
 
         case "link":
             handleLink(attrs: attrs)
@@ -185,11 +212,20 @@ final class OPDSFeedParser: NSObject, XMLParserDelegate {
             // Acquisition link — this is a downloadable book
             entryDownloadURL = url
             entryIsNavigation = false
+            // Extract server-native IDs from the href for Phase 2 progress sync
+            extractServerIDs(from: href)
 
         } else if rel.contains("vaemendis.net/opds-pse/stream") ||
                   rel.contains("opds-pse") {
             // OPDS-PSE page streaming (Kavita / Komga)
             entryStreamURL = url
+            // pse:lastRead attribute carries the resume position
+            if let lastRead = attrs["pse:lastRead"] ?? attrs["lastRead"],
+               let page = Int(lastRead) {
+                entryPseLastRead = page
+            }
+            // Also extract IDs if present in the PSE stream href
+            if entryKavitaChapterId == nil { extractServerIDs(from: href) }
 
         } else if rel == "subsection" || rel == "http://opds-spec.org/subsection" {
             // Navigation feed — drill-down catalog link
@@ -197,6 +233,42 @@ final class OPDSFeedParser: NSObject, XMLParserDelegate {
             entryNavFeedURL = url
         }
     }
+
+    // MARK: - Server ID Extraction
+
+    /// Parses Kavita and Komga native IDs from an OPDS link href.
+    /// Kavita:  /api/opds/.../series/{seriesId}/volume/{volumeId}/chapter/{chapterId}
+    /// Komga:   /opds/v1.2/books/{bookId}/...
+    private func extractServerIDs(from href: String) {
+        // Kavita — integer path segments
+        if let seriesId = regexInt(href, pattern: "/series/(\\d+)") {
+            entryKavitaSeriesId = seriesId
+        }
+        if let volumeId = regexInt(href, pattern: "/volume/(\\d+)") {
+            entryKavitaVolumeId = volumeId
+        }
+        if let chapterId = regexInt(href, pattern: "/chapter/(\\d+)") {
+            entryKavitaChapterId = chapterId
+        }
+        if let libraryId = regexInt(href, pattern: "/library/(\\d+)") {
+            entryKavitaLibraryId = libraryId
+        }
+
+        // Komga — alphanumeric book ID
+        if let match = href.range(of: #"/books/([A-Z0-9]+)"#, options: .regularExpression) {
+            let segment = String(href[match])
+            let bookId = segment.replacingOccurrences(of: "/books/", with: "")
+            if !bookId.isEmpty { entryKomgaBookId = bookId }
+        }
+    }
+
+    private func regexInt(_ string: String, pattern: String) -> Int? {
+        guard let range = string.range(of: pattern, options: .regularExpression),
+              let numRange = string[range].range(of: #"\d+"#, options: .regularExpression)
+        else { return nil }
+        return Int(string[range][numRange])
+    }
+
 
     private func commitEntry() {
         if entryIsNavigation, let feedURL = entryNavFeedURL {
@@ -207,14 +279,20 @@ final class OPDSFeedParser: NSObject, XMLParserDelegate {
             ))
         } else {
             entries.append(OPDSEntry(
-                id:          entryID.isEmpty ? UUID().uuidString : entryID,
-                title:       entryTitle,
-                author:      entryAuthor,
-                coverURL:    entryCoverURL,
-                downloadURL: entryDownloadURL,
-                streamURL:   entryStreamURL,
-                pageCount:   entryPageCount,
-                kind:        entryIsNavigation ? .navigation : .acquisition
+                id:               entryID.isEmpty ? UUID().uuidString : entryID,
+                title:            entryTitle,
+                author:           entryAuthor,
+                coverURL:         entryCoverURL,
+                downloadURL:      entryDownloadURL,
+                streamURL:        entryStreamURL,
+                pageCount:        entryPageCount,
+                kind:             entryIsNavigation ? .navigation : .acquisition,
+                kavitaChapterId:  entryKavitaChapterId,
+                kavitaVolumeId:   entryKavitaVolumeId,
+                kavitaSeriesId:   entryKavitaSeriesId,
+                kavitaLibraryId:  entryKavitaLibraryId,
+                komgaBookId:      entryKomgaBookId,
+                pseLastRead:      entryPseLastRead
             ))
         }
     }
