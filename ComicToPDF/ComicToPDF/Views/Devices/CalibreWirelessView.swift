@@ -357,7 +357,7 @@ struct CalibreWirelessView: View {
 
         // Import into the app's conversion pipeline
         Task {
-            await manager.processImportedFiles([url])
+            await manager.processImportedFiles(urls: [url])
         }
 
         withAnimation {

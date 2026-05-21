@@ -198,9 +198,7 @@ struct LibraryHeaderView: View {
                     .padding(.horizontal, 16)
                 }
                 .padding(.top, 16)
-                } // end portrait (vSizeClass != .compact)
-            } // end hSizeClass == .compact (iPhone)
-
+                }
             } else {
                 // ✔️ iPad layout: original single-row design
                 HStack(spacing: 12) {
