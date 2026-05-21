@@ -522,6 +522,17 @@ struct ModernLibraryView: View {
                         headerPinModeRaw = next.rawValue
                     }
                     HapticEngine.selection()
+                },
+                onCollapseToggle: {
+                    // Drag/tap on the collapse bar: toggle between expanded/collapsed pin states.
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        if isHeaderCollapsed {
+                            headerPinModeRaw = HeaderPinMode.pinnedExpanded.rawValue
+                        } else {
+                            headerPinModeRaw = HeaderPinMode.pinnedCollapsed.rawValue
+                        }
+                    }
+                    HapticEngine.selection()
                 }
             )
 

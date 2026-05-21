@@ -2,14 +2,16 @@ import SwiftUI
 import SwiftData
 
 enum DevicesMode: String, CaseIterable {
-    case sync    = "Devices"
-    case servers = "Servers"
+    case sync     = "Devices"
+    case servers  = "Servers"
+    case calibre  = "Calibre"
     case settings = "Settings"
 
     var icon: String {
         switch self {
         case .sync:     return "ipad.and.iphone"
         case .servers:  return "server.rack"
+        case .calibre:  return "book.closed"
         case .settings: return "gearshape"
         }
     }
@@ -17,6 +19,7 @@ enum DevicesMode: String, CaseIterable {
         switch self {
         case .sync:     return "ipad.and.iphone.fill"
         case .servers:  return "server.rack"
+        case .calibre:  return "book.closed.fill"
         case .settings: return "gearshape.fill"
         }
     }
@@ -24,6 +27,7 @@ enum DevicesMode: String, CaseIterable {
         switch self {
         case .sync:     return Color.inkBlue
         case .servers:  return Color(hex: "#2dd4a0")   // inkGreen
+        case .calibre:  return Color.inkAmber
         case .settings: return Color(hex: "#7B5EA7")
         }
     }
@@ -91,6 +95,10 @@ struct DevicesView: View {
                 } else if mode == .servers {
                     NavigationStack {
                         OPDSServersView()
+                    }
+                } else if mode == .calibre {
+                    NavigationStack {
+                        CalibreWirelessView()
                     }
                 } else {
                     NavigationStack {

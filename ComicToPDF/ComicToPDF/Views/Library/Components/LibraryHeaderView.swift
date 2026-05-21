@@ -25,16 +25,73 @@ struct LibraryHeaderView: View {
     var isCollapsed: Bool = false
     var pinMode: HeaderPinMode = .auto
     var onPinToggle: (() -> Void)? = nil
+    var onCollapseToggle: (() -> Void)? = nil   // Phase 4: drag-to-collapse
 
     @Environment(\.horizontalSizeClass) private var hSizeClass
+    @Environment(\.verticalSizeClass) private var vSizeClass
     @State private var showImportQueue = false
+    @State private var dragAccumulated: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
 
             if hSizeClass == .compact {
-                // ✔️ iPhone layout: title row + full-width search row
-                VStack(spacing: 8) {
+                // ── Layout branch: portrait vs landscape iPhone ──
+                if vSizeClass == .compact {
+                    // ✔️ iPhone LANDSCAPE: ultra-compact single-row
+                    HStack(spacing: 10) {
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Theme.orange.gradient)
+                        // Full-width search fills remaining space
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(Theme.textSecondary)
+                            TextField("Search…", text: $searchText)
+                                .font(.system(size: 14))
+                                .foregroundColor(Theme.text)
+                                .tint(Theme.orange)
+                            if !searchText.isEmpty {
+                                Button(action: { searchText = "" }) {
+                                    Image(systemName: "xmark.circle.fill").foregroundColor(Theme.textSecondary)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 12)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        // Compact icon row
+                        Menu {
+                            Picker("Sort By", selection: $sortOption) {
+                                ForEach(ModernLibraryView.SortOption.allCases) { o in Text(o.rawValue).tag(o) }
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Theme.text)
+                                .frame(width: 32, height: 32)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                        }
+                        Button {
+                            withAnimation { viewStyle = viewStyle == .grid ? .list : .grid }
+                        } label: {
+                            Image(systemName: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Theme.text)
+                                .frame(width: 32, height: 32)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+
+                } else {
+                    // ✔️ iPhone PORTRAIT: title row + full-width search row
+                    VStack(spacing: 8) {
                     // Row 1a: Title + icon buttons
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -141,6 +198,8 @@ struct LibraryHeaderView: View {
                     .padding(.horizontal, 16)
                 }
                 .padding(.top, 16)
+                } // end portrait (vSizeClass != .compact)
+            } // end hSizeClass == .compact (iPhone)
 
             } else {
                 // ✔️ iPad layout: original single-row design
@@ -508,8 +567,8 @@ struct LibraryHeaderView: View {
             }
 
             // ── Collapse indicator + Pin toggle ────────────────────────────
-            // Always visible at the bottom of the header. Chevron = collapse direction;
-            // pin button cycles: auto (no lock) → pin expanded → pin collapsed.
+            // Tap the chevron area OR drag up/down to collapse/expand the header.
+            // Pin button cycles: auto → pinned-expanded → pinned-collapsed.
             HStack(spacing: 0) {
                 Spacer()
 
@@ -540,8 +599,27 @@ struct LibraryHeaderView: View {
                 .padding(.trailing, 12)
                 .animation(.spring(response: 0.3, dampingFraction: 0.75), value: pinMode)
             }
-            .frame(height: 18)
+            .frame(height: 28)   // slightly taller hit target for drag
             .padding(.bottom, 4)
+            .contentShape(Rectangle())   // make entire width tappable
+            .onTapGesture { onCollapseToggle?() }
+            .gesture(
+                DragGesture(minimumDistance: 10)
+                    .onChanged { value in
+                        dragAccumulated = value.translation.height
+                    }
+                    .onEnded { value in
+                        let threshold: CGFloat = 20
+                        if !isCollapsed && value.translation.height < -threshold {
+                            // Dragged up — collapse
+                            onCollapseToggle?()
+                        } else if isCollapsed && value.translation.height > threshold {
+                            // Dragged down — expand
+                            onCollapseToggle?()
+                        }
+                        dragAccumulated = 0
+                    }
+            )
         }
         .background(.ultraThinMaterial)
         .overlay(

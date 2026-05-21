@@ -177,9 +177,8 @@ struct ModernEmptyState: View {
         .background(Theme.bg)
     }
 }
-
 // MARK: - Library Index Scrubber (on-demand, Contacts-style)
-// At rest: a subtle 3pt handle on the right edge.
+// At rest: FULLY INVISIBLE — no permanent ribbon on the right edge.
 // On touch/drag: springs open to the full letter list with selection haptics.
 // Auto-hides 1.5 seconds after the user lifts their finger.
 struct LibraryIndexScrubber: View {
@@ -195,9 +194,9 @@ struct LibraryIndexScrubber: View {
             let itemHeight = geo.size.height / CGFloat(letters.count)
 
             ZStack(alignment: .trailing) {
-                // ── Invisible wide hit area so touch begins anywhere on the right edge ──
+                // ── Invisible wide hit area (touch anywhere on right 28pt strip) ──
                 Color.clear
-                    .frame(width: isExpanded ? 36 : 22)
+                    .frame(width: 28)
 
                 // ── Expanded letter list ──────────────────────────────────────────────
                 if isExpanded {
@@ -227,14 +226,7 @@ struct LibraryIndexScrubber: View {
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
                 }
-
-                // ── Collapsed handle (subtle 3pt pill) ───────────────────────────────
-                if !isExpanded {
-                    Capsule()
-                        .fill(Theme.textSecondary.opacity(0.22))
-                        .frame(width: 3, height: 48)
-                        .transition(.opacity)
-                }
+                // NO collapsed handle — completely invisible at rest
             }
             .contentShape(Rectangle())
             .gesture(
